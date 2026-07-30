@@ -7,9 +7,12 @@ resulting ``Subset`` to the sampler.
 
 from __future__ import annotations
 
-from collections.abc import Sized
+from typing import TYPE_CHECKING
 
 from torch.utils.data import Subset
+
+if TYPE_CHECKING:
+    from collections.abc import Sized
 
 
 def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Subset:

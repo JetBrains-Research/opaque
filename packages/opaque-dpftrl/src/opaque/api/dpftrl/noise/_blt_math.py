@@ -18,7 +18,7 @@ import dataclasses
 import functools
 import logging
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -33,6 +33,9 @@ from . import (
     _toeplitz as toeplitz,
 )
 from ._engine import _internal_compute_dtype
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

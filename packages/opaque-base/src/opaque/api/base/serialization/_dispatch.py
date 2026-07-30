@@ -8,11 +8,13 @@ skips it (opaque non-containers).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import _structural
 from ._registry import _REGISTRY
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _join_path(prefix: str, rel_key: str) -> str:

@@ -57,31 +57,31 @@ from . import (
 )
 
 __all__ = [
-    # Accountant
-    "Accountant",
     "__version__",
-    "advantage_budget",
     # Submodules
     "amplification",
-    "beta_budget",
-    "cached",
-    "calibrate",
     "calibration",
-    "compose",
     "composition",
-    "delta_budget",
     "discretization",
+    "mechanisms",
+    # Accountant
+    "Accountant",
+    # Discretization
+    "set_discretization",
+    "get_discretization",
     # Generic mechanisms
     "eps_delta",
-    # Calibration / budgets
-    "epsilon_budget",
-    "get_discretization",
     "identity",
-    "mechanisms",
     "nonprivate",
     # Composition
     "repeat",
+    "compose",
+    "cached",
+    # Calibration / budgets
+    "epsilon_budget",
+    "delta_budget",
+    "advantage_budget",
+    "beta_budget",
     "risk_budget",
-    # Discretization
-    "set_discretization",
+    "calibrate",
 ]

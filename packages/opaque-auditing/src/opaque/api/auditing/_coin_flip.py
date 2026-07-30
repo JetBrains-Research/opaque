@@ -12,13 +12,15 @@ Reference:
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from torch.utils.data import Subset
 
 from opaque.random import fold_in
-from opaque.random.types import RngKey
+
+if TYPE_CHECKING:
+    from opaque.random.types import RngKey
 
 __all__ = ["CoinFlip", "coin_flip"]
 

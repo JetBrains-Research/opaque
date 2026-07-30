@@ -42,13 +42,13 @@ def vmap_create_causal_mask(
     inputs_embeds: torch.Tensor | None = None,
     attention_mask: torch.Tensor | None = None,
     past_key_values=None,
-    position_ids: torch.Tensor | None = None,
-    or_mask_function=None,
-    and_mask_function=None,
+    _position_ids: torch.Tensor | None = None,
+    _or_mask_function=None,
+    _and_mask_function=None,
     *,
     cache_position: torch.Tensor | None = None,
     input_embeds: torch.Tensor | None = None,
-    **kwargs,
+    **_kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible create_causal_mask.
 
@@ -190,7 +190,7 @@ def vmap_create_sliding_window_causal_mask(
     *,
     cache_position: torch.Tensor | None = None,
     input_embeds: torch.Tensor | None = None,
-    **kwargs,
+    **_kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible ``create_sliding_window_causal_mask``.
 

@@ -25,6 +25,7 @@ import os
 import shutil
 import time
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -1786,7 +1787,7 @@ class DPTrainer:
 
     def training_step(
         self,
-        model: Any,
+        _model: Any,
         inputs: dict[str, Tensor],
     ) -> dict[str, Any]:
         """One DP-SGD step: clipped grad → noise → optimizer update.
@@ -2784,19 +2785,19 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None:
             raise ValueError("save_metrics requires args.output_dir to be set")
-        os.makedirs(output_dir, exist_ok=True)
-        path = os.path.join(output_dir, f"{split}_results.json")
-        with open(path, "w") as f:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        path = Path(output_dir) / f"{split}_results.json"
+        with path.open("w") as f:
             json.dump(metrics, f, indent=2, sort_keys=True, default=str)
         if combined:
-            all_path = os.path.join(output_dir, "all_results.json")
-            if os.path.exists(all_path):
-                with open(all_path) as f:
+            all_path = Path(output_dir) / "all_results.json"
+            if all_path.exists():
+                with all_path.open() as f:
                     all_metrics = json.load(f)
             else:
                 all_metrics = {}
             all_metrics.update(metrics)
-            with open(all_path, "w") as f:
+            with all_path.open("w") as f:
                 json.dump(all_metrics, f, indent=2, sort_keys=True, default=str)
 
     def save_state(self) -> None:
@@ -2806,7 +2807,7 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None:
             raise ValueError("save_state requires args.output_dir to be set")
-        os.makedirs(output_dir, exist_ok=True)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
         self._save_trainer_state(output_dir)
 
     # ------------------------------------------------------------------
@@ -4148,7 +4149,7 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None or a.overwrite_output_dir:
             return
-        if not os.path.isdir(output_dir):
+        if not Path(output_dir).is_dir():
             return
         existing = ckpt.list_checkpoints(output_dir)
         if existing:
@@ -4313,23 +4314,23 @@ class DPTrainer:
         # ``save_pretrained`` writes a single file when the model fits
         # under ``max_shard_size``).
         candidates = [
-            os.path.join(ckpt_dir, ckpt.SAFE_WEIGHTS_NAME),
-            os.path.join(ckpt_dir, "adapter_model.safetensors"),
-            os.path.join(ckpt_dir, ckpt.WEIGHTS_NAME),
-            os.path.join(ckpt_dir, "adapter_model.bin"),
+            Path(ckpt_dir) / ckpt.SAFE_WEIGHTS_NAME,
+            Path(ckpt_dir) / "adapter_model.safetensors",
+            Path(ckpt_dir) / ckpt.WEIGHTS_NAME,
+            Path(ckpt_dir) / "adapter_model.bin",
         ]
         for path in candidates:
-            if not os.path.exists(path):
+            if not path.exists():
                 continue
-            if path.endswith(".safetensors"):
-                return load_safetensors(path, device=str(self._device)), False
+            if path.suffix == ".safetensors":
+                return load_safetensors(str(path), device=str(self._device)), False
             # ``weights_only=False``: ``pytorch_model.bin`` is a pickled
             # state-dict that may carry ``torch.dtype`` / ``torch.device``
             # markers (HF historically stamps these into checkpoints) —
             # PyTorch 2.6's safe-load default rejects them.  Pinning the
             # explicit ``False`` keeps the behaviour we tested against.
             return (
-                torch.load(path, map_location=self._device, weights_only=False),
+                torch.load(str(path), map_location=self._device, weights_only=False),
                 False,
             )
 
@@ -4337,10 +4338,10 @@ class DPTrainer:
         # model in place.  ``strict=False`` mirrors the PEFT-friendly
         # single-file path so partial-key checkpoints still load.
         sharded_indices = (
-            os.path.join(ckpt_dir, SAFE_WEIGHTS_INDEX_NAME),
-            os.path.join(ckpt_dir, WEIGHTS_INDEX_NAME),
+            Path(ckpt_dir) / SAFE_WEIGHTS_INDEX_NAME,
+            Path(ckpt_dir) / WEIGHTS_INDEX_NAME,
         )
-        if any(os.path.exists(p) for p in sharded_indices):
+        if any(p.exists() for p in sharded_indices):
             load_sharded_checkpoint(
                 self._model,
                 ckpt_dir,
@@ -4372,7 +4373,7 @@ class DPTrainer:
         if self._ctx is not None:
             self._restore_params(self._ctx.trainable_params)
         if _distributed.should_save(a, self._ddp):
-            os.makedirs(target, exist_ok=True)
+            Path(target).mkdir(parents=True, exist_ok=True)
             self._save_model_artifacts(target)
             self._save_training_args(target)
             # Privacy provenance travels with every saved model.  Use the
@@ -4430,7 +4431,7 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None:
             raise ValueError("Saving checkpoints requires args.output_dir to be set")
-        ckpt_dir = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        ckpt_dir = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
         # Atomic publish: write everything into a sibling ``*.tmp`` staging
         # directory, then ``os.replace`` it onto the final ``checkpoint-N``
         # name only once all artefacts (and every rank's RNG snapshot) have
@@ -4446,9 +4447,9 @@ class DPTrainer:
         # callbacks below that may inspect params).
         self._restore_params(ctx.trainable_params)
         if _distributed.should_save(a, self._ddp):
-            if os.path.isdir(staging_dir):
+            if Path(staging_dir).is_dir():
                 shutil.rmtree(staging_dir)  # stale leftover from a prior crash
-            os.makedirs(staging_dir, exist_ok=True)
+            Path(staging_dir).mkdir(parents=True, exist_ok=True)
             self._save_model_artifacts(staging_dir)
 
             # HF parity: register ``best_model_checkpoint`` by *looking up*
@@ -4468,11 +4469,11 @@ class DPTrainer:
                     # name (it materialises at the rename).
                     self.state.best_model_checkpoint = ckpt_dir
                 else:
-                    best_dir = os.path.join(
-                        output_dir,
-                        f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}",
+                    best_dir = str(
+                        Path(output_dir)
+                        / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}"
                     )
-                    if os.path.isdir(best_dir):
+                    if Path(best_dir).is_dir():
                         self.state.best_model_checkpoint = best_dir
                     else:
                         log.debug(
@@ -4500,11 +4501,11 @@ class DPTrainer:
         _distributed.barrier(self._ddp)
 
         if _distributed.should_save(a, self._ddp):
-            if os.path.isdir(ckpt_dir):
+            if Path(ckpt_dir).is_dir():
                 # Defensive: the only callers target a fresh step, but never
                 # let a stale dir block the atomic rename.
                 shutil.rmtree(ckpt_dir)
-            os.replace(staging_dir, ckpt_dir)
+            Path(staging_dir).replace(ckpt_dir)
             # Rotation honours ``save_total_limit`` and protects best when set.
             ckpt.rotate_checkpoints(
                 output_dir,
@@ -4540,18 +4541,18 @@ class DPTrainer:
 
                 save_safetensors(
                     state_dict,
-                    os.path.join(output_dir, ckpt.SAFE_WEIGHTS_NAME),
+                    str(Path(output_dir) / ckpt.SAFE_WEIGHTS_NAME),
                     metadata={"format": "pt"},
                 )
             else:
-                torch.save(state_dict, os.path.join(output_dir, ckpt.WEIGHTS_NAME))
+                torch.save(state_dict, str(Path(output_dir) / ckpt.WEIGHTS_NAME))
         if self._processing_class is not None:
             self._processing_class.save_pretrained(output_dir)
 
     def _save_optimizer(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
         torch.save(
             opaque_state_dict(ctx.opt_state),
-            os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME),
+            str(Path(ckpt_dir) / ckpt.DP_OPTIMIZER_NAME),
         )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
@@ -4576,7 +4577,7 @@ class DPTrainer:
 
         a = self.args
         ckpt.save_dp_runtime_state(
-            os.path.join(ckpt_dir, ckpt.DP_STATE_NAME),
+            str(Path(ckpt_dir) / ckpt.DP_STATE_NAME),
             clip_state=ctx.clip_state,
             noise_state=ctx.noise_state,
             sampler_state=sampler_state,
@@ -4602,8 +4603,8 @@ class DPTrainer:
         )
 
     def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
-        path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
-        with open(path, "w") as f:
+        path = Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME
+        with path.open("w") as f:
             json.dump(opaque_state_dict(accountant), f, indent=2)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
@@ -4642,8 +4643,8 @@ class DPTrainer:
         self.state.stateful_callbacks = cb_states
 
         payload = self.state.to_json()
-        path = os.path.join(ckpt_dir, ckpt.TRAINER_STATE_NAME)
-        with open(path, "w") as f:
+        path = Path(ckpt_dir) / ckpt.TRAINER_STATE_NAME
+        with path.open("w") as f:
             json.dump(payload, f, indent=2, default=str)
 
     def _save_training_args(self, ckpt_dir: str) -> None:
@@ -4651,9 +4652,9 @@ class DPTrainer:
         # ``torch.load(.../training_args.bin)`` accepts the bundled
         # ``TrainingArguments`` because the dataclass is a strict
         # superset of ``TrainingArguments``.
-        torch.save(self.args, os.path.join(ckpt_dir, ckpt.TRAINING_ARGS_NAME))
+        torch.save(self.args, str(Path(ckpt_dir) / ckpt.TRAINING_ARGS_NAME))
 
-    def _maybe_final_save(self, ctx: _TrainingContext, global_step: int) -> None:
+    def _maybe_final_save(self, _ctx: _TrainingContext, global_step: int) -> None:
         """Always emit a final checkpoint when saving is enabled (HF parity).
 
         Skipped if a checkpoint at this exact step already exists (e.g. an
@@ -4664,8 +4665,8 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None:
             return
-        target = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
-        if os.path.isdir(target):
+        target = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
+        if Path(target).is_dir():
             return
         self._save_checkpoint()
 
@@ -4676,8 +4677,8 @@ class DPTrainer:
         output_dir = self._effective_output_dir()
         if output_dir is None:
             return
-        target = os.path.join(output_dir, f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
-        if os.path.isdir(target):
+        target = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
+        if Path(target).is_dir():
             self._save_trainer_state(target)
 
     # ------------------------------------------------------------------
@@ -4716,7 +4717,7 @@ class DPTrainer:
             raise TypeError(
                 f"resume_from_checkpoint must be str | bool | None, got {type(value).__name__}"
             )
-        if not os.path.isdir(value):
+        if not Path(value).is_dir():
             raise FileNotFoundError(
                 f"resume_from_checkpoint directory does not exist: {value}"
             )
@@ -4768,11 +4769,7 @@ class DPTrainer:
             ckpt.DP_OPTIMIZER_NAME,
             ckpt.DP_ACCOUNTANT_NAME,
         )
-        missing = [
-            name
-            for name in required
-            if not os.path.exists(os.path.join(ckpt_dir, name))
-        ]
+        missing = [name for name in required if not (Path(ckpt_dir) / name).exists()]
         if missing:
             raise RuntimeError(
                 f"Cannot resume training from {ckpt_dir}: missing DP runtime "
@@ -4787,18 +4784,18 @@ class DPTrainer:
             )
 
         runtime_payload = ckpt.load_dp_runtime_state(
-            os.path.join(ckpt_dir, ckpt.DP_STATE_NAME)
+            str(Path(ckpt_dir) / ckpt.DP_STATE_NAME)
         )
-        with open(os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)) as f:
+        with (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f:
             accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:
         """Read ``trainer_state.json`` from a checkpoint directory."""
-        path = os.path.join(ckpt_dir, ckpt.TRAINER_STATE_NAME)
-        if not os.path.exists(path):
+        path = Path(ckpt_dir) / ckpt.TRAINER_STATE_NAME
+        if not path.exists():
             return None
-        with open(path) as f:
+        with path.open() as f:
             return json.load(f)
 
     def _apply_runtime_state(
@@ -4812,11 +4809,11 @@ class DPTrainer:
         ctx.clip_state = opaque_from_state_dict(ctx.clip_state, runtime.clip_state)
         ctx.noise_state = opaque_from_state_dict(ctx.noise_state, runtime.noise_state)
 
-        opt_path = os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME)
-        if os.path.exists(opt_path):
+        opt_path = Path(ckpt_dir) / ckpt.DP_OPTIMIZER_NAME
+        if opt_path.exists():
             # Load flat serialisation on CPU; tensors move with ``opt.update``.
             opt_sd = torch.load(
-                opt_path,
+                str(opt_path),
                 map_location="cpu",
                 weights_only=False,
             )
@@ -4837,7 +4834,7 @@ class DPTrainer:
             rank=self._ddp.rank,
             world_size=self._ddp.world_size,
         )
-        if not os.path.exists(path):
+        if not Path(path).exists():
             return
         # ``weights_only=False``: the snapshot bundles
         # ``random.getstate()`` (a Python tuple) and NumPy's RNG state

@@ -21,14 +21,17 @@ from __future__ import annotations
 import functools
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
-from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
+
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import Pld
 
 #: Mechanism types accepted by :func:`poisson`.
 _Inner = MfGaussian

@@ -84,7 +84,7 @@ def extract_prompt(example: dict) -> dict:
 
     # Walk element-wise; stop at first mismatch.
     prefix_len = 0
-    for c_elem, r_elem in zip(chosen, rejected):
+    for c_elem, r_elem in zip(chosen, rejected, strict=False):
         if c_elem == r_elem:
             prefix_len += 1
         else:

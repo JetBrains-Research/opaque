@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._sensitivity import minsep_true_max_participations
-from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     inverse_as_streaming_matrix,
 )
@@ -30,6 +30,9 @@ from ._toeplitz import (
 from ._toeplitz import (
     sensitivity_squared as _toeplitz_col_norm_sq,
 )
+
+if TYPE_CHECKING:
+    from ._streaming_matrix import StreamingMatrix
 
 
 def _native():

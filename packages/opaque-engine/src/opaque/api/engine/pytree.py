@@ -71,7 +71,7 @@ def tree_map_with_path(
     fn: Callable[[tuple[Any, ...], Any], Any],
     tree: Any,
     *,
-    namespace: str = "",
+    _namespace: str = "",
 ) -> Any:
     """Apply function to leaves with their path in the tree.
 

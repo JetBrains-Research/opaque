@@ -51,7 +51,7 @@ is correct end-to-end as a library API.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     from torchopt.base import GradientTransformation
@@ -62,7 +62,9 @@ except ImportError as exc:
     ) from exc
 
 from opaque.pytree import tree_map
-from opaque.types import TensorPytree
+
+if TYPE_CHECKING:
+    from opaque.types import TensorPytree
 
 
 @dataclasses.dataclass(frozen=True)

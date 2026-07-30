@@ -14,8 +14,7 @@ to SFT and DPO, and the two-layer dispatcher :func:`_convert_trl_config`.
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..trainer._convert import (  # noqa: F401  (_reject_if_truthy re-exported)
     _apply_manifest,
@@ -29,6 +28,9 @@ from ..trainer._hf_convert import (
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _import_trl() -> Any:

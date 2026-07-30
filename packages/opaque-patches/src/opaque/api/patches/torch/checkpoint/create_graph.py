@@ -21,7 +21,7 @@ def apply() -> None:
     orig = eager._autograd_grad
 
     def _autograd_grad(
-        outputs, inputs, grad_outputs=None, retain_graph=False, create_graph=True
+        outputs, inputs, grad_outputs=None, retain_graph=False, _create_graph=True
     ):
         return orig(
             outputs, inputs, grad_outputs, retain_graph=retain_graph, create_graph=False

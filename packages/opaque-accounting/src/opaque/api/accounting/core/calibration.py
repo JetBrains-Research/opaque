@@ -23,10 +23,8 @@ Example::
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
-
-from opaque.api.accounting.core._base import DpProcess
+from typing import TYPE_CHECKING
 
 # Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
@@ -45,6 +43,11 @@ from opaque.api.accounting.core._budgets import (
     risk_budget,
 )
 from opaque.api.accounting.core._native_cache import _clear_all_native_caches
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.api.accounting.core._base import DpProcess
 
 # =============================================================================
 # Calibration
@@ -411,19 +414,19 @@ def _calibrate_impl(
 # =============================================================================
 
 __all__ = [
-    "AdvantageBudget",
-    "BetaBudget",
     # Re-exported from budgets (convenience)
     "Budget",
-    "CalibrateResult",
-    "DeltaBudget",
     "EpsilonBudget",
+    "DeltaBudget",
+    "AdvantageBudget",
+    "BetaBudget",
     "RiskBudget",
+    "epsilon_budget",
+    "delta_budget",
     "advantage_budget",
     "beta_budget",
+    "risk_budget",
     # Calibration
     "calibrate",
-    "delta_budget",
-    "epsilon_budget",
-    "risk_budget",
+    "CalibrateResult",
 ]

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from opaque.api.engine.scheduling._constant import ConstantSchedule
 from opaque.api.engine.scheduling._ramp import resolve_ramp
-from opaque.api.engine.scheduling._schedule import Schedule
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.api.engine.scheduling._schedule import Schedule
 
 __all__ = ["WithWarmup", "with_warmup"]
 

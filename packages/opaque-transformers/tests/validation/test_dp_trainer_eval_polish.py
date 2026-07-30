@@ -24,12 +24,11 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
 from torch import Tensor
-from transformers.trainer_utils import EvalPrediction
 from transformers.utils import ModelOutput
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
@@ -38,6 +37,9 @@ from opaque.transformers.trainer.types import TrainOutput
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
+
+if TYPE_CHECKING:
+    from transformers.trainer_utils import EvalPrediction
 
 # ---------------------------------------------------------------------------
 # Test fixtures: tiny GPT-2 + tokenizer.  Reused across the integration

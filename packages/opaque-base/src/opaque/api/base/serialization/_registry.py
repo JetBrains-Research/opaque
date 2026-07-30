@@ -14,9 +14,10 @@ by the dispatcher (see ``_dispatch.py``) when needed.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ._types import FromStateDictFn, StateDictFn
+if TYPE_CHECKING:
+    from ._types import FromStateDictFn, StateDictFn
 
 _REGISTRY: dict[type[Any], tuple[StateDictFn, FromStateDictFn]] = {}
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -34,7 +34,9 @@ except ImportError as exc:
 
 from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
-from opaque.types import TensorPytree
+
+if TYPE_CHECKING:
+    from opaque.types import TensorPytree
 
 _LR = float | Callable[[int], float]
 

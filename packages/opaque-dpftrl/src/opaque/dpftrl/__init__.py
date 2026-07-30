@@ -79,28 +79,28 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    "BMinSepSampler",
-    # Samplers
-    "BallsInBinsSampler",
-    "CyclicPoissonSampler",
-    "SequentialBatchSampler",
     "__version__",
     # Subpackages
     "accounting",
+    "clipping",
+    "noise",
+    "sampling",
+    # MF-safe clipping (re-exported for one-stop imports)
+    "clipped_grad",
     "auto_clipped_grad",
+    "per_group",
+    # Dispatchers
+    "mf_gaussian_noise",
     # Strategy factories
     "band_mf_strategy",
     "bisr_strategy",
-    "blt_strategy",
     "bsr_strategy",
-    # MF-safe clipping (re-exported for one-stop imports)
-    "clipped_grad",
-    "clipping",
+    "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
-    # Dispatchers
-    "mf_gaussian_noise",
-    "noise",
-    "per_group",
-    "sampling",
+    # Samplers
+    "BallsInBinsSampler",
+    "BMinSepSampler",
+    "CyclicPoissonSampler",
+    "SequentialBatchSampler",
 ]

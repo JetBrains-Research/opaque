@@ -720,7 +720,7 @@ class TestDPTrainerLRScheduling:
         #   step 5 → schedule(4) = 1e-3 * 1/3
         expected = [0.0, 5e-4, 1e-3, 1e-3 * 2 / 3, 1e-3 * 1 / 3]
         assert len(lrs) == 5
-        for got, exp in zip(lrs, expected):
+        for got, exp in zip(lrs, expected, strict=False):
             assert got == pytest.approx(exp, abs=1e-9)
 
     def test_warmup_changes_param_trajectory(self, gpt2_with_lora, tiny_lm_dataset):
@@ -1294,7 +1294,9 @@ class TestDPTrainerCheckpointing:
             f"(phase1's 5 + phase2's 5); got {len(lrs_chained)} entries"
         )
 
-        for step, (got, exp) in enumerate(zip(lrs_chained, lrs_continuous), start=1):
+        for step, (got, exp) in enumerate(
+            zip(lrs_chained, lrs_continuous, strict=False), start=1
+        ):
             assert got == pytest.approx(exp, abs=1e-9), (
                 f"LR mismatch at global_step={step}: chained={got}, continuous={exp}"
             )

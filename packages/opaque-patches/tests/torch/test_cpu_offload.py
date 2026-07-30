@@ -72,7 +72,7 @@ class TestSaveOnCpuWithClippedGrad:
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
             grads_offload, _ = grad_fn(W1, W2, x, state=state)
 
-        for g_v, g_o in zip(grads_vanilla.pytree, grads_offload.pytree):
+        for g_v, g_o in zip(grads_vanilla.pytree, grads_offload.pytree, strict=False):
             torch.testing.assert_close(g_o, g_v)
 
     def test_no_pin_memory(self):

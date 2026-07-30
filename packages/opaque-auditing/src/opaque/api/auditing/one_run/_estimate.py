@@ -15,15 +15,18 @@ References:
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.stats
 
-from opaque.api.auditing._coin_flip import CoinFlip
 from opaque.api.auditing.one_run._eps_delta import EpsDeltaMethod
 from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
-from opaque.random.types import RngKey
+
+if TYPE_CHECKING:
+    from opaque.api.auditing._coin_flip import CoinFlip
+    from opaque.random.types import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
 

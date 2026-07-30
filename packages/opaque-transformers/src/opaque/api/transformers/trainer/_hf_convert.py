@@ -25,8 +25,7 @@ the machinery it delegates to.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._convert import (
     _apply_manifest,
@@ -34,6 +33,9 @@ from ._convert import (
     _normalize_dp_overrides,
     _reject_if_truthy,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

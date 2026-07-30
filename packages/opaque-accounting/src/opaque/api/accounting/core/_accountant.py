@@ -12,9 +12,8 @@ identical steps are collapsed using structural equality (``==``), so
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from opaque.api.accounting.core._base import DpProcess
 from opaque.api.accounting.core._budgets import (
     AdvantageBudget,
     BetaBudget,
@@ -25,6 +24,9 @@ from opaque.api.accounting.core._budgets import (
 )
 from opaque.api.accounting.core._process_codec import _load_dp_process
 from opaque.api.accounting.core.mechanisms.types import Identity
+
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import DpProcess
 
 __all__ = ["Accountant"]
 

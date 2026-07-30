@@ -18,8 +18,7 @@ it with :func:`opaque.dpftrl.accounting.per_step` for the
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opaque.dpftrl import (
     BallsInBinsSampler,
@@ -47,7 +46,11 @@ from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.random.types import RngKey
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.random.types import RngKey
 
 
 @dataclasses.dataclass(frozen=True)

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward,
@@ -38,6 +38,9 @@ from opaque.api.patches.transformers.components.masking import (
     apply_module_masking_patch,
 )
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

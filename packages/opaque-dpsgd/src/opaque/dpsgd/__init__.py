@@ -64,19 +64,19 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    # Sampling
-    "PoissonSampler",
     "__version__",
     # Subpackages
     "accounting",
+    "clipping",
+    "noise",
+    "sampling",
     # Clipping
     "adaptive_clipped_grad",
     "auto_clipped_grad",
     "clipped_grad",
-    "clipping",
+    "per_group",
     # Noise mechanisms
     "gaussian_noise",
-    "noise",
-    "per_group",
-    "sampling",
+    # Sampling
+    "PoissonSampler",
 ]

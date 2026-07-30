@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
-from opaque.api.engine.clipping._clipped_fun import FixedClipState
 from opaque.api.engine.types import ClippedPytree, SecondMomentClippingOutput
 
 if TYPE_CHECKING:
+    from opaque.api.engine.clipping._clipped_fun import FixedClipState
     from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
 
 

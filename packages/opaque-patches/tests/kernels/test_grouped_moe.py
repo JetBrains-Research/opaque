@@ -63,7 +63,9 @@ def _check_parity(device: str) -> None:
     in_dims = (0, None, None, 0, 0)
     gs = vmap(grad(f_s, argnums=(0, 1, 2, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
     gd = vmap(grad(f_d, argnums=(0, 1, 2, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
-    for name, a, b in zip(("dx", "d_gate_up", "d_down", "d_router"), gs, gd):
+    for name, a, b in zip(
+        ("dx", "d_gate_up", "d_down", "d_router"), gs, gd, strict=False
+    ):
         assert (a - b).abs().max().item() < _TOL, f"vmap(grad) {name}"
 
 
@@ -107,7 +109,7 @@ def _check_bf16_within_floor(device: str) -> None:
     in_dims = (0, None, None, 0, 0)
     gs = vmap(grad(f_s, argnums=(0, 1, 2)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
     gd = vmap(grad(f_d, argnums=(0, 1, 2)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
-    for name, a, b in zip(("dx", "d_gate_up", "d_down"), gs, gd):
+    for name, a, b in zip(("dx", "d_gate_up", "d_down"), gs, gd, strict=False):
         assert _frob(a, b) < 1e-2, f"vmap(grad) {name}"
 
 
@@ -139,7 +141,7 @@ def _check_frozen_experts(device: str) -> None:
     in_dims = (0, None, None, 0, 0)
     gs = vmap(grad(f_s, argnums=(0, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
     gd = vmap(grad(f_d, argnums=(0, 4)), in_dims=in_dims)(x3, gu, dn, idx3, w3)
-    for name, a, b in zip(("dx", "d_router"), gs, gd):
+    for name, a, b in zip(("dx", "d_router"), gs, gd, strict=False):
         assert (a - b).abs().max().item() < _TOL, f"frozen vmap(grad) {name}"
     # Per-sample dx still genuinely distinct across the batch.
     assert (gs[0][0] - gs[0][1]).abs().max().item() > 0

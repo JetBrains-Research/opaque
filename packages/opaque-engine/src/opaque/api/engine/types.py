@@ -28,12 +28,14 @@ import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from numbers import Real
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import torch
 
 from opaque.api.engine.pytree import tree_map
-from opaque.api.engine.random.types import RngKey
+
+if TYPE_CHECKING:
+    from opaque.api.engine.random.types import RngKey
 
 # ===========================================================================
 # Pytree alias

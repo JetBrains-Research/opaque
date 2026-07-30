@@ -33,14 +33,17 @@ from __future__ import annotations
 
 import time
 import warnings
-from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.engine.device import device_capabilities
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 @dataclass(frozen=True)

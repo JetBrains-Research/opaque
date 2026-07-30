@@ -20,10 +20,9 @@ References:
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -31,11 +30,16 @@ from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
-from opaque.random.types import RngKey
-from opaque.types import PerGroup
 
 from ._engine import MFNoiseState, _iid_normal_noise
-from ._streaming_matrix import StreamingMatrix
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.random.types import RngKey
+    from opaque.types import PerGroup
+
+    from ._streaming_matrix import StreamingMatrix
 
 
 def _native():
@@ -169,7 +173,7 @@ def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> 
 
 
 def _make_lambda_cgd_noise(
-    grad_template: Any,
+    _grad_template: Any,
     strategy: LambdaCgdStrategy,
     *,
     n_steps: int,

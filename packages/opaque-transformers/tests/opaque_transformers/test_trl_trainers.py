@@ -765,7 +765,7 @@ def _per_example_losses(trainer, batch):
     def fn(tp, *batch_args):
         merged = {**frozen, **tp}
         return trainer.compute_per_example_loss(
-            fmodel, merged, dict(zip(keys, batch_args))
+            fmodel, merged, dict(zip(keys, batch_args, strict=False))
         )
 
     vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(keys))

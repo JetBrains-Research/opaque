@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from opaque.api.engine.scheduling._decay import resolve_decay
 from opaque.api.engine.scheduling._ramp import resolve_ramp
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["WarmupStableDecay", "warmup_stable_decay"]
 

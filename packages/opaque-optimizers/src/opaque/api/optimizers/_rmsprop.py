@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -49,7 +49,9 @@ from opaque.api.optimizers._bias_correction import (
 )
 from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
-from opaque.types import PerGroup, TensorPytree
+
+if TYPE_CHECKING:
+    from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 

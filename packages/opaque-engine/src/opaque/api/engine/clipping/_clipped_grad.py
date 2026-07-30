@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch.autograd.profiler import record_function
@@ -17,8 +16,12 @@ from opaque.api.engine.clipping._helpers import (
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.api.engine.clipping._types import ClippedGradFn
 from opaque.api.engine.types import PerGroup, clipped
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.api.engine.clipping._types import ClippedGradFn
 
 
 @dataclass(frozen=True)

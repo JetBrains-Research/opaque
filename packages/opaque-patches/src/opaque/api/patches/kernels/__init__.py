@@ -228,27 +228,27 @@ except ModuleNotFoundError as import_error:
 
 
 __all__ = [
-    "ACTIVATION_GEGLU_APPROX",
-    "ACTIVATION_GEGLU_EXACT",
-    "ACTIVATION_SWIGLU",
     # Loss
     "opaque_cross_entropy_loss",
-    "opaque_fused_add_rms_norm",
-    "opaque_geglu_approx",
-    "opaque_geglu_exact",
+    "opaque_selective_log_softmax",
     "opaque_linear_cross_entropy_loss",
-    "opaque_lora_mlp",
-    "opaque_lora_qkv",
-    # LoRA
-    "opaque_lora_w",
     # MoE expert FFN
     "opaque_moe",
+    # Activations
+    "opaque_swiglu",
+    "opaque_geglu_exact",
+    "opaque_geglu_approx",
     "opaque_rms_norm",
+    "opaque_fused_add_rms_norm",
     # Position embeddings
     "opaque_rope",
     "opaque_rope_qk",
-    "opaque_selective_log_softmax",
     "opaque_slow_rope",
-    # Activations
-    "opaque_swiglu",
+    # LoRA
+    "opaque_lora_w",
+    "opaque_lora_qkv",
+    "opaque_lora_mlp",
+    "ACTIVATION_SWIGLU",
+    "ACTIVATION_GEGLU_EXACT",
+    "ACTIVATION_GEGLU_APPROX",
 ]

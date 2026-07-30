@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-from numpy.random import Generator
+
+if TYPE_CHECKING:
+    from numpy.random import Generator
 
 
 def _maybe_truncate_indices(

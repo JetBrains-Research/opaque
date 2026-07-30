@@ -49,7 +49,7 @@ def vmap_eager_attention_forward(
     attention_mask: torch.Tensor | None,
     scaling: float,
     dropout: float = 0.0,
-    **kwargs,
+    **_kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """vmap-compatible eager_attention_forward.
 
@@ -102,7 +102,7 @@ def vmap_eager_attention_forward_gemma2(
     scaling: float | None = None,
     dropout: float = 0.0,
     softcap: float | None = None,
-    **kwargs,
+    **_kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """vmap-compatible eager_attention_forward for Gemma2.
 
@@ -166,7 +166,7 @@ def _make_vmap_compatible_init(original_init):
         if not hasattr(self, "get_usable_length"):
 
             def get_usable_length(
-                kv_seq_len: int | None = None,
+                _kv_seq_len: int | None = None,
                 layer_idx: int | None = None,
             ) -> int:
                 if layer_idx is None:

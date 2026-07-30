@@ -87,7 +87,7 @@ def apply_model_patches(
 
 
 def apply_runtime_patches(
-    *, performance: bool = True, compat: bool = True, **kwargs
+    *, _performance: bool = True, compat: bool = True, **kwargs
 ) -> None:
     """Apply global runtime patches.
 

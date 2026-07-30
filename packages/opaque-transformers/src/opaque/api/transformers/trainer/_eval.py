@@ -143,7 +143,7 @@ class _PredictionAccumulator:
         labels: Any | None,
         inputs: Tensor | None,
         *,
-        batch_size: int,
+        _batch_size: int,
     ) -> None:
         """Append one batch's tensors to the on-device "hot" buffers.
 

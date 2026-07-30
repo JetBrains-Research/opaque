@@ -11,16 +11,20 @@ References:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
-from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import inverse_as_streaming_matrix
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ._streaming_matrix import StreamingMatrix
 
 
 def _native():

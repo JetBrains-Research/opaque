@@ -12,7 +12,8 @@ The composition-node dataclasses (``Composed``, ``Repeated``,
 
 from __future__ import annotations
 
-from opaque.api.accounting.core._base import DpProcess
+from typing import TYPE_CHECKING
+
 from opaque.api.accounting.core.composition._cached import cached
 from opaque.api.accounting.core.composition._composed import (
     Composed,  # noqa: F401  -- register in _PROCESS_REGISTRY
@@ -20,6 +21,9 @@ from opaque.api.accounting.core.composition._composed import (
 from opaque.api.accounting.core.composition._repeated import (
     Repeated,  # noqa: F401  -- register in _PROCESS_REGISTRY
 )
+
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import DpProcess
 
 
 def repeat(process: DpProcess, count: int) -> DpProcess:

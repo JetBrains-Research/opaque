@@ -408,7 +408,7 @@ def adaptive_clipped_grad(
         # Force grad_norms computation to update the threshold
         user_wants_return_aux = return_aux
         clipped_result = cast(
-            tuple[Callable, Any],
+            "tuple[Callable, Any]",
             clipped_grad(
                 loss_fn,
                 argnums=argnums,

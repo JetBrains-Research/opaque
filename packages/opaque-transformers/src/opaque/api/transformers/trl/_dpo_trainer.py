@@ -21,9 +21,8 @@ from __future__ import annotations
 import copy
 import dataclasses
 import uuid
-from collections.abc import Callable
 from operator import attrgetter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -63,6 +62,9 @@ from opaque.api.transformers.trainer import DPTrainer
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
 
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # TRL ``loss_type`` name → ``opaque.alignment.dpo.loss`` head. An unknown value
 # raises a standard ``KeyError`` at dispatch.
@@ -791,7 +793,9 @@ class DPOTrainer(DPTrainer):
 
         parts: dict[str, torch.Tensor] = {}
         weights: dict[str, float] = {}
-        for name, weight, head in zip(self._loss_type, self._loss_weights, self._heads):
+        for name, weight, head in zip(
+            self._loss_type, self._loss_weights, self._heads, strict=False
+        ):
             weights[name] = weight
             # ---- reference-free composites (assembled by hand) ----
             if name == "chosen_nll":
@@ -1136,10 +1140,10 @@ class DPOTrainer(DPTrainer):
     # ------------------------------------------------------------------
     def prediction_step(
         self,
-        model: Any,
+        _model: Any,
         inputs: dict[str, Any],
-        prediction_loss_only: bool,
-        ignore_keys: list[str] | None = None,
+        _prediction_loss_only: bool,
+        _ignore_keys: list[str] | None = None,
     ) -> tuple[Any, None, None]:
         """One eval batch → per-example DPO loss (+ rewards via the aux channel).
 
@@ -1174,7 +1178,7 @@ class DPOTrainer(DPTrainer):
 
         def per_example(p, *args):
             return self.compute_per_example_loss_and_metrics(
-                fmodel, p, dict(zip(keys, args))
+                fmodel, p, dict(zip(keys, args, strict=False))
             )
 
         vmapped = torch.vmap(per_example, in_dims=(None,) + (0,) * len(keys))

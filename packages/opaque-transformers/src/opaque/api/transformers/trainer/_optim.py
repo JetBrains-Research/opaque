@@ -28,10 +28,12 @@ Names that have no DP-aware mapping (8-bit, paged, GaLore, fused
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import opaque.optimizers as opaque_opt
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 GradientTransformation = Any  # torchopt.base.GradientTransformation, lazy
 

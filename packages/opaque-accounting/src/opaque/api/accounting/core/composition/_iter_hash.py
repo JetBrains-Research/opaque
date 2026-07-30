@@ -15,7 +15,10 @@ trees produce distinct hashes (modulo standard hash collisions).
 
 from __future__ import annotations
 
-from opaque.api.accounting.core._base import DpProcess
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import DpProcess
 
 # Sentinel tag strings folded into the hash to distinguish wrapper kinds
 # (so e.g. ``Repeated(x, 3)`` doesn't collide with ``Composed(x, x, x)``).

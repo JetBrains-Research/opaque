@@ -12,7 +12,7 @@ def _rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+def _opaque_apply_rotary_pos_emb(q, k, cos, sin, _position_ids=None, unsqueeze_dim=1):
     """RoPE using Opaque Triton kernel.
 
     Replaces HF's apply_rotary_pos_emb at module level. Uses Opaque_RoPE_QK

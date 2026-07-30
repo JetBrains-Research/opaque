@@ -10,8 +10,10 @@ import threading
 import warnings
 import weakref
 from collections import OrderedDict
-from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _T = TypeVar("_T")
 

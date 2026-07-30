@@ -26,10 +26,13 @@ division** by the per-example token count.
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
 
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["fused_nll_loss", "nll_loss"]
 

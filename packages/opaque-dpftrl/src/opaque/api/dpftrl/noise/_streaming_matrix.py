@@ -16,11 +16,13 @@ Example:
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 import optree as _ot
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 State = TypeVar("State")
 
@@ -248,7 +250,7 @@ def diagonal(diag: torch.Tensor) -> StreamingMatrix:
         A StreamingMatrix representing the diagonal matrix.
     """
 
-    def init_fn(abstract_value):
+    def init_fn(_abstract_value):
         return torch.tensor(0, dtype=torch.long)
 
     def next_fn(value, i):

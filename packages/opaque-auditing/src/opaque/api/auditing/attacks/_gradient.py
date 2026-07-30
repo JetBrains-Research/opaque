@@ -12,8 +12,7 @@ and :func:`~opaque.api.auditing.attacks._loss.loss_scores`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -22,6 +21,9 @@ from opaque.api.auditing.attacks._helpers import (
     _merge_args,
     _validate_batch_argnums,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["gradient_scores"]
 

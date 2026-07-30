@@ -16,7 +16,7 @@ class TestGaussianNoisePerGroup:
 
     def _make_pg(self, param_keys, group_values):
         groups = {k: k for k in param_keys}
-        values = dict(zip(param_keys, group_values))
+        values = dict(zip(param_keys, group_values, strict=False))
         return PerGroup(groups=groups, values=values)
 
     def test_returns_tuple(self):

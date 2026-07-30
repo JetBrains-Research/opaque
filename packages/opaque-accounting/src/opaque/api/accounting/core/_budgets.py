@@ -23,9 +23,10 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from opaque.api.accounting.core._base import DpProcess
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import DpProcess
 
 # =============================================================================
 # Budget protocol
@@ -349,18 +350,18 @@ def risk_budget(risk: float, prior: float) -> RiskBudget:
 
 
 __all__ = [
-    "AdvantageBudget",
-    "BetaBudget",
     # Protocol
     "Budget",
-    "DeltaBudget",
     # Budget types
     "EpsilonBudget",
+    "DeltaBudget",
+    "AdvantageBudget",
+    "BetaBudget",
     "RiskBudget",
-    "advantage_budget",
-    "beta_budget",
-    "delta_budget",
     # Budget factories
     "epsilon_budget",
+    "delta_budget",
+    "advantage_budget",
+    "beta_budget",
     "risk_budget",
 ]

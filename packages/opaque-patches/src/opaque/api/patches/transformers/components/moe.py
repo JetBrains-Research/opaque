@@ -19,7 +19,7 @@ fallback.
 from __future__ import annotations
 
 
-def _make_moe_experts_forward(original, *, grouped=True):
+def _make_moe_experts_forward(_original, *, grouped=True):
     """Build a stacked-weight MoE experts ``forward`` using the Opaque kernel.
 
     ``grouped`` (captured at patch time from the ``grouped_moe`` gate) selects the

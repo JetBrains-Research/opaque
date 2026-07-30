@@ -33,26 +33,26 @@ from opaque.api.alignment.dpo.loss._squarechipo import squarechipo_loss
 from opaque.api.alignment.dpo.loss._wpo import wpo_weights
 
 __all__ = [
-    "apo_down_loss",
-    "apo_zero_loss",
-    "bco_loss",
-    "chosen_nll_loss",
-    "discopop_loss",
-    "exo_loss",
-    "f_divergence_logits",
-    # helpers
-    "f_divergence_remap",
-    "hinge_loss",
-    "ipo_loss",
-    "ld_dpo_split",
-    "mpo_combine",
-    "nca_loss",
-    "odds_ratio_loss",
-    "robust_loss",
     # variants
     "sigmoid_loss",
+    "hinge_loss",
+    "robust_loss",
+    "ipo_loss",
     "simpo_loss",
-    "sppo_loss",
+    "discopop_loss",
+    "chosen_nll_loss",
     "squarechipo_loss",
+    "apo_zero_loss",
+    "apo_down_loss",
+    "exo_loss",
+    "nca_loss",
+    "bco_loss",
+    "sppo_loss",
+    "odds_ratio_loss",
+    # helpers
+    "f_divergence_remap",
+    "f_divergence_logits",
+    "mpo_combine",
     "wpo_weights",
+    "ld_dpo_split",
 ]

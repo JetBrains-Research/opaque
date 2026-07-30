@@ -8,9 +8,8 @@ Opaque's per-example :meth:`DPTrainer.compute_per_example_loss` hook.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from operator import attrgetter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -25,6 +24,9 @@ from opaque.alignment.sft.loss import dft_loss, fused_dft_loss, nll_loss
 from opaque.api.transformers.trainer import DPTrainer
 
 from ._sft_config import SFTConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Loss dispatch (``loss_type`` → alignment head); unknown values raise KeyError.
 # ``chunked_nll`` is handled separately (fused linear-CE forward, logits-free).

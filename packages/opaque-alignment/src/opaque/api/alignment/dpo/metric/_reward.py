@@ -9,7 +9,10 @@ detached so it can never leak gradient back into the mechanism.
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["reward_metrics"]
 

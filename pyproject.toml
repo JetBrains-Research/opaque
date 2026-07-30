@@ -212,11 +212,14 @@ src = [
 ]
 
 [tool.ruff.lint]
-# High-signal rules: correctness, modernity, import hygiene, small cleanups.
-# Deliberately omitted (noise / intentional patterns, revisit later):
-#   PL* complexity & magic values, TRY* exception-message style,
-#   PTH* pathlib migration, ARG* unused-arg churn, INP001 (false + on PEP 420),
-#   TC* TYPE_CHECKING moves, ANN/D annotation & docstring debt.
+# High-signal rules. Omitted only when they fight intentional design or are a
+# separate documentation/typing project — not merely because they need edits:
+#   INP001  — false positive on pytest test trees (no __init__.py by design)
+#   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
+#   TRY003  — requires bespoke exception classes for every message; low fit
+#   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
+#   ANN/D   — full annotation/docstring coverage is a separate initiative
+#   RUF022  — alphabetical __all__ destroys thematic section comments
 select = [
   "E", "F", "W",
   "I",
@@ -235,19 +238,34 @@ select = [
   "LOG",
   "SLOT",
   "FLY",
+  "TC",   # move typing-only imports under TYPE_CHECKING
+  "ARG",  # unused args (prefix with _)
+  "PTH",  # prefer pathlib over os.path
 ]
 ignore = [
   "E501",   # formatter owns line length
   "RUF001", # intentional unicode in strings (math / en-dash)
   "RUF002", # intentional unicode in docstrings
   "RUF003", # intentional unicode in comments
+  "RUF022", # keep thematic __all__ section comments
   "B019",   # lru_cache on frozen PLD mechanism methods is intentional
-  "B905",   # zip(..., strict=) is a behavior change; defer
   "SIM108", # if/else often clearer than ternary here
   "PT011",  # broad pytest.raises(...) used intentionally in places
+  "ARG004", # autograd.Function / vmap staticmethod signatures are fixed APIs
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["opaque"]
+# Keep force-single-line off; section comments in import blocks are rare —
+# side-effect imports use an adjacent comment above the import line.
 
 [tool.ruff.lint.per-file-ignores]
 # Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
 "packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
+# Test suites routinely take fixture/interface args they do not read.
+"**/tests/**" = ["ARG001", "ARG002", "ARG005"]
+# Triton kernels + autograd.Function.vmap must mirror fixed call signatures.
+"packages/opaque-patches/src/opaque/api/patches/kernels/**" = ["ARG001", "ARG002", "ARG005"]
+# Optimizer update() kwargs match a uniform torchopt-style signature.
+"packages/opaque-optimizers/src/opaque/api/optimizers/**" = ["ARG001", "ARG002"]

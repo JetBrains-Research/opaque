@@ -153,7 +153,7 @@ def _auto_fuse_lora(model):
 
 
 def apply_peft_model_patches(
-    model, *, performance: bool = True, compat: bool = True, **kwargs
+    model, *, performance: bool = True, _compat: bool = True, **kwargs
 ) -> None:
     """Manually apply fused LoRA patching (QKV + MLP + Linear) to a PEFT model.
 

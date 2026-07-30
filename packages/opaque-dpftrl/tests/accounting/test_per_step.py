@@ -21,7 +21,7 @@ These tests cover the contract:
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -30,12 +30,16 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
 from opaque.api.accounting.core.composition.types import Repeated
 from opaque.api.accounting.dpftrl.composition import PerStep
-from opaque.dpftrl.accounting.types import DpFtrlProcess
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     blt_strategy,
     identity_strategy,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.dpftrl.accounting.types import DpFtrlProcess
 
 _DELTA = 1e-5
 _MC_KW = {"num_mc_samples": 4000, "seed": 17}

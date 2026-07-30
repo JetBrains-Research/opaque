@@ -22,9 +22,12 @@ never down.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["preference_collator"]
 

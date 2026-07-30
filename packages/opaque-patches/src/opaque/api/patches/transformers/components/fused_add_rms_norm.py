@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
 
 from opaque.api.patches.transformers._compat import IS_TRANSFORMERS_V5
+
+if TYPE_CHECKING:
+    import torch
 
 
 def _post_attn_eps_and_weight(layer) -> tuple[torch.Tensor, float]:

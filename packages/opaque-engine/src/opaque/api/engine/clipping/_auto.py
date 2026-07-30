@@ -30,14 +30,16 @@ own gradient).
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux, clipped_grad
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
 from opaque.api.engine.types import ClipState, PerGroup
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _DEFAULT_GAMMA = 0.01
 

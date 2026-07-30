@@ -18,18 +18,21 @@ References:
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
-from opaque.random.types import RngKey
 from opaque.types import NoiseState, PerGroup
 
 from . import _streaming_matrix as streaming_matrix
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from opaque.random.types import RngKey
 
 
 @dataclasses.dataclass(frozen=True)
@@ -221,7 +224,7 @@ def _matrix_factorization_noise(
 
 
 def _tensor_mf_noise(
-    grad_template: Any,
+    _grad_template: Any,
     noising: torch.Tensor,
     *,
     key: RngKey,

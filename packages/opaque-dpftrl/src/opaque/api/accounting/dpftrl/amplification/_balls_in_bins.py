@@ -38,9 +38,9 @@ from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
-from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
@@ -48,6 +48,9 @@ from opaque.api.dpftrl.noise._blt import BltStrategy
 from opaque.api.dpftrl.noise._bsr import BsrStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
+
+if TYPE_CHECKING:
+    from opaque.api.accounting.core._base import Pld
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = MfGaussian

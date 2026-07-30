@@ -19,7 +19,10 @@ tensors. The key-subset check happens on the static ``weights`` dict keys
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["mpo_combine"]
 

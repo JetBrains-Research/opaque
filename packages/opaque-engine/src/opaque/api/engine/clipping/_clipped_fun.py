@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch.func import vmap as _vmap
@@ -19,6 +18,9 @@ from opaque.api.engine.types import (
     clipped,
 )
 from opaque.api.engine.types import ClipState as _ClipState
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)

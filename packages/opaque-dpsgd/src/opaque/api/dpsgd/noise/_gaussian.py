@@ -36,11 +36,11 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from typing import TYPE_CHECKING
 
 import torch
 from torch.autograd.profiler import record_function
 
-from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 from opaque.api.engine.noise_allocation import (
     PAIRED_FIRST_STREAM_FOLD,
     PAIRED_SECOND_STREAM_FOLD,
@@ -59,6 +59,9 @@ from opaque.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
+
+if TYPE_CHECKING:
+    from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 
 _SQRT2 = math.sqrt(2.0)
 

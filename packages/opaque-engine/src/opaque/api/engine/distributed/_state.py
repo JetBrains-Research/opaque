@@ -15,9 +15,8 @@ sync function: each subsystem registers its types on import.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
 from dataclasses import fields, is_dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.distributed as dist
@@ -25,6 +24,9 @@ import torch.distributed as dist
 from opaque.api.engine.pytree import tree_map
 
 from .collectives import all_reduce_, get_world_size, is_distributed
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 def assert_scalar_equal(

@@ -12,13 +12,15 @@ serialization surface.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 
 from opaque.api.base.serialization import register_serializer
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _tensor_save(obj: torch.Tensor) -> dict[str, Any]:

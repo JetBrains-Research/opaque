@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -64,7 +64,9 @@ import optree
 
 from opaque.api.optimizers._bias_correction import resolve_noise_variance
 from opaque.api.optimizers._chain import make_optimizer_chain
-from opaque.types import PerGroup, TensorPytree
+
+if TYPE_CHECKING:
+    from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -246,7 +248,8 @@ def _scale_by_adafactor(
             assert state.m is not None
             flat_old_m, _ = optree.tree_flatten(state.m)
             new_flat_m = [
-                b1 * old_m + (1.0 - b1) * g for old_m, g in zip(flat_old_m, new_grads)
+                b1 * old_m + (1.0 - b1) * g
+                for old_m, g in zip(flat_old_m, new_grads, strict=False)
             ]
             updates_unflat = optree.tree_unflatten(state.treespec, new_flat_m)
             new_m = optree.tree_unflatten(state.treespec, new_flat_m)

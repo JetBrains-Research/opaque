@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -42,6 +42,9 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _DELTA = 1e-5
 _MC_KW = {"num_mc_samples": 4000, "seed": 17}

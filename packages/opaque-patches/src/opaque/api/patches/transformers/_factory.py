@@ -23,8 +23,7 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from opaque.api.patches.transformers._router import (
     _has_kernel_runtime,
@@ -60,6 +59,9 @@ from opaque.api.patches.transformers.components.swiglu import (
     _make_phi3_mlp_forward,
     _make_swiglu_mlp_forward,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
