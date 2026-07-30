@@ -231,7 +231,9 @@ class TestPerGroupBC:
         assert isinstance(s.phi_g, dict)
         # Steady-state ratio: (0.8/0.2)² = 16.
         assert s.phi_g[("weight",)] > 0
-        assert s.phi_g[("bias",)] / s.phi_g[("weight",)] == pytest.approx(16.0, rel=1e-3)
+        assert s.phi_g[("bias",)] / s.phi_g[("weight",)] == pytest.approx(
+            16.0, rel=1e-3
+        )
 
 
 # ---------------------------------------------------------------------------
