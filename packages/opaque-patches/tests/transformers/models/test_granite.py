@@ -6,8 +6,8 @@ import pytest
 
 pytest.importorskip("transformers")
 
-import os
 import sys
+from pathlib import Path
 
 from transformers.models.granite.modeling_granite import (
     GraniteConfig,
@@ -16,7 +16,7 @@ from transformers.models.granite.modeling_granite import (
 
 from opaque.patches import apply_model_patches
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
     assert_forward_backward,
     assert_forward_no_grad,

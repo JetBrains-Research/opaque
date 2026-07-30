@@ -9,7 +9,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 import torch
@@ -1024,7 +1024,7 @@ class TestDPTrainerCheckpointing:
         trainer.train()
 
         state_path = tmp_path / "checkpoint-2" / "trainer_state.json"
-        with open(state_path) as f:
+        with state_path.open() as f:
             data = json.load(f)
         assert data["global_step"] == 2
         assert data["max_steps"] == 2
@@ -1169,7 +1169,7 @@ class TestDPTrainerCheckpointing:
         assert trainer.state.best_metric is not None
         assert trainer.state.best_global_step in (2, 4)
         assert trainer.state.best_model_checkpoint is not None
-        assert os.path.isdir(trainer.state.best_model_checkpoint)
+        assert Path(trainer.state.best_model_checkpoint).is_dir()
 
     def test_save_strategy_best_only_saves_on_improvement(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
@@ -1272,7 +1272,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer_1.train()
         ckpt_dir = str(chain_dir / "checkpoint-5")
-        assert os.path.isdir(ckpt_dir), f"checkpoint-5 not written at {chain_dir}"
+        assert Path(ckpt_dir).is_dir(), f"checkpoint-5 not written at {chain_dir}"
 
         # --- phase 2: resume same args, run to step 10 ---
         model_2, tokenizer_2 = gpt2_with_lora
@@ -1315,7 +1315,7 @@ class TestDPTrainerCheckpointing:
         out1 = trainer1.train()
         assert out1.global_step == 2
         ckpt_dir = str(tmp_path / "checkpoint-2")
-        assert os.path.isdir(ckpt_dir)
+        assert Path(ckpt_dir).is_dir()
 
         # Resume: max_steps=4 → run 2 more steps starting at global_step=2.
         model2, tokenizer2 = gpt2_with_lora
@@ -1330,7 +1330,7 @@ class TestDPTrainerCheckpointing:
         assert out2.global_step == 4
         assert trainer2.state.global_step == 4
         # checkpoint-4 was just written by the final save / save_steps.
-        assert os.path.isdir(str(tmp_path / "checkpoint-4"))
+        assert (tmp_path / "checkpoint-4").is_dir()
 
     def test_resume_true_finds_latest(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
         """resume_from_checkpoint=True picks the latest checkpoint under output_dir."""
@@ -1395,7 +1395,6 @@ class TestDPTrainerCheckpointing:
     ):
         """A checkpoint missing ``accountant.json`` is not a complete DP
         checkpoint, so resume rejects it as a weights-only export."""
-        import os
 
         # Produce a checkpoint, then delete its accountant.json.
         model, tokenizer = gpt2_with_lora
@@ -1408,7 +1407,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer.train()
         ckpt_dir = tmp_path / "checkpoint-2"
-        os.remove(ckpt_dir / "accountant.json")
+        (ckpt_dir / "accountant.json").unlink()
 
         model2, tokenizer2 = gpt2_with_lora
         trainer2 = DPTrainer(
@@ -1503,9 +1502,9 @@ class TestDPTrainerCheckpointing:
         trainer1.train()
         ckpt_dir = str(tmp_path / "checkpoint-2")
         # Interpretability file always present; resumability files absent.
-        assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
-        assert not os.path.exists(os.path.join(ckpt_dir, "dp_optimizer.pt"))
-        assert not os.path.exists(os.path.join(ckpt_dir, "dp_state.pt"))
+        assert (Path(ckpt_dir) / "accountant.json").exists()
+        assert not (Path(ckpt_dir) / "dp_optimizer.pt").exists()
+        assert not (Path(ckpt_dir) / "dp_state.pt").exists()
 
         model2, tokenizer2 = gpt2_with_lora
         out2_dir = tmp_path / "resumed"
@@ -1583,7 +1582,7 @@ class TestDPTrainerCheckpointing:
         )
         trainer1.train()
         # The trainer writes the callback's ExportableState payload into the JSON.
-        with open(tmp_path / "checkpoint-2" / "trainer_state.json") as f:
+        with (tmp_path / "checkpoint-2" / "trainer_state.json").open() as f:
             ts = json.load(f)
         assert ts.get("stateful_callbacks", {}).get("StatefulCallback") == {
             "args": {},

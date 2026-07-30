@@ -14,7 +14,6 @@ Covers:
 from __future__ import annotations
 
 import dataclasses
-import os
 from typing import Any
 
 import pytest
@@ -281,7 +280,7 @@ class TestControlFlags:
         trainer.train()
 
         # save_strategy='no' but the callback forced should_save=True at step 2.
-        assert os.path.isdir(os.path.join(str(tmp_path), "checkpoint-2"))
+        assert (tmp_path / "checkpoint-2").is_dir()
 
 
 # ---------------------------------------------------------------------------

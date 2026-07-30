@@ -69,12 +69,12 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from opaque.api.engine.device import device_capabilities
-from opaque.scheduling.types import Schedule
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
@@ -190,6 +190,9 @@ from ._optim import (  # noqa: E402, I001
     resolve_optimizer_name as _resolve_optimizer_name,
     supported_names as _supported_optimizer_names,
 )
+
+if TYPE_CHECKING:
+    from opaque.scheduling.types import Schedule
 
 _DP_OPTIMIZERS: tuple[str, ...] = _supported_optimizer_names()
 
@@ -510,11 +513,11 @@ class TrainingArguments:
             self.output_dir = "trainer_output"
             log.info("No output directory specified, defaulting to 'trainer_output'.")
         if self.output_dir is not None:
-            self.output_dir = os.path.expanduser(self.output_dir)
+            self.output_dir = str(Path(self.output_dir).expanduser())
         if self.logging_dir is None and self.output_dir is not None:
-            self.logging_dir = os.path.join(self.output_dir, "runs")
+            self.logging_dir = str(Path(self.output_dir) / "runs")
         if self.logging_dir is not None:
-            self.logging_dir = os.path.expanduser(self.logging_dir)
+            self.logging_dir = str(Path(self.logging_dir).expanduser())
 
         # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
         # JSON object string, HF-style "key=value,..." string, or None.

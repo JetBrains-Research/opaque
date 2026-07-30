@@ -15,7 +15,7 @@ in-package CI signal so regressions surface immediately.
 from __future__ import annotations
 
 import math
-import os
+from pathlib import Path
 
 import pytest
 import torch
@@ -228,7 +228,11 @@ class TestDpFtrlCheckpointRoundTrip:
         assert out1.global_step >= 8
 
         ckpts = sorted(
-            [d for d in os.listdir(outdir) if d.startswith("checkpoint-")],
+            [
+                d.name
+                for d in Path(outdir).iterdir()
+                if d.name.startswith("checkpoint-")
+            ],
             key=lambda d: int(d.split("-")[1]),
         )
         assert len(ckpts) >= 2, f"expected mid-train + end ckpts, got {ckpts}"
@@ -367,7 +371,11 @@ class TestDpFtrlLrScheduleIntegration:
 
         # Find a mid-train checkpoint.
         ckpts = sorted(
-            [d for d in os.listdir(outdir) if d.startswith("checkpoint-")],
+            [
+                d.name
+                for d in Path(outdir).iterdir()
+                if d.name.startswith("checkpoint-")
+            ],
             key=lambda d: int(d.split("-")[1]),
         )
         assert len(ckpts) >= 2

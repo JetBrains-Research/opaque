@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -326,9 +325,10 @@ def create_model_card(
     )
     model_card_content = training_summary.to_model_card()
 
-    output_path = os.path.join(a.output_dir, "README.md")
-    os.makedirs(a.output_dir, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as fh:
+    output_dir = Path(a.output_dir)
+    output_path = output_dir / "README.md"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fh:
         fh.write(model_card_content)
 
     log.info("Model card written to %s", output_path)

@@ -19,7 +19,7 @@ DP regression would silently break:
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 import torch
@@ -109,10 +109,12 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     trainer.train()
 
     # Find a checkpoint and confirm it has accountant.json but no dp_state.
-    ckpts = [d for d in os.listdir(tmp_path) if d.startswith("checkpoint-")]
+    ckpts = [
+        d.name for d in Path(tmp_path).iterdir() if d.name.startswith("checkpoint-")
+    ]
     assert ckpts, "expected at least one checkpoint"
-    ckpt_dir = os.path.join(tmp_path, min(ckpts))
-    assert os.path.exists(os.path.join(ckpt_dir, "accountant.json"))
+    ckpt_dir = Path(tmp_path) / min(ckpts)
+    assert (ckpt_dir / "accountant.json").exists()
 
     model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id
@@ -257,8 +259,8 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok
     )
     part.train()
-    ckpt = os.path.join(part_dir, "checkpoint-2")
-    assert os.path.isdir(ckpt)
+    ckpt = str(Path(part_dir) / "checkpoint-2")
+    assert Path(ckpt).is_dir()
 
     args_resume = _args(
         part_dir,
@@ -468,8 +470,8 @@ def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tm
         model=model, args=args, train_dataset=lm_dataset, processing_class=tok
     )
     trainer.train()
-    ckpt = os.path.join(tmp_path, "checkpoint-3")  # mid epoch 0 (steps 1-4)
-    assert os.path.isdir(ckpt)
+    ckpt = str(Path(tmp_path) / "checkpoint-3")  # mid epoch 0 (steps 1-4)
+    assert Path(ckpt).is_dir()
 
     model2 = make_gpt2_model()
     model2.config.pad_token_id = tok.pad_token_id

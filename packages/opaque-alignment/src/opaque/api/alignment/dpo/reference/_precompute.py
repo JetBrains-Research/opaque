@@ -42,10 +42,9 @@ is the identity and ``is_main_process`` is ``True``.
 from __future__ import annotations
 
 import hashlib
-import os
 import tempfile
-from collections.abc import Callable, Sequence
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 from safetensors.torch import load_file as _safetensors_load
@@ -58,6 +57,9 @@ from opaque.distributed import (
     wait_for_everyone,
 )
 from opaque.serialization import from_state_dict, state_dict
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 __all__ = ["compute_ref_logprobs_for_dataset"]
 
@@ -97,8 +99,8 @@ def _cache_path(
 ) -> str:
     """Resolve the ``.safetensors`` path, defaulting to ``<tmp>/opaque_ref_cache``."""
     if cache_dir is None:
-        cache_dir = os.path.join(tempfile.gettempdir(), _DEFAULT_CACHE_SUBDIR)
-    return os.path.join(cache_dir, f"{fingerprint}{_CACHE_EXT}")
+        cache_dir = str(Path(tempfile.gettempdir()) / _DEFAULT_CACHE_SUBDIR)
+    return str(Path(cache_dir) / f"{fingerprint}{_CACHE_EXT}")
 
 
 def _load_cache(
@@ -111,7 +113,7 @@ def _load_cache(
     or a load error (treated as a stale/corrupt cache that should be recomputed
     rather than crash the run).
     """
-    if not os.path.exists(path):
+    if not Path(path).exists():
         return None
     try:
         flat = _safetensors_load(path)
@@ -145,7 +147,7 @@ def _save_cache(
     written directly via :func:`safetensors.torch.save_file` with no dtype
     conversion (native bf16/fp16/fp32 round-trip).
     """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     flat = state_dict(columns)
     tensors: dict[str, torch.Tensor] = {}
     for key, value in flat.items():

@@ -16,7 +16,7 @@ Covers the publish-only surface (no in-training auto-push):
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
@@ -221,13 +221,13 @@ class TestCreateModelCard:
             return_value="# Model\n\nSome card content.\n",
         ):
             _hub.create_model_card(trainer)
-        readme = os.path.join(str(tmp_path), "README.md")
-        return open(readme).read()
+        readme = Path(tmp_path) / "README.md"
+        return readme.read_text()
 
     def test_readme_written(self, tmp_path):
         content = self._build_card(tmp_path)
         assert len(content) > 0
-        assert os.path.isfile(str(tmp_path / "README.md"))
+        assert (tmp_path / "README.md").is_file()
 
     def test_dp_section_present(self, tmp_path):
         content = self._build_card(tmp_path)
@@ -259,7 +259,7 @@ class TestCreateModelCard:
             _hub.create_model_card(
                 _tiny_trainer_with_hub(tmp_path),
             )
-        with open(str(tmp_path / "README.md")) as f:
+        with (tmp_path / "README.md").open() as f:
             content2 = f.read()
         # Section should appear exactly once.
         assert content2.count("<!-- opaque-dp:begin -->") == 1

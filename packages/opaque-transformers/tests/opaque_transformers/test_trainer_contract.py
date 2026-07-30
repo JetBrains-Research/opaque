@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import os
 
 import torch
 from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
@@ -191,7 +190,7 @@ def test_public_save_model_writes_training_args(tmp_path):
 
     trainer.save_model()
 
-    assert os.path.exists(tmp_path / "training_args.bin")
+    assert (tmp_path / "training_args.bin").exists()
 
 
 def test_train_signature_keeps_hf_subset():

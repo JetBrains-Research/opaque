@@ -17,6 +17,7 @@ the multi-rank scenarios.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import shutil
 import socket
 import subprocess
@@ -25,7 +26,7 @@ import sys
 import pytest
 import torch
 
-RUNNER = os.path.join(os.path.dirname(__file__), "_ddp_runner.py")
+RUNNER = str(Path(__file__).resolve().parent / "_ddp_runner.py")
 
 
 def _free_port() -> int:

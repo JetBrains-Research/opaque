@@ -18,6 +18,7 @@ unrelated to the DDP path under test.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 import os
 import sys
@@ -183,11 +184,11 @@ def scenario_runtime_foundation(
     # rng_state_{rank}.pth files written by every rank.
     dist.barrier()
     if rank == 0:
-        children = sorted(os.listdir(output_dir))
+        children = sorted(p.name for p in Path(output_dir).iterdir())
         ckpts = [c for c in children if c.startswith("checkpoint-")]
         assert ckpts, f"No checkpoints in {output_dir}: {children}"
-        ckpt_dir = os.path.join(output_dir, ckpts[-1])
-        files = set(os.listdir(ckpt_dir))
+        ckpt_dir = Path(output_dir) / ckpts[-1]
+        files = {p.name for p in ckpt_dir.iterdir()}
         # Rank-0-only artefacts.
         assert "trainer_state.json" in files
         # Per-rank RNG snapshots written by every rank.
@@ -347,19 +348,19 @@ def scenario_rank_gating_and_worker_seed(
     trainer.save_state()
 
     dist.barrier()
-    metrics_path = os.path.join(output_dir, "rank_gate_results.json")
-    state_path = os.path.join(output_dir, "trainer_state.json")
-    with open(metrics_path) as f:
+    metrics_path = Path(output_dir) / "rank_gate_results.json"
+    state_path = Path(output_dir) / "trainer_state.json"
+    with metrics_path.open() as f:
         saved_metrics = json.load(f)
     if rank == 0:
         assert len(trainer.state.log_history) == 1
-        assert os.path.exists(metrics_path)
-        assert os.path.exists(state_path)
+        assert metrics_path.exists()
+        assert state_path.exists()
         assert saved_metrics["rank"] == 0.0
     else:
         assert len(trainer.state.log_history) == 0
-        assert os.path.exists(metrics_path)
-        assert os.path.exists(state_path)
+        assert metrics_path.exists()
+        assert state_path.exists()
         assert saved_metrics["rank"] == 0.0
 
 

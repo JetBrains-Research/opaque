@@ -8,15 +8,15 @@ one MoE (mellum) — work under DP ``vmap(grad)`` on BOTH ``eager`` (the
 O(N²) reference) and ``sdpa``.
 """
 
-import os
 import sys
+from pathlib import Path
 
 import pytest
 import torch
 
 pytest.importorskip("transformers")
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
     assert_forward_no_grad,
     assert_vmap_grad,

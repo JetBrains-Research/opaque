@@ -6,14 +6,14 @@ import pytest
 
 pytest.importorskip("transformers")
 
-import os
 import sys
+from pathlib import Path
 
 from transformers.models.gemma2.modeling_gemma2 import Gemma2Config, Gemma2ForCausalLM
 
 from opaque.patches import apply_model_patches
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
     assert_forward_backward,
     assert_forward_no_grad,

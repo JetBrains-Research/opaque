@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -168,8 +168,8 @@ class TestLoadBestModelMutates:
         best_dir = trainer.state.best_model_checkpoint
         from safetensors.torch import load_file as load_safetensors
 
-        adapter_path = os.path.join(best_dir, "adapter_model.safetensors")
-        if not os.path.exists(adapter_path):
+        adapter_path = str(Path(best_dir) / "adapter_model.safetensors")
+        if not Path(adapter_path).exists():
             pytest.skip(f"Expected adapter weights under {best_dir} not found")
         best_weights = load_safetensors(adapter_path, device="cpu")
 
@@ -239,13 +239,11 @@ class TestBestFolderLookup:
         if trainer.state.best_global_step is None:
             pytest.skip("Eval never improved; nothing to verify.")
 
-        expected = os.path.join(
-            str(tmp_path),
-            f"checkpoint-{trainer.state.best_global_step}",
-        )
+        expected = str(tmp_path / f"checkpoint-{trainer.state.best_global_step}")
         assert trainer.state.best_model_checkpoint is not None
-        assert os.path.abspath(trainer.state.best_model_checkpoint) == os.path.abspath(
-            expected
+        assert (
+            Path(trainer.state.best_model_checkpoint).resolve()
+            == Path(expected).resolve()
         ), (
             f"best_model_checkpoint should resolve to checkpoint-"
             f"{trainer.state.best_global_step} via folder lookup; got "
@@ -253,9 +251,9 @@ class TestBestFolderLookup:
         )
         # The folder should also exist on disk and be persisted in
         # trainer_state.json (single schema; no JSON re-parse).
-        ts_path = os.path.join(expected, "trainer_state.json")
-        assert os.path.exists(ts_path)
-        with open(ts_path) as f:
+        ts_path = Path(expected) / "trainer_state.json"
+        assert ts_path.exists()
+        with ts_path.open() as f:
             ts = json.load(f)
         assert ts["best_global_step"] == trainer.state.best_global_step
 
@@ -354,7 +352,7 @@ class TestEarlyStoppingExportableState:
         # ``transformers.trainer_callback.TrainerState`` writes too —
         # the schema is the canonical HF round-trip shape.
         ts_path = tmp_path / "checkpoint-2" / "trainer_state.json"
-        with open(ts_path) as f:
+        with ts_path.open() as f:
             ts = json.load(f)
         cb_payload = ts["stateful_callbacks"].get("EarlyStoppingCallback")
         assert cb_payload is not None

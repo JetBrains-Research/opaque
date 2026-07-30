@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 import torch
@@ -72,7 +73,7 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
 
 def _has_model_weights(checkpoint_dir: str) -> bool:
     return any(
-        os.path.exists(os.path.join(checkpoint_dir, name))
+        (Path(checkpoint_dir) / name).exists()
         for name in {ckpt.SAFE_WEIGHTS_NAME, ckpt.WEIGHTS_NAME}
     )
 
@@ -147,15 +148,15 @@ def test_reporting_callbacks_receive_privacy_logs_and_functional_slots(
             )
 
         def on_save(self, args, state, control, **kwargs):
-            checkpoint_dir = os.path.join(
-                args.output_dir, f"checkpoint-{state.global_step}"
+            checkpoint_dir = str(
+                Path(args.output_dir) / f"checkpoint-{state.global_step}"
             )
             records.append(
                 {
                     "event": "save",
                     "optimizer": kwargs["optimizer"],
                     "lr_scheduler": kwargs["lr_scheduler"],
-                    "checkpoint_exists": os.path.isdir(checkpoint_dir),
+                    "checkpoint_exists": Path(checkpoint_dir).is_dir(),
                     "state_id": id(state),
                 }
             )
@@ -382,14 +383,14 @@ def test_artifact_callback_sees_complete_dp_checkpoint_after_save(
 
     class ArtifactCallback(TrainerCallback):
         def on_save(self, args, state, control, **kwargs):
-            checkpoint_dir = os.path.join(
-                args.output_dir,
-                f"{ckpt.PREFIX_CHECKPOINT_DIR}-{state.global_step}",
+            checkpoint_dir = str(
+                Path(args.output_dir)
+                / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             )
             uploaded_checkpoints.append(
                 {
                     "path": checkpoint_dir,
-                    "files": set(os.listdir(checkpoint_dir)),
+                    "files": {p.name for p in Path(checkpoint_dir).iterdir()},
                     "has_model_weights": _has_model_weights(checkpoint_dir),
                     "optimizer": kwargs["optimizer"],
                     "lr_scheduler": kwargs["lr_scheduler"],
@@ -416,7 +417,7 @@ def test_artifact_callback_sees_complete_dp_checkpoint_after_save(
 
     assert len(uploaded_checkpoints) == 1
     checkpoint = uploaded_checkpoints[0]
-    assert os.path.isdir(checkpoint["path"])
+    assert Path(checkpoint["path"]).is_dir()
     assert checkpoint["optimizer"] is None
     assert checkpoint["lr_scheduler"] is None
     assert checkpoint["has_model_weights"] is True
@@ -437,11 +438,11 @@ def test_artifact_callback_save_only_model_still_sees_privacy_metadata(
 
     class ArtifactCallback(TrainerCallback):
         def on_save(self, args, state, control, **kwargs):
-            checkpoint_dir = os.path.join(
-                args.output_dir,
-                f"{ckpt.PREFIX_CHECKPOINT_DIR}-{state.global_step}",
+            checkpoint_dir = (
+                Path(args.output_dir)
+                / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             )
-            uploaded_checkpoints.append(set(os.listdir(checkpoint_dir)))
+            uploaded_checkpoints.append({p.name for p in checkpoint_dir.iterdir()})
 
     def fake_reporting_callbacks(report_to):
         assert report_to == ["mlflow"]
