@@ -237,8 +237,8 @@ class TestPerGroupBC:
         s = _state(state)
         assert isinstance(s.phi, dict)
         # Variance ratio is (0.8/0.2)² = 16.
-        assert s.phi["weight"] > 0
-        assert s.phi["bias"] / s.phi["weight"] == pytest.approx(16.0, rel=1e-3)
+        assert s.phi[("weight",)] > 0
+        assert s.phi[("bias",)] / s.phi[("weight",)] == pytest.approx(16.0, rel=1e-3)
 
 
 # ---------------------------------------------------------------------------

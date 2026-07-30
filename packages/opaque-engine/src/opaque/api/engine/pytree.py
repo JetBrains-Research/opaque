@@ -28,6 +28,49 @@ from typing import Any
 import optree as _ot
 import torch
 
+ParamPath = tuple[str | int, ...]
+"""Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
+
+Flat ``named_parameters`` dicts use a one-segment path, e.g.
+``("layers.0.weight",)``.  Nested trees use multi-segment paths, e.g.
+``("layers", 0, "weight")``.  The two never collide.
+"""
+
+
+def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
+    """Normalize an optree path (or flat string key) to :data:`ParamPath`."""
+    if isinstance(path, str):
+        return (path,)
+    out: list[str | int] = []
+    for part in path:
+        if isinstance(part, (str, int)):
+            out.append(part)
+        else:
+            raise TypeError(
+                f"ParamPath components must be str or int; got {type(part).__name__}"
+            )
+    if not out:
+        raise ValueError("ParamPath must be non-empty")
+    return tuple(out)
+
+
+def param_path_display(path: ParamPath) -> str:
+    """Dotted display form for pattern matching and diagnostics."""
+    return ".".join(str(p) for p in path)
+
+
+def tree_flatten_with_paths(
+    tree: Any,
+) -> tuple[list[ParamPath], list[Any], Any]:
+    """Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.
+
+    Wraps :func:`optree.tree_flatten_with_path` so PerGroup consumers share one
+    path convention.
+    """
+    raw_paths, leaves, treedef = _ot.tree_flatten_with_path(tree)
+    paths = [param_path(p) for p in raw_paths]
+    return paths, list(leaves), treedef
+
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
     """Extract all leaf tensors from a PyTree.
@@ -364,9 +407,13 @@ def global_norm(
 
 
 __all__ = [
+    "ParamPath",
     "global_norm",
     "merge",
+    "param_path",
+    "param_path_display",
     "partition",
+    "tree_flatten_with_paths",
     "tree_leaves",
     "tree_map",
     "tree_map_with_path",

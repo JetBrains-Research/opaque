@@ -206,23 +206,13 @@ def _scale_by_adam(
         per_group = is_per_group(effective_stddev) or isinstance(state.phi, dict)
 
         if per_group:
-            # Per-leaf path: walk ``new_mu`` and ``new_nu`` in lockstep
-            # by dotted-key paths matching :class:`PerGroup`'s lookup
-            # keys, so nested param pytrees work the same as flat dicts.
-            new_phi: dict[str, float] = {}
+            # Per-leaf path: walk moments by optree ParamPath so nested
+            # param pytrees match :class:`PerGroup.groups` keys.
+            from opaque.api.optimizers._bias_correction import map_leaves_with_path
 
-            def _bc_walk(mu_node: Any, nu_node: Any, prefix: str) -> Any:
-                if isinstance(mu_node, dict):
-                    return {
-                        k: _bc_walk(
-                            mu_node[k],
-                            nu_node[k],
-                            f"{prefix}.{k}" if prefix else str(k),
-                        )
-                        for k in mu_node
-                    }
-                # Tensor leaf.
-                path = prefix
+            new_phi: dict = {}
+
+            def _bc_leaf(path, mu_node, nu_node):
                 nv = resolve_noise_variance(effective_stddev, path)
                 old_phi_k = (
                     state.phi.get(path, 0.0)
@@ -241,7 +231,7 @@ def _scale_by_adam(
                     v_hat = v_raw
                 return m_hat / (v_hat.sqrt() + eps)
 
-            result = _bc_walk(new_mu, new_nu, "")
+            result = map_leaves_with_path(_bc_leaf, new_mu, new_nu)
         else:
             scalar_var = float(effective_stddev) ** 2
             new_phi = update_phi_ema(state.phi, scalar_var, b2)

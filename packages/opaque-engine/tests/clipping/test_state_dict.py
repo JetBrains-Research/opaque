@@ -28,11 +28,8 @@ class TestPerGroupStateDict:
     def test_state_dict_flat_dotted_keys(self):
         pg = PerGroup(groups={"a": "g"}, values={"g": 2.0})
         sd = state_dict(pg)
-        # Generic structural walker emits flat dotted keys
-        # ("groups.<param_key>" / "values.<group_name>") rather than
-        # nested dicts; the contract for PerGroup is documented on the
-        # class.
-        assert sd == {"groups.a": "g", "values.g": 2.0}
+        # Path tuples stringify under the structural walker.
+        assert sd == {"groups.('a',)": "g", "values.g": 2.0}
 
     def test_roundtrip_preserves_float_values(self):
         pg = PerGroup(groups={"a": "g"}, values={"g": 0.5})

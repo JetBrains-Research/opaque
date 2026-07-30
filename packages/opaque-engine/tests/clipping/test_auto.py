@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
+from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping.fun import auto_clipped_fun, auto_scale_pytree
 from opaque.api.engine.clipping.types import AutoClippedGradAux, AutoClipState
 from opaque.types import ClippedPytree, PerGroup
@@ -113,21 +114,33 @@ class TestAutoScalePytree:
         max_norm = math.sqrt(0.5**2 + 1.5**2)
         assert total_norm <= max_norm + 1e-4
 
-    def test_nested_pytree_raises(self):
+    def test_nested_pytree_scales_groups(self):
         pytree = {
             "layer1": {"attn": torch.tensor([3.0, 4.0]), "mlp": torch.tensor([6.0])},
+            "layer2": {"attn": torch.tensor([0.0, 0.0]), "mlp": torch.tensor([8.0])},
         }
-        pg = PerGroup(
-            groups={"layer1.attn": "attn", "layer1.mlp": "mlp"},
-            values={"attn": 2.0, "mlp": 1.0},
+        pg = per_group(pytree, attn=2.0, mlp=1.0)
+        scaled, aux = auto_scale_pytree(pytree, R=pg, gamma=0.01)
+
+        attn_scale = 2.0 / (5.0 + 0.01)
+        mlp_scale = 1.0 / (10.0 + 0.01)
+        torch.testing.assert_close(
+            scaled["layer1"]["attn"], torch.tensor([3.0, 4.0]) * attn_scale
         )
-        with pytest.raises(TypeError, match="flat dict\\[str, Tensor\\]"):
-            auto_scale_pytree(pytree, R=pg)
+        torch.testing.assert_close(
+            scaled["layer1"]["mlp"], torch.tensor([6.0]) * mlp_scale
+        )
+        torch.testing.assert_close(
+            scaled["layer2"]["mlp"], torch.tensor([8.0]) * mlp_scale
+        )
+        assert aux.group_norms is not None
+        assert aux.group_norms["attn"].item() == pytest.approx(5.0)
+        assert aux.group_norms["mlp"].item() == pytest.approx(10.0)
 
     def test_group_key_mismatch_raises(self):
         pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
         pg = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
-        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
             auto_scale_pytree(pytree, R=pg)
 
 

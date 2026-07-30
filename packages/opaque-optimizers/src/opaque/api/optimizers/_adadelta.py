@@ -190,68 +190,40 @@ def _scale_by_adadelta(
         # ---- Per-leaf Δx, v_dx, and (optional) phi_dx ----------------
         # Walk leaves so we can resolve per-group σ and read/write the
         # per-leaf phi_dx tensor.  Single walk handles both paths.
+        import optree
 
-        def _phi_g_for(path: str) -> float:
+        from opaque.api.engine.pytree import tree_flatten_with_paths
+
+        def _phi_g_for(path) -> float:
             if isinstance(new_phi_g, dict):
                 return float(new_phi_g.get(path, 0.0))
             return float(new_phi_g)
 
-        def _walk_compute(
-            updates_node: Any,
-            v_g_node: Any,
-            v_dx_node: Any,
-            phi_dx_node: Any,
-            prefix: str,
-        ) -> tuple[Any, Any, Any, Any]:
-            if isinstance(updates_node, dict):
-                out_dx = {}
-                out_v_dx = {}
-                out_phi_dx = {}
-                out_v_g = {}
-                for k in updates_node:
-                    sub_prefix = f"{prefix}.{k}" if prefix else str(k)
-                    o_dx, o_v_dx, o_phi_dx, o_v_g = _walk_compute(
-                        updates_node[k],
-                        v_g_node[k],
-                        v_dx_node[k],
-                        phi_dx_node[k],
-                        sub_prefix,
-                    )
-                    out_dx[k] = o_dx
-                    out_v_dx[k] = o_v_dx
-                    out_phi_dx[k] = o_phi_dx
-                    out_v_g[k] = o_v_g
-                return out_dx, out_v_dx, out_phi_dx, out_v_g
+        u_paths, u_leaves, u_def = tree_flatten_with_paths(updates)
+        _, vg_leaves, _ = tree_flatten_with_paths(new_v_g)
+        _, vdx_leaves, vdx_def = tree_flatten_with_paths(state.v_dx)
+        _, phidx_leaves, phidx_def = tree_flatten_with_paths(state.phi_dx)
 
-            # Tensor leaf at path ``prefix``.
-            v_g_t = v_g_node
-            # In the second-moment-substitution branch, ``E[g²]`` is
-            # already debiased by post-processing — applying φ_g would
-            # subtract the noise variance twice if a prior
-            # ``NoisedPytree`` step had grown φ_g.  Force zero here so
-            # the carried-over EMA does not silently double-correct.
+        dx_out: list[Any] = []
+        vdx_out: list[Any] = []
+        phidx_out: list[Any] = []
+
+        for path, updates_node, v_g_t, v_dx_node, phi_dx_node in zip(
+            u_paths, u_leaves, vg_leaves, vdx_leaves, phidx_leaves, strict=True
+        ):
             if noise_bias_correction and noisy_squared_grads is None:
-                phi_g_path = _phi_g_for(prefix)
+                phi_g_path = _phi_g_for(path)
             else:
                 phi_g_path = 0.0
 
-            # Corrected E[g²] at this step.
             if phi_g_path > 0:
                 corrected_g = v_g_t - phi_g_path
                 v_g_corrected = torch.where(corrected_g > 0, corrected_g, v_g_t)
             else:
                 v_g_corrected = v_g_t
-            # In the SM branch, noisy g² can be negative when noise dominates;
-            # clamp to 0 so _rms (which adds eps before sqrt) stays well-defined.
             if noisy_squared_grads is not None:
                 v_g_corrected = torch.clamp(v_g_corrected, min=0.0)
 
-            # Corrected E[Δx²] from previous step (the φ_dx is the
-            # *previous* one because we read ``v_dx_node`` and the
-            # matching pre-step φ_dx_node).  Same double-correction
-            # concern as φ_g above: skip the subtraction in the
-            # second-moment-substitution branch where σ isn't available
-            # to advance the EMA.
             if noise_bias_correction and noisy_squared_grads is None:
                 corrected_dx = v_dx_node - phi_dx_node
                 v_dx_corrected_prev = torch.where(
@@ -263,37 +235,29 @@ def _scale_by_adadelta(
             rms_g = _rms(v_g_corrected, eps)
             rms_dx_prev = _rms(v_dx_corrected_prev, eps)
 
-            # Per-element coefficient.  Sign: ``Δx = -coef · g``; the
-            # chain's ``scale_by_neg_lr`` does the negation, so we
-            # return ``coef · g`` here.
             coef = rms_dx_prev / rms_g
             dx = coef * updates_node
 
-            # Update v_dx with raw squared update (Δx_t)².  The negative
-            # sign of Δx is irrelevant under squaring.
             v_dx_new_t = rho * v_dx_node + (1 - rho) * dx * dx
 
-            # Update φ_dx with the per-element noise variance injected
-            # by this step: coef² · σ².  σ is scalar (or per-group);
-            # coef is per-element; the product is per-element.
             if noise_bias_correction and noisy_squared_grads is None:
                 sigma_sq = (
-                    resolve_noise_variance(effective, prefix)
+                    resolve_noise_variance(effective, path)
                     if is_per_group(effective)
                     else float(effective) ** 2
                 )
-                # ``sigma_sq`` is a scalar; the variance contribution
-                # to (Δx_t)_i is ``coef_i² · sigma_sq``.
                 noise_var_dx = coef * coef * sigma_sq
                 phi_dx_new_t = rho * phi_dx_node + (1 - rho) * noise_var_dx
             else:
                 phi_dx_new_t = phi_dx_node
 
-            return dx, v_dx_new_t, phi_dx_new_t, v_g_t  # v_g_t is unchanged here
+            dx_out.append(dx)
+            vdx_out.append(v_dx_new_t)
+            phidx_out.append(phi_dx_new_t)
 
-        result_tree, new_v_dx_tree, new_phi_dx_tree, _ = _walk_compute(
-            updates, new_v_g, state.v_dx, state.phi_dx, ""
-        )
+        result_tree = optree.tree_unflatten(u_def, dx_out)
+        new_v_dx_tree = optree.tree_unflatten(vdx_def, vdx_out)
+        new_phi_dx_tree = optree.tree_unflatten(phidx_def, phidx_out)
 
         # In the noisy_squared_grads branch we already declared new_phi_dx;
         # in the bc-active branch, the walker assembled it.

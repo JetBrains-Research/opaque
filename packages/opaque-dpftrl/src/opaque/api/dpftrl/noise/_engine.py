@@ -109,22 +109,27 @@ def _iid_normal_noise(
             raise
 
     if isinstance(stddev, PerGroup):
-        from opaque.api.engine.clipping._per_group import require_flat_param_dict
+        import optree
 
-        target_tree = require_flat_param_dict(
-            target_tree, context="PerGroup stddev for MF noise"
-        )
-        out: dict[str, Any] = {}
-        for param_key, tensor in target_tree.items():
-            leaf_std = stddev.for_key(param_key)
+        from opaque.api.engine.pytree import tree_flatten_with_paths
+
+        paths, leaves, treedef = tree_flatten_with_paths(target_tree)
+        out_leaves: list[Any] = []
+        for path, tensor in zip(paths, leaves, strict=True):
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(
+                    "PerGroup MF noise expects tensor leaves; "
+                    f"got {type(tensor).__name__} at path {path!r}."
+                )
+            leaf_std = stddev.for_path(path)
             noise = _randn_on_device(
                 tensor.shape,
                 noise_dtype=compute_dtype,
                 device=tensor.device,
                 generator=generator,
             )
-            out[param_key] = noise * leaf_std
-        return out
+            out_leaves.append(noise * leaf_std)
+        return optree.tree_unflatten(treedef, out_leaves)
 
     def make_noise(t):
         noise = _randn_on_device(
@@ -295,14 +300,14 @@ def _tensor_mf_noise(
         matrix_row_base = noising[step_index]
 
         if isinstance(stddev, PerGroup):
-            from opaque.api.engine.clipping._per_group import require_flat_param_dict
+            import optree
 
-            clipped_grads = require_flat_param_dict(
-                clipped_grads, context="PerGroup stddev for dense MF noise"
-            )
+            from opaque.api.engine.pytree import tree_flatten_with_paths
 
-            def add_noise_keyed(param_key: str, grad_tensor: torch.Tensor):
-                eff = stddev.for_key(param_key)
+            paths, leaves, treedef = tree_flatten_with_paths(clipped_grads)
+
+            def add_noise_at_path(path, grad_tensor: torch.Tensor):
+                eff = stddev.for_path(path)
                 matrix_row = matrix_row_base * eff
                 noise = _gaussian_linear_combination(
                     matrix_row,
@@ -313,7 +318,15 @@ def _tensor_mf_noise(
                 )
                 return (grad_tensor + noise).to(grad_tensor.dtype)
 
-            noisy_grads = {k: add_noise_keyed(k, v) for k, v in clipped_grads.items()}
+            noisy_leaves = []
+            for path, v in zip(paths, leaves, strict=True):
+                if not isinstance(v, torch.Tensor):
+                    raise TypeError(
+                        "PerGroup dense MF noise expects tensor leaves; "
+                        f"got {type(v).__name__} at path {path!r}."
+                    )
+                noisy_leaves.append(add_noise_at_path(path, v))
+            noisy_grads = optree.tree_unflatten(treedef, noisy_leaves)
         else:
             matrix_row = matrix_row_base * float(stddev)
 

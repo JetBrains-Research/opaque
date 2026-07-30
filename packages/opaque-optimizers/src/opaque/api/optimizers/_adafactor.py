@@ -88,7 +88,7 @@ class AdafactorState:
             and ``noise_bias_correction`` is enabled.
         treespec: Frozen tree spec from ``optree`` so updates can be
             re-packed in the same shape.
-        paths: Dotted-path string per leaf, aligned with ``v_flat`` /
+        paths: Optree ParamPath per leaf, aligned with ``v_flat`` /
             ``phi_flat``.  Used to look up per-group ``noise_stddev``
             values during BC.
         step: Number of completed updates.
@@ -98,7 +98,7 @@ class AdafactorState:
     v_flat: tuple[tuple[torch.Tensor, ...], ...]
     phi_flat: tuple[float, ...]
     treespec: Any  # optree.PyTreeSpec — vendor-specific, kept opaque
-    paths: tuple[str, ...]
+    paths: tuple
     step: int
 
 
@@ -135,11 +135,6 @@ def _approx_v_hat(
     return (v_row / r_mean).unsqueeze(-1) * v_col.unsqueeze(-2)
 
 
-def _path_to_dotted(path: tuple) -> str:
-    """Convert an ``optree`` path tuple to PerGroup's dotted-string form."""
-    return ".".join(str(component) for component in path)
-
-
 def _scale_by_adafactor(
     b1: float,
     b2_decay: float,
@@ -156,8 +151,10 @@ def _scale_by_adafactor(
     use_first_moment = b1 > 0.0
 
     def init_fn(params: Any) -> AdafactorState:
-        path_list, flat, treespec = optree.tree_flatten_with_path(params)
-        paths = tuple(_path_to_dotted(p) for p in path_list)
+        from opaque.api.engine.pytree import tree_flatten_with_paths
+
+        path_list, flat, treespec = tree_flatten_with_paths(params)
+        paths = tuple(path_list)
         v_flat = tuple(_init_v_for_leaf(leaf) for leaf in flat)
         phi_flat = tuple(0.0 for _ in flat)
         m = None

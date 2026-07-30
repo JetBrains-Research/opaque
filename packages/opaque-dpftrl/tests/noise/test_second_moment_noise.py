@@ -247,10 +247,10 @@ class TestPairedPerGroupMahalanobis:
         second_row_l2 = _row_l2_at_zero(second_strategy, n_steps=50, min_sep=50)
         mahal = 0.0
         for param_key in ("w", "b"):
-            d1 = pg.for_key(param_key) * c1
-            d2 = sq_pg.for_key(param_key) * c2
-            base_s1 = s1.for_key(param_key) / first_row_l2
-            base_s2 = s2.for_key(param_key) / second_row_l2
+            d1 = pg.for_path(param_key) * c1
+            d2 = sq_pg.for_path(param_key) * c2
+            base_s1 = s1.for_path(param_key) / first_row_l2
+            base_s2 = s2.for_path(param_key) / second_row_l2
             mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 

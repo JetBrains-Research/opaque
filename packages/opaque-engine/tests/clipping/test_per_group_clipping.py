@@ -111,33 +111,51 @@ class TestClipPytreePerGroup:
         assert not torch.isnan(clipped["a"]).any()
         torch.testing.assert_close(clipped["a"], torch.tensor([0.0, 0.0]))
 
-    def test_nested_pytree_raises(self):
-        """Per-group clip requires a flat dict — nested must not silently skip."""
+    def test_nested_pytree_clips_groups(self):
+        """Nested params clip by optree ParamPath — not silently skipped."""
         pytree = {
             "layer1": {
                 "attn": torch.tensor([3.0, 4.0]),
                 "mlp": torch.tensor([30.0]),
             },
+            "layer2": {
+                "attn": torch.tensor([5.0, 12.0]),
+                "mlp": torch.tensor([40.0]),
+            },
         }
-        pg = PerGroup(
-            groups={"layer1.attn": "attn", "layer1.mlp": "mlp"},
-            values={"attn": 1.0, "mlp": 1.0},
+        pg = per_group(pytree, attn=1.0, mlp=1.0)
+        clipped, aux = clip_pytree(pytree, pg)
+
+        attn_scale = 1.0 / (9.0 + 16.0 + 25.0 + 144.0) ** 0.5
+        mlp_scale = 1.0 / 50.0
+        torch.testing.assert_close(
+            clipped["layer1"]["attn"], torch.tensor([3.0, 4.0]) * attn_scale
         )
-        with pytest.raises(TypeError, match="flat dict\\[str, Tensor\\]"):
-            clip_pytree(pytree, pg)
+        torch.testing.assert_close(
+            clipped["layer2"]["attn"], torch.tensor([5.0, 12.0]) * attn_scale
+        )
+        torch.testing.assert_close(
+            clipped["layer1"]["mlp"], torch.tensor([30.0]) * mlp_scale
+        )
+        torch.testing.assert_close(
+            clipped["layer2"]["mlp"], torch.tensor([40.0]) * mlp_scale
+        )
+        assert aux.group_norms is not None
+        assert aux.group_norms["attn"].item() == pytest.approx((194.0) ** 0.5)
+        assert aux.group_norms["mlp"].item() == pytest.approx(50.0)
 
     def test_group_key_mismatch_raises(self):
-        """Missing or extra PerGroup keys must raise, not skip clipping."""
+        """Missing or extra PerGroup paths must raise, not skip clipping."""
         pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
         pg_missing = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
-        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
             clip_pytree(pytree, pg_missing)
 
         pg_extra = PerGroup(
             groups={"a": "g1", "b": "g2", "c": "g3"},
             values={"g1": 1.0, "g2": 1.0, "g3": 1.0},
         )
-        with pytest.raises(ValueError, match="must match the pytree keys exactly"):
+        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
             clip_pytree(pytree, pg_extra)
 
 

@@ -11,70 +11,53 @@ from typing import Any
 
 import torch
 
+from opaque.api.engine.pytree import (
+    ParamPath,
+    param_path_display,
+    tree_flatten_with_paths,
+)
 from opaque.api.engine.types import PerGroup as _PerGroup
 
 
-def require_flat_param_dict(
-    params: Any,
-    *,
-    context: str,
-) -> dict[str, torch.Tensor]:
-    """Require a flat ``dict[str, Tensor]`` (``named_parameters`` layout).
-
-    Per-group clipping, noise, and :func:`per_group` key parameter names.
-    Nested containers have no unique top-level string key per tensor leaf, and
-    a top-level ``.items()`` walk would silently skip nested tensors — so the
-    PerGroup pipeline rejects nesting instead of inventing a dotted-path
-    encoding.  Flatten with ``dict(module.named_parameters())`` or
-    ``make_functional(..., partition_trainable=True)`` first.
-
-    Scalar (global) clipping / noise still accept arbitrary pytrees via
-    ``tree_map`` / ``global_norm``.
-    """
-    if not isinstance(params, dict):
-        raise TypeError(
-            f"{context} requires a flat dict[str, Tensor] "
-            f"(named_parameters layout); got {type(params).__name__}."
-        )
-    bad_keys = [
-        key for key, value in params.items() if not isinstance(value, torch.Tensor)
-    ]
-    if bad_keys:
-        sample = ", ".join(repr(k) for k in bad_keys[:5])
-        more = "" if len(bad_keys) <= 5 else f" (+{len(bad_keys) - 5} more)"
-        raise TypeError(
-            f"{context} requires a flat dict[str, Tensor]; "
-            f"non-tensor values at keys: {sample}{more}. "
-            f"Flatten nested params "
-            f"(e.g. dict(module.named_parameters())) before per-group use."
-        )
-    return params
-
-
-def _extract_keys(params: dict[str, torch.Tensor]) -> list[str]:
-    """Return top-level keys from a flat parameter dict."""
-    return [str(k) for k in params]
+def _tensor_paths(params: Any) -> list[ParamPath]:
+    """Leaf :data:`~opaque.pytree.ParamPath`s for tensor leaves in ``params``."""
+    paths, leaves, _ = tree_flatten_with_paths(params)
+    out: list[ParamPath] = []
+    for path, leaf in zip(paths, leaves, strict=True):
+        if isinstance(leaf, torch.Tensor):
+            out.append(path)
+        elif leaf is None:
+            continue
+        else:
+            raise TypeError(
+                "per_group expects a PyTree of tensors; "
+                f"non-tensor leaf at path {path!r}: {type(leaf).__name__}"
+            )
+    if not out:
+        raise ValueError("per_group requires at least one tensor leaf.")
+    return out
 
 
 def per_group(
-    params: dict,
+    params: Any,
     /,
     patterns: dict[str, float] | None = None,
     *,
     fallback: float | None = None,
     **kwargs: float,
 ) -> _PerGroup:
-    """Construct PerGroup from parameter keys and substring patterns.
+    """Construct PerGroup from parameter leaf paths and substring patterns.
 
-    Each pattern is a substring matched against parameter keys.  Params
-    whose key contains the substring are assigned to that group.  Every
-    parameter must match exactly one pattern (error on 0 or 2+).
+    Each pattern is a substring matched against the dotted display form of
+    each leaf :data:`~opaque.pytree.ParamPath` (see
+    :func:`~opaque.pytree.param_path_display`).  Leaves whose display path
+    contains the substring are assigned to that group.  Every leaf must
+    match exactly one pattern (error on 0 or 2+).
 
-    ``params`` must be a flat ``dict[str, Tensor]`` in
-    ``named_parameters`` / ``make_functional(..., partition_trainable=True)``
-    layout.  Nested dicts are rejected — flatten first so group keys match
-    the pytree that :func:`~opaque.api.engine.clipping.clip_pytree` and
-    per-group noise will see.
+    ``params`` may be any tensor pytree: flat ``named_parameters`` dicts
+    (paths are one-segment ``(name,)``), nested dicts, lists, or tuples.
+    The returned :class:`~opaque.types.PerGroup` is compiled against those
+    optree paths so clip / noise / optimizers look up the same identity.
 
     The ``patterns`` dict arg merges with ``**kwargs`` to support keys
     containing dots (which cannot be used as keyword arguments)::
@@ -88,8 +71,8 @@ def per_group(
     parameters raise ``ValueError``.
 
     Args:
-        params: Flat parameter dict (``dict[str, Tensor]``).  Keys are
-            matched against patterns.
+        params: Parameter pytree (flat or nested).  Leaf paths are matched
+            against patterns via their dotted display form.
         patterns: Optional dict of ``{pattern: value}`` pairs.  Merged with
             ``**kwargs``.
         fallback: Optional value for parameters that don't match any
@@ -100,7 +83,7 @@ def per_group(
 
     Returns:
         :class:`~opaque.types.PerGroup` with pre-resolved
-        parameter-to-group assignments.
+        path-to-group assignments.
 
     See also:
         :mod:`opaque.serialization` — persist or restore a ``PerGroup`` with
@@ -108,7 +91,7 @@ def per_group(
         when parameter keys or grouping patterns change.
 
     Raises:
-        TypeError: If ``params`` is not a flat ``dict[str, Tensor]``.
+        TypeError: If ``params`` has a non-tensor leaf.
         ValueError: If no patterns are provided, if a parameter matches zero
             patterns (and no ``fallback`` is given), if a parameter
             matches multiple patterns, or if any value is not positive.
@@ -120,8 +103,6 @@ def per_group(
         ...           gate_proj=1.0, up_proj=1.0, down_proj=1.0)
         >>> per_group(params, **{f'layers.{i}': norms[i] for i in range(32)})
     """
-    params = require_flat_param_dict(params, context="per_group")
-
     all_patterns: dict[str, float] = {}
     if patterns is not None:
         all_patterns.update(patterns)
@@ -139,26 +120,28 @@ def per_group(
     if fallback is not None and fallback <= 0:
         raise ValueError(f"Fallback value must be positive, got {fallback}.")
 
-    param_keys = _extract_keys(params)
+    param_paths = _tensor_paths(params)
 
-    groups: dict[str, str] = {}
-    for param_key in param_keys:
-        matches = [pat for pat in all_patterns if pat in param_key]
+    groups: dict[ParamPath, str] = {}
+    for path in param_paths:
+        display = param_path_display(path)
+        matches = [pat for pat in all_patterns if pat in display]
         if len(matches) == 0:
             if fallback is not None:
-                groups[param_key] = "fallback"
+                groups[path] = "fallback"
                 continue
             raise ValueError(
-                f"Parameter '{param_key}' did not match any pattern. "
-                f"Available patterns: {list(all_patterns.keys())}. "
+                f"Parameter path {path!r} (display {display!r}) did not match "
+                f"any pattern. Available patterns: {list(all_patterns.keys())}. "
                 f"Use fallback=<value> to catch unmatched parameters."
             )
         if len(matches) > 1:
             raise ValueError(
-                f"Parameter '{param_key}' matched multiple patterns: {matches}. "
+                f"Parameter path {path!r} (display {display!r}) matched "
+                f"multiple patterns: {matches}. "
                 f"Each parameter must match exactly one pattern."
             )
-        groups[param_key] = matches[0]
+        groups[path] = matches[0]
 
     used_groups = set(groups.values())
     values = {
@@ -169,4 +152,4 @@ def per_group(
     return _PerGroup(groups=groups, values=values)
 
 
-__all__ = ["per_group", "require_flat_param_dict"]
+__all__ = ["per_group"]
