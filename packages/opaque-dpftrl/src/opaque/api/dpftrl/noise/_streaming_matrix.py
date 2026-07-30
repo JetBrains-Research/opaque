@@ -250,7 +250,7 @@ def diagonal(diag: torch.Tensor) -> StreamingMatrix:
         A StreamingMatrix representing the diagonal matrix.
     """
 
-    def init_fn(_abstract_value):
+    def init_fn(abstract_value):
         return torch.tensor(0, dtype=torch.long)
 
     def next_fn(value, i):

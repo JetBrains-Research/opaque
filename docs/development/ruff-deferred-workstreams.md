@@ -38,7 +38,7 @@ Permanent ignores that are **not** workstreams (document only):
 | `E501` | Formatter owns line length |
 | `RUF001` / `RUF002` / `RUF003` | Intentional unicode in math strings / docs / comments |
 | `RUF022` | Alphabetical `__all__` destroys thematic section comments |
-| `ARG` | Underscore-renaming unused parameters breaks keyword-compatible HF / torch / vmap / monkeypatch signatures (`create_graph=`, `batch_size=`, `prediction_loss_only=`, …). Tried in the Format Python gate and reverted as a policy omit — not a cleanup workstream. |
+| `ARG` | Underscore-renaming unused parameters breaks keyword-compatible HF / torch / vmap / monkeypatch signatures (`create_graph=`, `batch_size=`, `prediction_loss_only=`, `performance=`, `position_ids=`, …). Tried in the Format Python gate and reverted as a policy omit — not a cleanup workstream. Leftover renames from that attempt were restored to the original parameter names. |
 | `INP001` on `**/tests/**`, `tests/**`, `packages/*/src/opaque/*.py` | Pytest trees and PEP 420 façades must not grow `__init__.py` |
 
 ---

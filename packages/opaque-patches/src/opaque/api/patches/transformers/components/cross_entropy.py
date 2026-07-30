@@ -13,7 +13,7 @@ def _pytorch_causal_lm_loss(
     ignore_index: int = -100,
     shift_labels=None,
     label_smoothing: float = 0.0,
-    **_kwargs,
+    **kwargs,
 ) -> torch.Tensor:
     """Standard PyTorch cross-entropy loss for non-CUDA devices.
 

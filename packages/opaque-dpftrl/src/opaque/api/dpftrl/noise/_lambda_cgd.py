@@ -173,7 +173,7 @@ def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> 
 
 
 def _make_lambda_cgd_noise(
-    _grad_template: Any,
+    grad_template: Any,
     strategy: LambdaCgdStrategy,
     *,
     n_steps: int,

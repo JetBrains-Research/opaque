@@ -189,7 +189,7 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
     if class_name == "WandbCallback":
 
         class OpaqueWandbCallback(callback_cls):  # type: ignore[misc, valid-type]
-            def on_log(self, args, state, _control, model=None, logs=None, **_kwargs):
+            def on_log(self, args, state, control, model=None, logs=None, **kwargs):
                 single_value_scalars = {
                     "train_runtime",
                     "train_samples_per_second",
@@ -235,7 +235,7 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
     elif class_name == "TensorBoardCallback":
 
         class OpaqueTensorBoardCallback(callback_cls):  # type: ignore[misc, valid-type]
-            def on_log(self, args, state, _control, logs=None, **_kwargs):
+            def on_log(self, args, state, control, logs=None, **kwargs):
                 if not state.is_world_process_zero:
                     return
 
@@ -337,7 +337,7 @@ class BestModelSaveCallback(TrainerCallback):
     :func:`is_metric_improved` against the same operands.
     """
 
-    def on_evaluate(self, args, state, control, metrics=None, **_kwargs):
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         if args.save_strategy != "best":
             return
         resolved = resolve_eval_metric(metrics, args.metric_for_best_model)

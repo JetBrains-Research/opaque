@@ -1787,7 +1787,7 @@ class DPTrainer:
 
     def training_step(
         self,
-        _model: Any,
+        model: Any,
         inputs: dict[str, Tensor],
     ) -> dict[str, Any]:
         """One DP-SGD step: clipped grad → noise → optimizer update.
@@ -4654,7 +4654,7 @@ class DPTrainer:
         # superset of ``TrainingArguments``.
         torch.save(self.args, str(Path(ckpt_dir) / ckpt.TRAINING_ARGS_NAME))
 
-    def _maybe_final_save(self, _ctx: _TrainingContext, global_step: int) -> None:
+    def _maybe_final_save(self, ctx: _TrainingContext, global_step: int) -> None:
         """Always emit a final checkpoint when saving is enabled (HF parity).
 
         Skipped if a checkpoint at this exact step already exists (e.g. an

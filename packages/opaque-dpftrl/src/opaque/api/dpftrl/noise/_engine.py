@@ -224,7 +224,7 @@ def _matrix_factorization_noise(
 
 
 def _tensor_mf_noise(
-    _grad_template: Any,
+    grad_template: Any,
     noising: torch.Tensor,
     *,
     key: RngKey,
