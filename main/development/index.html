@@ -18,7 +18,7 @@
         <link rel="prev" href="../tutorials/distributed_training/">
       
       
-        <link rel="next" href="../reference/">
+        <link rel="next" href="ruff-deferred-workstreams/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -2198,6 +2198,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="ruff-deferred-workstreams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Ruff deferred workstreams
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2705,6 +2728,10 @@ checks before opening a pull request:</p>
 hardware backend automatically skip when it is unavailable; see the
 <a href="https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md#test-markers-and-filtering">test-marker reference</a>
 for the available selections.</p>
+<p>Lint rules that need a dedicated migration (typing, docstrings, exception
+taxonomy, complexity) are tracked in
+<a href="ruff-deferred-workstreams/">Ruff deferred-rule workstreams</a> — do not
+enable those families in a drive-by Format Python PR.</p>
 <h2 id="submit-a-pull-request">Submit a pull request<a class="headerlink" href="#submit-a-pull-request" title="Permanent link">&para;</a></h2>
 <p>Use a focused branch from your fork, add regression coverage for behavior
 changes, and ensure public API additions include type annotations and
