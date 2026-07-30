@@ -54,30 +54,30 @@ from opaque.api.alignment.logprob import (
 )
 
 __all__ = [
-    # per-sequence log-probabilities
-    "sequence_logp",
-    "fused_sequence_logp",
-    # per-pair heads (on log-ratios)
-    "sigmoid_loss",
-    "hinge_loss",
-    "robust_loss",
-    "ipo_loss",
-    "discopop_loss",
-    "chosen_nll_loss",
-    "squarechipo_loss",
-    "apo_zero_loss",
     "apo_down_loss",
-    "exo_loss",
-    "nca_loss",
+    "apo_zero_loss",
     "bco_loss",
-    "sppo_loss",
-    # reference-free heads (on length-normalized log-probs)
-    "simpo_loss",
-    "odds_ratio_loss",
+    "chosen_nll_loss",
+    "discopop_loss",
+    "exo_loss",
+    "f_divergence_logits",
     # log-ratio combinators (composite objectives)
     "f_divergence_remap",
-    "f_divergence_logits",
-    "mpo_combine",
-    "wpo_weights",
+    "fused_sequence_logp",
+    "hinge_loss",
+    "ipo_loss",
     "ld_dpo_split",
+    "mpo_combine",
+    "nca_loss",
+    "odds_ratio_loss",
+    "robust_loss",
+    # per-sequence log-probabilities
+    "sequence_logp",
+    # per-pair heads (on log-ratios)
+    "sigmoid_loss",
+    # reference-free heads (on length-normalized log-probs)
+    "simpo_loss",
+    "sppo_loss",
+    "squarechipo_loss",
+    "wpo_weights",
 ]

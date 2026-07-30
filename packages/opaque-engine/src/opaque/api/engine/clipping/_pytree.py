@@ -6,8 +6,8 @@ from collections import namedtuple
 
 import torch
 
-from opaque.api.engine.types import PerGroup
 from opaque.api.engine.pytree import global_norm, tree_map
+from opaque.api.engine.types import PerGroup
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
 """Auxiliary outputs from clip_pytree.
@@ -309,4 +309,4 @@ def clip_pytree(
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=None)
 
 
-__all__ = ["clip_pytree", "auto_scale_pytree", "ClipPytreeAux"]
+__all__ = ["ClipPytreeAux", "auto_scale_pytree", "clip_pytree"]

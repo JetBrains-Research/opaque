@@ -5,8 +5,8 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.random import fold_in, key
 from opaque.dpsgd.sampling import PoissonSampler
+from opaque.random import fold_in, key
 
 
 class TestPoissonSamplerKeys:

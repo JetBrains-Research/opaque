@@ -144,7 +144,7 @@ class TestDpFtrlTrain:
 
 class TestDpFtrlSamplerDispatch:
     @pytest.mark.parametrize(
-        "mechanism,expected_sampler_module_name",
+        ("mechanism", "expected_sampler_module_name"),
         [
             ("mf_identity", "opaque.api.dpsgd.sampling._poisson"),
             ("mf_band", "opaque.api.dpftrl.sampling._b_min_sep"),
@@ -193,7 +193,7 @@ class TestDpFtrlSamplerDispatch:
 
 class TestDpFtrlCheckpointRoundTrip:
     @pytest.mark.parametrize(
-        "mechanism,max_steps",
+        ("mechanism", "max_steps"),
         [
             ("mf_identity", 8),
             ("mf_band", 16),
@@ -275,8 +275,9 @@ class TestDpFtrlLrScheduleIntegration:
         # ``ctx.mf.strategy.lr_schedule``.  Snapshot via an
         # ``on_step_begin`` callback (fires after ``_setup_training``
         # populates ``_ctx``).
-        from opaque.scheduling.types import ConstantSchedule, CosineSchedule
         from transformers import TrainerCallback
+
+        from opaque.scheduling.types import ConstantSchedule, CosineSchedule
 
         captured: dict[str, type] = {}
         sentinel_trainer: dict[str, object] = {}
@@ -333,25 +334,25 @@ class TestDpFtrlLrScheduleIntegration:
         # from-scratch run — the saved accountant.json must round-trip
         # the cosine schedule baked into the BandMfStrategy.
         outdir = tmp_path / "bandmf_cosine"
-        kwargs = dict(
-            per_device_train_batch_size=4,
-            max_steps=16,
-            save_steps=4,
-            privacy_noise_mechanism="mf_band",
-            privacy_noise_mechanism_kwargs={"bands": 4},
-            privacy_noise_multiplier=1.0,
-            clipping_norm=1.0,
-            learning_rate=1e-3,
-            optim="sgd",
-            lr_scheduler="cosine",
-            report_to=[],
-            save_strategy="steps",
-            eval_strategy="no",
-            logging_strategy="no",
-            disable_tqdm=True,
-            use_cpu=True,
-            seed=0,
-        )
+        kwargs = {
+            "per_device_train_batch_size": 4,
+            "max_steps": 16,
+            "save_steps": 4,
+            "privacy_noise_mechanism": "mf_band",
+            "privacy_noise_mechanism_kwargs": {"bands": 4},
+            "privacy_noise_multiplier": 1.0,
+            "clipping_norm": 1.0,
+            "learning_rate": 1e-3,
+            "optim": "sgd",
+            "lr_scheduler": "cosine",
+            "report_to": [],
+            "save_strategy": "steps",
+            "eval_strategy": "no",
+            "logging_strategy": "no",
+            "disable_tqdm": True,
+            "use_cpu": True,
+            "seed": 0,
+        }
 
         # From-scratch run.
         args = TrainingArguments(output_dir=str(outdir), **kwargs)
@@ -421,7 +422,7 @@ class TestNonPrivateZeroNoise:
     """
 
     @pytest.mark.parametrize(
-        "mechanism,max_steps",
+        ("mechanism", "max_steps"),
         [("gaussian", 4), ("mf_identity", 4), ("mf_band", 16)],
     )
     def test_zero_noise_reports_inf_epsilon(self, tmp_path, mechanism, max_steps):

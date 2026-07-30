@@ -190,9 +190,8 @@ def test_kernels_autocast_proximity_to_full_cast(amp_dtype: torch.dtype):
         out_full = model_full(x.to(dtype=amp_dtype))
 
     # autocast on the fp32 model
-    with torch.autocast(device_type="cuda", dtype=amp_dtype):
-        with torch.no_grad():
-            out_amp = model_fp32(x)
+    with torch.autocast(device_type="cuda", dtype=amp_dtype), torch.no_grad():
+        out_amp = model_fp32(x)
 
     assert out_amp.dtype == amp_dtype
     assert out_full.dtype == amp_dtype

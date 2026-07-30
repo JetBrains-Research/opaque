@@ -8,14 +8,13 @@ re-exported.
 
 from __future__ import annotations
 
-from opaque.distributed import is_distributed
+from opaque.api.dpsgd.noise._gaussian import GaussianNoiseState
 from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
     register_sync_type,
     sync_object,
 )
-from opaque.api.dpsgd.noise._gaussian import GaussianNoiseState
-
+from opaque.distributed import is_distributed
 
 _NOISE_STATE_FIELD_OPS: dict[str, str] = {
     "_step_counter": "assert_equal",

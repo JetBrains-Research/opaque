@@ -50,24 +50,24 @@ from opaque.api.accounting.core.mechanisms.types import (
 __all__ = [
     # Interactive container
     "Accountant",
-    # Algebra base
-    "DpProcess",
-    # Budgets
-    "Budget",
-    "EpsilonBudget",
-    "DeltaBudget",
     "AdvantageBudget",
     "BetaBudget",
-    "RiskBudget",
+    # Budgets
+    "Budget",
+    "CachedProcess",
     # Calibration / discretization
     "CalibrateResult",
-    "DiscretizationConfig",
-    # Generic mechanisms
-    "EpsDelta",
-    "Identity",
-    "NonPrivate",
     # Composition
     "Composed",
+    "DeltaBudget",
+    "DiscretizationConfig",
+    # Algebra base
+    "DpProcess",
+    # Generic mechanisms
+    "EpsDelta",
+    "EpsilonBudget",
+    "Identity",
+    "NonPrivate",
     "Repeated",
-    "CachedProcess",
+    "RiskBudget",
 ]

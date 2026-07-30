@@ -126,7 +126,7 @@ def _check_frozen_experts(device: str) -> None:
     Exercises the ``compute_wgrad=False`` skip (mirrors the Triton fused path): the
     backward must NOT build the per-sample ``(B, E, ...)`` weight grads, yet ``dx``
     and ``d_router`` must still match the dense oracle bit-for-bit-within-_TOL."""
-    gu, dn, x3, idx3, w3, B, T, H = _inputs(device, E=16)
+    gu, dn, x3, idx3, w3, _B, _T, _H = _inputs(device, E=16)
 
     def f_s(xx, gg, dd, ii, ww):
         return Opaque_GroupedMoE.apply(xx, gg, dd, ii, ww).sum()

@@ -7,10 +7,12 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.types import PerGroup  # noqa: E402
-from opaque.optimizers import adafactor  # noqa: E402
-from opaque.optimizers.types import AdafactorState  # noqa: E402
+from opaque.optimizers import adafactor
+from opaque.optimizers.types import AdafactorState
+from opaque.types import (
+    PerGroup,
+    noised,
+)
 
 
 @pytest.fixture

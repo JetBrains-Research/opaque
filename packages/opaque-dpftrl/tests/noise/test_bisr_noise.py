@@ -5,8 +5,7 @@ import pytest
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
 
-
-_PART = dict(n_steps=100, min_sep=25, max_participations=4)
+_PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
 
 
 class TestBisrStrategy:

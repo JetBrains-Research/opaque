@@ -22,7 +22,6 @@ from torch.utils.data import Dataset
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
-
 pytest.importorskip("transformers")
 
 

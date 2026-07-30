@@ -33,7 +33,7 @@ def _make_bound(values, prefix="g", normalize_by=1.0):
 class TestScalarPaired:
     @pytest.mark.parametrize("nm", [0.3, 1.0, 2.5])
     @pytest.mark.parametrize(
-        "first,second",
+        ("first", "second"),
         [(1.0, 1.0), (0.5, 0.25), (2.0, 4.0), (1e-3, 1e-6), (3.0, 9.0)],
     )
     def test_returns_scalars(self, nm, first, second):
@@ -43,7 +43,7 @@ class TestScalarPaired:
 
     @pytest.mark.parametrize("nm", [0.3, 1.0, 2.5])
     @pytest.mark.parametrize(
-        "first,second",
+        ("first", "second"),
         [(1.0, 1.0), (0.5, 0.25), (2.0, 4.0), (1.0, 0.01)],
     )
     def test_explicit_formula(self, nm, first, second):
@@ -55,7 +55,7 @@ class TestScalarPaired:
 
     @pytest.mark.parametrize("nm", [0.3, 1.0, 2.5])
     @pytest.mark.parametrize(
-        "first,second",
+        ("first", "second"),
         [(1.0, 1.0), (0.5, 0.25), (2.0, 4.0), (0.05, 0.0025)],
     )
     def test_mahalanobis_equality(self, nm, first, second):

@@ -30,7 +30,8 @@ References:
     - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
 """
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from opaque.api.auditing import coin_flip, gradient_scores, loss_scores, one_run
 

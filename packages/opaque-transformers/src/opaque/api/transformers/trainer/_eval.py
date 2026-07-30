@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
+
 from transformers.trainer_pt_utils import (
     find_batch_size,
     nested_concat,
@@ -408,7 +409,7 @@ def _freeze_hot_chunk(
 
 
 def should_run_eval_at_step(
-    args: "TrainingArguments",
+    args: TrainingArguments,
     global_step: int,
     epoch: float,
     eval_steps_resolved: int,
@@ -502,7 +503,7 @@ def resolve_eval_num_samples(dataloader: Any, *, observed: int) -> int:
     # 1. dataset.__len__ (map-style or finite IterableDataset).
     try:
         if dataset is not None:
-            return int(len(dataset))
+            return len(dataset)
     except TypeError:
         pass
     # 2. Sharded iterable datasets carry a usable ``num_examples`` attr.

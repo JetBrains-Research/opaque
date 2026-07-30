@@ -39,7 +39,6 @@ from opaque.api.patches.transformers.components.masking import (
 )
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 
-
 log = logging.getLogger(__name__)
 
 
@@ -188,7 +187,7 @@ def make_apply_family_patches(
 
 
 __all__ = [
+    "_reset_patched_families",
     "family_name",
     "make_apply_family_patches",
-    "_reset_patched_families",
 ]

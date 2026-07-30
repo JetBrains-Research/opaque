@@ -9,8 +9,8 @@ import logging
 
 import torch.nn as nn
 
-from opaque.api.patches.transformers._router import apply_transformers_model_patches
 from opaque.api.patches.peft import apply_peft_model_patches
+from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +161,8 @@ def is_runtime_patched() -> bool:
 
 __all__ = [
     "apply_model_patches",
+    "apply_peft_model_patches",
     "apply_runtime_patches",
     "apply_transformers_model_patches",
-    "apply_peft_model_patches",
     "is_runtime_patched",
 ]

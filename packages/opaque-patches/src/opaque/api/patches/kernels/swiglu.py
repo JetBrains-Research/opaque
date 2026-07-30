@@ -7,14 +7,15 @@
 # repository root.
 """SwiGLU kernel with vmap support for DP-SGD."""
 
+import torch
 import triton
 import triton.language as tl
-import torch
+
 from ._utils import (
+    INT32_SAFETY_BUFFER,
     ensure_cuda_tensors,
     follow_autocast,
     torch_gpu_device,
-    INT32_SAFETY_BUFFER,
 )
 
 BLOCK_SIZE = 1024

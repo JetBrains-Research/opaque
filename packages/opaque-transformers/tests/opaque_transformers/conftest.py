@@ -19,4 +19,4 @@ def _apply_opaque_hf_patches():
     from opaque.patches import apply_runtime_patches
 
     apply_runtime_patches()
-    yield
+    return

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Union
 
 from opaque.api.engine.scheduling._constant import ConstantSchedule
 from opaque.api.engine.scheduling._ramp import resolve_ramp
@@ -31,7 +30,7 @@ class WithWarmup:
 
     schedule: Schedule
     transition_steps: int
-    ramp: Union[str, Callable[[float], float]] = "linear"
+    ramp: str | Callable[[float], float] = "linear"
     init_value: float = 0.0
 
     def __call__(self, step: int) -> float:

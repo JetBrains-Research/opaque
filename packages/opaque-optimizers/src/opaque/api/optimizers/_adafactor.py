@@ -62,10 +62,9 @@ except ImportError as exc:
 
 import optree
 
-from opaque.types import PerGroup, TensorPytree
 from opaque.api.optimizers._bias_correction import resolve_noise_variance
 from opaque.api.optimizers._chain import make_optimizer_chain
-
+from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -176,8 +175,8 @@ def _scale_by_adafactor(
         updates: Any,
         state: AdafactorState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, AdafactorState]:
         t = state.step + 1
@@ -345,4 +344,4 @@ def adafactor(
     )
 
 
-__all__ = ["adafactor", "AdafactorState"]
+__all__ = ["AdafactorState", "adafactor"]

@@ -349,18 +349,18 @@ def risk_budget(risk: float, prior: float) -> RiskBudget:
 
 
 __all__ = [
-    # Protocol
-    "Budget",
-    # Budget types
-    "EpsilonBudget",
-    "DeltaBudget",
     "AdvantageBudget",
     "BetaBudget",
+    # Protocol
+    "Budget",
+    "DeltaBudget",
+    # Budget types
+    "EpsilonBudget",
     "RiskBudget",
-    # Budget factories
-    "epsilon_budget",
-    "delta_budget",
     "advantage_budget",
     "beta_budget",
+    "delta_budget",
+    # Budget factories
+    "epsilon_budget",
     "risk_budget",
 ]

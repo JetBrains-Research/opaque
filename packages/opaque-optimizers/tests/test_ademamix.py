@@ -7,10 +7,12 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import ademamix  # noqa: E402
-from opaque.optimizers.types import AdEMAMixState  # noqa: E402
+from opaque.optimizers import ademamix
+from opaque.optimizers.types import AdEMAMixState
+from opaque.types import (
+    SecondMomentNoiseOutput,
+    noised,
+)
 
 
 @pytest.fixture

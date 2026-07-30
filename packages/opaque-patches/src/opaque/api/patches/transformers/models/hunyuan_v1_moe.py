@@ -8,7 +8,6 @@ from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
 
-
 _MODULE_PATH = "transformers.models.hunyuan_v1_moe.modeling_hunyuan_v1_moe"
 
 
@@ -39,4 +38,4 @@ apply_hunyuan_v1_moe_patches = make_apply_model_patches(
 register_family("hunyuan_v1_moe", apply_hunyuan_v1_moe_patches)
 
 
-__all__ = ["apply_hunyuan_v1_moe_patches", "apply_hunyuan_v1_moe_family_patches"]
+__all__ = ["apply_hunyuan_v1_moe_family_patches", "apply_hunyuan_v1_moe_patches"]

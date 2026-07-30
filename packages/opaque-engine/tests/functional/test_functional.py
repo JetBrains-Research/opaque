@@ -4,7 +4,7 @@ from collections import namedtuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.func import grad, vmap
 
 from opaque.functional import make_functional, with_batch_dim
@@ -138,11 +138,11 @@ def test_make_functional_disable_autograd_tracking():
     model = nn.Linear(5, 1)
 
     # Without disable_autograd_tracking
-    fmodel1, params1 = make_functional(model, disable_autograd_tracking=False)
+    _fmodel1, params1 = make_functional(model, disable_autograd_tracking=False)
     assert all(p.requires_grad for p in params1)
 
     # With disable_autograd_tracking
-    fmodel2, params2 = make_functional(model, disable_autograd_tracking=True)
+    _fmodel2, params2 = make_functional(model, disable_autograd_tracking=True)
     assert not any(p.requires_grad for p in params2)
 
 
@@ -190,7 +190,7 @@ def test_make_functional_parameter_independence():
     model = nn.Linear(5, 1)
     original_weight = model.weight.data.clone()
 
-    fmodel, params = make_functional(model)
+    _fmodel, params = make_functional(model)
 
     # Modify params
     params = tuple(p * 2 for p in params)

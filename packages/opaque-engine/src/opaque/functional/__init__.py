@@ -6,4 +6,4 @@ from opaque.api.engine.functional import (
     with_batch_dim,
 )
 
-__all__ = ["make_functional", "with_batch_dim", "empty_collate"]
+__all__ = ["empty_collate", "make_functional", "with_batch_dim"]

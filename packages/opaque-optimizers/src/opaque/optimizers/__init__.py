@@ -26,19 +26,19 @@ from opaque.api.optimizers import (
     schedule_free,
     sgd,
 )
-from opaque.optimizers import types  # noqa: F401  (submodule re-export)
+from opaque.optimizers import types
 
 __all__ = [
+    "adadelta",
+    "adafactor",
+    "adagrad",
     "adam",
     "adamw",
-    "sgd",
-    "lion",
     "ademamix",
-    "adafactor",
-    "rmsprop",
-    "adagrad",
-    "adadelta",
+    "lion",
     "radam",
+    "rmsprop",
     "schedule_free",
+    "sgd",
     "types",
 ]

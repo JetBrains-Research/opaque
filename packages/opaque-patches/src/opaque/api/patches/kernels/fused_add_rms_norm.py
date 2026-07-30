@@ -372,7 +372,7 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        del ctx  # noqa: ARG001
+        del ctx
 
     @staticmethod
     def backward(ctx, *grad_outputs):
@@ -457,7 +457,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, R, W, eps, offset, casting_mode, in_place = inputs
+        _X, _R, W, eps, offset, casting_mode, in_place = inputs
         cm = _casting_mode_int(casting_mode)
         _, S = output
         S_saved = S.detach().clone().contiguous()

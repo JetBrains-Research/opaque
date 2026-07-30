@@ -21,9 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import torch
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 import opaque.api.transformers.trainer._hub as _hub
-
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,16 +30,16 @@ import opaque.api.transformers.trainer._hub as _hub
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=1,
-        max_steps=1,
-        num_train_epochs=1,
-        save_strategy="no",
-        use_cpu=True,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-    )
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 1,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -260,7 +259,8 @@ class TestCreateModelCard:
             _hub.create_model_card(
                 _tiny_trainer_with_hub(tmp_path),
             )
-        content2 = open(str(tmp_path / "README.md")).read()
+        with open(str(tmp_path / "README.md")) as f:
+            content2 = f.read()
         # Section should appear exactly once.
         assert content2.count("<!-- opaque-dp:begin -->") == 1
         assert content2.count("<!-- opaque-dp:end -->") == 1

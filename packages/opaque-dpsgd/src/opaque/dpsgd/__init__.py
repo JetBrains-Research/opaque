@@ -22,7 +22,8 @@ extension's startup cost.
 """
 
 from importlib import import_module
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
 from opaque.dpsgd import clipping, noise, sampling
@@ -63,19 +64,19 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    # Sampling
+    "PoissonSampler",
     "__version__",
     # Subpackages
     "accounting",
-    "clipping",
-    "noise",
-    "sampling",
     # Clipping
     "adaptive_clipped_grad",
     "auto_clipped_grad",
     "clipped_grad",
-    "per_group",
+    "clipping",
     # Noise mechanisms
     "gaussian_noise",
-    # Sampling
-    "PoissonSampler",
+    "noise",
+    "per_group",
+    "sampling",
 ]

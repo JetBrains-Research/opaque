@@ -21,8 +21,9 @@ from __future__ import annotations
 import copy
 import dataclasses
 import uuid
+from collections.abc import Callable
 from operator import attrgetter
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
@@ -345,7 +346,7 @@ class DPOTrainer(DPTrainer):
                     model_id=model_id,
                     collator=data_collator,
                     batch_size=batch_size,
-                    cache_key=cache_key + ("eval",),
+                    cache_key=(*cache_key, "eval"),
                     disable_dropout=args.disable_dropout,
                 )
 

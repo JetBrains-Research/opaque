@@ -13,4 +13,4 @@ from opaque.api.accounting.core.composition._cached import CachedProcess
 from opaque.api.accounting.core.composition._composed import Composed
 from opaque.api.accounting.core.composition._repeated import Repeated
 
-__all__ = ["Composed", "Repeated", "CachedProcess"]
+__all__ = ["CachedProcess", "Composed", "Repeated"]

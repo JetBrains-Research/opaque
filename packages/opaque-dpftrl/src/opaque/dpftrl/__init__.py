@@ -29,7 +29,8 @@ extension's startup cost.
 """
 
 from importlib import import_module
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
 from opaque.dpftrl import clipping, noise, sampling
@@ -78,28 +79,28 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "BMinSepSampler",
+    # Samplers
+    "BallsInBinsSampler",
+    "CyclicPoissonSampler",
+    "SequentialBatchSampler",
     "__version__",
     # Subpackages
     "accounting",
-    "clipping",
-    "noise",
-    "sampling",
-    # MF-safe clipping (re-exported for one-stop imports)
-    "clipped_grad",
     "auto_clipped_grad",
-    "per_group",
-    # Dispatchers
-    "mf_gaussian_noise",
     # Strategy factories
     "band_mf_strategy",
     "bisr_strategy",
-    "bsr_strategy",
     "blt_strategy",
+    "bsr_strategy",
+    # MF-safe clipping (re-exported for one-stop imports)
+    "clipped_grad",
+    "clipping",
     "identity_strategy",
     "lambda_cgd_strategy",
-    # Samplers
-    "BallsInBinsSampler",
-    "BMinSepSampler",
-    "CyclicPoissonSampler",
-    "SequentialBatchSampler",
+    # Dispatchers
+    "mf_gaussian_noise",
+    "noise",
+    "per_group",
+    "sampling",
 ]

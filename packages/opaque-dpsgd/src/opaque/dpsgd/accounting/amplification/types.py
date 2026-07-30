@@ -5,4 +5,4 @@ from opaque.api.accounting.dpsgd.amplification.types import (
     Poisson,
 )
 
-__all__ = ["Poisson", "ParallelPoisson"]
+__all__ = ["ParallelPoisson", "Poisson"]

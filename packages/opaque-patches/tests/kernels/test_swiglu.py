@@ -19,7 +19,7 @@ Config: Mellum-4b scale (intermediate_dim=8256)
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 

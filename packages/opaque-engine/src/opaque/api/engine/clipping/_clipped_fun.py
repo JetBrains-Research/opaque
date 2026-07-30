@@ -12,13 +12,13 @@ from torch.func import vmap as _vmap
 from opaque.api.engine.clipping._helpers import normalize_to_tuple
 from opaque.api.engine.clipping._pytree import clip_pytree
 from opaque.api.engine.pytree import global_norm, tree_map
-from opaque.api.engine.types import ClipState as _ClipState
 from opaque.api.engine.types import (
     ClippedPytree,
     PerGroup,
     SecondMomentClippingOutput,
     clipped,
 )
+from opaque.api.engine.types import ClipState as _ClipState
 
 
 @dataclass(frozen=True)
@@ -608,4 +608,4 @@ def clipped_fun(
     return stateful_clipped_fn, clip_state
 
 
-__all__ = ["clipped_fun", "ClippedFunAux"]
+__all__ = ["ClippedFunAux", "clipped_fun"]

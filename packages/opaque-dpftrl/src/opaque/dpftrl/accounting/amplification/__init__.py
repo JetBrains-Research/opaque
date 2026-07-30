@@ -6,4 +6,4 @@ from opaque.api.accounting.dpftrl.amplification import (
     poisson,
 )
 
-__all__ = ["poisson", "b_min_sep", "balls_in_bins"]
+__all__ = ["b_min_sep", "balls_in_bins", "poisson"]

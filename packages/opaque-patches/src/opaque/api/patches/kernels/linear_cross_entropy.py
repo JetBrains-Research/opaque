@@ -46,7 +46,6 @@ from ._utils import (
     tl_softcapping_grad,
 )
 
-
 # =============================================================================
 # Autotune configs (subset of CCE defaults, sufficient for our use case)
 # =============================================================================
@@ -150,7 +149,7 @@ def _linear_ce_forward_kernel(
 
     # Tiled matmul: logits[b,v] = Σ_d E[b,d] * C[v,d]
     accum = tl.zeros((BLOCK_B, BLOCK_V), dtype=tl.float32)
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
+    for d in range(tl.cdiv(D, BLOCK_D)):
         e_mask = offs_b[:, None] < BMax
         if not EVEN_D:
             e_mask = e_mask & (offs_d[None, :] < (D - d * BLOCK_D))
@@ -231,7 +230,9 @@ else:
         {
             k: (lambda args, _v=v: _v)
             for k, v in Config(
-                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+                {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32},
+                num_warps=4,
+                num_stages=4,
             )
             .all_kwargs()
             .items()
@@ -264,7 +265,7 @@ def _mm_backward(
     b_ptrs = b_ptrs + d_inds * stride_bd
     da_ptrs = da_ptrs + d_inds * stride_ad
 
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
+    for d in range(tl.cdiv(D, BLOCK_D)):
         if EVEN_D:
             mask = partial_mask_b
         else:
@@ -356,7 +357,7 @@ def _linear_ce_backward_kernel(
 
     # Recompute logits via tiled matmul E @ C^T
     accum = tl.zeros((BLOCK_B, BLOCK_V), dtype=tl.float32)
-    for d in range(0, tl.cdiv(D, BLOCK_D)):
+    for d in range(tl.cdiv(D, BLOCK_D)):
         e_mask = offs_b[:, None] < BMax
         if not EVEN_D:
             e_mask = e_mask & (offs_d[None, :] < (D - d * BLOCK_D))
@@ -511,7 +512,9 @@ else:
         {
             k: (lambda args, _v=v: _v)
             for k, v in Config(
-                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+                {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32},
+                num_warps=4,
+                num_stages=4,
             )
             .all_kwargs()
             .items()
@@ -834,9 +837,9 @@ class _LinearCEBackward(torch.autograd.Function):
     ):
         (
             grad_bdim,
-            h_bdim,
+            _h_bdim,
             w_bdim,
-            lab_bdim,
+            _lab_bdim,
             sc_bdim,
             ii_bdim,
             dc_bdim,

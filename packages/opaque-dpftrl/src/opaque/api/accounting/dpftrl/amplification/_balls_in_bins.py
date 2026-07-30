@@ -279,7 +279,7 @@ def balls_in_bins(
         raise TypeError(
             f"balls_in_bins() requires an MfGaussian inner, got {type(inner).__name__}."
         )
-    if not isinstance(inner.strategy, _CorrelatedStrategies + (IdentityStrategy,)):
+    if not isinstance(inner.strategy, (*_CorrelatedStrategies, IdentityStrategy)):
         raise TypeError(
             "balls_in_bins() requires inner.strategy in {BltStrategy, "
             "BsrStrategy, BisrStrategy, LambdaCgdStrategy, IdentityStrategy}, "

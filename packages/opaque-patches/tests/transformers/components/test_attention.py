@@ -67,7 +67,7 @@ class TestAttentionWithMicrobatching:
             clipping_norm=1.0,
             microbatch_size=microbatch_size,
         )
-        grads, state = grad_fn(
+        grads, _state = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
         return grads

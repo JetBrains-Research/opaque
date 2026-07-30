@@ -36,7 +36,12 @@ def _data():
 
 
 def _build(mode):
-    common = dict(argnums=0, batch_argnums=(1, 2), normalize_by=8, return_aux=True)
+    common = {
+        "argnums": 0,
+        "batch_argnums": (1, 2),
+        "normalize_by": 8,
+        "return_aux": True,
+    }
     if mode == "fixed":
         return clipped_grad(_loss, clipping_norm=1.0, **common)
     if mode == "auto":

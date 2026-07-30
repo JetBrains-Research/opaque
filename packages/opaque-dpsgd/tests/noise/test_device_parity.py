@@ -20,9 +20,9 @@ the guard that keeps that boundary honest.
 import pytest
 import torch
 
-from opaque.types import clipped
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
+from opaque.types import clipped
 
 _N = 50_000
 _SIGMA = 1.0

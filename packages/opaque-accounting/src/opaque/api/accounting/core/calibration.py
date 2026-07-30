@@ -27,12 +27,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from opaque.api.accounting.core._base import DpProcess
-from opaque.api.accounting.core._native_cache import _clear_all_native_caches
 
 # Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
 # work as convenience imports.
-from opaque.api.accounting.core._budgets import (  # noqa: F401
+from opaque.api.accounting.core._budgets import (
     AdvantageBudget,
     BetaBudget,
     Budget,
@@ -45,6 +44,7 @@ from opaque.api.accounting.core._budgets import (  # noqa: F401
     epsilon_budget,
     risk_budget,
 )
+from opaque.api.accounting.core._native_cache import _clear_all_native_caches
 
 # =============================================================================
 # Calibration
@@ -411,19 +411,19 @@ def _calibrate_impl(
 # =============================================================================
 
 __all__ = [
-    # Re-exported from budgets (convenience)
-    "Budget",
-    "EpsilonBudget",
-    "DeltaBudget",
     "AdvantageBudget",
     "BetaBudget",
+    # Re-exported from budgets (convenience)
+    "Budget",
+    "CalibrateResult",
+    "DeltaBudget",
+    "EpsilonBudget",
     "RiskBudget",
-    "epsilon_budget",
-    "delta_budget",
     "advantage_budget",
     "beta_budget",
-    "risk_budget",
     # Calibration
     "calibrate",
-    "CalibrateResult",
+    "delta_budget",
+    "epsilon_budget",
+    "risk_budget",
 ]

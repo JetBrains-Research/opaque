@@ -38,7 +38,6 @@ from opaque.scheduling import (  # noqa: E402
     with_warmup,
 )
 
-
 BASE_LR = 1e-3
 
 

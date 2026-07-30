@@ -946,6 +946,7 @@ restores per-rank state without replaying batches.
   ```python
   if self._ddp.world_size > 1 and a.dp_shard == "per_rank":
       from opaque.distributed import local_shard
+
       dataset = local_shard(dataset, rank=self._ddp.rank, world_size=self._ddp.world_size)
   ```
   with `dataset_size` and `sample_rate` recomputed off the shard. The
@@ -1002,6 +1003,7 @@ noise). Specifically, between [line 1757 and line 1759](../../src/opaque/transfo
 ```python
 if self._ddp.is_distributed:
     from opaque.distributed import sum_gradients_, sync, gather_pytree
+
     # (a) sync clip state and per-example aux for adaptive clip — local-only otherwise
     ctx.clip_state, aux = sync(ctx.clip_state, aux)
     # (b) sum clipped grads across ranks

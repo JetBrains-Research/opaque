@@ -37,8 +37,7 @@ from opaque.transformers.trainer.types import TrainOutput
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 
 # ---------------------------------------------------------------------------
 # Test fixtures: tiny GPT-2 + tokenizer.  Reused across the integration
@@ -77,20 +76,20 @@ def tiny_dataset(gpt2_lora_and_tokenizer):
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
     """CPU-pinned, σ=0 args for deterministic eval runs."""
-    defaults: dict[str, Any] = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=4,
+    defaults: dict[str, Any] = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "per_device_eval_batch_size": 4,
         # NM=0.0 = non-private; target_eps is meaningless on this path.
-        privacy_noise_multiplier=0.0,
-        clipping_norm=1.0,
-        max_steps=1,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        seed=42,
-        use_cpu=True,
-    )
+        "privacy_noise_multiplier": 0.0,
+        "clipping_norm": 1.0,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "seed": 42,
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -445,7 +444,7 @@ class _MultiOutputStubModel(torch.nn.Module):
         # DPTrainer's optimizer setup needs at least one trainable param.
         self._noop = torch.nn.Linear(1, 1)
 
-    def forward(self, **inputs):  # noqa: ARG002
+    def forward(self, **inputs):
         return self._output
 
 

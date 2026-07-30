@@ -41,9 +41,7 @@ def _serialize_dp_process(p: Any) -> dict[str, Any]:
         v = getattr(p, f.name)
         if isinstance(v, DpProcess):
             out[f.name] = dict(opaque_state_dict(v))
-        elif isinstance(v, _PRIMITIVE_TYPES):
-            out[f.name] = v
-        elif isinstance(v, (tuple, list)):
+        elif isinstance(v, (_PRIMITIVE_TYPES, tuple, list)):
             out[f.name] = v
         # else: opaque — skip
     return out
@@ -98,7 +96,7 @@ def _coerce_field(cls: type[Any], fname: str, val: Any) -> Any:
 
     try:
         hints = get_type_hints(cls)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return val
     t = hints.get(fname)
     if t is None:

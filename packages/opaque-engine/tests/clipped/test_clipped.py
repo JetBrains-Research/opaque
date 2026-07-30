@@ -1,11 +1,7 @@
 import pytest
 import torch
 
-from opaque.types import ClippedPytree, clipped
-
-from opaque.types import NoisedPytree, noised
-
-from opaque.types import PerGroup
+from opaque.types import ClippedPytree, NoisedPytree, PerGroup, clipped, noised
 
 
 def test_functional_constructors_wrap_metadata(device):

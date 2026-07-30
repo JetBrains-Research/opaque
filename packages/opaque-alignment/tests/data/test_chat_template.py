@@ -15,10 +15,14 @@ import pytest
 
 transformers = pytest.importorskip("transformers")
 
-from transformers import LlamaConfig, LlamaForCausalLM, PreTrainedTokenizerFast  # noqa: E402
-from tokenizers import Tokenizer, AddedToken  # noqa: E402
+from tokenizers import AddedToken, Tokenizer  # noqa: E402
 from tokenizers.models import BPE  # noqa: E402
 from tokenizers.pre_tokenizers import Whitespace  # noqa: E402
+from transformers import (  # noqa: E402
+    LlamaConfig,
+    LlamaForCausalLM,
+    PreTrainedTokenizerFast,
+)
 
 from opaque.api.alignment.data._chat_template import (  # noqa: E402
     clone_chat_template,
@@ -231,11 +235,15 @@ class TestGetTrainingChatTemplate:
         # And the spans must cover assistant text, NOT user text.
         for start, end in indices:
             span = rendered[start:end]
-            assert "first question" not in span and "second question" not in span, (
+            assert "first question" not in span, (
+                f"user content leaked into generation span: {span!r}"
+            )
+            assert "second question" not in span, (
                 f"user content leaked into generation span: {span!r}"
             )
         joined = "".join(rendered[s:e] for s, e in indices)
-        assert "first answer" in joined and "second answer" in joined
+        assert "first answer" in joined
+        assert "second answer" in joined
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +369,8 @@ class TestCloneChatTemplate:
         """Functions are importable from the implementation module path."""
         from opaque.api.alignment.data._chat_template import (
             clone_chat_template as _clone,
+        )
+        from opaque.api.alignment.data._chat_template import (
             get_training_chat_template as _get,
         )
 

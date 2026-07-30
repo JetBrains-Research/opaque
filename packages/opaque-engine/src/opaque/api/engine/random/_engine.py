@@ -101,4 +101,4 @@ def generator_from_key(rng_key: RngKey) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
 
-__all__ = ["RngKey", "key", "split", "fold_in", "generator_from_key"]
+__all__ = ["RngKey", "fold_in", "generator_from_key", "key", "split"]

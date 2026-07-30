@@ -14,7 +14,8 @@ to SFT and DPO, and the two-layer dispatcher :func:`_convert_trl_config`.
 from __future__ import annotations
 
 import tempfile
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..trainer._convert import (  # noqa: F401  (_reject_if_truthy re-exported)
     _apply_manifest,

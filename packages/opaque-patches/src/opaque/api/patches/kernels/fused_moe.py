@@ -36,7 +36,6 @@ import triton.language as tl
 
 from ._utils import follow_autocast, torch_gpu_device
 
-
 # ---------------------------------------------------------------------------
 # Custom Triton kernel: grouped A^T @ B (the mode-2 per-group weight grad)
 # ---------------------------------------------------------------------------

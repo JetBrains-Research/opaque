@@ -72,9 +72,7 @@ def _no_lora_dropout(module, proj_name):
     dropout = proj.lora_dropout[active]
     if isinstance(dropout, torch.nn.Identity):
         return True
-    if isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0:
-        return True
-    return False
+    return bool(isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0)
 
 
 def _no_bias(module, proj_name):

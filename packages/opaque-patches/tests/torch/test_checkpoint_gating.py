@@ -22,7 +22,7 @@ _TORCH_CORE = [
     "create_graph",
     "reparametrize_recompute",
 ]
-_ALL = _TORCH_CORE + ["huggingface"]
+_ALL = [*_TORCH_CORE, "huggingface"]
 
 
 @pytest.fixture

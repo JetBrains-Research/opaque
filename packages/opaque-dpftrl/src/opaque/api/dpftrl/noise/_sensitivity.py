@@ -17,11 +17,11 @@ import torch
 from . import _checks as checks
 
 __all__ = [
-    "single_participation_sensitivity",
-    "max_participation_for_linear_fn",
-    "minsep_true_max_participations",
     "get_min_sep_sensitivity_upper_bound",
     "get_sensitivity_banded",
+    "max_participation_for_linear_fn",
+    "minsep_true_max_participations",
+    "single_participation_sensitivity",
 ]
 
 

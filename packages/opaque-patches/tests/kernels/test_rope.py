@@ -12,7 +12,7 @@ Config: Mellum-4b scale (uses mellum_config from conftest)
 
 import pytest
 import torch
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
@@ -55,7 +55,7 @@ def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.bfloat16):
 
 def pytorch_rope(Q, cos, sin):
     """PyTorch reference RoPE implementation."""
-    batch, seq_len, n_heads, head_dim = Q.shape
+    batch, seq_len, n_heads, _head_dim = Q.shape
     cos_expanded = cos[None, :, None, :].expand(batch, seq_len, n_heads, -1)
     sin_expanded = sin[None, :, None, :].expand(batch, seq_len, n_heads, -1)
     cos_full = torch.cat([cos_expanded, cos_expanded], dim=-1)

@@ -56,10 +56,10 @@ class _LMCollator:
     """
 
     __slots__ = (
-        "_pad_token_id",
-        "_max_length",
         "_completion_only_loss",
+        "_max_length",
         "_pad_to_multiple_of",
+        "_pad_token_id",
     )
 
     def __init__(

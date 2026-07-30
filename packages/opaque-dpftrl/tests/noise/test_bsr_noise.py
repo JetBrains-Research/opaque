@@ -5,12 +5,11 @@ import pytest
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._bsr import BsrStrategy, bsr_strategy
 
-
-_PART = dict(n_steps=100, min_sep=25, max_participations=4)
+_PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
 
 
 def _bsr(**overrides):
-    kwargs = dict(bandwidth=4, alpha=1.0, beta=0.5)
+    kwargs = {"bandwidth": 4, "alpha": 1.0, "beta": 0.5}
     kwargs.update(overrides)
     return bsr_strategy(**kwargs)
 

@@ -3,10 +3,11 @@
 Extracted from unsloth/kernels/utils.py for standalone use in opaque kernels.
 """
 
+from contextlib import nullcontext
+
+import torch
 import triton
 import triton.language as tl
-from contextlib import nullcontext
-import torch
 
 # Constants
 MAX_FUSED_SIZE: int = 65536

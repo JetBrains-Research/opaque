@@ -37,8 +37,7 @@ from typing import Any
 from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux, clipped_grad
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
-from opaque.api.engine.types import ClipState
-from opaque.api.engine.types import PerGroup
+from opaque.api.engine.types import ClipState, PerGroup
 
 _DEFAULT_GAMMA = 0.01
 
@@ -341,9 +340,9 @@ def auto_clipped_grad(
 
 
 __all__ = [
-    "auto_clipped_fun",
-    "auto_clipped_grad",
     "AutoClipState",
     "AutoClippedFunAux",
     "AutoClippedGradAux",
+    "auto_clipped_fun",
+    "auto_clipped_grad",
 ]

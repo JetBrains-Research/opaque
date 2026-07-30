@@ -67,15 +67,15 @@ def _run_ddp(
     # Quiet HF/torch in workers; keep our own stderr pristine.
     env["TRANSFORMERS_VERBOSITY"] = "error"
     try:
-        for rank in range(world_size):
-            procs.append(
-                subprocess.Popen(
-                    common + ["--rank", str(rank)],
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
+        procs = [
+            subprocess.Popen(
+                [*common, "--rank", str(rank)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            for rank in range(world_size)
+        ]
         results = []
         for p in procs:
             stdout, stderr = p.communicate(timeout=timeout)

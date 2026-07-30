@@ -10,13 +10,13 @@ import pytest
 pytest.importorskip("transformers")
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _test_utils import (  # noqa: E402
-    build_moe_model,
-    experts_forward_patched,
-    assert_forward_no_grad,
+from _test_utils import (
     assert_forward_backward,
+    assert_forward_no_grad,
     assert_vmap_forward,
     assert_vmap_grad,
+    build_moe_model,
+    experts_forward_patched,
 )
 
 

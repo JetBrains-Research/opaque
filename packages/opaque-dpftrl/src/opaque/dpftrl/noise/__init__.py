@@ -37,11 +37,11 @@ from opaque.api.dpftrl.noise import (
 )
 
 __all__ = [
-    "mf_gaussian_noise",
     "band_mf_strategy",
     "bisr_strategy",
-    "bsr_strategy",
     "blt_strategy",
+    "bsr_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
+    "mf_gaussian_noise",
 ]

@@ -45,7 +45,6 @@ class Pld:
         Returns:
             Epsilon value.
         """
-        ...
 
     def delta_at(self, epsilon: float) -> float:
         """Smallest δ achieving (ε, δ)-DP.
@@ -56,7 +55,6 @@ class Pld:
         Returns:
             Delta value.
         """
-        ...
 
     def advantage(self) -> float:
         """Total-variation advantage.
@@ -64,7 +62,6 @@ class Pld:
         Returns:
             Advantage in [0, 1]. Lower is more private.
         """
-        ...
 
     def beta_at(self, alpha: float) -> float:
         """Type-II error (β) at a given Type-I error (α).
@@ -75,7 +72,6 @@ class Pld:
         Returns:
             Beta value in [0, 1].
         """
-        ...
 
     def risk_at(self, prior: float) -> float:
         """Bayes risk under an optimal adversary.
@@ -86,7 +82,6 @@ class Pld:
         Returns:
             Risk value in [0, 0.5].
         """
-        ...
 
     def compose(self, other: Pld) -> Pld:
         """Compose this PLD with another (heterogeneous composition).
@@ -100,7 +95,6 @@ class Pld:
         Raises:
             ValueError: If composition fails (mismatched discretization).
         """
-        ...
 
     def self_compose(self, count: int) -> Pld:
         """Self-compose this PLD *count* times (homogeneous repetition).
@@ -111,19 +105,15 @@ class Pld:
         Returns:
             A new self-composed PLD.
         """
-        ...
 
     def __mul__(self, count: int) -> Pld:
         """``pld * k`` is shorthand for ``pld.self_compose(k)``."""
-        ...
 
     def __rmul__(self, count: int) -> Pld:
         """``k * pld`` also works."""
-        ...
 
     def __or__(self, other: Pld) -> Pld:
         """``a | b`` is shorthand for ``a.compose(b)``."""
-        ...
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
@@ -167,32 +157,26 @@ class DiscretizationConfig:
     @property
     def discretization(self) -> float:
         """Grid spacing for the PLD PMF."""
-        ...
 
     @property
     def log_mass_truncation_bound(self) -> float:
         """Log-probability below which tails are truncated."""
-        ...
 
     @property
     def max_grid_size(self) -> int:
         """Maximum bins before automatic coarsening."""
-        ...
 
     @property
     def tail_mass_truncation(self) -> float:
         """Total tail mass budget for composition truncation."""
-        ...
 
     @property
     def num_mc_samples(self) -> int:
         """Number of Monte Carlo samples."""
-        ...
 
     @property
     def seed(self) -> int:
         """RNG seed for Monte Carlo."""
-        ...
 
     def __repr__(self) -> str: ...
     def __eq__(self, other: object) -> bool: ...
@@ -220,7 +204,6 @@ def gaussian_pld(
         pld = dp.gaussian_pld(1.1, config)
         pld.epsilon_at(1e-5)  # ~3.92
     """
-    ...
 
 def eps_delta_pld(
     epsilon: float,
@@ -237,7 +220,6 @@ def eps_delta_pld(
     Returns:
         The privacy loss distribution.
     """
-    ...
 
 def identity_pld(
     config: DiscretizationConfig,
@@ -250,7 +232,6 @@ def identity_pld(
     Returns:
         The identity PLD (neutral element for composition).
     """
-    ...
 
 def non_private_pld(
     config: DiscretizationConfig,
@@ -266,7 +247,6 @@ def non_private_pld(
     Returns:
         A PLD with all mass at +∞.
     """
-    ...
 
 # ---------------------------------------------------------------------------
 # Amplification functions
@@ -293,7 +273,6 @@ def poisson_gaussian_pld(
         training = pld.self_compose(1000)
         training.epsilon_at(1e-5)
     """
-    ...
 
 def truncated_poisson_gaussian_pld(
     noise_multiplier: float,
@@ -317,7 +296,6 @@ def truncated_poisson_gaussian_pld(
     Returns:
         The amplified privacy loss distribution.
     """
-    ...
 
 def parallel_poisson_gaussian_pld(
     noise_multiplier: float,
@@ -339,7 +317,6 @@ def parallel_poisson_gaussian_pld(
     Returns:
         The amplified privacy loss distribution.
     """
-    ...
 
 def balls_in_bins_gaussian_pld(
     noise_multiplier: float,
@@ -360,7 +337,6 @@ def balls_in_bins_gaussian_pld(
     Returns:
         The per-epoch privacy loss distribution.
     """
-    ...
 
 def balls_in_bins_gaussian_pld_epochs(
     noise_multiplier: float,
@@ -382,7 +358,6 @@ def balls_in_bins_gaussian_pld_epochs(
     Returns:
         The privacy loss distribution for the entire training run.
     """
-    ...
 
 def bandmf_b_min_sep_warm_mc_pld(
     strategy_coef: list[float],
@@ -392,7 +367,6 @@ def bandmf_b_min_sep_warm_mc_pld(
     config: DiscretizationConfig,
 ) -> Pld:
     """Monte Carlo PLD for BandMF + warm-start b-min-sep (arXiv:2602.09338)."""
-    ...
 
 def register_b_min_sep_transcript_corpus(
     strategy_coef: list[float],
@@ -402,11 +376,9 @@ def register_b_min_sep_transcript_corpus(
     seed: int,
 ) -> int:
     """Allocate MC transcripts in Rust; return handle for reuse across σ."""
-    ...
 
 def drop_b_min_sep_transcript_corpus(handle: int) -> None:
     """Free a corpus allocated by ``register_b_min_sep_transcript_corpus``."""
-    ...
 
 def bandmf_b_min_sep_pld_from_transcript_handle(
     handle: int,
@@ -417,7 +389,6 @@ def bandmf_b_min_sep_pld_from_transcript_handle(
     config: DiscretizationConfig,
 ) -> Pld:
     """Build PLD from a registered corpus at σ."""
-    ...
 
 def bnb_mc_pld(
     gram: list[float],
@@ -439,7 +410,6 @@ def bnb_mc_pld(
     Returns:
         The privacy loss distribution (asymmetric).
     """
-    ...
 
 def bnb_mc_pld_identity(
     num_bins: int,
@@ -470,7 +440,6 @@ def bnb_mc_pld_identity(
     Returns:
         The privacy loss distribution (asymmetric).
     """
-    ...
 
 # ---------------------------------------------------------------------------
 # Matrix factorization functions
@@ -500,7 +469,6 @@ def mf_gaussian_pld(
         pld = dp.mf_gaussian_pld(1.0, 2.5, config)
         pld.epsilon_at(1e-5)
     """
-    ...
 
 def max_participation_for_linear_fn(
     x: list[float],
@@ -520,7 +488,6 @@ def max_participation_for_linear_fn(
     Returns:
         The optimal inner product.
     """
-    ...
 
 def minsep_true_max_participations(
     n: int,
@@ -537,7 +504,6 @@ def minsep_true_max_participations(
     Returns:
         Effective maximum participations.
     """
-    ...
 
 def single_participation_sensitivity(
     column_norms: list[float],
@@ -550,7 +516,6 @@ def single_participation_sensitivity(
     Returns:
         Maximum column norm (the sensitivity).
     """
-    ...
 
 def banded_sensitivity(
     gram_diag: list[float],
@@ -567,7 +532,6 @@ def banded_sensitivity(
     Returns:
         The exact L2 sensitivity.
     """
-    ...
 
 def general_sensitivity_upper_bound(
     gram_matrix: list[float],
@@ -586,7 +550,6 @@ def general_sensitivity_upper_bound(
     Returns:
         An upper bound on the L2 sensitivity.
     """
-    ...
 
 def fixed_epoch_sensitivity(
     gram_matrix: list[float],
@@ -603,7 +566,6 @@ def fixed_epoch_sensitivity(
     Returns:
         The L2 sensitivity under fixed-epoch participation.
     """
-    ...
 
 def blt_sensitivity_squared(
     buf_decay: list[float],
@@ -622,7 +584,6 @@ def blt_sensitivity_squared(
     Returns:
         The sensitivity squared.
     """
-    ...
 
 def toeplitz_minsep_sensitivity_squared(
     strategy_coef: list[float],
@@ -644,7 +605,6 @@ def toeplitz_minsep_sensitivity_squared(
     Returns:
         The sensitivity squared.
     """
-    ...
 
 def lambda_cgd_sensitivity_squared(
     lambda_: float,
@@ -671,7 +631,6 @@ def lambda_cgd_sensitivity_squared(
     Returns:
         The squared L2 sensitivity.
     """
-    ...
 
 def lambda_cgd_normalized_sensitivity_squared(
     lambda_: float,
@@ -695,7 +654,6 @@ def lambda_cgd_normalized_sensitivity_squared(
     Returns:
         The squared L2 sensitivity of the column-normalized matrix.
     """
-    ...
 
 def lambda_cgd_max_column_norm(
     lambda_: float,
@@ -712,7 +670,6 @@ def lambda_cgd_max_column_norm(
     Returns:
         The max column L2 norm.
     """
-    ...
 
 def lambda_cgd_gram_matrix(
     lambda_: float,
@@ -740,7 +697,6 @@ def lambda_cgd_gram_matrix(
     Returns:
         Flattened row-major b×b Gram matrix.
     """
-    ...
 
 def lambda_cgd_gram_matrix_lr(
     lambda_: float,
@@ -767,7 +723,6 @@ def lambda_cgd_gram_matrix_lr(
     Returns:
         Flattened row-major b×b Gram matrix.
     """
-    ...
 
 # ---------------------------------------------------------------------------
 # BISR (Banded Inverse Square Root)
@@ -781,7 +736,6 @@ def bisr_sensitivity_squared(
     momentum: float = 0.0,
 ) -> float:
     """Squared L2 sensitivity for BISR under min-sep participation."""
-    ...
 
 def bisr_normalized_sensitivity_squared(
     coefficients: list[float],
@@ -791,7 +745,6 @@ def bisr_normalized_sensitivity_squared(
     momentum: float = 0.0,
 ) -> float:
     """Squared L2 sensitivity of column-normalized BISR."""
-    ...
 
 def bisr_gram_matrix(
     coefficients: list[float],
@@ -802,7 +755,6 @@ def bisr_gram_matrix(
     momentum: float = 0.0,
 ) -> list[float]:
     """BnB Gram matrix for BISR with optional momentum."""
-    ...
 
 def bisr_gram_matrix_lr(
     coefficients: list[float],
@@ -814,7 +766,6 @@ def bisr_gram_matrix_lr(
     lr_weights: list[float],
 ) -> list[float]:
     """BnB Gram matrix for BISR with LR-schedule weighting."""
-    ...
 
 # ---------------------------------------------------------------------------
 # Toeplitz Gram matrix (for BnB with BandMF/BLT strategy coefs)
@@ -842,7 +793,6 @@ def toeplitz_gram_matrix(
     Returns:
         Flattened row-major b x b Gram matrix.
     """
-    ...
 
 def bisr_strategy_coefficients(
     coefficients: list[float],
@@ -860,7 +810,6 @@ def bisr_strategy_coefficients(
     Returns:
         First n entries of column 0.
     """
-    ...
 
 # ---------------------------------------------------------------------------
 # AdaClip utility
@@ -881,4 +830,3 @@ def adaclip_sensitivity(
     Returns:
         Combined sensitivity z̃.
     """
-    ...

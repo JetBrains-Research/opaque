@@ -12,6 +12,7 @@ helpers preprocess log-ratios before a variant.
 
 from opaque.api.alignment.dpo.loss._apo import apo_down_loss, apo_zero_loss
 from opaque.api.alignment.dpo.loss._bco import bco_loss
+from opaque.api.alignment.dpo.loss._chosen_nll import chosen_nll_loss
 from opaque.api.alignment.dpo.loss._discopop import discopop_loss
 from opaque.api.alignment.dpo.loss._exo import exo_loss
 from opaque.api.alignment.dpo.loss._f_divergence import (
@@ -25,34 +26,33 @@ from opaque.api.alignment.dpo.loss._mpo import mpo_combine
 from opaque.api.alignment.dpo.loss._nca import nca_loss
 from opaque.api.alignment.dpo.loss._orpo import odds_ratio_loss
 from opaque.api.alignment.dpo.loss._robust import robust_loss
-from opaque.api.alignment.dpo.loss._chosen_nll import chosen_nll_loss
-from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
+from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sppo import sppo_loss
 from opaque.api.alignment.dpo.loss._squarechipo import squarechipo_loss
 from opaque.api.alignment.dpo.loss._wpo import wpo_weights
 
 __all__ = [
-    # variants
-    "sigmoid_loss",
-    "hinge_loss",
-    "robust_loss",
-    "ipo_loss",
-    "simpo_loss",
-    "discopop_loss",
-    "chosen_nll_loss",
-    "squarechipo_loss",
-    "apo_zero_loss",
     "apo_down_loss",
-    "exo_loss",
-    "nca_loss",
+    "apo_zero_loss",
     "bco_loss",
-    "sppo_loss",
-    "odds_ratio_loss",
+    "chosen_nll_loss",
+    "discopop_loss",
+    "exo_loss",
+    "f_divergence_logits",
     # helpers
     "f_divergence_remap",
-    "f_divergence_logits",
-    "mpo_combine",
-    "wpo_weights",
+    "hinge_loss",
+    "ipo_loss",
     "ld_dpo_split",
+    "mpo_combine",
+    "nca_loss",
+    "odds_ratio_loss",
+    "robust_loss",
+    # variants
+    "sigmoid_loss",
+    "simpo_loss",
+    "sppo_loss",
+    "squarechipo_loss",
+    "wpo_weights",
 ]

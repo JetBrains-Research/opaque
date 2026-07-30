@@ -56,6 +56,7 @@ class TestEndToEndCalibration:
 
     def test_band_mf_poisson(self):
         import math
+
         import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import band_mf_strategy
 
@@ -66,10 +67,12 @@ class TestEndToEndCalibration:
             n_steps=20,
         )
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_blt_standalone(self):
         import math
+
         import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import blt_strategy
 
@@ -77,7 +80,8 @@ class TestEndToEndCalibration:
         eps = ftrl_acc.mf_gaussian(
             1.0, s, n_steps=10, min_sep=10, max_participations=1
         ).epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestLazyImport:

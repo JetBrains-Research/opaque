@@ -24,8 +24,8 @@ import sys
 import tempfile
 
 import torch
-import torch.nn as nn
 import torch.distributed as dist
+import torch.nn as nn
 from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
@@ -460,7 +460,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as exc:  # noqa: BLE001 — propagate via exit code + stderr
+    except Exception as exc:
         import traceback
 
         print(

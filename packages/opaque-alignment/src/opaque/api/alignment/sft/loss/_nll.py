@@ -31,7 +31,7 @@ import torch
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
-__all__ = ["nll_loss", "fused_nll_loss"]
+__all__ = ["fused_nll_loss", "nll_loss"]
 
 
 def nll_loss(

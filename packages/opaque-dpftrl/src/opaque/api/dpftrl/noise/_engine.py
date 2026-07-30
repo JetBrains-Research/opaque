@@ -23,11 +23,11 @@ from typing import Any
 
 import torch
 
-from opaque.types import NoiseState, PerGroup
+from opaque.pytree import tree_map
+from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
-from opaque.random import fold_in as rng_fold_in
-from opaque.pytree import tree_map
+from opaque.types import NoiseState, PerGroup
 
 from . import _streaming_matrix as streaming_matrix
 

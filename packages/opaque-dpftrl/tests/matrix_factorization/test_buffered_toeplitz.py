@@ -439,7 +439,7 @@ class TestOptimizeLoss:
         init_blt = get_init_blt(num_buffers=1)
         init_loss = float(loss(loss_fn, init_blt))
 
-        opt_blt, opt_loss = optimize_loss(
+        _opt_blt, opt_loss = optimize_loss(
             loss_fn, num_buffers=1, max_optimizer_steps=50
         )
         # Allow tiny floating-point tolerance

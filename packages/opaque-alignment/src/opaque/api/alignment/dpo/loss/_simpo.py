@@ -17,7 +17,7 @@ formed from the policy log-prob alone (no reference subtraction).
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
 __all__ = ["simpo_loss"]
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from dpsgd_ddp_helpers import (
     _spawn,
     _worker_adaptive_clipping,
@@ -12,7 +11,6 @@ from dpsgd_ddp_helpers import (
     _worker_sync_adaptive_clip_state,
     _worker_sync_aux_adaptive_clipping,
 )
-
 
 pytestmark = pytest.mark.cuda
 

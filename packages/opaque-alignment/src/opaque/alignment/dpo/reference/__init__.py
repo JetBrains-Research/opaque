@@ -28,7 +28,7 @@ from opaque.api.alignment.dpo.reference import (
 
 __all__ = [
     "compute_ref_logprobs_for_dataset",
+    "ema_update_reference",
     "null_ref_context",
     "with_disabled_adapter",
-    "ema_update_reference",
 ]

@@ -28,15 +28,15 @@ from opaque.api.base.serialization._types import (
 )
 
 __all__ = [
-    # Dispatcher
-    "state_dict",
-    "from_state_dict",
-    # Registry
-    "register_serializer",
-    "lookup_serializer",
+    "FromStateDictFn",
+    "SerializedState",
     # Contract types
     "Serializer",
-    "SerializedState",
     "StateDictFn",
-    "FromStateDictFn",
+    "from_state_dict",
+    "lookup_serializer",
+    # Registry
+    "register_serializer",
+    # Dispatcher
+    "state_dict",
 ]

@@ -22,7 +22,11 @@ from scipy.linalg import toeplitz as scipy_toeplitz
 
 from . import (
     _checks as checks,
+)
+from . import (
     _sensitivity as sensitivity,
+)
+from . import (
     _streaming_matrix as streaming_matrix,
 )
 
@@ -31,7 +35,7 @@ from . import (
 # ---------------------------------------------------------------------------
 
 _ParamT = TypeVar("_ParamT")
-_CallbackFnType: TypeAlias = Callable[["_OptimCallbackArgs"], None | bool]
+_CallbackFnType: TypeAlias = Callable[["_OptimCallbackArgs"], bool | None]
 
 
 @dataclasses.dataclass
@@ -127,15 +131,15 @@ def _lbfgs_optimize(
 # ---------------------------------------------------------------------------
 
 __all__ = [
-    "optimize",
     "inverse_as_streaming_matrix",
     "materialize_lower_triangular",
-    "sensitivity_squared",
-    "minsep_sensitivity_squared",
-    "per_query_error",
     "max_error",
     "mean_error",
+    "minsep_sensitivity_squared",
     "optimal_max_error_strategy_coefs",
+    "optimize",
+    "per_query_error",
+    "sensitivity_squared",
 ]
 
 
@@ -308,12 +312,11 @@ def multiply(
     Returns:
         Coefficients of the product matrix.
     """
-    if not skip_checks:
-        if n is None and len(lhs_coef) != len(rhs_coef):
-            raise ValueError(
-                "If n is not specified, lhs_coef and rhs_coef must have "
-                f"the same length, found {len(lhs_coef)} and {len(rhs_coef)}."
-            )
+    if not skip_checks and n is None and len(lhs_coef) != len(rhs_coef):
+        raise ValueError(
+            "If n is not specified, lhs_coef and rhs_coef must have "
+            f"the same length, found {len(lhs_coef)} and {len(rhs_coef)}."
+        )
     lhs_coef, n = _reconcile(lhs_coef, n)
     rhs_coef, _ = _reconcile(rhs_coef, n)
 

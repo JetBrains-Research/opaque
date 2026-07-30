@@ -61,8 +61,8 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.types import TensorPytree
 from opaque.pytree import tree_map
+from opaque.types import TensorPytree
 
 
 @dataclasses.dataclass(frozen=True)
@@ -193,4 +193,4 @@ def schedule_free(
     return GradientTransformation(init_fn, update_fn)
 
 
-__all__ = ["schedule_free", "ScheduleFreeState"]
+__all__ = ["ScheduleFreeState", "schedule_free"]

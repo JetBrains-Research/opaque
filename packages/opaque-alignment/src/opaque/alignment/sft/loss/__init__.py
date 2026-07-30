@@ -11,4 +11,4 @@ from opaque.api.alignment.sft.loss import (
     nll_loss,
 )
 
-__all__ = ["nll_loss", "dft_loss", "fused_nll_loss", "fused_dft_loss"]
+__all__ = ["dft_loss", "fused_dft_loss", "fused_nll_loss", "nll_loss"]

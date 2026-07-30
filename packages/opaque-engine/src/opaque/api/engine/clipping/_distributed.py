@@ -19,15 +19,14 @@ from opaque.api.engine.distributed._state import (
     register_sync_type,
 )
 
-from ._clipped_fun import ClippedFunAux
+from ._clipped_fun import ClippedFunAux, FixedClipState
 from ._clipped_grad import ClippedGradAux
-from ._clipped_fun import FixedClipState
 
 __all__ = [
+    "sync_aux",
     "sync_clip_state",
     "sync_clipped_fun_aux",
     "sync_clipped_grad_aux",
-    "sync_aux",
 ]
 
 

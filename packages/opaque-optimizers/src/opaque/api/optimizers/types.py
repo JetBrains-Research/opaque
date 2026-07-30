@@ -19,11 +19,11 @@ from opaque.api.optimizers._rmsprop import RMSpropState
 from opaque.api.optimizers._schedule_free import ScheduleFreeState
 
 __all__ = [
-    "AdamState",
+    "AdEMAMixState",
     "AdadeltaState",
     "AdafactorState",
     "AdagradState",
-    "AdEMAMixState",
+    "AdamState",
     "LionState",
     "RAdamState",
     "RMSpropState",

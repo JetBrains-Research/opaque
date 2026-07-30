@@ -13,15 +13,15 @@ import math
 import pytest
 import torch
 
+from opaque.api.engine.noise_allocation import paired_noise_stddevs
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.random import key
 from opaque.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
     clipped,
 )
-from opaque.api.engine.noise_allocation import paired_noise_stddevs
-from opaque.dpsgd.noise import gaussian_noise
-from opaque.random import key
 
 
 def _paired_input(

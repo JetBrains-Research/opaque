@@ -23,15 +23,15 @@ from opaque.api.engine.scheduling._with_restarts import WithRestarts
 from opaque.api.engine.scheduling._with_warmup import WithWarmup
 
 __all__ = [
-    "Schedule",
     "ConstantSchedule",
-    "LinearSchedule",
-    "PolynomialSchedule",
-    "ExponentialSchedule",
     "CosineSchedule",
+    "ExponentialSchedule",
     "InverseSqrtSchedule",
+    "LinearSchedule",
     "OneMinusSqrtSchedule",
-    "WithWarmup",
-    "WithRestarts",
+    "PolynomialSchedule",
+    "Schedule",
     "WarmupStableDecay",
+    "WithRestarts",
+    "WithWarmup",
 ]

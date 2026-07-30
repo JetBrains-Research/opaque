@@ -9,15 +9,16 @@
 
 import math
 
+import torch
 import triton
 import triton.language as tl
-import torch
+
 from ._utils import (
+    INT32_SAFETY_BUFFER,
     ensure_cuda_tensors,
     follow_autocast,
-    triton_tanh,
     torch_gpu_device,
-    INT32_SAFETY_BUFFER,
+    triton_tanh,
 )
 
 BLOCK_SIZE = 1024

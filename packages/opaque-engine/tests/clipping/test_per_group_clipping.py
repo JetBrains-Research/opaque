@@ -3,13 +3,11 @@
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping._pytree import clip_pytree
 from opaque.api.engine.clipping.types import FixedClipState
-from opaque.types import PerGroup
-from opaque.api.engine.clipping._per_group import per_group
+from opaque.types import ClippedPytree, PerGroup
 
 
 def _unwrap_clipped(value):
@@ -36,7 +34,7 @@ class TestClipPytreePerGroup:
             groups={"attn.q": "attn", "attn.k": "attn", "mlp.w": "mlp"},
             values={"attn": 10.0, "mlp": 10.0},  # Large bounds
         )
-        clipped, aux = clip_pytree(pytree, pg)
+        clipped, _aux = clip_pytree(pytree, pg)
         for key in pytree:
             torch.testing.assert_close(clipped[key], pytree[key])
 
@@ -53,7 +51,7 @@ class TestClipPytreePerGroup:
             groups={"attn.q": "attn", "attn.k": "attn", "mlp.w": "mlp"},
             values={"attn": 1.0, "mlp": 6.0},
         )
-        clipped, aux = clip_pytree(pytree, pg)
+        clipped, _aux = clip_pytree(pytree, pg)
 
         # attn group clipped: scale = 1/5
         torch.testing.assert_close(clipped["attn.q"], torch.tensor([0.6]))
@@ -158,7 +156,8 @@ class TestClippedGradPerGroup:
         grads = _unwrap_clipped(grads)
 
         assert isinstance(grads, dict)
-        assert "w1" in grads and "w2" in grads
+        assert "w1" in grads
+        assert "w2" in grads
 
     def test_output_bound_preserves_per_group_metadata(self):
         """The clipped output carries per-group max_norm metadata after normalization."""

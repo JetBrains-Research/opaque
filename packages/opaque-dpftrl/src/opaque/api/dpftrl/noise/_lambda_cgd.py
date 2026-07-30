@@ -29,10 +29,10 @@ import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.pytree import tree_map
-from opaque.types import PerGroup
+from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
 from opaque.random.types import RngKey
-from opaque.random import fold_in as rng_fold_in
+from opaque.types import PerGroup
 
 from ._engine import MFNoiseState, _iid_normal_noise
 from ._streaming_matrix import StreamingMatrix

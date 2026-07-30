@@ -183,7 +183,8 @@ class TestPerStepErrors:
         # built from them merge under the ``__or__`` rule (procs match).
         proc_a = self._proc(nm=1.0)
         proc_b = self._proc(nm=1.0)
-        assert proc_a == proc_b and proc_a is not proc_b
+        assert proc_a == proc_b
+        assert proc_a is not proc_b
         step_a = ftrl_acc.per_step(proc_a)
         step_b = ftrl_acc.per_step(proc_b)
         result = step_a | step_b
@@ -259,7 +260,8 @@ def _seed_mc():
 class TestPerStepCrossAmp:
     """``PerStep`` and ``Repeated(PerStep, K)`` work for every supported amp."""
 
-    def test_repeated_at_full_horizon_matches_proc(self, amp: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_repeated_at_full_horizon_matches_proc(self, amp: str):
         factory, _ = _AMPLIFICATIONS[amp]
         proc = factory()
         step = ftrl_acc.per_step(proc)
@@ -268,7 +270,8 @@ class TestPerStepCrossAmp:
         e_full_direct = proc.epsilon_at(_DELTA)
         assert math.isclose(e_full_via_step, e_full_direct, rel_tol=1e-9)
 
-    def test_repeated_at_intermediate_matches_pld_at_horizon(self, amp: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_repeated_at_intermediate_matches_pld_at_horizon(self, amp: str):
         factory, _ = _AMPLIFICATIONS[amp]
         proc = factory()
         K = max(1, proc.n_steps // 2)

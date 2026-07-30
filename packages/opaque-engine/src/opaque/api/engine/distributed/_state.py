@@ -14,6 +14,7 @@ sync function: each subsystem registers its types on import.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping
 from dataclasses import fields, is_dataclass
 from typing import Any
@@ -247,12 +248,10 @@ def _ensure_builtin_sync_types_loaded() -> None:
     façade would require an extra side-effect import there, so we target
     the impl module directly.
     """
-    import opaque.api.engine.clipping._distributed  # noqa: F401
+    import opaque.api.engine.clipping._distributed
 
-    try:
+    with contextlib.suppress(ImportError):
         import opaque.api.engine.profiling._distributed  # noqa: F401
-    except ImportError:
-        pass
 
 
 def sync(*states: Any) -> Any:
@@ -290,7 +289,7 @@ __all__ = [
     "gather_pytree",
     "gather_tensors",
     "reduce_scalar",
-    "sync_object",
     "register_sync_type",
     "sync",
+    "sync_object",
 ]

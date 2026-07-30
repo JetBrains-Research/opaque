@@ -476,7 +476,7 @@ class _RMSNormBackward(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        del ctx  # noqa: ARG001
+        del ctx
 
     @staticmethod
     def backward(ctx, *grad_outputs):
@@ -556,7 +556,7 @@ class Opaque_RMSNorm(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, W, eps, offset, casting_mode, in_place, row_mode = inputs
+        X, W, eps, offset, casting_mode, in_place, _row_mode = inputs
         cm = _casting_mode_int(casting_mode)
         orig_shape = X.shape
         X_saved = X.detach().clone().contiguous()

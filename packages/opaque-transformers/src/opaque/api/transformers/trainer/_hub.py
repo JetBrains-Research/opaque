@@ -32,10 +32,10 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dataclasses import dataclass, field
 from transformers.modelcard import TrainingSummary
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ def _create_repo(repo_name: str, *, token: str | None, private: bool | None) -> 
 # ---------------------------------------------------------------------------
 
 
-def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
+def init_hf_repo(trainer: DPTrainer, token: str | None = None) -> None:
     """Create (or validate) the Hub repo and set ``trainer.hub_model_id``.
 
     Mirrors ``Trainer.init_hf_repo``.  Only runs on process-zero.
@@ -107,7 +107,7 @@ def init_hf_repo(trainer: "DPTrainer", token: str | None = None) -> None:
 
 
 def push_to_hub(
-    trainer: "DPTrainer",
+    trainer: DPTrainer,
     commit_message: str | None = "End of training",
     blocking: bool = True,
     token: str | None = None,
@@ -229,9 +229,9 @@ class DPTrainingSummary(TrainingSummary):
     @classmethod
     def from_trainer(
         cls,
-        trainer: "DPTrainer",
+        trainer: DPTrainer,
         language: str | None = None,
-        license: str | None = None,  # noqa: A002
+        license: str | None = None,
         tags: str | list[str] | None = None,
         model_name: str | None = None,
         finetuned_from: str | None = None,
@@ -240,7 +240,7 @@ class DPTrainingSummary(TrainingSummary):
         dataset_metadata: dict[str, Any] | None = None,
         dataset: str | list[str] | None = None,
         dataset_args: str | list[str] | None = None,
-    ) -> "DPTrainingSummary":
+    ) -> DPTrainingSummary:
         summary = super().from_trainer(
             trainer,
             language=language,
@@ -265,9 +265,9 @@ class DPTrainingSummary(TrainingSummary):
 
 
 def create_model_card(
-    trainer: "DPTrainer",
+    trainer: DPTrainer,
     language: str | None = None,
-    license: str | None = None,  # noqa: A002
+    license: str | None = None,
     tags: str | list[str] | None = None,
     model_name: str | None = None,
     finetuned_from: str | None = None,
@@ -303,7 +303,7 @@ def create_model_card(
     if tags is None:
         tags = opaque_tags
     elif isinstance(tags, str):
-        tags = [tags] + opaque_tags
+        tags = [tags, *opaque_tags]
     else:
         for t in opaque_tags:
             if t not in tags:
@@ -334,7 +334,7 @@ def create_model_card(
     log.info("Model card written to %s", output_path)
 
 
-def _build_privacy_summary(trainer: "DPTrainer") -> dict[str, float | str]:
+def _build_privacy_summary(trainer: DPTrainer) -> dict[str, float | str]:
     """Extract structured privacy values for model-card rendering."""
     a = trainer.args
 

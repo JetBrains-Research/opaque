@@ -43,6 +43,6 @@ def lookup_serializer(
 
 
 __all__ = [
-    "register_serializer",
     "lookup_serializer",
+    "register_serializer",
 ]

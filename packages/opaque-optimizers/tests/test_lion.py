@@ -7,10 +7,12 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import clipped  # noqa: E402
-from opaque.types import noised  # noqa: E402
-from opaque.optimizers import lion  # noqa: E402
-from opaque.optimizers.types import LionState  # noqa: E402
+from opaque.optimizers import lion
+from opaque.optimizers.types import LionState
+from opaque.types import (
+    clipped,
+    noised,
+)
 
 
 @pytest.fixture
@@ -32,7 +34,8 @@ def _lion_state(chain_state) -> LionState:
 class TestLion:
     def test_returns_gradient_transformation(self):
         opt = lion(lr=1e-4)
-        assert hasattr(opt, "init") and hasattr(opt, "update")
+        assert hasattr(opt, "init")
+        assert hasattr(opt, "update")
 
     def test_state_has_only_m(self, params):
         opt = lion(lr=1e-4)

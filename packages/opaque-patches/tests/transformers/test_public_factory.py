@@ -18,6 +18,7 @@ import pytest
 
 pytest.importorskip("transformers")
 
+from opaque.api.patches.transformers._registry import _FAMILY_REGISTRY
 from opaque.patches.transformers import (
     family_name,
     make_apply_family_patches,
@@ -28,7 +29,6 @@ from opaque.patches.transformers import (
     register_rms_norm_kind,
     supported_families,
 )
-from opaque.api.patches.transformers._registry import _FAMILY_REGISTRY
 
 
 @pytest.fixture
@@ -298,7 +298,7 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
 
     # ``performance=True`` alone installs only the loss_function kernel —
     # the fused-linear-CE forward stays untouched.
-    _, FakeA, original_loss, apply_a = _fresh_module("a")
+    _, FakeA, _original_loss, apply_a = _fresh_module("a")
     instance_a = FakeA()
     apply_a(instance_a, performance=True, compat=False)
     assert instance_a.loss_function is _opaque_causal_lm_loss
@@ -353,10 +353,10 @@ def test_family_name_returns_none_for_non_hf_object():
 def test_family_factory_default_replacements_are_opaque_vmap_safe():
     """Default closures bind opaque's vmap-safe implementations."""
     from opaque.api.patches.transformers._family import (
+        _opaque_apply_rotary_pos_emb,
         apply_module_masking_patch,
         vmap_eager_attention_forward,
         vmap_repeat_kv,
-        _opaque_apply_rotary_pos_emb,
     )
 
     apply = make_apply_family_patches(
@@ -466,7 +466,8 @@ def test_family_factory_tracks_idempotency_per_enabled_concern(monkeypatch):
 # ----------------------------------------------------------------------------
 
 
-def test_register_family_makes_it_visible_in_supported_families(_restore_registry):
+@pytest.mark.usefixtures("_restore_registry")
+def test_register_family_makes_it_visible_in_supported_families():
     name = "public_api_test_router_visibility"
     fam = make_apply_family_patches(family=name, module_path="some.fake.module")
     apply = make_apply_model_patches(
@@ -480,7 +481,8 @@ def test_register_family_makes_it_visible_in_supported_families(_restore_registr
     assert name in supported_families()
 
 
-def test_register_family_routes_via_apply_transformers_model_patches(_restore_registry):
+@pytest.mark.usefixtures("_restore_registry")
+def test_register_family_routes_via_apply_transformers_model_patches():
     """``apply_transformers_model_patches`` (the dispatcher used by
     :func:`opaque.patches.apply_model_patches`) consults the registry,
     so user-registered families are reached without any source-code

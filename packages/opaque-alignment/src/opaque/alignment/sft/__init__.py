@@ -11,4 +11,4 @@ sub-concern subpackages, reached directly (e.g. ``sft.loss.nll_loss``,
 
 from opaque.alignment.sft import collator, loss
 
-__all__ = ["loss", "collator"]
+__all__ = ["collator", "loss"]

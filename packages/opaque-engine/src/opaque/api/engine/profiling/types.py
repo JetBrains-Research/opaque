@@ -13,4 +13,4 @@ from opaque.api.engine.profiling._memory import (
     StepPerf,
 )
 
-__all__ = ["StepPerf", "PerfStage", "PerfTracker", "PerfState", "MemoryStats"]
+__all__ = ["MemoryStats", "PerfStage", "PerfState", "PerfTracker", "StepPerf"]

@@ -32,12 +32,12 @@ from typing import Any
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.random.types import RngKey
 from opaque.api.dpftrl.sampling._partitions import (
     PartitionType,
     _equal_split_partition,
     _independent_partition,
 )
+from opaque.random.types import RngKey
 
 
 class CyclicPoissonSampler(Sampler):

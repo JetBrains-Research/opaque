@@ -23,11 +23,10 @@ Use :func:`opaque.distributed.sync` to synchronize clipping state or aux
 objects across ranks.
 """
 
+import opaque.api.engine.clipping._distributed  # noqa: F401  (registers sync handlers)
 from opaque.api.engine.clipping._auto import auto_clipped_grad
 from opaque.api.engine.clipping._clipped_grad import clipped_grad
 from opaque.api.engine.clipping._per_group import per_group
-
-import opaque.api.engine.clipping._distributed  # noqa: F401  (registers sync handlers)
 
 __all__ = [
     "auto_clipped_grad",

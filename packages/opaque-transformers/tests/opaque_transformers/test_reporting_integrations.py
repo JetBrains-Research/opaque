@@ -48,24 +48,24 @@ def _dataset() -> list[dict[str, torch.Tensor]]:
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        use_cpu=True,
-        per_device_train_batch_size=7,
-        per_device_eval_batch_size=7,
-        max_steps=1,
-        num_train_epochs=1,
-        learning_rate=1e-3,
-        eval_strategy="no",
-        logging_strategy="steps",
-        logging_steps=1,
-        save_strategy="steps",
-        save_steps=1,
-        clipping_norm=1.0,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        remove_unused_columns=True,
-    )
+    defaults = {
+        "output_dir": str(tmp_path),
+        "use_cpu": True,
+        "per_device_train_batch_size": 7,
+        "per_device_eval_batch_size": 7,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "learning_rate": 1e-3,
+        "eval_strategy": "no",
+        "logging_strategy": "steps",
+        "logging_steps": 1,
+        "save_strategy": "steps",
+        "save_steps": 1,
+        "clipping_norm": 1.0,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "remove_unused_columns": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 

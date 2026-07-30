@@ -20,8 +20,8 @@ from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.random import fold_in as rng_fold_in
 from opaque.random.types import RngKey
 from opaque.types import (
-    NoiseState,
     NoisedPytree,
+    NoiseState,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
@@ -50,8 +50,8 @@ class SecondMomentMFNoiseState(NoiseState):
 
 def make_second_moment_mf_noise(
     grad_template: Any,
-    first_strategy: "MfStrategy",
-    second_strategy: "MfStrategy",
+    first_strategy: MfStrategy,
+    second_strategy: MfStrategy,
     *,
     n_steps: int,
     min_sep: int,

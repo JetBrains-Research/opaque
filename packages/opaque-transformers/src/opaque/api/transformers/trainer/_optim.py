@@ -297,8 +297,8 @@ def validate_functional_optimizer_cls_and_kwargs(
 
 __all__ = [
     "build_optimizer",
-    "resolve_optimizer_name",
     "canonical_optimizer_names",
+    "resolve_optimizer_name",
     "supported_names",
     "validate_functional_optimizer_cls_and_kwargs",
 ]

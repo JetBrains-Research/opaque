@@ -15,7 +15,7 @@
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.func import vmap, grad
+from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
@@ -93,7 +93,7 @@ def test_backward_matches_reference(assert_precision):
 
 def test_vmap_forward(assert_precision):
     B = 4
-    x, gate_up, down, ti, tw = _inputs()
+    _x, gate_up, down, ti, tw = _inputs()
     xb = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
     tib = ti.unsqueeze(0).expand(B, -1, -1).contiguous()
     twb = tw.unsqueeze(0).expand(B, -1, -1).contiguous()
@@ -107,7 +107,7 @@ def test_vmap_forward(assert_precision):
 def test_vmap_grad_per_example(assert_precision):
     """Per-example gradients (DP-SGD path) match a loop reference and are distinct."""
     B = 4
-    x, gate_up, down, ti, tw = _inputs()
+    _x, gate_up, down, ti, tw = _inputs()
     xb = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
     tib = ti.unsqueeze(0).expand(B, -1, -1).contiguous()
     twb = tw.unsqueeze(0).expand(B, -1, -1).contiguous()

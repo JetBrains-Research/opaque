@@ -42,15 +42,14 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.types import PerGroup, TensorPytree
-from opaque.pytree import tree_map
 from opaque.api.optimizers._bias_correction import (
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
 )
 from opaque.api.optimizers._chain import make_optimizer_chain
-
+from opaque.pytree import tree_map
+from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
 
@@ -88,8 +87,8 @@ def _scale_by_rmsprop(
         updates: Any,
         state: RMSpropState,
         *,
-        params: Any = None,  # noqa: ARG001
-        inplace: bool = False,  # noqa: ARG001
+        params: Any = None,
+        inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, RMSpropState]:
@@ -247,4 +246,4 @@ def rmsprop(
     )
 
 
-__all__ = ["rmsprop", "RMSpropState"]
+__all__ = ["RMSpropState", "rmsprop"]

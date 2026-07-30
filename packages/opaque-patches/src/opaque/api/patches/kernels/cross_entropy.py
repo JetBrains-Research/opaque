@@ -7,9 +7,10 @@
 # repository root.
 """Cross-entropy loss kernel with vmap support for DP-SGD."""
 
+import torch
 import triton
 import triton.language as tl
-import torch
+
 from ._utils import (
     MAX_FUSED_SIZE,
     calculate_settings,
@@ -505,7 +506,7 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         logits, labels, logit_softcapping, logit_scaling, label_smoothing = inputs
-        losses, logsumexp = output
+        _losses, logsumexp = output
         ctx.save_for_backward(logits, logsumexp, labels)
         ctx.vocab_size = logits.shape[-1]
         ctx.original_shape = logits.shape[:-1]

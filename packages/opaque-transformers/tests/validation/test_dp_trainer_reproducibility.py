@@ -27,8 +27,7 @@ from opaque.transformers.trainer import DPTrainer, TrainingArguments
 # ``_hf_shared`` is in the parent of ``validation/``; mirror the import
 # convention used by the sibling tests.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model  # noqa: E402
-
+from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -78,21 +77,21 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
     bit-identical parameters.  Enabling DP noise (σ>0) would require
     tolerance-based comparison.
     """
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        max_steps=3,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_strategy="no",
-        eval_strategy="no",
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "max_steps": 3,
+        "num_train_epochs": 1,
+        "logging_steps": 1,
+        "save_strategy": "no",
+        "eval_strategy": "no",
         # NM=0.0 = non-private; target_eps is meaningless on this path.
-        privacy_noise_multiplier=0.0,
-        clipping_norm=1.0,
-        learning_rate=1e-3,
-        seed=42,
-        use_cpu=True,
-    )
+        "privacy_noise_multiplier": 0.0,
+        "clipping_norm": 1.0,
+        "learning_rate": 1e-3,
+        "seed": 42,
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 

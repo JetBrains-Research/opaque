@@ -118,5 +118,5 @@ class TestStreamingMatrixFactorizationNoise:
     def test_returns_mf_noise_state(self):
         """_matrix_factorization_noise returns MFNoiseState."""
         grad = torch.zeros(10)
-        noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
+        _noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
         assert isinstance(state, MFNoiseState)

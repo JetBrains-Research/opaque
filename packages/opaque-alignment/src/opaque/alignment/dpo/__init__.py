@@ -15,4 +15,4 @@ sub-concern subpackages, reached directly (e.g. ``dpo.loss.sigmoid_loss``,
 
 from opaque.alignment.dpo import collator, data, loss, metric, reference
 
-__all__ = ["loss", "collator", "reference", "metric", "data"]
+__all__ = ["collator", "data", "loss", "metric", "reference"]

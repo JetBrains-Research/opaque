@@ -109,7 +109,7 @@ def _restore_adapters(model: Any, saved: list[str] | str | None) -> None:
 def null_ref_context(
     model: Any,
     ref_model: Any | None = None,
-) -> "Generator[None, None, None]":
+) -> Generator[None, None, None]:
     """Context manager that turns *model* into its own reference inside the block.
 
     Dispatches per the ref-model design table:
@@ -178,7 +178,7 @@ def null_ref_context(
 
 
 @contextmanager
-def with_disabled_adapter(model: Any) -> "Generator[None, None, None]":
+def with_disabled_adapter(model: Any) -> Generator[None, None, None]:
     """Thin context manager that disables adapters on *model* for the block.
 
     When *model* is a PEFT model, enters ``model.disable_adapter()`` so the

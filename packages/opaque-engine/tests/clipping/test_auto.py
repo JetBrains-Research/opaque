@@ -5,12 +5,10 @@ import math
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.api.engine.clipping.fun import auto_clipped_fun, auto_scale_pytree
 from opaque.api.engine.clipping.types import AutoClippedGradAux, AutoClipState
-from opaque.types import PerGroup
+from opaque.types import ClippedPytree, PerGroup
 
 
 def _unwrap_clipped(value):
@@ -229,7 +227,7 @@ class TestAutoClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
+        (_grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
         assert isinstance(aux, AutoClippedGradAux)
         assert aux.grad_norms.shape == (8,)
         assert aux.clipped_grad_norms.shape == (8,)
@@ -335,7 +333,7 @@ class TestAutoClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
+        (_grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
         assert aux.loss_aux is not None  # predictions per example
 
 
@@ -384,7 +382,7 @@ class TestAutoClippedGradPerGroup:
         batch_x = torch.randn(6, 10)
         batch_y = torch.randn(6)
 
-        (grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
+        (_grads, aux), _ = grad_fn(params, batch_x, batch_y, state=state)
         assert aux.group_norms is not None
         assert set(aux.group_norms.keys()) == {"weights", "biases"}
 

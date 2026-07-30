@@ -43,7 +43,8 @@ class TestPoissonDataclass:
     def test_pld_returns_valid(self):
         pld = Poisson(Gaussian(0.8), 0.01).pld()
         eps = pld.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestPoissonTruncatedDataclass:
@@ -62,7 +63,8 @@ class TestPoissonTruncatedDataclass:
             Gaussian(0.8), 0.01, truncated_batch_size=128, dataset_size=10_000
         ).pld()
         eps = pld.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestParallelPoissonDataclass:
@@ -85,7 +87,8 @@ class TestParallelPoissonDataclass:
     def test_pld_returns_valid(self):
         pld = ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4).pld()
         eps = pld.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 # ── Constructor function tests ───────────────────────────────────────
@@ -104,7 +107,7 @@ class TestPoissonConstructor:
         assert p.dataset_size is None
 
     def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian|AdaClip"):
+        with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
             dpsgd_acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
 
     def test_accepts_adaclip(self):
@@ -112,7 +115,8 @@ class TestPoissonConstructor:
             dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000), 0.01
         )
         eps = step.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_propagates_config(self):
         """Config is now query-time, so this test verifies pld() accepts discretization."""
@@ -122,8 +126,10 @@ class TestPoissonConstructor:
         pld2 = p.pld(discretization=1e-4)
         eps1 = pld1.epsilon_at(1e-5)
         eps2 = pld2.epsilon_at(1e-5)
-        assert math.isfinite(eps1) and eps1 > 0
-        assert math.isfinite(eps2) and eps2 > 0
+        assert math.isfinite(eps1)
+        assert eps1 > 0
+        assert math.isfinite(eps2)
+        assert eps2 > 0
 
 
 class TestPoissonTruncatedConstructor:
@@ -141,7 +147,7 @@ class TestPoissonTruncatedConstructor:
         assert t.dataset_size == 10_000
 
     def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian|AdaClip"):
+        with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
             dpsgd_acc.poisson(
                 acc.eps_delta(1.0),
                 0.01,
@@ -157,7 +163,8 @@ class TestPoissonTruncatedConstructor:
             dataset_size=10_000,
         )
         eps = step.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_requires_both_truncation_args(self):
         with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):

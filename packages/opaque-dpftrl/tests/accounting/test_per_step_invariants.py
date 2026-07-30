@@ -20,6 +20,7 @@ worker.
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable
 
@@ -189,7 +190,7 @@ class TestCyclicPoissonBand:
     def test_monotonic_across_bands(self):
         proc = self._proc(n_steps=100, bands=8)
         eps_seq = [_eps_at(proc, k, _DELTA) for k in range(8, 101, 8)]
-        for a, b in zip(eps_seq, eps_seq[1:]):
+        for a, b in itertools.pairwise(eps_seq):
             assert b >= a - 1e-10
 
 
@@ -210,14 +211,16 @@ class TestBMinSep:
         assert _atomic_unit(self._proc(bands=4)) == 4
         assert _atomic_unit(self._proc(bands=8)) == 8
 
-    def test_endpoints(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_endpoints(self):
         proc = self._proc(n_steps=32)
         assert _eps_at(proc, 0, _DELTA) == 0.0
         e_full = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         e_via_step = _eps_at(proc, 32, _DELTA)
         assert math.isclose(e_full, e_via_step, rel_tol=1e-9)
 
-    def test_trend_increases(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_trend_increases(self):
         """Aggregate ε increases between K=bands and K=N."""
         proc = self._proc(n_steps=32, bands=4)
         e_full = _eps_at(proc, 32, _DELTA)
@@ -244,14 +247,16 @@ class TestBallsInBinsIdentity:
         assert _atomic_unit(self._proc(num_bins=10)) == 10
         assert _atomic_unit(self._proc(num_bins=4)) == 4
 
-    def test_endpoints(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_endpoints(self):
         proc = self._proc(num_bins=10, num_epochs=10)
         assert _eps_at(proc, 0, _DELTA) == 0.0
         e_full = _eps_at(proc, 100, _DELTA)
         e_direct = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         assert math.isclose(e_full, e_direct, rel_tol=1e-9)
 
-    def test_monotonic(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_monotonic(self):
         proc = self._proc(num_bins=10, num_epochs=10)
         e_full = _eps_at(proc, 100, _DELTA)
         prev = 0.0
@@ -359,7 +364,7 @@ def _pair_id(pair: tuple[str, str]) -> str:
 _SUPPORTED_IDS = [_pair_id(p) for p in _SUPPORTED_PAIRS]
 
 
-@pytest.mark.parametrize("amp,mech", _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
+@pytest.mark.parametrize(("amp", "mech"), _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
 class TestKPrefixInvariants:
     """For every supported (amp, inner) pair, ``per_step(proc) * K`` satisfies
     the documented contract: endpoint identities, monotone non-decreasing,
@@ -373,27 +378,32 @@ class TestKPrefixInvariants:
     — MC kwargs cannot be threaded through ``(step * K).epsilon_at(δ)``.
     """
 
-    def test_inherits_dp_ftrl_process(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_inherits_dp_ftrl_process(self, amp: str, mech: str):
         proc = _build(amp, mech)
         assert isinstance(proc, DpFtrlProcess)
 
-    def test_step_zero_is_identity_eps(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_step_zero_is_identity_eps(self, amp: str, mech: str):
         proc = _build(amp, mech)
         assert _eps_via_step(proc, 0, _DELTA) == 0.0
 
-    def test_full_horizon_matches_proc(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_full_horizon_matches_proc(self, amp: str, mech: str):
         proc = _build(amp, mech)
         e_full_via_step = _eps_via_step(proc, proc.n_steps, _DELTA)
         e_full = _eps_full(proc, _DELTA)
         assert math.isclose(e_full_via_step, e_full, rel_tol=1e-9)
 
-    def test_overshoot_step_raises(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_overshoot_step_raises(self, amp: str, mech: str):
         proc = _build(amp, mech)
         step = ftrl_acc.per_step(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
-    def test_bounded_by_full(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_bounded_by_full(self, amp: str, mech: str):
         proc = _build(amp, mech)
         e_full = _eps_full(proc, _DELTA)
         # MC paths have transcript noise: 10% slack at the test budget.
@@ -401,13 +411,15 @@ class TestKPrefixInvariants:
         for K in (1, proc.atomic_unit, proc.n_steps // 2, proc.n_steps - 1):
             assert _eps_via_step(proc, K, _DELTA) <= e_full + slack
 
-    def test_trend_increases(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_trend_increases(self, amp: str, mech: str):
         proc = _build(amp, mech)
         e_small = _eps_via_step(proc, proc.atomic_unit, _DELTA)
         e_full = _eps_full(proc, _DELTA)
         assert e_small < e_full
 
-    def test_monotone_at_unit_boundaries(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
         proc = _build(amp, mech)
         n, M = proc.n_steps, proc.atomic_unit
         e_full = _eps_full(proc, _DELTA)
@@ -425,7 +437,8 @@ class TestKPrefixInvariants:
             assert e_K >= prev - slack
             prev = e_K
 
-    def test_sandwich_at_intermediate_K(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
         if _is_mc_proc(_build(amp, mech)):
             pytest.skip("MC path: sandwich holds in expectation only")
         proc = _build(amp, mech)
@@ -437,7 +450,8 @@ class TestKPrefixInvariants:
         e_hi = _eps_via_step(proc, min((G + 1) * M, n), _DELTA)
         assert e_lo - 1e-9 <= e_K <= e_hi + 1e-9
 
-    def test_supports_composition(self, amp: str, mech: str, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_supports_composition(self, amp: str, mech: str):
         proc = _build(amp, mech)
         step = ftrl_acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
@@ -474,7 +488,8 @@ class TestRecipeDrivenGramRegen:
     primitive on the same Gram structure, so ε agrees up to MC variance.
     """
 
-    def test_bsr(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_bsr(self):
         full = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         direct = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
@@ -487,7 +502,8 @@ class TestRecipeDrivenGramRegen:
         )
         assert math.isclose(e_at, e_dir, rel_tol=_REGEN_TOL)
 
-    def test_bisr(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_bisr(self):
         full = bisr_strategy(bandwidth=2)
         direct = bisr_strategy(bandwidth=2)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
@@ -500,7 +516,8 @@ class TestRecipeDrivenGramRegen:
         )
         assert math.isclose(e_at, e_dir, rel_tol=_REGEN_TOL)
 
-    def test_lambda_cgd(self, _seed_mc):
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_lambda_cgd(self):
         full = lambda_cgd_strategy(lambda_=0.5)
         direct = lambda_cgd_strategy(lambda_=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)

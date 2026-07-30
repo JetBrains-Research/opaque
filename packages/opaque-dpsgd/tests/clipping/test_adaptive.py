@@ -5,12 +5,9 @@ import math
 import pytest
 import torch
 
-from opaque.types import ClippedPytree
-
-from opaque.types import NoisedPytree
-
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.random import key
+from opaque.types import ClippedPytree, NoisedPytree
 
 
 def _unwrap_clipped(value):
@@ -262,7 +259,7 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Should return (grads, grad_aux) and new state
-        (grads, grad_aux), clip_state = grad_fn(
+        (grads, _grad_aux), clip_state = grad_fn(
             params, batch_x, batch_y, state=clip_state
         )
         grads = _unwrap_clipped(grads)
@@ -574,7 +571,7 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(
-            ValueError, match="clipping_norm_max.*must be.*clipping_norm_min"
+            ValueError, match=r"clipping_norm_max.*must be.*clipping_norm_min"
         ):
             adaptive_clipped_grad(
                 loss_fn, clipping_norm_min=10.0, clipping_norm_max=5.0, key=key(0)

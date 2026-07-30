@@ -12,7 +12,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-
 _HEADLINE = (
     "gaussian",
     "adaclip",
@@ -55,14 +54,17 @@ class TestEndToEndCalibration:
 
     def test_poisson_gaussian(self):
         import math
+
         import opaque.dpsgd.accounting as dpsgd_acc
 
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 1000
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_truncated_poisson_gaussian(self):
         import math
+
         import opaque.dpsgd.accounting as dpsgd_acc
 
         proc = dpsgd_acc.poisson(
@@ -72,7 +74,8 @@ class TestEndToEndCalibration:
             dataset_size=10_000,
         )
         eps = (proc * 100).epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestLazyImport:

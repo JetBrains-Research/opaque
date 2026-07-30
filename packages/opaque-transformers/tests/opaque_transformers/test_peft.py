@@ -13,8 +13,9 @@ from peft import (
     PromptTuningConfig,
     get_peft_model,
 )
-from opaque.pytree import tree_leaves
 from transformers import AutoModelForCausalLM
+
+from opaque.pytree import tree_leaves
 
 from ._helpers import prepare_lora_model, run_clipped_grad_test
 

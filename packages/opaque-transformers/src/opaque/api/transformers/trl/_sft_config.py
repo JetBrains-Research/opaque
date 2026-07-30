@@ -131,7 +131,7 @@ class SFTConfig(TrainingArguments):
         # Behavior
         strict: bool = True,
         **opaque_overrides: Any,
-    ) -> "SFTConfig":
+    ) -> SFTConfig:
         """Convert a ``trl.SFTConfig`` to an opaque ``SFTConfig``.
 
         Requires the optional ``trl`` extra:

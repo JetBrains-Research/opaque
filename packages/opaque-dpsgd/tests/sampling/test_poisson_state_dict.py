@@ -16,7 +16,7 @@ from torch.utils.data import TensorDataset
 
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
-from opaque.serialization import state_dict, from_state_dict
+from opaque.serialization import from_state_dict, state_dict
 
 
 def _make_sampler(seed: int = 7, n_steps: int = 20) -> PoissonSampler:

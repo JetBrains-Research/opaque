@@ -46,7 +46,7 @@ class MfStrategy(Protocol):
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-    ) -> "torch.Tensor": ...
+    ) -> torch.Tensor: ...
 
     def gram_matrix(
         self,
@@ -62,7 +62,7 @@ class MfStrategy(Protocol):
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-    ) -> "StreamingMatrix": ...
+    ) -> StreamingMatrix: ...
 
     def sensitivity(
         self,
@@ -74,13 +74,13 @@ class MfStrategy(Protocol):
 
 
 __all__ = [
-    "MFNoiseState",
-    "SecondMomentMFNoiseState",
-    "MfStrategy",
     "BandMfStrategy",
     "BisrStrategy",
     "BltStrategy",
     "BsrStrategy",
     "IdentityStrategy",
     "LambdaCgdStrategy",
+    "MFNoiseState",
+    "MfStrategy",
+    "SecondMomentMFNoiseState",
 ]

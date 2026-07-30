@@ -8,8 +8,9 @@ Opaque's per-example :meth:`DPTrainer.compute_per_example_loss` hook.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from operator import attrgetter
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
@@ -334,9 +335,7 @@ class SFTTrainer(DPTrainer):
             return True
         if "prompt" in row and "completion" in row:
             return True
-        if _detect_chat_column(row) is not None:
-            return True
-        return False
+        return _detect_chat_column(row) is not None
 
     # ------------------------------------------------------------------
     # Dataset preparation (TRL-shaped)

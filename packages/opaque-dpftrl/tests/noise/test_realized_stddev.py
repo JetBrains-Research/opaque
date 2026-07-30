@@ -104,23 +104,23 @@ class TestStreamingMatrixRealizedSigma:
         )
 
     @pytest.mark.parametrize(
-        "make_strategy,part",
+        ("make_strategy", "part"),
         [
             (
                 lambda: band_mf_strategy(bands=4, momentum=0.9),
-                dict(n_steps=20, min_sep=1, max_participations=20),
+                {"n_steps": 20, "min_sep": 1, "max_participations": 20},
             ),
             (
                 lambda: blt_strategy(momentum=0.9),
-                dict(n_steps=20, min_sep=4, max_participations=5),
+                {"n_steps": 20, "min_sep": 4, "max_participations": 5},
             ),
             (
                 lambda: bisr_strategy(bandwidth=4, momentum=0.5),
-                dict(n_steps=20, min_sep=4, max_participations=5),
+                {"n_steps": 20, "min_sep": 4, "max_participations": 5},
             ),
             (
                 lambda: bsr_strategy(bandwidth=4, alpha=1.0, beta=0.5),
-                dict(n_steps=20, min_sep=4, max_participations=5),
+                {"n_steps": 20, "min_sep": 4, "max_participations": 5},
             ),
         ],
         ids=["band_mf", "blt", "bisr", "bsr"],

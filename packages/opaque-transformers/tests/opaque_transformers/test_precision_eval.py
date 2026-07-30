@@ -14,21 +14,21 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._precision import eval_dtype
+from opaque.transformers.trainer import TrainingArguments
 
 
 def _args(**overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=None,
-        save_strategy="no",
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        use_cpu=True,
+    defaults = {
+        "output_dir": None,
+        "save_strategy": "no",
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "use_cpu": True,
         # Synthetic ``nn.Linear`` fixture; not in opaque's family
         # registry — silence the "no detectable family" info log.
-        use_compat_patches=False,
-    )
+        "use_compat_patches": False,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -73,9 +73,9 @@ def test_bf16_full_eval_restores_even_on_exception():
     model = torch.nn.Linear(4, 2)
     train_dtype = torch.float32
     args = _args(bf16_full_eval=True)
-    with pytest.raises(RuntimeError, match="boom"):
-        with eval_dtype(model, args, train_dtype):
-            assert next(model.parameters()).dtype == torch.bfloat16
+    with eval_dtype(model, args, train_dtype):
+        assert next(model.parameters()).dtype == torch.bfloat16
+        with pytest.raises(RuntimeError, match="boom"):
             raise RuntimeError("boom")
     # The finally clause must have restored fp32.
     assert next(model.parameters()).dtype == torch.float32

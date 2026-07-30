@@ -115,7 +115,7 @@ class TestGPT2LoRADPTraining:
         """Test that make_functional correctly separates LoRA params from frozen."""
         model, _ = gpt2_with_lora
 
-        fmodel, trainable, frozen = make_functional(
+        _fmodel, trainable, frozen = make_functional(
             model,
             disable_autograd_tracking=True,
             partition_trainable=True,
@@ -130,7 +130,7 @@ class TestGPT2LoRADPTraining:
         assert trainable_count > 0
 
         # All trainable params should have 'lora' in their name
-        for name in trainable.keys():
+        for name in trainable:
             assert "lora" in name.lower(), f"Expected LoRA param, got: {name}"
 
     def test_clipped_grad_with_hf_builtin_loss(self, gpt2_with_lora, sample_batch):
@@ -247,7 +247,7 @@ class TestGPT2LoRADPTraining:
             return_aux=True,
         )
 
-        (grads, grad_aux), _ = grad_fn(
+        (_grads, grad_aux), _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
 
@@ -293,7 +293,7 @@ class TestGPT2LoRADPTraining:
             return_aux=True,
         )
 
-        (grads, grad_aux), _ = grad_fn(
+        (_grads, grad_aux), _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
 
@@ -586,7 +586,7 @@ class TestMellumLoRADPTraining:
         """Test that Mellum with LoRA converts to functional form correctly."""
         model, _ = mellum_with_lora
 
-        fmodel, trainable, frozen = make_functional(
+        _fmodel, trainable, frozen = make_functional(
             model,
             disable_autograd_tracking=True,
             partition_trainable=True,
@@ -797,7 +797,7 @@ class TestMellumLoRADPTraining:
             microbatch_size=1,
         )
 
-        grads, _ = grad_fn(
+        _grads, _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
 

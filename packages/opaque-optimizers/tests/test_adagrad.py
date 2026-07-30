@@ -7,9 +7,9 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.optimizers import adagrad  # noqa: E402
-from opaque.optimizers.types import AdagradState  # noqa: E402
+from opaque.optimizers import adagrad
+from opaque.optimizers.types import AdagradState
+from opaque.types import noised
 
 
 @pytest.fixture
@@ -35,9 +35,9 @@ class TestVanilla:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            dict(lr=1e-2, eps=1e-10, initial_accumulator_value=0.0),
-            dict(lr=5e-3, eps=1e-8, initial_accumulator_value=0.1),
-            dict(lr=0.1, eps=1e-6, initial_accumulator_value=1.0),
+            {"lr": 1e-2, "eps": 1e-10, "initial_accumulator_value": 0.0},
+            {"lr": 5e-3, "eps": 1e-8, "initial_accumulator_value": 0.1},
+            {"lr": 0.1, "eps": 1e-6, "initial_accumulator_value": 1.0},
         ],
         ids=["default", "warm_accumulator", "large_accumulator"],
     )

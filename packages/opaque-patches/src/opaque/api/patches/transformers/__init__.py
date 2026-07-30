@@ -43,6 +43,12 @@ the family from the model and dispatches to the right
   vmap-safe RoPE on a class without owning a model instance yet).
 """
 
+# Eagerly import built-in family modules so each one's import-time
+# ``register_family(...)`` call lands in the registry.  Each file is
+# tiny (just two factory invocations and the register call); the actual
+# ``transformers.models.X`` modeling module is imported lazily inside
+# the patch function on first use.
+from opaque.api.patches.transformers import models  # noqa: F401
 from opaque.api.patches.transformers._factory import (
     make_apply_model_patches,
     register_activation_kind,
@@ -59,14 +65,6 @@ from opaque.api.patches.transformers._registry import (
     supported_families,
 )
 from opaque.api.patches.transformers._router import apply_transformers_model_patches
-
-# Eagerly import built-in family modules so each one's import-time
-# ``register_family(...)`` call lands in the registry.  Each file is
-# tiny (just two factory invocations and the register call); the actual
-# ``transformers.models.X`` modeling module is imported lazily inside
-# the patch function on first use.
-from opaque.api.patches.transformers import models  # noqa: F401, E402
-
 
 __all__ = [
     "apply_transformers_model_patches",

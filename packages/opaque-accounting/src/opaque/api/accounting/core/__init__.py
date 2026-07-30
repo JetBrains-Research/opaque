@@ -21,27 +21,18 @@ except ImportError as e:
         "-m packages/opaque-accounting/Cargo.toml"
     ) from e
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 try:
     __version__ = _pkg_version("opaque-accounting")
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-from . import (
-    amplification,
-    calibration,
-    composition,
-    discretization,
-    mechanisms,
-)
-
-from opaque.api.accounting.core._accountant import Accountant
-
 # Side-effect import: registers Accountant + DpProcess subclasses with
 # the unified ``opaque.api.base.serialization`` registry.
 import opaque.api.accounting.core._serialization  # noqa: F401
-
+from opaque.api.accounting.core._accountant import Accountant
 from opaque.api.accounting.core.calibration import (
     advantage_budget,
     beta_budget,
@@ -57,32 +48,40 @@ from opaque.api.accounting.core.discretization import (
 )
 from opaque.api.accounting.core.mechanisms import eps_delta, identity, nonprivate
 
+from . import (
+    amplification,
+    calibration,
+    composition,
+    discretization,
+    mechanisms,
+)
+
 __all__ = [
-    "__version__",
-    # Submodules
-    "amplification",
-    "calibration",
-    "composition",
-    "discretization",
-    "mechanisms",
     # Accountant
     "Accountant",
-    # Discretization
-    "set_discretization",
-    "get_discretization",
+    "__version__",
+    "advantage_budget",
+    # Submodules
+    "amplification",
+    "beta_budget",
+    "cached",
+    "calibrate",
+    "calibration",
+    "compose",
+    "composition",
+    "delta_budget",
+    "discretization",
     # Generic mechanisms
     "eps_delta",
+    # Calibration / budgets
+    "epsilon_budget",
+    "get_discretization",
     "identity",
+    "mechanisms",
     "nonprivate",
     # Composition
     "repeat",
-    "compose",
-    "cached",
-    # Calibration / budgets
-    "epsilon_budget",
-    "delta_budget",
-    "advantage_budget",
-    "beta_budget",
     "risk_budget",
-    "calibrate",
+    # Discretization
+    "set_discretization",
 ]

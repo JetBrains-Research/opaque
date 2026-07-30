@@ -23,7 +23,6 @@ import math
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
-
 from opaque.api.accounting.core._base import Pld
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl._base import DpFtrlProcess

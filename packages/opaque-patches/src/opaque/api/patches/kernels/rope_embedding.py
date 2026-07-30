@@ -19,9 +19,10 @@ Three implementations:
 3. Slow_RoPE_Embedding: Pure PyTorch fallback (always vmap-compatible)
 """
 
+import torch
 import triton
 import triton.language as tl
-import torch
+
 from ._utils import (
     calculate_settings,
     ensure_cuda_tensors,
@@ -231,7 +232,8 @@ class _RoPEBackward(torch.autograd.Function):
     def vmap(info, in_dims, grad_Q, cos, sin):
         grad_Q_bdim, cos_bdim, sin_bdim = in_dims
 
-        assert cos_bdim is None and sin_bdim is None
+        assert cos_bdim is None
+        assert sin_bdim is None
         if grad_Q_bdim != 0:
             # A non-leading batch dim would rotate rows with the wrong positions.
             raise ValueError(f"grad_Q should be batched at dim 0, got {grad_Q_bdim}")
@@ -291,7 +293,7 @@ class Opaque_RoPE(torch.autograd.Function):
 
         batch, seq_len, n_heads, head_dim = Q.shape
         Q_out = Q.clone().reshape(batch * seq_len, n_heads * head_dim)
-        n_rows, n_cols = Q_out.shape
+        n_rows, _n_cols = Q_out.shape
 
         assert seq_len <= cos.shape[0], f"seq_len {seq_len} > cos length {cos.shape[0]}"
 
@@ -324,7 +326,7 @@ class Opaque_RoPE(torch.autograd.Function):
         # Save cos/sin from inputs (squeezed to match what forward used)
         ctx.save_for_backward(cos.squeeze(), sin.squeeze())
         # Recompute metadata from input shapes
-        batch, seq_len, n_heads, head_dim = Q.shape
+        _batch, _seq_len, n_heads, head_dim = Q.shape
         BLOCK_SIZE, num_warps = calculate_settings(head_dim // 2)
         div, mod = divmod(n_heads, ROPE_GROUP_SIZE)
         ctx.BLOCK_SIZE = BLOCK_SIZE
@@ -441,10 +443,12 @@ class _RoPE_QK_Backward(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_Q, grad_K, cos, sin, rope_ptr, has_indices, seq_len):
-        gQ_bdim, gK_bdim, cos_bdim, sin_bdim, rp_bdim, hi_bdim, sl_bdim = in_dims
+        gQ_bdim, gK_bdim, cos_bdim, sin_bdim, _rp_bdim, hi_bdim, sl_bdim = in_dims
 
-        assert cos_bdim is None and sin_bdim is None
-        assert hi_bdim is None and sl_bdim is None
+        assert cos_bdim is None
+        assert sin_bdim is None
+        assert hi_bdim is None
+        assert sl_bdim is None
         if gQ_bdim != 0 or gK_bdim != 0:
             # A non-leading batch dim would rotate rows with the wrong positions.
             raise ValueError(
@@ -706,7 +710,7 @@ class Opaque_SlowRoPE(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        Q, cos, sin, position_ids = inputs
+        _Q, cos, sin, position_ids = inputs
         # Backward must rotate with the same per-token angles as forward.
         cos, sin = _slow_rope_cos_sin(cos, sin, position_ids)
         ctx.save_for_backward(cos, sin)

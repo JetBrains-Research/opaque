@@ -41,13 +41,16 @@ class TestGaussianDataclass:
         pld2 = g.pld(discretization=1e-4)
         eps1 = pld1.epsilon_at(1e-5)
         eps2 = pld2.epsilon_at(1e-5)
-        assert math.isfinite(eps1) and eps1 > 0
-        assert math.isfinite(eps2) and eps2 > 0
+        assert math.isfinite(eps1)
+        assert eps1 > 0
+        assert math.isfinite(eps2)
+        assert eps2 > 0
 
     def test_pld_returns_valid(self):
         pld = Gaussian(0.8).pld()
         eps = pld.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestEpsDeltaDataclass:
@@ -91,7 +94,8 @@ class TestGaussianConstructor:
         g = dpsgd_acc.gaussian(1.1)
         # config is None or module default, either way pld works
         eps = g.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 class TestEpsDeltaConstructor:

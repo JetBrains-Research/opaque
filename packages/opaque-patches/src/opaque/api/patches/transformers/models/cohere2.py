@@ -17,7 +17,6 @@ from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
 
-
 _MODULE_PATH = "transformers.models.cohere2.modeling_cohere2"
 
 
@@ -41,4 +40,4 @@ apply_cohere2_patches = make_apply_model_patches(
 register_family("cohere2", apply_cohere2_patches)
 
 
-__all__ = ["apply_cohere2_patches", "apply_cohere2_family_patches"]
+__all__ = ["apply_cohere2_family_patches", "apply_cohere2_patches"]

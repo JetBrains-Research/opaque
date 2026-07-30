@@ -10,13 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 
-from opaque.distributed import is_distributed
+from opaque.api.dpftrl.noise._engine import MFNoiseState
 from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
     register_sync_type,
     sync_object,
 )
-from opaque.api.dpftrl.noise._engine import MFNoiseState
+from opaque.distributed import is_distributed
 from opaque.types import PerGroup
 
 

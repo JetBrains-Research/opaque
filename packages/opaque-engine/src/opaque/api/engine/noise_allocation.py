@@ -84,7 +84,7 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
         # i.e. clipping-disabled) per-group bounds.  Short-circuit before the
         # ``0 * sqrt(c * sum_c)`` product, which would be NaN when any bound
         # is +inf.
-        return PerGroup(max_norm.groups, {k: 0.0 for k in max_norm.values})
+        return PerGroup(max_norm.groups, dict.fromkeys(max_norm.values, 0.0))
     sum_c = sum(max_norm.values.values())
     return PerGroup(
         max_norm.groups,

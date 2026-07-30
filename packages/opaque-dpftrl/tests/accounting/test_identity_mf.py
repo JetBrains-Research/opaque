@@ -13,7 +13,6 @@ from opaque.dpftrl.accounting.types import MfGaussian
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 from opaque.dpftrl.noise.types import IdentityStrategy
 
-
 _DELTA = 1e-5
 
 
@@ -167,7 +166,8 @@ class TestBallsInBinsIdentity:
             num_bins=k,
             n_steps=k * E,
         ).epsilon_at(_DELTA)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     @pytest.mark.slow
     def test_is_reduces_variance_on_ensemble(self):
@@ -178,6 +178,7 @@ class TestBallsInBinsIdentity:
         ≥ 2×).  In practice the gain at this config is 3-30×.
         """
         import statistics
+
         from opaque.api.accounting.core.discretization import DiscretizationConfig
         from opaque.api.accounting.dpftrl.amplification._balls_in_bins import (
             _IDENTITY_IS_TILT,
@@ -328,7 +329,8 @@ class TestTruncatedPoissonIdentity:
             truncated_batch_size=64,
             dataset_size=50_000,
         ).epsilon_at(_DELTA)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 def test_identity_mf_calibrates_through_poisson():

@@ -14,7 +14,7 @@ from opaque.api.alignment.logprob._sequence import (
 )
 
 __all__ = [
+    "fused_sequence_logp",
     "selective_log_softmax",
     "sequence_logp",
-    "fused_sequence_logp",
 ]

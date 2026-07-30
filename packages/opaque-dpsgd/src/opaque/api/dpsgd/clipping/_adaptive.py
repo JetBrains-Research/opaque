@@ -7,22 +7,19 @@ from typing import Any, cast
 import torch
 from torch.autograd.profiler import record_function
 
-from opaque.types import SecondMomentClippingOutput, clipped
-
-from opaque.api.engine.clipping._helpers import (
-    batch_size_from_args,
-    normalize_to_tuple,
-    zero_grads_like,
-)
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
     _validate_static_args,
     clipped_grad,
 )
-from opaque.types import ClipState
+from opaque.api.engine.clipping._helpers import (
+    batch_size_from_args,
+    normalize_to_tuple,
+    zero_grads_like,
+)
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
-from opaque.types import PerGroup
+from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -338,7 +335,7 @@ def adaptive_clipped_grad(
 
     def _empty_num_clipped():
         if is_per_group:
-            return {gn: 0.0 for gn in initial_clipping_norm.values}
+            return dict.fromkeys(initial_clipping_norm.values, 0.0)
         return 0.0
 
     def _empty_batch_state(state: AdaptiveClipState) -> AdaptiveClipState:
@@ -551,7 +548,7 @@ def adaptive_clipped_grad(
 
 
 __all__ = [
-    "adaptive_clipped_grad",
     "AdaptiveClipState",
     "AdaptiveClippedGradAux",
+    "adaptive_clipped_grad",
 ]

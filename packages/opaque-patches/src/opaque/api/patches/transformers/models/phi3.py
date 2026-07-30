@@ -17,7 +17,6 @@ from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
 
-
 _MODULE_PATH = "transformers.models.phi3.modeling_phi3"
 
 
@@ -46,4 +45,4 @@ apply_phi3_patches = make_apply_model_patches(
 register_family("phi3", apply_phi3_patches)
 
 
-__all__ = ["apply_phi3_patches", "apply_phi3_family_patches"]
+__all__ = ["apply_phi3_family_patches", "apply_phi3_patches"]

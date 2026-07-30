@@ -13,14 +13,13 @@ import os
 
 import pytest
 import torch
+from _hf_shared import build_lm_dataset, make_gpt2
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback as _HFTrainerCallback
-from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
-from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.api.transformers.trainer._state import DPTrainerState
-
-from _hf_shared import build_lm_dataset, make_gpt2  # noqa: E402
+from opaque.transformers.trainer import DPTrainer, TrainingArguments
+from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
 
 def _default_args(**overrides) -> TrainingArguments:
@@ -32,13 +31,13 @@ def _default_args(**overrides) -> TrainingArguments:
     device mismatch).  Tests that explicitly need an accelerator can
     override.
     """
-    defaults = dict(
-        per_device_train_batch_size=4,
-        clipping_norm=1.0,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-        use_cpu=True,
-    )
+    defaults = {
+        "per_device_train_batch_size": 4,
+        "clipping_norm": 1.0,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+        "use_cpu": True,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -284,10 +283,13 @@ class TestDPTrainerTrain:
 
         changed = False
         for n, p in model.named_parameters():
-            if p.requires_grad and n in pre_train_params:
-                if not torch.allclose(p.data, pre_train_params[n]):
-                    changed = True
-                    break
+            if (
+                p.requires_grad
+                and n in pre_train_params
+                and not torch.allclose(p.data, pre_train_params[n])
+            ):
+                changed = True
+                break
         assert changed, "Model parameters did not change after training"
 
     def test_model_generates_after_training(self, gpt2_with_lora, tiny_lm_dataset):
@@ -730,16 +732,16 @@ class TestDPTrainerLRScheduling:
             if p.requires_grad
         }
 
-        common = dict(
-            clipping_norm=1.0,
-            max_steps=4,
-            num_train_epochs=1,
-            learning_rate=1e-3,
-            warmup_steps=2,
-            seed=42,
-            eval_strategy="no",
-            logging_steps=999,
-        )
+        common = {
+            "clipping_norm": 1.0,
+            "max_steps": 4,
+            "num_train_epochs": 1,
+            "learning_rate": 1e-3,
+            "warmup_steps": 2,
+            "seed": 42,
+            "eval_strategy": "no",
+            "logging_steps": 999,
+        }
 
         trainer1 = DPTrainer(
             model=model_const,
@@ -785,20 +787,20 @@ class TestDPTrainerCheckpointing:
     """End-to-end checkpoint save / rotation / final-save tests."""
 
     def _common_args(self, output_dir, **overrides):
-        defaults = dict(
-            clipping_norm=1.0,
-            max_steps=4,
-            num_train_epochs=1,
-            learning_rate=1e-3,
-            lr_scheduler="constant",
-            eval_strategy="no",
-            logging_steps=1,
-            output_dir=str(output_dir),
-            save_strategy="steps",
-            save_steps=2,
-            save_safetensors=True,
-            overwrite_output_dir=True,
-        )
+        defaults = {
+            "clipping_norm": 1.0,
+            "max_steps": 4,
+            "num_train_epochs": 1,
+            "learning_rate": 1e-3,
+            "lr_scheduler": "constant",
+            "eval_strategy": "no",
+            "logging_steps": 1,
+            "output_dir": str(output_dir),
+            "save_strategy": "steps",
+            "save_steps": 2,
+            "save_safetensors": True,
+            "overwrite_output_dir": True,
+        }
         defaults.update(overrides)
         return _default_args(**defaults)
 
@@ -1230,13 +1232,13 @@ class TestDPTrainerCheckpointing:
                     control.should_save = True
                     control.should_training_stop = True
 
-        common = dict(
-            max_steps=10,
-            lr_scheduler="linear",
-            warmup_steps=2,
-            learning_rate=1e-3,
-            logging_steps=1,
-        )
+        common = {
+            "max_steps": 10,
+            "lr_scheduler": "linear",
+            "warmup_steps": 2,
+            "learning_rate": 1e-3,
+            "logging_steps": 1,
+        }
 
         # --- continuous baseline ---
         model_c, tokenizer_c = gpt2_with_lora

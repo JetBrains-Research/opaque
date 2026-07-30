@@ -13,7 +13,8 @@ Supported types: ``constant``, ``constant_with_warmup``, ``linear``,
 from __future__ import annotations
 
 import math
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from opaque.scheduling import (
     constant_schedule,
@@ -27,7 +28,6 @@ from opaque.scheduling import (
 )
 from opaque.scheduling.types import CosineSchedule
 from transformers.trainer_utils import SchedulerType
-
 
 __all__ = [
     "build_lr_schedule",

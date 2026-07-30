@@ -3,6 +3,7 @@
 """Shared utilities for testing vmap and gradients on models."""
 
 import torch
+
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
 

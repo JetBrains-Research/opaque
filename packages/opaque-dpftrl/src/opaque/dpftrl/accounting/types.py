@@ -10,10 +10,10 @@ from opaque.api.accounting.dpftrl.types import (
 )
 
 __all__ = [
-    "MfGaussian",
-    "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
+    "CyclicPoisson",
     "DpFtrlProcess",
+    "MfGaussian",
     "PerStep",
 ]

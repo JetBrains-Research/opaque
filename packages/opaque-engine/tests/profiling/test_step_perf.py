@@ -7,14 +7,13 @@ import pytest
 import torch
 
 from opaque.profiling import (
-    PerfState,
     PerfStage,
+    PerfState,
     PerfTracker,
     StepPerf,
     perf_tracker,
     step_perf,
 )
-
 
 DEVICES = ["cpu"]
 if torch.cuda.is_available():
@@ -77,9 +76,11 @@ class TestStepPerfContextManager:
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_perf_not_available_inside_context(self, device):
-        with step_perf(device) as sp:
-            with pytest.raises(RuntimeError, match="not available"):
-                _ = sp.perf
+        with (
+            step_perf(device) as sp,
+            pytest.raises(RuntimeError, match="not available"),
+        ):
+            _ = sp.perf
 
     def test_result_deprecation_warning(self):
         with step_perf("cpu") as sp:
@@ -235,7 +236,7 @@ class TestStepPerfIntegration:
 
     def test_full_loop(self):
         state = PerfState(device=torch.device("cpu"))
-        for i in range(3):
+        for _i in range(3):
             with step_perf("cpu", batch_size=16) as sp:
                 x = torch.randn(50, 50)
                 _ = x @ x.T

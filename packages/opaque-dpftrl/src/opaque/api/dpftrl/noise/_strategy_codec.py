@@ -60,8 +60,7 @@ def _resolve_factory(cls_name: str):
 def _factory_name_for(cls_name: str) -> str:
     """Map ``ClsName`` → ``snake_case_strategy`` factory name."""
     base = cls_name
-    if base.endswith("Strategy"):
-        base = base[: -len("Strategy")]
+    base = base.removesuffix("Strategy")
     if not base:
         raise ValueError(f"unexpected strategy class name: {cls_name!r}")
     out_chars: list[str] = []
@@ -186,7 +185,7 @@ def register_strategy(cls: type) -> type:
 
 
 __all__ = [
+    "deserialize_strategy",
     "register_strategy",
     "serialize_strategy",
-    "deserialize_strategy",
 ]

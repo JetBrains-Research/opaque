@@ -25,7 +25,11 @@ import torch
 
 from . import (
     _sensitivity as sensitivity,
+)
+from . import (
     _streaming_matrix as streaming_matrix,
+)
+from . import (
     _toeplitz as toeplitz,
 )
 from ._engine import _internal_compute_dtype
@@ -34,13 +38,13 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "BufferedToeplitz",
-    "optimize",
-    "materialize",
     "inverse",
     "inverse_as_streaming_matrix",
-    "sensitivity_squared",
-    "max_error",
     "iteration_error",
+    "materialize",
+    "max_error",
+    "optimize",
+    "sensitivity_squared",
 ]
 
 

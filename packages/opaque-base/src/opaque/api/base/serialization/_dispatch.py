@@ -93,4 +93,4 @@ def from_state_dict(template: Any, sd: Mapping[str, Any]) -> Any:
     return _walk_load(template, sd, "")
 
 
-__all__ = ["state_dict", "from_state_dict"]
+__all__ = ["from_state_dict", "state_dict"]

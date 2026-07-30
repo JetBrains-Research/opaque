@@ -63,7 +63,7 @@ def test_tree_map_multiple_trees_elementwise(device):
 
 
 @pytest.mark.parametrize(
-    "tree, expected",
+    ("tree", "expected"),
     [
         ({}, 0.0),
         ({"x": torch.tensor([3.0, 4.0])}, 5.0),
@@ -79,7 +79,8 @@ def test_tree_map_multiple_trees_elementwise(device):
 def test_global_norm_l2(tree, expected, device):
     tree = _to_device(tree, device)
     got = pu.global_norm(tree)
-    assert isinstance(got, torch.Tensor) and got.shape == ()
+    assert isinstance(got, torch.Tensor)
+    assert got.shape == ()
     # Empty trees return CPU tensor, non-empty should match input device type
     if tree:
         assert got.device.type == device.type

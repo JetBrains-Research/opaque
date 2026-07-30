@@ -14,11 +14,10 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.types import ClippedPytree
-
 from opaque.api.engine.clipping._clipped_fun import clipped_fun
 from opaque.api.engine.clipping._pytree import clip_pytree
 from opaque.pytree import global_norm
+from opaque.types import ClippedPytree
 
 
 def _unwrap_clipped(value):
@@ -86,7 +85,7 @@ def test_global_norm_bf16_norm_unbiased_under_default():
 def test_clip_pytree_default_output_matches_input_dtype():
     """Type-stable boundary: bf16 in → bf16 out by default."""
     tree = {"a": torch.tensor([6.0, 8.0], dtype=torch.bfloat16)}
-    clipped, aux = clip_pytree(tree, clipping_norm=5.0)
+    clipped, _aux = clip_pytree(tree, clipping_norm=5.0)
     assert clipped["a"].dtype == torch.bfloat16
     # ||(6, 8)|| = 10; scale = 5/10 = 0.5; clipped = (3, 4); ||clipped|| = 5
     expected = torch.tensor([3.0, 4.0], dtype=torch.bfloat16)

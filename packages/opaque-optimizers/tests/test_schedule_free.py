@@ -7,8 +7,8 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.optimizers import adamw, schedule_free  # noqa: E402
-from opaque.optimizers.types import ScheduleFreeState  # noqa: E402
+from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers.types import ScheduleFreeState
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ class TestScheduleFreeWrapper:
     def test_update_advances_step_and_x(self, params, grads):
         opt = schedule_free(adamw(lr=1e-2), beta=0.9)
         state = opt.init(params)
-        delta, state = opt.update(grads, state, params=params)
+        _delta, state = opt.update(grads, state, params=params)
         assert state.step == 1
         # x should differ from initial params (it's now an average of z,
         # which moved away from y₀ = z₀ = x₀ via the inner update).

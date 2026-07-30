@@ -149,7 +149,7 @@ class NativeCache:
     def _safe_destruct(self, handle: int) -> None:
         try:
             self._destructor(handle)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.warn(
                 f"NativeCache({self._name!r}): destructor failed for handle "
                 f"{handle}: {exc}",

@@ -54,7 +54,6 @@ import torch
 
 from opaque.pytree import tree_leaves, tree_map
 
-
 __all__ = ["LossScaler", "LossScalerState", "all_finite", "loss_scaler"]
 
 

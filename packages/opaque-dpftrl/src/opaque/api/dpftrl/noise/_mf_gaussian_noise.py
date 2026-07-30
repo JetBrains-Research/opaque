@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 def mf_gaussian_noise(
     grad_template: Any,
-    strategy: "MfStrategy",
+    strategy: MfStrategy,
     *,
     n_steps: int,
     min_sep: int = 1,
@@ -60,7 +60,7 @@ def mf_gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
-    second_moment_strategy: "MfStrategy | None" = None,
+    second_moment_strategy: MfStrategy | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
     MFNoiseState | SecondMomentMFNoiseState,
@@ -201,7 +201,7 @@ def mf_gaussian_noise(
 
 def _make_raw_mf_noise(
     grad_template: Any,
-    strategy: "MfStrategy",
+    strategy: MfStrategy,
     *,
     n_steps: int,
     min_sep: int,

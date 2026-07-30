@@ -18,8 +18,8 @@ from opaque.api.transformers.trl import (
 )
 
 __all__ = [
-    "SFTConfig",
-    "SFTTrainer",
     "DPOConfig",
     "DPOTrainer",
+    "SFTConfig",
+    "SFTTrainer",
 ]

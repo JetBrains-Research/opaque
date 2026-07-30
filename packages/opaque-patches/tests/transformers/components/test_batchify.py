@@ -1,6 +1,7 @@
 import pytest
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM
+
 from opaque.patches import apply_model_patches
 
 pytestmark = pytest.mark.skipif(

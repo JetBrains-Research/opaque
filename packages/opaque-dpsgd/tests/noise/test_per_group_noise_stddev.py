@@ -60,7 +60,7 @@ class TestPerGroupNoiseStddev:
         stddev = per_group_noise_stddev(max_norm, 1.5)
         # σ = nm * sqrt(B * B) = nm * B
         expected = 1.5 * 2.0 / 5.0
-        assert list(stddev.values.values())[0] == pytest.approx(expected)
+        assert next(iter(stddev.values.values())) == pytest.approx(expected)
 
     def test_equal_norms_gives_equal_stddev(self):
         """With equal C_i, all σ_i should be the same."""

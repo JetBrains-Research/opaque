@@ -29,8 +29,8 @@ class Serializer(Protocol):
 
 
 __all__ = [
-    "SerializedState",
-    "StateDictFn",
     "FromStateDictFn",
+    "SerializedState",
     "Serializer",
+    "StateDictFn",
 ]

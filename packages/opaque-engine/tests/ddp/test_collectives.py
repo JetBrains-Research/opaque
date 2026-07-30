@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from engine_ddp_helpers import (
     _spawn,
     _worker_all_reduce_values,
@@ -12,7 +11,6 @@ from engine_ddp_helpers import (
     _worker_reduce_pytree_nested,
     _worker_reduce_scalar,
 )
-
 
 pytestmark = pytest.mark.cuda
 

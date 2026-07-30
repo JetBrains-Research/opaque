@@ -37,9 +37,9 @@ from __future__ import annotations
 from typing import Literal
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
-__all__ = ["f_divergence_remap", "f_divergence_logits"]
+__all__ = ["f_divergence_logits", "f_divergence_remap"]
 
 FDivergence = Literal["reverse_kl", "forward_kl", "js_divergence", "alpha_divergence"]
 

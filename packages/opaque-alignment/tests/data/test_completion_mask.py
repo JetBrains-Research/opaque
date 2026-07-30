@@ -23,10 +23,10 @@ import pytest
 
 transformers = pytest.importorskip("transformers")
 
-from transformers import PreTrainedTokenizerFast  # noqa: E402
-from tokenizers import Tokenizer, AddedToken  # noqa: E402
+from tokenizers import AddedToken, Tokenizer  # noqa: E402
 from tokenizers.models import BPE  # noqa: E402
 from tokenizers.pre_tokenizers import Whitespace  # noqa: E402
+from transformers import PreTrainedTokenizerFast  # noqa: E402
 
 from opaque.api.alignment.data._chat_template import (  # noqa: E402
     get_training_chat_template,

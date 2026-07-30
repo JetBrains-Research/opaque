@@ -115,7 +115,7 @@ class DPTrainerState:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "DPTrainerState":
+    def from_json(cls, data: dict[str, Any]) -> DPTrainerState:
         """Reconstruct from a dict loaded from ``trainer_state.json``.
 
         Unknown keys are filtered (forward-compat with newer writers).

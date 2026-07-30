@@ -19,7 +19,6 @@ import pytest
 
 from opaque.api.alignment.dpo.data._prompt import extract_prompt
 
-
 # ---------------------------------------------------------------------------
 # Conversational preference pair — 2-message shared prefix
 # ---------------------------------------------------------------------------

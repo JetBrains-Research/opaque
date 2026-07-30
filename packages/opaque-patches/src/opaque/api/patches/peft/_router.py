@@ -2,21 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import types
 import logging
+import types
 
+from .components._utils import _has_lora, _no_bias, _no_lora_dropout
 from .components.linear import _make_lora_linear_forward
 from .components.mlp import (
-    _is_phi3_style_mlp,
     _MLP_ACTIVATION_MAP,
+    _is_phi3_style_mlp,
     _make_fused_lora_mlp_forward,
 )
 from .components.qkv import (
     _FUSEABLE_QKV_ATTENTION_CLASSES,
-    _opaque_fused_lora_qkv,
     _make_fused_qkv_attention_forward,
+    _opaque_fused_lora_qkv,
 )
-from .components._utils import _has_lora, _no_lora_dropout, _no_bias
 
 logger = logging.getLogger(__name__)
 
@@ -175,12 +175,15 @@ def apply_peft_model_patches(
     patched_lora = False
     for module in model.modules():
         cls_name = type(module).__name__
-        if cls_name == "Linear" and "peft.tuners.lora" in type(module).__module__:
-            if not hasattr(module.forward, "__opaque_patched__"):
-                new_fwd = _make_lora_linear_forward(type(module).forward)
-                new_fwd.__opaque_patched__ = True
-                module.forward = types.MethodType(new_fwd, module)
-                patched_lora = True
+        if (
+            cls_name == "Linear"
+            and "peft.tuners.lora" in type(module).__module__
+            and not hasattr(module.forward, "__opaque_patched__")
+        ):
+            new_fwd = _make_lora_linear_forward(type(module).forward)
+            new_fwd.__opaque_patched__ = True
+            module.forward = types.MethodType(new_fwd, module)
+            patched_lora = True
 
     if patched_lora:
         logger.debug("opaque: Applied Triton kernel patches for peft.LoRA.Linear")

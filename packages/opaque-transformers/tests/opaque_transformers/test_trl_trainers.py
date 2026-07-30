@@ -17,17 +17,19 @@ import pytest
 pytest.importorskip("transformers")
 pytest.importorskip("datasets")
 
-import torch  # noqa: E402
-from datasets import Dataset  # noqa: E402
-from transformers import (  # noqa: E402
+from typing import ClassVar
+
+import torch
+from datasets import Dataset
+from transformers import (
     LlamaConfig,
     LlamaForCausalLM,
     Qwen2Config,
     Qwen2ForCausalLM,
 )
 
-from opaque.alignment.dpo.loss import sequence_logp  # noqa: E402
-from opaque.transformers.trl import (  # noqa: E402
+from opaque.alignment.dpo.loss import sequence_logp
+from opaque.transformers.trl import (
     DPOConfig,
     DPOTrainer,
     SFTConfig,
@@ -330,8 +332,13 @@ def test_sft_eos_token_honored_when_set_else_tokenizer(tmp_path):
         pad_token = "<pad>"
         eos_token = "</s>"
 
-        _vocab = {"hello": 5, "world": 6, "</s>": 2, "<eos2>": 3}
-        _specials = ("</s>", "<eos2>")
+        _vocab: ClassVar[dict[str, int]] = {
+            "hello": 5,
+            "world": 6,
+            "</s>": 2,
+            "<eos2>": 3,
+        }
+        _specials: ClassVar[tuple[str, ...]] = ("</s>", "<eos2>")
 
         def save_pretrained(self, *a, **k):
             return None
@@ -1345,7 +1352,9 @@ def test_sft_fused_last_hidden_state_is_last_layer_only(tmp_path):
     trainer.model.eval()
     rows = [trainer.train_dataset[i] for i in range(2)]
     batch = _to_device(trainer, trainer.data_collator(rows))
-    fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)
+    _fmodel, trainable, frozen = make_functional(
+        trainer.model, partition_trainable=True
+    )
     params = {**frozen, **trainable}
     hidden = trainer._last_hidden_state(
         params, batch["input_ids"], batch["attention_mask"]

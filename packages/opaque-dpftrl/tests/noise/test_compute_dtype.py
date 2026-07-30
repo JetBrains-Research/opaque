@@ -32,11 +32,11 @@ def _build_noise(*, compute_dtype=None):
     how we probe the documented default.  Anything else is forwarded as
     the explicit user value.
     """
-    kwargs = dict(
-        n_steps=4,
-        noise_multiplier=1.0,
-        key=key(42),
-    )
+    kwargs = {
+        "n_steps": 4,
+        "noise_multiplier": 1.0,
+        "key": key(42),
+    }
     if compute_dtype is not None:
         kwargs["compute_dtype"] = compute_dtype
     return mf_gaussian_noise(_template(), identity_strategy(), **kwargs)

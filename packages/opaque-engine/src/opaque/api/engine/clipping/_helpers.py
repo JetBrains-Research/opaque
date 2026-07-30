@@ -87,8 +87,8 @@ def zero_grads_like(args: tuple, argnums: tuple[int, ...]):
 
 
 __all__ = [
-    "normalize_to_tuple",
-    "normalize_fun_to_return_aux",
     "batch_size_from_args",
+    "normalize_fun_to_return_aux",
+    "normalize_to_tuple",
     "zero_grads_like",
 ]

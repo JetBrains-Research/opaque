@@ -40,8 +40,8 @@ class DiscretizationConfig:
 
 __all__ = [
     "DiscretizationConfig",
-    "set_discretization",
     "get_discretization",
+    "set_discretization",
 ]
 
 # Module-level discretization default

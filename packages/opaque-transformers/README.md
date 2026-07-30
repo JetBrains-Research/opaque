@@ -25,8 +25,10 @@ a notebook that uses HF primitives without the trainer).
 from opaque.patches import apply_runtime_patches, is_runtime_patched
 from opaque.transformers import DPTrainer
 
-apply_runtime_patches(compat=True)     # global runtime shims — idempotent
-trainer = DPTrainer(model, args, ...)  # runtime compat + apply_model_patches on the model
+apply_runtime_patches(compat=True)  # global runtime shims — idempotent
+trainer = DPTrainer(
+    model, args, ...
+)  # runtime compat + apply_model_patches on the model
 
 assert is_runtime_patched()
 ```

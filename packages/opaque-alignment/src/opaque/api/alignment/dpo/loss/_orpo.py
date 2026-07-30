@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
 __all__ = ["odds_ratio_loss"]
 

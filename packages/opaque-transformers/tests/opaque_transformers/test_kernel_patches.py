@@ -7,10 +7,10 @@ and remain vmap-compatible for DP-SGD.
 """
 
 import pytest
-
-from ._helpers import requires_hf_auth
 import torch
 import torch.nn.functional as F
+
+from ._helpers import requires_hf_auth
 
 pytest.importorskip("transformers")
 
@@ -19,12 +19,11 @@ pytestmark = pytest.mark.skipif(
     reason="Kernel patch compatibility tests require CUDA/Triton",
 )
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 from peft import LoraConfig, get_peft_model  # noqa: E402
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 from opaque.api.engine.clipping import clipped_grad  # noqa: E402
 from opaque.functional import make_functional  # noqa: E402
-
 
 RTOL = 1e-4
 ATOL = 1e-4
@@ -238,7 +237,7 @@ class TestEndToEnd:
         grad_fn, clip_state = clipped_grad(
             per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
         )
-        grads, state = grad_fn(
+        grads, _state = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
 
@@ -528,13 +527,14 @@ class TestCrossEntropyPatches:
         """The CE patch sets ``loss_function`` on matching model *instances* —
         it is not a global ``LOSS_MAPPING`` entry. Verifying the actual
         mechanism is device-agnostic (the helper just rebinds the attribute)."""
-        from opaque.api.patches.transformers.components.cross_entropy import (
-            _opaque_causal_lm_loss,
-            apply_causal_lm_loss_function_patch,
-        )
         from transformers.models.llama.modeling_llama import (
             LlamaConfig,
             LlamaForCausalLM,
+        )
+
+        from opaque.api.patches.transformers.components.cross_entropy import (
+            _opaque_causal_lm_loss,
+            apply_causal_lm_loss_function_patch,
         )
 
         model = LlamaForCausalLM(
@@ -736,8 +736,8 @@ class TestCoherePatches:
     def test_cohere_swiglu_mlp_matches(self, device):
         """Patched CohereMLP should match PyTorch SwiGLU reference."""
         try:
-            from transformers.models.cohere.modeling_cohere import CohereMLP
             from transformers.models.cohere.configuration_cohere import CohereConfig
+            from transformers.models.cohere.modeling_cohere import CohereMLP
         except ImportError:
             pytest.skip("Cohere not available")
 
@@ -1204,7 +1204,7 @@ class TestFusedLoRAQKV:
         grad_fn, clip_state = clipped_grad(
             per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
         )
-        grads, state = grad_fn(
+        grads, _state = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
         )
 

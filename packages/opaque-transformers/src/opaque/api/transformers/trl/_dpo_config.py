@@ -197,7 +197,7 @@ class DPOConfig(TrainingArguments):
         # Behavior
         strict: bool = True,
         **opaque_overrides: Any,
-    ) -> "DPOConfig":
+    ) -> DPOConfig:
         """Convert a ``trl.DPOConfig`` to an opaque ``DPOConfig``.
 
         Requires the optional ``trl`` extra:

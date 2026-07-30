@@ -7,10 +7,12 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.types import noised  # noqa: E402
-from opaque.types import SecondMomentNoiseOutput  # noqa: E402
-from opaque.optimizers import rmsprop  # noqa: E402
-from opaque.optimizers.types import RMSpropState  # noqa: E402
+from opaque.optimizers import rmsprop
+from opaque.optimizers.types import RMSpropState
+from opaque.types import (
+    SecondMomentNoiseOutput,
+    noised,
+)
 
 
 @pytest.fixture
@@ -36,9 +38,9 @@ class TestVanilla:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            dict(lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0.0),
-            dict(lr=5e-3, alpha=0.95, eps=1e-6, weight_decay=0.0),
-            dict(lr=0.1, alpha=0.9, eps=1e-4, weight_decay=0.0),
+            {"lr": 1e-2, "alpha": 0.99, "eps": 1e-8, "weight_decay": 0.0},
+            {"lr": 5e-3, "alpha": 0.95, "eps": 1e-6, "weight_decay": 0.0},
+            {"lr": 0.1, "alpha": 0.9, "eps": 1e-4, "weight_decay": 0.0},
         ],
         ids=["default", "alpha_095", "high_lr"],
     )

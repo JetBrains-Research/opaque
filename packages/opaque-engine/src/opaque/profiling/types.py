@@ -8,4 +8,4 @@ from opaque.api.engine.profiling.types import (
     StepPerf,
 )
 
-__all__ = ["StepPerf", "PerfStage", "PerfTracker", "PerfState", "MemoryStats"]
+__all__ = ["MemoryStats", "PerfStage", "PerfState", "PerfTracker", "StepPerf"]

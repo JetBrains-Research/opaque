@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from dpsgd_ddp_helpers import _spawn, _worker_shared_noise_is_deterministic
-from opaque.types import clipped
 
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
+from opaque.types import clipped
 
 
 def _noise_raw(noise_fn, grads, state):

@@ -24,14 +24,17 @@ import math
 import os
 import shutil
 import time
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
-import opaque.accounting as acc
-import opaque.dpsgd.accounting as dpsgd_acc
 import torch
 import torchopt
 from datasets import Dataset
+from torch import Tensor
+from torch.utils.data import DataLoader
+
+import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
@@ -39,35 +42,18 @@ from opaque.api.engine.device import (
     device_capabilities,
     sdpa_autocast_under_vmap_broken,
 )
+from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.profiling import PerfTracker, perf_tracker
+from opaque.random import key
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
+)
+from opaque.serialization import (
     state_dict as opaque_state_dict,
 )
-from . import _checkpoint as ckpt
-from . import _distributed
-from . import _dpftrl
-from . import _eval
-from . import _hub
-from ._callback import (
-    BestModelSaveCallback,
-    build_callback_handler,
-    is_metric_improved,
-    resolve_eval_metric,
-)
-from ._training_arguments import TrainingArguments
-from ._eval import EvalPrediction
-from .types import EvaluationResult, TrainOutput
-from ._precision import eval_dtype
-from ._scheduler import build_lr_schedule
-from ._state import DPTrainerState
-from opaque.random import key
-from torch import Tensor
-from torch.utils.data import DataLoader
 from transformers import (
     DataCollatorWithPadding,
     PreTrainedModel,
@@ -76,21 +62,36 @@ from transformers import (
     enable_full_determinism,
     set_seed,
 )
-from transformers.trainer_utils import RemoveColumnsCollator
-from transformers.trainer_utils import (
-    TrainerMemoryTracker,
-    speed_metrics,
-)
 from transformers.data.data_collator import default_data_collator
 from transformers.trainer_callback import TrainerCallback, TrainerControl
-from transformers.trainer_utils import seed_worker
+from transformers.trainer_utils import (
+    RemoveColumnsCollator,
+    TrainerMemoryTracker,
+    seed_worker,
+    speed_metrics,
+)
 from transformers.utils import find_labels
+
+from . import _checkpoint as ckpt
+from . import _distributed, _dpftrl, _eval, _hub
+from ._callback import (
+    BestModelSaveCallback,
+    build_callback_handler,
+    is_metric_improved,
+    resolve_eval_metric,
+)
+from ._eval import EvalPrediction
+from ._precision import eval_dtype
+from ._scheduler import build_lr_schedule
+from ._state import DPTrainerState
+from ._training_arguments import TrainingArguments
+from .types import EvaluationResult, TrainOutput
 
 __all__ = [
     "DPTrainer",
     "EvaluationResult",
-    "TrainingArguments",
     "TrainOutput",
+    "TrainingArguments",
 ]
 
 log = logging.getLogger(__name__)
@@ -191,7 +192,7 @@ def _compile_with_fullgraph_fallback(
             return fallback(*args, **kwargs)
         try:
             return full(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001 - any compile failure → fallback
+        except Exception as e:
             log.warning(
                 "torch.compile fullgraph=True failed (%s: %s); "
                 "falling back to fullgraph=False for subsequent steps.",
@@ -431,7 +432,7 @@ class DPTrainer:
         # ``_setup_training`` finally block copies the live accountant
         # off the per-run context into this slot; checkpoint loads
         # restore directly into it.
-        self._accountant: "Accountant | None" = None
+        self._accountant: Accountant | None = None
         self._train_dataloader: DataLoader | None = None
         self._eval_dataloader: DataLoader | None = None
         self._signature_columns: list[str] | None = None
@@ -736,7 +737,7 @@ class DPTrainer:
             return
         try:
             setter("eager")
-        except Exception as e:  # noqa: BLE001 - fall back to a clear instruction
+        except Exception as e:
             log.warning(
                 "bf16 DP on MPS: could not switch %s to eager attention "
                 "(%s: %s); load it with attn_implementation='eager'.",
@@ -818,7 +819,7 @@ class DPTrainer:
         self,
         resume_from_checkpoint: str | bool | None,
         ignore_keys_for_eval: list[str] | None,
-    ) -> "TrainOutput":
+    ) -> TrainOutput:
         """Inner dispatch."""
         if self._train_dataset is None:
             raise ValueError("DPTrainer.train() requires a train_dataset.")
@@ -1097,7 +1098,7 @@ class DPTrainer:
     def _setup_training(
         self,
         *,
-        prefix_accountant: "Accountant | None" = None,
+        prefix_accountant: Accountant | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
     ) -> _TrainingContext:
@@ -1353,11 +1354,15 @@ class DPTrainer:
         # ``.noise_stddev`` carries the realized σ for downstream
         # consumers (e.g. opaque optimizers' DP bias correction).
         if mechanism_kind == "gaussian":
-            _gn_extra: dict[str, Any] = {}
-            if isinstance(a.privacy_noise_mechanism_kwargs, dict):
-                for _k, _v in a.privacy_noise_mechanism_kwargs.items():
-                    if _k in ("bound", "compute_dtype"):
-                        _gn_extra[_k] = _v
+            _gn_extra: dict[str, Any] = {
+                _k: _v
+                for _k, _v in (
+                    a.privacy_noise_mechanism_kwargs.items()
+                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
+                    else ()
+                )
+                if _k in ("bound", "compute_dtype")
+            }
             make_noise = (
                 functools.partial(gaussian_noise, **_gn_extra)
                 if _gn_extra
@@ -1892,7 +1897,8 @@ class DPTrainer:
             # ⇒ identical noise) and the optimizer update is a pure function of
             # an identical input on every rank, so parameters stay in lockstep.
             if self._ddp.is_distributed:
-                from opaque.distributed import sum_gradients_, sync as _opaque_sync
+                from opaque.distributed import sum_gradients_
+                from opaque.distributed import sync as _opaque_sync
 
                 sum_gradients_(grads)
                 ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
@@ -2283,7 +2289,9 @@ class DPTrainer:
         )
 
         if use_per_example_loss:
-            vmapped_fn, batch_argnums, batch_keys = self._get_eval_per_example_loss_fn()
+            vmapped_fn, _batch_argnums, batch_keys = (
+                self._get_eval_per_example_loss_fn()
+            )
             if self._ctx is not None:
                 trainable = self._ctx.trainable_params
             else:
@@ -2839,7 +2847,7 @@ class DPTrainer:
     def create_model_card(
         self,
         language: str | None = None,
-        license: str | None = None,  # noqa: A002
+        license: str | None = None,
         tags: str | list[str] | None = None,
         model_name: str | None = None,
         finetuned_from: str | None = None,
@@ -3041,7 +3049,7 @@ class DPTrainer:
                 model_to_inspect = self._model.base_model.model
         signature = inspect.signature(model_to_inspect.forward)
         signature_columns = list(signature.parameters.keys())
-        signature_columns += list(set(["label", "label_ids"] + self._label_names))
+        signature_columns += list({"label", "label_ids", *self._label_names})
 
         # Opaque's import-time model patches may wrap ``forward`` into a generic
         # ``(*args, **kwargs)`` callable, which makes HF-style column pruning unsafe.
@@ -3975,7 +3983,7 @@ class DPTrainer:
         total_steps,
         target_delta,
         *,
-        prefix_accountant: "Accountant | None" = None,
+        prefix_accountant: Accountant | None = None,
         global_step_already_done: int = 0,
     ):
         """Calibrate or return fixed noise multiplier.
@@ -4162,7 +4170,7 @@ class DPTrainer:
         if v is None:
             return 0
         if 0 < v < 1:
-            return max(1, int(round(total_steps * float(v))))
+            return max(1, round(total_steps * float(v)))
         return max(1, int(v))
 
     def _update_best_metric(
@@ -4201,7 +4209,7 @@ class DPTrainer:
         if self.args.save_strategy in {"steps", "epoch", "best"}:
             self.state.best_global_step = global_step
 
-    def _load_best_model(self, ctx: "_TrainingContext") -> None:
+    def _load_best_model(self, ctx: _TrainingContext) -> None:
         """Restore best-checkpoint weights into the underlying ``nn.Module``.
 
         Ordering contract (HF parity):
@@ -4287,6 +4295,7 @@ class DPTrainer:
         when no checkpoint files were found.
         """
         from safetensors.torch import load_file as load_safetensors
+
         from transformers.utils import (
             SAFE_WEIGHTS_INDEX_NAME,
             WEIGHTS_INDEX_NAME,
@@ -4539,13 +4548,13 @@ class DPTrainer:
         if self._processing_class is not None:
             self._processing_class.save_pretrained(output_dir)
 
-    def _save_optimizer(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
+    def _save_optimizer(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
         torch.save(
             opaque_state_dict(ctx.opt_state),
             os.path.join(ckpt_dir, ckpt.DP_OPTIMIZER_NAME),
         )
 
-    def _save_dp_runtime(self, ckpt_dir: str, ctx: "_TrainingContext") -> None:
+    def _save_dp_runtime(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
         # ``state_dict`` from the opaque.serialization registry — each
         # sampler family (Poisson here, dp-ftrl variants in subclasses)
         # registers its own serializer pair at module-import time.
@@ -4592,7 +4601,7 @@ class DPTrainer:
             ),
         )
 
-    def _save_accountant(self, ckpt_dir: str, accountant: "Accountant") -> None:
+    def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
         path = os.path.join(ckpt_dir, ckpt.DP_ACCOUNTANT_NAME)
         with open(path, "w") as f:
             json.dump(opaque_state_dict(accountant), f, indent=2)
@@ -4644,7 +4653,7 @@ class DPTrainer:
         # superset of ``TrainingArguments``.
         torch.save(self.args, os.path.join(ckpt_dir, ckpt.TRAINING_ARGS_NAME))
 
-    def _maybe_final_save(self, ctx: "_TrainingContext", global_step: int) -> None:
+    def _maybe_final_save(self, ctx: _TrainingContext, global_step: int) -> None:
         """Always emit a final checkpoint when saving is enabled (HF parity).
 
         Skipped if a checkpoint at this exact step already exists (e.g. an
@@ -4730,7 +4739,7 @@ class DPTrainer:
 
     def _read_runtime_for_resume(
         self, ckpt_dir: str
-    ) -> tuple["ckpt.RuntimeCheckpoint", "Accountant"]:
+    ) -> tuple[ckpt.RuntimeCheckpoint, Accountant]:
         """Load a *complete* DP checkpoint for resume.
 
         A resumable DP checkpoint must carry the full runtime needed to
@@ -4794,9 +4803,9 @@ class DPTrainer:
 
     def _apply_runtime_state(
         self,
-        ctx: "_TrainingContext",
-        runtime: "ckpt.RuntimeCheckpoint",
-        accountant: "Accountant | None",
+        ctx: _TrainingContext,
+        runtime: ckpt.RuntimeCheckpoint,
+        accountant: Accountant | None,
         ckpt_dir: str,
     ) -> None:
         """Overwrite ctx fields with values restored from a checkpoint."""
@@ -4885,7 +4894,7 @@ class DPTrainer:
             for attr_key, value in attrs.items():
                 setattr(cb, attr_key, value)
 
-    def _warn_on_arg_drift(self, runtime: "ckpt.RuntimeCheckpoint") -> None:
+    def _warn_on_arg_drift(self, runtime: ckpt.RuntimeCheckpoint) -> None:
         """Surface drift between the saved checkpoint and current ``args``.
 
         Iterates over every ``RuntimeCheckpoint`` field tagged
@@ -4959,7 +4968,7 @@ class DPTrainer:
                 )
 
     def _current_values_for_drift(
-        self, a, ctx: "_TrainingContext | None"
+        self, a, ctx: _TrainingContext | None
     ) -> dict[str, Any]:
         """Resolve current (post-setup) values for the drift-checked fields.
 

@@ -16,23 +16,22 @@ import torch.nn as nn
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
-
 # ----------------------------------------------------------------------------
 # Tiny shared trainer helper
 # ----------------------------------------------------------------------------
 
 
 def _args(tmp_path, **overrides) -> TrainingArguments:
-    defaults = dict(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=1,
-        max_steps=1,
-        num_train_epochs=1,
-        save_strategy="no",
-        use_cpu=True,
-        privacy_target_epsilon=10.0,
-        privacy_noise_multiplier=1.0,
-    )
+    defaults = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 1,
+        "max_steps": 1,
+        "num_train_epochs": 1,
+        "save_strategy": "no",
+        "use_cpu": True,
+        "privacy_target_epsilon": 10.0,
+        "privacy_noise_multiplier": 1.0,
+    }
     defaults.update(overrides)
     return TrainingArguments(**defaults)
 
@@ -85,7 +84,7 @@ def test_torch_compile_invalid_mode_rejected_at_args(tmp_path):
 
 
 def test_torch_compile_with_auto_find_microbatch_size_rejected(tmp_path):
-    with pytest.raises(ValueError, match="torch_compile.*auto_find_microbatch_size"):
+    with pytest.raises(ValueError, match=r"torch_compile.*auto_find_microbatch_size"):
         _args(tmp_path, torch_compile=True, auto_find_microbatch_size=True)
 
 
@@ -137,7 +136,7 @@ def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatc
     # so patch the source location rather than the consumer's module.
     monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
 
-    trainer, model = _tiny_trainer(tmp_path, use_performance_kernels=True)
+    _trainer, model = _tiny_trainer(tmp_path, use_performance_kernels=True)
     assert len(calls) == 1
     assert calls[0]["model"] is model
     assert calls[0]["kwargs"]["performance"] is True

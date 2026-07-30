@@ -18,7 +18,7 @@ class TestHelperIntegration:
         from opaque.dpsgd.noise import gaussian_noise
 
         k = random_key()
-        noise_fn, state = gaussian_noise(
+        noise_fn, _state = gaussian_noise(
             noise_multiplier=1.0,
             key=k,
         )
@@ -29,7 +29,7 @@ class TestHelperIntegration:
         from opaque.dpsgd.noise import gaussian_noise
 
         k = fold_in(key(42), 10)
-        noise_fn, state = gaussian_noise(
+        noise_fn, _state = gaussian_noise(
             noise_multiplier=1.0,
             key=k,
         )
@@ -43,7 +43,7 @@ class TestHelperIntegration:
         losses = []
         for step in range(3):
             k = fold_in(base, step)
-            noise_fn, state = gaussian_noise(
+            _noise_fn, _state = gaussian_noise(
                 noise_multiplier=1.0,
                 key=k,
             )

@@ -7,10 +7,9 @@ import math
 import pytest
 import torch
 
-from opaque.dpftrl.clipping import clipped_grad
+from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
-from opaque.types import PerGroup, clipped
-from opaque.types import NoisedPytree, SecondMomentClippingOutput
+from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -20,8 +19,8 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_gaussian_noise,
 )
-from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
 from opaque.random import key
+from opaque.types import NoisedPytree, PerGroup, SecondMomentClippingOutput, clipped
 
 
 def _make_pg_two_groups() -> PerGroup:

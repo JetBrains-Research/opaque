@@ -43,7 +43,6 @@ from collections.abc import Callable
 
 import torch.nn as nn
 
-
 _FAMILY_REGISTRY: dict[str, Callable] = {}
 
 

@@ -118,7 +118,7 @@ dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
   "pytest-xdist>=3.5.0",   # Parallel test execution (`-n auto`); CI shards within each job
-  "ruff>=0.1.0",
+  "ruff>=0.16.0,<0.17",
   "scipy>=1.11.0",         # Statistical tests
   # Cross-validation against reference DP accounting libraries. Imported by
   # packages/opaque-dpsgd/tests/accounting/test_cross_validation.py — not a
@@ -190,8 +190,8 @@ filterwarnings = [
 
 [tool.ruff]
 # Shared lint/format settings for CI (`autoformat.yml`), `uv run ruff …`, and
-# editor integrations. Keep the rule select explicit: Ruff 0.16 widened the
-# unconfigured default far beyond the historical E/F gate this repo enforces.
+# editor integrations. Select is explicit: Ruff 0.16 widened the unconfigured
+# default far beyond what this repo wants as a merge gate.
 target-version = "py311"  # inferred from requires-python (>=3.11,<3.13)
 line-length = 88
 
@@ -212,5 +212,42 @@ src = [
 ]
 
 [tool.ruff.lint]
-# Historical default gate (pycodestyle subset + Pyflakes), matching Ruff <0.16.
-select = ["E4", "E7", "E9", "F"]
+# High-signal rules: correctness, modernity, import hygiene, small cleanups.
+# Deliberately omitted (noise / intentional patterns, revisit later):
+#   PL* complexity & magic values, TRY* exception-message style,
+#   PTH* pathlib migration, ARG* unused-arg churn, INP001 (false + on PEP 420),
+#   TC* TYPE_CHECKING moves, ANN/D annotation & docstring debt.
+select = [
+  "E", "F", "W",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+  "RUF",
+  "C4",
+  "PIE",
+  "PERF",
+  "FURB",
+  "FA",
+  "ICN",
+  "PGH",
+  "PT",
+  "LOG",
+  "SLOT",
+  "FLY",
+]
+ignore = [
+  "E501",   # formatter owns line length
+  "RUF001", # intentional unicode in strings (math / en-dash)
+  "RUF002", # intentional unicode in docstrings
+  "RUF003", # intentional unicode in comments
+  "B019",   # lru_cache on frozen PLD mechanism methods is intentional
+  "B905",   # zip(..., strict=) is a behavior change; defer
+  "SIM108", # if/else often clearer than ternary here
+  "PT011",  # broad pytest.raises(...) used intentionally in places
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
+"packages/opaque-optimizers/tests/**" = ["E402"]
+"packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]

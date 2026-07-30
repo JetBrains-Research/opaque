@@ -28,14 +28,22 @@ def test_auto_clipped_fun_is_internal_impl():
 
 def test_auto_types_match_internal():
     from opaque.api.engine.clipping.types import (
-        AutoClipState as IntState,
         AutoClippedFunAux as IntFunAux,
+    )
+    from opaque.api.engine.clipping.types import (
         AutoClippedGradAux as IntGradAux,
+    )
+    from opaque.api.engine.clipping.types import (
+        AutoClipState as IntState,
+    )
+    from opaque.dpsgd.clipping.types import (
+        AutoClippedFunAux as PubFunAux,
+    )
+    from opaque.dpsgd.clipping.types import (
+        AutoClippedGradAux as PubGradAux,
     )
     from opaque.dpsgd.clipping.types import (
         AutoClipState as PubState,
-        AutoClippedFunAux as PubFunAux,
-        AutoClippedGradAux as PubGradAux,
     )
 
     assert IntState is PubState

@@ -17,7 +17,6 @@ from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
 
-
 _MODULE_PATH = "transformers.models.granite.modeling_granite"
 
 
@@ -46,4 +45,4 @@ apply_granite_patches = make_apply_model_patches(
 register_family("granite", apply_granite_patches)
 
 
-__all__ = ["apply_granite_patches", "apply_granite_family_patches"]
+__all__ = ["apply_granite_family_patches", "apply_granite_patches"]

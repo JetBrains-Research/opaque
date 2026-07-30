@@ -4,8 +4,8 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.random import fold_in, key
 from opaque.dpftrl.sampling import BMinSepSampler
+from opaque.random import fold_in, key
 
 
 def test_reproducibility():

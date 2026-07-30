@@ -8,11 +8,11 @@ from dataclasses import fields
 import pytest
 import torch
 
+import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 from opaque.serialization import from_state_dict as opaque_from_state_dict
-import opaque.api.transformers.trainer._checkpoint as ckpt
 
 
 class TestParseCheckpointStep:
@@ -254,7 +254,7 @@ class TestRuntimeCheckpointDriftMetadata:
         raise AssertionError(f"no field {name!r} on RuntimeCheckpoint")
 
     @pytest.mark.parametrize(
-        "field_name,expected",
+        ("field_name", "expected"),
         [
             ("sample_rate", "dp_relevant"),
             ("target_delta", "dp_relevant"),

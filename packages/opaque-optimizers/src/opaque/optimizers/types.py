@@ -13,11 +13,11 @@ from opaque.api.optimizers.types import (
 )
 
 __all__ = [
-    "AdamState",
+    "AdEMAMixState",
     "AdadeltaState",
     "AdafactorState",
     "AdagradState",
-    "AdEMAMixState",
+    "AdamState",
     "LionState",
     "RAdamState",
     "RMSpropState",

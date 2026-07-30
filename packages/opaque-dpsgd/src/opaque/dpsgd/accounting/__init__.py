@@ -39,8 +39,8 @@ from opaque.api.accounting.dpsgd import (
 )
 
 __all__ = [
-    "gaussian",
     "adaclip",
-    "poisson",
+    "gaussian",
     "parallel_poisson",
+    "poisson",
 ]
