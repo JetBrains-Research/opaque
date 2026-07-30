@@ -48,45 +48,45 @@ MECHANISMS:
 USAGE:
 
   # Quick smoke test (~2 minutes, SmolLM2-135M on KExercises)
-  python examples/train_dp_ftrl.py --preset smoke
+  python examples/train_dpftrl.py --preset smoke
 
   # BandMF + b-min-sep on Mellum (default mechanism: b=64, momentum=0.95)
-  python examples/train_dp_ftrl.py --preset mellum-kstack
+  python examples/train_dpftrl.py --preset mellum-kstack
 
   # 4-GPU distributed run with torchrun (sharded, same global batch as 1-GPU)
-  torchrun --nproc_per_node=4 examples/train_dp_ftrl.py --preset mellum-kstack
+  torchrun --nproc_per_node=4 examples/train_dpftrl.py --preset mellum-kstack
 
   # BLT on Mellum (near-optimal correlated noise; heavier calibration solve)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism blt
 
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
 
   # BISR with bandwidth=4, Balls-in-Bins sampling
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
 
   # BSR (closed-form): workload α via --bsr-alpha (paper default 1.0); optimizer WD is separate (--weight-decay, default 0)
-  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
+  python examples/train_dpftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism identity
 
   # Non-DP baseline (no noise, no privacy accounting, same loop)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
+  python examples/train_dpftrl.py --preset mellum-kstack --mechanism none
 
     # Adam-family without private second moments (single-stream MF noise)
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw
+  python examples/train_dpftrl.py --preset smoke --optimizer adamw
 
     # DP-Adam with private second moments (two MF noise streams)
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --mechanism blt
-    python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --second-moment --beta1 0.9 --beta2 0.999
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment --mechanism blt
+    python examples/train_dpftrl.py --preset smoke --optimizer adamw --second-moment --beta1 0.9 --beta2 0.999
 
     # AdEMAMix with private second moments — slow EMA captures long-range gradient signal
-    python examples/train_dp_ftrl.py --preset smoke --optimizer ademamix --second-moment
+    python examples/train_dpftrl.py --preset smoke --optimizer ademamix --second-moment
 
     # Lion under MF noise (no private second moment — lion has no second moment)
-  python examples/train_dp_ftrl.py --preset smoke --optimizer lion
+  python examples/train_dpftrl.py --preset smoke --optimizer lion
 
 REFERENCES:
 

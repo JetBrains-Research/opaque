@@ -356,7 +356,7 @@ the agent file for the full protocol.
 
 ```bash
 uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
-uv run python examples/train_dp_ftrl.py   # MF-based DP-FTRL training
+uv run python examples/train_dpftrl.py   # MF-based DP-FTRL training
 ```
 
 Baseline without kernel patches:
@@ -373,10 +373,10 @@ GPU training configs in `.cadence/configs/`:
 | Preset file | Entry point | Notes |
 | --- | --- | --- |
 | `train_dpsgd (mellum_kstack).yaml` | `train_dpsgd.py --preset mellum-kstack` | Single H200, DP-SGD |
-| `train_dp_ftrl (mellum_kstack).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
+| `train_dpftrl (mellum_kstack).yaml` | `train_dpftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
 | `train_dpsgd (qwen_7b_kstack).yaml` | `train_dpsgd.py` | 7B model, single H200 |
 | `train_dpsgd (mellum_kstack_distributed).yaml` | `train_dpsgd.py --preset mellum-kstack` | Multi-GPU DDP |
-| `train_dp_ftrl (mellum_kstack_distributed).yaml` | `train_dp_ftrl.py --preset mellum-kstack` | Multi-GPU DDP |
+| `train_dpftrl (mellum_kstack_distributed).yaml` | `train_dpftrl.py --preset mellum-kstack` | Multi-GPU DDP |
 
 Override args via `-e EXTRA_ARGS="--max-steps 200"` and run name via
 `-e RUN_NAME="my-experiment"`.

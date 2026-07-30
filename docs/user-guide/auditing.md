@@ -145,7 +145,7 @@ print(f"ε (audit): {estimate.epsilon_at(delta=1e-5):.4f}")
 ```
 
 See [examples/train_dpsgd.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py)
-and [examples/train_dp_ftrl.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dp_ftrl.py)
+and [examples/train_dpftrl.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpftrl.py)
 for complete working examples with the `--audit` flag.
 
 ### Parameter reference

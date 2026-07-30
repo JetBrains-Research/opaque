@@ -20,7 +20,7 @@ These are the same defect reported from different call sites. One fix each:
 | Loss-scaler "zero privacy budget" claim | docs/user-guide/precision.md finding + `_loss_scaler.py:27-34` finding |
 | AdaClip realized-vs-expected batch denominator | `_clipped_fun.py:569-586` finding + `_adaptive.py:103-114` finding + the Rust `adaclip.rs` Δ=1/2 finding are **one root cause** (§2, RC-3) |
 | MF noise redrawn every step | "dense-matrix MF engine path redraws", "_tensor_mf_noise redraws the full Gaussian vector" |
-| `train_dp_ftrl.py` one-epoch runs | "BLT and Balls-in-Bins runs execute exactly one epoch", "reuses an already-exhausted sampler object" |
+| `train_dpftrl.py` one-epoch runs | "BLT and Balls-in-Bins runs execute exactly one epoch", "reuses an already-exhausted sampler object" |
 | DP-FTRL doc signature drift | "Every DP-FTRL mechanism doc page…", "~35 documentation call sites" |
 | `gradient_checkpointing` default | docs/alignment/trainers.md finding + docs/reference/transformers.md finding |
 | NOTICE broken paths | two separate reports of the same eight paths |
@@ -118,7 +118,7 @@ Every one of these is a documented guarantee that the code does not provide. Wit
 This section is the point of the document. Each cluster is **one design change** that resolves the listed findings. Do not let these be worked as independent tickets.
 
 ### RC-1 — There is no binding between the sampler you run and the amplification you account for
-**Resolves:** quickstart + DP-SGD tutorial + auditing tutorial + DP-FTRL tutorial sampler mismatches; `train_sft.py --no-shard`+`--truncated-batch-size`; `BallsInBinsSampler` dropping empty bins; `train_dp_ftrl.py` one-epoch runs; `distributed.md` unbounded sampler; `dp-sgd.md` end-to-end loop; issue O (audit coin flip changes n → changes min_sep/bins).
+**Resolves:** quickstart + DP-SGD tutorial + auditing tutorial + DP-FTRL tutorial sampler mismatches; `train_sft.py --no-shard`+`--truncated-batch-size`; `BallsInBinsSampler` dropping empty bins; `train_dpftrl.py` one-epoch runs; `distributed.md` unbounded sampler; `dp-sgd.md` end-to-end loop; issue O (audit coin flip changes n → changes min_sep/bins).
 
 **Change:** samplers emit a `SamplingContract` (mode, `sample_rate`, `n_steps`, `min_sep`, `num_bins`, `max_participations`). Amplification factories *require* one; `Accountant` records it; a mismatch raises. `BallsInBinsSampler` yields empty batches for empty bins so the declared `num_bins` stays true. `parallel_poisson(poisson(...))` composes rather than either-or.
 
@@ -315,7 +315,7 @@ Phase 0 ────────────┤                                 
 
 **Five hard orderings, stated plainly:**
 
-1. **The auditor before any audited-ε claim.** D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in `train_dp_ftrl.py` is currently comparing two *different mechanisms* — fix that with RC-1 before trusting any output.
+1. **The auditor before any audited-ε claim.** D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in `train_dpftrl.py` is currently comparing two *different mechanisms* — fix that with RC-1 before trusting any output.
 2. **The gloo lane before the distributed fixes.** Every RC-8 fix is a 10-line change that is impossible to verify today. Build the lane, watch it fail on the current code, then fix.
 3. **The benchmark harness before any performance number.** Do not restate the memory-optimizations tables, the BISR table, the Adafactor comparison, or the second-moment overhead from memory.
 4. **MC-UCB before b-min-sep/BnB claims and before issue I's sandwich tests.** The tests are skipped for 6 of 8 pairs *because* the estimates are non-conservative point estimates.

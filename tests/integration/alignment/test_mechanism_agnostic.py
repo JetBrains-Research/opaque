@@ -109,7 +109,7 @@ def test_same_closure_runs_under_dpsgd_and_dpftrl() -> None:
     noisy_sgd, _ = sgd_noise_fn(clipped, sgd_state)
 
     # --- DP-FTRL: correlated matrix-factorized (band-MF) noise -------------
-    # Mirror examples/train_dp_ftrl.py: band_mf_strategy(...) recipe +
+    # Mirror examples/train_dpftrl.py: band_mf_strategy(...) recipe +
     # mf_gaussian_noise(grad_template, strategy, n_steps=..., ...).
     strategy = band_mf_strategy(bands=4, momentum=0.95)
     ftrl_noise_fn, ftrl_state = mf_gaussian_noise(

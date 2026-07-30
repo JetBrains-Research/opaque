@@ -13,7 +13,7 @@ observed drift while still catching real bugs (missing gradient
 reduction, wrong MF noise wiring, mis-keyed sampler, etc.).
 
 This is the test that mirrors what the Cadence single-vs-multi-GPU
-``train_dp_ftrl`` W&B comparison checks at production scale.
+``train_dpftrl`` W&B comparison checks at production scale.
 """
 
 from __future__ import annotations
