@@ -382,6 +382,20 @@ def make_lr_schedule(
 # ---------------------------------------------------------------------------
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    """Fail fast if fields with no neutral default are still unset.
+
+    Presets fill these in; a preset-free run must provide them on the CLI.
+    """
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="DP-FTRL training with matrix factorization noise"
@@ -390,14 +404,15 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack"],
-        default="smoke",
-        help="Preset configuration.",
+        choices=["smoke", "mellum-kstack", "mellum2-kstack"],
+        default=None,
+        help="Optional preset that fills in any unset arguments. Omit it to "
+        "configure the run directly (at least --model-name and --dataset).",
     )
 
     # Model
     model_g = parser.add_argument_group("model")
-    model_g.add_argument("--model-name", type=str, default="HuggingFaceTB/SmolLM2-135M")
+    model_g.add_argument("--model-name", type=str, default=None)
     model_g.add_argument(
         "--attention", type=str, choices=["eager", "sdpa"], default="sdpa"
     )
@@ -416,7 +431,7 @@ def parse_args():
 
     # Data
     data_g = parser.add_argument_group("data")
-    data_g.add_argument("--dataset", type=str, default="fancyzhx/ag_news")
+    data_g.add_argument("--dataset", type=str, default=None)
     data_g.add_argument(
         "--dataset-subset", dest="dataset_subset", type=str, default=None
     )
@@ -880,6 +895,9 @@ def parse_args():
         _set("mechanism", "band_mf")
         _set("band_mf_sampling", "b_min_sep")
         _set("lr_warmup_steps", 0)
+
+    _require_configured(parser, args)
+
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:

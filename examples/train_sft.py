@@ -442,6 +442,20 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type):
     return per_example_loss
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    """Fail fast if fields with no neutral default are still unset.
+
+    Presets fill these in; a preset-free run must provide them on the CLI.
+    """
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -460,18 +474,18 @@ def parse_args():
         "--preset",
         type=str,
         choices=[
-            "custom",
             "smoke",
             "mellum-kstack",
             "mellum2-kstack",
             "qwen-7b-kstack",
         ],
-        default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, "
+        default=None,
+        help="Optional preset that fills in any unset arguments. Omit it to "
+        "configure the run directly (at least --model-name and --dataset). "
         "smoke=quick test SmolLM2-135M + KExercises at ε=8, "
         "mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, "
         "mellum2-kstack=Mellum2-12B-A2.5B MoE + KStack at ε=10 with adafactor @ 5e-5, "
-        "qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
+        "qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4.",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -480,8 +494,8 @@ def parse_args():
         "--model",
         dest="model_name",
         type=str,
-        default="HuggingFaceTB/SmolLM2-135M",
-        help="HuggingFace model name or local path",
+        default=None,
+        help="HuggingFace model name or local path (required unless a --preset sets it)",
     )
     model_group.add_argument(
         "--attention",
@@ -502,8 +516,8 @@ def parse_args():
     data_group.add_argument(
         "--dataset",
         type=str,
-        default="fancyzhx/ag_news",
-        help="HuggingFace dataset name",
+        default=None,
+        help="HuggingFace dataset name (required unless a --preset sets it)",
     )
     data_group.add_argument(
         "--dataset-subset",
@@ -1026,9 +1040,8 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
-    elif args.preset == "custom":
-        # Keep all user-provided/default CLI arguments unchanged.
-        pass
+
+    _require_configured(parser, args)
 
     # --microbatch-size 0 means "no microbatching" (full-batch vmap).
     # Needed because argparse type=int can't accept None on CLI to override presets.

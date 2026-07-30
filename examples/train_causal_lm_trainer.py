@@ -190,6 +190,20 @@ def _provided_dests(parser: argparse.ArgumentParser) -> set[str]:
     return provided
 
 
+def _require_configured(parser, args, required=("model_name", "dataset")):
+    """Fail fast if fields with no neutral default are still unset.
+
+    Presets fill these in; a preset-free run must provide them on the CLI.
+    """
+    missing = [name for name in required if getattr(args, name) is None]
+    if missing:
+        flags = ", ".join("--" + name.replace("_", "-") for name in missing)
+        parser.error(
+            f"missing required configuration: {flags}. "
+            f"Pass them directly or select a --preset (e.g. --preset smoke)."
+        )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -198,15 +212,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "mellum2-kstack"],
-        default="smoke",
-        help="Apply preset configuration (CLI args take precedence).",
+        choices=["smoke", "mellum-kstack", "mellum2-kstack"],
+        default=None,
+        help="Optional preset that fills in any unset arguments (CLI args take "
+        "precedence). Omit it to configure the run directly (at least "
+        "--model-name and --dataset).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
-    model_group.add_argument(
-        "--model-name", type=str, default="HuggingFaceTB/SmolLM2-135M"
-    )
+    model_group.add_argument("--model-name", type=str, default=None)
     model_group.add_argument(
         "--attention",
         type=str,
@@ -230,7 +244,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
-    data_group.add_argument("--dataset", type=str, default="fancyzhx/ag_news")
+    data_group.add_argument("--dataset", type=str, default=None)
     data_group.add_argument(
         "--dataset-subset",
         "--dataset-name",
@@ -753,8 +767,8 @@ def parse_args() -> argparse.Namespace:
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("auto_find_microbatch_size", True)
-    elif args.preset == "custom":
-        pass
+
+    _require_configured(parser, args)
 
     if args.microbatch_size == 0:
         args.microbatch_size = None
