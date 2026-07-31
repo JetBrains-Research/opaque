@@ -323,7 +323,7 @@ class TestPerGroupBC:
         )
         adam = _adam_state(state)
         assert isinstance(adam.phi, dict)
-        assert set(adam.phi.keys()) == set(pg_params.keys())
+        assert set(adam.phi.keys()) == {(k,) for k in pg_params}
 
     def test_per_group_correction_is_per_key(self, pg_params, pg_grads, pg_stddev):
         opt_pg = adamw(lr=1e-3, noise_bias_correction=True)
@@ -363,13 +363,12 @@ class TestPerGroupBC:
             },
             "layer2": {"weight": torch.randn_like(nested_params["layer2"]["weight"])},
         }
-        # PerGroup keyed by dotted leaf paths (exactly what
-        # opaque._clipping._per_group._extract_keys produces for nested dicts).
+        # PerGroup keyed by nested optree paths.
         pg = PerGroup(
             groups={
-                "layer1.weight": "g_a",
-                "layer1.bias": "g_a",
-                "layer2.weight": "g_b",
+                ("layer1", "weight"): "g_a",
+                ("layer1", "bias"): "g_a",
+                ("layer2", "weight"): "g_b",
             },
             values={"g_a": 0.2, "g_b": 0.7},
         )
@@ -385,16 +384,16 @@ class TestPerGroupBC:
         )
         new_adam = _adam_state(new_state)
         assert set(new_adam.phi.keys()) == {
-            "layer1.weight",
-            "layer1.bias",
-            "layer2.weight",
+            ("layer1", "weight"),
+            ("layer1", "bias"),
+            ("layer2", "weight"),
         }
         # Different groups → different φ-EMA values.
-        assert new_adam.phi["layer1.weight"] == pytest.approx(
-            new_adam.phi["layer1.bias"]
+        assert new_adam.phi[("layer1", "weight")] == pytest.approx(
+            new_adam.phi[("layer1", "bias")]
         )
-        assert new_adam.phi["layer2.weight"] != pytest.approx(
-            new_adam.phi["layer1.weight"]
+        assert new_adam.phi[("layer2", "weight")] != pytest.approx(
+            new_adam.phi[("layer1", "weight")]
         )
         # Updates have matching nested shape.
         assert updates["layer1"]["weight"].shape == (4, 3)

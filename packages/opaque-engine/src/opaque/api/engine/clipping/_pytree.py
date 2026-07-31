@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from collections import namedtuple
+from typing import Any
 
+import optree
 import torch
 
-from opaque.api.engine.pytree import global_norm, tree_map
+from opaque.api.engine.pytree import (
+    ParamPath,
+    global_norm,
+    param_path_display,
+    tree_flatten_with_paths,
+    tree_map,
+)
 from opaque.api.engine.types import PerGroup
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
@@ -19,25 +27,53 @@ Fields:
 """
 
 
+def _tensor_path_leaves(
+    pytree: Any,
+) -> tuple[list[ParamPath], list[torch.Tensor], Any]:
+    """Flatten tensor leaves with :data:`~opaque.pytree.ParamPath` keys."""
+    paths, leaves, treedef = tree_flatten_with_paths(pytree)
+    tensor_leaves: list[torch.Tensor] = []
+    for path, leaf in zip(paths, leaves, strict=True):
+        if not isinstance(leaf, torch.Tensor):
+            raise TypeError(
+                f"Expected tensor leaves for per-group clipping; "
+                f"got {type(leaf).__name__} at path {path!r}."
+            )
+        tensor_leaves.append(leaf)
+    return paths, tensor_leaves, treedef
+
+
+def _validate_per_group_paths(
+    paths: list[ParamPath],
+    pg: PerGroup,
+) -> None:
+    """Require a 1:1 match between leaf paths and ``pg.groups`` keys."""
+    leaf_set = set(paths)
+    group_set = set(pg.groups)
+    if leaf_set == group_set:
+        return
+    missing_in_groups = sorted(leaf_set - group_set, key=param_path_display)
+    missing_in_tree = sorted(group_set - leaf_set, key=param_path_display)
+    parts: list[str] = [
+        "PerGroup path keys must match the pytree tensor leaves exactly."
+    ]
+    if missing_in_groups:
+        parts.append(f"Leaves with no group assignment: {missing_in_groups}.")
+    if missing_in_tree:
+        parts.append(f"Group paths with no matching leaf: {missing_in_tree}.")
+    raise ValueError(" ".join(parts))
+
+
 def _resolve_compute_dtype_for_reduction(
-    pytree: dict[str, object],
+    leaves: list[torch.Tensor],
     compute_dtype: torch.dtype | None,
 ) -> torch.dtype:
-    """Pick the dtype for sum-of-squares reductions.
-
-    None ⇒ promote bf16/fp16 inputs to fp32, then take the highest float
-    dtype present across all tensor leaves (so mixed fp32/fp64 trees
-    accumulate at fp64, not silently downcast).  Explicit dtype ⇒ use
-    as-is (DP callers force fp32 here for sensitivity-bound stability).
-
-    Mirrors :func:`opaque.pytree.global_norm`'s dtype resolution so
-    the per-group reduction agrees with the global-flat path.
-    """
+    """Pick the dtype for sum-of-squares reductions over ``leaves``."""
     if compute_dtype is not None:
         return compute_dtype
-    acc = torch.float32  # baseline; bf16/fp16 always promote to at least this
-    for leaf in pytree.values():
-        if not isinstance(leaf, torch.Tensor) or not torch.is_floating_point(leaf):
+    acc = torch.float32
+    for leaf in leaves:
+        if not torch.is_floating_point(leaf):
             continue
         promoted = (
             torch.float32
@@ -48,25 +84,49 @@ def _resolve_compute_dtype_for_reduction(
     return acc
 
 
-def _auto_scale_per_group(
-    pytree: dict[str, torch.Tensor],
+def _accumulate_group_sq_norms(
+    paths: list[ParamPath],
+    leaves: list[torch.Tensor],
     pg: PerGroup,
-    gamma: float,
-    compute_dtype: torch.dtype | None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
-    """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
-    acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
-
+    acc_dtype: torch.dtype,
+) -> dict[str, torch.Tensor]:
     group_sq_norms: dict[str, torch.Tensor] = {}
-    for key, tensor in pytree.items():
-        if not isinstance(tensor, torch.Tensor):
-            continue
-        group_name = pg.groups[key]
+    for path, tensor in zip(paths, leaves, strict=True):
+        group_name = pg.groups[path]
         sq = (tensor.to(acc_dtype) ** 2).sum()
         if group_name in group_sq_norms:
             group_sq_norms[group_name] = group_sq_norms[group_name] + sq
         else:
             group_sq_norms[group_name] = sq
+    return group_sq_norms
+
+
+def _scale_leaves_by_group(
+    paths: list[ParamPath],
+    leaves: list[torch.Tensor],
+    pg: PerGroup,
+    group_scales: dict[str, torch.Tensor],
+    treedef: Any,
+) -> Any:
+    scaled = [
+        group_scales[pg.groups[path]].to(dtype=leaf.dtype) * leaf
+        for path, leaf in zip(paths, leaves, strict=True)
+    ]
+    return optree.tree_unflatten(treedef, scaled)
+
+
+def _auto_scale_per_group(
+    pytree: Any,
+    pg: PerGroup,
+    gamma: float,
+    compute_dtype: torch.dtype | None,
+) -> tuple[Any, ClipPytreeAux]:
+    """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
+    paths, leaves, treedef = _tensor_path_leaves(pytree)
+    _validate_per_group_paths(paths, pg)
+    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
+
+    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
 
     group_scales: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
@@ -79,14 +139,7 @@ def _auto_scale_per_group(
         scale = torch.where(torch.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
 
-    scaled: dict[str, torch.Tensor] = {}
-    for key, val in pytree.items():
-        if isinstance(val, torch.Tensor):
-            group_name = pg.groups[key]
-            scale = group_scales[group_name]
-            scaled[key] = scale.to(dtype=val.dtype) * val
-        else:
-            scaled[key] = val
+    scaled = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef)
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
     group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
@@ -94,12 +147,12 @@ def _auto_scale_per_group(
 
 
 def auto_scale_pytree(
-    pytree: dict[str, torch.Tensor],
+    pytree: Any,
     R: float | PerGroup = 1.0,
     gamma: float = 0.01,
     *,
     compute_dtype: torch.dtype | None = None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+) -> tuple[Any, ClipPytreeAux]:
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
     Scales the PyTree by ``R / (\|pytree\| + gamma)`` so the output L2
@@ -109,9 +162,10 @@ def auto_scale_pytree(
     learning rate.
 
     Args:
-        pytree: Dictionary of tensors to scale.
+        pytree: Tensor pytree to scale (flat or nested).
         R: Output sensitivity bound (non-negative). When ``PerGroup``, each
-            group is scaled independently to its own bound.
+            group is scaled independently to its own bound; leaf paths must
+            match ``R.groups`` exactly.
         gamma: Small positive denominator stabilizer :math:`\gamma` (default
             0.01). Must be strictly positive; at ``gamma=0`` this reduces to
             AUTO-V (undefined at zero gradient).
@@ -167,27 +221,18 @@ def auto_scale_pytree(
 
 
 def _clip_pytree_per_group(
-    pytree: dict[str, torch.Tensor],
+    pytree: Any,
     pg: PerGroup,
     return_zero: bool,
     compute_dtype: torch.dtype | None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
-    """Per-group clipping: each group is clipped to its own L2 norm max_norm."""
-    acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
+) -> tuple[Any, ClipPytreeAux]:
+    """Per-group clipping keyed by optree :data:`~opaque.pytree.ParamPath`."""
+    paths, leaves, treedef = _tensor_path_leaves(pytree)
+    _validate_per_group_paths(paths, pg)
+    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
 
-    # 1. Accumulate squared norms per group
-    group_sq_norms: dict[str, torch.Tensor] = {}
-    for key, tensor in pytree.items():
-        if not isinstance(tensor, torch.Tensor):
-            continue
-        group_name = pg.groups[key]
-        sq = (tensor.to(acc_dtype) ** 2).sum()
-        if group_name in group_sq_norms:
-            group_sq_norms[group_name] = group_sq_norms[group_name] + sq
-        else:
-            group_sq_norms[group_name] = sq
+    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
 
-    # 2. Compute per-group scale factors: min(1, norm_bound / norm)
     group_scales: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
         norm = torch.sqrt(sq_norm)
@@ -199,15 +244,7 @@ def _clip_pytree_per_group(
         scale = torch.where(torch.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
 
-    # 3. Apply per-group scales
-    clipped: dict[str, torch.Tensor] = {}
-    for key, val in pytree.items():
-        if isinstance(val, torch.Tensor):
-            group_name = pg.groups[key]
-            scale = group_scales[group_name]
-            clipped[key] = scale.to(dtype=val.dtype) * val
-        else:
-            clipped[key] = val
+    clipped = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef)
 
     if return_zero:
         clipped = tree_map(
@@ -221,22 +258,22 @@ def _clip_pytree_per_group(
 
 
 def clip_pytree(
-    pytree: dict[str, torch.Tensor],
+    pytree: Any,
     clipping_norm: float | PerGroup,
     return_zero: bool = False,
     *,
     compute_dtype: torch.dtype | None = None,
-) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+) -> tuple[Any, ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
     NaN and Inf values in the input are replaced with zeros before clipping.
     This is vmap-compatible and DP-safe (the clipped output has norm <= clipping_norm).
 
     Args:
-        pytree: Dictionary of tensors to clip
+        pytree: Tensor pytree to clip (flat or nested).
         clipping_norm: Maximum L2 norm (non-negative, or inf for no clipping).
-            When ``PerGroup``, each group of parameters is clipped independently
-            to its own norm bound.
+            When ``PerGroup``, each group is clipped independently; leaf paths
+            must match ``clipping_norm.groups`` exactly.
         return_zero: If True, the output PyTree is guaranteed to be zero no matter
             what the inputs are. Does not influence the formal guarantees but useful
             for privacy amplification via padding (see https://arxiv.org/pdf/2411.04205).
@@ -257,9 +294,6 @@ def clip_pytree(
         - NaN/Inf values: Replaced with zeros before clipping
         - return_zero=True: Returns zeros regardless of other parameters
     """
-    # Sanitize NaN/Inf → 0 before clipping.  This is both vmap-compatible
-    # (no data-dependent control flow) and DP-safe (zeroed contributions
-    # have norm 0, which is within the sensitivity bound).
     pytree = tree_map(
         lambda t: (
             torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
@@ -269,28 +303,19 @@ def clip_pytree(
         pytree,
     )
 
-    # Per-group path: clip each group independently
     if isinstance(clipping_norm, PerGroup):
         return _clip_pytree_per_group(pytree, clipping_norm, return_zero, compute_dtype)
 
-    # --- Global (flat) clipping path ---
-
-    # Compute original norm (always finite after sanitization)
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
 
-    # Compute scale factor
     clipping_norm_tensor = torch.tensor(
         clipping_norm, dtype=orig_norm.dtype, device=orig_norm.device
     )
     clipping_norm_tensor = torch.clamp(clipping_norm_tensor, min=0.0)
 
-    # Basic clipping: scale = min(1, clipping_norm / orig_norm)
     scale = torch.minimum(torch.tensor(1.0), clipping_norm_tensor / orig_norm)
-
-    # Handle norm=0 or NaN: set scale to 0
     scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))
 
-    # Apply scale (cast to input dtype to avoid 0D-vs-0D promotion to float32)
     def scale_leaf(t):
         if not isinstance(t, torch.Tensor):
             return t
@@ -300,7 +325,6 @@ def clip_pytree(
         lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
     )
 
-    # Apply return_zero if requested (for privacy amplification via padding)
     if return_zero:
         clipped = tree_map(
             lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t, clipped

@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import torch
 
-from opaque.api.engine.pytree import tree_map
+from opaque.api.engine.pytree import ParamPath, tree_map
 
 if TYPE_CHECKING:
     from opaque.api.engine.random.types import RngKey
@@ -66,7 +66,7 @@ TensorPytree = (
 
 @dataclass(frozen=True)
 class PerGroup:
-    """Per-group values with pre-resolved parameter-to-group assignment.
+    """Per-group values with pre-resolved leaf-path → group assignment.
 
     Flows through the DP pipeline as clipping norms, output bounds,
     noise multipliers, and noise stddevs.  Supports arithmetic so
@@ -79,17 +79,28 @@ class PerGroup:
     of a plain product.
 
     Attributes:
-        groups: Mapping from parameter key to group name (pre-resolved).
+        groups: Mapping from :data:`~opaque.pytree.ParamPath` (optree leaf
+            path) to group name.  Flat ``named_parameters`` keys are stored as
+            one-segment paths ``(name,)``; nested trees use multi-segment
+            paths such as ``("layer", "weight")``.  A bare ``str`` key is
+            accepted at construction and normalized to ``(str,)``.
         values: Mapping from group name to the per-group value.
 
     Checkpointing uses :func:`opaque.serialization.state_dict` /
     :func:`opaque.serialization.from_state_dict`; the template must use
-    the same ``groups`` / ``values`` keys as at save time (flat keys such
-    as ``groups.<param_key>`` / ``values.<group_name>``).
+    the same ``groups`` / ``values`` keys as at save time.
     """
 
-    groups: dict[str, str]
+    groups: dict[ParamPath | str, str]
     values: dict[str, float]
+
+    def __post_init__(self) -> None:
+        from opaque.api.engine.pytree import param_path
+
+        normalized: dict[ParamPath, str] = {}
+        for key, group in self.groups.items():
+            normalized[param_path(key)] = group
+        object.__setattr__(self, "groups", normalized)
 
     @property
     def effective(self) -> float:
@@ -130,9 +141,11 @@ class PerGroup:
     def __truediv__(self, scalar: float) -> PerGroup:
         return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})
 
-    def for_key(self, key: str) -> float:
-        """Look up the per-group value for a parameter key."""
-        return self.values[self.groups[key]]
+    def for_path(self, path: ParamPath | str) -> float:
+        """Look up the per-group value for a leaf :data:`~opaque.pytree.ParamPath`."""
+        from opaque.api.engine.pytree import param_path
+
+        return self.values[self.groups[param_path(path)]]
 
 
 # ===========================================================================
@@ -454,6 +467,7 @@ __all__ = [
     "NoiseState",
     "NoiseStddev",
     "NoisedPytree",
+    "ParamPath",
     "PerGroup",
     "SecondMomentClippingOutput",
     "SecondMomentNoiseOutput",

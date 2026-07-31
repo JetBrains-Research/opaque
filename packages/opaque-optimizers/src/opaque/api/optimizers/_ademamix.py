@@ -158,24 +158,11 @@ def _scale_by_ademamix(
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
-            # Per-leaf path: walk by dotted-key paths matching
-            # :class:`PerGroup`'s lookup keys, so nested param pytrees
-            # work the same as flat dicts.
-            new_phi: dict[str, float] = {}
+            from opaque.api.optimizers._bias_correction import map_leaves_with_path
 
-            def _bc_walk(mf_node: Any, ms_node: Any, v_node: Any, prefix: str) -> Any:
-                if isinstance(mf_node, dict):
-                    return {
-                        k: _bc_walk(
-                            mf_node[k],
-                            ms_node[k],
-                            v_node[k],
-                            f"{prefix}.{k}" if prefix else str(k),
-                        )
-                        for k in mf_node
-                    }
-                # Tensor leaf.
-                path = prefix
+            new_phi: dict = {}
+
+            def _bc_leaf(path, mf_node, ms_node, v_node):
                 nv = resolve_noise_variance(effective, path)
                 old_phi_k = (
                     state.phi.get(path, 0.0)
@@ -193,7 +180,7 @@ def _scale_by_ademamix(
                     v_hat = v_raw
                 return ((mf_node / bc1) + alpha * ms_node) / (v_hat.sqrt() + eps)
 
-            result = _bc_walk(new_mf, new_ms, new_nu, "")
+            result = map_leaves_with_path(_bc_leaf, new_mf, new_ms, new_nu)
         else:
             scalar_var = float(effective) ** 2
             new_phi = update_phi_ema(state.phi, scalar_var, b2)

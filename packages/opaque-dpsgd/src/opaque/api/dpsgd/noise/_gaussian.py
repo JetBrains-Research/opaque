@@ -286,18 +286,23 @@ def gaussian_noise(
     def _add_noise_tree(grads, effective_stddev, generator):
         _validate_noise_stddev(effective_stddev)
 
-        # Per-group σ: ClippedPytree.pytree must be a flat dict[path_key, Tensor].
+        # Per-group σ: look up each leaf by optree ParamPath.
         if isinstance(effective_stddev, PerGroup):
-            if not isinstance(grads, dict):
-                raise TypeError(
-                    "gaussian_noise with PerGroup stddev requires "
-                    "ClippedPytree.pytree to be a dict[str, torch.Tensor]."
-                )
-            noised = {}
-            for param_key, tensor in grads.items():
-                group_std = effective_stddev.for_key(param_key)
-                noised[param_key] = _sample(tensor, group_std, generator)
-            return noised
+            import optree
+
+            from opaque.api.engine.pytree import tree_flatten_with_paths
+
+            paths, leaves, treedef = tree_flatten_with_paths(grads)
+            noised_leaves = []
+            for path, tensor in zip(paths, leaves, strict=True):
+                if not isinstance(tensor, torch.Tensor):
+                    raise TypeError(
+                        "gaussian_noise with PerGroup stddev expects tensor "
+                        f"leaves; got {type(tensor).__name__} at path {path!r}."
+                    )
+                group_std = effective_stddev.for_path(path)
+                noised_leaves.append(_sample(tensor, group_std, generator))
+            return optree.tree_unflatten(treedef, noised_leaves)
 
         return tree_map(lambda t: _sample(t, effective_stddev, generator), grads)
 

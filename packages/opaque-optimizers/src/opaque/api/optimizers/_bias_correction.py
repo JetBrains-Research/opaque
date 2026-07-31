@@ -30,56 +30,81 @@ lives elsewhere (``opaque.dpsgd.noise``, ``opaque.dpftrl.noise``).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from opaque.api.engine.pytree import ParamPath, tree_flatten_with_paths
 from opaque.types import PerGroup
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
-def walk_dict_leaves(tree: Any, prefix: str = "") -> Any:
-    """Yield ``(dotted_path, leaf)`` pairs for a ``dict``-tree.
 
-    Mirrors the path convention of
-    :func:`opaque._clipping._per_group._extract_keys`: walks ``dict``-valued
-    nodes recursively and treats anything that is not a ``dict`` as a
-    leaf.  The yielded dotted-key paths match the keys
-    :class:`PerGroup` expects when looking up per-leaf values, so this
-    is the right walker to use whenever a per-leaf operation needs
-    PerGroup parity (BC's φ-EMA, per-leaf noise allocation, …).
+def map_leaves_with_path(
+    fn: Any,
+    tree: Any,
+    *others: Any,
+) -> Any:
+    """Apply ``fn(path, leaf, *other_leaves)`` and rebuild ``tree``'s structure.
+
+    All trees must share the same :data:`~opaque.pytree.ParamPath` sequence
+    (same leaf order and structure).  Matching leaf *counts* alone is not
+    enough — e.g. a length-2 list vs a 2-key dict would otherwise silently
+    mis-align leaves.
     """
-    if isinstance(tree, dict):
-        for k, v in tree.items():
-            sub = f"{prefix}.{k}" if prefix else str(k)
-            yield from walk_dict_leaves(v, sub)
-    else:
-        yield prefix, tree
+    import optree
+
+    paths, leaves, treedef = tree_flatten_with_paths(tree)
+    other_flat = [tree_flatten_with_paths(t) for t in others]
+    for i, (other_paths, other_leaves, _) in enumerate(other_flat):
+        if other_paths != paths:
+            raise ValueError(
+                f"pytree ParamPath mismatch for argument {i}: "
+                f"primary paths {paths!r}, got {other_paths!r}."
+            )
+        if len(other_leaves) != len(leaves):
+            raise ValueError(
+                f"pytree leaf count mismatch: primary has {len(leaves)}, "
+                f"argument {i} has {len(other_leaves)}"
+            )
+    out_leaves = []
+    for j, path in enumerate(paths):
+        args = [leaves[j], *[flat[1][j] for flat in other_flat]]
+        out_leaves.append(fn(path, *args))
+    return optree.tree_unflatten(treedef, out_leaves)
 
 
-def init_per_group_phi(params: Any) -> dict[str, float]:
-    """Initial φ-EMA dict: ``0.0`` per dotted leaf path of ``params``.
+def walk_param_leaves(tree: Any) -> Iterator[tuple[ParamPath, Any]]:
+    """Yield ``(ParamPath, leaf)`` pairs for every leaf in ``tree``.
 
-    Used by per-group BC at ``init`` time so the state shape covers
-    every leaf the per-step BC walk will see, including for nested
-    param pytrees.
+    Uses :func:`~opaque.pytree.tree_flatten_with_paths` so paths match
+    :class:`~opaque.types.PerGroup.groups` keys (flat ``named_parameters``
+    are one-segment paths; nested trees are multi-segment).
     """
-    return {path: 0.0 for path, _ in walk_dict_leaves(params)}
+    paths, leaves, _ = tree_flatten_with_paths(tree)
+    yield from zip(paths, leaves, strict=True)
+
+
+def init_per_group_phi(params: Any) -> dict[ParamPath, float]:
+    """Initial φ-EMA dict: ``0.0`` per leaf path of ``params``."""
+    return {path: 0.0 for path, _ in walk_param_leaves(params)}
 
 
 def resolve_noise_variance(
     noise_stddev: float | PerGroup,
-    key: str | None = None,
+    path: ParamPath | str | None = None,
 ) -> float:
     """Square a (possibly per-group) noise stddev to get its variance.
 
-    When ``noise_stddev`` is a :class:`PerGroup`, ``key`` selects the
-    parameter's group; the per-key value is squared.  When it's a plain
-    float, ``key`` is ignored.
+    When ``noise_stddev`` is a :class:`PerGroup`, ``path`` selects the
+    leaf's group; the per-path value is squared.  When it's a plain
+    float, ``path`` is ignored.
     """
     if isinstance(noise_stddev, PerGroup):
-        if key is None:
+        if path is None:
             raise ValueError(
-                "resolve_noise_variance requires `key` for PerGroup noise_stddev"
+                "resolve_noise_variance requires `path` for PerGroup noise_stddev"
             )
-        return float(noise_stddev.for_key(key)) ** 2
+        return float(noise_stddev.for_path(path)) ** 2
     return float(noise_stddev) ** 2
 
 
@@ -89,17 +114,16 @@ def is_per_group(noise_stddev: float | PerGroup) -> bool:
 
 
 def update_phi_ema(
-    phi: float | dict[str, float],
-    new_variance: float | dict[str, float],
+    phi: float | dict[ParamPath, float],
+    new_variance: float | dict[ParamPath, float],
     b2: float,
-) -> float | dict[str, float]:
+) -> float | dict[ParamPath, float]:
     """Advance the noise-variance EMA by one step::
 
         φ_t = β₂ φ_{t-1} + (1 − β₂) Φ_t
 
     Both arguments are scalars in the homogeneous case; in the per-group
-    case both are ``dict[str, float]`` keyed identically.  Mixed shapes
-    raise.
+    case both are path-keyed dicts.  Mixed shapes raise.
     """
     if isinstance(phi, dict):
         if not isinstance(new_variance, dict):
@@ -111,10 +135,16 @@ def update_phi_ema(
     return b2 * phi + (1 - b2) * float(new_variance)
 
 
+# Back-compat alias used by a few call sites / older comments.
+walk_dict_leaves = walk_param_leaves
+
+
 __all__ = [
     "init_per_group_phi",
     "is_per_group",
+    "map_leaves_with_path",
     "resolve_noise_variance",
     "update_phi_ema",
     "walk_dict_leaves",
+    "walk_param_leaves",
 ]
