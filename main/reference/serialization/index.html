@@ -2757,9 +2757,13 @@ shape as at save time; keys present in the checkpoint overwrite leaves, and
 missing keys keep template values (forward compatibility when new fields appear).
 Non-serialisable leaves (vendor specs, callables, …) are skipped on save and
 preserved from the template on load.</p>
-<p>:class:<code>~opaque.types.PerGroup</code> checkpoints through the same API (flat keys such
-as <code>groups.&lt;param_key&gt;</code> / <code>values.&lt;group_name&gt;</code>).  NumPy <code>ndarray</code> leaves
-are supported alongside <code>torch.Tensor</code>.</p>
+<p>:class:<code>~opaque.types.PerGroup</code> checkpoints through the same API. Path keys
+serialize as their <code>str()</code> form under the structural walker — e.g.
+<code>groups.('a',)</code> for a flat leaf, or <code>groups.('layer', 'weight')</code> for a
+nested path — alongside <code>values.&lt;group_name&gt;</code>.  When DP bias correction is
+enabled on Adam-family optimizers, <code>phi</code> is a path-keyed dict from
+<code>opt.init</code> so <code>from_state_dict</code> round-trips without resetting φ.  NumPy
+<code>ndarray</code> leaves are supported alongside <code>torch.Tensor</code>.</p>
 <p>Domain pages with examples: <a href="../optimizers/">Optimizers</a>, <a href="../accounting/">Accounting</a>.</p>
 <h2 id="api-surface-no-per-type-state_dict">API surface (no per-type <code>state_dict()</code>)<a class="headerlink" href="#api-surface-no-per-type-state_dict" title="Permanent link">&para;</a></h2>
 <p>Opaque centralises (de)serialisation in :func:<code>opaque.serialization.state_dict</code>
