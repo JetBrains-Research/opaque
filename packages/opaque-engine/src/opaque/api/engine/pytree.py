@@ -34,11 +34,18 @@ ParamPath = tuple[str | int, ...]
 Flat ``named_parameters`` dicts use a one-segment path, e.g.
 ``("layers.0.weight",)``.  Nested trees use multi-segment paths, e.g.
 ``("layers", 0, "weight")``.  The two never collide.
+
+A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
+matching :func:`optree.tree_flatten_with_path`.
 """
 
 
 def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
-    """Normalize an optree path (or flat string key) to :data:`ParamPath`."""
+    """Normalize an optree path (or flat string key) to :data:`ParamPath`.
+
+    The empty path ``()`` is valid and denotes a root leaf (a pytree that
+    is itself a single tensor).
+    """
     if isinstance(path, str):
         return (path,)
     out: list[str | int] = []
@@ -49,8 +56,6 @@ def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
             raise TypeError(
                 f"ParamPath components must be str or int; got {type(part).__name__}"
             )
-    if not out:
-        raise ValueError("ParamPath must be non-empty")
     return tuple(out)
 
 

@@ -72,6 +72,18 @@ class TestTreeMapWithPath:
         flat_paths, _, _ = tree_flatten_with_paths(tree)
         assert walked == flat_paths
 
+    def test_leaf_tensor_root_path(self):
+        """A bare Tensor is a valid pytree with empty ParamPath ``()``."""
+        from opaque.pytree import tree_flatten_with_paths
+
+        leaf = torch.ones(3)
+        paths, leaves, _ = tree_flatten_with_paths(leaf)
+        assert paths == [()]
+        assert len(leaves) == 1
+        out = tree_map_with_path(lambda p, x: (p, x * 2), leaf)
+        assert out[0] == ()
+        torch.testing.assert_close(out[1], leaf * 2)
+
 
 class TestPartition:
     """Tests for partition function."""

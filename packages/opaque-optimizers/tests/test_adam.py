@@ -179,6 +179,24 @@ class TestBCMode:
             _, state = opt.update(grads, state, params=params)
         assert _adam_state(state).phi == 0.0
 
+    def test_bc_init_accepts_leaf_tensor(self):
+        """Single-Tensor params are a valid pytree (empty ParamPath)."""
+        params = torch.randn(4, 3)
+        opt = adamw(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(params)
+        phi = _adam_state(state).phi
+        assert isinstance(phi, dict)
+        assert set(phi) == {()}
+        assert phi[()] == 0.0
+        grads = torch.randn_like(params)
+        updates, new_state = opt.update(
+            noised(grads, max_norm=1.0, noise_stddev=0.5),
+            state,
+            params=params,
+        )
+        assert updates.shape == params.shape
+        assert _adam_state(new_state).phi[()] > 0.0
+
     def test_phi_advances_under_noisy_metadata(self, params, grads):
         b2 = 0.999
         sigma = 0.5
