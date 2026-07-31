@@ -26,12 +26,14 @@ primary API for DP-SGD training.
 ```python
 from opaque.dpsgd.clipping import clipped_grad
 
+
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
 
+
 grad_fn, clip_state = clipped_grad(
     loss_fn,
-    argnums=0,             # differentiate w.r.t. first argument (params)
+    argnums=0,  # differentiate w.r.t. first argument (params)
     batch_argnums=(1, 2),  # second and third arguments are batched
     clipping_norm=1.0,
     normalize_by=batch_size,
@@ -104,7 +106,10 @@ Set `return_aux=True` to get per-example gradient norms and loss values:
 
 ```python
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, batch_argnums=1, return_aux=True,
+    loss_fn,
+    clipping_norm=1.0,
+    batch_argnums=1,
+    return_aux=True,
 )
 
 (grads, aux), clip_state = grad_fn(params, batch, state=clip_state)
@@ -180,9 +185,9 @@ grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
     batch_argnums=1,
     initial_clipping_norm=1.0,
-    target_quantile=0.5,   # aim for 50% of gradients clipped
+    target_quantile=0.5,  # aim for 50% of gradients clipped
     normalize_by=batch_size,
-    key=key(7),            # required for quantile noise
+    key=key(7),  # required for quantile noise
 )
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
@@ -228,9 +233,11 @@ import opaque.accounting as acc
 
 expected_batch_size = sample_rate * dataset_size
 step = dpsgd_acc.poisson(
-    dpsgd_acc.adaclip(dpsgd_acc.gaussian(noise_multiplier),
-                fraction_noise_std=0.05,
-                expected_batch_size=expected_batch_size),
+    dpsgd_acc.adaclip(
+        dpsgd_acc.gaussian(noise_multiplier),
+        fraction_noise_std=0.05,
+        expected_batch_size=expected_batch_size,
+    ),
     sample_rate,
 )
 training = step * num_steps
@@ -279,12 +286,15 @@ from opaque.functional import make_functional
 
 fmodel, params = make_functional(model)
 
+
 def loss_fn(params, x, y):
     pred = fmodel(params, x.unsqueeze(0)).squeeze()
     return (pred - y) ** 2
 
-grad_fn, clip_state = clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
-                                   clipping_norm=1.0)
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
+)
 ```
 
 ### Separating trainable and frozen parameters
@@ -295,13 +305,20 @@ frozen parameters:
 ```python
 fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 
+
 def loss_fn(trainable_params, input_ids, labels):
-    out = fmodel(trainable_params, frozen, input_ids=input_ids.unsqueeze(0),
-                 labels=labels.unsqueeze(0))
+    out = fmodel(
+        trainable_params,
+        frozen,
+        input_ids=input_ids.unsqueeze(0),
+        labels=labels.unsqueeze(0),
+    )
     return out.loss
 
-grad_fn, clip_state = clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
-                                   clipping_norm=1.0)
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
+)
 ```
 
 Only the trainable parameters receive per-example gradients. Frozen parameters
@@ -338,6 +355,7 @@ patterns:
 
 ```python
 from opaque.dpsgd.clipping import clipped_grad, per_group
+
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
 grad_fn, clip_state = clipped_grad(
@@ -349,9 +367,17 @@ grad_fn, clip_state = clipped_grad(
 )
 ```
 
-Each trainable parameter key (from `make_functional`) is matched by substring
-against the patterns. Every parameter must match exactly one pattern. Use
-`fallback=<value>` as a catch-all for unmatched parameters:
+Each parameter leaf is matched by substring against the patterns, using the
+leaf's display path (`".".join` of the optree `ParamPath`). Flat
+`named_parameters` keys from `make_functional` are one-segment paths; nested
+dicts/lists use multi-segment paths (e.g. `("layer", "attn")` displays as
+`layer.attn`). Every leaf must match exactly one pattern. Use
+`fallback=<value>` as a catch-all for unmatched parameters.
+
+Prefer `per_group(params, …)` over constructing `PerGroup` by hand: a bare
+string key such as `"layer.attn"` normalizes to the one-segment path
+`("layer.attn",)`, which does **not** match a nested leaf at
+`("layer", "attn")`.
 
 ```python
 pg = per_group(params, self_attn=1.0, fallback=0.5)
@@ -397,7 +423,8 @@ stddev = grads.noise_stddev_for(noise_multiplier=noise_multiplier)
 
 # Or 'isotropic' for a uniform σ across leaves
 uniform = grads.noise_stddev_for(
-    noise_multiplier=noise_multiplier, allocation="isotropic",
+    noise_multiplier=noise_multiplier,
+    allocation="isotropic",
 )
 ```
 
@@ -426,7 +453,10 @@ With `return_aux=True`, the returned auxiliary data includes per-group norms:
 
 ```python
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=pg, batch_argnums=1, return_aux=True,
+    loss_fn,
+    clipping_norm=pg,
+    batch_argnums=1,
+    return_aux=True,
 )
 (grads, aux), clip_state = grad_fn(params, batch, state=clip_state)
 
@@ -475,8 +505,8 @@ grad_fn, clip_state = auto_clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=(1, 2),
-    R=1.0,              # sensitivity bound (default 1.0)
-    gamma=0.01,         # denominator stabilizer γ (default 0.01)
+    R=1.0,  # sensitivity bound (default 1.0)
+    gamma=0.01,  # denominator stabilizer γ (default 0.01)
     normalize_by=batch_size,
 )
 
@@ -505,8 +535,11 @@ from opaque.dpftrl import band_mf_strategy, mf_gaussian_noise
 from opaque.random import key
 
 grad_fn, clip_state = auto_clipped_grad(
-    loss_fn, argnums=0, batch_argnums=(1, 2),
-    R=1.0, normalize_by=batch_size,
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    R=1.0,
+    normalize_by=batch_size,
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
@@ -556,8 +589,11 @@ from opaque.dpsgd.clipping import auto_clipped_grad, per_group
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
 grad_fn, clip_state = auto_clipped_grad(
-    loss_fn, argnums=0, batch_argnums=(1, 2),
-    R=pg, normalize_by=batch_size,
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    R=pg,
+    normalize_by=batch_size,
 )
 # grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by
 ```

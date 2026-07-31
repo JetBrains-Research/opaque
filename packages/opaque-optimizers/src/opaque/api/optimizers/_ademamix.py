@@ -49,6 +49,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.api.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -57,6 +58,7 @@ from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
+    from opaque.pytree import ParamPath
     from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
@@ -69,7 +71,7 @@ class AdEMAMixState:
     m_fast: TensorPytree
     m_slow: TensorPytree
     nu: TensorPytree
-    phi: float | dict[str, float]
+    phi: float | dict[ParamPath, float]
     step: int
 
 
@@ -84,11 +86,12 @@ def _scale_by_ademamix(
 ) -> GradientTransformation:
     def init_fn(params: Any) -> AdEMAMixState:
         zeros = lambda p: torch.zeros_like(p)  # noqa: E731
+        phi: float | dict = init_per_group_phi(params) if noise_bias_correction else 0.0
         return AdEMAMixState(
             m_fast=tree_map(zeros, params),
             m_slow=tree_map(zeros, params),
             nu=tree_map(zeros, params),
-            phi=0.0,
+            phi=phi,
             step=0,
         )
 

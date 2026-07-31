@@ -34,11 +34,18 @@ ParamPath = tuple[str | int, ...]
 Flat ``named_parameters`` dicts use a one-segment path, e.g.
 ``("layers.0.weight",)``.  Nested trees use multi-segment paths, e.g.
 ``("layers", 0, "weight")``.  The two never collide.
+
+A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
+matching :func:`optree.tree_flatten_with_path`.
 """
 
 
 def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
-    """Normalize an optree path (or flat string key) to :data:`ParamPath`."""
+    """Normalize an optree path (or flat string key) to :data:`ParamPath`.
+
+    The empty path ``()`` is valid and denotes a root leaf (a pytree that
+    is itself a single tensor).
+    """
     if isinstance(path, str):
         return (path,)
     out: list[str | int] = []
@@ -49,8 +56,6 @@ def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
             raise TypeError(
                 f"ParamPath components must be str or int; got {type(part).__name__}"
             )
-    if not out:
-        raise ValueError("ParamPath must be non-empty")
     return tuple(out)
 
 
@@ -138,15 +143,18 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
 
 
 def tree_map_with_path(
-    fn: Callable[[tuple[Any, ...], Any], Any],
+    fn: Callable[[ParamPath, Any], Any],
     tree: Any,
 ) -> Any:
-    """Apply function to leaves with their path in the tree.
+    """Apply function to leaves with their :data:`ParamPath` in the tree.
 
-    This is useful for selective operations based on parameter names/locations.
+    Paths and leaf order match :func:`tree_flatten_with_paths` (optree
+    traversal, including sorted dict keys), so results align with
+    :class:`~opaque.types.PerGroup` keys.
 
     Args:
-        fn: Function that takes (path, leaf) where path is a tuple of keys
+        fn: Function that takes ``(path, leaf)`` where ``path`` is a
+            :data:`ParamPath`.
         tree: PyTree to traverse
 
     Returns:
@@ -161,18 +169,9 @@ def tree_map_with_path(
         ('layer1', 'weight'): torch.Size([2])
         ('layer2', 'bias'): torch.Size([3])
     """
-
-    def _traverse(path: tuple, subtree: Any) -> Any:
-        if isinstance(subtree, dict):
-            return {k: _traverse((*path, k), v) for k, v in subtree.items()}
-        elif isinstance(subtree, (list, tuple)):
-            result = [_traverse((*path, i), v) for i, v in enumerate(subtree)]
-            return type(subtree)(result)
-        else:
-            # Leaf node
-            return fn(path, subtree)
-
-    return _traverse((), tree)
+    paths, leaves, treedef = tree_flatten_with_paths(tree)
+    out = [fn(path, leaf) for path, leaf in zip(paths, leaves, strict=True)]
+    return _ot.tree_unflatten(treedef, out)
 
 
 def partition(

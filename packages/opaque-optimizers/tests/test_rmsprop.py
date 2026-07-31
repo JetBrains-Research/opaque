@@ -110,7 +110,9 @@ class TestBCMode:
                 params=params,
             )
             expected_phi = alpha * expected_phi + (1 - alpha) * (sigma**2)
-        assert _rms_state(state).phi == pytest.approx(expected_phi)
+        phi = _rms_state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx(expected_phi) for v in phi.values())
 
     def test_noisy_updates_take_per_step_metadata(self, params, grads):
         alpha = 0.99
@@ -124,7 +126,9 @@ class TestBCMode:
                 params=params,
             )
             expected_phi = alpha * expected_phi + (1 - alpha) * (sigma**2)
-        assert _rms_state(state).phi == pytest.approx(expected_phi)
+        phi = _rms_state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx(expected_phi) for v in phi.values())
 
     def test_bc_increases_effective_lr(self, params, grads):
         big = {k: v * 10 for k, v in grads.items()}
