@@ -1,9 +1,10 @@
 """Distributed synchronization helpers for core clipping components.
 
 Implements all-reduce/all-gather patterns for the algorithm-agnostic
-fixed clipping state and clipping auxiliary outputs. DP-SGD-specific
-adaptive clipping sync lives in :mod:`opaque.dpsgd.clipping.distributed`
-and self-registers via :func:`opaque.distributed.register_sync_type`.
+fixed and AUTO-S clipping states and clipping auxiliary outputs.
+DP-SGD-specific adaptive clipping sync lives in
+:mod:`opaque.dpsgd.clipping.distributed` and self-registers via
+:func:`opaque.distributed.register_sync_type`.
 """
 
 from __future__ import annotations
@@ -28,23 +29,35 @@ from opaque.api.engine.pytree import (
     tree_unflatten,
 )
 
+from opaque.api.engine.types import ClipState
+
+from ._auto import AutoClipState
 from ._clipped_fun import ClippedFunAux, FixedClipState
 from ._clipped_grad import ClippedGradAux
 
 __all__ = [
     "sync_aux",
-    "sync_clip_state",
     "sync_clipped_fun_aux",
     "sync_clipped_grad_aux",
+    "sync_marker_clip_state",
 ]
 
 
-def sync_clip_state(state: FixedClipState) -> FixedClipState:
-    """Synchronize fixed clipping marker state."""
-    if not is_distributed():
-        return state
-    if not isinstance(state, FixedClipState):
-        raise TypeError(f"Expected FixedClipState, got {type(state)}")
+def sync_marker_clip_state(state: ClipState) -> ClipState:
+    """Synchronize a field-less clipping marker state (fixed or AUTO-S).
+
+    Marker states carry no cross-rank quantities, so syncing is the identity.
+    A subclass that grows fields would need real collectives, so this raises
+    rather than returning it untouched.
+    """
+    if not isinstance(state, ClipState):
+        raise TypeError(f"Expected a ClipState, got {type(state)}")
+    if dataclasses.is_dataclass(state) and dataclasses.fields(state):
+        raise TypeError(
+            f"{type(state).__name__} carries fields "
+            f"{[f.name for f in dataclasses.fields(state)]} and needs its own "
+            "sync function; register one with register_sync_type()."
+        )
 
     return state
 
@@ -237,6 +250,9 @@ def sync_aux(
     raise TypeError(f"Unsupported aux type for sync_aux: {type(aux)}")
 
 
-register_sync_type(FixedClipState, sync_clip_state)
+register_sync_type(FixedClipState, sync_marker_clip_state)
+register_sync_type(AutoClipState, sync_marker_clip_state)
+# ``AutoClippedFunAux`` / ``AutoClippedGradAux`` add no fields, so they
+# resolve to these base registrations through the MRO.
 register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
 register_sync_type(ClippedGradAux, sync_clipped_grad_aux)

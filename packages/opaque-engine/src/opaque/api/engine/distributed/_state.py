@@ -231,14 +231,39 @@ def sync_object(
 
 _SYNC_REGISTRY: dict[type, Callable[[Any], Any]] = {}
 
+# Memoizes the ``__mro__`` walk in :func:`_resolve_sync_fn`; cleared on
+# every registration so a late registration is never shadowed.
+_SYNC_RESOLVED: dict[type, Callable[[Any], Any] | None] = {}
+
 
 def register_sync_type(state_type: type, sync_fn: Callable[[Any], Any]) -> None:
-    """Register a sync function for ``state_type``.
+    """Register a sync function for ``state_type`` and its subclasses.
 
     Subsystems (clipping, profiling, noise) call this on import to make their
-    state types discoverable by :func:`sync`.
+    state types discoverable by :func:`sync`. A subclass resolves to the
+    nearest registered base class, so a variant that adds no fields (e.g.
+    the AUTO-S clipping aux) is covered by its base registration; a subclass
+    that needs different handling registers its own function.
     """
     _SYNC_REGISTRY[state_type] = sync_fn
+    _SYNC_RESOLVED.clear()
+
+
+def _resolve_sync_fn(state_type: type) -> Callable[[Any], Any] | None:
+    """Return the sync function for ``state_type`` or its nearest base."""
+    cached = _SYNC_RESOLVED.get(state_type, ...)
+    if cached is not ...:
+        return cached  # type: ignore[return-value]
+
+    resolved: Callable[[Any], Any] | None = None
+    for base in state_type.__mro__:
+        candidate = _SYNC_REGISTRY.get(base)
+        if candidate is not None:
+            resolved = candidate
+            break
+
+    _SYNC_RESOLVED[state_type] = resolved
+    return resolved
 
 
 def _ensure_builtin_sync_types_loaded() -> None:
@@ -259,8 +284,11 @@ def _ensure_builtin_sync_types_loaded() -> None:
 def sync(*states: Any) -> Any:
     """Synchronize one or more registered state/aux objects across ranks.
 
-    Dispatches based on object type to whichever function was registered via
-    :func:`register_sync_type`.
+    Dispatches on object type — exact type first, then the nearest base class
+    registered via :func:`register_sync_type` — and raises for a type that
+    resolves to nothing. Skipping an unrecognized state would leave each rank
+    training on its own shard with no indication that the collective never
+    happened.
 
     Returns:
         A single synchronized object if one argument was passed, otherwise a
@@ -269,13 +297,16 @@ def sync(*states: Any) -> Any:
 
     def _sync_one(single: Any) -> Any:
         state_type = type(single)
-        if state_type not in _SYNC_REGISTRY:
+        sync_fn = _resolve_sync_fn(state_type)
+        if sync_fn is None:
             _ensure_builtin_sync_types_loaded()
-        if state_type in _SYNC_REGISTRY:
-            return _SYNC_REGISTRY[state_type](single)
+            sync_fn = _resolve_sync_fn(state_type)
+        if sync_fn is not None:
+            return sync_fn(single)
         raise TypeError(
-            f"No sync function registered for {state_type.__name__}. "
-            f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
+            f"No sync function registered for {state_type.__name__} or any of "
+            f"its base classes. Registered types: "
+            f"{[t.__name__ for t in _SYNC_REGISTRY]}"
         )
 
     if len(states) == 1:

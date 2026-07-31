@@ -23,10 +23,7 @@ from typing import Any
 WalkSave = Callable[[Any, str, dict[str, Any]], None]
 WalkLoad = Callable[[Any, Mapping[str, Any], str], Any]
 
-# Python primitives we serialise verbatim. Anything that is not a
-# registered exact-type AND not one of these AND not a generic container
-# is treated as opaque and skipped on save (the template-driven load
-# preserves it).
+# Python primitives we serialise verbatim.
 _PRIMITIVES = (int, float, bool, str, type(None))
 
 
@@ -34,8 +31,28 @@ def _is_named_tuple_instance(obj: Any) -> bool:
     return isinstance(obj, tuple) and hasattr(obj, "_fields")
 
 
+def is_structural(obj: Any) -> bool:
+    """Whether this walker can handle ``obj`` without a registered handler.
+
+    The dispatcher calls this before delegating: a value that is neither
+    registered nor structural is a dispatch error rather than something
+    to walk past.
+    """
+    if isinstance(obj, type):
+        return False
+    return (
+        dataclasses.is_dataclass(obj)
+        or isinstance(obj, (tuple, list, dict))
+        or isinstance(obj, _PRIMITIVES)
+    )
+
+
 def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -> None:
-    """Save generic Python containers; opaque non-container leaves skip."""
+    """Save generic Python containers.
+
+    Callers gate on :func:`is_structural`; a non-structural ``state``
+    raises rather than dropping the value from the state dict.
+    """
     if dataclasses.is_dataclass(state) and not isinstance(state, type):
         for f in dataclasses.fields(state):
             sub = f"{prefix}.{f.name}" if prefix else f.name
@@ -62,7 +79,10 @@ def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -
     if isinstance(state, _PRIMITIVES):
         out[prefix] = state
         return
-    # Opaque — skip.
+    raise TypeError(
+        f"{type(state).__qualname__} is not a generic container; "
+        "the caller must resolve it through the serializer registry."
+    )
 
 
 def walk_load(
@@ -71,7 +91,11 @@ def walk_load(
     prefix: str,
     recurse: WalkLoad,
 ) -> Any:
-    """Rebuild generic Python containers from ``sd``; pass opaque leaves through."""
+    """Rebuild generic Python containers from ``sd``.
+
+    Mirrors :func:`walk_save`: callers gate on :func:`is_structural` and a
+    non-structural ``template`` raises.
+    """
     if dataclasses.is_dataclass(template) and not isinstance(template, type):
         replacements: dict[str, Any] = {}
         for f in dataclasses.fields(template):
@@ -96,8 +120,10 @@ def walk_load(
         }
     if isinstance(template, _PRIMITIVES):
         return sd.get(prefix, template)
-    # Opaque — pass through.
-    return template
+    raise TypeError(
+        f"{type(template).__qualname__} is not a generic container; "
+        "the caller must resolve it through the serializer registry."
+    )
 
 
-__all__ = ["WalkLoad", "WalkSave", "walk_load", "walk_save"]
+__all__ = ["WalkLoad", "WalkSave", "is_structural", "walk_load", "walk_save"]
