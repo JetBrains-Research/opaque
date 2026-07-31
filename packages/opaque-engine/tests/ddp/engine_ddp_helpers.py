@@ -184,3 +184,62 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
         assert abs(peak_max - peak_min) < 1e-6
     finally:
         _cleanup_ddp()
+
+
+def _setup_gloo(rank: int, world_size: int, port: int) -> None:
+    """CPU process-group init for empty-batch collective-parity tests."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+
+
+def _spawn_gloo(world_size: int, fn, *args) -> None:
+    port = _find_free_port()
+    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _worker_sync_aux_empty_batch(rank: int, world_size: int, port: int) -> None:
+    """Rank 0 draws an empty batch; rank 1 draws examples. Must not hang."""
+    from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+    from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+    from opaque.distributed import sync
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        if rank == 0:
+            aux = ClippedGradAux(
+                loss_values=torch.empty(0),
+                grad_norms=torch.empty(0),
+                clipped_grad_norms=torch.empty(0),
+                loss_aux=None,
+                clipping_rate=0.0,
+                batch_size=0,
+                group_norms=None,
+            )
+        else:
+            aux = ClippedGradAux(
+                loss_values=torch.tensor([1.0, 2.0, 3.0]),
+                grad_norms=torch.tensor([0.4, 1.2, 0.8]),
+                clipped_grad_norms=torch.tensor([0.4, 1.0, 0.8]),
+                loss_aux=None,
+                clipping_rate=1.0 / 3.0,
+                batch_size=3,
+                group_norms=None,
+            )
+
+        synced = sync_clipped_grad_aux(aux)
+        # Also exercise the type-dispatched sync path used by trainers.
+        synced2 = sync(aux)
+
+        assert synced.batch_size == 3
+        assert synced2.batch_size == 3
+        assert synced.grad_norms.shape[0] == 3
+        assert abs(synced.clipping_rate - (1.0 / 3.0)) < 1e-5
+        # A follow-up collective must still succeed (proves no desync).
+        token = torch.tensor([float(rank + 1)])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert abs(token.item() - sum(range(1, world_size + 1))) < 1e-5
+    finally:
+        _cleanup_ddp()

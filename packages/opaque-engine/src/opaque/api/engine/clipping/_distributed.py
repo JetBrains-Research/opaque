@@ -40,14 +40,26 @@ def sync_clip_state(state: FixedClipState) -> FixedClipState:
     return state
 
 
+# Scalar aux fields reduced with a fixed all-reduce sequence. Everything else
+# is treated as gather-able (tensors / nested tensor pytrees / None placeholders)
+# so ranks with empty Poisson batches still walk the same collective schedule.
+_SCALAR_AUX_FIELDS = frozenset({"clipping_rate", "batch_size"})
+
+
 def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
-    """Split dataclass fields into tensor-like and scalar/None groups."""
+    """Split dataclass fields by schema, not by runtime value.
+
+    Classifying by ``isinstance`` / ``is None`` made empty-batch ranks drop
+    tensor fields from the gather map while non-empty ranks kept them, so the
+    two sides issued different collective sequences and permanently desynced
+    the process group.
+    """
     tensor_fields: dict[str, object] = {}
     scalar_fields: dict[str, object] = {}
 
     for f in dataclasses.fields(aux):
         value = getattr(aux, f.name)
-        if value is None or isinstance(value, (int, float)):
+        if f.name in _SCALAR_AUX_FIELDS:
             scalar_fields[f.name] = value
         else:
             tensor_fields[f.name] = value
@@ -59,21 +71,23 @@ def _sync_clipping_rate(
     clipping_rate: float | None,
     norms: torch.Tensor | None,
 ) -> float | None:
-    """Compute global clipping rate as weighted average across ranks."""
+    """Compute global clipping rate as a size-weighted average across ranks.
+
+    Always issues the same two ``reduce_scalar`` collectives. An empty local
+    batch contributes weight 0; branching on ``local_n > 0`` previously made
+    empty ranks issue one all-reduce while non-empty ranks issued two, which
+    desynchronized the process group after a single empty Poisson draw.
+    """
     if clipping_rate is None:
         return None
 
-    local_n = 0.0
-    if isinstance(norms, torch.Tensor):
-        local_n = float(norms.numel())
-
+    local_n = float(norms.numel()) if isinstance(norms, torch.Tensor) else 0.0
     local_rate = float(clipping_rate)
-    if local_n > 0:
-        global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
-        global_total = reduce_scalar(local_n, op="sum")
-        return global_weighted_sum / max(1.0, global_total)
-    else:
-        return reduce_scalar(local_rate, op="mean")
+    global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
+    global_total = reduce_scalar(local_n, op="sum")
+    if global_total <= 0.0:
+        return 0.0
+    return global_weighted_sum / global_total
 
 
 def _sync_batch_size(batch_size: int) -> int:
@@ -87,7 +101,9 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    # Always gather the schema tensor map (possibly all-None / empty) so every
+    # rank issues the same all_gather_object sequence.
+    gathered = gather_pytree(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
     scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
@@ -106,7 +122,7 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    gathered = gather_pytree(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(
         aux.clipping_rate, aux.grad_norms

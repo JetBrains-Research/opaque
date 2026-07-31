@@ -54,7 +54,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3843` + 3 examples | Adaptive clipping converges to the wrong quantile |
 | Reject non-finite scores in `one_run()` | `auditing/one_run/_estimate.py:37-83` | NaN scores manufacture ε̂ from a numerically broken run |
 | Cap/bound the `_mu_at` doubling + bisection | `auditing/one_run/_gdp.py:66-77` | **Infinite hang** for m>2000 with a strong attack |
-| Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |
+| ✅ Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |
 
 **Effort: 3–4 engineer-days**, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.
 
