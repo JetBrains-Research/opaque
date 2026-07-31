@@ -86,9 +86,7 @@ def _scale_by_ademamix(
 ) -> GradientTransformation:
     def init_fn(params: Any) -> AdEMAMixState:
         zeros = lambda p: torch.zeros_like(p)  # noqa: E731
-        phi: float | dict = (
-            init_per_group_phi(params) if noise_bias_correction else 0.0
-        )
+        phi: float | dict = init_per_group_phi(params) if noise_bias_correction else 0.0
         return AdEMAMixState(
             m_fast=tree_map(zeros, params),
             m_slow=tree_map(zeros, params),

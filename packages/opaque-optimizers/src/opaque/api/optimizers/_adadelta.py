@@ -134,9 +134,7 @@ def _scale_by_adadelta(
         phi_g: float | dict = (
             init_per_group_phi(params) if noise_bias_correction else 0.0
         )
-        return AdadeltaState(
-            v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0
-        )
+        return AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
 
     def update_fn(
         updates: Any,

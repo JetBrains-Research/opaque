@@ -143,9 +143,7 @@ def _scale_by_adam(
     def init_fn(params: Any) -> AdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        phi: float | dict = (
-            init_per_group_phi(params) if noise_bias_correction else 0.0
-        )
+        phi: float | dict = init_per_group_phi(params) if noise_bias_correction else 0.0
         return AdamState(mu=mu, nu=nu, phi=phi, step=0)
 
     def update_fn(

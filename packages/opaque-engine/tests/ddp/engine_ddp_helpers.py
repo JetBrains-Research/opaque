@@ -202,9 +202,7 @@ def _worker_second_moment_clip_gloo(rank: int, world_size: int, port: int) -> No
     try:
         scale = 1.0 if rank == 0 else 10.0
         out = SecondMomentClippingOutput(
-            grads=ClippedPytree(
-                {"w": torch.tensor([1.0, 2.0]) * scale}, max_norm=1.0
-            ),
+            grads=ClippedPytree({"w": torch.tensor([1.0, 2.0]) * scale}, max_norm=1.0),
             squared_grads=ClippedPytree(
                 {"w": torch.tensor([3.0]) * scale}, max_norm=2.0
             ),

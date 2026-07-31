@@ -111,15 +111,18 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
 
 
 def tree_map_with_path(
-    fn: Callable[[tuple[Any, ...], Any], Any],
+    fn: Callable[[ParamPath, Any], Any],
     tree: Any,
 ) -> Any:
-    """Apply function to leaves with their path in the tree.
+    """Apply function to leaves with their :data:`ParamPath` in the tree.
 
-    This is useful for selective operations based on parameter names/locations.
+    Paths and leaf order match :func:`tree_flatten_with_paths` (optree
+    traversal, including sorted dict keys), so results align with
+    :class:`~opaque.types.PerGroup` keys.
 
     Args:
-        fn: Function that takes (path, leaf) where path is a tuple of keys
+        fn: Function that takes ``(path, leaf)`` where ``path`` is a
+            :data:`ParamPath`.
         tree: PyTree to traverse
 
     Returns:
@@ -134,18 +137,9 @@ def tree_map_with_path(
         ('layer1', 'weight'): torch.Size([2])
         ('layer2', 'bias'): torch.Size([3])
     """
-
-    def _traverse(path: tuple, subtree: Any) -> Any:
-        if isinstance(subtree, dict):
-            return {k: _traverse((*path, k), v) for k, v in subtree.items()}
-        elif isinstance(subtree, (list, tuple)):
-            result = [_traverse((*path, i), v) for i, v in enumerate(subtree)]
-            return type(subtree)(result)
-        else:
-            # Leaf node
-            return fn(path, subtree)
-
-    return _traverse((), tree)
+    paths, leaves, treedef = tree_flatten_with_paths(tree)
+    out = [fn(path, leaf) for path, leaf in zip(paths, leaves, strict=True)]
+    return _ot.tree_unflatten(treedef, out)
 
 
 def partition(

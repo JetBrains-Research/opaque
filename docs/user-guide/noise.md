@@ -59,11 +59,13 @@ import opaque.accounting as acc
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * num_steps,
-    param_min=0.1, param_max=10.0,
+    param_min=0.1,
+    param_max=10.0,
 )
 
 noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param,
+    key=key(42),
 )
 ```
 
@@ -106,7 +108,8 @@ stddev = grads.noise_stddev_for(noise_multiplier=noise_multiplier)
 
 # Or 'isotropic' (uniform): scalar nm · ‖C‖₂
 uniform_stddev = grads.noise_stddev_for(
-    noise_multiplier=noise_multiplier, allocation="isotropic",
+    noise_multiplier=noise_multiplier,
+    allocation="isotropic",
 )
 ```
 
@@ -234,14 +237,18 @@ from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
 grad_fn, clip_state = auto_clipped_grad(
-    loss_fn, argnums=0, batch_argnums=(1, 2),
-    R=1.0, normalize_by=batch_size,
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    R=1.0,
+    normalize_by=batch_size,
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     band_mf_strategy(bands=4),
     n_steps=num_steps,
-    noise_multiplier=noise_multiplier, key=key(0),
+    noise_multiplier=noise_multiplier,
+    key=key(0),
 )
 
 for batch_x, batch_y in dataloader:
@@ -297,9 +304,16 @@ the gradients (e.g., the model parameters).
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
 as `gaussian_noise` (bounded or not) on DP-SGD: no extra privacy
 cost versus scalar clipping at the same `noise_multiplier`, and the MF
-Gaussian accountant is unchanged. Trainable parameters must be a **flat**
-`dict[str, torch.Tensor]` (as with `make_functional(..., partition_trainable=True)`)
-so each key maps to a clipping group.
+Gaussian accountant is unchanged. Leaf→group assignment is keyed by
+optree `ParamPath` tuples (the same contract as `per_group(params, …)`),
+so nested parameter pytrees work as well as flat `named_parameters`
+dicts. Prefer `per_group(params, …)` over hand-building `PerGroup` with
+dotted string keys — a bare string normalizes to a one-segment path and
+will not match nested leaves.
+
+`DPTrainer` / examples still use flat trainable params from
+`make_functional(..., partition_trainable=True)` by choice; custom loops
+may pass any tensor pytree.
 
 ### Private second moments
 
@@ -352,7 +366,8 @@ from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
 noise_fn, noise_state = mf_gaussian_noise(
-    params, strategy,
+    params,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -369,10 +384,14 @@ from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
-    n_steps=10000, min_sep=100, max_participations=5, max_buffers=10,
+    n_steps=10000,
+    min_sep=100,
+    max_participations=5,
+    max_buffers=10,
 )
 noise_fn, noise_state = mf_gaussian_noise(
-    params, strategy,
+    params,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -388,11 +407,14 @@ from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
+    lambda_=0.9,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
 )
 noise_fn, noise_state = mf_gaussian_noise(
-    params, strategy,
+    params,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -408,10 +430,13 @@ from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
-    n_steps=total_steps, bandwidth=4, momentum=0.95,
+    n_steps=total_steps,
+    bandwidth=4,
+    momentum=0.95,
 )
 noise_fn, noise_state = mf_gaussian_noise(
-    params, strategy,
+    params,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -428,7 +453,8 @@ from opaque.random import key
 
 strategy = identity_strategy()
 noise_fn, noise_state = mf_gaussian_noise(
-    params, strategy,
+    params,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -444,7 +470,7 @@ receives these values rather than recomputing them. This ensures that
 noise generation and privacy accounting always agree on the mechanism.
 
 ```python
-import opaque.accounting as acc           # cross-cutting calibration / composition
+import opaque.accounting as acc  # cross-cutting calibration / composition
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
@@ -459,12 +485,15 @@ eps = proc.epsilon_at(1e-5)
 
 # DP-λCGD / BISR / BLT — strategy.as_mechanism populates the accounting
 strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
+    lambda_=0.9,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
     ftrl_acc.mf_gaussian(1.0, strategy),
-    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
+    num_bins=steps_per_epoch,
+    n_steps=steps_per_epoch * num_epochs,
 )
 
 # Private second moments — accounting is unchanged from first-moment-only.
@@ -473,7 +502,8 @@ proc = dpftrl_acc.balls_in_bins(
 # MF mechanism PLD used for the first-moment-only release.
 proc = dpftrl_acc.balls_in_bins(
     ftrl_acc.mf_gaussian(1.0, strategy),
-    num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
+    num_bins=steps_per_epoch,
+    n_steps=steps_per_epoch * num_epochs,
 )
 ```
 
@@ -493,11 +523,12 @@ from opaque.random import key
 
 strategy = blt_strategy(
     n_steps=5000,
-    min_sep=100,            # minimum steps between participations
-    max_participations=5,   # 5 epochs
+    min_sep=100,  # minimum steps between participations
+    max_participations=5,  # 5 epochs
 )
 noise_fn, state = mf_gaussian_noise(
-    grad_template, strategy,
+    grad_template,
+    strategy,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )

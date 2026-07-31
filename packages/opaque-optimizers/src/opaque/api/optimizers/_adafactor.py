@@ -178,11 +178,18 @@ def _scale_by_adafactor(
         inplace: bool = False,
         noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, AdafactorState]:
+        from opaque.api.engine.pytree import tree_flatten_with_paths
+
         t = state.step + 1
         # Time-varying β₂_t per the paper: β₂_t = 1 − t^c.
         beta2_t = 1.0 - (float(t) ** b2_decay)
 
-        flat_grads, _ = optree.tree_flatten(updates)
+        flat_paths, flat_grads, _ = tree_flatten_with_paths(updates)
+        if flat_paths != list(state.paths):
+            raise ValueError(
+                f"updates ParamPath mismatch: expected {list(state.paths)!r}, "
+                f"got {flat_paths!r}."
+            )
         if len(flat_grads) != len(state.v_flat):
             raise ValueError(
                 f"updates pytree has {len(flat_grads)} leaves, "
@@ -243,10 +250,10 @@ def _scale_by_adafactor(
         # Optional first moment β₁.
         if use_first_moment:
             assert state.m is not None
-            flat_old_m, _ = optree.tree_flatten(state.m)
+            _, flat_old_m, _ = tree_flatten_with_paths(state.m)
             new_flat_m = [
                 b1 * old_m + (1.0 - b1) * g
-                for old_m, g in zip(flat_old_m, new_grads, strict=False)
+                for old_m, g in zip(flat_old_m, new_grads, strict=True)
             ]
             updates_unflat = optree.tree_unflatten(state.treespec, new_flat_m)
             new_m = optree.tree_unflatten(state.treespec, new_flat_m)

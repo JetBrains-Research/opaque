@@ -169,7 +169,9 @@ class TestAdamW:
         torch.testing.assert_close(
             u_orig["layer1"]["weight"], u_rest["layer1"]["weight"]
         )
-        torch.testing.assert_close(u_orig["layer2"]["weight"], u_rest["layer2"]["weight"])
+        torch.testing.assert_close(
+            u_orig["layer2"]["weight"], u_rest["layer2"]["weight"]
+        )
 
     def test_torch_save_load_round_trip(self, params, grads, tmp_path):
         opt = adamw(lr=1e-3, weight_decay=0.01)
