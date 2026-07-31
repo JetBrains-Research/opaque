@@ -126,7 +126,7 @@ from opaque.profiling import (
     print_memory,
     reset_peak_memory,
 )
-from opaque.random import key, fold_in
+from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
@@ -2214,6 +2214,12 @@ def main():
         )
         use_second_moment = False
 
+    # AdaClip's noisy clipping-rate estimate and the gradient mechanism are
+    # separate DP releases, so they need independent RNG streams.
+    quantile_noise_key = gradient_noise_key = key(args.seed)
+    if args.clipping_mode == "adaptive":
+        quantile_noise_key, gradient_noise_key = split(gradient_noise_key)
+
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
         # ``second_moment`` flows to the inner ``clipped_grad``; the adaptive
@@ -2227,7 +2233,7 @@ def main():
             clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
             return_aux=True,
-            key=key(args.seed),
+            key=quantile_noise_key,
             normalize_by=args.batch_size,
             second_moment=use_second_moment,
         )
@@ -2486,12 +2492,12 @@ def main():
         noise_fn, noise_state = gaussian_noise(
             noise_multiplier=noise_multiplier,
             bound=args.noise_bound,
-            key=key(args.seed),
+            key=gradient_noise_key,
         )
     else:
         noise_fn, noise_state = gaussian_noise(
             noise_multiplier=noise_multiplier,
-            key=key(args.seed),
+            key=gradient_noise_key,
         )
 
     # Training loop
