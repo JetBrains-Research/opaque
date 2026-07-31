@@ -40,10 +40,8 @@ def is_structural(obj: Any) -> bool:
     """
     if isinstance(obj, type):
         return False
-    return (
-        dataclasses.is_dataclass(obj)
-        or isinstance(obj, (tuple, list, dict))
-        or isinstance(obj, _PRIMITIVES)
+    return dataclasses.is_dataclass(obj) or isinstance(
+        obj, (tuple, list, dict, *_PRIMITIVES)
     )
 
 

@@ -28,7 +28,6 @@ from opaque.api.engine.pytree import (
     tree_structure,
     tree_unflatten,
 )
-
 from opaque.api.engine.types import ClipState
 
 from ._auto import AutoClipState
