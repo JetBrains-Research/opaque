@@ -290,10 +290,11 @@ class TestBoundedGaussianPerGroup:
             assert tensor.min().item() >= -bound
             assert tensor.max().item() <= bound
 
-    def test_per_group_stddev_requires_dict_pytree(self):
+    def test_per_group_stddev_path_mismatch_raises(self):
         max_norm = PerGroup(groups={"w": "g"}, values={"g": 1.0})
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=3.0, key=key(0))
-        with pytest.raises(TypeError, match="dict\\[str"):
+        # List grads use path (0,), not ("w",).
+        with pytest.raises(KeyError):
             noise_fn(clipped([torch.zeros(3)], max_norm=max_norm), state)
 
     def test_all_zero_bound_clamps_to_bound(self):

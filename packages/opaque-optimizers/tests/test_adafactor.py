@@ -199,9 +199,9 @@ class TestBCMode:
         # Group "attn" → σ=0.2 → variance 0.04 (× one-step EMA factor)
         # Group "mlp"  → σ=0.8 → variance 0.64
         # The two should differ proportionally to (0.04, 0.64).
-        attn_phi = path_to_phi["fc1.weight"]
-        mlp_phi = path_to_phi["fc2.weight"]
-        bias_phi = path_to_phi["bias"]
+        attn_phi = path_to_phi[("fc1.weight",)]
+        mlp_phi = path_to_phi[("fc2.weight",)]
+        bias_phi = path_to_phi[("bias",)]
         assert mlp_phi > attn_phi
         # Bias is in the same group as fc2.weight → same phi.
         assert mlp_phi == pytest.approx(bias_phi)

@@ -138,22 +138,11 @@ def _scale_by_rmsprop(
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
-            # Per-leaf path: walk by dotted-key paths matching
-            # :class:`PerGroup`'s lookup keys.
-            new_phi: dict[str, float] = {}
+            from opaque.api.optimizers._bias_correction import map_leaves_with_path
 
-            def _bc_walk(g_node: Any, v_node: Any, prefix: str) -> Any:
-                if isinstance(g_node, dict):
-                    return {
-                        k: _bc_walk(
-                            g_node[k],
-                            v_node[k],
-                            f"{prefix}.{k}" if prefix else str(k),
-                        )
-                        for k in g_node
-                    }
-                # Tensor leaf.
-                path = prefix
+            new_phi: dict = {}
+
+            def _bc_leaf(path, g_node, v_node):
                 nv = resolve_noise_variance(effective, path)
                 old_phi_k = (
                     state.phi.get(path, 0.0)
@@ -169,7 +158,7 @@ def _scale_by_rmsprop(
                     v_corrected = v_node
                 return g_node / (v_corrected.sqrt() + eps)
 
-            result = _bc_walk(updates, new_nu, "")
+            result = map_leaves_with_path(_bc_leaf, updates, new_nu)
         else:
             scalar_var = float(effective) ** 2
             new_phi = update_phi_ema(state.phi, scalar_var, alpha)

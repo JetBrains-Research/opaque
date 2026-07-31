@@ -162,9 +162,9 @@ class TestMfNoisePerGroupSingleStream:
             key=key(2),
         )
         pg = PerGroup(groups={"w": "g"}, values={"g": 1.0})
-        # tree of tuples is not a flat dict — PerGroup stddev cannot resolve keys
+        # Tuple grads have paths (0,), (1,) — not ("w",) — so lookup fails.
         bad = clipped((torch.zeros(3), torch.zeros(3)), max_norm=pg)
-        with pytest.raises(TypeError, match="flat dict"):
+        with pytest.raises(KeyError):
             noise_fn(bad, state)
 
     @pytest.mark.parametrize(
@@ -231,8 +231,8 @@ class TestMfNoisePerGroupSingleStream:
         eff = pg.effective
         sig_pg = per_group_noise_stddev(pg, nm)
         sigma_iso = nm * eff
-        assert sig_pg.for_key("w") == pytest.approx(sigma_iso)
-        assert sig_pg.for_key("b") == pytest.approx(sigma_iso)
+        assert sig_pg.for_path("w") == pytest.approx(sigma_iso)
+        assert sig_pg.for_path("b") == pytest.approx(sigma_iso)
 
     def test_per_group_unequal_bounds_strict_utility_win(self, grad_template):
         """Asymmetric group bounds: summed leaf variance under optimal per-group
@@ -243,8 +243,8 @@ class TestMfNoisePerGroupSingleStream:
             values={"a": 1.0, "b": 4.0},
         )
         sig = per_group_noise_stddev(pg, nm)
-        v_opt = sig.for_key("w") ** 2 * grad_template["w"].numel()
-        v_opt += sig.for_key("b") ** 2 * grad_template["b"].numel()
+        v_opt = sig.for_path("w") ** 2 * grad_template["w"].numel()
+        v_opt += sig.for_path("b") ** 2 * grad_template["b"].numel()
         sigma_iso = nm * pg.effective
         n_w = grad_template["w"].numel()
         n_b = grad_template["b"].numel()
@@ -296,12 +296,12 @@ class TestMfNoisePerGroupPairedStream:
         s2 = out.noisy_squared_grads.noise_stddev
         mahal = 0.0
         for param_key in ("w", "b"):
-            b1 = pg.for_key(param_key)
-            b2 = sq_pg.for_key(param_key)
+            b1 = pg.for_path(param_key)
+            b2 = sq_pg.for_path(param_key)
             d1 = b1 * c1
             d2 = b2 * c2
-            base_s1 = s1.for_key(param_key) / first_row_l2
-            base_s2 = s2.for_key(param_key) / second_row_l2
+            base_s1 = s1.for_path(param_key) / first_row_l2
+            base_s2 = s2.for_path(param_key) / second_row_l2
             mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
@@ -339,9 +339,9 @@ class TestMfNoisePerGroupMahalanobisSingleStream:
         row_l2 = _row_l2_at_zero(strategy, n_steps=n_steps)
         acc = 0.0
         for param_key in ("w", "b"):
-            b_g = pg.for_key(param_key)
+            b_g = pg.for_path(param_key)
             sens = b_g * c1
-            base_sigma = sigma.for_key(param_key) / row_l2
+            base_sigma = sigma.for_path(param_key) / row_l2
             acc += (sens / base_sigma) ** 2
         assert acc == pytest.approx((c1 / nm) ** 2, rel=1e-9)
 
@@ -408,9 +408,9 @@ class TestPerGroupPairedWithClippedGradAndMf:
         second_row_l2 = _row_l2_at_zero(second, n_steps=n_steps)
         mahal = 0.0
         for param_key in ("w", "b"):
-            d1 = pg1.for_key(param_key) * c1
-            d2 = sq1.for_key(param_key) * c2
-            base_s1 = s1.for_key(param_key) / first_row_l2
-            base_s2 = s2.for_key(param_key) / second_row_l2
+            d1 = pg1.for_path(param_key) * c1
+            d2 = sq1.for_path(param_key) * c2
+            base_s1 = s1.for_path(param_key) / first_row_l2
+            base_s2 = s2.for_path(param_key) / second_row_l2
             mahal += (d1 / base_s1) ** 2 + (d2 / base_s2) ** 2
         assert mahal == pytest.approx((c1 / nm) ** 2, rel=1e-8)
