@@ -26,7 +26,7 @@ import shutil
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torchopt
@@ -48,7 +48,7 @@ from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
 from opaque.profiling import PerfTracker, perf_tracker
-from opaque.random import key
+from opaque.random import key, split
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
 )
@@ -72,6 +72,9 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.utils import find_labels
+
+if TYPE_CHECKING:
+    from opaque.random.types import RngKey
 
 from . import _checkpoint as ckpt
 from . import _distributed, _dpftrl, _eval, _hub
@@ -1246,6 +1249,14 @@ class DPTrainer:
         else:
             clip_norm = float(mgn)
 
+        # AdaClip releases both a noisy clipping-rate estimate and noisy
+        # gradients.  They must use independent streams for the composed
+        # mechanism; reusing the root key makes both step-t streams identical.
+        # Keep non-adaptive seeding unchanged for reproducibility.
+        quantile_noise_key = gradient_noise_key = key(a.seed)
+        if a.clipping_mode == "adaptive":
+            quantile_noise_key, gradient_noise_key = split(gradient_noise_key)
+
         # --- Clipping ---
         grad_fn, clip_state = self._create_grad_fn(
             per_example_loss_fn,
@@ -1254,6 +1265,7 @@ class DPTrainer:
             clip_norm,
             expected_batch_size,
             microbatch_size,
+            quantile_noise_key=quantile_noise_key,
             has_aux=wants_metrics,
         )
 
@@ -1371,7 +1383,7 @@ class DPTrainer:
             )
             noise_fn, noise_state = make_noise(
                 noise_multiplier=noise_multiplier,
-                key=key(a.seed),
+                key=gradient_noise_key,
             )
         else:
             # DP-FTRL: pull the participation context (``n_steps`` /
@@ -3827,6 +3839,7 @@ class DPTrainer:
         expected_batch_size: int,
         microbatch_size: int,
         *,
+        quantile_noise_key: RngKey,
         has_aux: bool = False,
     ) -> tuple[Callable[..., Any], Any]:
         """Create the clipped gradient function based on clipping mode.
@@ -3853,7 +3866,7 @@ class DPTrainer:
                 clipping_norm_max=clip_norm_max,
                 microbatch_size=microbatch_size,
                 return_aux=True,
-                key=key(a.seed),
+                key=quantile_noise_key,
                 normalize_by=expected_batch_size,
             )
         elif a.clipping_mode == "auto":
