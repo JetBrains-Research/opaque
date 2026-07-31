@@ -50,11 +50,16 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.api.optimizers._bias_correction import is_per_group, resolve_noise_variance
+from opaque.api.optimizers._bias_correction import (
+    init_per_group_phi,
+    is_per_group,
+    resolve_noise_variance,
+)
 from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
+    from opaque.pytree import ParamPath
     from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
@@ -67,14 +72,15 @@ class AdagradState:
     Attributes:
         v_acc: Per-coordinate cumulative ``∑ g²`` (pytree matching
             params).
-        phi_acc: Cumulative noise variance ``∑ σ²`` (scalar or
-            ``dict[group, float]``).  Stays at zero unless
-            ``NoisedPytree`` updates supply realized σ metadata.
+        phi_acc: Cumulative noise variance ``∑ σ²`` (scalar, or
+            ``dict[ParamPath, float]`` when BC is enabled).  Stays at
+            zero unless ``NoisedPytree`` updates supply realized σ
+            metadata.
         step: Number of completed updates.
     """
 
     v_acc: TensorPytree
-    phi_acc: float | dict[str, float]
+    phi_acc: float | dict[ParamPath, float]
     step: int
 
 
@@ -89,7 +95,10 @@ def _scale_by_adagrad(
             lambda p: torch.full_like(p, initial_accumulator_value),
             params,
         )
-        return AdagradState(v_acc=v_acc, phi_acc=0.0, step=0)
+        phi_acc: float | dict = (
+            init_per_group_phi(params) if noise_bias_correction else 0.0
+        )
+        return AdagradState(v_acc=v_acc, phi_acc=phi_acc, step=0)
 
     def update_fn(
         updates: Any,

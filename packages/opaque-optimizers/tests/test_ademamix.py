@@ -92,7 +92,9 @@ class TestBCMode:
                 params=params,
             )
             expected_phi = b2 * expected_phi + (1 - b2) * (sigma**2)
-        assert _ame(state).phi == pytest.approx(expected_phi)
+        phi = _ame(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx(expected_phi) for v in phi.values())
 
     def test_bc_flag_disables_noisy_metadata_correction(self, params, grads):
         opt = ademamix(lr=1e-3, noise_bias_correction=False)

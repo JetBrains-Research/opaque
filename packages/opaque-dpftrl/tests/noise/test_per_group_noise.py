@@ -167,6 +167,37 @@ class TestMfNoisePerGroupSingleStream:
         with pytest.raises(KeyError):
             noise_fn(bad, state)
 
+    def test_nested_per_group_noise(self):
+        """MF PerGroup σ resolves nested ParamPaths via per_group()."""
+        from opaque.api.engine.clipping._per_group import per_group
+
+        nested_template = {
+            "layer": {"w": torch.zeros(4, 3), "b": torch.zeros(4)},
+        }
+        strategy = identity_strategy()
+        noise_fn, state = mf_gaussian_noise(
+            nested_template,
+            strategy,
+            n_steps=5,
+            noise_multiplier=1.0,
+            key=key(11),
+        )
+        pg = per_group(nested_template, w=0.5, b=2.0)
+        grads = {
+            "layer": {
+                "w": torch.zeros(4, 3),
+                "b": torch.zeros(4),
+            },
+        }
+        out, _ = noise_fn(clipped(grads, max_norm=pg), state)
+        assert isinstance(out.noise_stddev, PerGroup)
+        assert ("layer", "w") in out.noise_stddev.groups
+        assert ("layer", "b") in out.noise_stddev.groups
+        assert out.noise_stddev.for_path(("layer", "b")) > out.noise_stddev.for_path(
+            ("layer", "w")
+        )
+        assert not torch.allclose(out.pytree["layer"]["w"], grads["layer"]["w"])
+
     @pytest.mark.parametrize(
         "make_strategy",
         [

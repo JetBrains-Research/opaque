@@ -56,6 +56,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.api.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -65,6 +66,7 @@ from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
+    from opaque.pytree import ParamPath
     from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
@@ -93,13 +95,14 @@ class RAdamState:
     Attributes:
         mu: First-moment EMA (pytree matching params).
         nu: Second-moment EMA (pytree matching params).
-        phi: Noise-variance EMA (scalar or ``dict[group, float]``).
+        phi: Noise-variance EMA (scalar, or ``dict[ParamPath, float]``
+            when BC is enabled).
         step: Number of completed updates.
     """
 
     mu: TensorPytree
     nu: TensorPytree
-    phi: float | dict[str, float]
+    phi: float | dict[ParamPath, float]
     step: int
 
 
@@ -151,7 +154,8 @@ def _scale_by_radam(
     def init_fn(params: Any) -> RAdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        return RAdamState(mu=mu, nu=nu, phi=0.0, step=0)
+        phi: float | dict = init_per_group_phi(params) if noise_bias_correction else 0.0
+        return RAdamState(mu=mu, nu=nu, phi=phi, step=0)
 
     def update_fn(
         updates: Any,

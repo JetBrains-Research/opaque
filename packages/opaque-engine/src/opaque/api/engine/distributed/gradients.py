@@ -8,6 +8,10 @@ metadata semantics are determined: ``sum`` and ``mean``.  Summing disjoint local
 clipped queries preserves the per-record max_norm; averaging divides it by world
 size.  Summing independent Gaussian-noised local queries scales ``noise_stddev``
 by ``sqrt(world_size)``; averaging scales it by ``1 / sqrt(world_size)``.
+
+Paired-stream wrappers (:class:`~opaque.types.SecondMomentClippingOutput`,
+:class:`~opaque.types.SecondMomentNoiseOutput`) recurse into both child
+wrappers so both streams participate in the collective.
 """
 
 from __future__ import annotations
@@ -20,7 +24,12 @@ import torch
 import torch.distributed as dist
 
 from opaque.api.engine.pytree import tree_map
-from opaque.api.engine.types import ClippedPytree, NoisedPytree
+from opaque.api.engine.types import (
+    ClippedPytree,
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+)
 
 from ._state import assert_scalar_equal
 from .collectives import all_reduce_, get_world_size, is_distributed
@@ -121,6 +130,16 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
     stays unchanged.  Use :func:`reduce_pytree` for reductions such as noised
     ``sum`` or clipped/noised ``mean`` that need updated metadata.
     """
+    if isinstance(pytree, SecondMomentClippingOutput):
+        reduce_pytree_(pytree.grads, op=op)
+        reduce_pytree_(pytree.squared_grads, op=op)
+        return
+
+    if isinstance(pytree, SecondMomentNoiseOutput):
+        reduce_pytree_(pytree.noisy_grads, op=op)
+        reduce_pytree_(pytree.noisy_squared_grads, op=op)
+        return
+
     if isinstance(pytree, ClippedPytree):
         _assert_wrapper_reduction_supported(pytree, op)
         if _in_place_wrapper_metadata_changes(pytree, op):
@@ -143,7 +162,12 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
     def _reduce(leaf: Any) -> Any:
         if isinstance(leaf, torch.Tensor):
             all_reduce_(leaf, op=op)
-        return leaf
+            return leaf
+        raise TypeError(
+            f"reduce_pytree_ expects tensor leaves after wrapper dispatch; "
+            f"got {type(leaf).__name__}. Unwrap paired/custom containers "
+            f"explicitly or register a reduction branch."
+        )
 
     tree_map(_reduce, pytree)
 
@@ -152,8 +176,21 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
     """Return a pytree with each tensor leaf reduced; input unchanged.
 
     When passed ``ClippedPytree`` or ``NoisedPytree``, preserves and updates the
-    wrapper metadata for supported ``sum`` and ``mean`` reductions.
+    wrapper metadata for supported ``sum`` and ``mean`` reductions.  Paired
+    second-moment wrappers recurse into both child streams.
     """
+    if isinstance(pytree, SecondMomentClippingOutput):
+        return SecondMomentClippingOutput(
+            grads=reduce_pytree(pytree.grads, op=op),
+            squared_grads=reduce_pytree(pytree.squared_grads, op=op),
+        )
+
+    if isinstance(pytree, SecondMomentNoiseOutput):
+        return SecondMomentNoiseOutput(
+            noisy_grads=reduce_pytree(pytree.noisy_grads, op=op),
+            noisy_squared_grads=reduce_pytree(pytree.noisy_squared_grads, op=op),
+        )
+
     if isinstance(pytree, ClippedPytree):
         _assert_wrapper_reduction_supported(pytree, op)
         _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
@@ -167,7 +204,13 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
         return _reduced_metadata(reduced, op, _metadata_world_size())
 
     def _clone(leaf: Any) -> Any:
-        return leaf.clone() if isinstance(leaf, torch.Tensor) else leaf
+        if isinstance(leaf, torch.Tensor):
+            return leaf.clone()
+        raise TypeError(
+            f"reduce_pytree expects tensor leaves after wrapper dispatch; "
+            f"got {type(leaf).__name__}. Unwrap paired/custom containers "
+            f"explicitly or register a reduction branch."
+        )
 
     reduced = tree_map(_clone, pytree)
     reduce_pytree_(reduced, op=op)

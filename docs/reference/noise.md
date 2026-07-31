@@ -95,8 +95,10 @@ transformation wrapper and no `ρ` knob.
 `mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the
 MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
-Mahalanobis allocation as `gaussian_noise`). Trainable gradients must be a
-flat `dict[str, Tensor]` so each leaf maps to a group.
+Mahalanobis allocation as `gaussian_noise`). Leaf→group keys are optree
+`ParamPath` tuples (build them with `per_group(params, …)`); nested
+parameter trees are supported. Trainer/examples keep flat
+`named_parameters` by choice.
 
 ## Gaussian (optionally bounded)
 

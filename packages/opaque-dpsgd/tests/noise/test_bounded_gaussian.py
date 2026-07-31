@@ -272,6 +272,37 @@ class TestBoundedGaussianPerGroup:
         mlp_var = output.pytree["bias"].var().item()
         assert mlp_var > attn_var * 2.5
 
+    def test_nested_per_group_noise(self):
+        """PerGroup σ follows nested ParamPaths, not only flat named_parameters."""
+        from opaque.api.engine.clipping._per_group import per_group
+
+        nested = {
+            "layer1": {
+                "attn": torch.zeros(2000),
+                "mlp": torch.zeros(2000),
+            },
+            "layer2": {
+                "attn": torch.zeros(2000),
+                "mlp": torch.zeros(2000),
+            },
+        }
+        pg = per_group(nested, attn=1.0, mlp=5.0)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, bound=50.0, key=key(7))
+        output, _ = noise_fn(clipped(nested, max_norm=pg), state)
+
+        assert isinstance(output.noise_stddev, PerGroup)
+        assert ("layer1", "attn") in output.noise_stddev.groups
+        assert ("layer2", "mlp") in output.noise_stddev.groups
+        attn_var = output.pytree["layer1"]["attn"].var().item()
+        mlp_var = output.pytree["layer1"]["mlp"].var().item()
+        assert mlp_var > attn_var * 2.5
+        torch.testing.assert_close(
+            output.pytree["layer1"]["attn"].var(),
+            output.pytree["layer2"]["attn"].var(),
+            rtol=0.3,
+            atol=0.05,
+        )
+
     def test_per_group_bounds_respected(self):
         # Bound is absolute and shared across groups.
         max_norm = PerGroup(

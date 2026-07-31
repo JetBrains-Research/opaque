@@ -97,7 +97,9 @@ class TestDPCorrection:
             )
             # Cumulative — every step adds σ², no decay.
             expected = t * (sigma**2)
-            assert _ada_state(state).phi_acc == pytest.approx(expected)
+            phi_acc = _ada_state(state).phi_acc
+            assert isinstance(phi_acc, dict)
+            assert all(v == pytest.approx(expected) for v in phi_acc.values())
 
     def test_noisy_updates_take_per_step_metadata(self, params, grads):
         opt = adagrad(lr=1e-2, noise_bias_correction=True)
@@ -110,7 +112,9 @@ class TestDPCorrection:
                 params=params,
             )
             expected += sigma**2
-        assert _ada_state(state).phi_acc == pytest.approx(expected)
+        phi_acc = _ada_state(state).phi_acc
+        assert isinstance(phi_acc, dict)
+        assert all(v == pytest.approx(expected) for v in phi_acc.values())
 
     def test_correction_prevents_runaway_denominator(self, params):
         """The headline DP-Adagrad fix: with correction, the effective

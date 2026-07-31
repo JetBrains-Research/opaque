@@ -11,9 +11,13 @@ missing keys keep template values (forward compatibility when new fields appear)
 Non-serialisable leaves (vendor specs, callables, …) are skipped on save and
 preserved from the template on load.
 
-:class:`~opaque.types.PerGroup` checkpoints through the same API (flat keys such
-as ``groups.<param_key>`` / ``values.<group_name>``).  NumPy ``ndarray`` leaves
-are supported alongside ``torch.Tensor``.
+:class:`~opaque.types.PerGroup` checkpoints through the same API. Path keys
+serialize as their ``str()`` form under the structural walker — e.g.
+``groups.('a',)`` for a flat leaf, or ``groups.('layer', 'weight')`` for a
+nested path — alongside ``values.<group_name>``.  When DP bias correction is
+enabled on Adam-family optimizers, ``phi`` is a path-keyed dict from
+``opt.init`` so ``from_state_dict`` round-trips without resetting φ.  NumPy
+``ndarray`` leaves are supported alongside ``torch.Tensor``.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 

@@ -162,7 +162,8 @@ class TestNoiseBiasCorrection:
         # φ must be > 0 even in warmup; expected = (1-(β₂)^5)·σ²
         b2 = 0.999
         expected_phi = (1.0 - b2**5) * sigma**2
-        assert s.phi == pytest.approx(expected_phi, rel=1e-4)
+        assert isinstance(s.phi, dict)
+        assert all(v == pytest.approx(expected_phi, rel=1e-4) for v in s.phi.values())
 
     def test_phi_stays_zero_when_bc_off(self, params, grads):
         """φ does not advance when ``noise_bias_correction=False``."""
@@ -182,7 +183,9 @@ class TestNoiseBiasCorrection:
         state = opt.init(params)
         for _ in range(20):
             _, state = opt.update(grads, state, params=params)
-        assert _state(state).phi == 0.0
+        phi = _state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == 0.0 for v in phi.values())
 
     def test_bc_changes_rectified_update(self, params, grads):
         """With non-zero σ past warmup, BC actually changes the update."""
@@ -260,7 +263,9 @@ class TestSecondMomentSubstitution:
             _, state = opt.update(out, state, params=params)
         # Substitution branch leaves φ at zero (post-processing already
         # debiased v).
-        assert _state(state).phi == 0.0
+        phi = _state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == 0.0 for v in phi.values())
 
 
 # ---------------------------------------------------------------------------
