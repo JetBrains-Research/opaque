@@ -46,13 +46,21 @@ def map_leaves_with_path(
 ) -> Any:
     """Apply ``fn(path, leaf, *other_leaves)`` and rebuild ``tree``'s structure.
 
-    All trees must share the same leaf count (optree layout).
+    All trees must share the same :data:`~opaque.pytree.ParamPath` sequence
+    (same leaf order and structure).  Matching leaf *counts* alone is not
+    enough — e.g. a length-2 list vs a 2-key dict would otherwise silently
+    mis-align leaves.
     """
     import optree
 
     paths, leaves, treedef = tree_flatten_with_paths(tree)
-    other_leaf_lists = [tree_flatten_with_paths(t)[1] for t in others]
-    for i, other_leaves in enumerate(other_leaf_lists):
+    other_flat = [tree_flatten_with_paths(t) for t in others]
+    for i, (other_paths, other_leaves, _) in enumerate(other_flat):
+        if other_paths != paths:
+            raise ValueError(
+                f"pytree ParamPath mismatch for argument {i}: "
+                f"primary paths {paths!r}, got {other_paths!r}."
+            )
         if len(other_leaves) != len(leaves):
             raise ValueError(
                 f"pytree leaf count mismatch: primary has {len(leaves)}, "
@@ -60,7 +68,7 @@ def map_leaves_with_path(
             )
     out_leaves = []
     for j, path in enumerate(paths):
-        args = [leaves[j], *[ol[j] for ol in other_leaf_lists]]
+        args = [leaves[j], *[flat[1][j] for flat in other_flat]]
         out_leaves.append(fn(path, *args))
     return optree.tree_unflatten(treedef, out_leaves)
 
