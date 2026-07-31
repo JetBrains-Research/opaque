@@ -3125,9 +3125,9 @@
 <td><strong>Zero-noise release of clipped gradients</strong> at step <em>n</em>; unaccounted noise past horizon</td>
 </tr>
 <tr>
-<td>Flatten with paths in per-group clip; raise on group/leaf mismatch</td>
-<td><code>engine/clipping/_pytree.py:180-220, 58-93</code></td>
-<td><strong>No clipping at all</strong> on any nested parameter pytree</td>
+<td>✅ Path-keyed PerGroup (optree ParamPath) for nested + flat pytrees</td>
+<td><code>engine/{types,pytree,clipping}</code> + dpsgd/dpftrl noise + optimizers BC</td>
+<td>Nested containers previously skipped leaves; compiled keys are now unambiguous path tuples</td>
 </tr>
 <tr>
 <td>✅ Split the RNG key for quantile vs gradient noise</td>
