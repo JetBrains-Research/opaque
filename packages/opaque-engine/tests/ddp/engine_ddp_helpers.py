@@ -243,3 +243,50 @@ def _worker_sync_aux_empty_batch(rank: int, world_size: int, port: int) -> None:
         assert abs(token.item() - sum(range(1, world_size + 1))) < 1e-5
     finally:
         _cleanup_ddp()
+
+
+def _worker_sync_aux_empty_vs_per_group(rank: int, world_size: int, port: int) -> None:
+    """Empty rank has group_norms=None; nonempty has per-group dict.
+
+    After ParamPath-keyed PerGroup, aux ``group_norms`` are still keyed by
+    group name, but empty batches still omit the dict. Sync must not hang.
+    """
+    from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+    from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        if rank == 0:
+            aux = ClippedGradAux(
+                loss_values=torch.empty(0),
+                grad_norms=torch.empty(0),
+                clipped_grad_norms=torch.empty(0),
+                loss_aux=None,
+                clipping_rate=0.0,
+                batch_size=0,
+                group_norms=None,
+            )
+        else:
+            aux = ClippedGradAux(
+                loss_values=torch.tensor([1.0, 2.0]),
+                grad_norms=torch.tensor([0.5, 1.5]),
+                clipped_grad_norms=torch.tensor([0.5, 1.0]),
+                loss_aux=None,
+                clipping_rate=0.5,
+                batch_size=2,
+                group_norms={
+                    "attn": torch.tensor([0.5, 1.5]),
+                    "mlp": torch.tensor([0.2, 0.3]),
+                },
+            )
+
+        synced = sync_clipped_grad_aux(aux)
+        assert synced.batch_size == 2
+        assert synced.group_norms is not None
+        assert set(synced.group_norms) == {"attn", "mlp"}
+        assert synced.group_norms["attn"].shape[0] == 2
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert abs(token.item() - float(world_size)) < 1e-5
+    finally:
+        _cleanup_ddp()

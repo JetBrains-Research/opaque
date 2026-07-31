@@ -9,12 +9,14 @@ and self-registers via :func:`opaque.distributed.register_sync_type`.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import torch
+import torch.distributed as dist
 
 from opaque.api.engine.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
-    gather_pytree,
+    get_world_size,
     reduce_scalar,
     register_sync_type,
 )
@@ -67,6 +69,101 @@ def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
     return tensor_fields, scalar_fields
 
 
+def _cpu_payload(value: Any) -> Any:
+    """Detach tensors to CPU for ``all_gather_object`` pickling."""
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, dict):
+        return {k: _cpu_payload(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_cpu_payload(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_cpu_payload(v) for v in value)
+    return value
+
+
+def _infer_device(value: Any) -> torch.device:
+    if isinstance(value, torch.Tensor):
+        return value.device
+    if isinstance(value, dict):
+        for child in value.values():
+            if isinstance(child, torch.Tensor):
+                return child.device
+    if isinstance(value, (list, tuple)):
+        for child in value:
+            if isinstance(child, torch.Tensor):
+                return child.device
+    return torch.device("cpu")
+
+
+def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
+    """Concatenate per-rank aux payloads; ``None`` ranks contribute nothing."""
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+
+    sample = present[0]
+    if isinstance(sample, torch.Tensor):
+        parts = [v.to(device) for v in values if isinstance(v, torch.Tensor)]
+        return torch.cat(parts, dim=0) if parts else None
+
+    if isinstance(sample, dict):
+        keys: list[Any] = []
+        seen: set[Any] = set()
+        for payload in present:
+            for key in payload:
+                if key not in seen:
+                    seen.add(key)
+                    keys.append(key)
+        merged: dict[Any, Any] = {}
+        for key in keys:
+            per_rank = [
+                None if payload is None else payload.get(key) for payload in values
+            ]
+            merged_value = _merge_gathered_values(per_rank, device)
+            if merged_value is not None:
+                merged[key] = merged_value
+        return merged or None
+
+    if isinstance(sample, (list, tuple)):
+        length = len(sample)
+        if any(len(v) != length for v in present):
+            raise TypeError(
+                "Distributed aux gather requires matching sequence lengths "
+                f"across ranks; got {[len(v) for v in present]}"
+            )
+        merged_seq = [
+            _merge_gathered_values([v[i] for v in present], device)
+            for i in range(length)
+        ]
+        return type(sample)(merged_seq)
+
+    raise TypeError(
+        "Distributed aux gathering supports tensor / dict-of-tensor / None "
+        f"leaves only; got {type(sample)}"
+    )
+
+
+def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
+    """Gather schema tensor fields with one collective per field.
+
+    Field-level ``all_gather_object`` (instead of ``tree_map`` over leaves)
+    keeps the collective count identical when one rank has ``group_norms=None``
+    (empty batch) and another has a per-group dict — a structure mismatch that
+    ``gather_pytree`` cannot reconcile.
+    """
+    gathered: dict[str, object] = {}
+    # Sorted keys → identical collective order on every rank.
+    for name in sorted(tensor_fields):
+        local = tensor_fields[name]
+        payloads = [None] * get_world_size()
+        dist.all_gather_object(payloads, _cpu_payload(local))
+        gathered[name] = _merge_gathered_values(payloads, _infer_device(local))
+    return gathered
+
+
 def _sync_clipping_rate(
     clipping_rate: float | None,
     norms: torch.Tensor | None,
@@ -101,9 +198,7 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    # Always gather the schema tensor map (possibly all-None / empty) so every
-    # rank issues the same all_gather_object sequence.
-    gathered = gather_pytree(tensor_fields)
+    gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
     scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
@@ -122,7 +217,7 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields)
+    gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(
         aux.clipping_rate, aux.grad_norms

@@ -120,7 +120,7 @@ class TestSyncAuxCollectiveParity:
         import opaque.api.engine.clipping._distributed as dist_mod
 
         monkeypatch.setattr(dist_mod, "is_distributed", lambda: True)
-        monkeypatch.setattr(dist_mod, "gather_pytree", lambda tree: tree)
+        monkeypatch.setattr(dist_mod, "_gather_aux_fields", lambda tree: tree)
 
         def _run(aux: ClippedGradAux) -> list[tuple[float, str]]:
             calls: list[tuple[float, str]] = []
@@ -154,7 +154,7 @@ class TestSyncAuxCollectiveParity:
         import opaque.api.engine.clipping._distributed as dist_mod
 
         monkeypatch.setattr(dist_mod, "is_distributed", lambda: True)
-        monkeypatch.setattr(dist_mod, "gather_pytree", lambda tree: tree)
+        monkeypatch.setattr(dist_mod, "_gather_aux_fields", lambda tree: tree)
 
         def _run(aux: ClippedFunAux) -> list[str]:
             calls: list[tuple[float, str]] = []
