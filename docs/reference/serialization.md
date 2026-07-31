@@ -8,8 +8,16 @@ optimizer state, schedules, [`Accountant`](accounting.md) / [`DpProcess`](accoun
 Restore is **template-driven**: pass a freshly constructed object of the same
 shape as at save time; keys present in the checkpoint overwrite leaves, and
 missing keys keep template values (forward compatibility when new fields appear).
-Non-serialisable leaves (vendor specs, callables, …) are skipped on save and
-preserved from the template on load.
+
+Handler lookup follows each leaf's ``__mro__``, so a registration for
+``torch.Tensor`` also covers ``torch.nn.Parameter`` — the leaf type
+[`make_functional`](utilities.md) returns. Leaves that hold no state of their
+own (vendor specs such as ``optree.PyTreeSpec``) are declared with
+:func:`opaque.serialization.register_inert_type` and come back from the
+template. Any other unrecognised leaf raises :exc:`TypeError` instead of being
+dropped: a leaf missing from the checkpoint restores as whatever the template
+held, which for noise or optimizer state means a resumed run that silently
+differs from the saved one.
 
 :class:`~opaque.types.PerGroup` checkpoints through the same API. Path keys
 serialize as their ``str()`` form under the structural walker — e.g.
@@ -42,7 +50,9 @@ acct2 = from_state_dict(Accountant(), flat)
 
 The same pattern applies to clip state, noise state, functional optimizer
 state, and any other value that flows through the DP training loop.  Custom
-types may register handlers with :func:`opaque.serialization.register_serializer`.
+types may register handlers with :func:`opaque.serialization.register_serializer`,
+or declare themselves stateless with
+:func:`opaque.serialization.register_inert_type`.
 
 ::: opaque.serialization
     options:

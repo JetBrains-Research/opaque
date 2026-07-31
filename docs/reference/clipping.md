@@ -62,11 +62,12 @@ differential privacy.
 ### Distributed Sync Helpers
 
 Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
-object. It auto-dispatches to the right function based on type:
+object. It auto-dispatches on type, resolving a subclass to the nearest
+registered base class:
 
-- **`sync(FixedClipState)`** → marker-state passthrough.
+- **`sync(FixedClipState | AutoClipState)`** → marker-state passthrough.
 - **`sync(AdaptiveClipState)`** → aggregates counts and recomputes the internal adaptive threshold.
-- **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux)`** → gathers aux across ranks.
+- **`sync(ClippedFunAux | ClippedGradAux)`** → gathers aux across ranks, including the `Auto*` and `Adaptive*` subclasses.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)
 

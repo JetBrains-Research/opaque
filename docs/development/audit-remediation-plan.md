@@ -72,11 +72,13 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 
 Convert "unknown → skip" into "unknown → raise" at three remaining dispatch sites. This is the same 5-line change repeated, and it converts eight *silent* findings into loud ones even before the real fixes land:
 
-- `base/serialization/_dispatch.py:54-60` — MRO fallback + raise on unregistered non-container
-- `engine/distributed/gradients.py:124-174` — `_reduce`/`_clone` raise on non-Tensor non-None leaf
-- `engine/distributed/_state.py:266-276` — MRO walk against `_SYNC_REGISTRY`, raise on miss
+- ✅ `base/serialization/_dispatch.py` — both walkers resolve the registry along `__mro__` (so the `torch.Tensor` handler covers `nn.Parameter`, i.e. everything `make_functional` returns) and raise `TypeError` on an unregistered non-container leaf. Types that genuinely hold no serializable state declare themselves with the new `register_inert_type()` (`optree.PyTreeSpec` is the only one in-tree). Tensor loads now validate shape like the ndarray loads already did.
+- ✅ `engine/distributed/gradients.py` — `_reduce`/`_clone` raise on a non-Tensor leaf. `None` never reaches them: optree treats it as an empty subtree, not a leaf.
+- ✅ `engine/distributed/_state.py` — `sync()` resolves `_SYNC_REGISTRY` along `__mro__` and still raises on a full miss. That fixes AUTO-S under DDP: `AutoClippedGradAux` / `AutoClippedFunAux` add no fields, so they resolve to their base handlers, and `AutoClipState` is registered alongside `FixedClipState` against a shared marker-state handler that raises if a subclass grows fields.
 
 **Not applicable in this checkout:** the audited precision-dispatch action references a removed/nonexistent `_dispatch` path. `opaque.api.engine.precision.__init__` exports only the current loss-scaling surface, and `_loss_scaler.py` has no silent fallback dispatch path; no compatibility shim or new engine code is needed.
+
+**Still open from RC-7 after this policy commit:** registering the wrapper dataclasses as optree nodes — `tree_leaves(clipped(...))` is still `[]`, which is why `all_finite()` on a `ClippedPytree` still returns `True` for an infinite leaf (the full fix also needs the per-example finite mask surfaced from `clipped_fun` before `clip_pytree`'s `nan_to_num`) — and `sync_object`'s value-derived field map (RC-8, needs the C1 gloo lane).
 
 **Effort: 1 day.** See RC-7 for the full fix.
 

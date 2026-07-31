@@ -80,7 +80,10 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
 
 The ``sync()`` machinery is type-dispatched: clipping and noise states
 register themselves with ``opaque.distributed._state.register_sync_type``
-and ship the right per-state aggregation rule.  Lower-level scalar
+and ship the right per-state aggregation rule.  Dispatch resolves a
+subclass to its nearest registered base class, and a state that resolves
+to nothing raises — leaving it unsynchronized would let every rank keep
+training on its own shard unannounced.  Lower-level scalar
 reductions, tensor gathers, and object syncs live in ``_state.py``;
 they're internal plumbing for the registered DP runtime objects rather
 than headline API.
