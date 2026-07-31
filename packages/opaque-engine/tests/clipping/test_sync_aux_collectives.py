@@ -168,6 +168,15 @@ class TestMergeGatheredValues:
                 torch.device("cpu"),
             )
 
+    def test_non_tensor_leaf_fails_closed(self):
+        import pytest
+
+        with pytest.raises(TypeError, match="tensor leaves only"):
+            _merge_gathered_values(
+                [{"tag": "rank0"}, {"tag": "rank1"}],
+                torch.device("cpu"),
+            )
+
 
 class TestGatherAuxFieldDevice:
     def test_none_local_field_uses_sibling_tensor_device(self, monkeypatch):

@@ -106,9 +106,9 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     ``group_norms``; that is filtered before flatten/cat/unflatten so the
     collective schedule stays fixed while the merge stays structure-typed.
 
-    Nested ``None`` placeholders are part of the treedef (not leaves) and are
-    preserved by unflatten. Tensor leaves are concatenated; other leaves are
-    kept from the first non-empty rank.
+    Nested ``None`` placeholders live in the treedef rather than the leaf list,
+    so unflatten restores them. Every actual leaf must be a tensor: keeping one
+    rank's non-tensor leaf would silently discard the other ranks' values.
     """
     present = [v for v in values if v is not None]
     if not present:
@@ -125,24 +125,19 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
 
     leaf_lists = [tree_flatten(payload)[0] for payload in present]
     if not leaf_lists[0]:
-        # e.g. structures that only contain None placeholders
+        # Structures made purely of None placeholders carry no leaves.
         return present[0]
 
     merged_leaves: list[Any] = []
     for i in range(len(leaf_lists[0])):
         column = [leaves[i] for leaves in leaf_lists]
-        sample = column[0]
-        if isinstance(sample, torch.Tensor):
-            if not all(isinstance(leaf, torch.Tensor) for leaf in column):
-                raise TypeError(
-                    "Distributed aux gather requires tensor leaves at matching "
-                    f"positions; got {[type(leaf) for leaf in column]}"
-                )
-            merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
-        else:
-            # Non-tensor leaf (rare aux metadata). Nested None is treedef-only
-            # and never appears here under default optree policies.
-            merged_leaves.append(sample)
+        if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+            raise TypeError(
+                "Distributed aux gathering supports tensor leaves only; got "
+                f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
+                "preserved structurally and does not need to be a leaf."
+            )
+        merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
     return tree_unflatten(treedef, merged_leaves)
 
 
