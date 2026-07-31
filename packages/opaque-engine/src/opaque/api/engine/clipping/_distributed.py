@@ -89,6 +89,15 @@ def _infer_device(value: Any) -> torch.device:
     return leaves[0].device if leaves else torch.device("cpu")
 
 
+def _infer_device_from_fields(tensor_fields: dict[str, object]) -> torch.device:
+    """Prefer any local tensor device so empty optional fields stay on-device."""
+    for value in tensor_fields.values():
+        leaves = tree_leaves(value)
+        if leaves:
+            return leaves[0].device
+    return torch.device("cpu")
+
+
 def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     """Concatenate per-rank aux pytrees; ``None`` ranks contribute nothing.
 
@@ -96,6 +105,10 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     nesting). Empty batches send ``None`` for optional fields such as
     ``group_norms``; that is filtered before flatten/cat/unflatten so the
     collective schedule stays fixed while the merge stays structure-typed.
+
+    Nested ``None`` placeholders are part of the treedef (not leaves) and are
+    preserved by unflatten. Tensor leaves are concatenated; other leaves are
+    kept from the first non-empty rank.
     """
     present = [v for v in values if v is not None]
     if not present:
@@ -112,21 +125,25 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
 
     leaf_lists = [tree_flatten(payload)[0] for payload in present]
     if not leaf_lists[0]:
-        # e.g. all-None nested placeholders with no tensor leaves
+        # e.g. structures that only contain None placeholders
         return present[0]
 
-    if any(not isinstance(leaf, torch.Tensor) for leaf in leaf_lists[0]):
-        bad = next(leaf for leaf in leaf_lists[0] if not isinstance(leaf, torch.Tensor))
-        raise TypeError(
-            "Distributed aux gathering supports tensor leaves only; "
-            f"got non-tensor leaf {type(bad)}"
-        )
-
-    concatenated = [
-        torch.cat([leaves[i].to(device) for leaves in leaf_lists], dim=0)
-        for i in range(len(leaf_lists[0]))
-    ]
-    return tree_unflatten(treedef, concatenated)
+    merged_leaves: list[Any] = []
+    for i in range(len(leaf_lists[0])):
+        column = [leaves[i] for leaves in leaf_lists]
+        sample = column[0]
+        if isinstance(sample, torch.Tensor):
+            if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+                raise TypeError(
+                    "Distributed aux gather requires tensor leaves at matching "
+                    f"positions; got {[type(leaf) for leaf in column]}"
+                )
+            merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
+        else:
+            # Non-tensor leaf (rare aux metadata). Nested None is treedef-only
+            # and never appears here under default optree policies.
+            merged_leaves.append(sample)
+    return tree_unflatten(treedef, merged_leaves)
 
 
 def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
@@ -140,12 +157,14 @@ def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
     :func:`~opaque.pytree.tree_unflatten`.
     """
     gathered: dict[str, object] = {}
+    default_device = _infer_device_from_fields(tensor_fields)
     # Sorted keys → identical collective order on every rank.
     for name in sorted(tensor_fields):
         local = tensor_fields[name]
         payloads = [None] * get_world_size()
         dist.all_gather_object(payloads, _cpu_payload(local))
-        gathered[name] = _merge_gathered_values(payloads, _infer_device(local))
+        device = _infer_device(local) if tree_leaves(local) else default_device
+        gathered[name] = _merge_gathered_values(payloads, device)
     return gathered
 
 

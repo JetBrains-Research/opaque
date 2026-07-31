@@ -144,6 +144,18 @@ class TestMergeGatheredValues:
         assert torch.equal(merged["attn"], torch.tensor([1.0, 3.0]))
         assert torch.equal(merged["mlp"], torch.tensor([2.0, 4.0]))
 
+    def test_nested_none_placeholders_are_preserved(self):
+        merged = _merge_gathered_values(
+            [
+                {"attn": torch.tensor([1.0]), "skip": None, "mlp": torch.tensor([2.0])},
+                {"attn": torch.tensor([3.0]), "skip": None, "mlp": torch.tensor([4.0])},
+            ],
+            torch.device("cpu"),
+        )
+        assert merged["skip"] is None
+        assert torch.equal(merged["attn"], torch.tensor([1.0, 3.0]))
+        assert torch.equal(merged["mlp"], torch.tensor([2.0, 4.0]))
+
     def test_structure_mismatch_among_nonempty_raises(self):
         import pytest
 
@@ -155,6 +167,40 @@ class TestMergeGatheredValues:
                 ],
                 torch.device("cpu"),
             )
+
+
+class TestGatherAuxFieldDevice:
+    def test_none_local_field_uses_sibling_tensor_device(self, monkeypatch):
+        import opaque.api.engine.clipping._distributed as dist_mod
+
+        cuda = (
+            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        )
+        remote_group_norms = {
+            "attn": torch.tensor([1.0]),
+            "mlp": torch.tensor([2.0]),
+        }
+
+        monkeypatch.setattr(dist_mod, "get_world_size", lambda: 2)
+
+        def _fake_all_gather(payloads, local):
+            payloads[0] = local
+            if local is None:
+                payloads[1] = remote_group_norms
+            elif isinstance(local, torch.Tensor):
+                payloads[1] = local.detach().cpu().clone()
+            else:
+                payloads[1] = local
+
+        monkeypatch.setattr(dist_mod.dist, "all_gather_object", _fake_all_gather)
+
+        fields = {
+            "grad_norms": torch.tensor([0.5], device=cuda),
+            "group_norms": None,
+        }
+        gathered = dist_mod._gather_aux_fields(fields)
+        assert gathered["group_norms"]["attn"].device == cuda
+        assert gathered["group_norms"]["mlp"].device == cuda
 
 
 class TestSyncAuxCollectiveParity:
