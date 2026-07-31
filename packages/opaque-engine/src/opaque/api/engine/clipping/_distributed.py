@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
+import optree
 import torch
 import torch.distributed as dist
 
@@ -20,6 +21,7 @@ from opaque.api.engine.distributed._state import (
     reduce_scalar,
     register_sync_type,
 )
+from opaque.api.engine.pytree import tree_leaves, tree_map
 
 from ._clipped_fun import ClippedFunAux, FixedClipState
 from ._clipped_grad import ClippedGradAux
@@ -70,89 +72,66 @@ def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
 
 
 def _cpu_payload(value: Any) -> Any:
-    """Detach tensors to CPU for ``all_gather_object`` pickling."""
-    if value is None:
-        return None
-    if isinstance(value, torch.Tensor):
-        return value.detach().cpu()
-    if isinstance(value, dict):
-        return {k: _cpu_payload(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_cpu_payload(v) for v in value]
-    if isinstance(value, tuple):
-        return tuple(_cpu_payload(v) for v in value)
-    return value
+    """Detach tensor leaves to CPU for ``all_gather_object`` pickling."""
+    return tree_map(
+        lambda leaf: leaf.detach().cpu() if isinstance(leaf, torch.Tensor) else leaf,
+        value,
+    )
 
 
 def _infer_device(value: Any) -> torch.device:
-    if isinstance(value, torch.Tensor):
-        return value.device
-    if isinstance(value, dict):
-        for child in value.values():
-            if isinstance(child, torch.Tensor):
-                return child.device
-    if isinstance(value, (list, tuple)):
-        for child in value:
-            if isinstance(child, torch.Tensor):
-                return child.device
-    return torch.device("cpu")
+    leaves = tree_leaves(value)
+    return leaves[0].device if leaves else torch.device("cpu")
 
 
 def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
-    """Concatenate per-rank aux payloads; ``None`` ranks contribute nothing."""
+    """Concatenate per-rank aux pytrees; ``None`` ranks contribute nothing.
+
+    Non-``None`` payloads must share an optree structure (same group keys /
+    nesting). Empty batches send ``None`` for optional fields such as
+    ``group_norms``; that is filtered before flatten/cat/unflatten so the
+    collective schedule stays fixed while the merge stays structure-typed.
+    """
     present = [v for v in values if v is not None]
     if not present:
         return None
 
-    sample = present[0]
-    if isinstance(sample, torch.Tensor):
-        parts = [v.to(device) for v in values if isinstance(v, torch.Tensor)]
-        return torch.cat(parts, dim=0) if parts else None
-
-    if isinstance(sample, dict):
-        keys: list[Any] = []
-        seen: set[Any] = set()
-        for payload in present:
-            for key in payload:
-                if key not in seen:
-                    seen.add(key)
-                    keys.append(key)
-        merged: dict[Any, Any] = {}
-        for key in keys:
-            per_rank = [
-                None if payload is None else payload.get(key) for payload in values
-            ]
-            merged_value = _merge_gathered_values(per_rank, device)
-            if merged_value is not None:
-                merged[key] = merged_value
-        return merged or None
-
-    if isinstance(sample, (list, tuple)):
-        length = len(sample)
-        if any(len(v) != length for v in present):
+    treedef = optree.tree_structure(present[0])
+    for payload in present[1:]:
+        other = optree.tree_structure(payload)
+        if other != treedef:
             raise TypeError(
-                "Distributed aux gather requires matching sequence lengths "
-                f"across ranks; got {[len(v) for v in present]}"
+                "Distributed aux gather requires matching pytree structures "
+                f"across non-empty ranks; got {treedef} vs {other}"
             )
-        merged_seq = [
-            _merge_gathered_values([v[i] for v in present], device)
-            for i in range(length)
-        ]
-        return type(sample)(merged_seq)
 
-    raise TypeError(
-        "Distributed aux gathering supports tensor / dict-of-tensor / None "
-        f"leaves only; got {type(sample)}"
-    )
+    leaf_lists = [optree.tree_flatten(payload)[0] for payload in present]
+    if not leaf_lists[0]:
+        # e.g. all-None nested placeholders with no tensor leaves
+        return present[0]
+
+    if any(not isinstance(leaf, torch.Tensor) for leaf in leaf_lists[0]):
+        bad = next(leaf for leaf in leaf_lists[0] if not isinstance(leaf, torch.Tensor))
+        raise TypeError(
+            "Distributed aux gathering supports tensor leaves only; "
+            f"got non-tensor leaf {type(bad)}"
+        )
+
+    concatenated = [
+        torch.cat([leaves[i].to(device) for leaves in leaf_lists], dim=0)
+        for i in range(len(leaf_lists[0]))
+    ]
+    return optree.tree_unflatten(treedef, concatenated)
 
 
 def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
     """Gather schema tensor fields with one collective per field.
 
-    Field-level ``all_gather_object`` (instead of ``tree_map`` over leaves)
-    keeps the collective count identical when one rank has ``group_norms=None``
-    (empty batch) and another has a per-group dict — a structure mismatch that
-    ``gather_pytree`` cannot reconcile.
+    Field-level ``all_gather_object`` keeps the collective count identical when
+    one rank has ``group_norms=None`` (empty batch) and another has a per-group
+    dict. Leaf-wise ``tree_map`` cannot bridge that structure mismatch; once
+    payloads are gathered, non-``None`` values are merged with optree
+    flatten / cat / unflatten.
     """
     gathered: dict[str, object] = {}
     # Sorted keys → identical collective order on every rank.

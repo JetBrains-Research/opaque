@@ -17,6 +17,7 @@ from opaque.api.engine.clipping._clipped_fun import ClippedFunAux
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
 from opaque.api.engine.clipping._distributed import (
     _SCALAR_AUX_FIELDS,
+    _merge_gathered_values,
     _split_aux_fields,
     _sync_clipping_rate,
     sync_clipped_fun_aux,
@@ -113,6 +114,47 @@ class TestSplitAuxFieldsSchema:
         nonempty_t, nonempty_s = _split_aux_fields(nonempty)
         assert set(empty_t) == set(nonempty_t)
         assert set(empty_s) == set(nonempty_s)
+
+
+class TestMergeGatheredValues:
+    def test_none_plus_per_group_dict_uses_optree_unflatten(self):
+        device = torch.device("cpu")
+        merged = _merge_gathered_values(
+            [
+                None,
+                {
+                    "attn": torch.tensor([0.5, 1.5]),
+                    "mlp": torch.tensor([0.2, 0.3]),
+                },
+            ],
+            device,
+        )
+        assert set(merged) == {"attn", "mlp"}
+        assert torch.equal(merged["attn"], torch.tensor([0.5, 1.5]))
+        assert torch.equal(merged["mlp"], torch.tensor([0.2, 0.3]))
+
+    def test_matching_dicts_concatenate_leaves(self):
+        merged = _merge_gathered_values(
+            [
+                {"attn": torch.tensor([1.0]), "mlp": torch.tensor([2.0])},
+                {"attn": torch.tensor([3.0]), "mlp": torch.tensor([4.0])},
+            ],
+            torch.device("cpu"),
+        )
+        assert torch.equal(merged["attn"], torch.tensor([1.0, 3.0]))
+        assert torch.equal(merged["mlp"], torch.tensor([2.0, 4.0]))
+
+    def test_structure_mismatch_among_nonempty_raises(self):
+        import pytest
+
+        with pytest.raises(TypeError, match="matching pytree structures"):
+            _merge_gathered_values(
+                [
+                    {"attn": torch.tensor([1.0])},
+                    {"attn": torch.tensor([1.0]), "mlp": torch.tensor([2.0])},
+                ],
+                torch.device("cpu"),
+            )
 
 
 class TestSyncAuxCollectiveParity:
