@@ -134,7 +134,8 @@ class TestNoiseBiasCorrection:
             )
         s = _state(state)
         # 200 steps at ρ=0.9 → 1-0.9^200 ≈ 1.0; should be very close to σ².
-        assert s.phi_g == pytest.approx(sigma**2, rel=1e-3)
+        assert isinstance(s.phi_g, dict)
+        assert all(v == pytest.approx(sigma**2, rel=1e-3) for v in s.phi_g.values())
 
     def test_phi_dx_is_nonneg_per_element(self, params, grads):
         """φ_dx is a per-element tensor and stays non-negative."""
@@ -173,7 +174,8 @@ class TestNoiseBiasCorrection:
         for _ in range(20):
             _, state = opt.update(grads, state, params=params)
         s = _state(state)
-        assert s.phi_g == 0.0
+        assert isinstance(s.phi_g, dict)
+        assert all(v == 0.0 for v in s.phi_g.values())
         for k in params:
             assert torch.all(s.phi_dx[k] == 0)
 
@@ -261,7 +263,8 @@ class TestSecondMomentSubstitution:
             _, state = opt.update(out, state, params=params)
         s = _state(state)
         # Both phi EMAs stay at zero in the substitution branch.
-        assert s.phi_g == 0.0
+        assert isinstance(s.phi_g, dict)
+        assert all(v == 0.0 for v in s.phi_g.values())
         for k in params:
             assert torch.all(s.phi_dx[k] == 0)
 
@@ -298,7 +301,8 @@ class TestSecondMomentSubstitution:
                 params=params,
             )
         s_before_switch = _state(state)
-        assert s_before_switch.phi_g > 0
+        assert isinstance(s_before_switch.phi_g, dict)
+        assert all(v > 0 for v in s_before_switch.phi_g.values())
         assert all(s_before_switch.phi_dx[k].max() > 0 for k in params)
         # Now feed a substitution call.  The output must be finite and
         # match what we'd get with phi forced to zero (no double

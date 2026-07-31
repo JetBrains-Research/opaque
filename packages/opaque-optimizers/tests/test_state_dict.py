@@ -112,6 +112,65 @@ class TestAdamW:
         assert restored[0].step == 7
         assert restored[0].phi == pytest.approx(state[0].phi)
 
+    def test_per_group_phi_round_trip_nested(self):
+        """Path-keyed φ survives state_dict when BC is enabled from init."""
+        from opaque.types import PerGroup
+
+        nested_params = {
+            "layer1": {
+                "weight": torch.randn(4, 3),
+                "bias": torch.randn(4),
+            },
+            "layer2": {"weight": torch.randn(2, 4)},
+        }
+        nested_grads = {
+            "layer1": {
+                "weight": torch.randn_like(nested_params["layer1"]["weight"]),
+                "bias": torch.randn_like(nested_params["layer1"]["bias"]),
+            },
+            "layer2": {"weight": torch.randn_like(nested_params["layer2"]["weight"])},
+        }
+        pg = PerGroup(
+            groups={
+                ("layer1", "weight"): "g_a",
+                ("layer1", "bias"): "g_a",
+                ("layer2", "weight"): "g_b",
+            },
+            values={"g_a": 0.2, "g_b": 0.7},
+        )
+        opt = adamw(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(nested_params)
+        assert isinstance(state[0].phi, dict)
+        assert set(state[0].phi) == {
+            ("layer1", "weight"),
+            ("layer1", "bias"),
+            ("layer2", "weight"),
+        }
+        for _ in range(3):
+            _, state = opt.update(
+                noised(nested_grads, max_norm=1.0, noise_stddev=pg),
+                state,
+                params=nested_params,
+            )
+        assert state[0].phi[("layer1", "weight")] != pytest.approx(0.0)
+        sd = state_dict(state)
+        restored = from_state_dict(opt.init(nested_params), sd)
+        assert restored[0].phi == state[0].phi
+        u_orig, _ = opt.update(
+            noised(nested_grads, max_norm=1.0, noise_stddev=pg),
+            state,
+            params=nested_params,
+        )
+        u_rest, _ = opt.update(
+            noised(nested_grads, max_norm=1.0, noise_stddev=pg),
+            restored,
+            params=nested_params,
+        )
+        torch.testing.assert_close(
+            u_orig["layer1"]["weight"], u_rest["layer1"]["weight"]
+        )
+        torch.testing.assert_close(u_orig["layer2"]["weight"], u_rest["layer2"]["weight"])
+
     def test_torch_save_load_round_trip(self, params, grads, tmp_path):
         opt = adamw(lr=1e-3, weight_decay=0.01)
         state = opt.init(params)
@@ -191,6 +250,42 @@ class TestAdafactor:
         assert not any("treespec" in k for k in sd)
         # v_flat tensors should be there.
         assert any("v_flat" in k for k in sd)
+
+    def test_per_group_phi_flat_round_trip(self, matrix_params, matrix_grads):
+        """Adafactor phi_flat + paths round-trip under PerGroup BC."""
+        from opaque.types import PerGroup
+
+        pg = PerGroup(
+            groups={
+                ("fc.weight",): "attn",
+                ("bias",): "mlp",
+            },
+            values={"attn": 0.2, "mlp": 0.8},
+        )
+        opt = adafactor(lr=1e-3, beta1=0.9, noise_bias_correction=True)
+        state = opt.init(matrix_params)
+        for _ in range(3):
+            _, state = opt.update(
+                noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
+                state,
+                params=matrix_params,
+            )
+        sd = state_dict(state)
+        restored = from_state_dict(opt.init(matrix_params), sd)
+        assert restored[0].phi_flat == state[0].phi_flat
+        assert restored[0].paths == state[0].paths
+        u_orig, _ = opt.update(
+            noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
+            state,
+            params=matrix_params,
+        )
+        u_rest, _ = opt.update(
+            noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
+            restored,
+            params=matrix_params,
+        )
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
 
 
 class TestScheduleFree:

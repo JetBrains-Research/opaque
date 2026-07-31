@@ -64,6 +64,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.api.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -72,6 +73,7 @@ from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
+    from opaque.pytree import ParamPath
     from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
@@ -89,20 +91,21 @@ class AdamState:
     Carries the noise-variance EMA ``phi`` regardless of whether DP
     bias correction is actively in use — this keeps the state shape
     constant across calls so checkpoints don't depend on call history.
-    The cost is one scalar (or one ``dict[str, float]`` per group).
+    With ``noise_bias_correction=True``, ``phi`` is a path-keyed dict
+    from init (stable for ``state_dict`` / ``from_state_dict``).
 
     Attributes:
         mu: First-moment EMA (pytree matching params).
         nu: Second-moment EMA (pytree matching params).
-        phi: Noise-variance EMA (scalar or ``dict[group, float]``).
-            Stays at zero unless ``NoisedPytree`` updates supply realized
-            σ metadata.
+        phi: Noise-variance EMA (scalar, or ``dict[ParamPath, float]``
+            when BC is enabled).  Stays at zero unless ``NoisedPytree``
+            updates supply realized σ metadata.
         step: Number of completed updates.
     """
 
     mu: TensorPytree
     nu: TensorPytree
-    phi: float | dict[str, float]
+    phi: float | dict[ParamPath, float]
     step: int
 
 
@@ -140,7 +143,10 @@ def _scale_by_adam(
     def init_fn(params: Any) -> AdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        return AdamState(mu=mu, nu=nu, phi=0.0, step=0)
+        phi: float | dict = (
+            init_per_group_phi(params) if noise_bias_correction else 0.0
+        )
+        return AdamState(mu=mu, nu=nu, phi=phi, step=0)
 
     def update_fn(
         updates: Any,

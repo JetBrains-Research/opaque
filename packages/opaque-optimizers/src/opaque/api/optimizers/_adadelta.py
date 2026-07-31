@@ -57,6 +57,7 @@ except ImportError as exc:
     ) from exc
 
 from opaque.api.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -66,6 +67,7 @@ from opaque.api.optimizers._chain import make_optimizer_chain
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
+    from opaque.pytree import ParamPath
     from opaque.types import PerGroup, TensorPytree
 
 _LR = float | Callable[[int], float]
@@ -87,9 +89,9 @@ class AdadeltaState:
     Attributes:
         v_g: Squared-gradient EMA ``E[g²]`` (pytree matching params).
         v_dx: Squared-update EMA ``E[Δx²]`` (pytree matching params).
-        phi_g: Gradient-noise-variance EMA — scalar (homogeneous σ) or
-            ``dict[group, float]`` (PerGroup σ).  Stays at zero unless a
-            ``NoisedPytree`` update supplies realized σ metadata.
+        phi_g: Gradient-noise-variance EMA — scalar, or
+            ``dict[ParamPath, float]`` when BC is enabled.  Stays at zero
+            unless a ``NoisedPytree`` update supplies realized σ metadata.
         phi_dx: Update-noise-variance EMA.  Per-element pytree matching
             params because the per-step variance ``coef_t² · σ²`` is
             element-wise even when σ is scalar.
@@ -98,7 +100,7 @@ class AdadeltaState:
 
     v_g: TensorPytree
     v_dx: TensorPytree
-    phi_g: float | dict[str, float]
+    phi_g: float | dict[ParamPath, float]
     phi_dx: TensorPytree
     step: int
 
@@ -129,7 +131,12 @@ def _scale_by_adadelta(
         v_g = tree_map(torch.zeros_like, params)
         v_dx = tree_map(torch.zeros_like, params)
         phi_dx = tree_map(torch.zeros_like, params)
-        return AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=0.0, phi_dx=phi_dx, step=0)
+        phi_g: float | dict = (
+            init_per_group_phi(params) if noise_bias_correction else 0.0
+        )
+        return AdadeltaState(
+            v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0
+        )
 
     def update_fn(
         updates: Any,

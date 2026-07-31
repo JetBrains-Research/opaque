@@ -184,3 +184,67 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
         assert abs(peak_max - peak_min) < 1e-6
     finally:
         _cleanup_ddp()
+
+
+def _setup_gloo(rank: int, world_size: int, port: int) -> None:
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+
+
+def _worker_second_moment_clip_gloo(rank: int, world_size: int, port: int) -> None:
+    from opaque.distributed.gradients import reduce_pytree
+    from opaque.types import ClippedPytree, SecondMomentClippingOutput
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        scale = 1.0 if rank == 0 else 10.0
+        out = SecondMomentClippingOutput(
+            grads=ClippedPytree(
+                {"w": torch.tensor([1.0, 2.0]) * scale}, max_norm=1.0
+            ),
+            squared_grads=ClippedPytree(
+                {"w": torch.tensor([3.0]) * scale}, max_norm=2.0
+            ),
+        )
+        reduced = reduce_pytree(out, op="sum")
+        assert isinstance(reduced, SecondMomentClippingOutput)
+        assert torch.allclose(reduced.grads.pytree["w"], torch.tensor([11.0, 22.0]))
+        assert torch.allclose(reduced.squared_grads.pytree["w"], torch.tensor([33.0]))
+        assert abs(reduced.grads.max_norm - 1.0) < 1e-6
+        assert abs(reduced.squared_grads.max_norm - 2.0) < 1e-6
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_second_moment_noise_gloo(rank: int, world_size: int, port: int) -> None:
+    from opaque.distributed.gradients import reduce_pytree
+    from opaque.types import NoisedPytree, SecondMomentNoiseOutput
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        scale = 1.0 if rank == 0 else 10.0
+        out = SecondMomentNoiseOutput(
+            noisy_grads=NoisedPytree(
+                {"w": torch.tensor([1.0]) * scale},
+                max_norm=1.0,
+                noise_stddev=0.5,
+            ),
+            noisy_squared_grads=NoisedPytree(
+                {"w": torch.tensor([2.0]) * scale},
+                max_norm=2.0,
+                noise_stddev=0.25,
+            ),
+        )
+        reduced = reduce_pytree(out, op="sum")
+        assert isinstance(reduced, SecondMomentNoiseOutput)
+        assert torch.allclose(reduced.noisy_grads.pytree["w"], torch.tensor([11.0]))
+        assert torch.allclose(
+            reduced.noisy_squared_grads.pytree["w"], torch.tensor([22.0])
+        )
+        assert abs(reduced.noisy_grads.noise_stddev - 0.5 * (2.0**0.5)) < 1e-6
+        assert abs(reduced.noisy_squared_grads.noise_stddev - 0.25 * (2.0**0.5)) < 1e-6
+    finally:
+        _cleanup_ddp()

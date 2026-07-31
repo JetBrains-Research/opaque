@@ -192,7 +192,9 @@ class TestBCMode:
                 params=params,
             )
             expected_phi = b2 * expected_phi + (1 - b2) * (sigma**2)
-        assert _adam_state(state).phi == pytest.approx(expected_phi)
+        phi = _adam_state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx(expected_phi) for v in phi.values())
 
     def test_noisy_updates_take_per_step_metadata(self, params, grads):
         b2 = 0.999
@@ -207,7 +209,9 @@ class TestBCMode:
                 params=params,
             )
             expected_phi = b2 * expected_phi + (1 - b2) * (sigma**2)
-        assert _adam_state(state).phi == pytest.approx(expected_phi)
+        phi = _adam_state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx(expected_phi) for v in phi.values())
 
     def test_noisy_updates_route_stddev_metadata(self, params, grads):
         b2 = 0.999
@@ -219,7 +223,9 @@ class TestBCMode:
             state,
             params=params,
         )
-        assert _adam_state(state).phi == pytest.approx((1 - b2) * sigma**2)
+        phi = _adam_state(state).phi
+        assert isinstance(phi, dict)
+        assert all(v == pytest.approx((1 - b2) * sigma**2) for v in phi.values())
 
     def test_explicit_noise_stddev_kwarg_rejected(self, params, grads):
         """``optimizer.update()`` does not take a per-step ``noise_stddev``
@@ -374,7 +380,14 @@ class TestPerGroupBC:
         )
         opt = adamw(lr=1e-3, noise_bias_correction=True)
         state = opt.init(nested_params)
-        assert _adam_state(state).phi == 0.0
+        init_phi = _adam_state(state).phi
+        assert isinstance(init_phi, dict)
+        assert set(init_phi) == {
+            ("layer1", "weight"),
+            ("layer1", "bias"),
+            ("layer2", "weight"),
+        }
+        assert all(v == 0.0 for v in init_phi.values())
         # Update should not raise (the old code crashed on the
         # ``resolve_noise_variance(pg, "layer1")`` lookup).
         updates, new_state = opt.update(
