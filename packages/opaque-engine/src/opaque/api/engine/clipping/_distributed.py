@@ -9,14 +9,23 @@ and self-registers via :func:`opaque.distributed.register_sync_type`.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import torch
+import torch.distributed as dist
 
 from opaque.api.engine.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
-    gather_pytree,
+    get_world_size,
     reduce_scalar,
     register_sync_type,
+)
+from opaque.api.engine.pytree import (
+    tree_flatten,
+    tree_leaves,
+    tree_map,
+    tree_structure,
+    tree_unflatten,
 )
 
 from ._clipped_fun import ClippedFunAux, FixedClipState
@@ -40,14 +49,26 @@ def sync_clip_state(state: FixedClipState) -> FixedClipState:
     return state
 
 
+# Scalar aux fields reduced with a fixed all-reduce sequence. Everything else
+# is treated as gather-able (tensors / nested tensor pytrees / None placeholders)
+# so ranks with empty Poisson batches still walk the same collective schedule.
+_SCALAR_AUX_FIELDS = frozenset({"clipping_rate", "batch_size"})
+
+
 def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
-    """Split dataclass fields into tensor-like and scalar/None groups."""
+    """Split dataclass fields by schema, not by runtime value.
+
+    Classifying by ``isinstance`` / ``is None`` made empty-batch ranks drop
+    tensor fields from the gather map while non-empty ranks kept them, so the
+    two sides issued different collective sequences and permanently desynced
+    the process group.
+    """
     tensor_fields: dict[str, object] = {}
     scalar_fields: dict[str, object] = {}
 
     for f in dataclasses.fields(aux):
         value = getattr(aux, f.name)
-        if value is None or isinstance(value, (int, float)):
+        if f.name in _SCALAR_AUX_FIELDS:
             scalar_fields[f.name] = value
         else:
             tensor_fields[f.name] = value
@@ -55,25 +76,114 @@ def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
     return tensor_fields, scalar_fields
 
 
+def _cpu_payload(value: Any) -> Any:
+    """Detach tensor leaves to CPU for ``all_gather_object`` pickling."""
+    return tree_map(
+        lambda leaf: leaf.detach().cpu() if isinstance(leaf, torch.Tensor) else leaf,
+        value,
+    )
+
+
+def _infer_device(value: Any) -> torch.device:
+    leaves = tree_leaves(value)
+    return leaves[0].device if leaves else torch.device("cpu")
+
+
+def _infer_device_from_fields(tensor_fields: dict[str, object]) -> torch.device:
+    """Prefer any local tensor device so empty optional fields stay on-device."""
+    for value in tensor_fields.values():
+        leaves = tree_leaves(value)
+        if leaves:
+            return leaves[0].device
+    return torch.device("cpu")
+
+
+def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
+    """Concatenate per-rank aux pytrees; ``None`` ranks contribute nothing.
+
+    Non-``None`` payloads must share an optree structure (same group keys /
+    nesting). Empty batches send ``None`` for optional fields such as
+    ``group_norms``; that is filtered before flatten/cat/unflatten so the
+    collective schedule stays fixed while the merge stays structure-typed.
+
+    Nested ``None`` placeholders live in the treedef rather than the leaf list,
+    so unflatten restores them. Every actual leaf must be a tensor: keeping one
+    rank's non-tensor leaf would silently discard the other ranks' values.
+    """
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+
+    treedef = tree_structure(present[0])
+    for payload in present[1:]:
+        other = tree_structure(payload)
+        if other != treedef:
+            raise TypeError(
+                "Distributed aux gather requires matching pytree structures "
+                f"across non-empty ranks; got {treedef} vs {other}"
+            )
+
+    leaf_lists = [tree_flatten(payload)[0] for payload in present]
+    if not leaf_lists[0]:
+        # Structures made purely of None placeholders carry no leaves.
+        return present[0]
+
+    merged_leaves: list[Any] = []
+    for i in range(len(leaf_lists[0])):
+        column = [leaves[i] for leaves in leaf_lists]
+        if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+            raise TypeError(
+                "Distributed aux gathering supports tensor leaves only; got "
+                f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
+                "preserved structurally and does not need to be a leaf."
+            )
+        merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
+    return tree_unflatten(treedef, merged_leaves)
+
+
+def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
+    """Gather schema tensor fields with one collective per field.
+
+    Field-level ``all_gather_object`` keeps the collective count identical when
+    one rank has ``group_norms=None`` (empty batch) and another has a per-group
+    dict. Leaf-wise ``tree_map`` cannot bridge that structure mismatch; once
+    payloads are gathered, non-``None`` values are merged with
+    :func:`~opaque.pytree.tree_flatten` / cat /
+    :func:`~opaque.pytree.tree_unflatten`.
+    """
+    gathered: dict[str, object] = {}
+    default_device = _infer_device_from_fields(tensor_fields)
+    # Sorted keys → identical collective order on every rank.
+    for name in sorted(tensor_fields):
+        local = tensor_fields[name]
+        payloads = [None] * get_world_size()
+        dist.all_gather_object(payloads, _cpu_payload(local))
+        device = _infer_device(local) if tree_leaves(local) else default_device
+        gathered[name] = _merge_gathered_values(payloads, device)
+    return gathered
+
+
 def _sync_clipping_rate(
     clipping_rate: float | None,
     norms: torch.Tensor | None,
 ) -> float | None:
-    """Compute global clipping rate as weighted average across ranks."""
+    """Compute global clipping rate as a size-weighted average across ranks.
+
+    Always issues the same two ``reduce_scalar`` collectives. An empty local
+    batch contributes weight 0; branching on ``local_n > 0`` previously made
+    empty ranks issue one all-reduce while non-empty ranks issued two, which
+    desynchronized the process group after a single empty Poisson draw.
+    """
     if clipping_rate is None:
         return None
 
-    local_n = 0.0
-    if isinstance(norms, torch.Tensor):
-        local_n = float(norms.numel())
-
+    local_n = float(norms.numel()) if isinstance(norms, torch.Tensor) else 0.0
     local_rate = float(clipping_rate)
-    if local_n > 0:
-        global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
-        global_total = reduce_scalar(local_n, op="sum")
-        return global_weighted_sum / max(1.0, global_total)
-    else:
-        return reduce_scalar(local_rate, op="mean")
+    global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
+    global_total = reduce_scalar(local_n, op="sum")
+    if global_total <= 0.0:
+        return 0.0
+    return global_weighted_sum / global_total
 
 
 def _sync_batch_size(batch_size: int) -> int:
@@ -87,7 +197,7 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
     scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
@@ -106,7 +216,7 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
         return aux
 
     tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(
         aux.clipping_rate, aux.grad_norms

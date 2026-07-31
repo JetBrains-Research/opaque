@@ -187,6 +187,7 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
 
 
 def _setup_gloo(rank: int, world_size: int, port: int) -> None:
+    """CPU process-group init for empty-batch collective-parity tests."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
@@ -244,5 +245,102 @@ def _worker_second_moment_noise_gloo(rank: int, world_size: int, port: int) -> N
         )
         assert abs(reduced.noisy_grads.noise_stddev - 0.5 * (2.0**0.5)) < 1e-6
         assert abs(reduced.noisy_squared_grads.noise_stddev - 0.25 * (2.0**0.5)) < 1e-6
+    finally:
+        _cleanup_ddp()
+
+
+def _spawn_gloo(world_size: int, fn, *args) -> None:
+    port = _find_free_port()
+    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _worker_sync_aux_empty_batch(rank: int, world_size: int, port: int) -> None:
+    """Rank 0 draws an empty batch; rank 1 draws examples. Must not hang."""
+    from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+    from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+    from opaque.distributed import sync
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        if rank == 0:
+            aux = ClippedGradAux(
+                loss_values=torch.empty(0),
+                grad_norms=torch.empty(0),
+                clipped_grad_norms=torch.empty(0),
+                loss_aux=None,
+                clipping_rate=0.0,
+                batch_size=0,
+                group_norms=None,
+            )
+        else:
+            aux = ClippedGradAux(
+                loss_values=torch.tensor([1.0, 2.0, 3.0]),
+                grad_norms=torch.tensor([0.4, 1.2, 0.8]),
+                clipped_grad_norms=torch.tensor([0.4, 1.0, 0.8]),
+                loss_aux=None,
+                clipping_rate=1.0 / 3.0,
+                batch_size=3,
+                group_norms=None,
+            )
+
+        synced = sync_clipped_grad_aux(aux)
+        # Also exercise the type-dispatched sync path used by trainers.
+        synced2 = sync(aux)
+
+        assert synced.batch_size == 3
+        assert synced2.batch_size == 3
+        assert synced.grad_norms.shape[0] == 3
+        assert abs(synced.clipping_rate - (1.0 / 3.0)) < 1e-5
+        # A follow-up collective must still succeed (proves no desync).
+        token = torch.tensor([float(rank + 1)])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert abs(token.item() - sum(range(1, world_size + 1))) < 1e-5
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_sync_aux_empty_vs_per_group(rank: int, world_size: int, port: int) -> None:
+    """Empty rank has group_norms=None; nonempty has per-group dict.
+
+    After ParamPath-keyed PerGroup, aux ``group_norms`` are still keyed by
+    group name, but empty batches still omit the dict. Sync must not hang.
+    """
+    from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+    from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        if rank == 0:
+            aux = ClippedGradAux(
+                loss_values=torch.empty(0),
+                grad_norms=torch.empty(0),
+                clipped_grad_norms=torch.empty(0),
+                loss_aux=None,
+                clipping_rate=0.0,
+                batch_size=0,
+                group_norms=None,
+            )
+        else:
+            aux = ClippedGradAux(
+                loss_values=torch.tensor([1.0, 2.0]),
+                grad_norms=torch.tensor([0.5, 1.5]),
+                clipped_grad_norms=torch.tensor([0.5, 1.0]),
+                loss_aux=None,
+                clipping_rate=0.5,
+                batch_size=2,
+                group_norms={
+                    "attn": torch.tensor([0.5, 1.5]),
+                    "mlp": torch.tensor([0.2, 0.3]),
+                },
+            )
+
+        synced = sync_clipped_grad_aux(aux)
+        assert synced.batch_size == 2
+        assert synced.group_norms is not None
+        assert set(synced.group_norms) == {"attn", "mlp"}
+        assert synced.group_norms["attn"].shape[0] == 2
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert abs(token.item() - float(world_size)) < 1e-5
     finally:
         _cleanup_ddp()
