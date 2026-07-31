@@ -62,6 +62,21 @@ def test_tree_map_multiple_trees_elementwise(device):
     torch.testing.assert_close(summed["x"], torch.tensor([4.0, 6.0], device=device))
 
 
+def test_tree_flatten_unflatten_roundtrip(device):
+    tree = {
+        "attn": torch.tensor([1.0, 2.0]),
+        "mlp": {"w": torch.tensor([3.0]), "b": torch.tensor([4.0])},
+    }
+    tree = _to_device(tree, device)
+    leaves, treedef = pu.tree_flatten(tree)
+    assert pu.tree_structure(tree) == treedef
+    assert all(isinstance(leaf, torch.Tensor) for leaf in leaves)
+    rebuilt = pu.tree_unflatten(treedef, [leaf * 2 for leaf in leaves])
+    torch.testing.assert_close(rebuilt["attn"], tree["attn"] * 2)
+    torch.testing.assert_close(rebuilt["mlp"]["w"], tree["mlp"]["w"] * 2)
+    torch.testing.assert_close(rebuilt["mlp"]["b"], tree["mlp"]["b"] * 2)
+
+
 @pytest.mark.parametrize(
     ("tree", "expected"),
     [

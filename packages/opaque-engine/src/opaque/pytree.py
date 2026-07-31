@@ -7,10 +7,13 @@ from opaque.api.engine.pytree import (
     param_path,
     param_path_display,
     partition,
+    tree_flatten,
     tree_flatten_with_paths,
     tree_leaves,
     tree_map,
     tree_map_with_path,
+    tree_structure,
+    tree_unflatten,
 )
 
 __all__ = [
@@ -20,8 +23,11 @@ __all__ = [
     "param_path",
     "param_path_display",
     "partition",
+    "tree_flatten",
     "tree_flatten_with_paths",
     "tree_leaves",
     "tree_map",
     "tree_map_with_path",
+    "tree_structure",
+    "tree_unflatten",
 ]

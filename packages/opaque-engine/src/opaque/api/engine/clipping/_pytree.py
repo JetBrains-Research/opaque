@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import namedtuple
 from typing import Any
 
-import optree
 import torch
 
 from opaque.api.engine.pytree import (
@@ -14,6 +13,7 @@ from opaque.api.engine.pytree import (
     param_path_display,
     tree_flatten_with_paths,
     tree_map,
+    tree_unflatten,
 )
 from opaque.api.engine.types import PerGroup
 
@@ -112,7 +112,7 @@ def _scale_leaves_by_group(
         group_scales[pg.groups[path]].to(dtype=leaf.dtype) * leaf
         for path, leaf in zip(paths, leaves, strict=True)
     ]
-    return optree.tree_unflatten(treedef, scaled)
+    return tree_unflatten(treedef, scaled)
 
 
 def _auto_scale_per_group(

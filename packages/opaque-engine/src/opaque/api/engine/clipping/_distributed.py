@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-import optree
 import torch
 import torch.distributed as dist
 
@@ -21,7 +20,13 @@ from opaque.api.engine.distributed._state import (
     reduce_scalar,
     register_sync_type,
 )
-from opaque.api.engine.pytree import tree_leaves, tree_map
+from opaque.api.engine.pytree import (
+    tree_flatten,
+    tree_leaves,
+    tree_map,
+    tree_structure,
+    tree_unflatten,
+)
 
 from ._clipped_fun import ClippedFunAux, FixedClipState
 from ._clipped_grad import ClippedGradAux
@@ -96,16 +101,16 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     if not present:
         return None
 
-    treedef = optree.tree_structure(present[0])
+    treedef = tree_structure(present[0])
     for payload in present[1:]:
-        other = optree.tree_structure(payload)
+        other = tree_structure(payload)
         if other != treedef:
             raise TypeError(
                 "Distributed aux gather requires matching pytree structures "
                 f"across non-empty ranks; got {treedef} vs {other}"
             )
 
-    leaf_lists = [optree.tree_flatten(payload)[0] for payload in present]
+    leaf_lists = [tree_flatten(payload)[0] for payload in present]
     if not leaf_lists[0]:
         # e.g. all-None nested placeholders with no tensor leaves
         return present[0]
@@ -121,7 +126,7 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
         torch.cat([leaves[i].to(device) for leaves in leaf_lists], dim=0)
         for i in range(len(leaf_lists[0]))
     ]
-    return optree.tree_unflatten(treedef, concatenated)
+    return tree_unflatten(treedef, concatenated)
 
 
 def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
@@ -130,8 +135,9 @@ def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
     Field-level ``all_gather_object`` keeps the collective count identical when
     one rank has ``group_norms=None`` (empty batch) and another has a per-group
     dict. Leaf-wise ``tree_map`` cannot bridge that structure mismatch; once
-    payloads are gathered, non-``None`` values are merged with optree
-    flatten / cat / unflatten.
+    payloads are gathered, non-``None`` values are merged with
+    :func:`~opaque.pytree.tree_flatten` / cat /
+    :func:`~opaque.pytree.tree_unflatten`.
     """
     gathered: dict[str, object] = {}
     # Sorted keys → identical collective order on every rank.

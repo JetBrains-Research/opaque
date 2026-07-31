@@ -72,6 +72,33 @@ def tree_flatten_with_paths(
     return paths, list(leaves), treedef
 
 
+def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
+    """Flatten ``tree`` to ``(leaves, treedef)``.
+
+    Thin wrapper around :func:`optree.tree_flatten`.  Prefer
+    :func:`tree_flatten_with_paths` when callers need leaf identities.
+    """
+    leaves, treedef = _ot.tree_flatten(tree)
+    return list(leaves), treedef
+
+
+def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
+    """Rebuild a PyTree from ``treedef`` and ``leaves``.
+
+    Thin wrapper around :func:`optree.tree_unflatten`.
+    """
+    return _ot.tree_unflatten(treedef, leaves)
+
+
+def tree_structure(tree: Any) -> Any:
+    """Return the optree structure of ``tree`` (no leaves).
+
+    Thin wrapper around :func:`optree.tree_structure`.  Useful for asserting
+    that independently gathered payloads share a layout before unflattening.
+    """
+    return _ot.tree_structure(tree)
+
+
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
     """Extract all leaf tensors from a PyTree.
 
@@ -413,8 +440,11 @@ __all__ = [
     "param_path",
     "param_path_display",
     "partition",
+    "tree_flatten",
     "tree_flatten_with_paths",
     "tree_leaves",
     "tree_map",
     "tree_map_with_path",
+    "tree_structure",
+    "tree_unflatten",
 ]
