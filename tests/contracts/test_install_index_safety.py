@@ -18,6 +18,6 @@ ARTIFACT_INDEX = (
     ["README.md", "docs/getting-started/installation.md"],
 )
 def test_pip_uses_artifact_registry_as_primary_index(path: str) -> None:
-    text = (REPO_ROOT / path).read_text()
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
     assert "--extra-index-url" not in text
     assert f"--index-url {ARTIFACT_INDEX}" in text
