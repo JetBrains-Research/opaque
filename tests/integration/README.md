@@ -14,6 +14,7 @@ tests/integration/
 ├── README.md
 ├── accounting/              — cross-stack PLD / serialization accountants
 ├── noise/                   — MF vs DP-SGD Gaussian noise comparisons
+├── sampling/                — DP-SGD vs DP-FTRL sampling-scheme separation
 └── transformers/            — HF-anchored LoRA pipelines (synthetic + Hub)
     ├── test_dpsgd_pipeline.py
     ├── test_dpftrl_pipeline.py

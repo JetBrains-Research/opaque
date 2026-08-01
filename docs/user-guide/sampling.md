@@ -204,6 +204,60 @@ sampler = BMinSepSampler(
 )
 ```
 
+## Random allocation (DP-SGD)
+
+### `RandomAllocationSampler`
+
+Each epoch, every example independently picks one of `num_bins` bins, and
+the epoch yields those `num_bins` bins as batches — so an epoch's batches
+partition the dataset exactly. The assignment is **redrawn every epoch**.
+
+This amplifies strictly more than Poisson at the matched rate
+`1 / num_bins`: an example appears exactly once per epoch instead of a
+Binomial number of times, so the worst case the accountant must cover is
+smaller.
+
+```python
+from opaque.dpsgd.sampling import RandomAllocationSampler
+from opaque.random import key
+
+num_bins = dataset_size // batch_size
+sampler = RandomAllocationSampler(
+    dataset,
+    num_bins=num_bins,
+    n_steps=num_epochs * num_bins,
+    key=key(42),
+)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
+```
+
+Bin sizes are Binomial, so **some batches are empty**. They are emitted
+rather than skipped: compacting them away would make each record's real
+participation separation `len(nonempty)` instead of `num_bins`, which the
+accounting assumes. Empty batches are handled downstream by the engine's
+collate path.
+
+Privacy accounting — a whole-**epoch** atom, so compose with
+`* num_epochs`, not `* n_steps`:
+
+```python
+epoch = dpsgd_acc.random_allocation(
+    dpsgd_acc.gaussian(noise_multiplier),
+    num_bins=num_bins,
+)
+training = epoch * num_epochs
+```
+
+!!! warning "Not the same scheme as `BallsInBinsSampler`"
+
+    `opaque.dpftrl.sampling.BallsInBinsSampler` fixes the bin assignment
+    once at init, because the matrix-mechanism dominating pair needs a known
+    separation between an example's participations. Redrawing per epoch is
+    valid only because DP-SGD noise is uncorrelated across steps — and there
+    it is strictly better. Pair each sampler only with its own accountant:
+    `RandomAllocationSampler` with `dpsgd_acc.random_allocation`,
+    `BallsInBinsSampler` with `dpftrl_acc.balls_in_bins`.
+
 ## Balls-in-Bins sampling
 
 ### `BallsInBinsSampler`
@@ -423,8 +477,9 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
+| `RandomAllocationSampler` (``opaque.dpsgd``) | Variable (Binomial) | Stronger than Poisson at rate ``1/num_bins`` | DP-SGD, whole-epoch passes |
 | `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``dpftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
-| `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
+| `BallsInBinsSampler` | Variable (Binomial) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSampler` is sufficient.
