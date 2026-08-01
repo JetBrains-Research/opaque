@@ -36,6 +36,11 @@ _TOL_MU = 0.01
 # covers the top 20 % for n = 10K, which dominates the Chernoff sum.
 _MAX_EXACT_RANKS = 2000
 
+# Search caps for _mu_at.  Rank truncation can leave the p-value below
+# significance for every finite μ, which an uncapped search never escapes.
+_MAX_MU_BRACKET_DOUBLINGS = 60
+_MAX_MU_BISECTION_ITERS = 100
+
 
 # ---------------------------------------------------------------------------
 # Audit method
@@ -54,21 +59,39 @@ class GdpMethod:
     # ------------------------------------------------------------------
 
     def _mu_at(self, significance: float, threshold: float | None) -> float:
-        """Inferred μ̂ via binary search.  Independent of δ."""
+        """Inferred μ̂ via binary search.  Independent of δ.
+
+        Raises:
+            RuntimeError: If no finite μ brings the p-value up to
+                ``significance``, which truncated ranks (v_k = 0.5) can cause
+                for strong attacks with more than ``_MAX_EXACT_RANKS`` guesses.
+        """
         validate_significance(significance)
         m = self._estimate.n_in + self._estimate.n_out
         r, u = self._estimate._best_r_u(threshold)
 
         # Bracket: start from the (ε, δ)-DP ceiling (a generous over-estimate
-        # asymptotically for μ-GDP) and auto-expand if the p-value at mu_hi
-        # is still < significance — keeps the search well-posed on the
-        # edge of the (m, σ) parameter space without a hidden cap.
+        # asymptotically for μ-GDP) and expand while the p-value is still
+        # below significance.
         mu_hi = search_ceiling(m, 0.0, significance)
-        while _p_value(m, r, u, mu_hi, self.grid_size) < significance:
+        for _ in range(_MAX_MU_BRACKET_DOUBLINGS):
+            if _p_value(m, r, u, mu_hi, self.grid_size) >= significance:
+                break
             mu_hi *= 2.0
+        else:
+            raise RuntimeError(
+                f"cannot invert μ-GDP p-value for (m={m}, r={r}, u={u}) at "
+                f"significance={significance}: p-value stays below it for "
+                f"every μ up to {mu_hi:g}. With r > {_MAX_EXACT_RANKS} "
+                f"truncated ranks pin the Chernoff bound; use fewer canaries "
+                f"or a larger significance."
+            )
 
         mu_lo = 0.0
-        while mu_hi - mu_lo > _TOL_MU:
+        # Relative tolerance: at large mu_hi, _TOL_MU alone is below one ULP.
+        for _ in range(_MAX_MU_BISECTION_ITERS):
+            if mu_hi - mu_lo <= _TOL_MU * max(1.0, mu_hi):
+                break
             mu_mid = (mu_lo + mu_hi) / 2.0
             if _p_value(m, r, u, mu_mid, self.grid_size) < significance:
                 mu_lo = mu_mid
@@ -299,8 +322,8 @@ def _p_value(
     via numerical integration, then applies a Chernoff tail bound on the
     sum of independent heterogeneous Bernoullis.
     """
-    if mu <= 0.0:
-        return 1.0  # perfectly private — can't reject
+    if not math.isfinite(mu) or mu <= 0.0:
+        return 1.0  # perfectly private / non-finite — can't reject
 
     grid = _gdp_base_pair_grid(mu, grid_size)
     r_prime = min(r, _MAX_EXACT_RANKS)

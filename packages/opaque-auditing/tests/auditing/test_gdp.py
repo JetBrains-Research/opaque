@@ -16,12 +16,25 @@ import scipy.stats
 
 from opaque.api.auditing.one_run._eps_delta import _p_value as _eps_delta_p_value
 from opaque.api.auditing.one_run._gdp import (
+    GdpMethod,
     _gdp_base_pair_grid,
     _gdp_to_eps_delta,
     _p_value,
 )
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
+
+
+class _StubEstimate:
+    """Minimal estimate stub that returns fixed (r, u) for ``_mu_at`` tests."""
+
+    def __init__(self, n_in: int, n_out: int, u: int):
+        self.n_in = n_in
+        self.n_out = n_out
+        self._u = u
+
+    def _best_r_u(self, threshold: float | None = None) -> tuple[int, int]:
+        return self.n_in + self.n_out, self._u
 
 
 def _make_estimate(in_scores, out_scores):
@@ -171,6 +184,29 @@ class TestPValue:
         p = _p_value(100, 100, 20, 1.0, 5000)
         assert isinstance(p, float)
         assert 0 <= p <= 1
+
+    @pytest.mark.parametrize("mu", [math.inf, math.nan])
+    def test_non_finite_mu_returns_one(self, mu):
+        assert _p_value(100, 100, 0, mu, 64) == 1.0
+
+
+# ---- GdpMethod._mu_at bracket / bisection caps -----------------------------
+
+
+class TestMuAtTermination:
+    """Regression: a strong attack past rank truncation must raise, not hang."""
+
+    @pytest.mark.parametrize(("n_half", "u"), [(1500, 0), (2500, 1400)])
+    def test_strong_attack_past_truncation_raises(self, n_half, u):
+        method = GdpMethod(_estimate=_StubEstimate(n_half, n_half, u), grid_size=64)
+        with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
+            method._mu_at(0.05, None)
+
+    def test_below_truncation_still_inverts(self):
+        method = GdpMethod(_estimate=_StubEstimate(500, 500, u=0), grid_size=256)
+        mu = method._mu_at(0.05, None)
+        assert math.isfinite(mu)
+        assert mu > 0.0
 
 
 # ---- OneRunEstimate.gdp() --------------------------------------------------
