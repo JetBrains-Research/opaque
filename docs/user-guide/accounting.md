@@ -16,7 +16,7 @@ factories live next to its runtime:
 | Module | Provides | Ships with |
 |--------|----------|------------|
 | `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
-| `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`. | `opaque-dpsgd` |
+| `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `random_allocation`. | `opaque-dpsgd` |
 | `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
 Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
@@ -144,6 +144,29 @@ step = dpsgd_acc.parallel_poisson(
     dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=4,
 )
 ```
+
+### `dpsgd_acc.random_allocation(inner, *, num_bins)`
+
+1-out-of-`num_bins` random allocation, the scheme
+`opaque.dpsgd.sampling.RandomAllocationSampler` implements: each epoch,
+every example lands in exactly one of `num_bins` batches, redrawn each
+epoch. Amplifies strictly more than `poisson()` at the matched rate
+`1 / num_bins`, and is computed by an exact PLD transform rather than
+Monte Carlo.
+
+**This is the one DP-SGD factory that returns a per-epoch process**, not a
+per-step one — it already covers `num_bins` steps. Compose with
+`* num_epochs`:
+
+```python
+num_bins = dataset_size // batch_size
+epoch = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=num_bins)
+eps = (epoch * num_epochs).epsilon_at(1e-5)
+```
+
+Composing `* n_steps` instead would charge `num_bins` times too much;
+`epoch.steps_per_epoch` is the conversion factor if you only have a step
+count.
 
 ### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
@@ -304,8 +327,14 @@ privacy cost across all `n_steps` rounds (must be a positive multiple of
 `num_bins`; per-bin participation count is `n_steps // num_bins`). Do NOT
 compose further externally.
 
-Used with DP-λCGD, BISR, BLT (with Gram matrix), `identity_mf`, and
-Gaussian mechanisms.
+Used with DP-λCGD, BISR, BSR, BLT, and `identity_strategy()`. The identity
+case is exact (its Gram is `num_epochs · I`, so the dominating pair collapses
+onto random allocation at `σ / √num_epochs`); the correlated cases go through
+Monte Carlo.
+
+The DP-SGD analogue is `dpsgd_acc.random_allocation`, which redraws the bin
+assignment every epoch. Do not mix the two: this accountant is for the
+fixed-assignment sampler `opaque.dpftrl.sampling.BallsInBinsSampler`.
 
 ```python
 strategy = lambda_cgd_strategy(
@@ -479,9 +508,10 @@ eps = acct.epsilon_at(delta=1e-5)
 For analytic DP-FTRL accountants, the K-step ε is bounded above by
 `proc.epsilon_at(delta)` and is monotone non-decreasing in K — both follow
 from the post-processing inequality on the deployed N-step mechanism.
-Monte Carlo b-min-sep and Balls-in-Bins results remain point estimates pending
-the RC-4 confidence correction, so this guarantee is not asserted for their
-reported ε values. `K > proc.n_steps` raises `ValueError`.
+b-min-sep and correlated-strategy Balls-in-Bins remain Monte Carlo point
+estimates pending the RC-4 confidence correction, so this guarantee is not
+asserted for their reported ε values; Balls-in-Bins with `identity_strategy()`
+is analytic and does carry it. `K > proc.n_steps` raises `ValueError`.
 
 ### Serialization
 
@@ -533,10 +563,13 @@ coarsening, and histogram buckets are rounded upward to the grid. There is no
 option to request an optimistic or lower-bound accounting result.
 
 !!! warning
-    The b-min-sep and Balls-in-Bins Monte Carlo PLDs are empirical point
+    b-min-sep, and Balls-in-Bins with a **correlated** strategy (λCGD, BISR,
+    BSR, BLT), build their PLDs by Monte Carlo — those are empirical point
     estimates. Conservative grid bucketing does not provide the RC-4
     confidence correction; do not treat their reported ε values as upper
-    confidence bounds.
+    confidence bounds. Balls-in-Bins with `identity_strategy()`, and
+    `random_allocation`, are computed by an exact transform and are not
+    affected.
 
 ## API reference
 

@@ -29,7 +29,7 @@ The accounting API is split into three namespaces:
 | Namespace | Contents | Import |
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
-| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson` | `from opaque.dpsgd import accounting as dpsgd_acc` |
+| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `random_allocation` | `from opaque.dpsgd import accounting as dpsgd_acc` |
 | `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
 The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
@@ -218,6 +218,31 @@ step = dpsgd_acc.parallel_poisson(
 )
 ```
 
+### `random_allocation(inner, *, num_bins) -> DpProcess`
+
+1-out-of-`num_bins` random allocation: each epoch, every example lands in
+exactly one of `num_bins` batches, with the assignment redrawn each epoch.
+Pairs with `opaque.dpsgd.sampling.RandomAllocationSampler`.
+
+Unlike every other DP-SGD amplification factory, this returns a
+**per-epoch** process covering `num_bins` steps. Compose with
+`* num_epochs`; composing `* n_steps` over-charges by a factor of
+`num_bins`. `steps_per_epoch` on the returned process is the conversion
+factor.
+
+Computed by the exact PLD transform of Feldman & Shenfeld (2026) —
+deterministic, with no Monte Carlo sampling. It is strictly tighter than
+`poisson()` at the matched rate `1 / num_bins`.
+
+- `inner` (Gaussian | AdaClip | NonPrivate): Base mechanism
+- `num_bins` (int): Bins per epoch (≥ 2), matching the sampler's `num_bins`
+
+```python
+num_bins = dataset_size // batch_size
+epoch = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.5), num_bins=num_bins)
+eps = (epoch * num_epochs).epsilon_at(1e-5)
+```
+
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
@@ -391,23 +416,26 @@ used for noise. `p0` is the per-example participation rate per iteration
 `E[|B|]/|D|` (match the training sampler’s target batch size).
 
 !!! warning
-    b-min-sep and Balls-in-Bins Monte Carlo PLDs are point estimates without
-    the RC-4 confidence correction. Conservative discretization does not make
-    their reported ε values upper confidence bounds.
+    b-min-sep, and Balls-in-Bins with a **correlated** strategy, build their
+    PLDs by Monte Carlo. Those are point estimates without the RC-4 confidence
+    correction — conservative discretization does not make their reported ε
+    values upper confidence bounds. Balls-in-Bins with `identity_strategy()`
+    is exempt: it is computed by an exact transform.
 
-### `balls_in_bins(inner, num_bins, num_epochs, *, lr_weights=None) -> DpProcess`
+### `balls_in_bins(inner, *, num_bins, n_steps) -> DpProcess`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total** privacy
 cost across all epochs — do NOT compose further with `* num_epochs`.
 
-For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
-Poisson per-step approximation. For correlated-noise mechanisms (DP-λCGD, BISR,
-BLT), uses Monte Carlo sampling of the dominating pair.
+With `identity_strategy()` (uncorrelated noise) the Gram is exactly
+`num_epochs · I`, so the dominating pair collapses onto 1-out-of-`num_bins`
+random allocation at `σ / √num_epochs` and the PLD is computed by the exact
+transform — deterministic, no sampling. For correlated-noise strategies
+(DP-λCGD, BISR, BSR, BLT) it uses Monte Carlo sampling of the dominating pair.
 
-- `inner` (Gaussian | LambdaCgd | Bisr | Blt | AdaClip): Core mechanism.
+- `inner` (MfGaussian): `dpftrl_acc.mf_gaussian(nm, strategy)`.
 - `num_bins` (int): Number of bins per epoch (typically `dataset_size / batch_size`).
-- `num_epochs` (int): Number of epochs.
-- `lr_weights` (list[float] | None): Optional per-step learning rate weights for tighter accounting.
+- `n_steps` (int): Total training rounds; must be a multiple of `num_bins`.
 
 ```python
 # With DP-λCGD
@@ -431,9 +459,10 @@ step-by-step under `Accountant`'s `acct |= step` idiom (the DP-SGD path
 shape). `per_step(proc) * K` materialises the strategy-aware K-prefix
 PLD via `proc._pld_at_horizon(K)`. For analytic PLDs, this is bounded above
 by `proc.epsilon_at(δ)` and monotone non-decreasing in K by post-processing
-on the deployed N-step mechanism. Monte Carlo b-min-sep and Balls-in-Bins
-results remain point estimates pending the RC-4 confidence correction, so this
-guarantee is not asserted for their reported ε values. `K > proc.n_steps` raises;
+on the deployed N-step mechanism. b-min-sep and correlated-strategy
+Balls-in-Bins remain Monte Carlo point estimates pending the RC-4 confidence
+correction, so this guarantee is not asserted for their reported ε values;
+identity Balls-in-Bins is analytic and does carry it. `K > proc.n_steps` raises;
 `PerStep` only composes with other `PerStep` instances wrapping the
 *same* underlying process.
 

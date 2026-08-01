@@ -72,14 +72,15 @@ advance.
 Subsampling amplification reduces per-step privacy cost. Not all
 mechanisms support all amplification types:
 
-| Mechanism | `opaque.dpsgd.accounting.poisson` | `opaque.dpsgd.accounting.poisson` (truncated) | `opaque.dpftrl.accounting.poisson` | `opaque.dpftrl.accounting.balls_in_bins` |
-|-----------|:-----------:|:---------------------:|:-------------------:|:-----------------:|
-| Gaussian | Yes | Yes | — | — |
-| BandMF | — | — | Yes | — |
-| BLT | *internal* | — | — | Yes |
-| DP-λCGD | — | — | — | Yes |
-| BISR | — | — | — | Yes |
-| BSR | — | — | — | Yes |
+| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.random_allocation` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
+|-----------|:-----------:|:---------------------:|:-------------------:|:-------------------:|:-----------------:|
+| Gaussian | Yes | Yes | Yes | — | — |
+| BandMF | — | — | — | Yes | — |
+| Identity MF | — | — | — | Yes | Yes |
+| BLT | *internal* | — | — | — | Yes |
+| DP-λCGD | — | — | — | — | Yes |
+| BISR | — | — | — | — | Yes |
+| BSR | — | — | — | — | Yes |
 
 - **`opaque.dpsgd.accounting.poisson`**: DP-SGD per-step Poisson
   subsampling ($q$ per example).
@@ -87,13 +88,19 @@ mechanisms support all amplification types:
   `truncated_batch_size` and `dataset_size`; caps batches (weaker
   privacy than plain Poisson at the same $q$ unless noise is
   recalibrated).
+- **`opaque.dpsgd.accounting.random_allocation`**: DP-SGD
+  1-out-of-`num_bins` random allocation, redrawn every epoch. Returns a
+  **per-epoch** process (compose with `* num_epochs`); amplifies more
+  than Poisson at the matched rate `1 / num_bins`.
 - **`opaque.dpftrl.accounting.poisson`**: DP-FTRL whole-process Poisson
   amplification (`BandMf` / `IdentityMf` inner, `n_steps` required).
   For `BandMf` this is the cyclic-participation analysis
   ($\lceil n/b\rceil$ independent groups).
 - **`opaque.dpftrl.accounting.balls_in_bins`**: Random-partition
-  amplification. Each epoch, examples are randomly assigned to bins.
-  Used with BLT, DP-λCGD, and BISR.
+  amplification with the assignment **fixed across epochs**. Used with
+  BLT, DP-λCGD, BISR, BSR, and identity MF. Not interchangeable with
+  `dpsgd_acc.random_allocation`, which redraws each epoch — the two
+  schemes have different samplers and different accountants.
 - **internal**: BLT handles multi-participation patterns (min-sep)
   within its own sensitivity computation — no external amplification
   wrapper needed. BLT also supports `balls_in_bins` with a

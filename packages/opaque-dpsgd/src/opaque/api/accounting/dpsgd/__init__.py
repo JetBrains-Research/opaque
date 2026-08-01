@@ -7,7 +7,14 @@ Mechanisms (``gaussian``, ``adaclip``) and amplification primitives
 from opaque.api.accounting.dpsgd.amplification import (
     parallel_poisson,
     poisson,
+    random_allocation,
 )
 from opaque.api.accounting.dpsgd.mechanisms import adaclip, gaussian
 
-__all__ = ["adaclip", "gaussian", "parallel_poisson", "poisson"]
+__all__ = [
+    "adaclip",
+    "gaussian",
+    "parallel_poisson",
+    "poisson",
+    "random_allocation",
+]

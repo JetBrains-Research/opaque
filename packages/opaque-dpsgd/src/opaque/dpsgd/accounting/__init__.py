@@ -13,9 +13,14 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 - :func:`poisson` — Poisson subsampling. Set ``truncated_batch_size``
   and ``dataset_size`` together for the truncated-Poisson production form.
 - :func:`parallel_poisson` — Poisson subsampling under parallel workers.
+- :func:`random_allocation` — 1-out-of-``num_bins`` random allocation
+  (pairs with :class:`opaque.dpsgd.sampling.RandomAllocationSampler`).
 
-Each amplification factory returns a **per-step** :class:`DpProcess`;
-compose externally with ``* num_steps`` for full-training privacy.
+:func:`poisson` and :func:`parallel_poisson` return a **per-step**
+:class:`DpProcess`; compose externally with ``* num_steps`` for
+full-training privacy.  :func:`random_allocation` is the exception — it
+returns a **per-epoch** process covering ``num_bins`` steps, so compose it
+with ``* num_epochs``.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`
@@ -36,6 +41,7 @@ from opaque.api.accounting.dpsgd import (
     gaussian,
     parallel_poisson,
     poisson,
+    random_allocation,
 )
 
 __all__ = [
@@ -43,4 +49,5 @@ __all__ = [
     "gaussian",
     "parallel_poisson",
     "poisson",
+    "random_allocation",
 ]
