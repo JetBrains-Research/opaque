@@ -98,7 +98,7 @@ Every one of these is a documented guarantee that the code does not provide. Wit
 12. `adaptive_clipped_grad` "automatically detects if distributed" — `_adaptive.py:200,212`.
 13. MC-derived ε values are point estimates — add a one-line caveat to `docs/reference/accounting.md` and the `pld()` docstrings until RC-4 lands.
 
-### 1.4 Add the missing disclosures (docs-only, ~1 day)
+### 1.4 ✅ Add the missing disclosures
 
 - **`docs/limitations.md`: "Randomness and the threat model."** The PRNG is not cryptographically secure; the seed is user-chosen, printed, and checkpointed; the guarantee is void against anyone who learns it. Noise state in checkpoints must be stripped before publishing artifacts.
 - **`docs/limitations.md`: "Telemetry outside the guarantee."** Every logging step publishes un-noised mean loss, mean pre-clip grad norm, clip rate, realized Poisson batch size, DPO reward means. Mirror the disclosure `DPTrainer.evaluate` already makes at `_dp_trainer.py:2716-2725`. Add `runs/` to `ignore_patterns` in `_hub.push_to_hub` **today** — that one is an actual exfiltration path.
@@ -107,9 +107,10 @@ Every one of these is a documented guarantee that the code does not provide. Wit
 ### 1.5 Supply chain — do these this week, they are not code changes
 
 - **Register all five `opaque-*` distribution names on PyPI** as placeholders. Right now `pip install opaque-engine` from the documented `--extra-index-url` command is a live dependency-confusion vector.
-- Switch documented install to `--index-url` (README.md:57-59, installation.md:12-15). Note separately: the name `opaque` on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to `opaque-dp`.
+- ✅ Switch documented install to `--index-url` (README.md:57-59, installation.md:12-15). Note separately: the name `opaque` on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to `opaque-dp`.
 - ✅ **Gate publishing on tests**: add `rust-tests`/`python-tests` to `needs:` for `publish-dev-wheels` (ci.yml) and add a test job gating `publish` (release.yml).
 - ✅ Guard the self-hosted GPU leg with `github.event.pull_request.head.repo.full_name == github.repository` (while still allowing manual dispatch) so fork PR code never reaches the non-ephemeral runner.
+- Add `if: github.event.pull_request.head.repo.full_name == github.repository` to the self-hosted GPU leg (pr.yml:85) — a fork PR currently executes arbitrary code on a non-ephemeral runner.
 
 **Phase 0 total: ~1 engineer-week** (parallelizable to ~3 calendar days across 3 people).
 

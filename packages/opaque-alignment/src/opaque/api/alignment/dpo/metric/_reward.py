@@ -3,8 +3,8 @@
 Computes the standard ``rewards/*`` diagnostics (chosen, rejected,
 accuracies, margins) from per-example chosen/rejected log-ratios.
 
-Training-time metrics are private internal state: every returned tensor is
-detached so it can never leak gradient back into the mechanism.
+These metrics are detached but un-noised; release is outside Opaque's DP
+accounting.
 """
 
 from __future__ import annotations

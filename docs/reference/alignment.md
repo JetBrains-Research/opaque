@@ -139,7 +139,9 @@ toggles.
 
 ### Metrics
 
-Detached, logging-only telemetry. Shared token metrics
+These metrics are un-noised and outside Opaque's DP accounting. See
+[Telemetry outside the guarantee](../limitations.md#telemetry-outside-the-guarantee).
+Shared token metrics
 ([`opaque.alignment.metric`](#api-documentation)):
 
 - **`mean_token_accuracy()`** — mean next-token argmax accuracy over the
@@ -149,8 +151,7 @@ Detached, logging-only telemetry. Shared token metrics
 Preference reward telemetry ([`opaque.alignment.dpo.metric`](#api-documentation)):
 
 - **`reward_metrics()`** — `rewards/chosen`, `rewards/rejected`,
-  `rewards/accuracies`, `rewards/margins` from per-example log-ratios; every
-  returned tensor is detached so it cannot leak gradient into the mechanism.
+  `rewards/accuracies`, `rewards/margins` from per-example log-ratios.
 
 **See also**: [Alignment overview](../alignment/index.md),
 [SFT end-to-end](../alignment/sft.md), [DPO end-to-end](../alignment/dpo.md).
