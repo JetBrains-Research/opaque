@@ -105,8 +105,5 @@ and computes the linear combination defined by the BISR coefficients.
 
 ## Bandwidth selection
 
-Bandwidth `p` retains `p - 1` previous noise vectors. Larger values therefore
-increase state and arithmetic. Runtime and utility depend on the workload;
-Opaque does not currently ship a reproducible benchmark harness and makes no
-quantitative bandwidth recommendation. Measure candidate values on the target
-training run.
+Bandwidth `p` retains `p - 1` noise vectors. Measure the runtime and utility
+trade-off on your workload.

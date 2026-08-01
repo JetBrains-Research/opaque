@@ -162,10 +162,8 @@ def clipped_grad(
             gradients before clipping. The function should consume the gradient pytree
             for a single example and return a new pytree (possibly with different
             structure). Can be used to e.g., scale the leaves of the pytree to
-            accommodate preconditioner clipping. The transformed gradient is the
-            query that is subsequently clipped; callers must account separately for
-            any data-dependent control flow or telemetry introduced by the transform.
-            Default is identity function.
+            accommodate preconditioner clipping. Account separately for any
+            data-dependent control flow or telemetry. Default is identity function.
         microbatch_size: If set, the batch is split up into microbatches of this
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.

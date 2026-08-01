@@ -197,11 +197,8 @@ respective EMA:
 $$\mu_t = \beta_1 \mu_{t-1} + (1-\beta_1) \tilde{g}_t, \qquad
 v_t = \beta_2 v_{t-1} + (1-\beta_2) \widetilde{g^2}_t$$
 
-The additional second-moment stream consumes privacy budget according to the
-configured joint sensitivity and noise allocation. The cost is
-configuration-dependent; calibrate the complete mechanism rather than relying
-on a fixed percentage. The optimizer substitutes the privatized stream in the
-v-update.
+The extra stream has a configuration-dependent privacy cost; calibrate the
+complete mechanism.
 
 This mode requires an MF noise mechanism with
 `mf_gaussian_noise(..., second_moment_strategy=...)`, so it
@@ -210,11 +207,8 @@ noise.
 
 ### Choosing from measurements
 
-Opaque does not currently ship a reproducible optimizer benchmark harness, so
-this guide makes no cross-workload empirical ranking. Optimizer, learning rate,
-schedule, and bias-correction behavior should be measured together on the
-target workload. Treat `noise_bias_correction=False` as an API default rather
-than an evidence-backed universal recommendation.
+No reproducible cross-workload benchmark is available. Tune the optimizer,
+learning rate, schedule, and bias correction together.
 
 ### When to use which
 
@@ -378,13 +372,8 @@ For non-DP use, `from torchopt import adamax` directly.
 
 ### Schedule-free under DP
 
-Schedule-free's published params $x_t = (1/n) \sum_s z_s$ are a
-Polyak-Ruppert average of the optimizer iterates. Its variance reduction under
-DP depends on the covariance of those iterates; independent gradient samples
-do not imply independent optimizer noise, especially with momentum or
-matrix-factorization noise. Opaque therefore makes no universal
-$\sqrt{n}$ noise-reduction claim. Evaluate the published averaged parameters
-on the target mechanism and workload.
+Schedule-free averages optimizer iterates. Its DP variance reduction depends
+on their covariance, so there is no universal $\sqrt{n}$ reduction.
 
 ```python
 from opaque.optimizers import adamw, schedule_free

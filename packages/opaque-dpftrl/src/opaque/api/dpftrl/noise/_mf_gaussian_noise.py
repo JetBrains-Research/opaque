@@ -256,13 +256,8 @@ def _make_raw_mf_noise(
         def row_l2_at(_step: int) -> float:
             return 1.0
     else:
-        # Materialize ``[‖row_0‖, ..., ‖row_{n-1}‖]`` once. Generic
-        # streaming matrices walk n unit-vector probes; for a matrix
-        # with ``bands`` retained rows this costs O(bands·n²) — see
-        # :meth:`StreamingMatrix.row_norms_squared`). Its runtime depends
-        # quadratically on the horizon; measure construction cost for the
-        # target horizon. Per-strategy closed-form fast paths could replace
-        # this if construction becomes a bottleneck.
+        # Generic streaming matrices materialize row norms in O(bands·n²).
+        # Measure construction cost for the target horizon.
         row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
 
         def row_l2_at(step: int) -> float:

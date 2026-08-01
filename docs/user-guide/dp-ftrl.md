@@ -128,11 +128,9 @@ for batch in dataloader:
     eps_so_far = acct.epsilon_at(delta=1e-5)
 ```
 
-For analytic PLDs, `(per_step(proc) * K).epsilon_at(δ)` is bounded above by
-`proc.epsilon_at(δ)` and is monotone non-decreasing in K (post-processing
-on the deployed N-step mechanism). Monte Carlo b-min-sep and Balls-in-Bins
-PLDs are point estimates without confidence correction, so their reported
-ε values do not carry those guarantees. `K > proc.n_steps` raises.
+For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
+Monte Carlo PLDs are point estimates without that guarantee. `K >
+proc.n_steps` raises.
 
 ## 3. Clipping
 

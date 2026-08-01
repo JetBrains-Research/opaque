@@ -261,9 +261,8 @@ Sets:
 
 **Returns:** None (side effects only)
 
-**Performance impact:** Deterministic algorithms can be slower and may select
-different kernels. Measure the effect on the target workload; Opaque does not
-publish a cross-workload percentage without a reproducible benchmark harness.
+**Performance impact:** Deterministic algorithms may be slower; measure on
+your workload.
 
 **Example:**
 

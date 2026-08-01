@@ -26,14 +26,9 @@ as the ``pre_clipping_transform`` of
 
 Skipped steps and the privacy accountant
 ----------------------------------------
-On a step where :func:`all_finite` returns ``False``, callers **must**
-skip the noise mechanism and optimizer update together. The decision is
-computed from the un-noised gradient and is therefore data-dependent;
-Opaque does not claim that the branch consumes zero privacy budget. Unless
-a separate privacy analysis covers the skip rule, advance accounting on a
-public, fixed schedule. This module only provides detection and scaling;
-the surrounding loop owns the skip decision because the optimizer call
-lives outside this primitive.
+A skip is data-dependent and is not free privacy-wise. Unless separately
+analyzed, advance accounting on a public fixed schedule. This module only
+provides detection and scaling; the surrounding loop owns the skip.
 
 Factory shape
 -------------

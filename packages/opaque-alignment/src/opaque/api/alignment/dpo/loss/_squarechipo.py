@@ -5,10 +5,8 @@ Implements the squared-sigmoid loss associated with:
     arXiv:2505.21395 — "SquareChiPO: Optimal Differentially Private
     Direct Preference Optimization via Chi-Squared Divergence".
 
-SquareChiPO is derived by minimising the χ²-divergence between the
-policy and a reward-weighted reference policy. This module provides the
-per-example squared-sigmoid objective only; it does not implement or claim
-the paper's complete DP construction or its optimal-rate guarantee.
+This module implements only the paper's per-example squared-sigmoid objective,
+not its complete DP construction or optimal-rate guarantee.
 
 Formula::
 

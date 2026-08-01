@@ -174,12 +174,8 @@ The implementation uses an inverse-CDF method: for each gradient element,
 noise is sampled from a Gaussian centred on that element and truncated to
 the per-coordinate interval.
 
-For high-dimensional model training, the per-coordinate ε-DP analysis of the
-paper does not apply (gradients live under an ℓ₂-ball constraint, not a
-product of intervals). The bounded implementation resamples from a truncated
-distribution; it is not post-processing of a sample from the standard
-Gaussian mechanism. Treat `bound=` as experimental: the ε reported by
-`dpsgd_acc.gaussian(noise_multiplier)` does **not** cover this bounded output.
+Treat `bound=` as experimental: `dpsgd_acc.gaussian()` does **not** cover the
+bounded output.
 
 `gaussian_noise` (bounded or not) accepts the same paired-stream input:
 when a `SecondMomentClippingOutput` (from

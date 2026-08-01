@@ -92,13 +92,8 @@ if grads_finite:
 scaler_state = scaler.update(scaler_state, grads_finite)
 ```
 
-On a non-finite step the wrapper skips the noise mechanism and optimizer
-update together. Whether a step is skipped is a data-dependent decision made
-from the un-noised gradient, so Opaque does not claim that the branch consumes
-zero privacy budget. Advance the accountant according to a public, fixed
-schedule unless a separate privacy analysis covers the skip rule. The
-scaler's `update` advances the grow/backoff schedule regardless of the
-decision.
+A skip is data-dependent and is not free privacy-wise. Unless separately
+analyzed, advance the accountant on a public fixed schedule.
 
 ## Recipe: `float32` training (everything disabled)
 

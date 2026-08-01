@@ -58,11 +58,8 @@ class DpFtrlProcess(DpProcess):
         deployed mechanism — and ``n_steps`` only changes the number of
         rows / compositions / epochs the privacy bound is evaluated on.
 
-        For analytic PLDs, the post-processing inequality on the K-prefix
-        projection implies ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and
-        monotonicity in K. Monte Carlo implementations return empirical
-        point estimates for which that reported-epsilon ordering is not
-        guaranteed.
+        Analytic PLDs preserve K-prefix monotonicity. Monte Carlo PLDs are
+        point estimates and need not preserve it.
 
         Raises:
             ValueError: If ``n_steps`` is outside ``[1, self.n_steps]``.
@@ -77,9 +74,7 @@ class DpFtrlProcess(DpProcess):
     ) -> Pld:
         """Return the full-horizon PLD.
 
-        A Monte Carlo subclass returns an empirical point estimate, not an
-        upper confidence bound; conservative grid discretization does not
-        account for Monte Carlo sampling error.
+        Monte Carlo results are point estimates, not an upper confidence bound.
         """
         return self._pld_at_horizon(
             self.n_steps,

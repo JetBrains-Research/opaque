@@ -113,11 +113,8 @@ class BMinSep(DpFtrlProcess):
         BandMF strategy coefficients and per-example sensitivity are
         evaluated at ``self.n_steps`` (the N-tuned deployed mechanism);
         ``n_steps`` controls only the warm-start MC transcript length.
-        The Rust sampler is prefix-stable under a fixed seed, so the
-        K-row evaluation is the post-processing projection of the
-        N-step output. The finite Monte Carlo PLDs are empirical point
-        estimates, so their reported epsilon values are not guaranteed
-        to be monotone or ordered by the post-processing inequality.
+        The Rust sampler is prefix-stable, but finite Monte Carlo PLDs are
+        point estimates and need not preserve epsilon monotonicity.
         """
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
@@ -153,10 +150,8 @@ class BMinSep(DpFtrlProcess):
         # slices each sample to the first K columns, which — because
         # within a single sample the per-step RNG state is deterministic
         # in the columns up to it — is byte-identical to a freshly-prepared
-        # K-row transcript at the same per-sample seed.  The K-step PLD
-        # is therefore a deterministic post-processing of the N-step
-        # corpus. The resulting finite-sample PLDs remain point estimates;
-        # their reported epsilon values need not preserve that exact ordering.
+        # K-row transcript at the same per-sample seed. Finite-sample PLDs
+        # remain point estimates and need not preserve epsilon ordering.
         #
         # ``_with_transcript_handle`` holds the per-cache lock around
         # both the lookup and the Rust call so a concurrent
@@ -199,11 +194,7 @@ class BMinSep(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
-        """Return the empirical Monte Carlo PLD for the full horizon.
-
-        This is a point estimate, not an upper confidence bound. Conservative
-        grid discretization does not account for Monte Carlo sampling error.
-        """
+        """Return a point estimate, not an upper confidence bound."""
         return self._pld_at_horizon(
             self.n_steps,
             discretization=discretization,

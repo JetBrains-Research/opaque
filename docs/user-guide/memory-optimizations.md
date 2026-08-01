@@ -47,11 +47,8 @@ grad_fn, clip_state = clipped_grad(
 
 ### Microbatch size vs throughput
 
-Smaller microbatches reduce the number of per-example gradients resident at
-once and require more sequential passes. The throughput trade-off depends on
-the model, shapes, device, and kernel configuration; Opaque does not publish a
-cross-workload speed table without a reproducible benchmark harness. Measure
-candidate sizes on the target workload.
+Smaller microbatches use less memory but require more passes. Measure the
+trade-off on your workload.
 
 ### Tuning workflow
 
@@ -164,17 +161,14 @@ for per-operation details and per-model support.
 
 ### Kernel benchmarks
 
-Kernel speed and memory use depend on tensor shapes, dtype, device, software
-versions, and whether `vmap(grad)` is active. Opaque does not currently ship a
-reproducible benchmark harness, so no quantitative comparison is claimed here.
-Profile patched and unpatched paths on the target workload.
+Kernel performance is workload-dependent; profile patched and unpatched
+paths on your workload.
 
 ### Fused linear cross-entropy
 
 Computes the loss directly from hidden states and the `lm_head` weight matrix,
-never materializing the full `(batch*seq, vocab)` logits tensor. This avoids
-that logits allocation; the realized memory reduction is workload-dependent.
-Enable it by passing `fused_linear_cross_entropy=True` to
+never materializing the full `(batch*seq, vocab)` logits tensor. Enable it by
+passing `fused_linear_cross_entropy=True` to
 `apply_model_patches(model, ...)`.
 
 The fused path returns `logits=None` from `XForCausalLM.forward`, which is

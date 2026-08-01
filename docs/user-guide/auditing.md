@@ -64,11 +64,8 @@ print(f"AUC (attack): {estimate.attack_auc():.4f}")
 and `.advantage()` all dispatch to the **μ-GDP order-statistics test** from
 Xiang et al. (2025).
 
-This default is intended for mechanisms whose privacy trade-off is
-appropriately modelled by μ-GDP, including the Gaussian-noise DP-SGD and
-matrix-factorisation examples in this guide. Opaque also ships mechanisms
-and transformations for which that model has not been established. Use the
-mechanism-agnostic method for those cases.
+Use μ-GDP only when it models the audited mechanism; otherwise use the
+mechanism-agnostic method.
 
 The dispatch requires `delta > 0`: μ-GDP is incompatible with pure ε-DP.
 
@@ -182,9 +179,8 @@ that reads the theoretical f-DP β at the inferred μ̂-GDP.
 
 ## Number of canaries
 
-For the mechanism-agnostic $(\varepsilon,\delta)$ method, the one-run audit
-has an approximate ceiling `ε ≲ ln(m / -ln(α))` for a perfect attack with
-`m` canaries at significance `α`. This ceiling does not apply to the default
+For the mechanism-agnostic $(\varepsilon,\delta)$ method, a perfect attack
+has an approximate ceiling `ε ≲ ln(m / -ln(α))`. This does not apply to the
 μ-GDP estimator:
 
 | Canaries m | Hard ceiling at α=0.05 |
@@ -194,8 +190,7 @@ has an approximate ceiling `ε ≲ ln(m / -ln(α))` for a perfect attack with
 | 100 000 | ≈ 10.4 |
 | 1 000 000 | ≈ 12.7 |
 
-Imperfect attacks lower the mechanism-agnostic estimate further. Do not use
-this table as a bound on values returned by the μ-GDP method.
+Imperfect attacks lower the mechanism-agnostic estimate further.
 
 In practice:
 

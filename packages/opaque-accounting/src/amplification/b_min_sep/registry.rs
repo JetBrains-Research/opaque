@@ -77,11 +77,9 @@ pub fn drop_b_min_sep_transcript_handle(id: u64) {
 /// RNG state at column `i` is fully determined by columns `0..i`, so
 /// this slice is byte-identical to a freshly-prepared `n_steps`-row
 /// transcript using the same per-sample initial RNG state. The
-/// resulting K-step transcript is therefore the prefix projection of
-/// the cached N-step transcript corpus. The PLDs built from these
-/// finite Monte Carlo samples remain point estimates, however, so their
-/// reported epsilon values are not guaranteed to preserve the exact
-/// post-processing ordering.
+/// K-step transcripts are prefix projections of the cached N-step corpus.
+/// Their finite-sample PLDs are point estimates and need not preserve the
+/// exact epsilon ordering.
 pub fn pld_from_transcript_handle(
     id: u64,
     strategy_coef: &[f64],
