@@ -1437,7 +1437,7 @@ def main():
             argnums=0,
             batch_argnums=(1,),
             initial_clipping_norm=clip_norm,
-            target_quantile=1.0 - args.target_clipping_rate,
+            target_quantile=args.target_clipping_rate,
             clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
             return_aux=True,

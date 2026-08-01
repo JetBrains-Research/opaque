@@ -51,7 +51,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | ✅ Horizon guard in all three MF `noise_fn`s (`step >= n_steps` → raise) | `dpftrl/noise/_lambda_cgd.py`, `_engine.py:319-341` | **Zero-noise release of clipped gradients** at step *n*; unaccounted noise past horizon |
 | ✅ Path-keyed PerGroup (optree ParamPath) for nested + flat pytrees | `engine/{types,pytree,clipping}` + dpsgd/dpftrl noise + optimizers BC | Nested containers previously skipped leaves; compiled keys are now unambiguous path tuples |
 | ✅ Split the RNG key for quantile vs gradient noise | `transformers/.../_dp_trainer.py:1368, 3847` + 3 examples | AdaClip composition void — identical noise streams |
-| `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3843` + 3 examples | Adaptive clipping converges to the wrong quantile |
+| ✅ `pass target_quantile=target_clip_rate` | `_dp_trainer.py:3865` + 3 examples | Adaptive clipping converges to the wrong quantile |
 | ✅ Reject non-finite scores in `one_run()` | `auditing/one_run/_estimate.py:37-83` | NaN scores manufacture ε̂ from a numerically broken run |
 | Cap/bound the `_mu_at` doubling + bisection | `auditing/one_run/_gdp.py:66-77` | **Infinite hang** for m>2000 with a strong attack |
 | ✅ Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |

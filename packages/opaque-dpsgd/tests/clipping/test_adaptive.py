@@ -310,6 +310,47 @@ class TestAdaptiveClippedGrad:
         # High quantile should result in lower threshold (clip more)
         assert clip_state_low._next_clipping_norm > clip_state_high._next_clipping_norm
 
+    @pytest.mark.parametrize("target_quantile", [0.25, 0.75])
+    def test_converges_to_requested_clipped_fraction(self, target_quantile):
+        """The steady-state clipped fraction equals ``target_quantile``.
+
+        The targets are asymmetric on purpose: 0.5 is a fixed point of
+        ``x -> 1 - x``, so it cannot tell "fraction clipped" apart from
+        the Andrew et al. "fraction left unclipped" convention.
+        """
+
+        # Per-example gradient of this loss is the example itself, so the
+        # per-example gradient norms are exactly ``norms``.
+        def loss_fn(params, x):
+            return (params * x).sum()
+
+        norms = torch.arange(1, 101, dtype=torch.float32) / 10.0
+        batch_x = torch.zeros(100, 4)
+        batch_x[:, 0] = norms
+        params = torch.zeros(4)
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=1.0,
+            target_quantile=target_quantile,
+            learning_rate=0.5,
+            fraction_noise_std=1e-6,
+            clipping_norm_min=0.01,
+            clipping_norm_max=100.0,
+            key=key(0),
+            batch_argnums=(1,),
+        )
+
+        for _ in range(200):
+            _, clip_state = grad_fn(params, batch_x, state=clip_state)
+
+        # ``_current_clipping_norm`` is the threshold used on the last step;
+        # ``_next_clipping_norm`` is the post-update value for the next one.
+        clipped_fraction = float(
+            (norms > clip_state._current_clipping_norm).float().mean()
+        )
+        assert clipped_fraction == pytest.approx(target_quantile, abs=0.02)
+
     def test_different_learning_rates(self):
         """Test that learning rate affects adaptation speed."""
 
