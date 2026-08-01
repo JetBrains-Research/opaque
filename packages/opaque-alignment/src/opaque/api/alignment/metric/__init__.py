@@ -1,10 +1,7 @@
 """Shared alignment metrics impl — exact token-level telemetry.
 
-These functions return detached but un-noised values computed from the private
-batch. Detaching only stops autograd; logging or publishing the values is
-outside Opaque's DP accounting. General token-level metrics live here
-(shared); preference reward telemetry (``reward_metrics``) is DPO-specific and
-lives in
+These metrics are detached but un-noised; release is outside Opaque's DP
+accounting. Preference metrics live in
 :mod:`opaque.api.alignment.dpo.metric`.
 """
 

@@ -3,9 +3,8 @@
 Computes the standard ``rewards/*`` diagnostics (chosen, rejected,
 accuracies, margins) from per-example chosen/rejected log-ratios.
 
-These metrics are exact, un-noised functions of the private batch. Returned
-tensors are detached to stop autograd, but logging or publishing them remains
-outside Opaque's DP accounting.
+These metrics are detached but un-noised; release is outside Opaque's DP
+accounting.
 """
 
 from __future__ import annotations

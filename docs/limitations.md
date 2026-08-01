@@ -13,34 +13,17 @@ See [Matrix factorization (MF)](user-guide/dp-ftrl.md).
 
 ## Randomness and the threat model
 
-Opaque's functional random keys are reproducible PRNG state, not
-cryptographically secure randomness. Training seeds are user-selected and are
-commonly recorded in logs and checkpoints. Anyone who obtains the seed and
-enough random/noise state can replay the mechanism's noise; a DP guarantee
-does not protect a release when its secret noise realization is disclosed.
-
-Treat seeds, random keys, noise state, and checkpoints containing them as
-sensitive data. Before publishing a model or training artifact, strip the
-random and noise state and verify that experiment configuration, logs, and
-model cards do not reveal it. See [Random keys](user-guide/rng-key.md) for the
-reproducibility model.
+Random keys are reproducible PRNG state, not cryptographically secure
+randomness. Exposing seeds or noise state can reveal the noise realization.
+Keep them private and strip the random and noise state before publishing.
+See [Random keys](user-guide/rng-key.md).
 
 ## Telemetry outside the guarantee
 
-DP accounting covers the configured mechanism output. It does not cover exact
-diagnostics computed from private training records. Training integrations can
-log un-noised mean loss, pre-clip gradient norm, clipping rate, realized
-Poisson batch size, token accuracy and entropy, and DPO reward/log-probability
-means. Detaching a metric only stops autograd; it does not make the value
-private.
-
-These values can flow to trainer log history, console output, TensorBoard,
-Weights & Biases, or another reporting integration. Evaluation on the private
-training set has the same issue. Do not publish this telemetry as
-DP-protected, and disable or restrict external logging when the values must
-remain private. Opaque excludes the default `runs/` TensorBoard directory from
-Hub folder uploads, but users remain responsible for other files and logging
-destinations under the output directory.
+DP accounting does not cover exact diagnostics such as un-noised mean loss,
+pre-clip gradient norm, clip rate, batch size, or token and reward metrics.
+Keep them private or disable external logging. Hub uploads exclude the default
+`runs/` directory; review other outputs before publishing.
 
 ## Gradient checkpointing
 

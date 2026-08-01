@@ -139,9 +139,7 @@ toggles.
 
 ### Metrics
 
-Exact, un-noised telemetry computed from the private batch. Returned tensors
-are detached to stop autograd, but detaching does not make a value private:
-logging or publishing these metrics is outside Opaque's DP accounting. See
+These metrics are un-noised and outside Opaque's DP accounting. See
 [Telemetry outside the guarantee](../limitations.md#telemetry-outside-the-guarantee).
 Shared token metrics
 ([`opaque.alignment.metric`](#api-documentation)):
