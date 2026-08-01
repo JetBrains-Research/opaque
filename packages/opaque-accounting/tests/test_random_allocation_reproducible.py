@@ -44,7 +44,9 @@ def _epsilons(num_threads: str) -> str:
         env=env,
         check=False,
     )
-    assert proc.returncode == 0, f"RAYON_NUM_THREADS={num_threads} failed:\n{proc.stderr}"
+    assert proc.returncode == 0, (
+        f"RAYON_NUM_THREADS={num_threads} failed:\n{proc.stderr}"
+    )
     return proc.stdout.strip()
 
 
