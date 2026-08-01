@@ -3202,8 +3202,9 @@
 <h3 id="15-supply-chain-do-these-this-week-they-are-not-code-changes">1.5 Supply chain — do these this week, they are not code changes<a class="headerlink" href="#15-supply-chain-do-these-this-week-they-are-not-code-changes" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Register all five <code>opaque-*</code> distribution names on PyPI</strong> as placeholders. Right now <code>pip install opaque-engine</code> from the documented <code>--extra-index-url</code> command is a live dependency-confusion vector.</li>
-<li>Switch documented install to <code>--index-url</code> (README.md:57-59, installation.md:12-15). Note separately: the name <code>opaque</code> on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to <code>opaque-dp</code>.</li>
-<li><strong>Gate publishing on tests</strong>: add <code>rust-tests</code>/<code>python-tests</code> to <code>needs:</code> for <code>publish-dev-wheels</code> (ci.yml) and add a test job gating <code>publish</code> (release.yml). Wheels currently ship from a red tree.</li>
+<li>✅ Switch documented install to <code>--index-url</code> (README.md:57-59, installation.md:12-15). Note separately: the name <code>opaque</code> on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to <code>opaque-dp</code>.</li>
+<li>✅ <strong>Gate publishing on tests</strong>: add <code>rust-tests</code>/<code>python-tests</code> to <code>needs:</code> for <code>publish-dev-wheels</code> (ci.yml) and add a test job gating <code>publish</code> (release.yml).</li>
+<li>✅ Guard the self-hosted GPU leg with <code>github.event.pull_request.head.repo.full_name == github.repository</code> (while still allowing manual dispatch) so fork PR code never reaches the non-ephemeral runner.</li>
 <li>Add <code>if: github.event.pull_request.head.repo.full_name == github.repository</code> to the self-hosted GPU leg (pr.yml:85) — a fork PR currently executes arbitrary code on a non-ephemeral runner.</li>
 </ul>
 <p><strong>Phase 0 total: ~1 engineer-week</strong> (parallelizable to ~3 calendar days across 3 people).</p>
