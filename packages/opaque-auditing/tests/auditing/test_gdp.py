@@ -16,12 +16,25 @@ import scipy.stats
 
 from opaque.api.auditing.one_run._eps_delta import _p_value as _eps_delta_p_value
 from opaque.api.auditing.one_run._gdp import (
+    GdpMethod,
     _gdp_base_pair_grid,
     _gdp_to_eps_delta,
     _p_value,
 )
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
+
+
+class _StubEstimate:
+    """Minimal estimate stub that returns fixed (r, u) for ``_mu_at`` tests."""
+
+    def __init__(self, n_in: int, n_out: int, u: int):
+        self.n_in = n_in
+        self.n_out = n_out
+        self._u = u
+
+    def _best_r_u(self, threshold: float | None = None) -> tuple[int, int]:
+        return self.n_in + self.n_out, self._u
 
 
 def _make_estimate(in_scores, out_scores):
@@ -171,6 +184,47 @@ class TestPValue:
         p = _p_value(100, 100, 20, 1.0, 5000)
         assert isinstance(p, float)
         assert 0 <= p <= 1
+
+    def test_non_finite_mu_returns_one(self):
+        """Non-finite μ must not produce NaN (which would break bracket search)."""
+        assert _p_value(100, 100, 0, math.inf, 64) == 1.0
+        assert _p_value(100, 100, 0, math.nan, 64) == 1.0
+
+
+# ---- GdpMethod._mu_at bracket / bisection caps -----------------------------
+
+
+class TestMuAtTermination:
+    """Regression: m > 2000 + strong attack must raise, not hang."""
+
+    def test_strong_attack_above_truncation_raises(self):
+        # Perfect attack with m=3000 → n_trunc=1000 → Chernoff floor permanently
+        # below significance=0.05.  Small grid keeps the capped search fast.
+        method = GdpMethod(
+            _estimate=_StubEstimate(1500, 1500, u=0),
+            grid_size=64,
+        )
+        with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
+            method._mu_at(0.05, None)
+
+    def test_strong_attack_m5000_raises(self):
+        # Documented failure scenario: m=5000, u=1400 (~72% accuracy).
+        method = GdpMethod(
+            _estimate=_StubEstimate(2500, 2500, u=1400),
+            grid_size=64,
+        )
+        with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
+            method._mu_at(0.05, None)
+
+    def test_safe_regime_still_returns(self):
+        """m ≤ 2000 (no truncation) continues to invert normally."""
+        method = GdpMethod(
+            _estimate=_StubEstimate(500, 500, u=0),
+            grid_size=256,
+        )
+        mu = method._mu_at(0.05, None)
+        assert math.isfinite(mu)
+        assert mu > 0.0
 
 
 # ---- OneRunEstimate.gdp() --------------------------------------------------
