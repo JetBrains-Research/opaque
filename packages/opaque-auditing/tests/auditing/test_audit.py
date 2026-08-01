@@ -85,6 +85,17 @@ class TestConstruction:
         with pytest.raises(ValueError, match="non-empty"):
             one_run(np.array([1.0, 2.0, 3.0]), coin_flip=cf)
 
+    @pytest.mark.parametrize("invalid_score", [np.nan, np.inf, -np.inf])
+    @pytest.mark.parametrize("partition", ["in", "out"])
+    def test_non_finite_score_raises(self, invalid_score, partition):
+        in_scores = np.array([1.0, 2.0, 3.0])
+        out_scores = np.array([4.0, 5.0, 6.0])
+        scores = in_scores if partition == "in" else out_scores
+        scores[1] = invalid_score
+
+        with pytest.raises(ValueError, match="scores must contain only finite values"):
+            _make_estimate(in_scores, out_scores)
+
 
 class TestEpsilonAt:
     """Tests for eps_delta().epsilon_at()."""

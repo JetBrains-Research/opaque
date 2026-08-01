@@ -51,6 +51,10 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
     Returns:
         A :class:`OneRunEstimate` with precomputed threshold structure.
 
+    Raises:
+        ValueError: If either partition is empty or any score is NaN or
+            infinite.
+
     Example::
 
         import opaque.auditing as auditing
@@ -67,6 +71,9 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
 
     if in_scores.size == 0 or out_scores.size == 0:
         raise ValueError("Both in_scores and out_scores must be non-empty")
+
+    if not np.all(np.isfinite(in_scores)) or not np.all(np.isfinite(out_scores)):
+        raise ValueError("scores must contain only finite values")
 
     thresholds, tn_counts, fn_counts = get_tn_fn_counts(in_scores, out_scores)
 
