@@ -1,9 +1,11 @@
 """Dispatcher: registry-first, generic-structural fallback.
 
 For each visited node the dispatcher consults the registry by exact
-type. If a serializer pair is registered, it is used; otherwise the
-generic structural walker handles the node (containers, primitives) or
-skips it (opaque non-containers).
+type, then by ``__mro__`` so subclasses reach their base class handler
+(``nn.Parameter`` resolves to the ``torch.Tensor`` pair). On a miss the
+generic structural walker handles the node if it is a container or a
+primitive, and raises ``TypeError`` otherwise — an unrecognised leaf is
+never dropped silently.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from . import _structural
-from ._registry import _REGISTRY
+from ._registry import resolve_serializer
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -53,9 +55,9 @@ def _subdict(sd: Mapping[str, Any], prefix: str) -> dict[str, Any]:
 
 
 def _walk_save(obj: Any, prefix: str, out: dict[str, Any]) -> None:
-    cls = type(obj)
-    if cls in _REGISTRY:
-        rel = _REGISTRY[cls][0](obj)
+    handlers = resolve_serializer(type(obj))
+    if handlers is not None:
+        rel = handlers[0](obj)
         for rk, rv in rel.items():
             out[_join_path(prefix, rk)] = rv
         return
@@ -63,9 +65,9 @@ def _walk_save(obj: Any, prefix: str, out: dict[str, Any]) -> None:
 
 
 def _walk_load(template: Any, sd: Mapping[str, Any], prefix: str) -> Any:
-    cls = type(template)
-    if cls in _REGISTRY:
-        return _REGISTRY[cls][1](template, _subdict(sd, prefix))
+    handlers = resolve_serializer(type(template))
+    if handlers is not None:
+        return handlers[1](template, _subdict(sd, prefix))
     return _structural.walk_load(template, sd, prefix, _walk_load)
 
 
