@@ -569,12 +569,19 @@ need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and the DP cost is `α^{2
 1. The Rényi route should **not** be advertised as a general replacement for MC
    on slowly-decaying Grams. For those, the conditional-composition route (§5.3)
    or the existing MC path remains necessary.
-2. There is a hard **tractability ceiling on `p`**. With `O(b·p·α^{2p})` and a
-   typical α in the low tens, only very small bandwidths are affordable — `p = 1`
-   (identity/DP-SGD) is an outright win, and `p = 2–4` is plausible, but
-   BSR/BandMF at the `p = 64` used in the paper's own experiments is not
-   obviously reachable by the DP as stated. This must be resolved against the
-   paper's experimental section before committing to phase 4 (§9, open question 5).
+2. The tractability ceiling is on **`min(p, α)`, not on `p`**. `O(b·p·α^{2p})` is
+   a loose bound: the DP state is a vector of per-bin participation counts
+   summing to at most α, so the reachable state space is `C(α+p−1, α)` — which is
+   *symmetric in `p` and `α`*, and only polynomial of degree α in `p`. The real
+   cost is ≈ `b·α·C(α+p−1, α)²`. At b = 1000 that is ~1.5·10⁷ ops for
+   `(p = 64, α = 2)` and ~6·10⁷ for `(p = 128, α = 2)` — seconds, not eons.
+   So the accountant is an outright win at `p = 1` (`O(bα²)`) **and** usable at
+   `p = 64` in the large-ε / small-α regime where Rényi accounting is the method
+   of choice anyway. It is the *high-privacy* regime — small ε, hence α in the
+   25–40 range — that forces `p` down to 2–5, and there the truncation slack of
+   conclusion 1 bites. Note also that [arXiv:2601.21636]'s own headline figures
+   never run the DP at `p = 64`: they pass a smaller *effective* bandwidth and
+   bound the out-of-band contribution, exactly as in conclusion 1.
 
 ### 5.5 A pre-existing fragility this analysis surfaced
 
@@ -591,31 +598,39 @@ heuristics already in the codebase:
 
 Most of the time these are accidentally complementary: when the wrap matters,
 the scan runs to the end and returns full bandwidth; when the scan stops early,
-`skip_cross_epoch` has already removed the wrap. Every configuration in the
-docstring's own regime (λ = 0.9, b = 1953) is safe.
+`skip_cross_epoch` has already removed the wrap.
 
-But the two thresholds — `1e-15` on `λ^b` and `1e-6` on the Gram entries — are
-unrelated, and there is a window between them. Re-implementing the detection
-loop and sweeping λ ∈ [0.7, 0.85], b ∈ [100, 240], E ∈ {2, 4, 8} finds **51
-configurations** where the wrap is retained but the detected bandwidth truncates
-it:
+**The λ = 0.9, b = 100 case from §5.4 is safe, and safe for an instructive
+reason.** Running the verbatim builder plus detection loop: `max_diag = 4.000159`
+so `abs_thresh = 4.0e−6`, while the *minimum* off-diagonal entry (`3.6e−2` at
+d = 50) sits four orders of magnitude above it. `any_above` is therefore true at
+every `d`, the `break` never fires, `est_bw = 99`, and `bw = min(208, 99) = 99`
+— the exact dense Cholesky, measured `max|LLᵀ − G| = 8.9e−16`. **A large corner
+is what keeps the scan running, not what defeats it.** The docstring's own
+regime (λ = 0.9, b = 1953) is likewise safe.
 
-| λ | b | E | λ^b | `skip_cross_epoch` | est_bw | bw | corner / diagonal |
-|---:|---:|---:|---:|:--:|---:|---:|---:|
-| 0.72 | 100 | 4 | 5.4e−15 | false | 42 | 94 | **0.540** |
-| 0.72 | 105 | 8 | 1.0e−15 | false | 42 | 94 | **0.630** |
-| 0.75 | 110 | 4 | 1.8e−14 | false | 48 | 106 | **0.563** |
+The defect is real but the window is narrow: truncation needs the off-diagonal
+profile to dip below threshold *in the middle* while cross-epoch terms are still
+retained — `λ^d < 1e−6` and `λ^{b−d} < 1e−6` and `2·est_bw + 10 < b − 1`, and it
+stops once `λ^b < 1e−15`. Measured windows (E = 4, momentum = 0):
 
-In these the banded Cholesky zeroes entries carrying more than a third of the
-diagonal magnitude, so the sampler draws `u ~ N(m_i, σ²·LLᵀ)` with `LLᵀ ≠ G`.
-That is not conservative in either direction — it is simply the wrong
-distribution, and the resulting ε could be too small.
+| λ | b window where the corner is truncated |
+|---:|---|
+| 0.5 | none |
+| 0.7 | 88 – 96 |
+| 0.8 | 136 – 154 |
+| 0.9 | 278 – 327 |
+| 0.95 | 564 – 673 |
 
-Two caveats on this finding: it comes from re-implementing the detection logic
-in Python, not from running the Rust; and the `est_bw·2 + 10` safety margin
-plus the `b − 1` cap rescue most nearby settings. **It should be confirmed
-against the real builder before being called a bug.** Independently of the
-random-allocation work, two cheap defensive fixes are worth making:
+Inside a window `LLᵀ = band(G)` exactly and the corner (worth ~68% of the
+diagonal) is zeroed, so the sampler draws `u ~ N(mᵢ, σ²·LLᵀ)` with `LLᵀ ≠ G` —
+not conservative in either direction, simply the wrong distribution.
+
+An earlier draft of this note put the λ = 0.9, b = 100 configuration *inside*
+the window. It is not; that case is exact. The windows above come from running
+the real builder and detection loop, and it is those that should be filed.
+Independently of the random-allocation work, two cheap defensive fixes are worth
+making:
 
 1. Measure bandwidth by **cyclic** distance `min(|i−j|, b−|i−j|)`, and stop
    subsampling rows (`step_by((b/20).max(1))`, `monte_carlo.rs:71`, checks ~20
@@ -746,10 +761,11 @@ on their own schedule.
 4. **BLT's retuning behaviour.** `_pld_at_horizon` already special-cases BLT
    because re-running L-BFGS at a shorter horizon changes the mechanism. Any new
    accountant must preserve that pinning argument.
-5. **The `α^{2p}` ceiling** (§5.4). Resolve what `p` means in the stated
-   complexity — the bandwidth of `C` in training steps, or the cyclic bandwidth
-   of `G` in bins — and how [arXiv:2601.21636] runs its own `p = 64` experiments,
-   before committing to the Rényi DP for anything beyond `p = 1`.
+5. **Where to sit on the `min(p, α)` frontier** (§5.4). The Rényi DP is cheap at
+   either small `p` or small `α`, and expensive only when both are large — which
+   is exactly the high-privacy corner. Deciding the default (`α` search range,
+   effective bandwidth, and when to fall back) needs a measurement sweep over
+   Opaque's actual strategies rather than a rule of thumb.
 
 ---
 
