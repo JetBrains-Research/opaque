@@ -108,8 +108,8 @@ Every one of these is a documented guarantee that the code does not provide. Wit
 
 - **Register all five `opaque-*` distribution names on PyPI** as placeholders. Right now `pip install opaque-engine` from the documented `--extra-index-url` command is a live dependency-confusion vector.
 - Switch documented install to `--index-url` (README.md:57-59, installation.md:12-15). Note separately: the name `opaque` on PyPI belongs to an unrelated project and can never be reclaimed — plan a rename to `opaque-dp`.
-- **Gate publishing on tests**: add `rust-tests`/`python-tests` to `needs:` for `publish-dev-wheels` (ci.yml) and add a test job gating `publish` (release.yml). Wheels currently ship from a red tree.
-- Add `if: github.event.pull_request.head.repo.full_name == github.repository` to the self-hosted GPU leg (pr.yml:85) — a fork PR currently executes arbitrary code on a non-ephemeral runner.
+- ✅ **Gate publishing on tests**: add `rust-tests`/`python-tests` to `needs:` for `publish-dev-wheels` (ci.yml) and add a test job gating `publish` (release.yml).
+- ✅ Guard the self-hosted GPU leg with `github.event.pull_request.head.repo.full_name == github.repository` (while still allowing manual dispatch) so fork PR code never reaches the non-ephemeral runner.
 
 **Phase 0 total: ~1 engineer-week** (parallelizable to ~3 calendar days across 3 people).
 
