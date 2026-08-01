@@ -39,7 +39,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
     ],
 )
 def test_unsafe_claim_is_absent(path: str, forbidden: str) -> None:
-    text = (REPO_ROOT / path).read_text().lower()
+    text = " ".join(
+        (REPO_ROOT / path).read_text(encoding="utf-8").lower().split()
+    )
     assert forbidden not in text
 
 
@@ -52,7 +54,9 @@ def test_unsafe_claim_is_absent(path: str, forbidden: str) -> None:
     ],
 )
 def test_bounded_gaussian_discloses_missing_accounting(path: str) -> None:
-    text = (REPO_ROOT / path).read_text().lower()
+    text = " ".join(
+        (REPO_ROOT / path).read_text(encoding="utf-8").lower().split()
+    )
     assert "experimental" in text
     assert "does not" in text
     assert "account" in text
@@ -69,6 +73,8 @@ def test_bounded_gaussian_discloses_missing_accounting(path: str) -> None:
     ],
 )
 def test_monte_carlo_pld_discloses_point_estimate(path: str) -> None:
-    text = " ".join((REPO_ROOT / path).read_text().lower().split())
+    text = " ".join(
+        (REPO_ROOT / path).read_text(encoding="utf-8").lower().split()
+    )
     assert "point estimate" in text
     assert "not an upper confidence bound" in text
