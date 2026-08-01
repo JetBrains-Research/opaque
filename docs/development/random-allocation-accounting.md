@@ -33,19 +33,24 @@ Plus several adjacent wins the same machinery unlocks (§7).
 - There is a **scheme distinction** that has to be made explicit before any of
   this lands (§3). Opaque today implements *fixed-assignment balls-in-bins*;
   the Feldman–Shenfeld results are about *k-out-of-t random allocation*. They
-  are different mechanisms with different privacy. Measured on the identity
-  strategy, re-randomising the assignment each epoch is worth **32–62% lower ε**
-  (§3.3) — but it is not free for correlated noise (§3.4).
+  are different mechanisms with different privacy. For the identity strategy,
+  re-randomising the assignment each epoch **provably dominates** fixed
+  assignment — no larger hockey-stick divergence at any ε, in both directions
+  (§3.3). The size of the win is strongly regime-dependent: 0% at `E = 1` by
+  construction, ~1–40% at `E = 2`, ~30–72% at `E = 4`, ~50–84% at `E = 16`
+  (δ = 10⁻⁸, b ∈ [8, 128], σ ∈ [0.5, 5]). It is not free for correlated noise
+  (§3.4).
 - Prototypes of the two core algorithms were written and validated against the
   authors' reference implementation and against closed forms (§4.4, §5.4). The
   PLD route came out **8–33% tighter than the best bound in [arXiv:2502.08202]**
   and tighter than Poisson at the matched rate, with a self-certifying
-  upper/lower sandwich of 0.4–1%.
+  upper/lower sandwich of 0.4–1.3% in three of the four regimes tested and 9% at
+  σ = 2 (which needs a finer α).
 - **Start with the identity path (§4.5).** Opaque's *existing* fixed-assignment
   BnB with `IdentityStrategy` turns out to be *exactly* 1-out-of-`b` random
   allocation of a Gaussian at `σ_eff = σ/√E`. So the PLD accountant is a
   deterministic, composable, drop-in replacement for `bnb_mc_pld_identity`
-  **with no sampler change and no scheme split** — and it measured 8–27%
+  **with no sampler change and no scheme split** — and it measured 7–27%
   tighter than the Rényi route on the same mechanism. This is the shortest path
   to value and it should lead the work.
 
@@ -58,9 +63,9 @@ Plus several adjacent wins the same machinery unlocks (§7).
 | BnB sampler | `opaque/api/dpftrl/sampling/_balls_in_bins.py` | fixed assignment, reused every epoch |
 | BnB accountant (correlated) | `amplification/balls_in_bins/monte_carlo.rs` | Monte Carlo over the Choquette-Choo Lemma 3.2 dominating pair, banded Cholesky |
 | BnB accountant (identity) | `amplification/balls_in_bins/identity.rs` | specialised importance-sampled MC |
-| Python surface | `accounting/dpftrl/amplification/_balls_in_bins.py` | `balls_in_bins(inner, num_bins, n_steps)` |
+| Python surface | `accounting/dpftrl/amplification/_balls_in_bins.py` | `balls_in_bins(inner, *, num_bins, n_steps)` |
 
-Three limitations follow from the accountant being Monte Carlo:
+Five limitations follow from the accountant being Monte Carlo:
 
 1. **The guarantee is probabilistic, not deterministic.** An MC accountant
    certifies "(ε, δ)-DP with high confidence", which is a strictly weaker
@@ -68,19 +73,27 @@ Three limitations follow from the accountant being Monte Carlo:
    modifying the mechanism with random abstentions.
 2. **Cost scales with 1/δ.** Showing (ε, 10⁻⁸)-DP is ~10⁵× more expensive than
    (ε, 10⁻³)-DP. This is the binding constraint at production δ.
-3. **It does not compose.** `BallsInBins` is documented as *total* cost —
-   `pld()` returns the whole-run PLD and callers are told not to compose it.
-   That is a direct consequence of the MC route, not a modelling choice.
+3. **Every PLD probe is a fresh MC run.** `BallsInBins` *does* compose — it
+   implements `_pld_at_horizon` (`_balls_in_bins.py:122`) and `per_step()`
+   (`composition/_per_step.py:101`) wraps it as an algebraic atom exactly like
+   `CyclicPoisson` and `BMinSep`. But each horizon, each σ and each
+   `(num_mc_samples, seed)` re-runs the sampler at
+   `O(num_mc_samples · b · bw)`. The "do NOT compose externally" warning is
+   about double-counting the whole-run cost, not an MC artefact.
 4. **Results are not reproducible across machines.** Every MC driver shards work
    by `rayon::current_num_threads()` and seeds per-thread streams as `seed + tid`
-   (`monte_carlo.rs:277-290`, `identity.rs:261-274`), so a different core count
-   yields a different sample partition and a different ε from the *same* seed.
-   For a number that goes into a privacy claim this is an unwelcome property.
-5. **The importance-sampling weights are never self-normalised.**
-   `weighted_samples_to_pmf` (`identity.rs:179-195`) deposits `w/n` per bucket
-   and `Pmf::new` does no renormalisation, so total mass equals 1 only in
-   expectation. The hardcoded `_IDENTITY_IS_TILT = 1.0` sits in a safe spot, but
-   the margin is thin — the tilt is a load-bearing constant, not a free knob.
+   for remove (`monte_carlo.rs:277-290`, `identity.rs:261-274`) and
+   `seed + 1000 + tid` for add (`monte_carlo.rs:320`), so the two directions
+   shard differently and a different core count yields a different ε from the
+   *same* seed. For a number that goes into a privacy claim this is an unwelcome
+   property.
+5. **Mass is lost silently.** `weighted_samples_to_pmf` (`identity.rs:129`,
+   deposit loop `:180-196`) deposits `w/n` per bucket and `Pmf::new` does no
+   renormalisation, so total mass equals 1 only in expectation. The hardcoded
+   `_IDENTITY_IS_TILT = 1.0` sits in a safe spot, but the margin is thin — the
+   tilt is a load-bearing constant, not a free knob. `samples_to_pmf`
+   (`monte_carlo.rs:349`, drop at `:378-384`) has the same problem and worse:
+   `NaN` is neither `is_finite()` nor `> 0.0`, so `NaN` samples vanish entirely.
 
 Two coverage gaps also exist:
 
@@ -126,10 +139,30 @@ a Lemma 3.2 bound to Scheme B, is not conservative in either direction — it is
 simply wrong. Any implementation must therefore pair each sampler with its own
 accountant and refuse the cross product.
 
-### 3.3 Scheme B is materially better for uncorrelated noise
+The mechanical consequence, which makes §3.4's penalty automatic rather than a
+documentation promise: a Scheme B process must report `min_sep = 1` and
+`max_participations = num_epochs` through the `MfAmplification` protocol
+(`dpftrl/amplification/types.py`). The strategy's sensitivity machinery then
+prices the lost separation on its own, and no correlated strategy can silently
+inherit a `min_sep = num_bins` tuning it no longer earns.
 
-Measured through identical Rényi machinery and an identical RDP→(ε, δ)
-conversion, so the comparison is apples-to-apples (δ = 10⁻⁸, identity strategy):
+### 3.3 Scheme B provably dominates for uncorrelated noise
+
+For `C = I` this is a **theorem**, not a measurement. In `ℝ^{bE}`,
+
+```
+P_A = (1/b) Σᵢ ⊗ₖ N(eᵢ, σ²I_b)          (fixed assignment)
+P_B = (1/b^E) Σ_{i₁…i_E} ⊗ₖ N(e_{iₖ}, σ²I_b)   (re-randomised)
+```
+
+Writing `iₖ = i + dₖ mod b` gives `P_B = E_d[T_d # P_A]`, where `T_d` relabels
+bins per epoch and fixes `Q`. Since `T_d # Q = Q`, we get
+`D_{e^ε}(T_d # P_A ‖ Q) = D_{e^ε}(P_A ‖ Q)` for every `d`, and joint convexity of
+the hockey-stick divergence gives `D(P_B‖Q) ≤ D(P_A‖Q)` and
+`D(Q‖P_B) ≤ D(Q‖P_A)` at every ε, in both directions.
+
+The table below only *sizes* the gain (δ = 10⁻⁸, identity strategy, identical
+Rényi machinery and RDP→(ε, δ) conversion on both sides):
 
 | b | epochs | σ | Scheme A (fixed) | Scheme B (re-shuffled) | ε reduction |
 |---:|---:|---:|---:|---:|---:|
@@ -143,6 +176,22 @@ conversion, so the comparison is apples-to-apples (δ = 10⁻⁸, identity strat
 
 The gap widens with epoch count, which is what the correlation argument
 predicts: fixed assignment adds no fresh sampling randomness after epoch 1.
+(Monotone in `E` in every near-exact PLD slice measured; a few Rényi slices are
+non-monotone — b = 64, σ = 0.7: 34.6 → 49.4 → 55.9 → 53.7 — which is an artefact
+of the finite α grid, not of the mechanism.)
+
+**Three caveats on the numbers.**
+
+1. They come from a *Rényi* protocol, which **understates** the gain. A
+   near-exact PLD / Monte-Carlo measurement of the same dominating pairs puts
+   the true reduction 3–15 points higher (b = 8, E = 4, σ = 1: 47.0% true vs
+   39.1% Rényi at δ = 10⁻⁴).
+2. The add-direction closed form is *provably identical* for both schemes —
+   `renyi_add_bound(E·I_b) = E·renyi_add_bound(I_b)` exactly — so whenever it
+   binds (the high-σ / low-ε corner) the protocol returns a spurious 0.0000%.
+3. The rows above are the middle of the range. Over b ∈ [8, 128], E ∈ [1, 16],
+   σ ∈ [0.5, 5] the reduction spans 0–66% with median 36%, and only about half
+   the configurations land in [32, 62]. Do not quote a single band.
 
 For DP-SGD this is close to free — re-shuffling every epoch is what ordinary
 training loops already do, and it is *easier* to implement than pinning an
@@ -211,6 +260,15 @@ the paper is explicit that FFT on a uniform grid is the wrong tool here: for
 σ = 1, β = 10⁻¹⁰ the PLD spans ≈ 12.5 but its exponent spans ≈ 950, so a uniform
 grid over the exponent either explodes or loses the left tail.
 
+FFT is **demoted, not ruled out**. On a grid made uniform in `e^l` the sums *do*
+land on the grid and `numerics::fft::convolve` applies verbatim. The paper offers
+this as an opt-in second path with no explicit tightness guarantee (validity
+still holds): it is tighter in the **remove** direction and looser in **add**,
+because uniform bins in `e^l` are fine at large positive loss and coarse at large
+negative loss. And since two valid upper bounds combine for free by pointwise
+minimum of their CCDFs, the FFT and direct bounds can be merged — the combined
+bound beats either alone.
+
 > **A shortcut that does not work.** It is tempting to observe that Opaque's
 > arithmetic loss grid *is* a geometric grid in `e^l` with ratio `r = e^Δ`, and
 > conclude that exp-PLD convolution is just `numerics::fft::convolve` in index
@@ -275,12 +333,19 @@ natural golden test case.)
 
 ### 4.3 Proposed Rust surface
 
+Module placement follows the existing layout: PMF representations live under
+`pld/pmf/` beside `dense.rs` (re-export from `pld/pmf/mod.rs`), and
+discretisation routines live in `discretization/` beside
+`create_pmf_connect_the_dots_uniform`.
+
 ```rust
-// pld/realization.rs
-pub fn pld_dual(pmf: &Pmf) -> Pmf;
+// pld/pmf/dense.rs  (or a small pld/realization.rs beside metrics.rs)
+pub fn pld_dual(pmf: &Pmf) -> Result<Pmf>;   // errors on negative_infinity_mass != 0
+
+// discretization/disc_dist.rs
 pub fn disc_dist(pmf: &Pmf, alpha: f64, beta: f64, dir: Rounding) -> Pmf;
 
-// pld/geom.rs
+// pld/pmf/geom.rs
 impl GeomPmf {
     pub fn from_pmf_exp(pmf: &Pmf) -> Self;
     pub fn conv(&self, other: &GeomPmf, dir: Rounding) -> Self;   // O(n²), rayon
@@ -324,11 +389,32 @@ One numerical trap: the dual reweights each bucket by `e^{−l}`, which
 **amplifies the small negative probabilities FFT composition leaves behind**.
 Clamp to zero before exponentiating.
 
+### 4.3b Details phase 1 needs pinned down
+
+Everything below is load-bearing and easy to get wrong:
+
+- **`range-renorm`'s exact rule.** The output keeps the ratio `r` and the bin
+  count `n`; only the anchor moves, to `l_min = l[1] + l'[1]`. Both operands must
+  share `r` and length (pad the shorter geometrically).
+- **Rounding is directional.** Up/right for the remove *upper* bound; down/left
+  for the add direction and for **all** lower bounds. Getting this backwards
+  produces a bound that looks fine and is invalid.
+- **`self_conv` costs `⌊log₂ t⌋ + popcount(t) − 1`** pairwise convolutions, not
+  `2⌈log₂ t⌉` — that is just the analysis bound.
+- **Re-truncate to `[q(β'), q(1−β')]` after each squaring**, or `n` grows
+  monotonically through the recursion.
+- **Kahan summation, and logcdf/logsf-based quantiles** once `δ ≤ 10⁻¹⁵/t` —
+  naive `ppf(1 − β)` returns `inf` in float64 well before that.
+- **`n₀ = IQR_{β/t}/α · (2⌈log₂ t⌉ + 1)`** is the grid size behind the
+  `O(n₀² log₂ t)` cost quoted in §4.1.
+
 Because the output is a genuine `PrivacyLossDistribution`, the `k > 1` reduction
-and multi-epoch composition reuse Opaque's **existing** composition path. That
-removes the "do NOT compose externally" restriction that the MC accountant
-forces, so `RandomAllocation` can implement `_pld_at_horizon` honestly and
-participate in calibration.
+and multi-epoch composition reuse Opaque's **existing** composition path.
+`RandomAllocation` then implements `_pld_at_horizon` *deterministically*, so
+repeated calibration probes over σ and horizon become cacheable and reproducible
+rather than fresh MC runs. (`BallsInBins` already implements `_pld_at_horizon`
+and already participates in calibration — what changes is cost and determinism,
+not composability.)
 
 ### 4.4 Validation
 
@@ -387,7 +473,7 @@ Verified numerically — both routes on the same mechanism, δ = 10⁻⁸:
 |---:|---:|---:|---:|---:|---:|
 | 16 | 2 | 1.0 | 0.7071 | **5.769** | 6.270 |
 | 16 | 4 | 1.0 | 0.5000 | **9.984** | 10.714 |
-| 32 | 2 | 1.0 | 0.7071 | **5.079** | 5.587 |
+| 32 | 2 | 1.0 | 0.7071 | **5.079** | 5.586 |
 | 32 | 4 | 2.0 | 1.0000 | **2.410** | 2.829 |
 | 64 | 4 | 2.0 | 1.0000 | **1.806** | 2.487 |
 
@@ -395,7 +481,7 @@ Three consequences, all good:
 
 1. `random_allocation_pld(gaussian_pld(σ/√E), t = num_bins, k = 1)` is a
    **drop-in replacement for `bnb_mc_pld_identity`** — deterministic,
-   composable, no 1/δ cost, and 8–27% tighter than the Rényi route. It needs
+   composable, no 1/δ cost, and 7–27% tighter than the Rényi route. It needs
    **no sampler change and no Scheme A/B split**, so it can ship ahead of
    everything in §3.
 2. §6 claimed no external oracle exists. That is wrong for this path: **every
@@ -451,15 +537,29 @@ The add direction has a closed form:
 
 | Strategy | Structure of `C` | Gram over bins | Route |
 |---|---|---|---|
-| `IdentityStrategy` | `C = I` (p = 1) | `G = E·I_b`, exactly diagonal | **exact DP**, `O(bα²)` |
-| `BandMfStrategy` | *p*-banded Toeplitz | cyclically *p*-banded | **exact DP** — closes a gap, BnB is unsupported today |
-| `BsrStrategy` | banded square root, explicit `bandwidth` | cyclically banded | **exact DP** |
+> **Unit trap.** `bsr_strategy(bandwidth=…)` and `band_mf_strategy(bands=…)`
+> are bandwidths in **training steps** (`_bsr.py:143`). The DP's `p` is a cyclic
+> bandwidth in **bins**. For `C` that is `p`-banded in steps, `G`'s cyclic
+> bandwidth in bins is `min(p, ⌈b/2⌉+1)` — so at `b = 100`, `bandwidth = 64`
+> *saturates* to 51 and `G` is effectively dense with no band to exploit.
+> Always convert before reasoning about cost.
+
+| Strategy | Structure of `C` | Gram over bins | Route |
+|---|---|---|---|
+| `IdentityStrategy` | `C = I` (p = 1) | `G = E·I_b`, exactly diagonal | **exact DP**, `O(bα²)` — and see §4.5, the PLD route is better still |
+| `BandMfStrategy` | *p*-banded Toeplitz | cyclically banded, `min(p, ⌈b/2⌉+1)` bins | exact DP if `p ≪ b`, else effective-`p` truncation — closes a gap, BnB unsupported today |
+| `BsrStrategy` | banded square root, explicit `bandwidth` (steps) | as above; saturates when `bandwidth ≳ b/2` | exact DP if `p ≪ b`, else effective-`p` truncation |
 | `BisrStrategy` | banded *inverse* square root | near-banded, fast decay | truncation + `ατ/(2σ²)` |
-| `LambdaCgdStrategy` | AR(1)-like, `G_{ij} ∼ E·λ^{\|i−j\|}` | near-banded, decay set by λ | truncation — **but see §5.4** |
+| `LambdaCgdStrategy` | AR(1)-like, `G_{ij} ≈ E·λ^{d} + (E−1)·λ^{b−d}` | cyclic, decay set by λ | truncation — **but see §5.4** |
 | `BltStrategy` | Toeplitz, buffer decay | near-banded | truncation |
 
-The banded cases are strictly better served than by MC. The near-banded cases
-need the caveat in §5.4.
+Note that `p` in the DP is a **free input** — an *effective* bandwidth decoupled
+from `C`'s true bandwidth. That is how [arXiv:2601.21636]'s own noise-calibration
+figures run: effective `p ∈ {2, 4}` plus the `τα/(2σ²)` correction, never the
+strategy's real bandwidth. So "exact DP" in the table means *available* when
+`p ≪ b`, not *how you would normally run it*; in practice every row above is
+handled by truncation at a chosen effective `p`, and the real question is the
+tightness/runtime trade-off of §5.4 conclusion 2.
 
 ### 5.3 Conditional composition — the part that unifies both questions
 
@@ -562,7 +662,8 @@ At λ ≤ 0.7 the bound tightens with `p`, as intended. At λ = 0.9 it gets *wor
 because `τ` decays too slowly for the `ατ/(2σ²)` term to pay for the larger
 retained band. Opaque's own MC docstring cites λ = 0.9, b = 1953 as a realistic
 configuration — squarely in the bad regime. At b = 100, E = 4, λ = 0.9 you would
-need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and the DP cost is `α^{2p}`.
+need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and by conclusion 2 the cost
+there is ≈ `b·α·C(α+p−1, α)²` — cheap at α = 2–3, prohibitive by α = 8.
 
 **Two conclusions:**
 
@@ -583,60 +684,85 @@ need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and the DP cost is `α^{2
    never run the DP at `p = 64`: they pass a smaller *effective* bandwidth and
    bound the out-of-band contribution, exactly as in conclusion 1.
 
-### 5.5 A pre-existing fragility this analysis surfaced
+### 5.5 Two pre-existing defects this analysis surfaced
 
 The cyclic structure of the Gram (§5.4) interacts badly with two independent
 heuristics already in the codebase:
 
 - `BandedCholesky::compute` (`monte_carlo.rs:61-127`) estimates a bandwidth by
-  walking `d = 1, 2, …` and **breaking at the first `d` whose entries all fall
-  below `1e-6 · max_diag`**. It only ever looks at `|i − j|`, never at the cyclic
-  distance, so a Gram that decays into the middle of the row and then *rises
-  again at the corner* stops the scan early.
-- `lambda_cgd_gram_matrix` (`gram_matrix.rs:235-237`) drops cross-epoch terms —
-  and therefore the wrap — when `λ^b < 1e-15`.
+  walking `d = 1, 2, …` and **breaking at the first `d` whose sampled entries all
+  fall below `1e-6 · max_diag`**. It only ever looks at `|i − j|`, never at the
+  cyclic distance. A U-shaped profile that decays into the middle of the row and
+  rises again at the corner therefore stops the scan at the **dip**, not at the
+  corner — it is the middle minimum, never the corner, that can end the scan
+  early.
+- `lambda_cgd_gram_matrix` (`gram_matrix.rs:237`) drops cross-epoch terms — and
+  therefore the wrap — when `λ^b < 1e-15` **and** `momentum^b < 1e-15` (with the
+  default `momentum = 0` the second conjunct is free). Applied at `:269-270`.
 
-Most of the time these are accidentally complementary: when the wrap matters,
-the scan runs to the end and returns full bandwidth; when the scan stops early,
-`skip_cross_epoch` has already removed the wrap.
+These are **not** complementary; they are two independent ways of losing the same
+corner. When the wrap survives the Gram builder, its size keeps the bandwidth
+scan running to `b−1` and the Cholesky is exact. When `skip_cross_epoch` fires
+the scan is short — but only because the wrap has already been deleted from the
+Gram, and deleting it is itself the error.
 
-**The λ = 0.9, b = 100 case from §5.4 is safe, and safe for an instructive
-reason.** Running the verbatim builder plus detection loop: `max_diag = 4.000159`
-so `abs_thresh = 4.0e−6`, while the *minimum* off-diagonal entry (`3.6e−2` at
-d = 50) sits four orders of magnitude above it. `any_above` is therefore true at
-every `d`, the `break` never fires, `est_bw = 99`, and `bw = min(208, 99) = 99`
-— the exact dense Cholesky, measured `max|LLᵀ − G| = 8.9e−16`. **A large corner
-is what keeps the scan running, not what defeats it.** The docstring's own
-regime (λ = 0.9, b = 1953) is likewise safe.
+**The λ = 0.9, b = 100 case from §5.4 is exact.** `max_diag = 4.000159` so
+`abs_thresh = 4.0e−6`, while the *minimum* off-diagonal entry (`3.6e−2` at
+d = 50) sits four orders of magnitude above it. `any_above` is true at every `d`,
+the `break` never fires, `est_bw = 99`, `bw = min(208, 99) = 99` — the dense
+Cholesky, measured `max|LLᵀ − G| = 8.9e−16`. A large corner is what *keeps the
+scan running*, not what defeats it. An earlier draft of this note had that
+backwards.
 
-The defect is real but the window is narrow: truncation needs the off-diagonal
-profile to dip below threshold *in the middle* while cross-epoch terms are still
-retained — `λ^d < 1e−6` and `λ^{b−d} < 1e−6` and `2·est_bw + 10 < b − 1`, and it
-stops once `λ^b < 1e−15`. Measured windows (E = 4, momentum = 0):
+#### The real soundness break is in the Gram builder, at production scale
 
-| λ | b window where the corner is truncated |
-|---:|---|
-| 0.5 | none |
-| 0.7 | 88 – 96 |
-| 0.8 | 136 – 154 |
-| 0.9 | 278 – 327 |
-| 0.95 | 564 – 673 |
+**The docstring's own regime (λ = 0.9, b = 1953) is *not* safe** — but the defect
+is one module upstream. There `λ^b ≪ 1e−15`, so `skip_cross_epoch` fires and
+`lambda_cgd_gram_matrix` restricts `q` to `p` (`gram_matrix.rs:269-270`), zeroing
+`G[0][b−1]` — whose true value is **2.7000** at b = 328, 400, 1000 and 1953. The
+Cholesky is faithful to the Gram it is handed (`max|LLᵀ − G| = 1.3e−12`); the
+Gram is the wrong one.
 
-Inside a window `LLᵀ = band(G)` exactly and the corner (worth ~68% of the
-diagonal) is zeroed, so the sampler draws `u ~ N(mᵢ, σ²·LLᵀ)` with `LLᵀ ≠ G` —
-not conservative in either direction, simply the wrong distribution.
+The justification comment (`gram_matrix.rs:233-234`, "cross-epoch terms decay as
+`λ^{b·|p−q|}`") holds only near the diagonal. For `i = 0`, `j = b−1`, `q = p−1`
+the column gap is `|b(q−p) + (j−i)| = 1`, so the dropped term is
+`(E−1)·λ¹ ≈ 2.7`, not `λ^b`. **This, not the bandwidth heuristic, is the defect
+to file.**
 
-An earlier draft of this note put the λ = 0.9, b = 100 configuration *inside*
-the window. It is not; that case is exact. The windows above come from running
-the real builder and detection loop, and it is those that should be filed.
-Independently of the random-allocation work, two cheap defensive fixes are worth
-making:
+#### Second break: the band can be non-PSD
 
-1. Measure bandwidth by **cyclic** distance `min(|i−j|, b−|i−j|)`, and stop
-   subsampling rows (`step_by((b/20).max(1))`, `monte_carlo.rs:71`, checks ~20
-   entries per diagonal and can under-detect on its own).
-2. Assert the dropped mass is negligible — e.g. `max|G − LLᵀ| ≤ tol · max_diag`
-   — rather than trusting the heuristic.
+Inside b ∈ [278, 295] (λ = 0.9, E = 4, momentum = 0) `band(G)` is not positive
+semi-definite. The regulariser at `monte_carlo.rs:107-110` sets
+`L[i][i] = sqrt(1e-30) = 1e-15`, and line 118 then *divides* by it: measured
+`max|L|` reaches 1.26e219 at b = 280 and **`inf`** at b = 282, 285, 290. The
+resulting non-finite privacy losses are then **silently dropped** by
+`samples_to_pmf` (`:378-384`), so the PMF quietly loses mass with no
+renormalisation. (The same silent drop swallows `NaN`, which is neither
+`is_finite()` nor `> 0.0`.)
+
+#### The truncation window itself is a tightness issue, not a soundness one
+
+Truncation needs the off-diagonal profile to dip below threshold in the middle
+while cross-epoch terms are still retained, and it stops once `λ^b < 1e−15`.
+Measured windows (E = 4, momentum = 0): λ = 0.5 → none; λ = 0.7 → b ∈ [88, 96];
+λ = 0.8 → b ∈ [136, 154]; λ = 0.9 → b ∈ [278, 327]; λ = 0.95 → b ∈ [564, 673].
+Inside a window `LLᵀ = band(G)` exactly and the corner is zeroed — but the
+measured effect on the sampled privacy loss is **mixed-sign and under 1% at the
+99.9th percentile** (b = 300, σ = 1.5, 40k samples). Worth fixing, but it is not
+where the risk is.
+
+Three defensive fixes, worth making independently of the random-allocation work
+and in this order:
+
+1. **Stop dropping the cyclic corner in `lambda_cgd_gram_matrix`.** Gate
+   `skip_cross_epoch` on the actual minimum column gap
+   (`min_{p≠q,i,j} |b(q−p) + (j−i)| = 1` for corner entries), not on `λ^b`.
+2. **Reject a non-PSD band** rather than regularising it, and **error on
+   non-finite samples** instead of silently dropping them.
+3. Measure bandwidth by **cyclic** distance `min(|i−j|, b−|i−j|)`, stop
+   subsampling rows (`step_by((b/20).max(1))`, `monte_carlo.rs:71` checks ~20
+   entries per diagonal and can under-detect on its own), and assert
+   `max|G − LLᵀ| ≤ tol · max_diag` rather than trusting the heuristic.
 
 This is also an argument for the deterministic accountants: a dynamic program
 over an explicitly *cyclically* banded Gram cannot make this class of mistake,
@@ -668,6 +794,11 @@ to be self-supporting:
 5. **Monotonicity**, matching the invariants already asserted in
    `packages/opaque-dpftrl/tests/accounting/`: ε decreasing in σ, increasing in
    epochs, increasing in k.
+6. **Reproducibility.** The deterministic accountant must return bit-identical ε
+   across `RAYON_NUM_THREADS` settings. This is the one property MC cannot
+   satisfy (§2, limitation 4) and the cheapest possible proof that the
+   replacement actually did its job — add it as a regression test, not an
+   afterthought.
 
 ---
 
@@ -717,9 +848,15 @@ that are impractical today.
 
 ### 7.5 Close the BandMF gap
 
-`BandMfStrategy.gram_matrix()` raising is the cheapest concrete win here:
-BandMF is genuinely *p*-banded, so the Rényi DP is exact and fast, and BnB
-support for it needs the Gram plus a dispatch entry.
+`BandMfStrategy.gram_matrix()` raising (`_band_mf.py:126-131`) is a concrete
+gap. Closing it means more than adding the Gram:
+
+- give `gram_matrix` the `(*, n_steps, min_sep, max_participations)` signature
+  `BsrStrategy` uses (`_bsr.py:150-160`), because `_pld_at_horizon` calls it that
+  way (`_balls_in_bins.py:206-210`);
+- add `BandMfStrategy` to `_CorrelatedStrategies` (`_balls_in_bins.py:59`);
+- add it to the `balls_in_bins()` type check **and** its error message
+  (`:285-290`).
 
 ---
 
@@ -741,8 +878,10 @@ composable accountant, it replaces an existing MC primitive rather than adding
 a new mechanism, and it comes with an external oracle. Phases 1–3, 4 and 6 are
 otherwise independent.
 
-Independently of all of this, the two defensive fixes in §5.5 are worth making
-on their own schedule.
+**Independently of all of this, the §5.5 fixes should be filed now** — the Gram
+builder dropping the cyclic corner at production scale, and the non-PSD band
+producing `inf`/`NaN` losses that are then silently discarded, are both live
+defects in shipped code and neither depends on any of the work above.
 
 ---
 
