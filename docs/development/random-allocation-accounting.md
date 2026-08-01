@@ -64,6 +64,16 @@ Three limitations follow from the accountant being Monte Carlo:
 3. **It does not compose.** `BallsInBins` is documented as *total* cost —
    `pld()` returns the whole-run PLD and callers are told not to compose it.
    That is a direct consequence of the MC route, not a modelling choice.
+4. **Results are not reproducible across machines.** Every MC driver shards work
+   by `rayon::current_num_threads()` and seeds per-thread streams as `seed + tid`
+   (`monte_carlo.rs:277-290`, `identity.rs:261-274`), so a different core count
+   yields a different sample partition and a different ε from the *same* seed.
+   For a number that goes into a privacy claim this is an unwelcome property.
+5. **The importance-sampling weights are never self-normalised.**
+   `weighted_samples_to_pmf` (`identity.rs:179-195`) deposits `w/n` per bucket
+   and `Pmf::new` does no renormalisation, so total mass equals 1 only in
+   expectation. The hardcoded `_IDENTITY_IS_TILT = 1.0` sits in a safe spot, but
+   the margin is thin — the tilt is a load-bearing constant, not a free knob.
 
 Two coverage gaps also exist:
 
@@ -194,6 +204,15 @@ the paper is explicit that FFT on a uniform grid is the wrong tool here: for
 σ = 1, β = 10⁻¹⁰ the PLD spans ≈ 12.5 but its exponent spans ≈ 950, so a uniform
 grid over the exponent either explodes or loses the left tail.
 
+> **A shortcut that does not work.** It is tempting to observe that Opaque's
+> arithmetic loss grid *is* a geometric grid in `e^l` with ratio `r = e^Δ`, and
+> conclude that exp-PLD convolution is just `numerics::fft::convolve` in index
+> space. It is not. Additive convolution in index space gives the law of
+> `L₁ + L₂` — that is, of the **product** `e^{L₁}·e^{L₂}` — whereas the
+> allocation transform needs the law of the **sum** `e^{L₁} + e^{L₂}`. A sum of
+> two geometric-grid values is not on the grid, which is exactly why the paper's
+> `conv` is a direct `O(n²)` pass with a `range-renorm` step rather than an FFT.
+
 So this needs a **new representation** next to `Pmf`, not a change to it:
 
 ```rust
@@ -246,6 +265,24 @@ pub fn subsample_pld(base: &PrivacyLossDistribution, lambda: f64)
 The `O(n²)` direct convolution is precisely why this belongs in the Rust core:
 at production settings `n ≈ 2·10⁴`, so one convolution is ~4·10⁸ fused
 multiply-adds — trivial for `rayon`, hopeless in Python.
+
+Three `Pmf` details will bite an implementer:
+
+- `Pmf::new` (`dense.rs:113`) hardcodes `negative_infinity_mass = 0.0` and there
+  is **no constructor that sets it**. The dual transform produces −∞ mass, so it
+  must build the result with a struct literal (all fields are `pub`) or a new
+  builder must be added.
+- `Pmf::new` performs **zero validation** — normalisation, ordering and
+  contiguity are all caller-enforced. New transforms must assert their own
+  invariants.
+- `pmf_beta_asymmetric` (`metrics.rs:289-298`) deliberately *drops*
+  `negative_infinity_mass` while the symmetric path keeps it (`metrics.rs:208`).
+  A PLD carrying −∞ mass will therefore read differently through the two paths.
+  This needs reconciling before the dual transform is exposed.
+
+One numerical trap: the dual reweights each bucket by `e^{−l}`, which
+**amplifies the small negative probabilities FFT composition leaves behind**.
+Clamp to zero before exponentiating.
 
 Because the output is a genuine `PrivacyLossDistribution`, the `k > 1` reduction
 and multi-epoch composition reuse Opaque's **existing** composition path. That
@@ -394,22 +431,45 @@ closed form, RDP→(ε, δ)) was checked:
 - **Truncation is sound** — for λ-CGD the truncated bound stayed above the exact
   value in every configuration tested.
 
-But one **negative result worth acting on**: for λ-CGD the truncation bound
-*degrades* as the retained bandwidth grows when λ is large.
+**The Gram really is cyclically banded.** Re-deriving Opaque's λ-CGD Gram from
+`gram_matrix.rs` gives
+`G_{ij} = Σ_{p,q} λ^{|b(p−q)+(i−j)|} ≈ E·λ^{d} + (E−1)·λ^{b−d}` for `d = |i−j|` —
+a *cyclic* structure, not a plain AR(1) band. At λ = 0.9, b = 100, E = 4 that
+predicts `G[0][0] = 4.0002`, `G[0][1] = 3.6002`, `G[0][50] = 0.0361`,
+`G[0][99] = 2.7002`, which reproduces the values measured from the Rust builder
+exactly. The corner is **67% of the diagonal** while the mid-row entry is under
+1%. This is precisely the structure [arXiv:2601.21636] assumes, and it confirms
+the strategy table above — but see §5.5, because the same fact has consequences
+for the *existing* MC accountant.
+
+But one **negative result worth acting on**: with that corrected Gram, the
+truncation bound still *degrades* as the retained bandwidth grows once λ is
+large (b = 8, E = 2, σ = 1, α = 3):
 
 | λ | exact | p = 1 | p = 2 | p = 3 |
 |---:|---:|---:|---:|---:|
-| 0.5 | 1.410 | 2.620 | 2.081 | 1.760 |
-| 0.9 | 2.397 | 3.820 | 4.222 | 4.289 |
+| 0.3 | 1.239 | 2.020 | 1.486 | 1.317 |
+| 0.5 | 1.447 | 2.643 | 2.124 | 1.834 |
+| 0.7 | 1.982 | 3.538 | 3.377 | 3.161 |
+| 0.9 | 3.740 | 6.247 | 6.769 | 6.914 |
 
-At λ = 0.5 the bound tightens with `p`, as intended. At λ = 0.9 it gets *worse*,
+At λ ≤ 0.7 the bound tightens with `p`, as intended. At λ = 0.9 it gets *worse*,
 because `τ` decays too slowly for the `ατ/(2σ²)` term to pay for the larger
 retained band. Opaque's own MC docstring cites λ = 0.9, b = 1953 as a realistic
-configuration — squarely in the bad regime. **Conclusion: the Rényi route should
-not be advertised as the general replacement for MC on λ-CGD.** For
-slowly-decaying Grams the conditional-composition route (§5.3) or the existing
-MC path remains necessary. Banded strategies (BandMF, BSR, identity) are where
-the Rényi DP wins outright.
+configuration — squarely in the bad regime. At b = 100, E = 4, λ = 0.9 you would
+need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and the DP cost is `α^{2p}`.
+
+**Two conclusions:**
+
+1. The Rényi route should **not** be advertised as a general replacement for MC
+   on slowly-decaying Grams. For those, the conditional-composition route (§5.3)
+   or the existing MC path remains necessary.
+2. There is a hard **tractability ceiling on `p`**. With `O(b·p·α^{2p})` and a
+   typical α in the low tens, only very small bandwidths are affordable — `p = 1`
+   (identity/DP-SGD) is an outright win, and `p = 2–4` is plausible, but
+   BSR/BandMF at the `p = 64` used in the paper's own experiments is not
+   obviously reachable by the DP as stated. This must be resolved against the
+   paper's experimental section before committing to phase 4 (§9, open question 5).
 
 ---
 
@@ -519,6 +579,10 @@ Phases 1–3 and 4–5 are independent and can proceed in parallel.
 4. **BLT's retuning behaviour.** `_pld_at_horizon` already special-cases BLT
    because re-running L-BFGS at a shorter horizon changes the mechanism. Any new
    accountant must preserve that pinning argument.
+5. **The `α^{2p}` ceiling** (§5.4). Resolve what `p` means in the stated
+   complexity — the bandwidth of `C` in training steps, or the cyclic bandwidth
+   of `G` in bins — and how [arXiv:2601.21636] runs its own `p = 64` experiments,
+   before committing to the Rényi DP for anything beyond `p = 1`.
 
 ---
 
