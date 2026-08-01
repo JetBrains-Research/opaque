@@ -125,6 +125,10 @@ dev = [
   # runtime dependency of opaque.
   "dp-accounting>=0.4.4",
   "riskcal>=1.2.0",
+  # Reference implementation published with Feldman & Shenfeld. Imported by
+  # test_cross_validation_allocation.py as a one-sided oracle: our PLD bound
+  # must sit at or below its analytic bounds.
+  "random-allocation>=1.0.5",
 ]
 
 # Everything the scripts under examples/ and docs/tutorials/ need.

@@ -27,6 +27,14 @@ use crate::pld::pmf::Pmf;
 use crate::pld::realization::Rounding;
 use rayon::prelude::*;
 
+/// Row chunks the `O(n²)` convolution core is split into.
+///
+/// Fixed rather than derived from the thread count, so the order in which
+/// partial sums are combined — and hence the exact bits of the result — is
+/// the same on every machine. Large enough to keep every core busy, small
+/// enough that the `ROW_CHUNKS · n` scratch stays trivial (4 MB at n = 8192).
+const ROW_CHUNKS: usize = 64;
+
 /// PMF over `[0, v_min·r⁰, …, v_min·r^{n-1}, +∞]`, stored in log-space.
 #[derive(Debug, Clone)]
 pub(crate) struct GeomPmf {
@@ -147,13 +155,27 @@ impl GeomPmf {
         };
 
         // interior × interior — the O(n²) core, parallel over rows of `a`.
-        let (par_probs, par_inf) = (0..n)
+        //
+        // Rows are split into a fixed number of chunks derived from `n` alone,
+        // and the per-chunk accumulators are folded back in chunk-index order.
+        // rayon's `fold`/`reduce` would instead split by thread count and
+        // work-stealing, so the summation order — and with it the last ulp of
+        // the reported ε — would depend on how many cores the machine has.
+        // Determinism across machines is the reason this transform replaced a
+        // Monte Carlo primitive, so it is worth the fixed chunking.
+        // Guarded by tests/test_random_allocation_reproducible.py.
+        let chunk_size = (n + ROW_CHUNKS - 1) / ROW_CHUNKS.max(1);
+        let partials: Vec<(Vec<f64>, f64)> = (0..n)
             .into_par_iter()
-            .filter(|&i| a.probs[i] != 0.0)
-            .fold(
-                || (vec![0.0f64; n], 0.0f64),
-                |(mut acc, mut inf), i| {
+            .chunks(chunk_size.max(1))
+            .map(|rows| {
+                let mut acc = vec![0.0f64; n];
+                let mut inf = 0.0f64;
+                for i in rows {
                     let pa = a.probs[i];
+                    if pa == 0.0 {
+                        continue;
+                    }
                     let la = a.log_value(i);
                     for j in 0..n {
                         let pb = b.probs[j];
@@ -175,22 +197,18 @@ impl GeomPmf {
                             acc[(idx.max(0.0)) as usize] += mass;
                         }
                     }
-                    (acc, inf)
-                },
-            )
-            .reduce(
-                || (vec![0.0f64; n], 0.0f64),
-                |(mut x, xi), (y, yi)| {
-                    for (a, b) in x.iter_mut().zip(y.iter()) {
-                        *a += *b;
-                    }
-                    (x, xi + yi)
-                },
-            );
-        for (p, q) in probs.iter_mut().zip(par_probs.iter()) {
-            *p += *q;
+                }
+                (acc, inf)
+            })
+            .collect();
+        // `collect` on an indexed parallel iterator preserves chunk order, so
+        // this fold is the same sequence of additions on every machine.
+        for (acc, inf) in &partials {
+            for (p, q) in probs.iter_mut().zip(acc.iter()) {
+                *p += *q;
+            }
+            infinity_mass += *inf;
         }
-        infinity_mass += par_inf;
 
         // 0 is the additive identity: 0 + v = v.
         if a.zero_mass > 0.0 {
