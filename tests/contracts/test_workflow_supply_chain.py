@@ -9,7 +9,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _workflow(name: str) -> str:
-    return (REPO_ROOT / ".github/workflows" / name).read_text()
+    path = REPO_ROOT / ".github/workflows" / name
+    assert path.exists(), path
+    return path.read_text(encoding="utf-8")
 
 
 def _job(workflow: str, name: str) -> str:
