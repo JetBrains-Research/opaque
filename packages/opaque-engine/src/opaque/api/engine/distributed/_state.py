@@ -236,9 +236,29 @@ def register_sync_type(state_type: type, sync_fn: Callable[[Any], Any]) -> None:
     """Register a sync function for ``state_type``.
 
     Subsystems (clipping, profiling, noise) call this on import to make their
-    state types discoverable by :func:`sync`.
+    state types discoverable by :func:`sync`.  Subclasses inherit the
+    registration through :func:`sync`'s MRO walk, so registering a base type
+    covers its specialisations unless one of them registers its own handler.
     """
     _SYNC_REGISTRY[state_type] = sync_fn
+
+
+def _resolve_sync_fn(state_type: type) -> Callable[[Any], Any] | None:
+    """Return the handler for ``state_type`` or its nearest registered base.
+
+    Exact type first, then ``__mro__`` order, matching the ``isinstance``
+    semantics the underlying sync helpers already implement (for example
+    ``sync_clipped_grad_aux`` rebuilds via ``type(aux)`` and so handles any
+    ``ClippedGradAux`` subclass).
+    """
+    fn = _SYNC_REGISTRY.get(state_type)
+    if fn is not None:
+        return fn
+    for base in state_type.__mro__[1:]:
+        fn = _SYNC_REGISTRY.get(base)
+        if fn is not None:
+            return fn
+    return None
 
 
 def _ensure_builtin_sync_types_loaded() -> None:
@@ -259,8 +279,10 @@ def _ensure_builtin_sync_types_loaded() -> None:
 def sync(*states: Any) -> Any:
     """Synchronize one or more registered state/aux objects across ranks.
 
-    Dispatches based on object type to whichever function was registered via
-    :func:`register_sync_type`.
+    Dispatches on object type — exact match first, then ``__mro__`` — to
+    whichever function was registered via :func:`register_sync_type`.  An
+    unregistered type raises ``TypeError``; nothing is passed through
+    unsynchronized.
 
     Returns:
         A single synchronized object if one argument was passed, otherwise a
@@ -269,10 +291,12 @@ def sync(*states: Any) -> Any:
 
     def _sync_one(single: Any) -> Any:
         state_type = type(single)
-        if state_type not in _SYNC_REGISTRY:
+        sync_fn = _resolve_sync_fn(state_type)
+        if sync_fn is None:
             _ensure_builtin_sync_types_loaded()
-        if state_type in _SYNC_REGISTRY:
-            return _SYNC_REGISTRY[state_type](single)
+            sync_fn = _resolve_sync_fn(state_type)
+        if sync_fn is not None:
+            return sync_fn(single)
         raise TypeError(
             f"No sync function registered for {state_type.__name__}. "
             f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
