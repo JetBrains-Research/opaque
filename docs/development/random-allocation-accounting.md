@@ -471,6 +471,57 @@ need `p ≈ 20–40` to get `τ` down to 0.49–0.065, and the DP cost is `α^{2
    obviously reachable by the DP as stated. This must be resolved against the
    paper's experimental section before committing to phase 4 (§9, open question 5).
 
+### 5.5 A pre-existing fragility this analysis surfaced
+
+The cyclic structure of the Gram (§5.4) interacts badly with two independent
+heuristics already in the codebase:
+
+- `BandedCholesky::compute` (`monte_carlo.rs:61-127`) estimates a bandwidth by
+  walking `d = 1, 2, …` and **breaking at the first `d` whose entries all fall
+  below `1e-6 · max_diag`**. It only ever looks at `|i − j|`, never at the cyclic
+  distance, so a Gram that decays into the middle of the row and then *rises
+  again at the corner* stops the scan early.
+- `lambda_cgd_gram_matrix` (`gram_matrix.rs:235-237`) drops cross-epoch terms —
+  and therefore the wrap — when `λ^b < 1e-15`.
+
+Most of the time these are accidentally complementary: when the wrap matters,
+the scan runs to the end and returns full bandwidth; when the scan stops early,
+`skip_cross_epoch` has already removed the wrap. Every configuration in the
+docstring's own regime (λ = 0.9, b = 1953) is safe.
+
+But the two thresholds — `1e-15` on `λ^b` and `1e-6` on the Gram entries — are
+unrelated, and there is a window between them. Re-implementing the detection
+loop and sweeping λ ∈ [0.7, 0.85], b ∈ [100, 240], E ∈ {2, 4, 8} finds **51
+configurations** where the wrap is retained but the detected bandwidth truncates
+it:
+
+| λ | b | E | λ^b | `skip_cross_epoch` | est_bw | bw | corner / diagonal |
+|---:|---:|---:|---:|:--:|---:|---:|---:|
+| 0.72 | 100 | 4 | 5.4e−15 | false | 42 | 94 | **0.540** |
+| 0.72 | 105 | 8 | 1.0e−15 | false | 42 | 94 | **0.630** |
+| 0.75 | 110 | 4 | 1.8e−14 | false | 48 | 106 | **0.563** |
+
+In these the banded Cholesky zeroes entries carrying more than a third of the
+diagonal magnitude, so the sampler draws `u ~ N(m_i, σ²·LLᵀ)` with `LLᵀ ≠ G`.
+That is not conservative in either direction — it is simply the wrong
+distribution, and the resulting ε could be too small.
+
+Two caveats on this finding: it comes from re-implementing the detection logic
+in Python, not from running the Rust; and the `est_bw·2 + 10` safety margin
+plus the `b − 1` cap rescue most nearby settings. **It should be confirmed
+against the real builder before being called a bug.** Independently of the
+random-allocation work, two cheap defensive fixes are worth making:
+
+1. Measure bandwidth by **cyclic** distance `min(|i−j|, b−|i−j|)`, and stop
+   subsampling rows (`step_by((b/20).max(1))`, `monte_carlo.rs:71`, checks ~20
+   entries per diagonal and can under-detect on its own).
+2. Assert the dropped mass is negligible — e.g. `max|G − LLᵀ| ≤ tol · max_diag`
+   — rather than trusting the heuristic.
+
+This is also an argument for the deterministic accountants: a dynamic program
+over an explicitly *cyclically* banded Gram cannot make this class of mistake,
+because the cyclic structure is in the data model rather than in a heuristic.
+
 ---
 
 ## 6. Validating an implementation
