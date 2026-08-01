@@ -247,3 +247,41 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
     )?;
     Ok(PyPld::new(pld))
 }
+
+/// Compute the PLD for random allocation applied to the Gaussian mechanism.
+///
+/// In k-out-of-t random allocation each record is used in k steps chosen
+/// uniformly at random from t. Unlike Monte Carlo, this is deterministic,
+/// composable, and reproducible across thread counts.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
+///     t (int): Steps per allocation round (number of bins), > 0.
+///     k (int): Steps each record participates in, in [1, t].
+///     upper (bool): True for a valid upper bound; False for the matching
+///         lower bound, which brackets the discretization error.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The amplified privacy loss distribution.
+///
+/// Raises:
+///     ValueError: If any parameter is out of range or the grid is too large.
+#[pyfunction]
+#[pyo3(name = "random_allocation_gaussian_pld", signature = (noise_multiplier, t, k, upper, config))]
+pub fn py_random_allocation_gaussian_pld(
+    noise_multiplier: f64,
+    t: usize,
+    k: usize,
+    upper: bool,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::random_allocation_gaussian_pld(
+        noise_multiplier,
+        t,
+        k,
+        upper,
+        &config.inner,
+    )?;
+    Ok(PyPld::new(pld))
+}

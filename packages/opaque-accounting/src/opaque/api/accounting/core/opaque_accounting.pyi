@@ -318,6 +318,34 @@ def parallel_poisson_gaussian_pld(
         The amplified privacy loss distribution.
     """
 
+def random_allocation_gaussian_pld(
+    noise_multiplier: float,
+    t: int,
+    k: int,
+    upper: bool,
+    config: DiscretizationConfig,
+) -> Pld:
+    """PLD for random allocation applied to the Gaussian mechanism.
+
+    In k-out-of-t random allocation each record is used in k steps chosen
+    uniformly at random from t. Deterministic, composable, and reproducible
+    across thread counts, unlike the Monte Carlo balls-in-bins accountant.
+
+    Args:
+        noise_multiplier: σ/Δ ratio, must be > 0.
+        t: Steps per allocation round (number of bins), > 0.
+        k: Steps each record participates in, in [1, t].
+        upper: True for a valid upper bound; False for the matching lower
+            bound, which brackets the discretization error.
+        config: PLD discretization configuration.
+
+    Returns:
+        The amplified privacy loss distribution.
+
+    Raises:
+        ValueError: If a parameter is out of range or the grid is too large.
+    """
+
 def balls_in_bins_gaussian_pld(
     noise_multiplier: float,
     num_bins: int,

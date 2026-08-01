@@ -4,6 +4,7 @@
 //! grid points have non-zero probability mass (typical for Gaussian mechanisms).
 
 pub mod dense;
+pub(crate) mod geom;
 
 pub use dense::Pmf;
 

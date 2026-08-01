@@ -175,6 +175,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         amplification::py_parallel_poisson_gaussian_pld,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_random_allocation_gaussian_pld,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
     m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld_identity, m)?)?;
     m.add_function(wrap_pyfunction!(
