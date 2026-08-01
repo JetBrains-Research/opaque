@@ -11,6 +11,11 @@ from __future__ import annotations
 
 import pytest
 
+# Importing the clipping package runs its __init__, which imports
+# ``_distributed`` and registers the marker / aux sync handlers.  Import it
+# explicitly so the registry-resolution assertions below do not depend on any
+# other test having called ``sync()`` first (test order is not guaranteed).
+import opaque.api.engine.clipping  # noqa: F401
 from opaque.api.engine.clipping._auto import (
     AutoClippedFunAux,
     AutoClippedGradAux,
