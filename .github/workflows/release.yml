@@ -31,6 +31,41 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME is on main — proceeding."
 
+  release-tests:
+    name: Release tests
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: Rust tests
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+
+      - name: Python tests
+        run: >-
+          uv run pytest -m "not cuda and not mps"
+          -n auto --dist loadscope
+
   build-python-wheel:
     name: Build ${{ matrix.package }} @ ${{ github.event.release.tag_name }}
     needs: [tag-guard]
@@ -164,7 +199,7 @@ jobs:
 
   publish:
     name: Publish to GCP + attach Release assets
-    needs: [merge-wheels]
+    needs: [merge-wheels, release-tests]
     runs-on: ubuntu-latest
     environment: release
     permissions:

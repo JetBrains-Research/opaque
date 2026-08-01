@@ -65,24 +65,14 @@ jobs:
       - name: cargo test
         run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
-  # One matrix over PLATFORMS (cpu / mps / gpu) × shards. Parallelism is
+  # One matrix over CPU/MPS platforms × shards. Parallelism is
   # two-level: the matrix fans shards across runners, and `pytest -n auto`
   # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
   # each class/module on one worker so fixtures/order are preserved).
-  #
-  # The GPU platform is special and carried as a single `include` leg:
-  #   * one self-hosted GPU runner, so it is NOT sharded (parallel shards would
-  #     just queue on the one box) and runs serially (xdist workers would
-  #     contend for device memory) — hence `xdist: ""`;
-  #   * `soft: true` -> `continue-on-error`, so a GPU failure (or a runner that
-  #     can't see CUDA) is reported as success to `needs.*.result` and does NOT
-  #     block the required gate below. The GPU leg still shows red and turns the
-  #     overall run red — visible signal without gating merges while the runner
-  #     is unproven. Drop `soft` once the GPU runner reliably runs CUDA.
+  # The self-hosted GPU lane is a separate fork-guarded job below.
   python-tests:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     runs-on: ${{ matrix.device.os }}
-    continue-on-error: ${{ matrix.soft == true }}
     timeout-minutes: 30  # safety net: a hung/preempted runner fails fast
     strategy:
       fail-fast: false
@@ -114,20 +104,6 @@ jobs:
             os: macos-latest
             marker: "not cuda and not slow"
             xdist: "-n auto --dist loadscope"
-        # GPU platform: a single unsharded, serial, non-blocking leg.
-        include:
-          - shard:
-              name: all
-              paths: packages tests
-            device:
-              name: gpu
-              label: CUDA
-              os: GPU-runner-001
-              marker: "cuda and not slow"
-              # No xdist (single GPU); `-rs` surfaces skip reasons so a runner
-              # that can't satisfy the GPU tests isn't a silent no-op.
-              xdist: "-rs"
-            soft: true
 
     steps:
       - uses: actions/checkout@v5
@@ -162,10 +138,54 @@ jobs:
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
+  # Fork pull requests must never execute untrusted code on the persistent
+  # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
+  # the job-level guard can prevent runner allocation entirely.
+  python-tests-gpu:
+    name: opaque-all (CUDA)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: GPU-runner-001
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: pytest
+        run: >-
+          uv run pytest packages tests
+          -m "cuda and not slow"
+          -rs
+          --cov=opaque
+          --cov-report=xml:coverage.xml
+          -q
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: gpu-all
+          fail_ci_if_error: false
+
   # Single aggregating status check — the ONE job to mark required in branch
   # protection. `needs.python-tests.result` is `success` only when every
-  # non-soft leg passed; the GPU leg's `continue-on-error` masks its result to
-  # success, so this gate reflects CPU + MPS only. Shards/platforms can be
+  # hosted-runner leg passed, so this gate reflects CPU + MPS only. The
+  # separately guarded GPU job remains non-blocking. Shards/platforms can be
   # added or renamed without touching the protection rule. `if: always()` makes
   # the gate report a failure (instead of being skipped) when a shard fails.
   python-tests-gate:
