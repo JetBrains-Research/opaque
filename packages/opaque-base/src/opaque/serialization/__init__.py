@@ -11,12 +11,14 @@ compatibility when new fields appear).
 
 Sub-packages may register custom serializers with
 :func:`register_serializer`. Lookup is by exact type and then by
-``__mro__``, so a subclass of a registered type (``nn.Parameter``
-against ``torch.Tensor``) uses the base class handler.
+``__mro__``, so a subclass of a registered type (a custom
+``torch.Tensor`` subclass, say) uses the nearest base class handler.
 ``torch.Tensor``, ``numpy.ndarray``, and ``torch.nn.Parameter``
 handlers register automatically when ``opaque-engine`` is loaded;
-``opaque-accounting`` registers PLD process types; stack wheels
-register their state objects.
+``nn.Parameter`` gets its own exact-type handler (preserving the
+subclass and ``requires_grad``) rather than relying on the ``__mro__``
+fallback. ``opaque-accounting`` registers PLD process types; stack
+wheels register their state objects.
 
 A leaf that is neither registered nor a generic container nor a
 primitive raises ``TypeError`` on both save and restore rather than
