@@ -1,7 +1,8 @@
 """DPO metrics impl — preference reward telemetry.
 
-``reward_metrics`` returns detached tensors for logging/accumulation, not for
-release. General token-level metrics (entropy,
+``reward_metrics`` returns detached but un-noised values computed from the
+private batch. Detaching only stops autograd; logging or publishing the values
+is outside Opaque's DP accounting. General token-level metrics (entropy,
 accuracy) live in the shared :mod:`opaque.api.alignment.metric`.
 """
 

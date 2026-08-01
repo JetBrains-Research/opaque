@@ -1,9 +1,10 @@
 """Token-level telemetry: prediction entropy and next-token accuracy.
 
 Both functions are masked diagnostics computed during training. They are
-private internal state, so every returned tensor is detached and never carries
-gradient back into the mechanism. Masked reductions guard against
-divide-by-zero on an all-masked batch via ``mask.sum().clamp(min=1)``.
+exact, un-noised functions of the private batch. Returned tensors are detached
+to stop autograd, but logging or publishing them remains outside Opaque's DP
+accounting. Masked reductions guard against divide-by-zero on an all-masked
+batch via ``mask.sum().clamp(min=1)``.
 """
 
 from __future__ import annotations
