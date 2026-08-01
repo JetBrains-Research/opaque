@@ -28,6 +28,7 @@ import pytest
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.core.mechanisms.types import Identity
+from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.dpftrl.accounting.types import (
     BallsInBins,
     BMinSep,
@@ -265,11 +266,11 @@ class TestBallsInBinsIdentity:
         prev = 0.0
         for k in range(10, 101, 10):
             e = _eps_at(proc, k, _DELTA)
-            # 15% slack: bnb_mc_pld_identity uses an importance-sampled MC.
-            assert e >= prev - 0.15 * max(e_full, 1.0), (
-                f"non-monotone at k={k}: {e} < {prev}"
-            )
-            assert e <= e_full + 0.15 * max(e_full, 1.0)
+            # The identity path is deterministic (random-allocation PLD
+            # transform), so monotonicity holds exactly rather than in
+            # expectation.
+            assert e >= prev - 1e-9, f"non-monotone at k={k}: {e} < {prev}"
+            assert e <= e_full + 1e-9
             prev = e
 
 
@@ -350,7 +351,15 @@ def _eps_via_step(proc: DpFtrlProcess, K: int, delta: float) -> float:
 
 
 def _is_mc_proc(proc: DpFtrlProcess) -> bool:
-    return isinstance(proc, (BMinSep, BallsInBins))
+    """Whether ``proc`` evaluates its PLD by Monte Carlo.
+
+    ``BallsInBins`` is strategy-dependent: the identity inner uses the
+    deterministic random-allocation transform, while correlated strategies
+    still sample the Lemma 3.2 pair via ``bnb_mc_pld``.
+    """
+    if isinstance(proc, BallsInBins):
+        return not isinstance(proc.inner.strategy, IdentityStrategy)
+    return isinstance(proc, BMinSep)
 
 
 def _eps_full(proc: DpFtrlProcess, delta: float) -> float:

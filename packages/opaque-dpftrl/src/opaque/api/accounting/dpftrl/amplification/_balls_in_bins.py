@@ -37,6 +37,7 @@ References:
 from __future__ import annotations
 
 import functools
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -59,17 +60,6 @@ _Inner = MfGaussian
 _CorrelatedStrategies = (BltStrategy, BsrStrategy, BisrStrategy, LambdaCgdStrategy)
 
 
-#: Importance-sampling tilt used by :func:`bnb_mc_pld_identity` for the
-#: ``IdentityStrategy`` dispatch.  Hardcoded to ``1.0``: empirically robust
-#: across DP-FTRL training regimes (ε ∈ [0.5, 20], σ ∈ [0.5, 3], k ∈ [8, 1000],
-#: E ∈ [1, 16]) — gives 4-76× MC variance reduction vs no IS in 9/10 swept
-#: configs and only ~3× worse (still ≤ 2.5% rel σ at 500k samples) in the
-#: heavy-noise / very-low-ε edge case.  Fixing this in code rather than
-#: exposing as a knob: the value is an MC internal detail, not a mechanism
-#: property; treating it like a privacy parameter would mislead users.
-_IDENTITY_IS_TILT: float = 1.0
-
-
 @dataclass(frozen=True, slots=True)
 class BallsInBins(DpFtrlProcess):
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
@@ -77,10 +67,10 @@ class BallsInBins(DpFtrlProcess):
     The returned PLD covers all ``n_steps`` training rounds (= ``num_bins``
     bins × ``n_steps // num_bins`` epochs).  Do NOT compose externally.
 
-    For ``IdentityStrategy`` inner, the dispatch uses
-    :func:`opaque.accounting._native.bnb_mc_pld_identity` — a specialised
-    importance-sampled MC that exploits the diagonal Gram structure
-    (``G = num_epochs · I_b``).
+    For ``IdentityStrategy`` inner, the dispatch uses the deterministic
+    random-allocation transform: with ``C = I`` the Gram is exactly
+    ``num_epochs · I_b`` and the dominating pair collapses onto
+    1-out-of-``num_bins`` random allocation at ``σ/√num_epochs``.
 
     Example (DP-λCGD)::
 
@@ -164,18 +154,27 @@ class BallsInBins(DpFtrlProcess):
 
         s = self.inner.strategy
 
-        # Identity uses a dedicated MC primitive that exploits
-        # ``G = num_epochs · I_b`` (Cholesky-free, IS on the shifted-bin
-        # coordinate); all other strategies feed their gram into the
-        # generic ``bnb_mc_pld``.
+        # Identity (C = I) collapses onto random allocation, exactly.
+        #
+        # The mixture means ``m_i = Σ_j |C|[:, b·j+i]`` are then indicators of
+        # disjoint step sets, so they are orthogonal with equal norm ``√E`` and
+        # the gram is ``G = E·I_b``.  Projecting onto their span and rescaling
+        # by ``1/√E`` turns the Lemma 3.2 pair into
+        # ``P = (1/b)Σ N(e_i, σ_eff²I_b)``, ``Q = N(0, σ_eff²I_b)`` with
+        # ``σ_eff = σ/√E`` — precisely the 1-out-of-b random allocation pair.
+        #
+        # So this path uses the deterministic PLD transform rather than Monte
+        # Carlo: no 1/δ sample cost, reproducible across thread counts, and
+        # tighter.  The sampler is unchanged — bins stay fixed across epochs.
         if isinstance(s, IdentityStrategy):
             if self.inner.noise_multiplier == 0:
                 return _native.non_private_pld(native_cfg)
-            return _native.bnb_mc_pld_identity(
+            sigma_eff = float(self.inner.noise_multiplier) / math.sqrt(num_epochs_K)
+            return _native.random_allocation_gaussian_pld(
+                sigma_eff,
                 self.num_bins,
-                num_epochs_K,
-                float(self.inner.noise_multiplier),
-                _IDENTITY_IS_TILT,
+                1,
+                True,  # upper bound; the lower variant is for test brackets
                 native_cfg,
             )
 

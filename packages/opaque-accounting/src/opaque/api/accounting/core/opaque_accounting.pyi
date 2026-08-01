@@ -439,40 +439,6 @@ def bnb_mc_pld(
         The privacy loss distribution (asymmetric).
     """
 
-def bnb_mc_pld_identity(
-    num_bins: int,
-    num_epochs: int,
-    sigma: float,
-    importance_tilt: float,
-    config: DiscretizationConfig,
-) -> Pld:
-    """Identity-specialised BnB PLD with optional importance sampling.
-
-    Specialised for the BnB-Identity dominating pair (``C = I`` ⇒ Gram is
-    ``num_epochs · I_b``, diagonal). Skips the Cholesky step, fixes the
-    shifted bin to index 0 by symmetry, and optionally tilts the proposal
-    on the shifted-bin standard-normal coordinate to concentrate samples
-    in the large-``Y`` tail.
-
-    Args:
-        num_bins: Number of bins ``b ≥ 2``.
-        num_epochs: Per-bin participation count ``E ≥ 1``.
-        sigma: Raw noise multiplier ``σ > 0``.
-        importance_tilt: Importance-sampling tilt ``τ`` for the shifted-bin
-            coordinate ``z_0`` under ``P``. ``0`` disables IS (plain
-            identity-specialised MC). Positive values reduce MC variance
-            for typical privacy regimes by oversampling the large-``Y`` tail.
-        config: PLD discretisation configuration (carries ``num_mc_samples``,
-            ``seed``).
-
-    Returns:
-        The privacy loss distribution (asymmetric).
-    """
-
-# ---------------------------------------------------------------------------
-# Matrix factorization functions
-# ---------------------------------------------------------------------------
-
 def mf_gaussian_pld(
     noise_multiplier: float,
     sensitivity: float,

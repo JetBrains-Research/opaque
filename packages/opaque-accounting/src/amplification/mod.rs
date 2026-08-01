@@ -22,7 +22,7 @@ pub use b_min_sep::{
     bandmf_b_min_sep_warm_mc_pld, drop_b_min_sep_transcript_handle, pld_from_transcript_handle,
     register_b_min_sep_transcripts,
 };
-pub use balls_in_bins::{bnb_mc_pld, bnb_mc_pld_identity};
+pub use balls_in_bins::bnb_mc_pld;
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
 pub use random_allocation::random_allocation_gaussian_pld;

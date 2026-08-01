@@ -8,8 +8,6 @@
 //! times — use `poisson_gaussian_pld(...).self_compose(...)` directly.
 
 pub(crate) mod cyclic_cholesky;
-pub mod identity;
 pub mod monte_carlo;
 
-pub use identity::bnb_mc_pld_identity;
 pub use monte_carlo::bnb_mc_pld;
