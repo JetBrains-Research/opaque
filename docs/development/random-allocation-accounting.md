@@ -898,6 +898,16 @@ Phase 5 shipped as two separate types rather than a refactor of one: DP-SGD's
 accountant covers only its own sampler.  The `k > 1` reduction exists in the
 Rust primitive but has no Python caller — with per-epoch redraw `k = 1` always.
 
+That `k > 1` path is a **bound, not an identity**: it splits `t` into `k`
+blocks and places the record once per block, which is a strictly smaller family
+of participation patterns than "any `k` of `t`".  It is sound by the same
+joint-convexity argument as §3.3 — a uniformly random partition into blocks
+induces exactly the uniform distribution over `k`-subsets, so the true mixture
+is an average of block-scheme mixtures and cannot have larger hockey-stick
+divergence than any one of them.  Whoever gives it a Python caller should
+decide first whether the looseness is acceptable, or compute `k`-out-of-`t`
+directly.
+
 Phase 2 was the right one to do first: it is the shortest path to a
 deterministic, composable accountant, it replaced an existing MC primitive
 rather than adding a new mechanism, and it came with an external oracle.

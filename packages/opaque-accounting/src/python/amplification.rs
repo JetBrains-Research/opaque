@@ -205,10 +205,17 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
 /// uniformly at random from t. Unlike Monte Carlo, this is deterministic,
 /// composable, and reproducible across thread counts.
 ///
+/// Exact for k = 1. For k > 1 the result is a valid **upper bound** rather
+/// than the exact k-out-of-t PLD: the t steps are split into k blocks and the
+/// record is placed once per block. Joint convexity of the hockey-stick
+/// divergence makes that an upper bound, because a uniformly random partition
+/// into blocks induces exactly the uniform distribution over k-subsets.
+///
 /// Args:
 ///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     t (int): Steps per allocation round (number of bins), > 0.
-///     k (int): Steps each record participates in, in [1, t].
+///     k (int): Steps each record participates in, in [1, t]. Values above 1
+///         return the block upper bound described above.
 ///     upper (bool): True for a valid upper bound; False for the matching
 ///         lower bound, which brackets the discretization error.
 ///     config (DiscretizationConfig): Discretization configuration.

@@ -331,10 +331,18 @@ def random_allocation_gaussian_pld(
     uniformly at random from t. Deterministic, composable, and reproducible
     across thread counts, unlike the Monte Carlo balls-in-bins accountant.
 
+    Exact for ``k = 1``. For ``k > 1`` the result is a valid **upper bound**
+    rather than the exact k-out-of-t PLD: the t steps are split into k blocks
+    and the record is placed once per block. Joint convexity of the
+    hockey-stick divergence makes that an upper bound, because a uniformly
+    random partition into blocks induces exactly the uniform distribution over
+    k-subsets.
+
     Args:
         noise_multiplier: σ/Δ ratio, must be > 0.
         t: Steps per allocation round (number of bins), > 0.
-        k: Steps each record participates in, in [1, t].
+        k: Steps each record participates in, in [1, t]. Values above 1 return
+            the block upper bound described above.
         upper: True for a valid upper bound; False for the matching lower
             bound, which brackets the discretization error.
         config: PLD discretization configuration.

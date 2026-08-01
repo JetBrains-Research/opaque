@@ -1,4 +1,4 @@
-//! Privacy amplification by random allocation, as an exact PLD transform.
+//! Privacy amplification by random allocation, as a PLD transform.
 //!
 //! In `k`-out-of-`t` random allocation each record is used in `k` steps chosen
 //! uniformly at random from `t`. Feldman & Shenfeld (arXiv:2602.17284) show the
@@ -128,11 +128,30 @@ fn alloc_add<L: LossRealization + ?Sized>(
 
 /// PLD of `k`-out-of-`t` random allocation applied to the Gaussian mechanism.
 ///
+/// Exact for `k = 1`. For `k > 1` the result is a valid **upper bound**, not
+/// the exact `k`-out-of-`t` PLD: the `t` steps are split into `k` blocks and
+/// the record is placed once per block, which is a strictly smaller family of
+/// participation patterns than "any `k` of `t`".
+///
+/// That bound is sound by the same joint-convexity argument that makes
+/// per-epoch redraw dominate fixed assignment. Drawing a uniformly random
+/// partition of `[t]` into `k` blocks and then picking one step per block
+/// induces exactly the uniform distribution over `k`-subsets — the whole
+/// construction is invariant under permutations of `[t]`, which act
+/// transitively on `k`-subsets. So the true mixture `P` is an average of the
+/// block-scheme mixtures `P_π` over partitions `π`, every `P_π` gives the same
+/// divergence by symmetry, and joint convexity of the hockey-stick divergence
+/// gives `D_ε(P ‖ Q) ≤ D_ε(P_π ‖ Q)`.
+///
+/// The block scheme itself factorises across blocks (independent picks,
+/// independent noise), so composing the per-block PLDs is exact.
+///
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be > 0.
 /// * `t` — steps per allocation round (the number of bins).
-/// * `k` — steps each record is used in, in `[1, t]`.
+/// * `k` — steps each record is used in, in `[1, t]`. Values above 1 return
+///   the block upper bound described above.
 /// * `upper` — `true` for a valid upper bound; `false` for the matching lower
 ///   bound, which brackets the discretisation error without needing any
 ///   external reference.
@@ -349,6 +368,72 @@ mod tests {
             .unwrap()
             .epsilon_at(1e-8);
         assert!(e4 > e1, "eps should rise with k: {} vs {}", e4, e1);
+    }
+
+    /// `k = t` is the one `k > 1` point with a known answer, so it pins the
+    /// block arithmetic against an independent construction.
+    ///
+    /// Every block has size 1, the record is in every step, and there is no
+    /// allocation left to amplify — the answer is the base Gaussian composed
+    /// `t` times. An `m_f`/`m_c` split that mis-sized the blocks or mis-counted
+    /// the rounds would land nowhere near it.
+    ///
+    /// Not an equality: at block size 1 this path returns `disc_dist`'s
+    /// directionally-rounded grid while `gaussian_pld` uses connect-the-dots,
+    /// so the two agree only up to discretisation (~3e-4 relative here). What
+    /// must hold exactly is the *direction* — the upper variant may never fall
+    /// below the truth.
+    #[test]
+    fn test_k_equals_t_is_full_participation() {
+        let c = cfg();
+        for &t in &[2usize, 5, 8] {
+            let alloc = random_allocation_gaussian_pld(1.0, t, t, true, &c)
+                .unwrap()
+                .epsilon_at(1e-8);
+            let every_step = gaussian_pld(1.0, &c)
+                .unwrap()
+                .self_compose(t)
+                .epsilon_at(1e-8);
+            assert!(
+                alloc >= every_step - 1e-9,
+                "t={}: k=t gave {}, below full participation {}",
+                t,
+                alloc,
+                every_step
+            );
+            assert!(
+                alloc <= every_step * 1.01,
+                "t={}: k=t gave {}, far above full participation {}",
+                t,
+                alloc,
+                every_step
+            );
+        }
+    }
+
+    /// The `k > 1` block decomposition must cover exactly `t` steps in exactly
+    /// `k` rounds for every divisibility case, including `k ∤ t`.
+    #[test]
+    fn test_block_decomposition_covers_t() {
+        for t in 1usize..=24 {
+            for k in 1..=t {
+                let (t_floor, t_ceil) = (t / k, (t + k - 1) / k);
+                let (m_f, m_c) = if t_floor == t_ceil {
+                    (k, 0)
+                } else {
+                    let m_c = t - t_floor * k;
+                    (k - m_c, m_c)
+                };
+                assert_eq!(m_f + m_c, k, "t={} k={}: round count", t, k);
+                assert_eq!(
+                    m_f * t_floor + m_c * t_ceil,
+                    t,
+                    "t={} k={}: step coverage",
+                    t,
+                    k
+                );
+            }
+        }
     }
 
     /// Random allocation should be at least competitive with Poisson at the

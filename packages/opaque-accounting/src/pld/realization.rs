@@ -288,22 +288,22 @@ mod tests {
         for &alpha in &[1e-1, 1e-2, 1e-3] {
             let up = disc_dist(&loss, alpha, 1e-12, Rounding::Up, 10_000_000).unwrap();
             let down = disc_dist(&loss, alpha, 1e-12, Rounding::Down, 10_000_000).unwrap();
-            let gap = (up.probs.len() as f64).mul_add(0.0, 0.0)
-                + (0..40)
-                    .map(|k| {
-                        let x = (k as f64 - 20.0) * 0.2;
-                        let c = |p: &crate::pld::pmf::Pmf| -> f64 {
-                            let mut acc = p.infinity_mass;
-                            for (i, &m) in p.probs.iter().enumerate() {
-                                if (p.lower_loss_index + i as i64) as f64 * p.discretization > x {
-                                    acc += m;
-                                }
+            // Widest gap between the two CCDFs over a grid spanning the bulk.
+            let gap = (0..40)
+                .map(|k| {
+                    let x = (k as f64 - 20.0) * 0.2;
+                    let c = |p: &crate::pld::pmf::Pmf| -> f64 {
+                        let mut acc = p.infinity_mass;
+                        for (i, &m) in p.probs.iter().enumerate() {
+                            if (p.lower_loss_index + i as i64) as f64 * p.discretization > x {
+                                acc += m;
                             }
-                            acc
-                        };
-                        (c(&up) - c(&down)).abs()
-                    })
-                    .fold(0.0f64, f64::max);
+                        }
+                        acc
+                    };
+                    (c(&up) - c(&down)).abs()
+                })
+                .fold(0.0f64, f64::max);
             assert!(gap <= prev + 1e-12, "gap grew at alpha={}", alpha);
             prev = gap;
         }
