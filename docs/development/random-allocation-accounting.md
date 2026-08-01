@@ -1,0 +1,538 @@
+# Privacy amplification by random allocation — design note
+
+**Status:** proposal / research note. Nothing here is implemented yet.
+
+**Scope.** How to extend Opaque's balls-in-bins support in two directions the
+Feldman–Shenfeld line of work now makes possible:
+
+1. **PLD accounting** for random allocation, not just Rényi/(ε, δ) bounds.
+2. **Correlated-noise DP-FTRL** (matrix mechanisms), not just the identity /
+   DP-SGD strategy.
+
+Plus several adjacent wins the same machinery unlocks (§7).
+
+---
+
+## 1. TL;DR
+
+- The paper usually cited here — Feldman & Shenfeld, *Privacy amplification by
+  random allocation* ([arXiv:2502.08202]) — is deliberately **analytic**: its
+  own discussion section names "does not lend itself to tight accounting of
+  composition" as the open problem. Both halves of the question therefore have
+  dedicated follow-ups, and neither needs new theory from us:
+  - **PLD** → Feldman & Shenfeld, *Efficient privacy loss accounting for
+    subsampling and random allocation* ([arXiv:2602.17284]). Gives an exact PLD
+    transform for random allocation plus a validity- and tightness-preserving
+    numerical algorithm.
+  - **Matrix mechanisms** → Schuchardt & Kalinin, *Sampling-Free Privacy
+    Accounting for Matrix Mechanisms under Random Allocation*
+    ([arXiv:2601.21636]). Gives a deterministic Rényi accountant (exact for
+    banded strategies) and a conditional-composition accountant that emits
+    **per-step dominating pairs** — which plug straight into Opaque's existing
+    PLD composition.
+- There is a **scheme distinction** that has to be made explicit before any of
+  this lands (§3). Opaque today implements *fixed-assignment balls-in-bins*;
+  the Feldman–Shenfeld results are about *k-out-of-t random allocation*. They
+  are different mechanisms with different privacy. Measured on the identity
+  strategy, re-randomising the assignment each epoch is worth **32–62% lower ε**
+  (§3.3) — but it is not free for correlated noise (§3.4).
+- Prototypes of the two core algorithms were written and validated against the
+  authors' reference implementation and against closed forms (§4.4, §5.4). The
+  PLD route came out **8–33% tighter than the best bound in [arXiv:2502.08202]**
+  and tighter than Poisson at the matched rate, with a self-certifying
+  upper/lower sandwich of 0.4–1%.
+
+---
+
+## 2. Where Opaque stands today
+
+| Piece | Location | Method |
+|---|---|---|
+| BnB sampler | `opaque/api/dpftrl/sampling/_balls_in_bins.py` | fixed assignment, reused every epoch |
+| BnB accountant (correlated) | `amplification/balls_in_bins/monte_carlo.rs` | Monte Carlo over the Choquette-Choo Lemma 3.2 dominating pair, banded Cholesky |
+| BnB accountant (identity) | `amplification/balls_in_bins/identity.rs` | specialised importance-sampled MC |
+| Python surface | `accounting/dpftrl/amplification/_balls_in_bins.py` | `balls_in_bins(inner, num_bins, n_steps)` |
+
+Three limitations follow from the accountant being Monte Carlo:
+
+1. **The guarantee is probabilistic, not deterministic.** An MC accountant
+   certifies "(ε, δ)-DP with high confidence", which is a strictly weaker
+   statement than a bound on δ. Recovering a deterministic guarantee requires
+   modifying the mechanism with random abstentions.
+2. **Cost scales with 1/δ.** Showing (ε, 10⁻⁸)-DP is ~10⁵× more expensive than
+   (ε, 10⁻³)-DP. This is the binding constraint at production δ.
+3. **It does not compose.** `BallsInBins` is documented as *total* cost —
+   `pld()` returns the whole-run PLD and callers are told not to compose it.
+   That is a direct consequence of the MC route, not a modelling choice.
+
+Two coverage gaps also exist:
+
+- `BandMfStrategy.gram_matrix()` **raises** — BandMF cannot use balls-in-bins at
+  all today, and falls back to Poisson / b-min-sep. BandMF is exactly the
+  *p*-banded case where the Schuchardt–Kalinin dynamic program is **exact and
+  fastest**, so this is the cheapest gap to close.
+- `IdentityStrategy.gram_matrix()` also raises; the identity path is served by a
+  bespoke MC primitive rather than the general machinery.
+
+---
+
+## 3. Two schemes, not one
+
+This distinction is the single most important thing in this note, because
+mixing the two up silently produces an **unsound** accountant.
+
+### 3.1 Scheme A — fixed-assignment balls-in-bins (what Opaque implements)
+
+Each record draws a bin `i ~ Uniform([b])` **once**, and participates in steps
+`i, b+i, 2b+i, …, (E−1)b+i`. `BallsInBinsSampler` says so explicitly, and it
+must: the Choquette-Choo Lemma 3.2 dominating pair requires it. Participation
+is *perfectly correlated across epochs* — learning the bin in epoch 1 reveals it
+for every later epoch. Min separation is exactly `b`, which is what the MF
+strategies are tuned for.
+
+This is the scheme in [arXiv:2601.21636] (their "balls-in-bins", `k` epochs,
+`b` batches per epoch).
+
+### 3.2 Scheme B — k-out-of-t random allocation (what Feldman–Shenfeld analyse)
+
+Each record picks `k` of the `t` steps **uniformly at random**, independently of
+other records. For `k = 1` this is one bin per record with no epoch structure;
+for `k > 1` [arXiv:2602.17284] reduces it to a composition of `m_f` copies of
+1-out-of-⌊t/k⌋ and `m_c` copies of 1-out-of-⌈t/k⌉ allocation.
+
+Operationally, "re-shuffle the bin assignment at the start of every epoch" is
+the `k = E`, `t = N` case, and its accounting is the `E`-fold composition of
+1-out-of-`b` allocation.
+
+**These are different mechanisms.** Applying an allocation bound to Scheme A, or
+a Lemma 3.2 bound to Scheme B, is not conservative in either direction — it is
+simply wrong. Any implementation must therefore pair each sampler with its own
+accountant and refuse the cross product.
+
+### 3.3 Scheme B is materially better for uncorrelated noise
+
+Measured through identical Rényi machinery and an identical RDP→(ε, δ)
+conversion, so the comparison is apples-to-apples (δ = 10⁻⁸, identity strategy):
+
+| b | epochs | σ | Scheme A (fixed) | Scheme B (re-shuffled) | ε reduction |
+|---:|---:|---:|---:|---:|---:|
+| 16 | 2 | 1.0 | 6.270 | 4.205 | 32.9% |
+| 16 | 4 | 1.0 | 10.714 | 5.792 | 45.9% |
+| 32 | 2 | 1.0 | 5.586 | 3.439 | 38.4% |
+| 32 | 4 | 1.0 | 10.021 | 4.658 | 53.5% |
+| 32 | 2 | 2.0 | 1.418 | 0.973 | 31.4% |
+| 64 | 4 | 2.0 | 2.487 | 1.180 | 52.6% |
+| 64 | 8 | 2.0 | 5.025 | 1.936 | 61.5% |
+
+The gap widens with epoch count, which is what the correlation argument
+predicts: fixed assignment adds no fresh sampling randomness after epoch 1.
+
+For DP-SGD this is close to free — re-shuffling every epoch is what ordinary
+training loops already do, and it is *easier* to implement than pinning an
+assignment.
+
+### 3.4 …but not obviously better for correlated noise
+
+Scheme B destroys the min-separation guarantee: a record can land in bin `b` of
+one epoch and bin `1` of the next, giving separation 1. Opaque's MF strategies
+(`min_sep`, `max_participations`) are tuned against `min_sep = num_bins`, and
+their sensitivity is computed over the worst-case participation pattern. Under
+Scheme B that worst case collapses to adjacent participation, and the
+sensitivity — hence σ — rises.
+
+So the recommendation splits:
+
+- **Identity / DP-SGD:** offer Scheme B and make it the default. Clear win.
+- **Correlated MF:** keep Scheme A as the default. Scheme B is only worth it if
+  the strategy is re-tuned at `min_sep = 1` and the sensitivity increase is
+  smaller than the amplification gain — an empirical question per strategy,
+  not something to assume.
+
+---
+
+## 4. Question 1 — PLD accounting for random allocation
+
+### 4.1 The result
+
+[arXiv:2602.17284] introduces a **PLD realization**: a random variable `L` over
+`[−∞, ∞]` with `E[e^{−L}] ≤ 1` and no mass at `−∞`. Its **dual** `L̃` is defined
+by `f_{L̃}(l) = f_L(−l)·e^{l}`, with an atom at `+∞` of mass `1 − E[e^{−L}]`. If
+`L` is the privacy loss of `(P, Q)` then `L̃` is the privacy loss of `(Q, P)`.
+
+Random allocation is then *exactly* a transform of the base PLD:
+
+```
+remove:   ψ⃗_t(L)  =  ln( (1/t) · ( e^{L₀} + Σ_{i=1}^{t−1} e^{−L̃ᵢ} ) )
+add:      ψ⃖_t(L)  =  −ln( (1/t) · Σ_{i=1}^{t} e^{−Lᵢ} )
+```
+
+with `L₀, L₁, …` independent copies. So the PLD of random allocation is a
+**convolution of exponentiated PLDs** — the log of a sum of `t` independent
+`exp`-PLDs. For the Gaussian the `exp`-PLDs are lognormal, and the allocation
+PLD is the log of a sum of `t` lognormals.
+
+Two facts make this practical:
+
+- **Errors do not accumulate.** Unlike composition (where discretisation error
+  adds across convolutions), if `Lᵢ ⪯_{(α,βᵢ)} Uᵢ` then
+  `ln(e^{L₁}+e^{L₂}) ⪯_{(α, β₁+β₂)} ln(e^{U₁}+e^{U₂})`. The `α` term does not
+  grow. This is what makes `t = 10⁶` tractable.
+- **`log t` convolutions suffice** via exponentiation by squaring.
+
+Total cost: `O((IQR_{β/t}/α)² · log³ t)`, deterministic, no sampling.
+
+### 4.2 Why this does not drop into Opaque's `Pmf` as-is
+
+Opaque's `Pmf` is an **evenly spaced additive** grid:
+`loss = (lower_loss_index + i) · discretization`, with `infinity_mass` and
+`negative_infinity_mass` atoms. That representation is right for PLDs and is
+what FFT composition needs.
+
+The allocation transform convolves in the **exponentiated** domain. Evenly
+spaced bins in the loss become **geometrically** spaced bins in `e^{loss}`, and
+the paper is explicit that FFT on a uniform grid is the wrong tool here: for
+σ = 1, β = 10⁻¹⁰ the PLD spans ≈ 12.5 but its exponent spans ≈ 950, so a uniform
+grid over the exponent either explodes or loses the left tail.
+
+So this needs a **new representation** next to `Pmf`, not a change to it:
+
+```rust
+/// PMF on a geometrically spaced grid: values are
+/// [0, v_min·r^0, …, v_min·r^{n-1}, +∞].  Used only for exp-PLDs.
+pub struct GeomPmf {
+    pub v_min: f64,
+    pub ratio: f64,        // r = e^{alpha'}
+    pub probs: Vec<f64>,
+    pub zero_mass: f64,    // image of the -inf atom under exp
+    pub infinity_mass: f64,
+}
+```
+
+Good news: `Pmf` already carries `negative_infinity_mass`, which the dual
+transform needs, and `PrivacyLossDistribution::new_asymmetric` already stores
+the remove and add PMFs separately — and **the add PMF *is* the dual of the
+remove PMF**. The structure Opaque already has lines up with what the algorithm
+wants.
+
+### 4.3 Proposed Rust surface
+
+```rust
+// pld/realization.rs
+pub fn pld_dual(pmf: &Pmf) -> Pmf;
+pub fn disc_dist(pmf: &Pmf, alpha: f64, beta: f64, dir: Rounding) -> Pmf;
+
+// pld/geom.rs
+impl GeomPmf {
+    pub fn from_pmf_exp(pmf: &Pmf) -> Self;
+    pub fn conv(&self, other: &GeomPmf, dir: Rounding) -> Self;   // O(n²), rayon
+    pub fn self_conv(&self, t: usize, dir: Rounding) -> Self;     // exp-by-squaring
+    pub fn into_pmf_log(self, scale: f64) -> Pmf;
+}
+
+// amplification/random_allocation.rs
+pub fn random_allocation_pld(
+    base: &PrivacyLossDistribution,
+    t: usize, k: usize,
+    alpha: f64, beta: f64,
+    dir: Rounding,                 // Upper => valid bound; Lower => audit sandwich
+    config: &DiscretizationConfig,
+) -> Result<PrivacyLossDistribution>;
+
+// generic Poisson subsampling on an arbitrary PLD (see §7.1)
+pub fn subsample_pld(base: &PrivacyLossDistribution, lambda: f64)
+    -> Result<PrivacyLossDistribution>;
+```
+
+The `O(n²)` direct convolution is precisely why this belongs in the Rust core:
+at production settings `n ≈ 2·10⁴`, so one convolution is ~4·10⁸ fused
+multiply-adds — trivial for `rayon`, hopeless in Python.
+
+Because the output is a genuine `PrivacyLossDistribution`, the `k > 1` reduction
+and multi-epoch composition reuse Opaque's **existing** composition path. That
+removes the "do NOT compose externally" restriction that the MC accountant
+forces, so `RandomAllocation` can implement `_pld_at_horizon` honestly and
+participate in calibration.
+
+### 4.4 Validation
+
+A Python prototype of Algorithms `disc-dist`, `PLD-dual`, `range-renorm`,
+`conv`, `self-conv`, `rand-alloc-rem` and `rand-alloc-add` was written and
+checked (δ = 10⁻⁸, k = 1, Gaussian):
+
+| σ | t | RA-PLD remove (upper) | RA-PLD remove (lower) | Poisson 1/t | FS25 `direct` | FS25 `decomposition` |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1.0 | 8 | **3.726** | 3.711 | 5.102 | 4.036 | 5.635 |
+| 1.0 | 64 | **1.806** | 1.792 | 1.938 | 2.298 | 2.409 |
+| 2.0 | 64 | **0.345** | 0.315 | 0.389 | 0.512 | 0.570 |
+| 1.0 | 128 | **1.270** | 1.253 | 1.330 | 1.893 | 1.748 |
+
+`direct` / `decomposition` are the authors' own reference implementation
+(`github.com/moshenfeld/random_allocation`, v1.0.5, MIT), which implements the
+[arXiv:2502.08202] bounds. Reading:
+
+- The PLD bound is **below every reference upper bound**, by 8–33%. Expected:
+  PLD accounting is tighter than the analytic and RDP routes.
+- The PLD bound is **below Poisson at the matched rate** in all four regimes,
+  matching the paper's claim that allocation can beat Poisson.
+- The **upper/lower sandwich is 0.4–1%** (9% in the σ = 2 case, which just needs
+  a finer α). This is self-certifying: the algorithm bounds its own error
+  without any reference to compare against — the property the MC accountant
+  cannot offer.
+- The add direction is uniformly looser than remove, consistent with both
+  papers.
+
+The reference implementation contains **no PLD method** — it predates
+[arXiv:2602.17284]. So this route has no public implementation to copy, and the
+sandwich is the correctness argument.
+
+---
+
+## 5. Question 2 — correlated-noise DP-FTRL
+
+### 5.1 The result
+
+For the Lemma 3.2 dominating pair `P = (1/b)Σᵢ N(mᵢ, σ²I)`, `Q = N(0, σ²I)`
+with Gram `G_{ij} = ⟨mᵢ, mⱼ⟩`, the remove-direction Rényi divergence is
+
+```
+R_α(P‖Q) = [ log Σ_{r ∈ [b]^α} exp( Σ_{j₁≠j₂} G_{r_{j₁}, r_{j₂}} / (2σ²) )
+             − α·log b ] / (α − 1)
+```
+
+Grouping by the count vector `c` (`cᵢ = #{j : r_j = i}`) gives the form that
+actually computes:
+
+```
+Σ_r (…) = Σ_{c : Σcᵢ = α} multinomial(α; c) · exp( (cᵀGc − Σᵢ cᵢG_{ii}) / (2σ²) )
+```
+
+Evaluating this is **#P-complete** for general `G`. But when `C` is *p*-banded,
+`G` becomes **cyclically** *p*-banded (banded with the corner blocks filled),
+`cᵀGc` only couples `cᵢ` with `c_{i±(p−1)}`, and a dynamic program over bins —
+carrying the last `p−1` counts and the running total — evaluates it in
+`O(b·p·α^{2p})`. For `p = 1` (DP-SGD) that is `O(bα²)`, versus the `O(2^α)` of
+the [arXiv:2502.08202] integer-partition formula.
+
+For near-banded `G`, the elementwise bound `G ≤ G^{(p)} + τE` with
+`τ = max_{min(|i−j|, b−|i−j|) ≥ p} G_{ij}` gives a valid upper bound by adding
+`ατ/(2σ²)`.
+
+The add direction has a closed form:
+`R_α(Q‖P) ≤ (1/(2bσ²))Σⱼ G_{jj} + ((α−1)/(2b²σ²))ΣᵢΣⱼ G_{ij}`.
+
+> **Note on the paper's statement.** As printed, the trailing term reads
+> `− α·log b / (1 − α)`, i.e. `+α·log b/(α − 1)`. Deriving
+> `E_Q[(P/Q)^α] = b^{−α} Σ_r exp(·)` gives the opposite sign, and the `b = 1`
+> case settles it: only the negative sign reproduces the Gaussian closed form
+> `R_α = α‖m‖²/(2σ²)`, which the prototype confirms to 10 decimal places
+> (§5.4). We should implement the derived sign.
+
+### 5.2 How Opaque's strategies map onto it
+
+| Strategy | Structure of `C` | Gram over bins | Route |
+|---|---|---|---|
+| `IdentityStrategy` | `C = I` (p = 1) | `G = E·I_b`, exactly diagonal | **exact DP**, `O(bα²)` |
+| `BandMfStrategy` | *p*-banded Toeplitz | cyclically *p*-banded | **exact DP** — closes a gap, BnB is unsupported today |
+| `BsrStrategy` | banded square root, explicit `bandwidth` | cyclically banded | **exact DP** |
+| `BisrStrategy` | banded *inverse* square root | near-banded, fast decay | truncation + `ατ/(2σ²)` |
+| `LambdaCgdStrategy` | AR(1)-like, `G_{ij} ∼ E·λ^{\|i−j\|}` | near-banded, decay set by λ | truncation — **but see §5.4** |
+| `BltStrategy` | Toeplitz, buffer decay | near-banded | truncation |
+
+The banded cases are strictly better served than by MC. The near-banded cases
+need the caveat in §5.4.
+
+### 5.3 Conditional composition — the part that unifies both questions
+
+The Rényi route is lossy for small ε (the RDP→(ε, δ) conversion captures large
+deviations). The second accountant in [arXiv:2601.21636] fixes that, and it is
+the piece that matters most architecturally for Opaque.
+
+The obstruction to PLD accounting for matrix mechanisms is that the Lemma 3.2
+dominating pair **does not factorise** across steps — noise correlation and a
+fixed participation count create shared randomness. Conditional composition
+(Choquette-Choo et al. 2023 Thm 3.1; "posterior sampling" in Feldman–Shenfeld)
+replaces it with a *factorising* pair at a bounded cost:
+
+```
+H_γ(P‖Q) ≤ H_γ( ⊗ₙ P⁽ⁿ⁾ ‖ ⊗ₙ Q⁽ⁿ⁾ ) + δ_E
+```
+
+where `δ_E` is the probability that the per-step pair fails to dominate. Their
+Algorithm returns exactly those `(P⁽ⁿ⁾, Q⁽ⁿ⁾)` given a significance `β = δ_E/N`,
+picking mixture weights via a reverse-hazard dominance criterion and analytic
+AM-GM tail bounds.
+
+**This is the bridge.** `⊗ₙ P⁽ⁿ⁾` is a product of per-step Gaussian mixtures —
+which is exactly the input Opaque's existing PLD composition already consumes.
+So the correlated-MF path becomes:
+
+```
+strategy → mixture means m_i → per-step dominating pairs (Alg. cond-comp)
+        → per-step PLDs → existing FFT composition → PLD → ε(δ)
+```
+
+with `δ_E` added to the final δ. No new composition machinery, and it produces a
+**composable, horizon-truncatable** PLD — which is what `_pld_at_horizon` wants
+and what MC cannot give.
+
+Their amortisation result matters for Opaque specifically: most of the cost of
+finding the thresholds `τᵢ` is linear in σ, so re-evaluating at a new σ drops
+from `O(N²b²)` to `O(Nb²)`. Opaque's `calibration.py` searches over σ; this
+makes that search roughly `N`× cheaper.
+
+### 5.4 Validation
+
+A prototype of the Rényi accountant (brute force, cyclic-banded DP, add-direction
+closed form, RDP→(ε, δ)) was checked:
+
+- **`b = 1` reduces to the Gaussian closed form** — `R_α = α‖m‖²/(2σ²)` to 10
+  decimal places across `(σ, ‖m‖², α)` combinations. This is what settles the
+  sign question in §5.1.
+- **The DP reproduces brute force exactly** on cyclically *p*-banded `G` for
+  `(b, p, α)` ∈ {(5,1,3), (5,1,4), (6,2,3), (6,2,4), (7,2,3), (8,3,3)},
+  agreeing to < 10⁻⁸.
+- **Truncation is sound** — for λ-CGD the truncated bound stayed above the exact
+  value in every configuration tested.
+
+But one **negative result worth acting on**: for λ-CGD the truncation bound
+*degrades* as the retained bandwidth grows when λ is large.
+
+| λ | exact | p = 1 | p = 2 | p = 3 |
+|---:|---:|---:|---:|---:|
+| 0.5 | 1.410 | 2.620 | 2.081 | 1.760 |
+| 0.9 | 2.397 | 3.820 | 4.222 | 4.289 |
+
+At λ = 0.5 the bound tightens with `p`, as intended. At λ = 0.9 it gets *worse*,
+because `τ` decays too slowly for the `ατ/(2σ²)` term to pay for the larger
+retained band. Opaque's own MC docstring cites λ = 0.9, b = 1953 as a realistic
+configuration — squarely in the bad regime. **Conclusion: the Rényi route should
+not be advertised as the general replacement for MC on λ-CGD.** For
+slowly-decaying Grams the conditional-composition route (§5.3) or the existing
+MC path remains necessary. Banded strategies (BandMF, BSR, identity) are where
+the Rényi DP wins outright.
+
+---
+
+## 6. Validating an implementation
+
+There is no reference implementation for either target algorithm, so the test
+strategy has to be self-supporting:
+
+1. **Sandwich.** Both algorithms have upper- and lower-bound variants
+   (`Rounding::Upper` / `Lower`). Every test asserts `lower ≤ upper` and that the
+   gap shrinks as α shrinks. This certifies without an oracle.
+2. **Degenerate cases.** `t = 1` must return the base PLD; `b = 1` must return
+   the Gaussian closed form; `G` diagonal must agree with the
+   integer-partition formula of [arXiv:2502.08202] Thm 4.8.
+3. **Cross-check against the reference bounds.** The authors' package (MIT) can
+   be a dev dependency; every new bound must sit at or below
+   `allocation_epsilon_direct` and `allocation_epsilon_decomposition`.
+4. **Cross-check against the existing MC accountant.** For configurations where
+   MC is affordable (δ ≈ 10⁻³), the deterministic bound must lie above the MC
+   estimate but within its confidence band's slack.
+5. **Monotonicity**, matching the invariants already asserted in
+   `packages/opaque-dpftrl/tests/accounting/`: ε decreasing in σ, increasing in
+   epochs, increasing in k.
+
+---
+
+## 7. Other things the same machinery unlocks
+
+### 7.1 Generic subsampling on an arbitrary PLD (the sleeper result)
+
+[arXiv:2602.17284] Thm `PLD_subsam` gives Poisson subsampling as a transform of
+the PLD *realization*:
+
+```
+remove:  f_{φ⃗_λ(L)}(l) = λ·f_L(φ_λ(l)) + (1−λ)·f_{−L̃}(φ_λ(l))
+add:     f_{φ⃖_λ(L)}(l) = f_L(−φ_λ(−l)),        φ_λ(l) = ln(1 + (e^l − 1)/λ)
+```
+
+Every mainstream accounting library — Google's `dp_accounting`, Opacus, Meta's —
+implements subsampled-Gaussian and subsampled-Laplace via *closed-form,
+mechanism-specific* PLDs. This theorem removes that restriction: subsampling
+becomes a `O(support)` transform of any PLD, so **any** mechanism with a
+dominating PLD gets amplification for free.
+
+For Opaque concretely: `AdaClip` (`transformations/adaclip.rs`) and any future
+non-Gaussian noise get Poisson amplification without bespoke analysis. This is
+arguably the highest value-per-line item in this note and is independent of
+random allocation entirely.
+
+### 7.2 Deterministic replacement for b-min-sep
+
+`amplification/b_min_sep/mc.rs` is Monte Carlo for the same reasons BnB is. The
+conditional-composition construction applies to the same class of
+non-factorising dominating pairs, so the same per-step-pair trick should
+deterministically bound b-min-sep too. Worth scoping after §5.3 lands.
+
+### 7.3 Auditing gets a two-sided bracket
+
+`opaque-auditing` currently validates ε empirically. The lower-bound variant of
+the allocation PLD gives a *numerical* lower bound on the same quantity, so
+audits can be checked against a bracket `[ε_lower, ε_upper]` rather than a single
+number. An empirical estimate outside that bracket is an unambiguous bug signal.
+
+### 7.4 Calibration speedup
+
+§5.3's σ-amortisation makes the conditional-composition accountant roughly `N`×
+cheaper across a calibration sweep. Combined with §4's removal of the
+"non-composable" restriction, `calibration.py` can calibrate BnB configurations
+that are impractical today.
+
+### 7.5 Close the BandMF gap
+
+`BandMfStrategy.gram_matrix()` raising is the cheapest concrete win here:
+BandMF is genuinely *p*-banded, so the Rényi DP is exact and fast, and BnB
+support for it needs the Gram plus a dispatch entry.
+
+---
+
+## 8. Suggested sequencing
+
+| Phase | Content | Depends on |
+|---|---|---|
+| 0 | Split the sampler API so Scheme A and Scheme B are distinct types, and make each accountant refuse the other's sampler (§3) | — |
+| 1 | `GeomPmf` + `pld_dual` + `disc_dist` + conv/self-conv in Rust, with the sandwich tests | — |
+| 2 | `random_allocation_pld` (Scheme B), Python surface, k > 1 reduction | 1 |
+| 3 | `subsample_pld` — generic subsampling transform (§7.1) | 1 |
+| 4 | Rényi DP accountant for banded Grams; add Gram support to BandMF | — |
+| 5 | Conditional-composition accountant → per-step pairs → existing composition | 4 |
+| 6 | Deprecate MC as the default where 4/5 dominate; keep it for slowly-decaying Grams (§5.4) | 4, 5 |
+
+Phases 1–3 and 4–5 are independent and can proceed in parallel.
+
+---
+
+## 9. Open questions
+
+1. **Is Scheme B actually worse for correlated MF?** §3.4 argues it is, but the
+   trade-off (amplification gain vs sensitivity loss at `min_sep = 1`) has not
+   been measured per strategy. This should be settled empirically before
+   choosing defaults.
+2. **`δ_E` budgeting.** Conditional composition spends δ on the non-dominance
+   event. How that is exposed — an implicit split, or a user-visible knob — is
+   an API decision with correctness consequences.
+3. **Choosing (α, β).** These are accuracy knobs, not privacy parameters. They
+   should follow the precedent set for `_IDENTITY_IS_TILT` and be fixed
+   internally with a documented default rather than exposed.
+4. **BLT's retuning behaviour.** `_pld_at_horizon` already special-cases BLT
+   because re-running L-BFGS at a shorter horizon changes the mechanism. Any new
+   accountant must preserve that pinning argument.
+
+---
+
+## References
+
+- [arXiv:2502.08202] Feldman & Shenfeld, *Privacy amplification by random allocation*.
+- [arXiv:2602.17284] Feldman & Shenfeld, *Efficient privacy loss accounting for subsampling and random allocation*.
+- [arXiv:2601.21636] Schuchardt & Kalinin, *Sampling-Free Privacy Accounting for Matrix Mechanisms under Random Allocation*.
+- Choquette-Choo, Ganesh, Haque, Steinke & Thakurta, *Near-exact privacy amplification for matrix mechanisms*, arXiv:2410.06266.
+- Choquette-Choo, Ganesh, Steinke & Thakurta, *Privacy amplification for matrix mechanisms*, ICLR 2024.
+- Chua et al., *Balls-and-bins sampling for DP-SGD*, AISTATS 2025.
+- Zhu, Dong & Wang, *Optimal accounting of differential privacy via characteristic function*, AISTATS 2022.
+- Reference implementation: `github.com/moshenfeld/random_allocation` (MIT).
+
+[arXiv:2502.08202]: https://arxiv.org/abs/2502.08202
+[arXiv:2602.17284]: https://arxiv.org/abs/2602.17284
+[arXiv:2601.21636]: https://arxiv.org/abs/2601.21636
