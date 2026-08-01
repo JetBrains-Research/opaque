@@ -22,10 +22,11 @@ Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
   (`opaque-engine`, `opaque-base`); never on `opaque-dpsgd`, `opaque-dpftrl`,
   or `opaque-optimizers`. The DP mechanism and optimizer are chosen at the call
   site. This is enforced by `tests/contracts/test_dependency_direction.py`.
-- **DP-purity invariant.** Every public per-example loss is Tier 1 — strict
-  per-example, NaN-injection verified (a single-record swap moves only that
-  row's gradient). Tier 3 variants (rank/sort/quantile across the batch, e.g.
-  DPO's `aot` family) are simply not shipped.
+- **Per-example API.** Public losses are designed to map each record to its
+  own scalar loss and compose with `vmap(grad(...))`. This is an API-shape
+  property, not a claim that every loss has passed NaN-injection or
+  single-record-swap verification. Tier 3 variants (rank/sort/quantile across
+  the batch, e.g. DPO's `aot` family) are not shipped.
 - **Direct functions, no registry.** Each method exposes its loss functions
   directly (`dpo_sigmoid`, `nll_loss`, …) — there is no string registry,
   resolver, or variant enum. A config-string consumer (trainer / CLI) builds

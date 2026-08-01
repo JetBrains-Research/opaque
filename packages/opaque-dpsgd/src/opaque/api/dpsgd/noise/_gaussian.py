@@ -24,8 +24,9 @@ output to ``[-B, B]`` (or ``[low, high]``); the noise is sampled from a
 Gaussian renormalized over that interval via the inverse-CDF method.  At
 training scale the per-coordinate analysis of the paper's bounded mechanism
 does not apply (gradients live under an ``ℓ2``-ball constraint, not a product
-of intervals), so the privacy accounting is the standard
-``(ε, δ)``-Gaussian — bounding only modifies the noise distribution.
+of intervals). This resampling operation is not post-processing of a standard
+Gaussian sample. Bounded mode is experimental and the standard
+``(ε, δ)``-Gaussian accountant does not cover its output.
 
 The noise function is **purely local** — it uses exactly the key you provide.
 For synchronized noise in distributed training, pass the same key on every rank.
@@ -188,13 +189,13 @@ def gaussian_noise(
             interval; must satisfy ``low <= 0 <= high``.  Units are absolute
             (same scale as the gradient / clip norm), not multiples of σ.
         compute_dtype: Internal dtype for uniform sampling and the
-            inverse-CDF arithmetic.  Defaults to ``torch.float32`` because the
-            Gaussian-mechanism privacy guarantee requires sampling from a
-            true Gaussian — sampling uniforms in ``torch.bfloat16`` produces
-            a coarsely-discretized lattice that does not satisfy the standard
-            analysis.  The type-stable boundary is preserved: the input's
-            dtype is matched on output (input upcast to ``compute_dtype``,
-            noise added, downcast at return).
+            inverse-CDF arithmetic. Defaults to ``torch.float32``. Every
+            finite-precision inverse-CDF sampler is discrete and has bounded
+            representable tails; the standard continuous-Gaussian analysis
+            does not by itself quantify that approximation. Lower-precision
+            uniforms make the discretization coarser. The type-stable boundary
+            is preserved: the input's dtype is matched on output (input upcast
+            to ``compute_dtype``, noise added, downcast at return).
 
     Returns:
         A tuple ``(noise_fn, state)`` where:

@@ -58,9 +58,11 @@ class DpFtrlProcess(DpProcess):
         deployed mechanism — and ``n_steps`` only changes the number of
         rows / compositions / epochs the privacy bound is evaluated on.
 
-        By the post-processing inequality on the K-prefix projection of
-        the N-step output stream,
-        ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is monotone in K.
+        For analytic PLDs, the post-processing inequality on the K-prefix
+        projection implies ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and
+        monotonicity in K. Monte Carlo implementations return empirical
+        point estimates for which that reported-epsilon ordering is not
+        guaranteed.
 
         Raises:
             ValueError: If ``n_steps`` is outside ``[1, self.n_steps]``.
@@ -73,6 +75,12 @@ class DpFtrlProcess(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
+        """Return the full-horizon PLD.
+
+        Monte Carlo subclasses return empirical point estimates rather than
+        upper confidence bounds; conservative grid discretization does not
+        account for Monte Carlo sampling error.
+        """
         return self._pld_at_horizon(
             self.n_steps,
             discretization=discretization,

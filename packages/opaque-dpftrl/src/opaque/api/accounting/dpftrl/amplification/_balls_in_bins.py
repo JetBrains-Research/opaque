@@ -141,8 +141,9 @@ class BallsInBins(DpFtrlProcess):
         built via the closed-form Toeplitz gram on those coefficients,
         evaluated at participation context ``(K, num_bins, K_epochs)``.
         In every case the K-prefix output is a deterministic projection
-        of the deployed N-step mechanism, so by post-processing
-        ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is monotone in K.
+        of the deployed N-step mechanism. The finite Monte Carlo PLDs are
+        empirical point estimates, so their reported epsilon values are
+        not guaranteed to be monotone or ordered by post-processing.
         """
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -224,6 +225,11 @@ class BallsInBins(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
+        """Return the empirical Monte Carlo PLD for the full horizon.
+
+        This is a point estimate, not an upper confidence bound. Conservative
+        grid discretization does not account for Monte Carlo sampling error.
+        """
         return self._pld_at_horizon(
             self.n_steps,
             discretization=discretization,

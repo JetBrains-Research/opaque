@@ -176,9 +176,10 @@ the per-coordinate interval.
 
 For high-dimensional model training, the per-coordinate ε-DP analysis of the
 paper does not apply (gradients live under an ℓ₂-ball constraint, not a
-product of intervals); use `dpsgd_acc.gaussian(noise_multiplier)` for
-accounting and treat the bound as bounded-support post-processing on the
-standard (ε, δ)-Gaussian mechanism.
+product of intervals). The bounded implementation resamples from a truncated
+distribution; it is not post-processing of a sample from the standard
+Gaussian mechanism. Treat `bound=` as experimental: the ε reported by
+`dpsgd_acc.gaussian(noise_multiplier)` does **not** cover this bounded output.
 
 `gaussian_noise` (bounded or not) accepts the same paired-stream input:
 when a `SecondMomentClippingOutput` (from

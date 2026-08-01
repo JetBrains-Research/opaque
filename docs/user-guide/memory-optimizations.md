@@ -47,16 +47,11 @@ grad_fn, clip_state = clipped_grad(
 
 ### Microbatch size vs throughput
 
-| Microbatch size | Memory | Passes (batch=256) | Relative speed |
-|-----------------|--------|--------------------|----------------|
-| 256 (no microbatch) | Highest | 1 | Fastest |
-| 64 | 4x less | 4 | ~3.5x slower |
-| 16 | 16x less | 16 | ~10x slower |
-| 1 | Minimum | 256 | ~100x slower |
-
-The relationship is not purely linear because GPU utilization drops for very
-small microbatches. In practice, `microbatch_size >= 4` maintains reasonable
-GPU utilization. Below that, the overhead of launching kernels dominates.
+Smaller microbatches reduce the number of per-example gradients resident at
+once and require more sequential passes. The throughput trade-off depends on
+the model, shapes, device, and kernel configuration; Opaque does not publish a
+cross-workload speed table without a reproducible benchmark harness. Measure
+candidate sizes on the target workload.
 
 ### Tuning workflow
 
@@ -124,8 +119,8 @@ with functorch). No special kwargs needed.
 | Technique | Memory | Compute | Notes |
 |-----------|--------|---------|-------|
 | No optimization | O(batch_size) | 1x | |
-| Gradient checkpointing | O(sqrt(layers)) | ~2x | ~81% savings on Mellum-4b |
-| Microbatching (size m) | O(m) | 1x | |
+| Gradient checkpointing | Workload-dependent | Recomputation overhead | Measure on the target model |
+| Microbatching (size m) | O(m) gradient term | More sequential passes | Measure on the target device |
 
 **Limitations:**
 
@@ -167,32 +162,19 @@ fallbacks.
 See [Model Patches — Triton kernels](huggingface/model-patches.md#triton-kernels)
 for per-operation details and per-model support.
 
-### Kernel benchmarks
+### Kernel performance
 
-Measured at Mellum-4b scale (batch=4, seq=1024, vocab=128256, LoRA r=16).
-Values > 1.0 mean the kernel is faster (speed) or uses less memory (memory)
-than the PyTorch baseline.
-
-| Kernel | Forward | Backward | Memory | vmap(grad) speed | vmap(grad) memory |
-|--------|---------|----------|--------|------------------|-------------------|
-| SwiGLU | 0.69x | 0.83x | 1.20x | 1.19x | 2.10x |
-| GeGLU Exact | 0.76x | 0.78x | 1.38x | 0.84x | 1.43x |
-| GeGLU Approx | 0.81x | 0.72x | 1.38x | 0.77x | 1.43x |
-| RoPE | 2.01x | 1.13x | 1.46x | 0.98x | 1.70x |
-| CE (V=32K) | 1.56x | 1.33x | 1.67x | 2.63x | 2.00x |
-| CE (V=128K) | 2.20x | 2.24x | 1.67x | 3.68x | 2.00x |
-
-SwiGLU/GeGLU forward is slower than native PyTorch because
-`autograd.Function.apply()` dispatch overhead dominates the trivially fast
-element-wise operation. The real value is in the fused backward and vmap
-memory savings.
+Kernel speed and memory use depend on tensor shapes, dtype, device, software
+versions, and whether `vmap(grad)` is active. Opaque does not currently ship a
+reproducible benchmark harness, so no quantitative comparison is claimed here.
+Profile patched and unpatched paths on the target workload.
 
 ### Fused linear cross-entropy
 
 Computes the loss directly from hidden states and the `lm_head` weight matrix,
-never materializing the full `(batch*seq, vocab)` logits tensor. For Mellum-4b
-with 128K vocab, that saves ~2 GB per forward pass relative to the non-fused
-path. Enabled by passing `fused_linear_cross_entropy=True` to
+never materializing the full `(batch*seq, vocab)` logits tensor. This avoids
+that logits allocation; the realized memory reduction is workload-dependent.
+Enable it by passing `fused_linear_cross_entropy=True` to
 `apply_model_patches(model, ...)`.
 
 The fused path returns `logits=None` from `XForCausalLM.forward`, which is
@@ -200,17 +182,6 @@ incompatible with callers that read `outputs.logits` — `compute_metrics`,
 `preprocess_logits_for_metrics`, and generation eval. Enable the patch when
 loss is the only consumer of the forward output;
 `examples/train_dpsgd.py` and `examples/train_dpftrl.py` do.
-
-| Metric | V=32K | V=128K |
-|--------|-------|--------|
-| Forward speedup | 8.73x | 9.46x |
-| Forward memory | 2.85x | 3.19x |
-| Backward speedup | 2.63x | 2.76x |
-| Backward memory | 3.35x | 3.80x |
-| vmap forward speedup | 8.86x | 8.88x |
-| vmap forward memory | 12.10x | 22.67x |
-| vmap(grad) speedup | 2.65x | 2.70x |
-| vmap(grad) memory | 6.06x | 8.05x |
 
 ## Profiling
 

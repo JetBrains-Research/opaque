@@ -173,9 +173,10 @@ per coordinate — the *bounded Gaussian mechanism* of Chen and Hale (2024).
 Bounds are absolute (same scale as the gradient / clip norm), not multiples
 of $\sigma$.  At training scale the paper's per-coordinate $\varepsilon$-DP
 analysis does not apply — gradients live under an $\ell_2$-ball constraint,
-not a product of intervals — so use `dpsgd_acc.gaussian()` for accounting and
-treat the bound as bounded-support post-processing on the standard
-$(\varepsilon, \delta)$-Gaussian mechanism.
+not a product of intervals. The implementation resamples from the truncated
+distribution rather than post-processing a standard Gaussian sample. Treat
+`bound=` as experimental: `dpsgd_acc.gaussian()` does not account for the
+bounded output, so its reported $\varepsilon$ does not cover this variant.
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise

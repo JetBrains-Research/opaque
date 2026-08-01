@@ -80,7 +80,13 @@ Convert "unknown → skip" into "unknown → raise" at three remaining dispatch 
 
 **Effort: 1 day.** See RC-7 for the full fix.
 
-### 1.3 Claims to withdraw immediately (docs-only, ~1 day total)
+### 1.3 ✅ Claims withdrawn pending underlying fixes
+
+The published claims below have been removed or qualified. They may be
+restored only after the corresponding mechanism, estimator, or reproducible
+benchmark harness lands. Items 8 and 9 had no published user-facing claim in
+this checkout; the missing gates remain tracked in the later infrastructure
+phases.
 
 Every one of these is a documented guarantee that the code does not provide. Withdraw now; restore only when the corresponding fix lands.
 
