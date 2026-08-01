@@ -1,7 +1,11 @@
 # Privacy amplification by random allocation — design note
 
-**Status:** proposal / research note. The §5.5 defects are **fixed**; everything
-else here is still a proposal.
+**Status:** partly implemented. The §5.5 defects are **fixed**. Phases 1, 2 and
+the Scheme-B half of phase 5 have **landed** — `GeomPmf` / `disc_dist` /
+`random_allocation_gaussian_pld` in Rust, the DP-FTRL identity path repointed
+onto them, and `RandomAllocationSampler` + `dpsgd_acc.random_allocation` for
+DP-SGD. Phases 3, 4, 6, 7 and 8 are still proposals; see the table in §8 for
+what each still needs.
 
 **Scope.** How to extend Opaque's balls-in-bins support in two directions the
 Feldman–Shenfeld line of work now makes possible:
@@ -873,26 +877,36 @@ gap. Closing it means more than adding the Gram:
 
 ## 8. Suggested sequencing
 
-| Phase | Content | Depends on |
-|---|---|---|
-| 1 | `GeomPmf` + `pld_dual` + `disc_dist` + conv/self-conv in Rust, with the sandwich tests and the §4.2b precondition assertions | — |
-| 2 | **Identity path (§4.5):** `random_allocation_pld` at `(t = b, σ/√E, k = 1)` as a drop-in for `bnb_mc_pld_identity`, cross-checked against the MIT reference impl. **No sampler change.** | 1 |
-| 3 | `subsample_pld` — generic subsampling transform (§7.1) | 1 |
-| 4 | Rényi DP accountant for banded Grams (`p = 1` first); add Gram support to BandMF | — |
-| 5 | Split the sampler API so Scheme A and Scheme B are distinct types, each accountant refusing the other's sampler (§3); general Scheme B accounting with the `k > 1` reduction | 1, 2 |
-| 6 | Mixture-Gaussian PLD primitive (§5.3) | — |
-| 7 | Conditional-composition accountant → per-step pairs → existing composition | 4, 6 |
-| 8 | Retire MC as the default where 2/4/7 dominate; keep it for slowly-decaying Grams (§5.4) | 2, 4, 7 |
+| Phase | Content | Depends on | State |
+|---|---|---|---|
+| 1 | `GeomPmf` + `disc_dist` + conv/self-conv in Rust, with the sandwich tests and the §4.2b precondition assertions | — | **done** |
+| 2 | **Identity path (§4.5):** `random_allocation_pld` at `(t = b, σ/√E, k = 1)` as a drop-in for `bnb_mc_pld_identity`, cross-checked against the MIT reference impl. **No sampler change.** | 1 | **done** |
+| 3 | `subsample_pld` — generic subsampling transform (§7.1) | 1 | proposal |
+| 4 | Rényi DP accountant for banded Grams (`p = 1` first); add Gram support to BandMF | — | proposal |
+| 5 | Scheme A and Scheme B as distinct samplers, each accountant refusing the other's (§3); general Scheme B accounting with the `k > 1` reduction | 1, 2 | **done** |
+| 6 | Mixture-Gaussian PLD primitive (§5.3) | — | proposal |
+| 7 | Conditional-composition accountant → per-step pairs → existing composition | 4, 6 | proposal |
+| 8 | Retire MC as the default where 2/4/7 dominate; keep it for slowly-decaying Grams (§5.4) | 2, 4, 7 | proposal |
 
-Phase 2 is the one to do first: it is the shortest path to a deterministic,
-composable accountant, it replaces an existing MC primitive rather than adding
-a new mechanism, and it comes with an external oracle. Phases 1–3, 4 and 6 are
-otherwise independent.
+`pld_dual` from phase 1 was **not** built: the Gaussian dual is closed form, so
+the transform takes it analytically and never reweights a discretised PLD by
+`e^{-l}`. A generic `pld_dual` is only needed by phase 3, and is scoped there.
 
-**Independently of all of this, the §5.5 fixes should be filed now** — the Gram
+Phase 5 shipped as two separate types rather than a refactor of one: DP-SGD's
+`RandomAllocationSampler` redraws per epoch (Scheme B), DP-FTRL's
+`BallsInBinsSampler` keeps its fixed assignment (Scheme A), and each stack's
+accountant covers only its own sampler.  The `k > 1` reduction exists in the
+Rust primitive but has no Python caller — with per-epoch redraw `k = 1` always.
+
+Phase 2 was the right one to do first: it is the shortest path to a
+deterministic, composable accountant, it replaced an existing MC primitive
+rather than adding a new mechanism, and it came with an external oracle.
+Phases 3, 4 and 6 remain independent of each other.
+
+The §5.5 fixes landed ahead of everything else, as they should have — the Gram
 builder dropping the cyclic corner at production scale, and the non-PSD band
-producing `inf`/`NaN` losses that are then silently discarded, are both live
-defects in shipped code and neither depends on any of the work above.
+producing `inf`/`NaN` losses that were then silently discarded, were both live
+defects in shipped code and neither depended on any of the work above.
 
 ---
 

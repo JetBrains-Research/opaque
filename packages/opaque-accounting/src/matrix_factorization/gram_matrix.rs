@@ -499,7 +499,7 @@ mod tests {
         let n = 10;
         let ip = column_inner_product(lambda, n, 2, 5);
         // = λ^3 · Σ_{r=0}^{4} λ^{2r}
-        let expected: f64 = lambda.powi(3) * (0..5).map(|r| lambda.powi(2 * r as i32)).sum::<f64>();
+        let expected: f64 = lambda.powi(3) * (0..5).map(|r| lambda.powi(2 * r)).sum::<f64>();
         assert!(
             (ip - expected).abs() < 1e-10,
             "got {}, expected {}",

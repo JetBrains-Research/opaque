@@ -356,23 +356,22 @@ mod tests {
     #[test]
     fn test_competitive_with_poisson() {
         let c = cfg();
-        for &(sigma, t) in &[(1.0, 32usize)] {
-            let ra = random_allocation_gaussian_pld(sigma, t, 1, true, &c)
-                .unwrap()
-                .epsilon_at(1e-8);
-            let po = poisson_gaussian_pld(sigma, 1.0 / t as f64, &c)
-                .unwrap()
-                .self_compose(t)
-                .epsilon_at(1e-8);
-            assert!(
-                ra <= po * 1.10,
-                "σ={} t={}: allocation {} vs Poisson {}",
-                sigma,
-                t,
-                ra,
-                po
-            );
-        }
+        let (sigma, t) = (1.0, 32usize);
+        let ra = random_allocation_gaussian_pld(sigma, t, 1, true, &c)
+            .unwrap()
+            .epsilon_at(1e-8);
+        let po = poisson_gaussian_pld(sigma, 1.0 / t as f64, &c)
+            .unwrap()
+            .self_compose(t)
+            .epsilon_at(1e-8);
+        assert!(
+            ra <= po * 1.10,
+            "σ={} t={}: allocation {} vs Poisson {}",
+            sigma,
+            t,
+            ra,
+            po
+        );
     }
 
     #[test]
