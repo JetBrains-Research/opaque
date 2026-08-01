@@ -41,6 +41,13 @@ Plus several adjacent wins the same machinery unlocks (§7).
   PLD route came out **8–33% tighter than the best bound in [arXiv:2502.08202]**
   and tighter than Poisson at the matched rate, with a self-certifying
   upper/lower sandwich of 0.4–1%.
+- **Start with the identity path (§4.5).** Opaque's *existing* fixed-assignment
+  BnB with `IdentityStrategy` turns out to be *exactly* 1-out-of-`b` random
+  allocation of a Gaussian at `σ_eff = σ/√E`. So the PLD accountant is a
+  deterministic, composable, drop-in replacement for `bnb_mc_pld_identity`
+  **with no sampler change and no scheme split** — and it measured 8–27%
+  tighter than the Rényi route on the same mechanism. This is the shortest path
+  to value and it should lead the work.
 
 ---
 
@@ -227,11 +234,44 @@ pub struct GeomPmf {
 }
 ```
 
-Good news: `Pmf` already carries `negative_infinity_mass`, which the dual
-transform needs, and `PrivacyLossDistribution::new_asymmetric` already stores
-the remove and add PMFs separately — and **the add PMF *is* the dual of the
-remove PMF**. The structure Opaque already has lines up with what the algorithm
-wants.
+### 4.2b Preconditions Opaque's PLDs do not currently meet
+
+Three of them, all load-bearing:
+
+1. **Stochastic, not hockey-stick, domination.** Every theorem in
+   [arXiv:2602.17284] (`def:stochDom`, `lem:mult_tight`, `thm:num_acc_RA`) is
+   stated for *first-order stochastic* domination. Opaque's PLDs are built by
+   `create_pmf_connect_the_dots_uniform` (`connect_the_dots.rs:82`), which
+   inverts a δ(ε) curve — that is tight in the **hockey-stick** sense, which is
+   strictly weaker. The paper explicitly cites a pair that hockey-stick-dominates
+   without stochastically dominating. **`gaussian_pld` output is therefore not a
+   valid input to the allocation transform.** The base PLD must be built by
+   `disc_dist` applied to the analytic loss CDF with round-up rounding, which
+   *is* stochastically dominating by construction. (The prototype does this; it
+   is why its sandwich holds.)
+2. **No mass at −∞.** A PLD realization requires `f_L(−∞) = 0`, because the dual
+   reweights by `e^{−l}` and `e^{+∞}` is not a number. But `gaussian_pld`,
+   `mf_gaussian_pld` and `poisson_gaussian_pld` all end with
+   `.with_tail_budgets(tail/2, tail/2)` (`gaussian.rs:36`), and `self_compose`
+   moves left-tail mass into `negative_infinity_mass`. `pld_dual` must **assert**
+   `negative_infinity_mass == 0` and reject composed or left-truncated inputs.
+   (The dual *produces* `+∞` mass; it is undefined *on* `−∞` mass. An earlier
+   draft of this note had that backwards.)
+3. **`E[e^{−L}] ≤ 1`.** Connect-the-Dots clamps negatives and renormalises
+   (`connect_the_dots.rs:145-160`), so whether `Σ pᵢe^{−lᵢ} ≤ 1` survives
+   discretisation is an open numerical question. Assert it at the entry point
+   and add a test sweeping σ and Δ.
+
+On the dual specifically: mathematically `D(L(P,Q)) = L(Q,P)`, so it is tempting
+to read the stored `pmf_add` as the dual of `pmf_remove`. **Do not implement it
+that way.** The two are independently round-up-discretised objects, and
+[arXiv:2602.17284] shows stochastic domination is *not* preserved by the dual
+transform — which is exactly why Alg. `rand-alloc-rem` takes the dual from the
+**raw, undiscretised** input, and why the lower-bound variant is undefined
+otherwise. The API must therefore take an analytic loss/CDF handle for the base
+mechanism, not just a discretised `Pmf`. (For the Gaussian the dual is available
+in closed form — `L̃ ~ N(1/(2σ²), 1/σ²)`, the same law as `L` — which makes it the
+natural golden test case.)
 
 ### 4.3 Proposed Rust surface
 
@@ -321,6 +361,49 @@ checked (δ = 10⁻⁸, k = 1, Gaussian):
 The reference implementation contains **no PLD method** — it predates
 [arXiv:2602.17284]. So this route has no public implementation to copy, and the
 sandwich is the correctness argument.
+
+### 4.5 The identity path is already a random allocation — start here
+
+§3 says Scheme A and Scheme B are different mechanisms, and they are. But for
+`IdentityStrategy` specifically, Scheme A **collapses onto a k = 1 allocation**.
+
+With `C = I`, the mixture mean `mᵢ = Σ_{j=0}^{E−1} |C|[:, b·j+i]` is the
+indicator of `{i, b+i, …, (E−1)b+i}`, so `‖mᵢ‖² = E` and `⟨mᵢ, mⱼ⟩ = 0` for
+`i ≠ j` — the Gram is exactly `E·I_b`. Projecting onto `span{mᵢ}` and rescaling
+by `1/√E`:
+
+```
+P ≅ (1/b) Σᵢ N(eᵢ, (σ²/E)·I_b),   Q ≅ N(0, (σ²/E)·I_b)
+```
+
+which is *precisely* the k = 1 random-allocation dominating pair `(P̄_b, Q^b)`
+for a Gaussian randomizer with `σ_eff = σ/√E`. Opaque's own
+`amplification/balls_in_bins/identity.rs` header states the `G = E·I_b` /
+`σ_eff` structure; the reduction to random allocation is the step not taken.
+
+Verified numerically — both routes on the same mechanism, δ = 10⁻⁸:
+
+| b | E | σ | σ_eff | RA-PLD at (t = b, σ_eff) | Rényi at G = E·I_b |
+|---:|---:|---:|---:|---:|---:|
+| 16 | 2 | 1.0 | 0.7071 | **5.769** | 6.270 |
+| 16 | 4 | 1.0 | 0.5000 | **9.984** | 10.714 |
+| 32 | 2 | 1.0 | 0.7071 | **5.079** | 5.587 |
+| 32 | 4 | 2.0 | 1.0000 | **2.410** | 2.829 |
+| 64 | 4 | 2.0 | 1.0000 | **1.806** | 2.487 |
+
+Three consequences, all good:
+
+1. `random_allocation_pld(gaussian_pld(σ/√E), t = num_bins, k = 1)` is a
+   **drop-in replacement for `bnb_mc_pld_identity`** — deterministic,
+   composable, no 1/δ cost, and 8–27% tighter than the Rényi route. It needs
+   **no sampler change and no Scheme A/B split**, so it can ship ahead of
+   everything in §3.
+2. §6 claimed no external oracle exists. That is wrong for this path: **every
+   k = 1 bound in [arXiv:2502.08202], and the whole MIT reference
+   implementation, applies to Opaque's existing identity BnB** at
+   `(t = b, σ → σ/√E)`. That is a real, independent cross-check.
+3. It does not extend to correlated `C`, where the `mᵢ` are neither orthogonal
+   nor equal-norm. Those still need §5.
 
 ---
 
@@ -416,6 +499,28 @@ Their amortisation result matters for Opaque specifically: most of the cost of
 finding the thresholds `τᵢ` is linear in σ, so re-evaluating at a new σ drops
 from `O(N²b²)` to `O(Nb²)`. Opaque's `calibration.py` searches over σ; this
 makes that search roughly `N`× cheaper.
+
+**Two caveats — this is the least-derisked part of the note.**
+
+- **Unlike §4 and §5.1, none of this was prototyped.** §5.4's validation covers
+  the *Rényi* accountant only. Treat §5.3 as a promising direction, not a
+  verified one.
+- **Opaque has no mixture-Gaussian PLD primitive.** The per-step pairs are
+  `(Σᵢ pᵢ N(μ_{i,n}, σ²), N(0, σ²))` with `b` arbitrary weights and `b`
+  arbitrary scalar means. Nothing in the codebase computes that:
+  `mf_gaussian_pld` is a single Gaussian, and `parallel_poisson.rs`'s mixture
+  has *collinear* means with binomial weights. [arXiv:2601.21636] leans on
+  Google `dp_accounting`'s `MixtureGaussianPrivacyLoss` here. So phase 5
+  implicitly includes a new
+  `mixture_gaussian_get_delta(ε, adjacency, &weights, &means, σ)` fed through
+  `discretize_asymmetric_mechanism`. That is a substantial work item in its own
+  right and should be scoped separately.
+
+Their Algorithm 2 as printed also needs care before implementation — the loop
+computes upper bounds `λ̄ᵢ` but the return line reads `λᵢ`, and the mixtures are
+written with `(n−1)`-dimensional prefix means where the per-step definition
+calls for the scalar step-`n` means. Reconcile against the proofs rather than
+transcribing.
 
 ### 5.4 Validation
 
@@ -526,8 +631,12 @@ because the cyclic structure is in the data model rather than in a heuristic.
 
 ## 6. Validating an implementation
 
-There is no reference implementation for either target algorithm, so the test
-strategy has to be self-supporting:
+For the **identity path** an external oracle does exist (§4.5): the MIT reference
+implementation's `allocation_epsilon_*` functions apply directly at
+`(t = num_bins, σ → σ/√E, k = 1)`. Use it.
+
+Everywhere else there is no reference implementation, so the test strategy has
+to be self-supporting:
 
 1. **Sandwich.** Both algorithms have upper- and lower-bound variants
    (`Rounding::Upper` / `Lower`). Every test asserts `lower ≤ upper` and that the
@@ -603,15 +712,22 @@ support for it needs the Gram plus a dispatch entry.
 
 | Phase | Content | Depends on |
 |---|---|---|
-| 0 | Split the sampler API so Scheme A and Scheme B are distinct types, and make each accountant refuse the other's sampler (§3) | — |
-| 1 | `GeomPmf` + `pld_dual` + `disc_dist` + conv/self-conv in Rust, with the sandwich tests | — |
-| 2 | `random_allocation_pld` (Scheme B), Python surface, k > 1 reduction | 1 |
+| 1 | `GeomPmf` + `pld_dual` + `disc_dist` + conv/self-conv in Rust, with the sandwich tests and the §4.2b precondition assertions | — |
+| 2 | **Identity path (§4.5):** `random_allocation_pld` at `(t = b, σ/√E, k = 1)` as a drop-in for `bnb_mc_pld_identity`, cross-checked against the MIT reference impl. **No sampler change.** | 1 |
 | 3 | `subsample_pld` — generic subsampling transform (§7.1) | 1 |
-| 4 | Rényi DP accountant for banded Grams; add Gram support to BandMF | — |
-| 5 | Conditional-composition accountant → per-step pairs → existing composition | 4 |
-| 6 | Deprecate MC as the default where 4/5 dominate; keep it for slowly-decaying Grams (§5.4) | 4, 5 |
+| 4 | Rényi DP accountant for banded Grams (`p = 1` first); add Gram support to BandMF | — |
+| 5 | Split the sampler API so Scheme A and Scheme B are distinct types, each accountant refusing the other's sampler (§3); general Scheme B accounting with the `k > 1` reduction | 1, 2 |
+| 6 | Mixture-Gaussian PLD primitive (§5.3) | — |
+| 7 | Conditional-composition accountant → per-step pairs → existing composition | 4, 6 |
+| 8 | Retire MC as the default where 2/4/7 dominate; keep it for slowly-decaying Grams (§5.4) | 2, 4, 7 |
 
-Phases 1–3 and 4–5 are independent and can proceed in parallel.
+Phase 2 is the one to do first: it is the shortest path to a deterministic,
+composable accountant, it replaces an existing MC primitive rather than adding
+a new mechanism, and it comes with an external oracle. Phases 1–3, 4 and 6 are
+otherwise independent.
+
+Independently of all of this, the two defensive fixes in §5.5 are worth making
+on their own schedule.
 
 ---
 
