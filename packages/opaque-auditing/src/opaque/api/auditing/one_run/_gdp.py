@@ -36,11 +36,8 @@ _TOL_MU = 0.01
 # covers the top 20 % for n = 10K, which dominates the Chernoff sum.
 _MAX_EXACT_RANKS = 2000
 
-# Bracket-expansion and bisection caps for :meth:`GdpMethod._mu_at`.
-# Without these the search can hang forever when rank truncation leaves
-# the Chernoff p-value permanently below ``significance`` (m > 2000 with
-# a strong attack).  60 doublings covers mu up to ~1e18× the ceiling start;
-# 100 bisection steps is far more than relative-tolerance needs.
+# Search caps for _mu_at.  Rank truncation can leave the p-value below
+# significance for every finite μ, which an uncapped search never escapes.
 _MAX_MU_BRACKET_DOUBLINGS = 60
 _MAX_MU_BISECTION_ITERS = 100
 
@@ -65,43 +62,33 @@ class GdpMethod:
         """Inferred μ̂ via binary search.  Independent of δ.
 
         Raises:
-            RuntimeError: If the p-value stays below ``significance`` for
-                every finite μ that the capped bracket search reaches.  This
-                happens when ``r > _MAX_EXACT_RANKS`` and the attack is strong
-                enough that the Chernoff floor from truncated ranks (v_k =
-                0.5) never reaches ``significance``.
+            RuntimeError: If no finite μ brings the p-value up to
+                ``significance``, which truncated ranks (v_k = 0.5) can cause
+                for strong attacks with more than ``_MAX_EXACT_RANKS`` guesses.
         """
         validate_significance(significance)
         m = self._estimate.n_in + self._estimate.n_out
         r, u = self._estimate._best_r_u(threshold)
 
         # Bracket: start from the (ε, δ)-DP ceiling (a generous over-estimate
-        # asymptotically for μ-GDP) and expand if the p-value at mu_hi is
-        # still < significance.  Cap the expansion — once rank truncation is
-        # active the Chernoff bound can be permanently below significance
-        # for every finite μ, and an uncapped loop hangs.
+        # asymptotically for μ-GDP) and expand while the p-value is still
+        # below significance.
         mu_hi = search_ceiling(m, 0.0, significance)
         for _ in range(_MAX_MU_BRACKET_DOUBLINGS):
-            p_hi = _p_value(m, r, u, mu_hi, self.grid_size)
-            if not (p_hi < significance):
+            if _p_value(m, r, u, mu_hi, self.grid_size) >= significance:
                 break
             mu_hi *= 2.0
         else:
             raise RuntimeError(
-                f"cannot invert μ-GDP p-value at significance={significance} "
-                f"for (m={m}, r={r}, u={u}): p-value remains below "
-                f"significance for every finite μ up to {mu_hi:g}. "
-                f"With more than {_MAX_EXACT_RANKS} canaries the order-"
-                f"statistics test truncates low-confidence ranks to "
-                f"v_k=0.5, which can leave the Chernoff bound permanently "
-                f"below significance for strong attacks. Use at most "
-                f"{_MAX_EXACT_RANKS} canaries for μ-GDP audits with strong "
-                f"attacks, or raise significance."
+                f"cannot invert μ-GDP p-value for (m={m}, r={r}, u={u}) at "
+                f"significance={significance}: p-value stays below it for "
+                f"every μ up to {mu_hi:g}. With r > {_MAX_EXACT_RANKS} "
+                f"truncated ranks pin the Chernoff bound; use fewer canaries "
+                f"or a larger significance."
             )
 
         mu_lo = 0.0
-        # Relative tolerance so the loop terminates in floating point when
-        # mu_hi is large (absolute _TOL_MU alone can be smaller than one ULP).
+        # Relative tolerance: at large mu_hi, _TOL_MU alone is below one ULP.
         for _ in range(_MAX_MU_BISECTION_ITERS):
             if mu_hi - mu_lo <= _TOL_MU * max(1.0, mu_hi):
                 break

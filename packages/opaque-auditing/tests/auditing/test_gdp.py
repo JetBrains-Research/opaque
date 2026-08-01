@@ -185,43 +185,25 @@ class TestPValue:
         assert isinstance(p, float)
         assert 0 <= p <= 1
 
-    def test_non_finite_mu_returns_one(self):
-        """Non-finite μ must not produce NaN (which would break bracket search)."""
-        assert _p_value(100, 100, 0, math.inf, 64) == 1.0
-        assert _p_value(100, 100, 0, math.nan, 64) == 1.0
+    @pytest.mark.parametrize("mu", [math.inf, math.nan])
+    def test_non_finite_mu_returns_one(self, mu):
+        assert _p_value(100, 100, 0, mu, 64) == 1.0
 
 
 # ---- GdpMethod._mu_at bracket / bisection caps -----------------------------
 
 
 class TestMuAtTermination:
-    """Regression: m > 2000 + strong attack must raise, not hang."""
+    """Regression: a strong attack past rank truncation must raise, not hang."""
 
-    def test_strong_attack_above_truncation_raises(self):
-        # Perfect attack with m=3000 → n_trunc=1000 → Chernoff floor permanently
-        # below significance=0.05.  Small grid keeps the capped search fast.
-        method = GdpMethod(
-            _estimate=_StubEstimate(1500, 1500, u=0),
-            grid_size=64,
-        )
+    @pytest.mark.parametrize(("n_half", "u"), [(1500, 0), (2500, 1400)])
+    def test_strong_attack_past_truncation_raises(self, n_half, u):
+        method = GdpMethod(_estimate=_StubEstimate(n_half, n_half, u), grid_size=64)
         with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
             method._mu_at(0.05, None)
 
-    def test_strong_attack_m5000_raises(self):
-        # Documented failure scenario: m=5000, u=1400 (~72% accuracy).
-        method = GdpMethod(
-            _estimate=_StubEstimate(2500, 2500, u=1400),
-            grid_size=64,
-        )
-        with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
-            method._mu_at(0.05, None)
-
-    def test_safe_regime_still_returns(self):
-        """m ≤ 2000 (no truncation) continues to invert normally."""
-        method = GdpMethod(
-            _estimate=_StubEstimate(500, 500, u=0),
-            grid_size=256,
-        )
+    def test_below_truncation_still_inverts(self):
+        method = GdpMethod(_estimate=_StubEstimate(500, 500, u=0), grid_size=256)
         mu = method._mu_at(0.05, None)
         assert math.isfinite(mu)
         assert mu > 0.0
