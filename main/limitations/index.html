@@ -1208,6 +1208,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#randomness-and-the-threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Randomness and the threat model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#telemetry-outside-the-guarantee" class="md-nav__link">
+    <span class="md-ellipsis">
+      Telemetry outside the guarantee
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gradient-checkpointing" class="md-nav__link">
     <span class="md-ellipsis">
       Gradient checkpointing
@@ -2669,6 +2687,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#randomness-and-the-threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Randomness and the threat model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#telemetry-outside-the-guarantee" class="md-nav__link">
+    <span class="md-ellipsis">
+      Telemetry outside the guarantee
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gradient-checkpointing" class="md-nav__link">
     <span class="md-ellipsis">
       Gradient checkpointing
@@ -2750,6 +2786,16 @@ encoded workload matches your optimizer (for example, BandMF/BLT <code>lr_schedu
 Toeplitz surrogate when <span class="arithmatex">\(\eta_t\)</span> varies). Private second moments add a second MF
 stream; pass its strategy explicitly.</p>
 <p>See <a href="../user-guide/dp-ftrl/">Matrix factorization (MF)</a>.</p>
+<h2 id="randomness-and-the-threat-model">Randomness and the threat model<a class="headerlink" href="#randomness-and-the-threat-model" title="Permanent link">&para;</a></h2>
+<p>Random keys are reproducible PRNG state, not cryptographically secure
+randomness. Exposing seeds or noise state can reveal the noise realization.
+Keep them private and strip the random and noise state before publishing.
+See <a href="../user-guide/rng-key/">Random keys</a>.</p>
+<h2 id="telemetry-outside-the-guarantee">Telemetry outside the guarantee<a class="headerlink" href="#telemetry-outside-the-guarantee" title="Permanent link">&para;</a></h2>
+<p>DP accounting does not cover exact diagnostics such as un-noised mean loss,
+pre-clip gradient norm, clip rate, batch size, or token and reward metrics.
+Keep them private or disable external logging. Hub uploads exclude the default
+<code>runs/</code> directory; review other outputs before publishing.</p>
 <h2 id="gradient-checkpointing">Gradient checkpointing<a class="headerlink" href="#gradient-checkpointing" title="Permanent link">&para;</a></h2>
 <p>Supported under <code>vmap(grad(...))</code> via automatic patches. See
 <a href="../user-guide/memory-optimizations/#gradient-checkpointing">Memory Optimizations</a>

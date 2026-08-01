@@ -3927,7 +3927,9 @@ toggles.</p>
   the reference toward the policy.</li>
 </ul>
 <h3 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h3>
-<p>Detached, logging-only telemetry. Shared token metrics
+<p>These metrics are un-noised and outside Opaque's DP accounting. See
+<a href="../../limitations/#telemetry-outside-the-guarantee">Telemetry outside the guarantee</a>.
+Shared token metrics
 (<a href="#api-documentation"><code>opaque.alignment.metric</code></a>):</p>
 <ul>
 <li><strong><code>mean_token_accuracy()</code></strong> — mean next-token argmax accuracy over the
@@ -3937,8 +3939,7 @@ toggles.</p>
 <p>Preference reward telemetry (<a href="#api-documentation"><code>opaque.alignment.dpo.metric</code></a>):</p>
 <ul>
 <li><strong><code>reward_metrics()</code></strong> — <code>rewards/chosen</code>, <code>rewards/rejected</code>,
-  <code>rewards/accuracies</code>, <code>rewards/margins</code> from per-example log-ratios; every
-  returned tensor is detached so it cannot leak gradient into the mechanism.</li>
+  <code>rewards/accuracies</code>, <code>rewards/margins</code> from per-example log-ratios.</li>
 </ul>
 <p><strong>See also</strong>: <a href="../../alignment/">Alignment overview</a>,
 <a href="../../alignment/sft/">SFT end-to-end</a>, <a href="../../alignment/dpo/">DPO end-to-end</a>.</p>
@@ -13285,9 +13286,8 @@ rejected).</li>
     <div class="doc doc-contents first">
 
         <p>opaque.alignment.metric — shared token-level metrics.</p>
-<p>General, detached token telemetry for eval logging (not for release): mean
-next-token accuracy and per-token prediction entropy. Preference reward
-telemetry is DPO-specific and lives in :mod:<code>opaque.alignment.dpo.metric</code>.</p>
+<p>Detached, un-noised token telemetry; release is outside Opaque's DP accounting.
+Preference metrics live in :mod:<code>opaque.alignment.dpo.metric</code>.</p>
 
 
 
@@ -13411,7 +13411,9 @@ categorical distribution per position.</p>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/metric/_token.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-19">19</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-17">17</a></span>
+<span class="normal"><a href="#__codelineno-0-18">18</a></span>
+<span class="normal"><a href="#__codelineno-0-19">19</a></span>
 <span class="normal"><a href="#__codelineno-0-20">20</a></span>
 <span class="normal"><a href="#__codelineno-0-21">21</a></span>
 <span class="normal"><a href="#__codelineno-0-22">22</a></span>
@@ -13434,34 +13436,32 @@ categorical distribution per position.</p>
 <span class="normal"><a href="#__codelineno-0-39">39</a></span>
 <span class="normal"><a href="#__codelineno-0-40">40</a></span>
 <span class="normal"><a href="#__codelineno-0-41">41</a></span>
-<span class="normal"><a href="#__codelineno-0-42">42</a></span>
-<span class="normal"><a href="#__codelineno-0-43">43</a></span>
-<span class="normal"><a href="#__codelineno-0-44">44</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="k">def</span><span class="w"> </span><span class="nf">entropy_from_logits</span><span class="p">(</span><span class="n">logits</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean per-position Shannon entropy over masked (shifted) positions.</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21"></a>
-<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="sd">    Logits and mask are shifted so that position ``t`` scores the predictive</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="sd">    distribution over the token at ``t + 1`` (standard causal-LM next-token</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="sd">    alignment), matching :func:`mean_token_accuracy`. Callers therefore pass the</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="sd">    full-length logits and mask; the shift happens here.</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26"></a>
-<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="sd">        logits: Logits of shape ``(..., seq, vocab)``; the last axis is the</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29"></a><span class="sd">            categorical distribution per position.</span>
-<a id="__codelineno-0-30" name="__codelineno-0-30"></a><span class="sd">        mask: Boolean/float mask of shape ``(..., seq)`` selecting which</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="sd">            (shifted) target positions contribute to the mean.</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a>
-<a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">        A detached scalar tensor: the entropy averaged over positions where the</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="sd">        shifted ``mask`` is truthy (``0`` when no position is unmasked).</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
-<a id="__codelineno-0-39" name="__codelineno-0-39"></a>    <span class="n">probs</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a>    <span class="n">log_probs</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41"></a>    <span class="n">entropy</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">probs</span> <span class="o">*</span> <span class="n">log_probs</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">entropy</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-<a id="__codelineno-0-43" name="__codelineno-0-43"></a>    <span class="n">total</span> <span class="o">=</span> <span class="p">(</span><span class="n">entropy</span> <span class="o">*</span> <span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">total</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+<span class="normal"><a href="#__codelineno-0-42">42</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="k">def</span><span class="w"> </span><span class="nf">entropy_from_logits</span><span class="p">(</span><span class="n">logits</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean per-position Shannon entropy over masked (shifted) positions.</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19"></a>
+<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="sd">    Logits and mask are shifted so that position ``t`` scores the predictive</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="sd">    distribution over the token at ``t + 1`` (standard causal-LM next-token</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="sd">    alignment), matching :func:`mean_token_accuracy`. Callers therefore pass the</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="sd">    full-length logits and mask; the shift happens here.</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24"></a>
+<a id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="sd">        logits: Logits of shape ``(..., seq, vocab)``; the last axis is the</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="sd">            categorical distribution per position.</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="sd">        mask: Boolean/float mask of shape ``(..., seq)`` selecting which</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29"></a><span class="sd">            (shifted) target positions contribute to the mean.</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30"></a>
+<a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="sd">        A detached scalar tensor: the entropy averaged over positions where the</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="sd">        shifted ``mask`` is truthy (``0`` when no position is unmasked).</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="n">probs</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="n">log_probs</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a>    <span class="n">entropy</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">probs</span> <span class="o">*</span> <span class="n">log_probs</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">entropy</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41"></a>    <span class="n">total</span> <span class="o">=</span> <span class="p">(</span><span class="n">entropy</span> <span class="o">*</span> <span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">total</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -13583,7 +13583,9 @@ token at <code>t + 1</code> (standard causal-LM next-token alignment).</p>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/metric/_token.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-47">47</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#__codelineno-0-47">47</a></span>
 <span class="normal"><a href="#__codelineno-0-48">48</a></span>
 <span class="normal"><a href="#__codelineno-0-49">49</a></span>
 <span class="normal"><a href="#__codelineno-0-50">50</a></span>
@@ -13607,35 +13609,33 @@ token at <code>t + 1</code> (standard causal-LM next-token alignment).</p>
 <span class="normal"><a href="#__codelineno-0-68">68</a></span>
 <span class="normal"><a href="#__codelineno-0-69">69</a></span>
 <span class="normal"><a href="#__codelineno-0-70">70</a></span>
-<span class="normal"><a href="#__codelineno-0-71">71</a></span>
-<span class="normal"><a href="#__codelineno-0-72">72</a></span>
-<span class="normal"><a href="#__codelineno-0-73">73</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="k">def</span><span class="w"> </span><span class="nf">mean_token_accuracy</span><span class="p">(</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a>    <span class="n">logits</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a>    <span class="n">labels</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a>    <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean next-token prediction accuracy over masked (shifted) positions.</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    Logits, labels, and mask are shifted so that position ``t`` predicts the</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">    token at ``t + 1`` (standard causal-LM next-token alignment).</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        logits: Logits of shape ``(..., seq, vocab)``.</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        labels: Target token ids of shape ``(..., seq)``.</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">        mask: Boolean/float mask of shape ``(..., seq)`` selecting which</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">            (shifted) target positions count toward accuracy.</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        A detached scalar tensor: the fraction of unmasked positions whose</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        argmax prediction matches the label (``0`` when none are unmasked).</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">labels</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
-<a id="__codelineno-0-70" name="__codelineno-0-70"></a>    <span class="n">preds</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-71" name="__codelineno-0-71"></a>    <span class="n">correct</span> <span class="o">=</span> <span class="p">(</span><span class="n">preds</span> <span class="o">==</span> <span class="n">labels</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">mask</span><span class="o">.</span><span class="n">bool</span><span class="p">()</span>
-<a id="__codelineno-0-72" name="__codelineno-0-72"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">correct</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+<span class="normal"><a href="#__codelineno-0-71">71</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="k">def</span><span class="w"> </span><span class="nf">mean_token_accuracy</span><span class="p">(</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a>    <span class="n">logits</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a>    <span class="n">labels</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a>    <span class="n">mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mean next-token prediction accuracy over masked (shifted) positions.</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Logits, labels, and mask are shifted so that position ``t`` predicts the</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">    token at ``t + 1`` (standard causal-LM next-token alignment).</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">        logits: Logits of shape ``(..., seq, vocab)``.</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        labels: Target token ids of shape ``(..., seq)``.</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        mask: Boolean/float mask of shape ``(..., seq)`` selecting which</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">            (shifted) target positions count toward accuracy.</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        A detached scalar tensor: the fraction of unmasked positions whose</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        argmax prediction matches the label (``0`` when none are unmasked).</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a>    <span class="n">labels</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">preds</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a>    <span class="n">correct</span> <span class="o">=</span> <span class="p">(</span><span class="n">preds</span> <span class="o">==</span> <span class="n">labels</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">mask</span><span class="o">.</span><span class="n">bool</span><span class="p">()</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+<a id="__codelineno-0-71" name="__codelineno-0-71"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">correct</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

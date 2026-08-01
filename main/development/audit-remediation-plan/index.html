@@ -2623,9 +2623,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#14-add-the-missing-disclosures-docs-only-1-day" class="md-nav__link">
+  <a href="#14-add-the-missing-disclosures" class="md-nav__link">
     <span class="md-ellipsis">
-      1.4 Add the missing disclosures (docs-only, ~1 day)
+      1.4 ✅ Add the missing disclosures
     </span>
   </a>
   
@@ -3193,7 +3193,7 @@
 <li><code>adaptive_clipped_grad</code> "automatically detects if distributed" — <code>_adaptive.py:200,212</code>.</li>
 <li>MC-derived ε values are point estimates — add a one-line caveat to <code>docs/reference/accounting.md</code> and the <code>pld()</code> docstrings until RC-4 lands.</li>
 </ol>
-<h3 id="14-add-the-missing-disclosures-docs-only-1-day">1.4 Add the missing disclosures (docs-only, ~1 day)<a class="headerlink" href="#14-add-the-missing-disclosures-docs-only-1-day" title="Permanent link">&para;</a></h3>
+<h3 id="14-add-the-missing-disclosures">1.4 ✅ Add the missing disclosures<a class="headerlink" href="#14-add-the-missing-disclosures" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>docs/limitations.md</code>: "Randomness and the threat model."</strong> The PRNG is not cryptographically secure; the seed is user-chosen, printed, and checkpointed; the guarantee is void against anyone who learns it. Noise state in checkpoints must be stripped before publishing artifacts.</li>
 <li><strong><code>docs/limitations.md</code>: "Telemetry outside the guarantee."</strong> Every logging step publishes un-noised mean loss, mean pre-clip grad norm, clip rate, realized Poisson batch size, DPO reward means. Mirror the disclosure <code>DPTrainer.evaluate</code> already makes at <code>_dp_trainer.py:2716-2725</code>. Add <code>runs/</code> to <code>ignore_patterns</code> in <code>_hub.push_to_hub</code> <strong>today</strong> — that one is an actual exfiltration path.</li>
