@@ -38,7 +38,7 @@ These are the same defect reported from different call sites. One fix each:
 
 Three parallel tracks. Nothing here should be blocked on design work.
 
-### 1.1 One-line / one-function fixes that change ε *today*
+### 1.1 ✅ One-line / one-function fixes that change ε *today*
 
 Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are ≤ 1 hour.
 
