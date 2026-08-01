@@ -13,7 +13,11 @@
 //! Python API always passes momentum=0.
 //!
 //! For normalized C̃_λ = C_λ·D⁻¹, the columns have unit norm and the inner
-//! products decay as λ^{|i-j|} within an epoch, with cross-epoch terms O(λ^b).
+//! products decay as λ^{|i-j|} within an epoch. Cross-epoch terms are **not**
+//! uniformly O(λ^b): the pair (i, j, p, q) has column gap |b(q-p) + (j-i)|,
+//! which is 1 — not b — at the cyclic corner (i=0, j=b-1, q=p-1). The Gram is
+//! therefore *cyclically* banded, G_{ij} ≈ E·λ^d + (E-1)·λ^{b-d} for
+//! d = |i-j|, and the corner can carry ~68% of the diagonal.
 //!
 //! # References
 //!
@@ -230,11 +234,23 @@ pub fn lambda_cgd_gram_matrix(
 
     // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨m_{b*p+i}, m_{b*q+j}⟩ / (d_{b*p+i} · d_{b*q+j})
     //
-    // Optimization: cross-epoch terms decay as λ^{b·|p-q|} (β^{b·|p-q|} for momentum).
-    // When both λ^b and β^b are < 1e-15, only same-epoch terms contribute.
-    let lambda_b = if b > 0 { lambda.powi(b as i32) } else { 1.0 };
-    let beta_b = if b > 0 { momentum.powi(b as i32) } else { 1.0 };
-    let skip_cross_epoch = lambda_b.abs() < 1e-15 && beta_b.abs() < 1e-15;
+    // Terms are pruned by the *actual* column gap |b(q-p) + (j-i)|, not by b.
+    // Cross-epoch terms do NOT uniformly decay as λ^{b·|p-q|}: the cyclic corner
+    // (i=0, j=b-1, q=p-1) has gap |b - (b-1)| = 1, so its contribution is
+    // (E-1)·λ¹ — comparable to the diagonal, not negligible. Pruning on λ^b
+    // zeroed it, which understated G and therefore ε.
+    //
+    // ⟨m_a, m_c⟩ is bounded by max(λ,β)^gap · Σ_u max(λ,β)^{2u}, and the
+    // normalized form divides by column norms ≥ 1, so this is a true upper
+    // bound on any dropped contribution.
+    let max_decay = lambda.max(momentum);
+    let term_bound = |gap: usize| -> f64 {
+        if max_decay <= 0.0 {
+            return if gap == 0 { 1.0 } else { 0.0 };
+        }
+        max_decay.powi(gap as i32) / (1.0 - max_decay * max_decay)
+    };
+    const TERM_TOL: f64 = 1e-15;
 
     // Precompute column norms for the normalized case
     let col_norms: Vec<f64> = if normalized {
@@ -266,13 +282,17 @@ pub fn lambda_cgd_gram_matrix(
                     break;
                 }
 
-                let q_start = if skip_cross_epoch { p } else { 0 };
-                let q_end = if skip_cross_epoch { p + 1 } else { e };
-
-                for q in q_start..q_end {
+                for q in 0..e {
                     let col_c = b * q + j;
                     if col_c >= n {
                         break;
+                    }
+
+                    // `continue`, not `break`: the gap is V-shaped in q
+                    // (|b(q-p) + (j-i)|), so a large gap at one q says nothing
+                    // about the next.
+                    if term_bound(col_a.abs_diff(col_c)) < TERM_TOL {
+                        continue;
                     }
 
                     let (lo, hi) = if col_a <= col_c {
@@ -447,6 +467,7 @@ pub fn lambda_cgd_gram_matrix_lr(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn test_column_inner_product_identity() {
@@ -713,6 +734,67 @@ mod tests {
                 i,
                 i
             );
+        }
+    }
+
+    /// The cyclic corner G[0][b-1] must survive at production scale.
+    ///
+    /// Regression: term pruning used to key on λ^b, which zeroed the corner.
+    /// The corner's actual column gap is |b(q-p) + (j-i)| = 1 (i=0, j=b-1,
+    /// q=p-1), so its contribution is ≈ (E-1)·λ — comparable to the diagonal.
+    #[test]
+    fn test_gram_matrix_cyclic_corner_retained() {
+        for &b in &[328usize, 400, 1000, 1953] {
+            let e = 4;
+            let gram = lambda_cgd_gram_matrix(0.9, b * e, b, Some(e), true, 0.0).unwrap();
+            let corner = gram[b - 1]; // G[0][b-1]
+            let diag = gram[0]; // G[0][0]
+            assert_relative_eq!(corner, 2.700, epsilon = 1e-3);
+            assert_relative_eq!(diag, 4.000, epsilon = 1e-3);
+            // Symmetric.
+            assert_relative_eq!(gram[(b - 1) * b], corner, epsilon = 1e-12);
+        }
+    }
+
+    /// The full measured row at λ=0.9, b=100, E=4 — the U-shaped profile that
+    /// makes the Gram cyclically, not linearly, banded.
+    #[test]
+    fn test_gram_matrix_cyclic_profile() {
+        let (b, e) = (100usize, 4);
+        let gram = lambda_cgd_gram_matrix(0.9, b * e, b, Some(e), true, 0.0).unwrap();
+        assert_relative_eq!(gram[0], 4.0002, epsilon = 1e-3); // G[0][0]
+        assert_relative_eq!(gram[1], 3.6002, epsilon = 1e-3); // G[0][1]
+        assert_relative_eq!(gram[50], 0.0361, epsilon = 1e-3); // G[0][50], the dip
+        assert_relative_eq!(gram[99], 2.7002, epsilon = 1e-3); // G[0][99], the corner
+                                                               // The corner dominates the mid-row minimum by ~75x — this is precisely
+                                                               // what a linear-bandwidth scan cannot see.
+        assert!(gram[99] > 50.0 * gram[50]);
+    }
+
+    /// Pruning must agree with brute-force column inner products.
+    #[test]
+    fn test_gram_matrix_matches_brute_force() {
+        for &(lam, b, e, beta) in &[
+            (0.9, 8usize, 3usize, 0.0),
+            (0.5, 6, 4, 0.0),
+            (0.95, 5, 3, 0.0),
+            (0.9, 6, 3, 0.5),
+        ] {
+            let n = b * e;
+            let gram = lambda_cgd_gram_matrix(lam, n, b, Some(e), false, beta).unwrap();
+            for i in 0..b {
+                for j in 0..b {
+                    let mut want = 0.0;
+                    for p in 0..e {
+                        for q in 0..e {
+                            let (a, c) = (b * p + i, b * q + j);
+                            let (lo, hi) = if a <= c { (a, c) } else { (c, a) };
+                            want += column_inner_product_momentum(lam, beta, n, lo, hi);
+                        }
+                    }
+                    assert_relative_eq!(gram[i * b + j], want, epsilon = 1e-10);
+                }
+            }
         }
     }
 
