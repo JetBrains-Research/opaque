@@ -1,6 +1,7 @@
 # Privacy amplification by random allocation — design note
 
-**Status:** proposal / research note. Nothing here is implemented yet.
+**Status:** proposal / research note. The §5.5 defects are **fixed**; everything
+else here is still a proposal.
 
 **Scope.** How to extend Opaque's balls-in-bins support in two directions the
 Feldman–Shenfeld line of work now makes possible:
@@ -684,7 +685,17 @@ there is ≈ `b·α·C(α+p−1, α)²` — cheap at α = 2–3, prohibitive by 
    never run the DP at `p = 64`: they pass a smaller *effective* bandwidth and
    bound the out-of-band contribution, exactly as in conclusion 1.
 
-### 5.5 Two pre-existing defects this analysis surfaced
+### 5.5 Two pre-existing defects this analysis surfaced — now fixed
+
+> **Fixed** in `fix(accounting): stop dropping the cyclic corner of the λ-CGD
+> Gram` and `fix(accounting): factorise the BnB Gram cyclically and stop losing
+> mass`. `lambda_cgd_gram_matrix` now prunes on the actual column gap;
+> `BandedCholesky` is replaced by `CyclicBandedCholesky`, which retains the
+> wrap; a non-PSD band and any non-finite sample are now errors rather than
+> silently regularised or dropped. The analysis below is retained because it
+> explains *why* the two layers had to be fixed together. Note that the λ = 0.9,
+> b = 100 configuration referenced in §5.4 was never in the truncation window —
+> a large corner is what keeps the linear scan running, not what defeats it.
 
 The cyclic structure of the Gram (§5.4) interacts badly with two independent
 heuristics already in the codebase:
