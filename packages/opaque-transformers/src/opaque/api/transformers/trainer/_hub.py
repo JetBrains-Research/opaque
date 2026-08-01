@@ -183,7 +183,7 @@ def push_to_hub(
         commit_message=commit_message,
         token=effective_token,
         run_as_future=not blocking,
-        ignore_patterns=["_*", f"{PREFIX_CHECKPOINT_DIR}-*"],
+        ignore_patterns=["_*", f"{PREFIX_CHECKPOINT_DIR}-*", "runs/**"],
         revision=revision,
     )
 

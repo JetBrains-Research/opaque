@@ -98,7 +98,7 @@ Every one of these is a documented guarantee that the code does not provide. Wit
 12. `adaptive_clipped_grad` "automatically detects if distributed" — `_adaptive.py:200,212`.
 13. MC-derived ε values are point estimates — add a one-line caveat to `docs/reference/accounting.md` and the `pld()` docstrings until RC-4 lands.
 
-### 1.4 Add the missing disclosures (docs-only, ~1 day)
+### 1.4 ✅ Add the missing disclosures
 
 - **`docs/limitations.md`: "Randomness and the threat model."** The PRNG is not cryptographically secure; the seed is user-chosen, printed, and checkpointed; the guarantee is void against anyone who learns it. Noise state in checkpoints must be stripped before publishing artifacts.
 - **`docs/limitations.md`: "Telemetry outside the guarantee."** Every logging step publishes un-noised mean loss, mean pre-clip grad norm, clip rate, realized Poisson batch size, DPO reward means. Mirror the disclosure `DPTrainer.evaluate` already makes at `_dp_trainer.py:2716-2725`. Add `runs/` to `ignore_patterns` in `_hub.push_to_hub` **today** — that one is an actual exfiltration path.

@@ -178,6 +178,7 @@ class TestPushToHub:
         assert kw["folder_path"] == str(tmp_path)
         assert kw["commit_message"] == "End of training"
         assert kw["run_as_future"] is False  # blocking=True by default
+        assert "runs/**" in kw["ignore_patterns"]
 
     def test_non_blocking_sets_run_as_future(self, tmp_path):
         mock_url = MagicMock()
