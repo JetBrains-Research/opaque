@@ -174,7 +174,7 @@ Dataclass surface.  Every field listed here exists on
 | `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / (10 * dataset_size)` when unset. |
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
-| `clipping_kwargs` | `dict[str, Any]` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
+| `clipping_kwargs` | `dict[str, Any]` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  `target_clipping_rate` (default `0.5`) is the target fraction of per-example gradients that get clipped, so the threshold converges to the `1 - target_clipping_rate` quantile of the per-example gradient norms. |
 | `sampling_mode` | `str` | `"poisson"` | Only `"poisson"` is supported. |
 | `sampling_kwargs` | `dict[str, Any]` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | Only `"gaussian"` is supported. |

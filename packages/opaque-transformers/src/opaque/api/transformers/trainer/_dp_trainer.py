@@ -3862,7 +3862,7 @@ class DPTrainer:
                 has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 initial_clipping_norm=clip_norm,
-                target_quantile=1.0 - target_clip_rate,
+                target_quantile=target_clip_rate,
                 clipping_norm_max=clip_norm_max,
                 microbatch_size=microbatch_size,
                 return_aux=True,

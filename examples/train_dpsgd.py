@@ -587,7 +587,9 @@ def parse_args():
         "--target-clipping-rate",
         type=float,
         default=0.5,
-        help="Target clipping rate for --clipping-mode adaptive.",
+        help="Target fraction of per-example gradients that get clipped under "
+        "--clipping-mode adaptive; the threshold converges to the "
+        "(1 - rate) quantile of the per-example gradient norms.",
     )
     dp_group.add_argument(
         "--clipping-norm-max",
@@ -1437,7 +1439,7 @@ def main():
             argnums=0,
             batch_argnums=(1,),
             initial_clipping_norm=clip_norm,
-            target_quantile=1.0 - args.target_clipping_rate,
+            target_quantile=args.target_clipping_rate,
             clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
             return_aux=True,

@@ -649,6 +649,32 @@ class TestDPTrainerAdaptiveClipping:
         assert ctx.noise_state._rng_key == gradient_noise_key
         assert ctx.clip_state._rng_key != ctx.noise_state._rng_key
 
+    @pytest.mark.parametrize("target_clipping_rate", [0.1, 0.9])
+    def test_target_clipping_rate_is_the_clipped_fraction(
+        self, gpt2_with_lora, tiny_lm_dataset, target_clipping_rate
+    ):
+        """``target_clipping_rate`` reaches the tracker uninverted.
+
+        The rates are asymmetric on purpose — 0.5 is a fixed point of
+        ``x -> 1 - x`` and cannot distinguish the two conventions.
+        """
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                clipping_mode="adaptive",
+                clipping_norm=1.0,
+                max_steps=1,
+                clipping_kwargs={"target_clipping_rate": target_clipping_rate},
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        ctx = trainer._setup_training()
+
+        assert ctx.clip_state._target_quantile == pytest.approx(target_clipping_rate)
+
     def test_adaptive_clipping_runs(self, gpt2_with_lora, tiny_lm_dataset):
         model, tokenizer = gpt2_with_lora
 
