@@ -344,8 +344,10 @@ class TestAdaptiveClippedGrad:
         for _ in range(200):
             _, clip_state = grad_fn(params, batch_x, state=clip_state)
 
+        # ``_current_clipping_norm`` is the threshold used on the last step;
+        # ``_next_clipping_norm`` is the post-update value for the next one.
         clipped_fraction = float(
-            (norms > clip_state._next_clipping_norm).float().mean()
+            (norms > clip_state._current_clipping_norm).float().mean()
         )
         assert clipped_fraction == pytest.approx(target_quantile, abs=0.02)
 
