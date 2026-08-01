@@ -16,10 +16,11 @@
 //!
 //! # Performance
 //!
-//! For DP-λCGD, the Gram matrix has near-AR(1) structure (entries decay as
-//! λ^{|i-j|}). The Cholesky factor inherits this bandedness, so we use a
-//! **banded Cholesky** with automatic bandwidth detection. This reduces the
-//! per-sample cost from O(b²) to O(b·p) where p is the effective bandwidth.
+//! For DP-λCGD the Gram is *cyclically* banded — `G_{ij} ≈ E·λ^d +
+//! (E-1)·λ^{b-d}` for `d = |i-j|`, so entries decay away from the diagonal and
+//! then rise again at the corner. We therefore use a **cyclically banded
+//! Cholesky** (`super::cyclic_cholesky`), which keeps the per-sample cost at
+//! O(b·p) while retaining the wrap that a linear band would discard.
 //!
 //! # References
 //!
@@ -36,112 +37,7 @@ use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
-/// Banded Cholesky decomposition.
-///
-/// Computes L such that G ≈ L·Lᵀ, where L is lower-triangular with
-/// bandwidth `bw` (L[i,j] = 0 for j < i - bw).
-///
-/// The bandwidth is auto-detected: entries of L smaller than `threshold`
-/// times the diagonal are set to zero.
-struct BandedCholesky {
-    /// Cholesky entries stored as (b × (bw+1)) in row-major.
-    /// data[i * stride + (j - (i-bw).max(0))] = L[i, j]
-    data: Vec<f64>,
-    b: usize,
-    bw: usize, // bandwidth (number of sub-diagonals kept)
-    stride: usize,
-}
-
-impl BandedCholesky {
-    /// Compute banded Cholesky with estimated bandwidth.
-    ///
-    /// Estimates bandwidth from the Gram matrix structure (smallest p where
-    /// off-diagonal entries drop below threshold), then computes only the
-    /// banded part of the Cholesky. O(b·bw²) instead of O(b³).
-    fn compute(gram: &[f64], b: usize, threshold: f64) -> Result<Self> {
-        // Estimate bandwidth from the Gram matrix: find the smallest p such
-        // that max_{|i-j|>p} |G_{ij}| < threshold * max(G_{ii}).
-        let max_diag = (0..b).map(|i| gram[i * b + i]).fold(0.0f64, f64::max);
-        let abs_thresh = threshold * max_diag;
-
-        let mut est_bw: usize = 1;
-        for d in 1..b {
-            let mut any_above = false;
-            // Check a few entries at distance d
-            for i in (0..b.saturating_sub(d)).step_by((b / 20).max(1)) {
-                if gram[i * b + (i + d)].abs() > abs_thresh {
-                    any_above = true;
-                    break;
-                }
-            }
-            if any_above {
-                est_bw = d;
-            } else {
-                break;
-            }
-        }
-        // Safety margin
-        let bw = (est_bw * 2 + 10).min(b - 1);
-        let stride = bw + 1;
-
-        // Compute banded Cholesky directly: only L[i,j] for j >= i - bw
-        let mut data = vec![0.0f64; b * stride];
-
-        for i in 0..b {
-            let j_lo = i.saturating_sub(bw);
-
-            for j in j_lo..=i {
-                let band_j = j - j_lo;
-
-                let k_lo = i.saturating_sub(bw).max(j.saturating_sub(bw));
-                let mut sum = 0.0;
-                for k in k_lo..j {
-                    let ik_band = k.saturating_sub(i.saturating_sub(bw));
-                    let jk_band = k.saturating_sub(j.saturating_sub(bw));
-                    if ik_band < stride && jk_band < stride {
-                        sum += data[i * stride + ik_band] * data[j * stride + jk_band];
-                    }
-                }
-
-                if i == j {
-                    let diag = gram[i * b + i] - sum;
-                    if diag <= 1e-15 {
-                        // Regularize slightly for numerical stability
-                        data[i * stride + band_j] = (diag.max(1e-30)).sqrt();
-                    } else {
-                        data[i * stride + band_j] = diag.sqrt();
-                    }
-                } else {
-                    let diag_j_band = bw.min(j); // band index of diagonal of row j
-                    let l_jj = data[j * stride + diag_j_band];
-                    if l_jj > 0.0 {
-                        data[i * stride + band_j] = (gram[i * b + j] - sum) / l_jj;
-                    }
-                }
-            }
-        }
-
-        Ok(BandedCholesky {
-            data,
-            b,
-            bw,
-            stride,
-        })
-    }
-
-    /// Compute u = mean + σ * L * z using banded structure.
-    /// O(b * bw) instead of O(b²).
-    fn sample_gaussian(&self, mean: &[f64], sigma: f64, z: &[f64], out: &mut [f64]) {
-        for k in 0..self.b {
-            let j_lo = k.saturating_sub(self.bw);
-            let mut lz = 0.0;
-            for (idx, zj) in z[j_lo..=k].iter().enumerate() {
-                lz += self.data[k * self.stride + idx] * zj;
-            }
-            out[k] = mean[k] + sigma * lz;
-        }
-    }
-}
+use super::cyclic_cholesky::CyclicBandedCholesky;
 
 /// Sample one privacy loss value from the BnB dominating pair.
 ///
@@ -149,7 +45,7 @@ impl BandedCholesky {
 #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn sample_privacy_loss_remove(
     gram: &[f64],
-    chol: &BandedCholesky,
+    chol: &CyclicBandedCholesky,
     b: usize,
     sigma: f64,
     inv_2sig2: f64,
@@ -191,7 +87,7 @@ fn sample_privacy_loss_remove(
 #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn sample_privacy_loss_add(
     _gram: &[f64],
-    chol: &BandedCholesky,
+    chol: &CyclicBandedCholesky,
     b: usize,
     sigma: f64,
     inv_2sig2: f64,
@@ -262,9 +158,24 @@ pub fn bnb_mc_pld(
         return Err(PldError::InvalidParameter("num_samples must be > 0".into()));
     }
 
-    // Banded Cholesky: auto-detects bandwidth from Gram structure.
-    // For DP-λCGD with λ=0.9, b=1953: bandwidth ≈ 2-5 (nearly bidiagonal).
-    let chol = BandedCholesky::compute(gram, b, 1e-6)?;
+    // Cyclically banded Cholesky: the Gram wraps, so a linear band would
+    // discard the corner (up to ~68% of the diagonal for λ-CGD).
+    let chol = CyclicBandedCholesky::compute(gram, b, 1e-6)?;
+
+    // The factorisation must actually reproduce the Gram it was handed —
+    // otherwise the sampler draws u ~ N(m_i, σ²·LLᵀ) from the wrong
+    // covariance, which is not conservative in either direction.
+    let max_diag = (0..b).map(|i| gram[i * b + i]).fold(0.0f64, f64::max);
+    let residual = chol.max_residual(gram);
+    if residual > 1e-8 * max_diag.max(1.0) {
+        return Err(PldError::NumericalError(format!(
+            "Cholesky does not reproduce the Gram matrix: max|G - LLᵀ| = {} \
+             (tolerance {}, b={}). The sampled covariance would not be G.",
+            residual,
+            1e-8 * max_diag.max(1.0),
+            b
+        )));
+    }
 
     let disc = config.discretization;
     let sigma2 = sigma * sigma;
@@ -339,16 +250,45 @@ pub fn bnb_mc_pld(
         .collect();
 
     // Build PMFs from samples
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
 
 /// Convert MC samples into a discrete PMF on the PLD grid.
-pub(crate) fn samples_to_pmf(samples: &[f64], discretization: f64, max_grid_size: usize) -> Pmf {
+///
+/// # Errors
+///
+/// Returns `NumericalError` on any non-finite sample. The privacy loss here is
+/// `log((1/b) Σ exp(·))` of a strictly positive, finite sum, so it is finite
+/// whenever the sampler is well-conditioned — a `NaN` or `±inf` means the
+/// Cholesky factor blew up, not that the true privacy loss is infinite.
+/// Previously `NaN` (which is neither `is_finite()` nor `> 0.0`) was dropped
+/// outright and `-inf` vanished, so the PMF silently lost mass and `Pmf::new`
+/// does no renormalisation.
+pub(crate) fn samples_to_pmf(
+    samples: &[f64],
+    discretization: f64,
+    max_grid_size: usize,
+) -> Result<Pmf> {
     if samples.is_empty() {
-        return Pmf::new(discretization, 0, vec![1.0], 0.0, max_grid_size);
+        return Ok(Pmf::new(discretization, 0, vec![1.0], 0.0, max_grid_size));
+    }
+
+    if let Some((idx, bad)) = samples
+        .iter()
+        .enumerate()
+        .find(|(_, y)| !y.is_finite())
+        .map(|(i, y)| (i, *y))
+    {
+        return Err(PldError::NumericalError(format!(
+            "non-finite privacy loss sample {} at index {} of {}; the sampler \
+             is ill-conditioned (check the Cholesky factor and the Gram matrix)",
+            bad,
+            idx,
+            samples.len()
+        )));
     }
 
     let n = samples.len() as f64;
@@ -376,13 +316,6 @@ pub(crate) fn samples_to_pmf(samples: &[f64], discretization: f64, max_grid_size
     let mut infinity_mass = 0.0f64;
 
     for &y in samples {
-        if !y.is_finite() {
-            if y > 0.0 {
-                infinity_mass += 1.0 / n;
-            }
-            continue;
-        }
-
         let bucket_idx = (y / effective_disc).ceil() as i64 - effective_lo;
 
         if bucket_idx < 0 {
@@ -394,13 +327,22 @@ pub(crate) fn samples_to_pmf(samples: &[f64], discretization: f64, max_grid_size
         }
     }
 
-    Pmf::new(
+    // `Pmf::new` performs no renormalisation, so the histogram has to account
+    // for every sample itself.
+    let total: f64 = probs.iter().sum::<f64>() + infinity_mass;
+    debug_assert!(
+        (total - 1.0).abs() < 1e-9,
+        "samples_to_pmf lost mass: total = {}",
+        total
+    );
+
+    Ok(Pmf::new(
         effective_disc,
         effective_lo,
         probs,
         infinity_mass,
         max_grid_size,
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -411,10 +353,55 @@ mod tests {
         DiscretizationConfig::default()
     }
 
+    /// The window that used to produce |L| ~ 1e219 and `inf`.
+    ///
+    /// At λ=0.9, E=4, momentum=0 and b in [278, 295] the *linearly* banded
+    /// factorisation of the (now corner-retaining) Gram is not PSD. The old
+    /// code regularised the pivot to sqrt(1e-30)=1e-15 and then divided by it;
+    /// the resulting non-finite losses were discarded silently by
+    /// `samples_to_pmf`, so the PMF quietly lost mass.
+    ///
+    /// The cyclic factorisation is PSD here, so this must now simply work —
+    /// and in no case may it return a non-finite ε.
     #[test]
-    fn test_banded_cholesky_identity() {
+    fn test_no_blowup_in_former_non_psd_window() {
+        use crate::matrix_factorization::lambda_cgd_gram_matrix;
+
+        let mut cfg = default_config();
+        cfg.num_mc_samples = 2000;
+        for &b in &[278usize, 280, 282, 285, 290, 295] {
+            let e = 4;
+            let gram = lambda_cgd_gram_matrix(0.9, b * e, b, Some(e), true, 0.0).unwrap();
+            let pld = bnb_mc_pld(&gram, b, 1.5, &cfg)
+                .unwrap_or_else(|err| panic!("b={} failed: {}", b, err));
+            let eps = pld.epsilon_at(1e-5);
+            assert!(eps.is_finite() && eps > 0.0, "b={}: eps={}", b, eps);
+        }
+    }
+
+    /// Non-finite samples must error, not vanish.
+    #[test]
+    fn test_samples_to_pmf_rejects_non_finite() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let samples = vec![0.1, 0.2, bad, 0.3];
+            let err = samples_to_pmf(&samples, 1e-4, 10_000);
+            assert!(err.is_err(), "{} must be rejected", bad);
+        }
+    }
+
+    /// Every finite sample lands somewhere: the histogram conserves mass.
+    #[test]
+    fn test_samples_to_pmf_conserves_mass() {
+        let samples: Vec<f64> = (0..1000).map(|i| (i as f64 - 500.0) * 0.01).collect();
+        let pmf = samples_to_pmf(&samples, 1e-3, 10_000).unwrap();
+        let total: f64 = pmf.probs.iter().sum::<f64>() + pmf.infinity_mass;
+        assert!((total - 1.0).abs() < 1e-9, "total mass = {}", total);
+    }
+
+    #[test]
+    fn test_cyclic_cholesky_identity() {
         let gram = vec![1.0, 0.0, 0.0, 1.0];
-        let chol = BandedCholesky::compute(&gram, 2, 1e-6).unwrap();
+        let chol = CyclicBandedCholesky::compute(&gram, 2, 1e-6).unwrap();
         // L should be identity → L*z = z
         let mut out = vec![0.0; 2];
         chol.sample_gaussian(&[0.0, 0.0], 1.0, &[1.0, 2.0], &mut out);
@@ -423,9 +410,9 @@ mod tests {
     }
 
     #[test]
-    fn test_banded_cholesky_2x2() {
+    fn test_cyclic_cholesky_2x2() {
         let gram = vec![4.0, 2.0, 2.0, 3.0];
-        let chol = BandedCholesky::compute(&gram, 2, 1e-6).unwrap();
+        let chol = CyclicBandedCholesky::compute(&gram, 2, 1e-6).unwrap();
         // L = [[2, 0], [1, sqrt(2)]]
         // L * [1, 0] = [2, 1]
         let mut out = vec![0.0; 2];

@@ -7,6 +7,7 @@
 //! exactly to Poisson-subsampled Gaussian composed `num_bins * num_epochs`
 //! times — use `poisson_gaussian_pld(...).self_compose(...)` directly.
 
+pub(crate) mod cyclic_cholesky;
 pub mod identity;
 pub mod monte_carlo;
 

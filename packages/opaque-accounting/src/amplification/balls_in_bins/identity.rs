@@ -302,7 +302,7 @@ pub fn bnb_mc_pld_identity(
     let max_grid = config.max_grid_size;
 
     let pmf_remove = weighted_samples_to_pmf(&remove_samples, disc, max_grid);
-    let pmf_add = samples_to_pmf(&add_samples, disc, max_grid);
+    let pmf_add = samples_to_pmf(&add_samples, disc, max_grid)?;
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
