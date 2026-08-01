@@ -157,11 +157,7 @@ def adaptive_clipped_grad(
         has_aux: If True, ``loss_fn`` returns ``(value, loss_aux)``.
         initial_clipping_norm: Initial clipping threshold C_0.  When
             ``PerGroup``, each group adapts independently.
-        target_quantile: Target fraction of per-example gradients that get
-            clipped.  The threshold converges to the ``1 - target_quantile``
-            quantile of the per-example gradient norms — the complement of
-            the ``gamma`` in Andrew et al., which targets the *unclipped*
-            fraction.
+        target_quantile: Target fraction of clipped gradients.
         learning_rate: Step size for geometric adaptation.
         clipping_norm_min: Minimum allowed clipping threshold.
         clipping_norm_max: Maximum allowed clipping threshold.
