@@ -77,8 +77,8 @@ class DpFtrlProcess(DpProcess):
     ) -> Pld:
         """Return the full-horizon PLD.
 
-        Monte Carlo subclasses return empirical point estimates rather than
-        upper confidence bounds; conservative grid discretization does not
+        A Monte Carlo subclass returns an empirical point estimate, not an
+        upper confidence bound; conservative grid discretization does not
         account for Monte Carlo sampling error.
         """
         return self._pld_at_horizon(

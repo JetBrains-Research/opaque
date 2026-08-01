@@ -162,7 +162,7 @@ fallbacks.
 See [Model Patches — Triton kernels](huggingface/model-patches.md#triton-kernels)
 for per-operation details and per-model support.
 
-### Kernel performance
+### Kernel benchmarks
 
 Kernel speed and memory use depend on tensor shapes, dtype, device, software
 versions, and whether `vmap(grad)` is active. Opaque does not currently ship a

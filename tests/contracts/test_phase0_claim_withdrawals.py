@@ -69,6 +69,6 @@ def test_bounded_gaussian_discloses_missing_accounting(path: str) -> None:
     ],
 )
 def test_monte_carlo_pld_discloses_point_estimate(path: str) -> None:
-    text = (REPO_ROOT / path).read_text().lower()
+    text = " ".join((REPO_ROOT / path).read_text().lower().split())
     assert "point estimate" in text
     assert "not an upper confidence bound" in text
