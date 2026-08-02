@@ -4078,11 +4078,40 @@ class DPTrainer:
                 return _prefix | (mechanism(nm) * _rem)
 
         ecal = a.noise_calibration_kwargs
+        param_min = float(ecal["min"])
+        param_max = float(ecal["max"])
+        if a.sampling_mode == "random_allocation":
+            # At very small σ, the analytic allocation transform can require
+            # an output grid larger than the configured numerical cap. Unlike
+            # Poisson accounting, the default calibration lower endpoint is
+            # therefore not always evaluable. Raise it geometrically to the
+            # first valid transform point before handing the bracket to the
+            # generic bisection.
+            configured_min = param_min
+            while True:
+                try:
+                    objective(param_min).epsilon_at(target_delta)
+                except ValueError as exc:
+                    if (
+                        "exceeds max_grid_size" not in str(exc)
+                        or param_min >= param_max
+                    ):
+                        raise
+                    param_min = min(param_min * 2.0, param_max)
+                else:
+                    break
+            if param_min != configured_min:
+                log.info(
+                    "Raised random-allocation calibration minimum from %.4g to "
+                    "%.4g because smaller σ exceeds the PLD grid cap.",
+                    configured_min,
+                    param_min,
+                )
         result = cal.calibrate(
             cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
             objective,
-            param_min=float(ecal["min"]),
-            param_max=float(ecal["max"]),
+            param_min=param_min,
+            param_max=param_max,
             tolerance=float(ecal["tolerance"]),
         )
         log.info(

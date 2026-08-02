@@ -149,7 +149,9 @@ each example appears in exactly one of the random epoch bins, and the
 accountant charges one whole-epoch process. It requires at least two bins and a
 `max_steps` value divisible by the resolved steps per epoch. `mf_identity`
 accepts an explicit `sampling_mode="balls_in_bins"` override for the fixed-bin
-matrix-mechanism schedule; its default remains Poisson.
+matrix-mechanism schedule; its default remains Poisson. During automatic
+random-allocation calibration, the trainer raises an infeasible lower noise
+bracket if the transform would exceed its PLD grid cap.
 
 So the minimal DP-FTRL configuration is one field:
 
