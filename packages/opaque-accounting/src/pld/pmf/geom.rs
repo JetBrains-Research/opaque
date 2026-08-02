@@ -191,32 +191,6 @@ impl GeomPmf {
         let mut infinity_mass = 0.0f64;
         let mut zero_mass = 0.0f64;
 
-        let mut place = |log_val: f64, mass: f64, probs: &mut Vec<f64>, inf: &mut f64| {
-            if mass == 0.0 {
-                return;
-            }
-            let pos = directed_next((log_val - log_v_min) / log_ratio, dir);
-            let idx = match dir {
-                Rounding::Up => pos.ceil(),
-                Rounding::Down => pos.floor(),
-            };
-            if idx < 0.0 {
-                // Only reachable via the 0-atom identity below; round toward
-                // the requested direction.
-                match dir {
-                    Rounding::Up => probs[0] += mass,
-                    Rounding::Down => zero_mass += mass,
-                }
-            } else if idx >= n as f64 {
-                match dir {
-                    Rounding::Up => *inf += mass,
-                    Rounding::Down => probs[n - 1] += mass,
-                }
-            } else {
-                probs[idx as usize] += mass;
-            }
-        };
-
         // interior × interior — the O(n²) core, parallel over rows of `a`.
         //
         // Rows are split into a fixed number of chunks derived from `n` alone,
@@ -274,6 +248,32 @@ impl GeomPmf {
             infinity_mass += *inf;
             zero_mass += *zero;
         }
+
+        let mut place = |log_val: f64, mass: f64, probs: &mut Vec<f64>, inf: &mut f64| {
+            if mass == 0.0 {
+                return;
+            }
+            let pos = directed_next((log_val - log_v_min) / log_ratio, dir);
+            let idx = match dir {
+                Rounding::Up => pos.ceil(),
+                Rounding::Down => pos.floor(),
+            };
+            if idx < 0.0 {
+                // Only reachable via the 0-atom identity below; round toward
+                // the requested direction.
+                match dir {
+                    Rounding::Up => probs[0] += mass,
+                    Rounding::Down => zero_mass += mass,
+                }
+            } else if idx >= n as f64 {
+                match dir {
+                    Rounding::Up => *inf += mass,
+                    Rounding::Down => probs[n - 1] += mass,
+                }
+            } else {
+                probs[idx as usize] += mass;
+            }
+        };
 
         // 0 is the additive identity: 0 + v = v.
         if a.zero_mass > 0.0 {
