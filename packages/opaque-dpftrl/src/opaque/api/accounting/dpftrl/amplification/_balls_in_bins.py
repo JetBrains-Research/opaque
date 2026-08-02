@@ -193,7 +193,7 @@ class BallsInBins(DpFtrlProcess):
                     rounded,
                     min_sep_K,
                     max_participations_K,
-                    True,
+                    False,
                 )
             )
         else:

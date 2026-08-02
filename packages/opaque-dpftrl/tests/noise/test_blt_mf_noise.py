@@ -1,9 +1,14 @@
 """Tests for BltStrategy factory and accounting equivalence."""
 
+import pytest
+
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.accounting.core import _native
+from opaque.api.accounting.dpftrl.amplification import _balls_in_bins
 from opaque.api.dpftrl.noise._blt import BltStrategy, blt_strategy
 
 _PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
+_SMALL_PART = {"n_steps": 20, "min_sep": 5, "max_participations": 4}
 
 
 class TestBltStrategy:
@@ -19,6 +24,29 @@ class TestBltStrategy:
         gram = s.gram_matrix(**_PART)
         assert gram is not None
         assert len(gram) == 25 * 25
+
+    def test_gram_matrix_matches_deployed_unnormalized_encoder(self):
+        s = blt_strategy(max_buffers=2, momentum=0.917)
+        coefs = s.coefficients(**_SMALL_PART).tolist()
+        raw = _native.toeplitz_gram_matrix(
+            coefs,
+            _SMALL_PART["n_steps"],
+            _SMALL_PART["min_sep"],
+            _SMALL_PART["max_participations"],
+            False,
+        )
+        normalized = _native.toeplitz_gram_matrix(
+            coefs,
+            _SMALL_PART["n_steps"],
+            _SMALL_PART["min_sep"],
+            _SMALL_PART["max_participations"],
+            True,
+        )
+
+        gram = s.gram_matrix(**_SMALL_PART)
+
+        assert gram == pytest.approx(raw)
+        assert max(abs(a - b) for a, b in zip(raw, normalized, strict=True)) > 1e-3
 
     def test_coefficients_length(self):
         s = blt_strategy(momentum=0.95)
@@ -52,3 +80,36 @@ class TestBltPld:
             n_steps=100,
         ).epsilon_at(self.delta)
         assert eps > 0
+
+    def test_blt_bnb_prefix_matches_deployed_unnormalized_encoder(self, monkeypatch):
+        s = blt_strategy(max_buffers=2, momentum=0.913)
+        proc = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_gaussian(1.0, s),
+            num_bins=5,
+            n_steps=20,
+        )
+        actual_native = _balls_in_bins._native
+        captured: dict[str, tuple[float, ...]] = {}
+        sentinel = object()
+
+        class CapturingNative:
+            def __getattr__(self, name):
+                return getattr(actual_native, name)
+
+            def bnb_mc_pld(self, gram, *_):
+                captured["gram"] = tuple(gram)
+                return sentinel
+
+        monkeypatch.setattr(_balls_in_bins, "_native", CapturingNative())
+
+        assert proc._pld_at_horizon(10) is sentinel
+
+        coefs = s.coefficients(
+            n_steps=proc.n_steps,
+            min_sep=proc.min_sep,
+            max_participations=proc.max_participations,
+        )[:10].tolist()
+        raw = actual_native.toeplitz_gram_matrix(coefs, 10, 5, 2, False)
+        normalized = actual_native.toeplitz_gram_matrix(coefs, 10, 5, 2, True)
+        assert captured["gram"] == pytest.approx(raw)
+        assert max(abs(a - b) for a, b in zip(raw, normalized, strict=True)) > 1e-3

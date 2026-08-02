@@ -113,7 +113,7 @@ def _blt_gram_matrix_cached(
             n_steps,
             min_sep,
             max_participations,
-            True,
+            False,
         )
     )
 
