@@ -77,9 +77,8 @@ class RandomAllocationSampler(Sampler):
             raise ValueError("data_source must not be empty")
         if num_bins < 2:
             raise ValueError(f"num_bins must be >= 2, got {num_bins}")
-        if n_steps is not None:
-            if n_steps < 1:
-                raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
+        if n_steps is not None and n_steps < 1:
+            raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
 
         self.data_source = data_source
         self.num_bins = num_bins
