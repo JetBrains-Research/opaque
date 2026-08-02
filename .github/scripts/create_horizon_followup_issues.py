@@ -180,15 +180,20 @@ ISSUES: tuple[IssueSpec, ...] = (
         affects_epsilon="no",
         verdict="CONFIRMED",
         claim=(
-            "Multiple stacked branches (`cursor/dptrainer-allocation-per-step-d1f5`, older "
-            "combined trainer PRs) are superseded by `cursor/horizon-allocation-processes-d1f5` "
-            "(#317). Leaving them open causes review and CI noise."
+            "Older stacked trainer PRs (`cursor/dptrainer-allocation-per-step-d1f5`, etc.) "
+            "are superseded by the two-PR stack **#314** (sampler schedule fixes) + **#317** "
+            "(DpHorizonProcess / `per_step` / trainer), both from the "
+            "`cursor/horizon-allocation-processes-d1f5` lineage. Leaving duplicate PRs "
+            "open causes review and CI noise."
         ),
         fix_sketch=(
-            "After #317 merges, close superseded PRs with a short comment pointing at #317 "
-            "and delete stale remote branches when safe."
+            "After #317 merges (with #314 merged first), close superseded PRs with a short "
+            "comment pointing at #314/#317 and delete stale remote branches when safe."
         ),
-        notes="Process hygiene after the DpHorizonProcess / `per_step` unification.",
+        notes=(
+            "Process hygiene after the allocation accounting unification. Do not close #314 or "
+            "#317 — they are the intended merge sequence."
+        ),
         labels=("triage", "area: ci"),
     ),
 )
