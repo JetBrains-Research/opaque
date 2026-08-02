@@ -101,9 +101,6 @@ class BallsInBinsSampler(Sampler):
         self._bins: list[list[int]] = [[] for _ in range(num_bins)]
         for idx, b in enumerate(assignments):
             self._bins[b].append(idx)
-        # Round-robin emits one batch per non-empty bin; cache the
-        # non-empty bin order so iteration is a flat enumerate.
-        self._nonempty_bins: list[list[int]] = [b for b in self._bins if b]
         self._consumed = 0
 
     @property
@@ -117,47 +114,41 @@ class BallsInBinsSampler(Sampler):
         return self._consumed
 
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches: round-robin over non-empty bins, repeated
-        for ``num_epochs``.
+        """Yield every bin slot, including empty batches, for ``num_epochs``.
 
         The same bin assignment is reused every epoch — the BnB
-        privacy accounting (Lemma 3.2) requires the assignment be
-        fixed across the run.
+        privacy accounting (Lemma 3.2) requires the assignment be fixed across
+        the run. Empty slots must remain in the stream: dropping them would
+        make the executed step schedule differ from the accountant's
+        ``num_bins``-slot epoch.
         """
-        nonempty = self._nonempty_bins
-        if not nonempty:
-            return
-        per_epoch = len(nonempty)
+        bins = self._bins
         if self.n_steps is None:
             i = self._consumed
             while True:
                 # Increment before yield so a snapshot taken mid-iter
                 # reports the count of batches actually emitted so far.
                 self._consumed = i + 1
-                yield nonempty[i % per_epoch]
+                yield bins[i % self.num_bins]
                 i += 1
         else:
-            epochs = self.n_steps // self.num_bins
-            total = per_epoch * epochs
-            for i in range(self._consumed, total):
+            for i in range(self._consumed, self.n_steps):
                 self._consumed = i + 1
-                yield nonempty[i % per_epoch]
+                yield bins[i % self.num_bins]
 
     def __len__(self) -> int:
-        """Non-empty batches remaining.
+        """Declared bin slots remaining.
 
-        After a partial run, reflects what ``__iter__`` will yield —
-        the total minus the cursor — so ``len(DataLoader(...))`` matches
-        the resumed iteration count.
+        After a partial run, reflects what ``__iter__`` will yield, including
+        empty batches, so ``len(DataLoader(...))`` matches the accountant's
+        remaining schedule.
 
         Raises:
             TypeError: If n_steps is None (infinite iteration).
         """
         if self.n_steps is None:
             raise TypeError("len() of unsized object (n_steps=None)")
-        epochs = self.n_steps // self.num_bins
-        total = len(self._nonempty_bins) * epochs
-        return total - self._consumed
+        return self.n_steps - self._consumed
 
     @property
     def expected_batch_size(self) -> float:

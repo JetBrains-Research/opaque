@@ -154,6 +154,18 @@ def _reference_epsilon(nm: float, q: float, n_steps: int, delta: float) -> float
     return acc.epsilon_at(delta)
 
 
+def _reference_random_allocation_epsilon(
+    nm: float, num_bins: int, num_epochs: int, delta: float
+) -> float:
+    import opaque.dpsgd.accounting as dpsgd_acc
+
+    epoch = dpsgd_acc.random_allocation(
+        dpsgd_acc.gaussian(nm),
+        num_bins=num_bins,
+    )
+    return (epoch * num_epochs).epsilon_at(delta)
+
+
 def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     """The σ the trainer calibrates reproduces the target ε against an
     independently-built accountant — guards the calibration solver, which no
@@ -189,6 +201,39 @@ def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     assert reported >= target_eps - 0.5
 
 
+def test_random_allocation_calibration_and_epoch_accounting(
+    gpt2_lora, lm_dataset, tmp_path
+):
+    """Random allocation calibrates and composes once per complete epoch."""
+    model, tok = gpt2_lora
+    target_eps, delta = 8.0, 1e-5
+    args = _args(
+        tmp_path,
+        privacy_noise_multiplier=None,
+        privacy_target_epsilon=target_eps,
+        privacy_target_delta=delta,
+        sampling_mode="random_allocation",
+        max_steps=4,
+        save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = trainer.train()
+
+    sigma = trainer.state.privacy_resolved_noise_multiplier
+    reported = out.metrics["privacy_epsilon"]
+    # Eight records and a logical batch size of four gives two bins per
+    # allocation epoch, so four optimizer steps comprise two epoch atoms.
+    ref = _reference_random_allocation_epsilon(
+        sigma, num_bins=2, num_epochs=2, delta=delta
+    )
+
+    assert reported == pytest.approx(ref, rel=1e-6)
+    assert reported <= target_eps + 1e-2
+    assert reported >= target_eps - 0.5
+
+
 def test_accountant_composes_exactly_total_steps(gpt2_lora, lm_dataset, tmp_path):
     """Reported ε equals an N-step reference and is distinguishable from
     N±1 — locking the one-mechanism-per-step composition count."""
@@ -213,7 +258,21 @@ def test_accountant_composes_exactly_total_steps(gpt2_lora, lm_dataset, tmp_path
     assert reported != pytest.approx(_reference_epsilon(nm, q, 6, delta), rel=1e-3)
 
 
-def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
+@pytest.mark.parametrize(
+    ("sampling_mode", "save_steps", "checkpoint_step"),
+    [
+        ("poisson", 2, 2),
+        ("random_allocation", 1, 1),
+    ],
+)
+def test_resume_keeps_total_epsilon_on_budget(
+    gpt2_lora,
+    lm_dataset,
+    tmp_path,
+    sampling_mode,
+    save_steps,
+    checkpoint_step,
+):
     """A run checkpointed mid-way and resumed reports the same final ε as an
     uninterrupted run (prefix + remaining stays on budget)."""
     model, tok = gpt2_lora
@@ -225,6 +284,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         privacy_noise_multiplier=nm,
         privacy_target_delta=delta,
         max_steps=4,
+        sampling_mode=sampling_mode,
         save_strategy="no",
     )
     full = DPTrainer(
@@ -252,14 +312,15 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         privacy_noise_multiplier=nm,
         privacy_target_delta=delta,
         max_steps=2,
+        sampling_mode=sampling_mode,
         save_strategy="steps",
-        save_steps=2,
+        save_steps=save_steps,
     )
     part = DPTrainer(
         model=model2, args=args_part, train_dataset=lm_dataset, processing_class=tok
     )
     part.train()
-    ckpt = str(Path(part_dir) / "checkpoint-2")
+    ckpt = str(Path(part_dir) / f"checkpoint-{checkpoint_step}")
     assert Path(ckpt).is_dir()
 
     args_resume = _args(
@@ -267,6 +328,7 @@ def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
         privacy_noise_multiplier=nm,
         privacy_target_delta=delta,
         max_steps=4,
+        sampling_mode=sampling_mode,
         save_strategy="no",
     )
     resumed = DPTrainer(
