@@ -34,6 +34,31 @@ These are the same defect reported from different call sites. One fix each:
 
 ---
 
+
+**Decision 3 (added by the FS26 survey) — what does `strategy.sensitivity()` mean?**
+
+`BandMfStrategy.sensitivity()` returns exactly 1.0 for every participation context
+(OPQ-177), because `_toeplitz.py:570` normalises the coefficients to unit norm and the
+method returns that norm. `BsrStrategy` over the same contexts returns 2.236 → 4.472. So
+the two strategies do not agree on what the method means, and `MfGaussian.pld` consumes it
+as if they did.
+
+Pick one and enforce it repo-wide:
+
+- **(a) `sensitivity()` is single-participation.** Then `_poisson.py:160` and
+  `_b_min_sep/__init__.py:146` are already correct, the four tests asserting `== 1.0` stay,
+  and `MfGaussian.pld` must stop treating the return value as participation-aware — either
+  computing the multi-participation sensitivity itself, or refusing a strategy it cannot
+  price. BSR then needs its own single-participation accessor.
+- **(b) `sensitivity()` is participation-aware.** Then BandMF must actually use `min_sep`
+  and `max_participations`, the four tests change, `types.py:39` is rewritten, and both
+  single-participation callers need an explicit `max_participations=1`.
+
+(a) is the smaller diff and matches the majority of call sites. Either way the deliverable
+is the same invariant test: **whatever `MfGaussian.pld` charges must be non-decreasing in
+`max_participations`, for every strategy.** That test is what makes this class of defect
+impossible to reintroduce, and it does not exist today.
+
 ## 1. Phase 0 — Stop the bleeding (target: 5 working days)
 
 Three parallel tracks. Nothing here should be blocked on design work.
@@ -55,8 +80,17 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 | ✅ Reject non-finite scores in `one_run()` | `auditing/one_run/_estimate.py:37-83` | NaN scores manufacture ε̂ from a numerically broken run |
 | ✅ Cap/bound the `_mu_at` doubling + bisection | `auditing/one_run/_gdp.py:66-77` | **Infinite hang** for m>2000 with a strong attack |
 | ✅ Structurally fixed collective sequence in `sync(aux)` | `engine/clipping/_distributed.py:59-82` | **One empty Poisson batch permanently desynchronizes the process group** (critical) |
+| BLT balls-in-bins Gram → `normalized=False` (OPQ-178) | `dpftrl/noise/_blt.py:111` + `.../amplification/_balls_in_bins.py:198` | Accountant prices the column-normalised encoder while the raw one is deployed — **ε under-reported 1.59×**, measured |
 
 **Effort: 3–4 engineer-days**, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.
+
+> **Two FS26-survey findings deliberately kept OUT of this table.** OPQ-177 (BandMF
+> `sensitivity()` ≡ 1.0) changes ε by more than anything above, but it is a **contract
+> decision**, not a one-liner: two callers legitimately want the single-participation
+> value, four shipped tests assert `== 1.0`, and `types.py:39` documents the drop as
+> intended. It belongs in §0.2 alongside the other decisions-before-code. OPQ-179
+> (signed vs `|C|` inner products) must not be turned into an assert until BLT's
+> coefficient signs are confirmed, or it hard-fails BLT at runtime.
 
 #### Accounting remediation status (Phase 0)
 
@@ -146,6 +180,22 @@ This section is the point of the document. Each cluster is **one design change**
 **Change:** `samples_to_pmf` / `weighted_samples_to_pmf` must return a **high-probability upper bound**, not an empirical histogram: reserve mass above the (1−k/n) empirical quantile into `infinity_mass`; inflate buckets by one-sided Clopper-Pearson / empirical-Bernstein at a caller-visible confidence level; residual → `infinity_mass`. Surface confidence level + resolution floor through `DiscretizationConfig`.
 
 **Why one change:** the UCB construction makes the monotonicity claim **true by construction**, gives the FFT guard a non-zero tail budget to work with, and makes the sandwich tests in issue I passable rather than skippable. Fixing the monotonicity claim by memoizing a running max is a workaround that leaves the underlying unsoundness.
+
+**Sharpened by the FS26 survey (OPQ-182 and the merged evidence).** The failure is a hard
+**cap**, not a slow convergence: with `G = E·I` (b=16, E=4, σ=1) `bnb_mc_pld` ε is flat at
+**9.064 for δ = 1e-8, 1e-11 and 1e-14**, while the exact identity path over the same
+mechanism gives **9.98242 → 12.20753 → 14.12360**. Because `infinity_mass` is identically
+0, *no sample budget closes that gap* — which retires "just raise `num_mc_samples`" as an
+answer. At production δ=1e-8 the under-report is 9.2%. Two consequences for this cluster:
+(a) the deterministic identity path now provides an **exact oracle** to test the UCB
+construction against — feed `E·I_b` to `bnb_mc_pld` and require the corrected estimator to
+bracket `random_allocation_gaussian_pld(σ/√E, b, 1, ·)`, which is the strongest test
+available and did not exist when this cluster was written; (b) OPQ-182 (thread-count
+dependence at fixed seed, 11.9% spread) should land in the same change, since both are in
+the same file and a UCB over a non-reproducible sample set is still not auditable.
+One staleness note: this cluster's `identity.rs` / `weighted_samples_to_pmf` references are
+now dead — that file was deleted when the identity path moved to the deterministic
+transform. `monte_carlo.rs` and `b_min_sep/mc.rs` remain affected.
 
 ### RC-5 — MF noise engines have no horizon guard and no correlation test
 **Resolves:** λ-CGD zero noise at step n (×2); streaming MF no horizon guard; `_column_norm` returning 0/NaN; dense engine redrawing base Gaussians (×2 reports — zero cross-step correlation, i.e. *not matrix-factorization noise at all*); BISR truncating C to `bandwidth` instead of `n_steps`; `_momentum_workload_coef` applying the LR schedule along the lag axis.
