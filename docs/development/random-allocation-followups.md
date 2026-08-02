@@ -103,10 +103,15 @@ The refinement `G' = c·I + s·J` is **exact, not approximate**: the second-bloc
 
 **Preconditions (three real, two proposal claims refuted).**
 1. BLT is blocked until §2.1 lands — every BLT number above is around the wrong mechanism.
-2. The lower leg must use `random_allocation_gaussian_pld(nm, 1, 1, false, cfg)` (the t==1 early return at `random_allocation.rs:90,:115` is the down-rounded Gaussian), **not** `gaussian_pld` — connect-the-dots is a valid *upper* bound on δ and is uncertified inside a lower-bound leg. One-line substitution.
+2. The lower-leg proposal requires a distinct diagnostic representation. The
+   safe-only random-allocation API does not expose a dominated `Pld`; a future
+   implementation must not recover one from `gaussian_pld`, whose
+   connect-the-dots construction is only an upper bound on δ.
 3. **REFUTED:** the proposal's headline risk, that `PrivacyLossDistribution::compose` re-inflates the lower leg, does not exist — `compose` passes `tail_mass_truncation = 0.0` (`packages/opaque-accounting/src/pld/mod.rs:389`). The tail-budget artifact measures 2.7e-9 in ε and only via `self_compose`. The claimed "real code change in the composition path" is not needed.
 4. Regime gate is mandatory (**PROVEN**): at σ=1 it loses for every strategy (BandMF(2) 15.65 vs 12.75 unamplified); at σ=3 it loses for BandMF(4); even at σ=10 the naive λ_max leg loses for λ-CGD (1.5098 vs 1.0492) — the `sJ` refinement is load-bearing whenever `λ_max/G[0,0]` is large (16.5 for λ-CGD, 18.3-51 for BLT).
-5. Claim wording: this brackets the **dominating pair's** ε, not the mechanism's. Upper leg is a mechanism bound; lower leg may be published only as an MC diagnostic.
+5. Claim wording: this would bracket the **dominating pair's** ε, not the
+   mechanism's. The safe-only accounting surface currently publishes only the
+   upper leg.
 
 **What it buys.** The first deterministic, thread-independent, composable bound for BandMF/BSR/BiSR/λ-CGD balls-in-bins, currently served only by an uncorrected MC point estimate (`monte_carlo.rs:134`, `samples_to_pmf` at `:270-345`). 5.6-13.6% over the MC estimate at high σ, and 65-77% below unamplified for banded strategies.
 
@@ -340,7 +345,7 @@ The concrete, cheap, unproposed item inside it: `truncated_get_delta` collapses 
 
 **Gap B3 — the entire non-ε metric surface (`pld/metrics.rs` β/risk/advantage + `_budgets.py`) was never evaluated, and the bracket is 4–7× wider there.**
 
-`DpProcess` exposes `beta_at`, `risk_at`, `advantage` (`packages/opaque-accounting/src/opaque/api/accounting/core/_base.py:169,189,211`) and `calibrate()` accepts `AdvantageBudget`/`BetaBudget`/`RiskBudget` (`_budgets.py:139,171,205`; factories `:287,308,330`). **Every value claim in all 11 candidates and the entire draft is stated in ε.** Measured on `random_allocation_gaussian_pld(σ,t,1,upper,cfg)`, disc=1e-4:
+`DpProcess` exposes `beta_at`, `risk_at`, `advantage` (`packages/opaque-accounting/src/opaque/api/accounting/core/_base.py:169,189,211`) and `calibrate()` accepts `AdvantageBudget`/`BetaBudget`/`RiskBudget` (`_budgets.py:139,171,205`; factories `:287,308,330`). **Every value claim in all 11 candidates and the entire draft is stated in ε.** The following are historical pre-safe-only bracket measurements, at disc=1e-4:
 
 | config | ε@1e-8 bracket | advantage bracket | β@α=0.3 bracket |
 |---|---|---|---|
@@ -349,7 +354,7 @@ The concrete, cheap, unproposed item inside it: `truncated_get_delta` collapses 
 
 The discretisation slack the draft measures as 3% is **19%** in the metric `advantage_budget` calibrates against. This changes the priority ordering: it is a second, independent and much larger motivation for §2.2 + raising `MAX_CONV_GRID`, and it means anyone calibrating a `RandomAllocation` or identity-`BallsInBins` process against `advantage_budget`/`beta_budget` today is over-noising by up to 19%.
 
-Related and unclosed: the draft's **Open Question 7** (`pmf_beta_asymmetric` at `pld/metrics.rs:268` dropping `negative_infinity_mass` at `:294-299`, while `pmf_beta` adds it at `:204-211`) is stated as "live, not hypothetical" and then appears **nowhere in the candidate pool and nowhere in the §4 sequencing plan**. Partial good news I can supply: I found **no direction violation** on the shipped `upper=true` path — β_up ≤ β_lo and advantage_up ≥ advantage_lo at every α tested, both configs. So the concern is not currently a soundness bug on the dominating side; it is unquantified on the `upper=false` side. **What closes it:** a candidate that (a) pins the β/advantage/risk bracket alongside the ε bracket in the transform's own tests, (b) resolves whether `pmf_beta_asymmetric` should adopt `pmf_beta`'s `negative_infinity_mass` treatment, and (c) re-runs §2.2's value case in β-space.
+Related and unclosed: the draft's **Open Question 7** (`pmf_beta_asymmetric` at `pld/metrics.rs:268` dropping `negative_infinity_mass` at `:294-299`, while `pmf_beta` adds it at `:204-211`) is stated as "live, not hypothetical" and then appears **nowhere in the candidate pool and nowhere in the §4 sequencing plan**. Partial good news: there was no direction violation on the historical upper path. Under the safe-only API, no lower path is available to measure. **What closes it:** a candidate that (a) pins beta/advantage/risk properties for the published bound, (b) resolves whether `pmf_beta_asymmetric` should adopt `pmf_beta`'s `negative_infinity_mass` treatment, and (c) revisits a diagnostic lower representation only if auditing needs one.
 
 **Gap B4 — modules with no lens, ranked by whether that matters.** Never opened by any verdict: `numerics/fft.rs` (377), `numerics/special.rs` (411), `numerics/truncation.rs` (272, cited but not read), `discretization/connect_the_dots.rs`, `matrix_factorization/{lambda_cgd.rs (479), sensitivity.rs (750), mf_gaussian.rs, gram_matrix.rs}`, `mechanisms/{identity,gaussian,non_private}.rs`, `python/*.rs` (the whole PyO3 boundary), `transformations/adaclip.rs`, `_b_min_sep/_transcript_cache.py`, `core/_accountant.py`, `core/_process_codec.py`, `core/_serialization.py`, `core/composition/*`.
 
@@ -375,9 +380,9 @@ Also cited-and-unused, lower priority: Zhu/Dong/Wang characteristic-function acc
 
 ## D. KILLS THAT LOOK SHAKY
 
-**Gap D1 — `epsilon-bracket-audit-join` and `audit-three-number-ladder` were killed on a precondition the survey's own evidence shows is already met.** §3b: "Both entirely downstream of a composable lower bound (§2.8), which was itself downgraded to LOW." But the §2.8 verdict states the opposite: "**The headline value is already delivered by shipped code** — the 19.4% bracket at (σ=2,t=64,E=64) was reproduced by calling the existing `.so` with no changes", and "the fix itself moves ε by **2.1e-9 to 2.6e-7**". A lower bound correct to 7 significant figures is a usable audit floor. So the audit candidates' stated blocker does not exist, and they were killed by transitivity through a downgrade whose own reasoning contradicts the transitive step.
+**Gap D1 — `epsilon-bracket-audit-join` and `audit-three-number-ladder` depend on a lower diagnostic.** Historical measurements found a numerical lower bound precise enough to use as an audit floor, but the safe-only accounting API intentionally no longer exposes it. The candidates therefore need a distinct, non-accounting diagnostic representation before they can proceed.
 
-This is compounded by B3: audits compare against **empirical ROC / β / advantage**, not ε — `opaque-auditing`'s `OneRunEstimate.beta_at` / `attack_beta_at` (`one_run/_estimate.py:208,298`) and `GdpMethod.beta_at` (`one_run/_gdp.py:149`) mirror `Pld`'s β surface deliberately. In β/advantage space the bracket is **4.6–19.2% wide**, not 0.19–3.0%. An audit estimate landing outside a 19%-wide bracket is a far stronger bug signal than the ε framing suggests, and `opaque-auditing` — one of the four packages the task names — otherwise received **zero candidates**. **What closes it:** revive the audit join scoped to β/advantage rather than ε, against the shipped `upper=false` PLD with no §2.8 dependency; measure whether the one-run GDP μ̂ lands inside the β bracket for the identity-BnB configuration.
+This is compounded by B3: audits compare against **empirical ROC / β / advantage**, not ε — `opaque-auditing`'s `OneRunEstimate.beta_at` / `attack_beta_at` (`one_run/_estimate.py:208,298`) and `GdpMethod.beta_at` (`one_run/_gdp.py:149`) mirror `Pld`'s β surface deliberately. The historical beta/advantage brackets were **4.6–19.2% wide**, not 0.19–3.0% in ε. **What closes it:** if auditing needs this comparison, add a diagnostic-only lower representation and measure whether the one-run GDP μ̂ lands inside the identity-BnB beta bracket.
 
 **Gap D2 — `heterogeneous-allocation` killed as "Identity only — explicitly does not touch the correlated-MF gap."** Identity is the shipped deterministic BnB path (`_balls_in_bins.py:169-179`) and the one path the draft says is 7-27% tighter than the Rényi route. "Identity only" is a limitation everywhere else in this survey and a virtue here. The kill reasoning is a category error even if the conclusion is right. **What closes it:** state the actual reason (no caller wants heterogeneous bin weights) or reinstate.
 

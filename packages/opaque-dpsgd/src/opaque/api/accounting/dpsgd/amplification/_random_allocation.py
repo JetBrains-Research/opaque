@@ -92,20 +92,19 @@ class RandomAllocation(DpProcess):
         native_cfg = config.to_native()
 
         # ``k = 1``: every example lands in exactly one of the ``num_bins``
-        # bins per epoch.  ``upper=True``: the lower variant exists only so
-        # tests can bracket the discretisation error.
+        # bins per epoch. The native primitive always returns a safe bound.
         match self.inner:
             case NonPrivate() | Gaussian(noise_multiplier=0):
                 return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.random_allocation_gaussian_pld(
-                    nm, self.num_bins, 1, True, native_cfg
+                    nm, self.num_bins, 1, native_cfg
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
             case AdaClip(inner=Gaussian()) as ac:
                 return _native.random_allocation_gaussian_pld(
-                    ac.effective_noise_multiplier, self.num_bins, 1, True, native_cfg
+                    ac.effective_noise_multiplier, self.num_bins, 1, native_cfg
                 )
             case _:
                 raise TypeError(

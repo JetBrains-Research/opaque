@@ -5,8 +5,8 @@
 //! Shenfeld (arXiv:2602.17284) is stated for **first-order stochastic**
 //! domination, which is strictly stronger — so its inputs cannot come from
 //! Connect-the-Dots. This module supplies the alternative: a privacy loss
-//! known analytically, discretised by CDF binning with directional rounding,
-//! which is stochastically dominating by construction.
+//! known analytically and discretised by CDF binning, which is stochastically
+//! dominating by construction.
 //!
 //! This is *not* a competitor to Connect-the-Dots. CTD remains the way
 //! mechanism PLDs are built and is better at it; `disc_dist` exists only for
@@ -16,17 +16,16 @@ use crate::error::{PldError, Result};
 use crate::numerics::special::gaussian_log_cdf;
 use statrs::distribution::{ContinuousCDF, Normal};
 
-/// Which way mass is moved when it does not land on a grid point.
+/// Direction for geometric-grid operations inside the allocation transform.
 ///
-/// There is no `Default`, deliberately: `Up` and `Down` produce an upper and a
-/// lower bound respectively, and getting them backwards yields a number that is
-/// smaller, smoother, and invalid.
+/// `Down` is only used to lower-bound an exponentiated sum before the
+/// add-direction transform applies `-ln`, which reverses the ordering. It is
+/// never exposed as an accounting result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Rounding {
-    /// Round mass up (toward +∞) — yields a dominating (upper-bound) PMF.
+pub(crate) enum Rounding {
+    /// Round toward +∞.
     Up,
-    /// Round mass down (toward −∞) — yields a dominated (lower-bound) PMF,
-    /// used to sandwich the discretisation error.
+    /// Round toward −∞ for a required intermediate calculation.
     Down,
 }
 
@@ -38,6 +37,9 @@ pub enum Rounding {
 pub(crate) trait LossRealization: Sync {
     /// `log P[L ≤ l]`.
     fn log_cdf(&self, l: f64) -> f64;
+
+    /// `log P[L > l]`.
+    fn log_survival(&self, l: f64) -> f64;
 
     /// Quantile in log-space. With `upper_tail = false` returns
     /// `inf{ l : P[L ≤ l] ≥ exp(log_p) }`; with `upper_tail = true` returns the
@@ -86,6 +88,10 @@ impl LossRealization for NormalLoss {
         gaussian_log_cdf((l - self.mean) / self.sd)
     }
 
+    fn log_survival(&self, l: f64) -> f64 {
+        gaussian_log_cdf((self.mean - l) / self.sd)
+    }
+
     fn quantile(&self, log_p: f64, upper_tail: bool) -> f64 {
         // exp(log_p) stays representable well past the tail masses used here
         // (f64 min normal ≈ 2.2e-308), whereas `1 - exp(log_p)` saturates to
@@ -102,20 +108,18 @@ impl LossRealization for NormalLoss {
 
 /// Discretise an analytic privacy loss onto Opaque's uniform loss grid.
 ///
-/// The result is stochastically dominating (`Rounding::Up`) or dominated
-/// (`Rounding::Down`) by construction: every unit of mass is moved to the
-/// nearest grid point in the chosen direction, never past it.
+/// The result stochastically dominates the analytic law: every unit of mass
+/// moves up to the nearest grid point, while the right tail becomes `+∞`.
 ///
 /// The grid must sit on multiples of `alpha` to satisfy `Pmf`'s convention
 /// that bucket `i` carries loss `(lower_loss_index + i) · discretization`.
 ///
-/// `beta` is the tail mass discarded at each end. Under `Up` it is folded into
-/// the `+∞` atom (conservative); under `Down` into the `−∞` atom.
+/// `beta` is the tail mass discarded at each end. The left tail moves to the
+/// first grid point and the right tail moves to the conservative `+∞` atom.
 pub(crate) fn disc_dist<L: LossRealization + ?Sized>(
     loss: &L,
     alpha: f64,
     beta: f64,
-    dir: Rounding,
     max_grid_size: usize,
 ) -> Result<crate::pld::pmf::Pmf> {
     if alpha.is_nan() || alpha <= 0.0 {
@@ -153,46 +157,49 @@ pub(crate) fn disc_dist<L: LossRealization + ?Sized>(
         )));
     }
 
-    // CDF at each grid point.
-    let cdf: Vec<f64> = (0..n)
-        .map(|i| loss.log_cdf((lo_idx + i as i64) as f64 * alpha).exp())
+    let log_cdf: Vec<f64> = (0..n)
+        .map(|i| loss.log_cdf((lo_idx + i as i64) as f64 * alpha))
+        .collect();
+    let log_survival: Vec<f64> = (0..n)
+        .map(|i| loss.log_survival((lo_idx + i as i64) as f64 * alpha))
         .collect();
 
     let mut probs = vec![0.0f64; n];
-    let mut infinity_mass = 0.0f64;
-    let mut negative_infinity_mass = 0.0f64;
-
-    match dir {
-        Rounding::Up => {
-            // Mass on (l_{i-1}, l_i] lands on l_i; everything below l_0 lands
-            // on l_0; everything above l_{n-1} goes to +∞.
-            probs[0] = cdf[0];
-            for i in 1..n {
-                probs[i] = (cdf[i] - cdf[i - 1]).max(0.0);
-            }
-            infinity_mass = (1.0 - cdf[n - 1]).max(0.0);
-        }
-        Rounding::Down => {
-            // Mass on [l_i, l_{i+1}) lands on l_i; everything below l_0 goes to
-            // -∞; everything above l_{n-1} lands on l_{n-1}.
-            negative_infinity_mass = cdf[0];
-            for i in 0..n - 1 {
-                probs[i] = (cdf[i + 1] - cdf[i]).max(0.0);
-            }
-            probs[n - 1] = (1.0 - cdf[n - 1]).max(0.0);
-        }
+    // Mass on (l_{i-1}, l_i] lands on l_i; everything below l_0 lands
+    // on l_0; everything above l_{n-1} goes to +∞. In the right tail,
+    // subtract survival probabilities instead of `1 - CDF`: CDF values there
+    // round to one long before the privacy-relevant tail is empty.
+    probs[0] = log_cdf[0].exp();
+    for i in 1..n {
+        probs[i] = if log_cdf[i] <= -std::f64::consts::LN_2 {
+            exp_log_difference(log_cdf[i], log_cdf[i - 1])
+        } else {
+            exp_log_difference(log_survival[i - 1], log_survival[i])
+        };
     }
 
     Ok(crate::pld::pmf::Pmf {
         discretization: alpha,
         lower_loss_index: lo_idx,
         probs,
-        infinity_mass,
-        negative_infinity_mass,
+        infinity_mass: log_survival[n - 1].exp(),
+        negative_infinity_mass: 0.0,
         max_grid_size,
         right_tail_budget: 0.0,
         left_tail_budget: 0.0,
     })
+}
+
+/// `exp(log_large) - exp(log_small)` without cancellation.
+///
+/// The inputs should satisfy `log_large >= log_small`; equal or inverted
+/// values can only arise from floating-point ties, and represent zero mass.
+fn exp_log_difference(log_large: f64, log_small: f64) -> f64 {
+    if log_large <= log_small {
+        0.0
+    } else {
+        (log_large + (-((log_small - log_large).exp())).ln_1p()).exp()
+    }
 }
 
 #[cfg(test)]
@@ -231,24 +238,20 @@ mod tests {
 
     #[test]
     fn test_disc_dist_conserves_mass() {
-        for &dir in &[Rounding::Up, Rounding::Down] {
-            for &sigma in &[0.5, 1.0, 3.0] {
-                let pmf =
-                    disc_dist(&NormalLoss::gaussian(sigma), 1e-3, 1e-12, dir, 10_000_000).unwrap();
-                assert_relative_eq!(total_mass(&pmf), 1.0, epsilon = 1e-9);
-            }
+        for &sigma in &[0.5, 1.0, 3.0] {
+            let pmf = disc_dist(&NormalLoss::gaussian(sigma), 1e-3, 1e-12, 10_000_000).unwrap();
+            assert_relative_eq!(total_mass(&pmf), 1.0, epsilon = 1e-9);
         }
     }
 
-    /// The whole point: Up stochastically dominates the exact law, Down is
-    /// dominated by it. Checked on the CCDF, pointwise.
+    /// The discretized PMF stochastically dominates the exact law, checked on
+    /// the CCDF pointwise.
     #[test]
-    fn test_disc_dist_brackets_exact_ccdf() {
+    fn test_disc_dist_dominates_exact_ccdf() {
         let sigma = 1.0;
         let loss = NormalLoss::gaussian(sigma);
         let alpha = 1e-2;
-        let up = disc_dist(&loss, alpha, 1e-12, Rounding::Up, 10_000_000).unwrap();
-        let down = disc_dist(&loss, alpha, 1e-12, Rounding::Down, 10_000_000).unwrap();
+        let pmf = disc_dist(&loss, alpha, 1e-12, 10_000_000).unwrap();
 
         let ccdf = |p: &crate::pld::pmf::Pmf, x: f64| -> f64 {
             let mut acc = p.infinity_mass;
@@ -262,61 +265,33 @@ mod tests {
 
         for k in -30..30 {
             let x = k as f64 * 0.1;
-            let exact = 1.0 - loss.log_cdf(x).exp();
+            let exact = loss.log_survival(x).exp();
             assert!(
-                ccdf(&up, x) >= exact - 1e-9,
-                "Up must dominate at x={}: {} < {}",
+                ccdf(&pmf, x) >= exact - 1e-9,
+                "discretization must dominate at x={}: {} < {}",
                 x,
-                ccdf(&up, x),
-                exact
-            );
-            assert!(
-                ccdf(&down, x) <= exact + 1e-9,
-                "Down must be dominated at x={}: {} > {}",
-                x,
-                ccdf(&down, x),
+                ccdf(&pmf, x),
                 exact
             );
         }
     }
 
-    /// The bracket must tighten as alpha shrinks.
+    /// Right-tail mass must survive grids where `1 - CDF` would round to zero.
     #[test]
-    fn test_bracket_tightens_with_alpha() {
+    fn test_disc_dist_preserves_right_tail_mass() {
         let loss = NormalLoss::gaussian(1.0);
-        let mut prev = f64::INFINITY;
-        for &alpha in &[1e-1, 1e-2, 1e-3] {
-            let up = disc_dist(&loss, alpha, 1e-12, Rounding::Up, 10_000_000).unwrap();
-            let down = disc_dist(&loss, alpha, 1e-12, Rounding::Down, 10_000_000).unwrap();
-            // Widest gap between the two CCDFs over a grid spanning the bulk.
-            let gap = (0..40)
-                .map(|k| {
-                    let x = (k as f64 - 20.0) * 0.2;
-                    let c = |p: &crate::pld::pmf::Pmf| -> f64 {
-                        let mut acc = p.infinity_mass;
-                        for (i, &m) in p.probs.iter().enumerate() {
-                            if (p.lower_loss_index + i as i64) as f64 * p.discretization > x {
-                                acc += m;
-                            }
-                        }
-                        acc
-                    };
-                    (c(&up) - c(&down)).abs()
-                })
-                .fold(0.0f64, f64::max);
-            assert!(gap <= prev + 1e-12, "gap grew at alpha={}", alpha);
-            prev = gap;
-        }
-        assert!(prev < 1e-2, "bracket did not tighten: {}", prev);
+        let pmf = disc_dist(&loss, 1e-2, 1e-50, 10_000_000).unwrap();
+        assert!(pmf.infinity_mass > 0.0);
+        assert_relative_eq!(total_mass(&pmf), 1.0, epsilon = 1e-9);
     }
 
     #[test]
     fn test_rejects_bad_params() {
         let l = NormalLoss::gaussian(1.0);
-        assert!(disc_dist(&l, 0.0, 1e-12, Rounding::Up, 1000).is_err());
-        assert!(disc_dist(&l, 1e-3, 0.0, Rounding::Up, 1000).is_err());
-        assert!(disc_dist(&l, 1e-3, 0.9, Rounding::Up, 1000).is_err());
+        assert!(disc_dist(&l, 0.0, 1e-12, 1000).is_err());
+        assert!(disc_dist(&l, 1e-3, 0.0, 1000).is_err());
+        assert!(disc_dist(&l, 1e-3, 0.9, 1000).is_err());
         // Grid too large for the cap.
-        assert!(disc_dist(&l, 1e-9, 1e-12, Rounding::Up, 100).is_err());
+        assert!(disc_dist(&l, 1e-9, 1e-12, 100).is_err());
     }
 }

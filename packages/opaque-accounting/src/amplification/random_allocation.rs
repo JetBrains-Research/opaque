@@ -39,8 +39,8 @@ use crate::pld::PrivacyLossDistribution;
 /// the grid would be ~2·10⁵ points and a single convolution ~4·10¹⁰ operations.
 ///
 /// So the transform picks the finest width it can afford rather than inheriting
-/// the FFT-tuned default. The cost of doing so is *measured*, not assumed: the
-/// lower-bound variant (`upper = false`) brackets it exactly.
+/// the FFT-tuned default. Its accuracy is cross-validated against an independent
+/// implementation of the same transform.
 const MAX_CONV_GRID: usize = 8192;
 
 /// Accuracy knobs derived from the caller's existing discretisation config.
@@ -82,24 +82,23 @@ fn alloc_remove<L: LossRealization + ?Sized>(
     neg_dual: &L,
     t: usize,
     acc: &Accuracy,
-    dir: Rounding,
     config: &DiscretizationConfig,
     out_disc: f64,
 ) -> Result<crate::pld::pmf::Pmf> {
-    let l = disc_dist(loss, acc.alpha, acc.beta, dir, config.max_grid_size)?;
+    let l = disc_dist(loss, acc.alpha, acc.beta, config.max_grid_size)?;
     if t == 1 {
         return Ok(l);
     }
     // disc-dist(-D): the negated dual, taken analytically.
-    let d = disc_dist(neg_dual, acc.alpha, acc.beta, dir, config.max_grid_size)?;
+    let d = disc_dist(neg_dual, acc.alpha, acc.beta, config.max_grid_size)?;
 
     let e_l = GeomPmf::from_pmf_exp(&l)?;
     let e_d = GeomPmf::from_pmf_exp(&d)?;
 
-    let e_d_t1 = e_d.self_conv(t - 1, dir)?;
-    let e_t = e_d_t1.conv(&e_l, dir)?;
+    let e_d_t1 = e_d.self_conv(t - 1, Rounding::Up)?;
+    let e_t = e_d_t1.conv(&e_l, Rounding::Up)?;
 
-    e_t.into_pmf_log(t as f64, out_disc, config.max_grid_size, dir)
+    e_t.into_pmf_log(t as f64, out_disc, config.max_grid_size, Rounding::Up)
 }
 
 /// Add-direction PLD of 1-out-of-`t` random allocation.
@@ -107,23 +106,19 @@ fn alloc_add<L: LossRealization + ?Sized>(
     loss: &L,
     t: usize,
     acc: &Accuracy,
-    dir: Rounding,
     config: &DiscretizationConfig,
     out_disc: f64,
 ) -> Result<crate::pld::pmf::Pmf> {
-    let l = disc_dist(loss, acc.alpha, acc.beta, dir, config.max_grid_size)?;
+    let l = disc_dist(loss, acc.alpha, acc.beta, config.max_grid_size)?;
     if t == 1 {
         return Ok(l);
     }
     let e_l = GeomPmf::from_pmf_exp_neg(&l)?;
     // An upper bound on -ln(S) needs a *lower* bound on S, so the inner
-    // convolution rounds the opposite way from the outer bound.
-    let inner = match dir {
-        Rounding::Up => Rounding::Down,
-        Rounding::Down => Rounding::Up,
-    };
-    let e_t = e_l.self_conv(t, inner)?;
-    e_t.into_pmf_neg_log(t as f64, out_disc, config.max_grid_size, dir)
+    // convolution rounds down. This is a fixed internal step in constructing
+    // the safe result, not a caller-selectable optimistic estimate.
+    let e_t = e_l.self_conv(t, Rounding::Down)?;
+    e_t.into_pmf_neg_log(t as f64, out_disc, config.max_grid_size, Rounding::Up)
 }
 
 /// PLD of `k`-out-of-`t` random allocation applied to the Gaussian mechanism.
@@ -152,9 +147,6 @@ fn alloc_add<L: LossRealization + ?Sized>(
 /// * `t` — steps per allocation round (the number of bins).
 /// * `k` — steps each record is used in, in `[1, t]`. Values above 1 return
 ///   the block upper bound described above.
-/// * `upper` — `true` for a valid upper bound; `false` for the matching lower
-///   bound, which brackets the discretisation error without needing any
-///   external reference.
 /// * `config` — discretisation configuration.
 ///
 /// # Errors
@@ -165,7 +157,6 @@ pub fn random_allocation_gaussian_pld(
     noise_multiplier: f64,
     t: usize,
     k: usize,
-    upper: bool,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
     if noise_multiplier.is_nan() || noise_multiplier <= 0.0 {
@@ -183,8 +174,6 @@ pub fn random_allocation_gaussian_pld(
             t, k
         )));
     }
-
-    let dir = if upper { Rounding::Up } else { Rounding::Down };
 
     // k > 1 reduces to a composition of single allocations: split t into
     // m_f rounds of ⌊t/k⌋ steps and m_c rounds of ⌈t/k⌉.
@@ -208,16 +197,9 @@ pub fn random_allocation_gaussian_pld(
             continue;
         }
         let acc = Accuracy::derive(&loss, config, steps);
-        let pmf_remove = alloc_remove(
-            &loss,
-            &neg_dual,
-            steps,
-            &acc,
-            dir,
-            config,
-            config.discretization,
-        )?;
-        let pmf_add = alloc_add(&loss, steps, &acc, dir, config, config.discretization)?;
+        let pmf_remove =
+            alloc_remove(&loss, &neg_dual, steps, &acc, config, config.discretization)?;
+        let pmf_add = alloc_add(&loss, steps, &acc, config, config.discretization)?;
         let single = PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add);
         let composed = if rounds == 1 {
             single
@@ -252,7 +234,7 @@ mod tests {
     fn test_t_one_is_base_gaussian() {
         let c = cfg();
         for &sigma in &[0.5, 1.0, 2.0] {
-            let ra = random_allocation_gaussian_pld(sigma, 1, 1, true, &c).unwrap();
+            let ra = random_allocation_gaussian_pld(sigma, 1, 1, &c).unwrap();
             let base = gaussian_pld(sigma, &c).unwrap();
             let (a, b) = (ra.epsilon_at(1e-8), base.epsilon_at(1e-8));
             assert!(
@@ -265,46 +247,14 @@ mod tests {
         }
     }
 
-    /// The upper bound must sit above the lower bound, and the gap must close
-    /// as the grid is refined. This is self-certifying: it bounds the
-    /// discretisation error with no external reference.
-    #[test]
-    fn test_sandwich() {
-        for &(sigma, t) in &[(1.0, 8usize), (2.0, 16)] {
-            let c = cfg();
-            let up = random_allocation_gaussian_pld(sigma, t, 1, true, &c)
-                .unwrap()
-                .epsilon_at(1e-8);
-            let lo = random_allocation_gaussian_pld(sigma, t, 1, false, &c)
-                .unwrap()
-                .epsilon_at(1e-8);
-            assert!(
-                lo <= up + 1e-9,
-                "σ={} t={}: lower {} > upper {}",
-                sigma,
-                t,
-                lo,
-                up
-            );
-            assert!(
-                up - lo < 0.25 * up.max(1.0),
-                "σ={} t={}: sandwich too wide ({} vs {})",
-                sigma,
-                t,
-                lo,
-                up
-            );
-        }
-    }
-
     /// More noise, less privacy loss.
     #[test]
     fn test_monotone_in_sigma() {
         let c = cfg();
-        let a = random_allocation_gaussian_pld(1.0, 8, 1, true, &c)
+        let a = random_allocation_gaussian_pld(1.0, 8, 1, &c)
             .unwrap()
             .epsilon_at(1e-8);
-        let b = random_allocation_gaussian_pld(2.0, 8, 1, true, &c)
+        let b = random_allocation_gaussian_pld(2.0, 8, 1, &c)
             .unwrap()
             .epsilon_at(1e-8);
         assert!(b < a, "more noise should lower eps: {} vs {}", b, a);
@@ -313,7 +263,7 @@ mod tests {
     /// Golden values, cross-validated against an independent Python
     /// implementation of the same paper (which bracketed
     /// [3.711, 3.726], [1.792, 1.806], [0.315, 0.345], [1.253, 1.270]).
-    /// Both bounds must land inside that bracket.
+    /// Opaque's safe bound must land inside that independent bracket.
     #[test]
     fn test_golden_epsilons() {
         let c = cfg();
@@ -323,20 +273,15 @@ mod tests {
             (2.0, 64, 0.314, 0.346),
             (1.0, 128, 1.252, 1.271),
         ] {
-            let up = random_allocation_gaussian_pld(sigma, t, 1, true, &c)
+            let got = random_allocation_gaussian_pld(sigma, t, 1, &c)
                 .unwrap()
                 .epsilon_at(1e-8);
-            let lo = random_allocation_gaussian_pld(sigma, t, 1, false, &c)
-                .unwrap()
-                .epsilon_at(1e-8);
-            assert!(lo <= up, "σ={} t={}: {} > {}", sigma, t, lo, up);
             assert!(
-                lo >= want_lo && up <= want_hi,
-                "σ={} t={}: [{}, {}] outside the cross-validated [{}, {}]",
+                got >= want_lo && got <= want_hi,
+                "σ={} t={}: {} outside the cross-validated [{}, {}]",
                 sigma,
                 t,
-                lo,
-                up,
+                got,
                 want_lo,
                 want_hi
             );
@@ -349,7 +294,7 @@ mod tests {
         let c = cfg();
         let mut prev = f64::INFINITY;
         for &t in &[4usize, 8, 16] {
-            let e = random_allocation_gaussian_pld(1.0, t, 1, true, &c)
+            let e = random_allocation_gaussian_pld(1.0, t, 1, &c)
                 .unwrap()
                 .epsilon_at(1e-8);
             assert!(e < prev, "eps should fall with t: {} at t={}", e, t);
@@ -361,10 +306,10 @@ mod tests {
     #[test]
     fn test_monotone_in_k() {
         let c = cfg();
-        let e1 = random_allocation_gaussian_pld(1.0, 16, 1, true, &c)
+        let e1 = random_allocation_gaussian_pld(1.0, 16, 1, &c)
             .unwrap()
             .epsilon_at(1e-8);
-        let e4 = random_allocation_gaussian_pld(1.0, 16, 4, true, &c)
+        let e4 = random_allocation_gaussian_pld(1.0, 16, 4, &c)
             .unwrap()
             .epsilon_at(1e-8);
         assert!(e4 > e1, "eps should rise with k: {} vs {}", e4, e1);
@@ -387,7 +332,7 @@ mod tests {
     fn test_k_equals_t_is_full_participation() {
         let c = cfg();
         for &t in &[2usize, 5, 8] {
-            let alloc = random_allocation_gaussian_pld(1.0, t, t, true, &c)
+            let alloc = random_allocation_gaussian_pld(1.0, t, t, &c)
                 .unwrap()
                 .epsilon_at(1e-8);
             let every_step = gaussian_pld(1.0, &c)
@@ -442,7 +387,7 @@ mod tests {
     fn test_competitive_with_poisson() {
         let c = cfg();
         let (sigma, t) = (1.0, 32usize);
-        let ra = random_allocation_gaussian_pld(sigma, t, 1, true, &c)
+        let ra = random_allocation_gaussian_pld(sigma, t, 1, &c)
             .unwrap()
             .epsilon_at(1e-8);
         let po = poisson_gaussian_pld(sigma, 1.0 / t as f64, &c)
@@ -462,9 +407,9 @@ mod tests {
     #[test]
     fn test_rejects_bad_params() {
         let c = cfg();
-        assert!(random_allocation_gaussian_pld(0.0, 8, 1, true, &c).is_err());
-        assert!(random_allocation_gaussian_pld(1.0, 0, 1, true, &c).is_err());
-        assert!(random_allocation_gaussian_pld(1.0, 8, 0, true, &c).is_err());
-        assert!(random_allocation_gaussian_pld(1.0, 8, 9, true, &c).is_err());
+        assert!(random_allocation_gaussian_pld(0.0, 8, 1, &c).is_err());
+        assert!(random_allocation_gaussian_pld(1.0, 0, 1, &c).is_err());
+        assert!(random_allocation_gaussian_pld(1.0, 8, 0, &c).is_err());
+        assert!(random_allocation_gaussian_pld(1.0, 8, 9, &c).is_err());
     }
 }

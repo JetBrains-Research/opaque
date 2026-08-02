@@ -310,8 +310,7 @@ Three of them, all load-bearing:
    without stochastically dominating. **`gaussian_pld` output is therefore not a
    valid input to the allocation transform.** The base PLD must be built by
    `disc_dist` applied to the analytic loss CDF with round-up rounding, which
-   *is* stochastically dominating by construction. (The prototype does this; it
-   is why its sandwich holds.)
+   *is* stochastically dominating by construction.
 2. **No mass at −∞.** A PLD realization requires `f_L(−∞) = 0`, because the dual
    reweights by `e^{−l}` and `e^{+∞}` is not a number. But `gaussian_pld`,
    `mf_gaussian_pld` and `poisson_gaussian_pld` all end with
@@ -330,11 +329,10 @@ to read the stored `pmf_add` as the dual of `pmf_remove`. **Do not implement it
 that way.** The two are independently round-up-discretised objects, and
 [arXiv:2602.17284] shows stochastic domination is *not* preserved by the dual
 transform — which is exactly why Alg. `rand-alloc-rem` takes the dual from the
-**raw, undiscretised** input, and why the lower-bound variant is undefined
-otherwise. The API must therefore take an analytic loss/CDF handle for the base
-mechanism, not just a discretised `Pmf`. (For the Gaussian the dual is available
-in closed form — `L̃ ~ N(1/(2σ²), 1/σ²)`, the same law as `L` — which makes it the
-natural golden test case.)
+**raw, undiscretised** input. The safe-only API must therefore take an analytic
+loss/CDF handle for the base mechanism, not just a discretised `Pmf`. (For the
+Gaussian the dual is available in closed form — `L̃ ~ N(1/(2σ²), 1/σ²)`, the
+same law as `L` — which makes it the natural golden test case.)
 
 ### 4.3 Proposed Rust surface
 
@@ -401,9 +399,10 @@ Everything below is load-bearing and easy to get wrong:
 - **`range-renorm`'s exact rule.** The output keeps the ratio `r` and the bin
   count `n`; only the anchor moves, to `l_min = l[1] + l'[1]`. Both operands must
   share `r` and length (pad the shorter geometrically).
-- **Rounding is directional.** Up/right for the remove *upper* bound; down/left
-  for the add direction and for **all** lower bounds. Getting this backwards
-  produces a bound that looks fine and is invalid.
+- **Rounding is directional.** Up/right for the remove bound; down/left only
+  for the exponentiated intermediate in the add direction, where `-ln`
+  reverses the order. Getting this backwards produces a bound that looks fine
+  and is invalid.
 - **`self_conv` costs `⌊log₂ t⌋ + popcount(t) − 1`** pairwise convolutions, not
   `2⌈log₂ t⌉` — that is just the analysis bound.
 - **Re-truncate to `[q(β'), q(1−β')]` after each squaring**, or `n` grows
@@ -792,11 +791,13 @@ implementation's `allocation_epsilon_*` functions apply directly at
 `(t = num_bins, σ → σ/√E, k = 1)`. Use it.
 
 Everywhere else there is no reference implementation, so the test strategy has
-to be self-supporting:
+to verify conservative construction directly:
 
-1. **Sandwich.** Both algorithms have upper- and lower-bound variants
-   (`Rounding::Upper` / `Lower`). Every test asserts `lower ≤ upper` and that the
-   gap shrinks as α shrinks. This certifies without an oracle.
+1. **Stochastic domination.** `disc_dist` rounds analytic losses upward and
+   each geometric-grid operation is checked to select a grid value on the safe
+   side of its exact sum. The downward geometric operation remains an internal
+   step of the add transform, where `-ln` reverses its direction; it is not an
+   accounting result.
 2. **Degenerate cases.** `t = 1` must return the base PLD; `b = 1` must return
    the Gaussian closed form; `G` diagonal must agree with the
    integer-partition formula of [arXiv:2502.08202] Thm 4.8.
@@ -849,10 +850,9 @@ deterministically bound b-min-sep too. Worth scoping after §5.3 lands.
 
 ### 7.3 Auditing gets a two-sided bracket
 
-`opaque-auditing` currently validates ε empirically. The lower-bound variant of
-the allocation PLD gives a *numerical* lower bound on the same quantity, so
-audits can be checked against a bracket `[ε_lower, ε_upper]` rather than a single
-number. An empirical estimate outside that bracket is an unambiguous bug signal.
+This is not available under the safe-only accounting API. A future audit-only
+diagnostic would need a distinct, non-accounting representation for a numerical
+lower bound rather than exposing a dominated `Pld` beside production bounds.
 
 ### 7.4 Calibration speedup
 
