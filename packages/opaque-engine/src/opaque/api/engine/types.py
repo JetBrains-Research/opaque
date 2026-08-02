@@ -28,6 +28,7 @@ import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from numbers import Real
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import torch
@@ -35,6 +36,8 @@ import torch
 from opaque.api.engine.pytree import ParamPath, tree_map
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from opaque.api.engine.random.types import RngKey
 
 # ===========================================================================
@@ -79,20 +82,21 @@ class PerGroup:
     of a plain product.
 
     Attributes:
-        groups: Mapping from :data:`~opaque.pytree.ParamPath` (optree leaf
-            path) to group name.  Flat ``named_parameters`` keys are stored as
-            one-segment paths ``(name,)``; nested trees use multi-segment
-            paths such as ``("layer", "weight")``.  A bare ``str`` key is
-            accepted at construction and normalized to ``(str,)``.
-        values: Mapping from group name to the per-group value.
+        groups: Read-only mapping from :data:`~opaque.pytree.ParamPath`
+            (optree leaf path) to group name.  Flat ``named_parameters`` keys
+            are stored as one-segment paths ``(name,)``; nested trees use
+            multi-segment paths such as ``("layer", "weight")``.  A bare
+            ``str`` key is accepted at construction and normalized to
+            ``(str,)``.
+        values: Read-only mapping from group name to the per-group value.
 
     Checkpointing uses :func:`opaque.serialization.state_dict` /
     :func:`opaque.serialization.from_state_dict`; the template must use
     the same ``groups`` / ``values`` keys as at save time.
     """
 
-    groups: dict[ParamPath | str, str]
-    values: dict[str, float]
+    groups: Mapping[ParamPath | str, str]
+    values: Mapping[str, float]
 
     def __post_init__(self) -> None:
         from opaque.api.engine.pytree import param_path
@@ -100,7 +104,8 @@ class PerGroup:
         normalized: dict[ParamPath, str] = {}
         for key, group in self.groups.items():
             normalized[param_path(key)] = group
-        object.__setattr__(self, "groups", normalized)
+        object.__setattr__(self, "groups", MappingProxyType(normalized))
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 
     @property
     def effective(self) -> float:

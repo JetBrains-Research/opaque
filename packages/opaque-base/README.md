@@ -9,7 +9,7 @@ handlers against:
 - `opaque.api.base.serialization._dispatch` — `state_dict`,
   `from_state_dict`.
 - `opaque.api.base.serialization._structural` — generic Python container
-  walker (dataclass, NamedTuple, tuple, list, dict, primitives). Torch
+  walker (dataclass, NamedTuple, tuple, list, mappings, primitives). Torch
   tensors and NumPy arrays are registered as exact-type handlers from
   `opaque-engine` and `opaque-accounting` independently.
 

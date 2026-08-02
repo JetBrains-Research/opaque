@@ -1,7 +1,7 @@
 """Generic Python container walker (no third-party deps).
 
 Handles the language-level container types — dataclasses, NamedTuples,
-tuples, lists, dicts, primitives — that are universally serializable
+tuples, lists, mappings, primitives — that are universally serializable
 without knowing anything about the leaf type. Specific concrete leaf
 types (``torch.Tensor``, ``numpy.ndarray``, custom state objects) live
 in the registry instead, so the dispatcher consults the registry first
@@ -40,7 +40,7 @@ def _unrecognized_leaf(obj: Any, prefix: str, verb: str) -> TypeError:
     return TypeError(
         f"Cannot {verb} {type(obj).__module__}.{type(obj).__qualname__} {where}: "
         "it is not a registered type, not a generic container "
-        "(dataclass / NamedTuple / tuple / list / dict) and not a primitive. "
+        "(dataclass / NamedTuple / tuple / list / mapping) and not a primitive. "
         "Register a handler with `register_serializer`, or — if the value "
         "carries no run state and the template reproduces it — declare it "
         "inert with `register_template_restored`."
@@ -67,7 +67,7 @@ def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -
         for i, v in enumerate(state):
             recurse(v, f"{prefix}[{i}]", out)
         return
-    if isinstance(state, dict):
+    if isinstance(state, Mapping):
         for k, v in state.items():
             sub = f"{prefix}.{k}" if prefix else str(k)
             recurse(v, sub, out)
@@ -102,7 +102,7 @@ def walk_load(
         return tuple(recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template))
     if isinstance(template, list):
         return [recurse(v, sd, f"{prefix}[{i}]") for i, v in enumerate(template)]
-    if isinstance(template, dict):
+    if isinstance(template, Mapping):
         return {
             k: recurse(v, sd, f"{prefix}.{k}" if prefix else str(k))
             for k, v in template.items()
