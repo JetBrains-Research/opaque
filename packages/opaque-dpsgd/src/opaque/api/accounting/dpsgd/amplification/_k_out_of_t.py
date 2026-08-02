@@ -20,7 +20,18 @@ _Inner = Gaussian | AdaClip | NonPrivate
 
 @dataclass(frozen=True, slots=True)
 class KOutOfT(DpHorizonProcess):
-    """Each record participates in exactly ``k`` uniform steps of the horizon."""
+    """Each record participates in exactly ``k`` uniform steps of the horizon.
+
+    Full-horizon accounting (``pld_at(n_steps)``) uses a block-decomposition
+    bound that is 3–45 % conservative over the true k-out-of-t distribution.
+
+    Prefix accounting (``pld_at(K)`` for ``K < n_steps``) with
+    ``total_participations > 1`` snaps to the full-horizon bound.  This gives
+    a tight, honest upper bound on ε at any intermediate step rather than the
+    heavily over-conservative cap bound.  Use ``pld_at(n_steps)`` directly
+    (i.e. calibrate against the total horizon) when setting
+    ``total_participations > 1``.
+    """
 
     inner: _Inner
     total_participations: int
@@ -71,6 +82,17 @@ class KOutOfT(DpHorizonProcess):
         noise_multiplier = self._noise_multiplier()
         if noise_multiplier is None:
             return _native.non_private_pld(config)
+        if n_steps < self.n_steps and self.total_participations > 1:
+            # Exact prefix accounting for k > 1 is not yet implemented.
+            # Snap to the full-horizon block bound: a 3–45 % conservative
+            # upper bound on ε for any K ≤ n_steps, far tighter than the
+            # cap bound used inside the Rust prefix path.
+            return self.pld_at(
+                self.n_steps,
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+            )
         return _native.k_out_of_t_gaussian_prefix_pld(
             noise_multiplier,
             self.n_steps,

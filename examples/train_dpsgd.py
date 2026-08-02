@@ -90,7 +90,7 @@ from opaque.profiling import (
 from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler, RandomAllocationSampler
 from opaque.distributed import local_shard
-from opaque.functional import make_functional
+from opaque.functional import make_functional, empty_collate
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -1220,6 +1220,8 @@ def main():
 
     # Collate: data_collator handles padding, then extract tensors + move to device.
     # Used by all DataLoaders that feed into per_example_loss_fn.
+    # empty_collate handles the zero-example batches that allocation samplers emit.
+    @empty_collate
     def collate(examples):
         batch = data_collator(examples)
         return (batch["input_ids"].to(device),)

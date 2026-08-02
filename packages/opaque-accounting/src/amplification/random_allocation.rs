@@ -257,10 +257,22 @@ pub fn random_allocation_gaussian_prefix_pld(
 
 /// Conservative prefix PLD for global `k`-out-of-`t` Gaussian allocation.
 ///
-/// The prefix participation count is hypergeometric. Conditional on `j`
-/// participations, positions are uniform `j`-out-of-`released_steps`.
-/// Joint convexity bounds each directional hockey-stick divergence by the
-/// hypergeometric-weighted sum of the component divergences.
+/// The prefix participation count is hypergeometric: conditional on
+/// `released_steps` of the total `total_steps` having been released, the
+/// number of participations `j` follows Hyp(`total_steps`,
+/// `total_participations`, `released_steps`).
+///
+/// For `total_participations == 1`: delegates to
+/// `random_allocation_gaussian_prefix_pld` (exact).
+///
+/// For `total_participations > 1` with `released_steps < total_steps`: bounds
+/// by monotonicity — evaluates `random_allocation_gaussian_pld(σ,
+/// released_steps, cap)` where `cap` is the largest likely support point of
+/// the hypergeometric distribution (after trimming a small tail) and folds in
+/// the trimmed mass as a failure probability.  This bound can be significantly
+/// over-conservative for small `released_steps / total_steps` ratios; the
+/// Python wrapper snaps `k > 1` prefix queries to the full-horizon block bound
+/// instead, which is only 3–45 % conservative.
 pub fn k_out_of_t_gaussian_prefix_pld(
     noise_multiplier: f64,
     total_steps: usize,
