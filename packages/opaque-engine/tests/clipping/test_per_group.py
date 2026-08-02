@@ -65,6 +65,30 @@ class TestPerGroup:
         with pytest.raises(AttributeError):
             pg.groups = {}
 
+    @pytest.mark.parametrize(
+        ("attribute", "key", "value"),
+        [
+            ("groups", ("a",), "g2"),
+            ("values", "g1", 2.0),
+        ],
+    )
+    def test_mappings_are_immutable(self, attribute, key, value):
+        pg = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
+
+        with pytest.raises(TypeError):
+            getattr(pg, attribute)[key] = value
+
+    def test_constructor_inputs_are_defensively_copied(self):
+        groups = {"a": "g1"}
+        values = {"g1": 1.0}
+        pg = PerGroup(groups=groups, values=values)
+
+        groups["a"] = "g2"
+        values["g1"] = 2.0
+
+        assert pg.groups == {("a",): "g1"}
+        assert pg.values == {"g1": 1.0}
+
     def test_arithmetic_chain(self):
         """noise_multiplier * (clipping_norm / normalize_by) should work."""
         pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 2.0, "g2": 4.0})
@@ -72,6 +96,8 @@ class TestPerGroup:
         stddev = 1.1 * sensitivity  # noise_multiplier=1.1
         assert stddev.values["g1"] == pytest.approx(0.22)
         assert stddev.values["g2"] == pytest.approx(0.44)
+        with pytest.raises(TypeError):
+            stddev.values["g1"] = 1.0
 
 
 class TestPerGroupHelper:

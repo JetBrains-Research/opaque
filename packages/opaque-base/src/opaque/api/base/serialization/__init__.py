@@ -4,7 +4,7 @@ This is the foundation seam every other ``opaque-*`` wheel uses: each
 wheel registers its concrete leaf types with the registry on import.
 The dispatcher consults the registry first (exact type, then
 ``__mro__``), then falls back to a generic Python container walker
-(dataclass / NamedTuple / tuple / list / dict / primitives). A leaf no
+(dataclass / NamedTuple / tuple / list / mapping / primitives). A leaf no
 handler claims raises ``TypeError``; use
 :func:`register_template_restored` to declare one intentionally inert.
 

@@ -15,7 +15,7 @@ serialized by the nearest base-class handler rather than dropped.
 (``torch.nn.Parameter`` is common enough to get its own exact-type handler that
 preserves the subclass and its ``requires_grad`` flag on restore, so it does
 not rely on the ``__mro__`` fallback.) A leaf that is neither registered nor a
-generic container (dataclass / NamedTuple / tuple / list / dict) nor a
+generic container (dataclass / NamedTuple / tuple / list / mapping) nor a
 primitive raises ``TypeError`` on both save and restore instead of being
 silently skipped.
 Genuinely inert leaves that the template reproduces (vendor structure handles

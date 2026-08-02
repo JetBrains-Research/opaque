@@ -75,7 +75,7 @@ def state_dict(obj: Any) -> dict[str, Any]:
     """Serialise ``obj`` to a flat ``dict[str, Any]``.
 
     Registered types use their exact-type handler; everything else is
-    walked structurally (dataclass, NamedTuple, tuple, list, dict,
+    walked structurally (dataclass, NamedTuple, tuple, list, mapping,
     primitives). Opaque non-containers are dropped — the load is
     template-driven and reads them back from the template.
     """
