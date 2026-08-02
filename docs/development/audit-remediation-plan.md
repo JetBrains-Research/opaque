@@ -149,9 +149,12 @@ This section is the point of the document. Each cluster is **one design change**
 ### RC-4 — Monte-Carlo point estimates are presented as privacy guarantees
 **Resolves:** MC PLDs with no confidence correction (`epsilon_at(δ)` returns finite for δ ≪ 1/num_mc_samples); b-min-sep non-monotonicity; MC amplification validated only by MC-vs-MC smoke tests; issue I (per-step invariant sandwich skipped for 6 of 8 MC pairs); `MAX_LINEAR_FFT_SIZE` guard inert because MC PLDs have zero tail budget.
 
-**Change:** `samples_to_pmf` / `weighted_samples_to_pmf` must return a **high-probability upper bound**, not an empirical histogram: reserve mass above the (1−k/n) empirical quantile into `infinity_mass`; inflate buckets by one-sided Clopper-Pearson / empirical-Bernstein at a caller-visible confidence level; residual → `infinity_mass`. Surface confidence level + resolution floor through `DiscretizationConfig`.
+**Candidate designs — choose after statistical design review:**
 
-**Why one change:** the UCB construction makes the monotonicity claim **true by construction**, gives the FFT guard a non-zero tail budget to work with, and makes the sandwich tests in issue I passable rather than skippable. Fixing the monotonicity claim by memoizing a running max is a workaround that leaves the underlying unsoundness.
+1. **Confidence-bounded PLD.** Replace the empirical histogram with a simultaneous upper-confidence PLD: reserve unresolved right-tail mass in `infinity_mass`, inflate bucket masses with one-sided bounds, and surface confidence + resolution through `DiscretizationConfig`. This preserves arbitrary PLD queries and composition, but must handle multiplicity and importance-sampling weights without becoming unusably loose.
+2. **Estimate-Verify-Release (EVR).** Keep the current estimator for proposing ε/noise, then verify the candidate on independent samples using the papers' concentration bound for both adjacency directions. Failed verification selects more noise or an analytically safe fallback, with verifier failure folded into δ. This follows the published formal construction and is better suited to calibration, but certifies a fixed `(ε,δ)` target rather than a reusable PLD.
+
+Either design must make Monte-Carlo uncertainty caller-visible and restore the skipped invariants before any BnB/b-min-sep ε claim. Memoizing a running maximum does not fix the underlying issue.
 
 ### RC-5 — MF noise engines have no horizon guard and no correlation test
 **Resolves:** λ-CGD zero noise at step n (×2); streaming MF no horizon guard; `_column_norm` returning 0/NaN; dense engine redrawing base Gaussians (×2 reports — zero cross-step correlation, i.e. *not matrix-factorization noise at all*); BISR truncating C to `bandwidth` instead of `n_steps`; `_momentum_workload_coef` applying the LR schedule along the lag axis.
@@ -225,9 +228,9 @@ Covers RC-16 + RC-6's generation counter. Includes: iterative serialize/load/`__
 `mechanisms/eps_delta.rs`, `mechanisms/identity.rs`, `discretization/connect_the_dots.rs`, `numerics/fft.rs`, `pld/pmf/dense.rs`
 Ceiling rounding, unconditional conservative PMF construction, `PyResult` on `self_compose`, and the u32 guard. The optimistic estimate mode was deleted rather than retained as a compatibility no-op.
 
-**A3. Monte-Carlo upper-confidence-bound PLDs** — 10–12d ⚠ hardest single item
+**A3. Verified Monte-Carlo accounting** — 10–12d ⚠ hardest single item
 `amplification/balls_in_bins/monte_carlo.rs`, `identity.rs`, `mc.rs`, `b_min_sep/registry.rs`, Python wrappers, `docs/reference/accounting.md`
-RC-4. Needs statistical design review, not just coding. Deliverables: UCB PMF construction, confidence level plumbed through `DiscretizationConfig`, closed-form/quadrature cross-check for BnB-Identity at small b,E at the **default** 100k budget, and a test asserting ε *increases* as `num_mc_samples` decreases.
+RC-4. Needs statistical design review, not just coding. Select and implement one of the two RC-4 designs; retain the alternative and rationale in the design record. Deliverables include a closed-form/quadrature cross-check for BnB-Identity at small b,E, explicit uncertainty/failure metadata, and acceptance tests for both adjacency directions.
 *Blocks: b-min-sep monotonicity restoration, issue I sandwich tests, any BnB/b-min-sep ε claim.*
 
 **A4. DP-SGD amplification API hygiene** — 1d
@@ -303,7 +306,7 @@ RC-7 remainder. `all_finite` needs the per-example finite mask surfaced from `cl
 Phase 0 ────────────┤                                     ├──> any ε claim
                     └─ A2 (Rust mechanisms) ──────────────┘
                                  │
-                                 ├──> A3 (MC-UCB) ──> b-min-sep/BnB claims, issue I sandwich tests
+                                 ├──> A3 (verified MC) ──> b-min-sep/BnB claims, issue I sandwich tests
                                  │
    G2 (conformance harness) ─────┼──> B1 (gaussian) ──> DP-SGD ε claims
                                  └──> B2 (AdaClip)  ──> AdaClip ε claims
@@ -326,7 +329,7 @@ Phase 0 ────────────┤                                 
 1. **The auditor before any audited-ε claim.** D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in `train_dpftrl.py` is currently comparing two *different mechanisms* — fix that with RC-1 before trusting any output.
 2. **The gloo lane before the distributed fixes.** Every RC-8 fix is a 10-line change that is impossible to verify today. Build the lane, watch it fail on the current code, then fix.
 3. **The benchmark harness before any performance number.** Do not restate the memory-optimizations tables, the BISR table, the Adafactor comparison, or the second-moment overhead from memory.
-4. **MC-UCB before b-min-sep/BnB claims and before issue I's sandwich tests.** The tests are skipped for 6 of 8 pairs *because* the estimates are non-conservative point estimates.
+4. **Verified MC accounting before b-min-sep/BnB claims and before issue I's sandwich tests.** The tests are skipped for 6 of 8 pairs *because* the estimates are non-conservative point estimates.
 5. **The conformance harness (G2) before signing off B1/B2.** Otherwise you are trading one unvalidated mechanism for another.
 
 ---
@@ -378,8 +381,8 @@ D1 → D2 (G6) → D3.
 *≈ 17 engineer-days.*
 
 ### M4 — "DP-FTRL and MC amplification are sound" (weeks 6–10)
-B3 (MF engines + covariance test) · A3 (MC-UCB) → restore the b-min-sep monotonicity claim by construction → un-skip issue I's sandwich tests at tight tolerance.
-**Exit:** MF noise is provably correlated as specified; MC-derived ε values are upper confidence bounds with a documented confidence level and resolution floor; `epsilon_at(δ)` returns INFINITY below the MC floor rather than a finite number.
+B3 (MF engines + covariance test) · A3 (verified MC) → restore supported b-min-sep claims → un-skip issue I's sandwich tests at tight tolerance.
+**Exit:** MF noise is provably correlated as specified; MC-derived privacy claims use either a confidence-bounded PLD or EVR, expose their uncertainty/failure metadata, and reject unsupported queries instead of returning an empirical finite ε.
 *≈ 22 engineer-days. A3 is the schedule risk — start the statistical design in M2.*
 
 ### M5 — "Trainers, alignment, patches" (weeks 7–12)
