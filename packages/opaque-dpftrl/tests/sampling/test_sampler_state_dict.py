@@ -110,6 +110,16 @@ class TestBMinSepRoundTrip:
 
 
 class TestBallsInBinsRoundTrip:
+    def test_emits_empty_bin_slots(self):
+        sampler = BallsInBinsSampler(_ds(1), num_bins=2, n_steps=4, key=key(5))
+
+        batches = list(sampler)
+
+        assert len(batches) == 4
+        assert batches[:2] == batches[2:]
+        assert sorted(index for batch in batches[:2] for index in batch) == [0]
+        assert any(not batch for batch in batches[:2])
+
     def test_snapshot_resumes_at_cursor(self):
         original = BallsInBinsSampler(_ds(), num_bins=10, n_steps=30, key=key(5))
         original_batches = list(original)

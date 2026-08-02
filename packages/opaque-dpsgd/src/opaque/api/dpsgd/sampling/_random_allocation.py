@@ -51,8 +51,8 @@ class RandomAllocationSampler(Sampler):
         data_source: Dataset to sample from (any object with ``__len__``).
         num_bins: Bins per epoch (``b ≥ 2``).  Typically
             ``dataset_size / desired_batch_size``.
-        n_steps: Total number of batches to yield.  Must be a positive
-            multiple of ``num_bins``.  ``None`` yields indefinitely.
+        n_steps: Total number of batches to yield. A final partial epoch yields
+            its first ``n_steps % num_bins`` bins. ``None`` yields indefinitely.
         key: RNG key for reproducibility.
 
     Example:
@@ -80,11 +80,6 @@ class RandomAllocationSampler(Sampler):
         if n_steps is not None:
             if n_steps < 1:
                 raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
-            if n_steps % num_bins != 0:
-                raise ValueError(
-                    f"n_steps ({n_steps}) must be a positive multiple of "
-                    f"num_bins ({num_bins}); the analysis assumes whole epochs."
-                )
 
         self.data_source = data_source
         self.num_bins = num_bins
@@ -96,8 +91,8 @@ class RandomAllocationSampler(Sampler):
 
     @property
     def num_epochs(self) -> int | None:
-        """Number of epochs, or ``None`` when unbounded."""
-        return None if self.n_steps is None else self.n_steps // self.num_bins
+        """Allocation epochs touched by the stream, or ``None`` when unbounded."""
+        return None if self.n_steps is None else -(-self.n_steps // self.num_bins)
 
     @property
     def consumed(self) -> int:

@@ -98,7 +98,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `num_bins` | `int` | required | Bins per epoch (≥ 2). Typically `dataset_size / batch_size` |
-| `n_steps` | `int` or `None` | `None` | Total number of batches to yield. Must be a positive multiple of `num_bins`. `None` = infinite |
+| `n_steps` | `int` or `None` | `None` | Total number of batches to yield. A final partial epoch yields its first remaining bins. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 Each epoch's `num_bins` batches partition the dataset exactly, and the
@@ -108,8 +108,9 @@ dropping them would change every record's participation separation and
 invalidate the accounting.
 
 Account with `dpsgd_acc.random_allocation(mechanism, num_bins=num_bins) *
-num_epochs` — the process is a whole-**epoch** atom, unlike `poisson`,
-which is per-step.
+num_epochs` for whole epochs — the process is a whole-**epoch** atom, unlike
+`poisson`, which is per-step. A partial final epoch must conservatively be
+charged as one whole additional epoch.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 
@@ -144,7 +145,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 
 Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
-are skipped.
+are emitted as empty batches so every accounted bin slot executes.
 
 Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 `mechanism` is `ftrl_acc.mf_gaussian(nm, strategy)` for `lambda_cgd_strategy`,
