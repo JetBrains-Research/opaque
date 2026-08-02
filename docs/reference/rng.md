@@ -261,7 +261,8 @@ Sets:
 
 **Returns:** None (side effects only)
 
-**Performance Impact:** Typically 10-30% slower with full determinism.
+**Performance impact:** Deterministic algorithms may be slower; measure on
+your workload.
 
 **Example:**
 

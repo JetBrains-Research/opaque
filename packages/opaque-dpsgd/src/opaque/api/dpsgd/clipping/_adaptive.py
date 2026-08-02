@@ -194,7 +194,7 @@ def adaptive_clipped_grad(
                 (*args, state, **kwargs) -> ((grad, aux), new_state)
             - initial_state: Initial AdaptiveClipState
 
-    Example (single-device or distributed):
+    Example (single device):
         >>> import torch
         >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
         >>> from opaque.dpsgd.noise import gaussian_noise
@@ -205,8 +205,8 @@ def adaptive_clipped_grad(
         ...     pred = x @ params
         ...     return ((pred - y) ** 2).mean()
         >>>
-        >>> # Create adaptive clipping function with initial state
-        >>> # (automatically detects if distributed!)
+        >>> # Create an adaptive clipping function with explicit local state.
+        >>> # Distributed callers must synchronize state explicitly.
         >>> grad_fn, clip_state = adaptive_clipped_grad(
         ...     loss_fn,
         ...     initial_clipping_norm=0.1,

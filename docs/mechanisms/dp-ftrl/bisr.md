@@ -105,12 +105,5 @@ and computes the linear combination defined by the BISR coefficients.
 
 ## Bandwidth selection
 
-| Bandwidth | Memory | Runtime overhead | Utility |
-|-----------|--------|-----------------|---------|
-| p=2 | Zero extra | <1% | Good (= λCGD) |
-| p=4 | 3 vectors | ~4% | Better |
-| p=8 | 7 vectors | ~8% | Near-optimal |
-| p=16 | 15 vectors | ~15% | Optimal for most tasks |
-
-The paper shows BISR matches BandMF at the same bandwidth while being
-simpler to implement and asymptotically optimal.
+Bandwidth `p` retains `p - 1` noise vectors. Measure the runtime and utility
+trade-off on your workload.

@@ -92,10 +92,8 @@ if grads_finite:
 scaler_state = scaler.update(scaler_state, grads_finite)
 ```
 
-On a non-finite step the wrapper *must* skip the noise mechanism, the optimizer
-update, **and** the accountant advance — together. Skipped steps consume zero
-privacy budget. The scaler's `update` advances the grow/backoff schedule
-regardless of the skip decision.
+A skip is data-dependent and is not free privacy-wise. Unless separately
+analyzed, advance the accountant on a public fixed schedule.
 
 ## Recipe: `float32` training (everything disabled)
 

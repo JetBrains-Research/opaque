@@ -64,11 +64,8 @@ print(f"AUC (attack): {estimate.attack_auc():.4f}")
 and `.advantage()` all dispatch to the **μ-GDP order-statistics test** from
 Xiang et al. (2025).
 
-This is the default because every DP mechanism Opaque ships — DP-SGD with
-Gaussian noise, and DP-FTRL with matrix-factorisation Gaussian noise — is
-in the Gaussian-DP family. On these mechanisms the μ-GDP test is **3–10×
-tighter** than the mechanism-agnostic (ε,δ)-DP test (Xiang et al. 2025,
-§5).
+Use μ-GDP only when it models the audited mechanism; otherwise use the
+mechanism-agnostic method.
 
 The dispatch requires `delta > 0`: μ-GDP is incompatible with pure ε-DP.
 
@@ -182,9 +179,9 @@ that reads the theoretical f-DP β at the inferred μ̂-GDP.
 
 ## Number of canaries
 
-The one-run audit has a hard ceiling at `ε ≲ ln(m / -ln(α))` for a perfect
-attack with `m` canaries at significance `α`. Anything above that is
-unreachable regardless of which method you pick:
+For the mechanism-agnostic $(\varepsilon,\delta)$ method, a perfect attack
+has an approximate ceiling `ε ≲ ln(m / -ln(α))`. This does not apply to the
+μ-GDP estimator:
 
 | Canaries m | Hard ceiling at α=0.05 |
 |---|---|
@@ -193,9 +190,7 @@ unreachable regardless of which method you pick:
 | 100 000 | ≈ 10.4 |
 | 1 000 000 | ≈ 12.7 |
 
-Imperfect attacks lower this further. So if you train at `ε = 60`, the
-audit cannot certify anywhere near it — that's a property of one-run
-auditing, not an Opaque limitation.
+Imperfect attacks lower the mechanism-agnostic estimate further.
 
 In practice:
 

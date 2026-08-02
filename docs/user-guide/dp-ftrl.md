@@ -128,9 +128,9 @@ for batch in dataloader:
     eps_so_far = acct.epsilon_at(delta=1e-5)
 ```
 
-`(per_step(proc) * K).epsilon_at(δ)` is bounded above by
-`proc.epsilon_at(δ)` and is monotone non-decreasing in K (post-processing
-on the deployed N-step mechanism); `K > proc.n_steps` raises.
+For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
+Monte Carlo PLDs are point estimates without that guarantee. `K >
+proc.n_steps` raises.
 
 ## 3. Clipping
 
