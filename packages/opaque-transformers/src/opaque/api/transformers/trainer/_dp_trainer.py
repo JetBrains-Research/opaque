@@ -1213,6 +1213,20 @@ class DPTrainer:
         expected_steps_per_epoch, total_steps, num_epochs = self._steps_breakdown(
             dataset_size
         )
+        if a.sampling_mode == "balls_in_bins":
+            if expected_steps_per_epoch < 2:
+                raise ValueError(
+                    "sampling_mode='balls_in_bins' requires at least two "
+                    f"steps per epoch, got {expected_steps_per_epoch}. Reduce "
+                    "train_batch_size or use sampling_mode='poisson'."
+                )
+            if total_steps % expected_steps_per_epoch:
+                raise ValueError(
+                    "sampling_mode='balls_in_bins' requires total_steps "
+                    f"({total_steps}) to be a multiple of steps_per_epoch "
+                    f"({expected_steps_per_epoch}). Set max_steps accordingly "
+                    "or use sampling_mode='poisson'."
+                )
 
         self.state.max_steps = total_steps
         # HF-parity bookkeeping for ``trainer_state.json``.

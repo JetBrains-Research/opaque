@@ -154,7 +154,7 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 # pins a single sampler.
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "gaussian": frozenset({"poisson"}),
-    "mf_identity": frozenset({"poisson"}),
+    "mf_identity": frozenset({"poisson", "balls_in_bins"}),
     "mf_band": frozenset({"b_min_sep", "poisson"}),
     "mf_blt": frozenset({"balls_in_bins"}),
     "mf_bisr": frozenset({"balls_in_bins"}),

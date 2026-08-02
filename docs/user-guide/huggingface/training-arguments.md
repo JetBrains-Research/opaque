@@ -144,6 +144,11 @@ the strategy kwargs:
 | `mf_lambda_cgd` | `balls_in_bins` | `{"lambda_": 0.5}` |
 | `mf_identity` | `poisson` | `{}` |
 
+`mf_identity` also accepts an explicit `sampling_mode="balls_in_bins"` override
+for the fixed-bin matrix-mechanism schedule. It requires at least two bins and
+a `max_steps` value divisible by the resolved steps per epoch; empty bins still
+run as empty batches so the trainer executes every accounted slot.
+
 So the minimal DP-FTRL configuration is one field:
 
 ```python

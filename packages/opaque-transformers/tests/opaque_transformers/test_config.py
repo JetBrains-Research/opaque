@@ -398,6 +398,14 @@ class TestClippingAndSamplingSurfaces:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="sequential")
 
+    def test_mf_identity_accepts_balls_in_bins(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            privacy_noise_mechanism="mf_identity",
+            sampling_mode="balls_in_bins",
+        )
+        assert args.sampling_mode == "balls_in_bins"
+
     def test_sampling_mode_auto_resolves_to_poisson_for_gaussian(self):
         # ``"auto"`` (the default) resolves to the canonical sampler for
         # the chosen mechanism — ``"poisson"`` for the DP-SGD
