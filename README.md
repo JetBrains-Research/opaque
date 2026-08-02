@@ -56,7 +56,7 @@ opaque.accounting                                          <- opaque-accounting
 ```bash
 # From the JetBrains Artifact Registry
 pip install opaque \
-  --extra-index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 
 # Or with uv
 uv add opaque \

@@ -130,9 +130,8 @@ class BallsInBins(DpFtrlProcess):
         column is read at ``self.n_steps`` and the K-prefix gram is
         built via the closed-form Toeplitz gram on those coefficients,
         evaluated at participation context ``(K, num_bins, K_epochs)``.
-        In every case the K-prefix output is a deterministic projection
-        of the deployed N-step mechanism, so by post-processing
-        ``ε(_pld_at_horizon(K)) ≤ ε(self)`` and is monotone in K.
+        K-prefix outputs are projections of the deployed mechanism, but finite
+        Monte Carlo PLDs are point estimates and need not preserve monotonicity.
         """
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -222,6 +221,7 @@ class BallsInBins(DpFtrlProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
+        """Return a point estimate, not an upper confidence bound."""
         return self._pld_at_horizon(
             self.n_steps,
             discretization=discretization,

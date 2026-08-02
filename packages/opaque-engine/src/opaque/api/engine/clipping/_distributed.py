@@ -28,8 +28,11 @@ from opaque.api.engine.pytree import (
     tree_unflatten,
 )
 
+from ._auto import AutoClipState
 from ._clipped_fun import ClippedFunAux, FixedClipState
 from ._clipped_grad import ClippedGradAux
+
+_MARKER_CLIP_STATES = (FixedClipState, AutoClipState)
 
 __all__ = [
     "sync_aux",
@@ -39,12 +42,25 @@ __all__ = [
 ]
 
 
-def sync_clip_state(state: FixedClipState) -> FixedClipState:
-    """Synchronize fixed clipping marker state."""
+def sync_clip_state(
+    state: FixedClipState | AutoClipState,
+) -> FixedClipState | AutoClipState:
+    """Synchronize a marker clipping state (fixed or AUTO-S).
+
+    Both carry no fields — the threshold travels in
+    ``ClippedPytree.max_norm`` and is fixed at construction — so there is
+    nothing to reduce and no collective to issue.  Adaptive clipping does
+    drift across steps and registers its own handler in
+    :mod:`opaque.dpsgd.clipping.distributed`.
+    """
     if not is_distributed():
         return state
-    if not isinstance(state, FixedClipState):
-        raise TypeError(f"Expected FixedClipState, got {type(state)}")
+    if not isinstance(state, _MARKER_CLIP_STATES):
+        raise TypeError(
+            "Expected a marker clip state "
+            f"({' or '.join(t.__name__ for t in _MARKER_CLIP_STATES)}), "
+            f"got {type(state).__name__}"
+        )
 
     return state
 
@@ -238,5 +254,6 @@ def sync_aux(
 
 
 register_sync_type(FixedClipState, sync_clip_state)
+register_sync_type(AutoClipState, sync_clip_state)
 register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
 register_sync_type(ClippedGradAux, sync_clipped_grad_aux)

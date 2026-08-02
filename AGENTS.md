@@ -264,6 +264,13 @@ clipping rule whose threshold drifts across steps, so it is the only one
 that violates the constant per-step sensitivity assumption MF privacy
 proofs require, and it correctly stays in `opaque.dpsgd.clipping`.
 
+### Test design
+
+Do not add tests whose only purpose is pinning prose in documentation,
+READMEs, or docstrings to verbatim strings or required words. Test behavior or
+stable machine-readable structure instead. A docs-only clarification may have
+no dedicated regression test when neither is available.
+
 ### Test markers
 
 Three orthogonal markers, declared in the root `pyproject.toml`:

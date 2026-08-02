@@ -77,10 +77,9 @@ pub fn drop_b_min_sep_transcript_handle(id: u64) {
 /// RNG state at column `i` is fully determined by columns `0..i`, so
 /// this slice is byte-identical to a freshly-prepared `n_steps`-row
 /// transcript using the same per-sample initial RNG state. The
-/// resulting K-step PLD is therefore a deterministic post-processing
-/// of the cached N-step transcript corpus, satisfying the
-/// post-processing inequality `ε_K ≤ ε_N` exactly (no MC variance gap
-/// between the two ends).
+/// K-step transcripts are prefix projections of the cached N-step corpus.
+/// Their finite-sample PLDs are point estimates and need not preserve the
+/// exact epsilon ordering.
 pub fn pld_from_transcript_handle(
     id: u64,
     strategy_coef: &[f64],

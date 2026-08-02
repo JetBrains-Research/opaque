@@ -24,9 +24,9 @@ WalkSave = Callable[[Any, str, dict[str, Any]], None]
 WalkLoad = Callable[[Any, Mapping[str, Any], str], Any]
 
 # Python primitives we serialise verbatim. Anything that is not a
-# registered exact-type AND not one of these AND not a generic container
-# is treated as opaque and skipped on save (the template-driven load
-# preserves it).
+# registered type AND not one of these AND not a generic container is
+# unrecognised, and an unrecognised leaf is an error rather than a
+# silent drop — see :func:`_unrecognized_leaf`.
 _PRIMITIVES = (int, float, bool, str, type(None))
 
 
@@ -34,8 +34,21 @@ def _is_named_tuple_instance(obj: Any) -> bool:
     return isinstance(obj, tuple) and hasattr(obj, "_fields")
 
 
+def _unrecognized_leaf(obj: Any, prefix: str, verb: str) -> TypeError:
+    """Build the fail-closed error for a leaf no handler claims."""
+    where = f"at {prefix!r}" if prefix else "at the root"
+    return TypeError(
+        f"Cannot {verb} {type(obj).__module__}.{type(obj).__qualname__} {where}: "
+        "it is not a registered type, not a generic container "
+        "(dataclass / NamedTuple / tuple / list / dict) and not a primitive. "
+        "Register a handler with `register_serializer`, or — if the value "
+        "carries no run state and the template reproduces it — declare it "
+        "inert with `register_template_restored`."
+    )
+
+
 def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -> None:
-    """Save generic Python containers; opaque non-container leaves skip."""
+    """Save generic Python containers; unrecognised leaves raise ``TypeError``."""
     if dataclasses.is_dataclass(state) and not isinstance(state, type):
         for f in dataclasses.fields(state):
             sub = f"{prefix}.{f.name}" if prefix else f.name
@@ -62,7 +75,7 @@ def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -
     if isinstance(state, _PRIMITIVES):
         out[prefix] = state
         return
-    # Opaque — skip.
+    raise _unrecognized_leaf(state, prefix, "serialize")
 
 
 def walk_load(
@@ -71,7 +84,7 @@ def walk_load(
     prefix: str,
     recurse: WalkLoad,
 ) -> Any:
-    """Rebuild generic Python containers from ``sd``; pass opaque leaves through."""
+    """Rebuild generic Python containers from ``sd``; unrecognised leaves raise."""
     if dataclasses.is_dataclass(template) and not isinstance(template, type):
         replacements: dict[str, Any] = {}
         for f in dataclasses.fields(template):
@@ -96,8 +109,7 @@ def walk_load(
         }
     if isinstance(template, _PRIMITIVES):
         return sd.get(prefix, template)
-    # Opaque — pass through.
-    return template
+    raise _unrecognized_leaf(template, prefix, "restore")
 
 
 __all__ = ["WalkLoad", "WalkSave", "walk_load", "walk_save"]

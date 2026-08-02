@@ -11,6 +11,20 @@ stream; pass its strategy explicitly.
 
 See [Matrix factorization (MF)](user-guide/dp-ftrl.md).
 
+## Randomness and the threat model
+
+Random keys are reproducible PRNG state, not cryptographically secure
+randomness. Exposing seeds or noise state can reveal the noise realization.
+Keep them private and strip the random and noise state before publishing.
+See [Random keys](user-guide/rng-key.md).
+
+## Telemetry outside the guarantee
+
+DP accounting does not cover exact diagnostics such as un-noised mean loss,
+pre-clip gradient norm, clip rate, batch size, or token and reward metrics.
+Keep them private or disable external logging. Hub uploads exclude the default
+`runs/` directory; review other outputs before publishing.
+
 ## Gradient checkpointing
 
 Supported under `vmap(grad(...))` via automatic patches. See

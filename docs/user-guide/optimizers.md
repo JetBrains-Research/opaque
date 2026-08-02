@@ -67,7 +67,7 @@ for batch in dataloader:
 Its per-tensor relative-step normalization (factored
 `v_row × v_col`) auto-scales effective learning rates per parameter
 group, which makes it both LR-robust and naturally resistant to
-DP noise inflation of the second moment (see [Empirical evidence](#empirical-evidence)
+DP noise inflation of the second moment (see [Choosing from measurements](#choosing-from-measurements)
 below). Pass `NoisedPytree` updates from a DP noise mechanism:
 
 ```python
@@ -79,7 +79,7 @@ optimizer = adafactor(lr=5e-4, weight_decay=0.01)
 **AdamW** (`adamw`) is a good alternative when you want first-moment
 momentum, but is more LR-sensitive than Adafactor: tuning matters.
 Use `noise_bias_correction=True` only when the LR has been tuned for
-the workload (see [the BC story](#empirical-evidence)):
+the workload (see [Choosing from measurements](#choosing-from-measurements)):
 
 ```python
 from opaque.optimizers import adamw
@@ -197,67 +197,25 @@ respective EMA:
 $$\mu_t = \beta_1 \mu_{t-1} + (1-\beta_1) \tilde{g}_t, \qquad
 v_t = \beta_2 v_{t-1} + (1-\beta_2) \widetilde{g^2}_t$$
 
-The additional second-moment stream costs ~22% extra privacy budget
-under add/remove DP, but the optimizer-side cost is trivial: just
-substitute the privatized stream in the v-update.
+The extra stream has a configuration-dependent privacy cost; calibrate the
+complete mechanism.
 
 This mode requires an MF noise mechanism with
 `mf_gaussian_noise(..., second_moment_strategy=...)`, so it
 applies to **DP-FTRL** training, not standard DP-SGD with i.i.d. Gaussian
 noise.
 
-### Empirical evidence
+### Choosing from measurements
 
-We cross-tested optimizer choice, learning rate, and BC on/off on a
-LoRA fine-tuning workload at ε=3 (full BC ablation matrix plus an LR
-sweep around each optimizer's published default). The findings drove
-this guide's defaults:
-
-1. **All shipped optimizers are DP-grade.** With a sensible LR,
-   every Adam-family factory and Adafactor landed within ~0.5% of a
-   tuned SGD-with-momentum baseline. Optimizer choice mattered less
-   than LR and schedule fit.
-
-2. **Adafactor's relative-step normalization replaces BC.** Adafactor
-   BC-on vs BC-off produced indistinguishable trajectories at every
-   threshold we measured and identical minima — the per-tensor
-   `v_row × v_col` factorization already plays the role BC plays for
-   plain Adam. This is the main reason Adafactor is the recommended
-   default.
-
-3. **BC is "honest LR"; BC-off is "implicit shrinkage".** With a
-   well-tuned LR, BC reaches early-loss thresholds faster and lands
-   a slightly better minimum than BC-off. With an LR set too high,
-   BC actively amplifies the resulting schedule overshoot — the same
-   configuration with BC off ran cleanly to a better minimum. Without
-   BC, the effective LR auto-shrinks proportionally to $\sigma^2/g^2$,
-   acting like an implicit annealing schedule keyed to the
-   noise/signal ratio.
-
-4. **LR sensitivity varies sharply across families.** Across a 10× LR
-   window around each optimizer's tuned setting, RAdam moved by less
-   than 0.2% and Adafactor by less than 0.5%; AdamW moved by ~2%;
-   Lion was sharper still and degenerate at one end of the bracket;
-   Adagrad diverged at the high end. Adafactor and RAdam are the
-   genuinely "set-and-forget" choices; Lion, RMSprop, and Adagrad
-   need careful LR tuning under DP.
-
-5. **Argmin at the last step ⇒ budget-limited.** Several
-   well-behaved configurations hit their minimum at the final
-   evaluation step, meaning the training budget cut them off before
-   convergence. If your run shows this signature, train for more
-   steps rather than reaching for a different optimizer.
-
-This is what motivates `noise_bias_correction=False` as the default:
-BC-off is more forgiving across the LR range, and Adafactor (the
-recommended default) is unaffected by the choice either way. Turn BC
-on once you've tuned LR to the workload.
+No reproducible cross-workload benchmark is available. Tune the optimizer,
+learning rate, schedule, and bias correction together.
 
 ### When to use which
 
 The bias-correction (BC) and private-second-moment paths target the same
 v-update bias by different means; they are alternatives.  BC default is
-**off** — turn it on once you've tuned LR; see [Empirical evidence](#empirical-evidence)
+**off** — turn it on once you've tuned LR; see
+[Choosing from measurements](#choosing-from-measurements)
 above.
 
 | Scenario | Optimizer | Notes |
@@ -394,10 +352,11 @@ Under DP both EMAs accumulate noise:
   `Δx_t = -coef_t · g̃_t` is linear in the noised gradient.
 
 ``adadelta`` maintains two parallel φ-EMAs at the
-same decay `ρ` and subtracts both biases.  `φ_g` is scalar (or
-per-group), `φ_dx` is per-element because the per-step update-noise
-variance varies element-wise even when `σ` is scalar.  Total state
-is roughly 1.5× vanilla Adadelta — still less than Adam's `m + v + φ`.
+same decay `ρ` and subtracts both biases. `φ_g` is scalar (or
+per-group), while `φ_dx` is per-element because the per-step update-noise
+variance varies element-wise even when `σ` is scalar. This adds one scalar
+(or per-group) value and one parameter-shaped value to vanilla Adadelta's
+state.
 
 The Adadelta two-EMA derivation has no published prior; it falls out
 of direct propagation of Gaussian variance through the linear scaling.
@@ -413,17 +372,8 @@ For non-DP use, `from torchopt import adamax` directly.
 
 ### Schedule-free under DP
 
-Schedule-free's published params $x_t = (1/n) \sum_s z_s$ are a
-Polyak-Ruppert average of the optimizer iterates.  Under DP, the
-per-step iterate noise is approximately independent (the gradient
-samples are independent), so:
-
-$$\text{Var}[x_n] \approx \frac{\text{Var}[z]}{n}$$
-
-The published checkpoint has $\sqrt{n}\times$ less noise than the
-final iterate at the same privacy budget.  This makes schedule-free
-particularly attractive for DP training, on top of its standard
-"no-LR-schedule" win.
+Schedule-free averages optimizer iterates. Its DP variance reduction depends
+on their covariance, so there is no universal $\sqrt{n}$ reduction.
 
 ```python
 from opaque.optimizers import adamw, schedule_free
