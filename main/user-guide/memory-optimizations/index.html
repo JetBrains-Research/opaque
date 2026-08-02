@@ -2994,45 +2994,8 @@ cost of 16x more sequential computation.</p>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="microbatch-size-vs-throughput">Microbatch size vs throughput<a class="headerlink" href="#microbatch-size-vs-throughput" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Microbatch size</th>
-<th>Memory</th>
-<th>Passes (batch=256)</th>
-<th>Relative speed</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>256 (no microbatch)</td>
-<td>Highest</td>
-<td>1</td>
-<td>Fastest</td>
-</tr>
-<tr>
-<td>64</td>
-<td>4x less</td>
-<td>4</td>
-<td>~3.5x slower</td>
-</tr>
-<tr>
-<td>16</td>
-<td>16x less</td>
-<td>16</td>
-<td>~10x slower</td>
-</tr>
-<tr>
-<td>1</td>
-<td>Minimum</td>
-<td>256</td>
-<td>~100x slower</td>
-</tr>
-</tbody>
-</table>
-<p>The relationship is not purely linear because GPU utilization drops for very
-small microbatches. In practice, <code>microbatch_size &gt;= 4</code> maintains reasonable
-GPU utilization. Below that, the overhead of launching kernels dominates.</p>
+<p>Smaller microbatches use less memory but require more passes. Measure the
+trade-off on your workload.</p>
 <h3 id="tuning-workflow">Tuning workflow<a class="headerlink" href="#tuning-workflow" title="Permanent link">&para;</a></h3>
 <p>Use a short manual sweep with <code>step_perf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
@@ -3101,15 +3064,15 @@ with functorch). No special kwargs needed.</p>
 </tr>
 <tr>
 <td>Gradient checkpointing</td>
-<td>O(sqrt(layers))</td>
-<td>~2x</td>
-<td>~81% savings on Mellum-4b</td>
+<td>Workload-dependent</td>
+<td>Recomputation overhead</td>
+<td>Measure on the target model</td>
 </tr>
 <tr>
 <td>Microbatching (size m)</td>
-<td>O(m)</td>
-<td>1x</td>
-<td></td>
+<td>O(m) gradient term</td>
+<td>More sequential passes</td>
+<td>Measure on the target device</td>
 </tr>
 </tbody>
 </table>
@@ -3146,137 +3109,18 @@ fallbacks.</p>
 <p>See <a href="../huggingface/model-patches/#triton-kernels">Model Patches — Triton kernels</a>
 for per-operation details and per-model support.</p>
 <h3 id="kernel-benchmarks">Kernel benchmarks<a class="headerlink" href="#kernel-benchmarks" title="Permanent link">&para;</a></h3>
-<p>Measured at Mellum-4b scale (batch=4, seq=1024, vocab=128256, LoRA r=16).
-Values &gt; 1.0 mean the kernel is faster (speed) or uses less memory (memory)
-than the PyTorch baseline.</p>
-<table>
-<thead>
-<tr>
-<th>Kernel</th>
-<th>Forward</th>
-<th>Backward</th>
-<th>Memory</th>
-<th>vmap(grad) speed</th>
-<th>vmap(grad) memory</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>SwiGLU</td>
-<td>0.69x</td>
-<td>0.83x</td>
-<td>1.20x</td>
-<td>1.19x</td>
-<td>2.10x</td>
-</tr>
-<tr>
-<td>GeGLU Exact</td>
-<td>0.76x</td>
-<td>0.78x</td>
-<td>1.38x</td>
-<td>0.84x</td>
-<td>1.43x</td>
-</tr>
-<tr>
-<td>GeGLU Approx</td>
-<td>0.81x</td>
-<td>0.72x</td>
-<td>1.38x</td>
-<td>0.77x</td>
-<td>1.43x</td>
-</tr>
-<tr>
-<td>RoPE</td>
-<td>2.01x</td>
-<td>1.13x</td>
-<td>1.46x</td>
-<td>0.98x</td>
-<td>1.70x</td>
-</tr>
-<tr>
-<td>CE (V=32K)</td>
-<td>1.56x</td>
-<td>1.33x</td>
-<td>1.67x</td>
-<td>2.63x</td>
-<td>2.00x</td>
-</tr>
-<tr>
-<td>CE (V=128K)</td>
-<td>2.20x</td>
-<td>2.24x</td>
-<td>1.67x</td>
-<td>3.68x</td>
-<td>2.00x</td>
-</tr>
-</tbody>
-</table>
-<p>SwiGLU/GeGLU forward is slower than native PyTorch because
-<code>autograd.Function.apply()</code> dispatch overhead dominates the trivially fast
-element-wise operation. The real value is in the fused backward and vmap
-memory savings.</p>
+<p>Kernel performance is workload-dependent; profile patched and unpatched
+paths on your workload.</p>
 <h3 id="fused-linear-cross-entropy">Fused linear cross-entropy<a class="headerlink" href="#fused-linear-cross-entropy" title="Permanent link">&para;</a></h3>
 <p>Computes the loss directly from hidden states and the <code>lm_head</code> weight matrix,
-never materializing the full <code>(batch*seq, vocab)</code> logits tensor. For Mellum-4b
-with 128K vocab, that saves ~2 GB per forward pass relative to the non-fused
-path. Enabled by passing <code>fused_linear_cross_entropy=True</code> to
+never materializing the full <code>(batch*seq, vocab)</code> logits tensor. Enable it by
+passing <code>fused_linear_cross_entropy=True</code> to
 <code>apply_model_patches(model, ...)</code>.</p>
 <p>The fused path returns <code>logits=None</code> from <code>XForCausalLM.forward</code>, which is
 incompatible with callers that read <code>outputs.logits</code> — <code>compute_metrics</code>,
 <code>preprocess_logits_for_metrics</code>, and generation eval. Enable the patch when
 loss is the only consumer of the forward output;
 <code>examples/train_dpsgd.py</code> and <code>examples/train_dpftrl.py</code> do.</p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>V=32K</th>
-<th>V=128K</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Forward speedup</td>
-<td>8.73x</td>
-<td>9.46x</td>
-</tr>
-<tr>
-<td>Forward memory</td>
-<td>2.85x</td>
-<td>3.19x</td>
-</tr>
-<tr>
-<td>Backward speedup</td>
-<td>2.63x</td>
-<td>2.76x</td>
-</tr>
-<tr>
-<td>Backward memory</td>
-<td>3.35x</td>
-<td>3.80x</td>
-</tr>
-<tr>
-<td>vmap forward speedup</td>
-<td>8.86x</td>
-<td>8.88x</td>
-</tr>
-<tr>
-<td>vmap forward memory</td>
-<td>12.10x</td>
-<td>22.67x</td>
-</tr>
-<tr>
-<td>vmap(grad) speedup</td>
-<td>2.65x</td>
-<td>2.70x</td>
-</tr>
-<tr>
-<td>vmap(grad) memory</td>
-<td>6.06x</td>
-<td>8.05x</td>
-</tr>
-</tbody>
-</table>
 <h2 id="profiling">Profiling<a class="headerlink" href="#profiling" title="Permanent link">&para;</a></h2>
 <h3 id="step_perf-perfstate">step_perf + PerfState<a class="headerlink" href="#step_perf-perfstate" title="Permanent link">&para;</a></h3>
 <p>Use <code>step_perf</code> to measure individual training steps and <code>PerfState</code> to

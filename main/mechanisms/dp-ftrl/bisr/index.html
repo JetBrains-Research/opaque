@@ -2885,44 +2885,8 @@ and computes the linear combination defined by the BISR coefficients.</p>
 <li>For a high-level comparison of MF mechanisms, see <a href="../../../user-guide/dp-ftrl/">Matrix factorization (MF)</a>.</li>
 </ul>
 <h2 id="bandwidth-selection">Bandwidth selection<a class="headerlink" href="#bandwidth-selection" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Bandwidth</th>
-<th>Memory</th>
-<th>Runtime overhead</th>
-<th>Utility</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>p=2</td>
-<td>Zero extra</td>
-<td>&lt;1%</td>
-<td>Good (= λCGD)</td>
-</tr>
-<tr>
-<td>p=4</td>
-<td>3 vectors</td>
-<td>~4%</td>
-<td>Better</td>
-</tr>
-<tr>
-<td>p=8</td>
-<td>7 vectors</td>
-<td>~8%</td>
-<td>Near-optimal</td>
-</tr>
-<tr>
-<td>p=16</td>
-<td>15 vectors</td>
-<td>~15%</td>
-<td>Optimal for most tasks</td>
-</tr>
-</tbody>
-</table>
-<p>The paper shows BISR matches BandMF at the same bandwidth while being
-simpler to implement and asymptotically optimal.</p>
+<p>Bandwidth <code>p</code> retains <code>p - 1</code> noise vectors. Measure the runtime and utility
+trade-off on your workload.</p>
 
 
 

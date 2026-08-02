@@ -2936,11 +2936,8 @@ with the tight order-statistics tests from
 <p><code>OneRunEstimate.epsilon_at(delta=)</code>, <code>.delta_at(epsilon=)</code>, <code>.beta_at(alpha=)</code>,
 and <code>.advantage()</code> all dispatch to the <strong>μ-GDP order-statistics test</strong> from
 Xiang et al. (2025).</p>
-<p>This is the default because every DP mechanism Opaque ships — DP-SGD with
-Gaussian noise, and DP-FTRL with matrix-factorisation Gaussian noise — is
-in the Gaussian-DP family. On these mechanisms the μ-GDP test is <strong>3–10×
-tighter</strong> than the mechanism-agnostic (ε,δ)-DP test (Xiang et al. 2025,
-§5).</p>
+<p>Use μ-GDP only when it models the audited mechanism; otherwise use the
+mechanism-agnostic method.</p>
 <p>The dispatch requires <code>delta &gt; 0</code>: μ-GDP is incompatible with pure ε-DP.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>                       <span class="c1"># default — μ-GDP</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># stricter confidence</span>
@@ -3022,9 +3019,9 @@ metrics directly from the estimate:</p>
 <p>The <code>attack_</code> prefix distinguishes these from the (audit-side) <code>beta_at</code>
 that reads the theoretical f-DP β at the inferred μ̂-GDP.</p>
 <h2 id="number-of-canaries">Number of canaries<a class="headerlink" href="#number-of-canaries" title="Permanent link">&para;</a></h2>
-<p>The one-run audit has a hard ceiling at <code>ε ≲ ln(m / -ln(α))</code> for a perfect
-attack with <code>m</code> canaries at significance <code>α</code>. Anything above that is
-unreachable regardless of which method you pick:</p>
+<p>For the mechanism-agnostic <span class="arithmatex">\((\varepsilon,\delta)\)</span> method, a perfect attack
+has an approximate ceiling <code>ε ≲ ln(m / -ln(α))</code>. This does not apply to the
+μ-GDP estimator:</p>
 <table>
 <thead>
 <tr>
@@ -3051,9 +3048,7 @@ unreachable regardless of which method you pick:</p>
 </tr>
 </tbody>
 </table>
-<p>Imperfect attacks lower this further. So if you train at <code>ε = 60</code>, the
-audit cannot certify anywhere near it — that's a property of one-run
-auditing, not an Opaque limitation.</p>
+<p>Imperfect attacks lower the mechanism-agnostic estimate further.</p>
 <p>In practice:</p>
 <table>
 <thead>

@@ -2954,9 +2954,9 @@ correct K-step bound under MF correlations:</p>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">acct</span> <span class="o">|=</span> <span class="n">step</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">eps_so_far</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p><code>(per_step(proc) * K).epsilon_at(δ)</code> is bounded above by
-<code>proc.epsilon_at(δ)</code> and is monotone non-decreasing in K (post-processing
-on the deployed N-step mechanism); <code>K &gt; proc.n_steps</code> raises.</p>
+<p>For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
+Monte Carlo PLDs are point estimates without that guarantee. <code>K &gt;
+proc.n_steps</code> raises.</p>
 <h2 id="3-clipping">3. Clipping<a class="headerlink" href="#3-clipping" title="Permanent link">&para;</a></h2>
 <p>Same engine clipping primitives as DP-SGD, just imported from
 <code>opaque.dpftrl.clipping</code>. Adaptive clipping is <strong>not</strong> available

@@ -993,9 +993,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#empirical-evidence" class="md-nav__link">
+  <a href="#choosing-from-measurements" class="md-nav__link">
     <span class="md-ellipsis">
-      Empirical evidence
+      Choosing from measurements
     </span>
   </a>
   
@@ -2895,9 +2895,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#empirical-evidence" class="md-nav__link">
+  <a href="#choosing-from-measurements" class="md-nav__link">
     <span class="md-ellipsis">
-      Empirical evidence
+      Choosing from measurements
     </span>
   </a>
   
@@ -3158,7 +3158,7 @@ pattern:</p>
 Its per-tensor relative-step normalization (factored
 <code>v_row × v_col</code>) auto-scales effective learning rates per parameter
 group, which makes it both LR-robust and naturally resistant to
-DP noise inflation of the second moment (see <a href="#empirical-evidence">Empirical evidence</a>
+DP noise inflation of the second moment (see <a href="#choosing-from-measurements">Choosing from measurements</a>
 below). Pass <code>NoisedPytree</code> updates from a DP noise mechanism:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adafactor</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
@@ -3167,7 +3167,7 @@ below). Pass <code>NoisedPytree</code> updates from a DP noise mechanism:</p>
 <p><strong>AdamW</strong> (<code>adamw</code>) is a good alternative when you want first-moment
 momentum, but is more LR-sensitive than Adafactor: tuning matters.
 Use <code>noise_bias_correction=True</code> only when the LR has been tuned for
-the workload (see <a href="#empirical-evidence">the BC story</a>):</p>
+the workload (see <a href="#choosing-from-measurements">Choosing from measurements</a>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1.5e-4</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
@@ -3252,68 +3252,20 @@ noise streams — one for <span class="arithmatex">\(g_t\)</span> (first moment)
 respective EMA:</p>
 <div class="arithmatex">\[\mu_t = \beta_1 \mu_{t-1} + (1-\beta_1) \tilde{g}_t, \qquad
 v_t = \beta_2 v_{t-1} + (1-\beta_2) \widetilde{g^2}_t\]</div>
-<p>The additional second-moment stream costs ~22% extra privacy budget
-under add/remove DP, but the optimizer-side cost is trivial: just
-substitute the privatized stream in the v-update.</p>
+<p>The extra stream has a configuration-dependent privacy cost; calibrate the
+complete mechanism.</p>
 <p>This mode requires an MF noise mechanism with
 <code>mf_gaussian_noise(..., second_moment_strategy=...)</code>, so it
 applies to <strong>DP-FTRL</strong> training, not standard DP-SGD with i.i.d. Gaussian
 noise.</p>
-<h3 id="empirical-evidence">Empirical evidence<a class="headerlink" href="#empirical-evidence" title="Permanent link">&para;</a></h3>
-<p>We cross-tested optimizer choice, learning rate, and BC on/off on a
-LoRA fine-tuning workload at ε=3 (full BC ablation matrix plus an LR
-sweep around each optimizer's published default). The findings drove
-this guide's defaults:</p>
-<ol>
-<li>
-<p><strong>All shipped optimizers are DP-grade.</strong> With a sensible LR,
-   every Adam-family factory and Adafactor landed within ~0.5% of a
-   tuned SGD-with-momentum baseline. Optimizer choice mattered less
-   than LR and schedule fit.</p>
-</li>
-<li>
-<p><strong>Adafactor's relative-step normalization replaces BC.</strong> Adafactor
-   BC-on vs BC-off produced indistinguishable trajectories at every
-   threshold we measured and identical minima — the per-tensor
-   <code>v_row × v_col</code> factorization already plays the role BC plays for
-   plain Adam. This is the main reason Adafactor is the recommended
-   default.</p>
-</li>
-<li>
-<p><strong>BC is "honest LR"; BC-off is "implicit shrinkage".</strong> With a
-   well-tuned LR, BC reaches early-loss thresholds faster and lands
-   a slightly better minimum than BC-off. With an LR set too high,
-   BC actively amplifies the resulting schedule overshoot — the same
-   configuration with BC off ran cleanly to a better minimum. Without
-   BC, the effective LR auto-shrinks proportionally to <span class="arithmatex">\(\sigma^2/g^2\)</span>,
-   acting like an implicit annealing schedule keyed to the
-   noise/signal ratio.</p>
-</li>
-<li>
-<p><strong>LR sensitivity varies sharply across families.</strong> Across a 10× LR
-   window around each optimizer's tuned setting, RAdam moved by less
-   than 0.2% and Adafactor by less than 0.5%; AdamW moved by ~2%;
-   Lion was sharper still and degenerate at one end of the bracket;
-   Adagrad diverged at the high end. Adafactor and RAdam are the
-   genuinely "set-and-forget" choices; Lion, RMSprop, and Adagrad
-   need careful LR tuning under DP.</p>
-</li>
-<li>
-<p><strong>Argmin at the last step ⇒ budget-limited.</strong> Several
-   well-behaved configurations hit their minimum at the final
-   evaluation step, meaning the training budget cut them off before
-   convergence. If your run shows this signature, train for more
-   steps rather than reaching for a different optimizer.</p>
-</li>
-</ol>
-<p>This is what motivates <code>noise_bias_correction=False</code> as the default:
-BC-off is more forgiving across the LR range, and Adafactor (the
-recommended default) is unaffected by the choice either way. Turn BC
-on once you've tuned LR to the workload.</p>
+<h3 id="choosing-from-measurements">Choosing from measurements<a class="headerlink" href="#choosing-from-measurements" title="Permanent link">&para;</a></h3>
+<p>No reproducible cross-workload benchmark is available. Tune the optimizer,
+learning rate, schedule, and bias correction together.</p>
 <h3 id="when-to-use-which">When to use which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h3>
 <p>The bias-correction (BC) and private-second-moment paths target the same
 v-update bias by different means; they are alternatives.  BC default is
-<strong>off</strong> — turn it on once you've tuned LR; see <a href="#empirical-evidence">Empirical evidence</a>
+<strong>off</strong> — turn it on once you've tuned LR; see
+<a href="#choosing-from-measurements">Choosing from measurements</a>
 above.</p>
 <table>
 <thead>
@@ -3471,10 +3423,11 @@ Under DP both EMAs accumulate noise:</p>
   <code>Δx_t = -coef_t · g̃_t</code> is linear in the noised gradient.</li>
 </ul>
 <p><code>adadelta</code> maintains two parallel φ-EMAs at the
-same decay <code>ρ</code> and subtracts both biases.  <code>φ_g</code> is scalar (or
-per-group), <code>φ_dx</code> is per-element because the per-step update-noise
-variance varies element-wise even when <code>σ</code> is scalar.  Total state
-is roughly 1.5× vanilla Adadelta — still less than Adam's <code>m + v + φ</code>.</p>
+same decay <code>ρ</code> and subtracts both biases. <code>φ_g</code> is scalar (or
+per-group), while <code>φ_dx</code> is per-element because the per-step update-noise
+variance varies element-wise even when <code>σ</code> is scalar. This adds one scalar
+(or per-group) value and one parameter-shaped value to vanilla Adadelta's
+state.</p>
 <p>The Adadelta two-EMA derivation has no published prior; it falls out
 of direct propagation of Gaussian variance through the linear scaling.</p>
 <h3 id="why-adamax-isnt-shipped">Why Adamax isn't shipped<a class="headerlink" href="#why-adamax-isnt-shipped" title="Permanent link">&para;</a></h3>
@@ -3485,15 +3438,8 @@ tiny, the per-coordinate denominator is permanently floored by
 accumulated noise magnitude.  No clean DP-aware variant exists.
 For non-DP use, <code>from torchopt import adamax</code> directly.</p>
 <h3 id="schedule-free-under-dp">Schedule-free under DP<a class="headerlink" href="#schedule-free-under-dp" title="Permanent link">&para;</a></h3>
-<p>Schedule-free's published params <span class="arithmatex">\(x_t = (1/n) \sum_s z_s\)</span> are a
-Polyak-Ruppert average of the optimizer iterates.  Under DP, the
-per-step iterate noise is approximately independent (the gradient
-samples are independent), so:</p>
-<div class="arithmatex">\[\text{Var}[x_n] \approx \frac{\text{Var}[z]}{n}\]</div>
-<p>The published checkpoint has <span class="arithmatex">\(\sqrt{n}\times\)</span> less noise than the
-final iterate at the same privacy budget.  This makes schedule-free
-particularly attractive for DP training, on top of its standard
-"no-LR-schedule" win.</p>
+<p>Schedule-free averages optimizer iterates. Its DP variance reduction depends
+on their covariance, so there is no universal <span class="arithmatex">\(\sqrt{n}\)</span> reduction.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span><span class="p">,</span> <span class="n">schedule_free</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">schedule_free</span><span class="p">(</span>

@@ -3336,7 +3336,8 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 <p><strong>Args:</strong>
 - <code>key_val</code>: RngKey (typically from <code>key()</code>)</p>
 <p><strong>Returns:</strong> None (side effects only)</p>
-<p><strong>Performance Impact:</strong> Typically 10-30% slower with full determinism.</p>
+<p><strong>Performance impact:</strong> Deterministic algorithms may be slower; measure on
+your workload.</p>
 <p><strong>Example:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span><span class="p">,</span> <span class="n">split</span><span class="p">,</span> <span class="n">set_reproducible_pytorch_seed</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>

@@ -2827,10 +2827,8 @@ the unscale as <code>pre_clipping_transform</code> so clipping sees the true mag
 <a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    <span class="n">acc_state</span> <span class="o">=</span> <span class="n">accountant</span><span class="o">.</span><span class="n">advance</span><span class="p">(</span><span class="n">acc_state</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
 <a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="n">scaler_state</span> <span class="o">=</span> <span class="n">scaler</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">scaler_state</span><span class="p">,</span> <span class="n">grads_finite</span><span class="p">)</span>
 </code></pre></div>
-<p>On a non-finite step the wrapper <em>must</em> skip the noise mechanism, the optimizer
-update, <strong>and</strong> the accountant advance — together. Skipped steps consume zero
-privacy budget. The scaler's <code>update</code> advances the grow/backoff schedule
-regardless of the skip decision.</p>
+<p>A skip is data-dependent and is not free privacy-wise. Unless separately
+analyzed, advance the accountant on a public fixed schedule.</p>
 <h2 id="recipe-float32-training-everything-disabled">Recipe: <code>float32</code> training (everything disabled)<a class="headerlink" href="#recipe-float32-training-everything-disabled" title="Permanent link">&para;</a></h2>
 <p>Pass <code>enabled=False</code> to keep the call sites uniform; the scaler degrades to
 identity functions, the autocast block is just omitted.</p>

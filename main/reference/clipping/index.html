@@ -3943,7 +3943,7 @@ steps under Poisson sampling.</p>
           </tr>
       </tbody>
     </table>
-        <p>Example (single-device or distributed):
+        <p>Example (single device):
     &gt;&gt;&gt; import torch
     &gt;&gt;&gt; from opaque.dpsgd.clipping import adaptive_clipped_grad
     &gt;&gt;&gt; from opaque.dpsgd.noise import gaussian_noise
@@ -3954,8 +3954,8 @@ steps under Poisson sampling.</p>
     ...     pred = x @ params
     ...     return ((pred - y) ** 2).mean()
     &gt;&gt;&gt;
-    &gt;&gt;&gt; # Create adaptive clipping function with initial state
-    &gt;&gt;&gt; # (automatically detects if distributed!)
+    &gt;&gt;&gt; # Create an adaptive clipping function with explicit local state.
+    &gt;&gt;&gt; # Distributed callers must synchronize state explicitly.
     &gt;&gt;&gt; grad_fn, clip_state = adaptive_clipped_grad(
     ...     loss_fn,
     ...     initial_clipping_norm=0.1,
@@ -4510,7 +4510,7 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">                (*args, state, **kwargs) -&gt; ((grad, aux), new_state)</span>
 <a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="sd">            - initial_state: Initial AdaptiveClipState</span>
 <a id="__codelineno-0-196" name="__codelineno-0-196"></a>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">    Example (single-device or distributed):</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">    Example (single device):</span>
 <a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">        &gt;&gt;&gt; import torch</span>
 <a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">        &gt;&gt;&gt; from opaque.dpsgd.clipping import adaptive_clipped_grad</span>
 <a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">        &gt;&gt;&gt; from opaque.dpsgd.noise import gaussian_noise</span>
@@ -4521,8 +4521,8 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        ...     pred = x @ params</span>
 <a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        ...     return ((pred - y) ** 2).mean()</span>
 <a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">        &gt;&gt;&gt; # Create adaptive clipping function with initial state</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">        &gt;&gt;&gt; # (automatically detects if distributed!)</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">        &gt;&gt;&gt; # Create an adaptive clipping function with explicit local state.</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">        &gt;&gt;&gt; # Distributed callers must synchronize state explicitly.</span>
 <a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        &gt;&gt;&gt; grad_fn, clip_state = adaptive_clipped_grad(</span>
 <a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">        ...     loss_fn,</span>
 <a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">        ...     initial_clipping_norm=0.1,</span>
@@ -5745,8 +5745,8 @@ aux dataclass containing loss values, gradient norms, and loss aux.</p>
 gradients before clipping. The function should consume the gradient pytree
 for a single example and return a new pytree (possibly with different
 structure). Can be used to e.g., scale the leaves of the pytree to
-accommodate preconditioner clipping. Does not affect the sensitivity
-guarantee. Default is identity function.</p>
+accommodate preconditioner clipping. Account separately for any
+data-dependent control flow or telemetry. Default is identity function.</p>
               </div>
             </td>
             <td>
@@ -6147,8 +6147,8 @@ bf16/fp16 to float32 for numerical stability. Independent of
 <a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="sd">            gradients before clipping. The function should consume the gradient pytree</span>
 <a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">            for a single example and return a new pytree (possibly with different</span>
 <a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">            structure). Can be used to e.g., scale the leaves of the pytree to</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            accommodate preconditioner clipping. Does not affect the sensitivity</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">            guarantee. Default is identity function.</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            accommodate preconditioner clipping. Account separately for any</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">            data-dependent control flow or telemetry. Default is identity function.</span>
 <a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">        microbatch_size: If set, the batch is split up into microbatches of this</span>
 <a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">            size for memory-efficient processing. Processes each microbatch separately</span>
 <a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="sd">            and accumulates results without materializing the full batch of gradients.</span>
@@ -10434,8 +10434,8 @@ aux dataclass containing loss values, gradient norms, and loss aux.</p>
 gradients before clipping. The function should consume the gradient pytree
 for a single example and return a new pytree (possibly with different
 structure). Can be used to e.g., scale the leaves of the pytree to
-accommodate preconditioner clipping. Does not affect the sensitivity
-guarantee. Default is identity function.</p>
+accommodate preconditioner clipping. Account separately for any
+data-dependent control flow or telemetry. Default is identity function.</p>
               </div>
             </td>
             <td>
@@ -10836,8 +10836,8 @@ bf16/fp16 to float32 for numerical stability. Independent of
 <a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="sd">            gradients before clipping. The function should consume the gradient pytree</span>
 <a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">            for a single example and return a new pytree (possibly with different</span>
 <a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">            structure). Can be used to e.g., scale the leaves of the pytree to</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            accommodate preconditioner clipping. Does not affect the sensitivity</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">            guarantee. Default is identity function.</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">            accommodate preconditioner clipping. Account separately for any</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">            data-dependent control flow or telemetry. Default is identity function.</span>
 <a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">        microbatch_size: If set, the batch is split up into microbatches of this</span>
 <a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">            size for memory-efficient processing. Processes each microbatch separately</span>
 <a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="sd">            and accumulates results without materializing the full batch of gradients.</span>

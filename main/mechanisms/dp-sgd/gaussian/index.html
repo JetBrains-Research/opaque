@@ -3080,11 +3080,8 @@ sample. A given example may appear on multiple workers.</p>
 from a Gaussian renormalized over <span class="arithmatex">\([-B, B]\)</span> (or <span class="arithmatex">\([\text{low}, \text{high}]\)</span>)
 per coordinate — the <em>bounded Gaussian mechanism</em> of Chen and Hale (2024).
 Bounds are absolute (same scale as the gradient / clip norm), not multiples
-of <span class="arithmatex">\(\sigma\)</span>.  At training scale the paper's per-coordinate <span class="arithmatex">\(\varepsilon\)</span>-DP
-analysis does not apply — gradients live under an <span class="arithmatex">\(\ell_2\)</span>-ball constraint,
-not a product of intervals — so use <code>dpsgd_acc.gaussian()</code> for accounting and
-treat the bound as bounded-support post-processing on the standard
-<span class="arithmatex">\((\varepsilon, \delta)\)</span>-Gaussian mechanism.</p>
+of <span class="arithmatex">\(\sigma\)</span>. Treat <code>bound=</code> as experimental: <code>dpsgd_acc.gaussian()</code> does not
+cover this variant.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>

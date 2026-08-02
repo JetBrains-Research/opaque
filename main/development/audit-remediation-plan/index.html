@@ -2614,9 +2614,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#13-claims-to-withdraw-immediately-docs-only-1-day-total" class="md-nav__link">
+  <a href="#13-claims-withdrawn-pending-underlying-fixes" class="md-nav__link">
     <span class="md-ellipsis">
-      1.3 Claims to withdraw immediately (docs-only, ~1 day total)
+      1.3 ✅ Claims withdrawn pending underlying fixes
     </span>
   </a>
   
@@ -3176,7 +3176,12 @@
 </ul>
 <p><strong>Not applicable in this checkout:</strong> the audited precision-dispatch action references a removed/nonexistent <code>_dispatch</code> path. <code>opaque.api.engine.precision.__init__</code> exports only the current loss-scaling surface, and <code>_loss_scaler.py</code> has no silent fallback dispatch path; no compatibility shim or new engine code is needed.</p>
 <p><strong>Effort: 1 day.</strong> See RC-7 for the full fix.</p>
-<h3 id="13-claims-to-withdraw-immediately-docs-only-1-day-total">1.3 Claims to withdraw immediately (docs-only, ~1 day total)<a class="headerlink" href="#13-claims-to-withdraw-immediately-docs-only-1-day-total" title="Permanent link">&para;</a></h3>
+<h3 id="13-claims-withdrawn-pending-underlying-fixes">1.3 ✅ Claims withdrawn pending underlying fixes<a class="headerlink" href="#13-claims-withdrawn-pending-underlying-fixes" title="Permanent link">&para;</a></h3>
+<p>The published claims below have been removed or qualified. They may be
+restored only after the corresponding mechanism, estimator, or reproducible
+benchmark harness lands. Items 8 and 9 had no published user-facing claim in
+this checkout; the missing gates remain tracked in the later infrastructure
+phases.</p>
 <p>Every one of these is a documented guarantee that the code does not provide. Withdraw now; restore only when the corresponding fix lands.</p>
 <ol>
 <li><code>bound=</code> Gaussian is "post-processing on the standard (ε,δ)-Gaussian" — <code>docs/user-guide/noise.md:174-179</code>. It resamples; it is not post-processing; there is no bounded-Gaussian accountant. Mark <strong>experimental, not covered by the recorded ε</strong>.</li>
@@ -3225,8 +3230,12 @@
 <p><strong>Why one change:</strong> the four-way undercharge, the drift, and the double-default are all "two places independently decide what the released statistic is."</p>
 <h3 id="rc-4-monte-carlo-point-estimates-are-presented-as-privacy-guarantees">RC-4 — Monte-Carlo point estimates are presented as privacy guarantees<a class="headerlink" href="#rc-4-monte-carlo-point-estimates-are-presented-as-privacy-guarantees" title="Permanent link">&para;</a></h3>
 <p><strong>Resolves:</strong> MC PLDs with no confidence correction (<code>epsilon_at(δ)</code> returns finite for δ ≪ 1/num_mc_samples); b-min-sep non-monotonicity; MC amplification validated only by MC-vs-MC smoke tests; issue I (per-step invariant sandwich skipped for 6 of 8 MC pairs); <code>MAX_LINEAR_FFT_SIZE</code> guard inert because MC PLDs have zero tail budget.</p>
-<p><strong>Change:</strong> <code>samples_to_pmf</code> / <code>weighted_samples_to_pmf</code> must return a <strong>high-probability upper bound</strong>, not an empirical histogram: reserve mass above the (1−k/n) empirical quantile into <code>infinity_mass</code>; inflate buckets by one-sided Clopper-Pearson / empirical-Bernstein at a caller-visible confidence level; residual → <code>infinity_mass</code>. Surface confidence level + resolution floor through <code>DiscretizationConfig</code>.</p>
-<p><strong>Why one change:</strong> the UCB construction makes the monotonicity claim <strong>true by construction</strong>, gives the FFT guard a non-zero tail budget to work with, and makes the sandwich tests in issue I passable rather than skippable. Fixing the monotonicity claim by memoizing a running max is a workaround that leaves the underlying unsoundness.</p>
+<p><strong>Candidate designs — choose after statistical design review:</strong></p>
+<ol>
+<li><strong>Confidence-bounded PLD.</strong> Replace the empirical histogram with a simultaneous upper-confidence PLD: reserve unresolved right-tail mass in <code>infinity_mass</code>, inflate bucket masses with one-sided bounds, and surface confidence + resolution through <code>DiscretizationConfig</code>. This preserves arbitrary PLD queries and composition, but must handle multiplicity and importance-sampling weights without becoming unusably loose.</li>
+<li><strong>Estimate-Verify-Release (EVR).</strong> Keep the current estimator for proposing ε/noise, then verify the candidate on independent samples using the papers' concentration bound for both adjacency directions. Failed verification selects more noise or an analytically safe fallback, with verifier failure folded into δ. This follows the published formal construction and is better suited to calibration, but certifies a fixed <code>(ε,δ)</code> target rather than a reusable PLD.</li>
+</ol>
+<p>Either design must make Monte-Carlo uncertainty caller-visible and restore the skipped invariants before any BnB/b-min-sep ε claim. Memoizing a running maximum does not fix the underlying issue.</p>
 <h3 id="rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test">RC-5 — MF noise engines have no horizon guard and no correlation test<a class="headerlink" href="#rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test" title="Permanent link">&para;</a></h3>
 <p><strong>Resolves:</strong> λ-CGD zero noise at step n (×2); streaming MF no horizon guard; <code>_column_norm</code> returning 0/NaN; dense engine redrawing base Gaussians (×2 reports — zero cross-step correlation, i.e. <em>not matrix-factorization noise at all</em>); BISR truncating C to <code>bandwidth</code> instead of <code>n_steps</code>; <code>_momentum_workload_coef</code> applying the LR schedule along the lag axis.</p>
 <p><strong>Change:</strong> thread <code>n_steps</code> into <code>_matrix_factorization_noise</code>/<code>_make_raw_mf_noise</code> and raise in all three <code>noise_fn</code>s. Derive base z_j from a per-<strong>column</strong> key <code>fold_in(key, j)</code>, not a per-step key. Add an <strong>empirical covariance test</strong>: sample the noise sequence and assert Cov ≈ σ²C⁻¹(C⁻¹)ᵀ, run against dense <em>and</em> streaming engines. That single test catches all four correlation/truncation bugs and prevents the next one.</p>
@@ -3273,9 +3282,9 @@ Covers RC-16 + RC-6's generation counter. Includes: iterative serialize/load/<co
 <p><strong>A2. <code>opaque-accounting</code> Rust mechanisms + numerics</strong> — 4d
 <code>mechanisms/eps_delta.rs</code>, <code>mechanisms/identity.rs</code>, <code>discretization/connect_the_dots.rs</code>, <code>numerics/fft.rs</code>, <code>pld/pmf/dense.rs</code>
 Ceiling rounding, unconditional conservative PMF construction, <code>PyResult</code> on <code>self_compose</code>, and the u32 guard. The optimistic estimate mode was deleted rather than retained as a compatibility no-op.</p>
-<p><strong>A3. Monte-Carlo upper-confidence-bound PLDs</strong> — 10–12d ⚠ hardest single item
+<p><strong>A3. Verified Monte-Carlo accounting</strong> — 10–12d ⚠ hardest single item
 <code>amplification/balls_in_bins/monte_carlo.rs</code>, <code>identity.rs</code>, <code>mc.rs</code>, <code>b_min_sep/registry.rs</code>, Python wrappers, <code>docs/reference/accounting.md</code>
-RC-4. Needs statistical design review, not just coding. Deliverables: UCB PMF construction, confidence level plumbed through <code>DiscretizationConfig</code>, closed-form/quadrature cross-check for BnB-Identity at small b,E at the <strong>default</strong> 100k budget, and a test asserting ε <em>increases</em> as <code>num_mc_samples</code> decreases.
+RC-4. Needs statistical design review, not just coding. Select and implement one of the two RC-4 designs; retain the alternative and rationale in the design record. Deliverables include a closed-form/quadrature cross-check for BnB-Identity at small b,E, explicit uncertainty/failure metadata, and acceptance tests for both adjacency directions.
 <em>Blocks: b-min-sep monotonicity restoration, issue I sandwich tests, any BnB/b-min-sep ε claim.</em></p>
 <p><strong>A4. DP-SGD amplification API hygiene</strong> — 1d
 <code>poisson(1.0)</code> special-case, <code>parallel_poisson</code> delegating to <code>poisson()</code> + <code>num_workers</code> validation, <code>TestParallelPoissonCrossValidation</code> made non-vacuous against dp_accounting or the Rust golden vectors.</p>
@@ -3329,7 +3338,7 @@ RC-7 remainder. <code>all_finite</code> needs the per-example finite mask surfac
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Phase 0 ────────────┤                                     ├──&gt; any ε claim
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                    └─ A2 (Rust mechanisms) ──────────────┘
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                                 │
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                                 ├──&gt; A3 (MC-UCB) ──&gt; b-min-sep/BnB claims, issue I sandwich tests
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                                 ├──&gt; A3 (verified MC) ──&gt; b-min-sep/BnB claims, issue I sandwich tests
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                                 │
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>   G2 (conformance harness) ─────┼──&gt; B1 (gaussian) ──&gt; DP-SGD ε claims
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                                 └──&gt; B2 (AdaClip)  ──&gt; AdaClip ε claims
@@ -3351,7 +3360,7 @@ RC-7 remainder. <code>all_finite</code> needs the per-example finite mask surfac
 <li><strong>The auditor before any audited-ε claim.</strong> D1 must land before D2, D2 before anything in docs or README says a number was empirically validated. Issue O also means the audit harness in <code>train_dpftrl.py</code> is currently comparing two <em>different mechanisms</em> — fix that with RC-1 before trusting any output.</li>
 <li><strong>The gloo lane before the distributed fixes.</strong> Every RC-8 fix is a 10-line change that is impossible to verify today. Build the lane, watch it fail on the current code, then fix.</li>
 <li><strong>The benchmark harness before any performance number.</strong> Do not restate the memory-optimizations tables, the BISR table, the Adafactor comparison, or the second-moment overhead from memory.</li>
-<li><strong>MC-UCB before b-min-sep/BnB claims and before issue I's sandwich tests.</strong> The tests are skipped for 6 of 8 pairs <em>because</em> the estimates are non-conservative point estimates.</li>
+<li><strong>Verified MC accounting before b-min-sep/BnB claims and before issue I's sandwich tests.</strong> The tests are skipped for 6 of 8 pairs <em>because</em> the estimates are non-conservative point estimates.</li>
 <li><strong>The conformance harness (G2) before signing off B1/B2.</strong> Otherwise you are trading one unvalidated mechanism for another.</li>
 </ol>
 <hr />
@@ -3444,8 +3453,8 @@ RC-7 remainder. <code>all_finite</code> needs the per-example finite mask surfac
 <strong>Exit:</strong> Type-I error at nominal level across 200 null runs; no hang; no NaN-manufactured ε̂; the "hard ceiling" and Gaussian-DP-family claims corrected; issue O resolved so the audit compares one mechanism to itself.
 <em>≈ 17 engineer-days.</em></p>
 <h3 id="m4-dp-ftrl-and-mc-amplification-are-sound-weeks-610">M4 — "DP-FTRL and MC amplification are sound" (weeks 6–10)<a class="headerlink" href="#m4-dp-ftrl-and-mc-amplification-are-sound-weeks-610" title="Permanent link">&para;</a></h3>
-<p>B3 (MF engines + covariance test) · A3 (MC-UCB) → restore the b-min-sep monotonicity claim by construction → un-skip issue I's sandwich tests at tight tolerance.
-<strong>Exit:</strong> MF noise is provably correlated as specified; MC-derived ε values are upper confidence bounds with a documented confidence level and resolution floor; <code>epsilon_at(δ)</code> returns INFINITY below the MC floor rather than a finite number.
+<p>B3 (MF engines + covariance test) · A3 (verified MC) → restore supported b-min-sep claims → un-skip issue I's sandwich tests at tight tolerance.
+<strong>Exit:</strong> MF noise is provably correlated as specified; MC-derived privacy claims use either a confidence-bounded PLD or EVR, expose their uncertainty/failure metadata, and reject unsupported queries instead of returning an empirical finite ε.
 <em>≈ 22 engineer-days. A3 is the schedule risk — start the statistical design in M2.</em></p>
 <h3 id="m5-trainers-alignment-patches-weeks-712">M5 — "Trainers, alignment, patches" (weeks 7–12)<a class="headerlink" href="#m5-trainers-alignment-patches-weeks-712" title="Permanent link">&para;</a></h3>
 <p>F1 · F2 · F3 (with the TRL parity gate that issue F says already exists) · F4 · F5 (G7 parity suite) · E1 · E2.
