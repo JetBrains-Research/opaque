@@ -41,7 +41,7 @@ use crate::pld::PrivacyLossDistribution;
 /// So the transform picks the finest width it can afford rather than inheriting
 /// the FFT-tuned default. Its accuracy is cross-validated against an independent
 /// implementation of the same transform.
-const MAX_CONV_GRID: usize = 8192;
+const MAX_CONV_GRID: usize = 16_384;
 
 /// Accuracy knobs derived from the caller's existing discretisation config.
 ///

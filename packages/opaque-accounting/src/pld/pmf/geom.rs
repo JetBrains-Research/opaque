@@ -32,7 +32,7 @@ use rayon::prelude::*;
 /// Fixed rather than derived from the thread count, so the order in which
 /// partial sums are combined — and hence the exact bits of the result — is
 /// the same on every machine. Large enough to keep every core busy, small
-/// enough that the `ROW_CHUNKS · n` scratch stays trivial (4 MB at n = 8192).
+/// enough that the `ROW_CHUNKS · n` scratch stays modest (8 MB at n = 16,384).
 const ROW_CHUNKS: usize = 64;
 
 /// Move a finite floating-point value one representable step in `dir`.
