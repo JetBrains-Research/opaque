@@ -240,6 +240,25 @@ class TestBuildSampler:
         )
         assert isinstance(sampler, RandomAllocationSampler)
 
+    def test_k_out_of_t(self):
+        dataset = _ListDataset(64)
+        sampler = _dpftrl.build_sampler(
+            sampling_mode="k_out_of_t",
+            dataset=dataset,
+            sample_rate=0.1,
+            n_steps=8,
+            key=key(0),
+            sampling_kwargs={"total_participations": 3},
+            mf=None,
+            noise_multiplier=None,
+            num_bins=4,
+            expected_batch_size=4,
+        )
+        from opaque.dpsgd.sampling import KOutOfTSampler
+
+        assert isinstance(sampler, KOutOfTSampler)
+        assert sampler.total_participations == 3
+
     def test_b_min_sep_reads_bands_and_sampling_prob_from_amplifier(self):
         from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
             participation_p_from_per_example_rate,

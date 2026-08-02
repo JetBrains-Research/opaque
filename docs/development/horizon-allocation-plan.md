@@ -188,10 +188,10 @@ Poisson.
 | Calibration: raise `param_min` when PLD grid exceeds `max_grid_size` | Done (branch) |
 | DP-FTRL branch docstring → `opaque.accounting.per_step` | Done (branch) |
 | Remove any `accounting_unit_steps` / epoch-multiple charging | Done (branch) |
-| **`k_out_of_t` in `TrainingArguments`** (`_SAMPLING_MODES`, validation, `sampling_kwargs.total_participations`) | Not done |
-| **`build_sampler` / `_build_mechanism` for `k_out_of_t`** | Not done |
-| **Trainer tests** (config, smoke, `test_dp_guarantees` for k-out-of-t) | Not done |
-| **Docs: `training-arguments.md`** for k-out-of-t | Partial |
+| **`k_out_of_t` in `TrainingArguments`** (`_SAMPLING_MODES`, validation, `sampling_kwargs.total_participations`) | Done (branch) |
+| **`build_sampler` / `_build_mechanism` for `k_out_of_t`** | Done (branch) |
+| **Trainer tests** (config, smoke, `test_dp_guarantees` for k-out-of-t) | Done (branch) |
+| **Docs: `training-arguments.md`** for k-out-of-t | Done (branch) |
 
 **Acceptance:** Same patterns as `random_allocation`: complete schedule,
 calibration, step-wise `acc |= step`, resume recalibration, stop-at-ε.
@@ -212,13 +212,13 @@ calibration, step-wise `acc |= step`, resume recalibration, stop-at-ε.
 
 | Task | Status |
 | --- | --- |
-| `uv sync --group dev --all-packages --extra all` | Pending |
-| `uv run pytest -m "not cuda and not mps and not slow"` | Pending |
-| Targeted: dpsgd/dpftrl accounting, transformers validation, `tests/integration/accounting`, `tests/contracts` | Pending |
+| `uv sync --group dev --all-packages --extra all` | Done |
+| `uv run pytest -m "not cuda and not mps and not slow"` | Done (3422 passed) |
+| Targeted: dpsgd/dpftrl accounting, transformers validation, `tests/integration/accounting`, `tests/contracts` | Done (via full suite) |
 | `uv run ruff check packages/` + format | Pending |
 | `cargo test --workspace` | Done (355 passed, last run) |
 | Docs build (`uv sync --group docs` + `mkdocs build --strict`) | Pending |
-| Commit, push `cursor/horizon-allocation-processes-d1f5` | Pending |
+| Commit, push `cursor/horizon-allocation-processes-d1f5` | Pending (this turn) |
 | Open/update stacked PR | Pending |
 
 **Suggested PR title (Conventional Commits):**

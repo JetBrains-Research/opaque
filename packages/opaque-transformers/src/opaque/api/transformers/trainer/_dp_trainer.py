@@ -3982,6 +3982,29 @@ class DPTrainer:
                     )
                 )
 
+        elif a.sampling_mode == "k_out_of_t":
+            k_raw = sk.get("total_participations")
+            if k_raw is None:
+                raise ValueError(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'total_participations'."
+                )
+            total_k = int(k_raw)
+            if not 1 <= total_k <= n_steps:
+                raise ValueError(
+                    "total_participations must be in "
+                    f"[1, n_steps={n_steps}], got {total_k}."
+                )
+
+            def mechanism(nm, _u=_unamplified, _k=total_k, _ns=n_steps):
+                return acc.per_step(
+                    dpsgd_acc.k_out_of_t(
+                        _u(nm),
+                        total_participations=_k,
+                        n_steps=_ns,
+                    )
+                )
+
         elif tb_cap is not None:
 
             def mechanism(
@@ -4051,7 +4074,7 @@ class DPTrainer:
         ecal = a.noise_calibration_kwargs
         param_min = float(ecal["min"])
         param_max = float(ecal["max"])
-        if a.sampling_mode == "random_allocation":
+        if a.sampling_mode in ("random_allocation", "k_out_of_t"):
             configured_min = param_min
             while True:
                 try:
@@ -4067,8 +4090,9 @@ class DPTrainer:
                     break
             if param_min != configured_min:
                 log.info(
-                    "Raised random-allocation calibration minimum from %.4g to "
+                    "Raised %s calibration minimum from %.4g to "
                     "%.4g because smaller σ exceeds the PLD grid cap.",
+                    a.sampling_mode,
                     configured_min,
                     param_min,
                 )

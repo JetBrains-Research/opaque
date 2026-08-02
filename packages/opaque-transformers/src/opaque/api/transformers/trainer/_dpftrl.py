@@ -43,7 +43,11 @@ from opaque.dpftrl.accounting import mf_gaussian
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
-from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
+from opaque.dpsgd.sampling import (
+    KOutOfTSampler,
+    PoissonSampler,
+    RandomAllocationSampler,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -231,6 +235,25 @@ def build_sampler(
         return RandomAllocationSampler(
             dataset,
             num_bins=num_bins,
+            n_steps=n_steps,
+            key=key,
+        )
+    if sampling_mode == "k_out_of_t":
+        k_raw = sk.get("total_participations")
+        if k_raw is None:
+            raise ValueError(
+                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                "'total_participations'."
+            )
+        total_participations = int(k_raw)
+        if not 1 <= total_participations <= n_steps:
+            raise ValueError(
+                "total_participations must be in "
+                f"[1, n_steps={n_steps}], got {total_participations}."
+            )
+        return KOutOfTSampler(
+            dataset,
+            total_participations=total_participations,
             n_steps=n_steps,
             key=key,
         )

@@ -219,9 +219,10 @@ class TestRandomAllocationDataclass:
 
     def test_fields(self):
         g = Gaussian(0.8)
-        r = RandomAllocation(g, 16)
+        r = RandomAllocation(g, 16, 64)
         assert r.inner is g
         assert r.num_bins == 16
+        assert r.n_steps == 64
 
     def test_frozen(self):
         r = RandomAllocation(Gaussian(0.8), 16, 64)

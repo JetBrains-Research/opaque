@@ -166,6 +166,18 @@ def _reference_random_allocation_epsilon(
     ).epsilon_at(delta)
 
 
+def _reference_k_out_of_t_epsilon(
+    nm: float, total_participations: int, n_steps: int, delta: float
+) -> float:
+    import opaque.dpsgd.accounting as dpsgd_acc
+
+    return dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(nm),
+        total_participations=total_participations,
+        n_steps=n_steps,
+    ).epsilon_at(delta)
+
+
 def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     """The σ the trainer calibrates reproduces the target ε against an
     independently-built accountant — guards the calibration solver, which no
@@ -224,6 +236,31 @@ def test_random_allocation_calibration_and_step_accounting(
     ref = _reference_random_allocation_epsilon(
         sigma, num_bins=2, n_steps=5, delta=delta
     )
+    assert reported == pytest.approx(ref, rel=1e-6)
+    assert target_eps - 0.5 <= reported <= target_eps + 1e-2
+
+
+def test_k_out_of_t_calibration_and_step_accounting(gpt2_lora, lm_dataset, tmp_path):
+    model, tok = gpt2_lora
+    target_eps, delta = 8.0, 1e-5
+    k, n_steps = 2, 5
+    args = _args(
+        tmp_path,
+        privacy_noise_multiplier=None,
+        privacy_target_epsilon=target_eps,
+        privacy_target_delta=delta,
+        sampling_mode="k_out_of_t",
+        sampling_kwargs={"total_participations": k},
+        max_steps=n_steps,
+        save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = trainer.train()
+    sigma = trainer.state.privacy_resolved_noise_multiplier
+    reported = out.metrics["privacy_epsilon"]
+    ref = _reference_k_out_of_t_epsilon(sigma, k, n_steps, delta)
     assert reported == pytest.approx(ref, rel=1e-6)
     assert target_eps - 0.5 <= reported <= target_eps + 1e-2
 
