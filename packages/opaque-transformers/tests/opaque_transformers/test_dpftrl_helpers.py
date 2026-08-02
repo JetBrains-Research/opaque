@@ -29,7 +29,7 @@ from opaque.dpftrl.noise.types import (
     IdentityStrategy,
     LambdaCgdStrategy,
 )
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
 from opaque.random import key
 
 
@@ -223,6 +223,23 @@ class TestBuildSampler:
             expected_batch_size=4,
         )
         assert isinstance(sampler, PoissonSampler)
+
+    def test_random_allocation(self):
+        dataset = _ListDataset(64)
+        sampler = _dpftrl.build_sampler(
+            sampling_mode="random_allocation",
+            dataset=dataset,
+            sample_rate=0.1,
+            n_steps=8,
+            key=key(0),
+            sampling_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
+            num_bins=4,
+            expected_batch_size=4,
+        )
+        assert isinstance(sampler, RandomAllocationSampler)
+        assert sampler.num_bins == 4
 
     def test_b_min_sep_reads_bands_and_sampling_prob_from_amplifier(self):
         from opaque.api.accounting.dpftrl.amplification._b_min_sep import (

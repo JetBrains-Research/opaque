@@ -45,7 +45,7 @@ from opaque.dpftrl.accounting import (
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -227,6 +227,13 @@ def build_sampler(
             sample_rate=sample_rate,
             n_steps=n_steps,
             truncated_batch_size=truncated_batch_size,
+            key=key,
+        )
+    if sampling_mode == "random_allocation":
+        return RandomAllocationSampler(
+            dataset,
+            num_bins=num_bins,
+            n_steps=n_steps,
             key=key,
         )
     if sampling_mode == "b_min_sep":

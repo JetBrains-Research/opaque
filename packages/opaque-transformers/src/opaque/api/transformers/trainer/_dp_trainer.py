@@ -226,8 +226,11 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
-    # Cached per-step ``DpProcess`` reused across step compositions.
+    # Cached ``DpProcess`` reused every ``accounting_unit_steps`` optimizer
+    # steps. Random allocation is an epoch atom; all other mechanisms are
+    # per-step atoms.
     step_process: Any
+    accounting_unit_steps: int
     target_delta: float
     sample_rate: float
     calibration_source: str
@@ -1213,6 +1216,23 @@ class DPTrainer:
         expected_steps_per_epoch, total_steps, num_epochs = self._steps_breakdown(
             dataset_size
         )
+        if a.sampling_mode == "random_allocation":
+            if expected_steps_per_epoch < 2:
+                raise ValueError(
+                    "sampling_mode='random_allocation' requires at least two "
+                    f"steps per epoch, got {expected_steps_per_epoch}. Reduce "
+                    "train_batch_size or use sampling_mode='poisson'."
+                )
+            if total_steps % expected_steps_per_epoch:
+                raise ValueError(
+                    "sampling_mode='random_allocation' requires total_steps "
+                    f"({total_steps}) to be a multiple of steps_per_epoch "
+                    f"({expected_steps_per_epoch}). Set max_steps accordingly "
+                    "or use sampling_mode='poisson'."
+                )
+        accounting_unit_steps = (
+            expected_steps_per_epoch if a.sampling_mode == "random_allocation" else 1
+        )
 
         self.state.max_steps = total_steps
         # HF-parity bookkeeping for ``trainer_state.json``.
@@ -1316,6 +1336,7 @@ class DPTrainer:
             sample_rate,
             clip_norm,
             dataset_size,
+            num_bins=expected_steps_per_epoch,
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
@@ -1323,6 +1344,7 @@ class DPTrainer:
             mechanism,
             total_steps,
             target_delta,
+            accounting_unit_steps=accounting_unit_steps,
             prefix_accountant=prefix_accountant,
             global_step_already_done=global_step_already_done,
         )
@@ -1421,6 +1443,7 @@ class DPTrainer:
             accounting=accounting,
             mechanism=mechanism,
             step_process=acc.cached(mechanism(noise_multiplier)),
+            accounting_unit_steps=accounting_unit_steps,
             target_delta=target_delta,
             sample_rate=sample_rate,
             calibration_source=calibration_source,
@@ -1531,15 +1554,14 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
-        # Build the train loader ONCE: a single
-        # ``PoissonSampler(n_steps=total_steps)`` drives every
-        # epoch; the outer loop's role is purely callback synthesis
-        # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
-        # handling.  Resume restores the sampler's ``consumed`` cursor
-        # via the opaque.serialization registry; the restored sampler
-        # is installed on ``ctx.current_sampler`` *before* loader
-        # construction so ``DataLoader`` binds to it (the
-        # ``batch_sampler`` attribute is immutable post-init).
+        # Build the train loader ONCE: a privacy-aware sampler bounded by
+        # ``total_steps`` drives every epoch; the outer loop's role is purely
+        # callback synthesis (``on_epoch_begin`` / ``on_epoch_end``) and
+        # per-epoch break handling. Resume restores the sampler's ``consumed``
+        # cursor via the opaque.serialization registry; the restored sampler
+        # is installed on ``ctx.current_sampler`` *before* loader construction
+        # so ``DataLoader`` binds to it (the ``batch_sampler`` attribute is
+        # immutable post-init).
         if (
             resume_path is not None
             and saved_sampler_state is not None
@@ -1587,7 +1609,11 @@ class DPTrainer:
                 )
 
                 # Privacy accounting (data-independent, before execution).
-                ctx.accounting |= ctx.step_process
+                # Random allocation charges an entire epoch at its first
+                # optimizer step. This remains safe if training checkpoints
+                # or stops mid-epoch; every other mechanism charges per step.
+                if global_step % ctx.accounting_unit_steps == 0:
+                    ctx.accounting |= ctx.step_process
 
                 # Training step: clip → noise → optimize.  DP-SGD has no
                 # substep concept; each iteration is a full optimizer step
@@ -3387,16 +3413,16 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode``.  Three modes are reachable through
+        # ``sampling_mode``. Four modes are reachable through
         # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
-        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
-        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
-        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
-        # call it directly, but those are not exposed as config
-        # ``sampling_mode`` values (no matching accountant amplifier) and the
-        # config layer rejects them.  The sampler iterates end-to-end without
-        # per-epoch re-instantiation; the outer epoch loop is purely a
-        # synthetic boundary layer for HF callbacks.
+        # ``poisson`` (DP-SGD + ``mf_identity``), ``random_allocation``
+        # (DP-SGD), ``b_min_sep`` (``mf_band``), and ``balls_in_bins`` (MF
+        # mechanisms). ``build_sampler`` also constructs ``cyclic_poisson`` /
+        # ``sequential`` for subclasses that call it directly, but those are
+        # not exposed as config ``sampling_mode`` values (no matching
+        # accountant amplifier) and the config layer rejects them. The sampler
+        # iterates end-to-end without per-epoch re-instantiation; the outer
+        # epoch loop is purely a synthetic boundary layer for HF callbacks.
         if ctx.current_sampler is None:
             from opaque.random import fold_in, key
 
@@ -3909,14 +3935,15 @@ class DPTrainer:
         clip_norm: Any,
         dataset_size: int,
         *,
+        num_bins: int,
         mf_amplifier_factory: Callable[[float], Any] | None = None,
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
-        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): the
-        Poisson amplification covers both plain Poisson sampling and the
-        truncated variant; ``dpsgd_acc.poisson`` dispatches internally
-        when ``truncated_batch_size`` / ``dataset_size`` are supplied.
+        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
+        amplification covers the plain and truncated Poisson modes;
+        random allocation returns a whole-epoch process over ``num_bins``
+        optimizer steps.
 
         DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
         amplifier factory (built in :meth:`_setup_training`) with
@@ -3968,7 +3995,12 @@ class DPTrainer:
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if tb_cap is not None:
+        if a.sampling_mode == "random_allocation":
+
+            def mechanism(nm, _u=_unamplified, _nb=num_bins):
+                return dpsgd_acc.random_allocation(_u(nm), num_bins=_nb)
+
+        elif tb_cap is not None:
 
             def mechanism(
                 nm,
@@ -3997,19 +4029,26 @@ class DPTrainer:
         total_steps,
         target_delta,
         *,
+        accounting_unit_steps: int = 1,
         prefix_accountant: Accountant | None = None,
         global_step_already_done: int = 0,
     ):
         """Calibrate or return fixed noise multiplier.
 
-        When ``prefix_accountant`` is given, calibrates over the *remaining*
-        steps with the saved process composed on the left, so the run's final ε
-        equals ``privacy_target_epsilon``.
+        When ``prefix_accountant`` is given, calibrates over the remaining
+        accounting units with the saved process composed on the left, so the
+        run's final ε equals ``privacy_target_epsilon``.
         """
+        if total_steps % accounting_unit_steps:
+            raise ValueError(
+                f"total_steps ({total_steps}) must be divisible by "
+                f"accounting_unit_steps ({accounting_unit_steps})."
+            )
         if a.privacy_noise_multiplier is not None:
             log.info("Using fixed noise multiplier: %.4f", a.privacy_noise_multiplier)
             return a.privacy_noise_multiplier
 
+        total_units = total_steps // accounting_unit_steps
         if prefix_accountant is None or global_step_already_done == 0:
             log.info(
                 "Calibrating privacy (target eps=%.2f, delta=%.2e)...",
@@ -4017,29 +4056,61 @@ class DPTrainer:
                 target_delta,
             )
 
-            def objective(nm, _mechanism=mechanism, _steps=total_steps):
-                return _mechanism(nm) * _steps
+            def objective(nm, _mechanism=mechanism, _units=total_units):
+                return _mechanism(nm) * _units
         else:
-            remaining_steps = max(1, total_steps - global_step_already_done)
+            completed_units = (
+                global_step_already_done + accounting_unit_steps - 1
+            ) // accounting_unit_steps
+            remaining_units = max(1, total_units - completed_units)
             log.info(
-                "Recalibrating remaining %d/%d steps over saved accountant "
+                "Recalibrating remaining %d/%d accounting units over saved accountant "
                 "(target eps=%.2f, delta=%.2e)...",
-                remaining_steps,
-                total_steps,
+                remaining_units,
+                total_units,
                 a.privacy_target_epsilon,
                 target_delta,
             )
             prefix_process = prefix_accountant.process
 
-            def objective(nm, _prefix=prefix_process, _rem=remaining_steps):
+            def objective(nm, _prefix=prefix_process, _rem=remaining_units):
                 return _prefix | (mechanism(nm) * _rem)
 
         ecal = a.noise_calibration_kwargs
+        param_min = float(ecal["min"])
+        param_max = float(ecal["max"])
+        if a.sampling_mode == "random_allocation":
+            # At very small σ, the analytic allocation transform can require
+            # an output grid larger than the configured numerical cap. Unlike
+            # Poisson accounting, the default calibration lower endpoint is
+            # therefore not always evaluable. Raise it geometrically to the
+            # first valid transform point before handing the bracket to the
+            # generic bisection.
+            configured_min = param_min
+            while True:
+                try:
+                    objective(param_min).epsilon_at(target_delta)
+                except ValueError as exc:
+                    if (
+                        "exceeds max_grid_size" not in str(exc)
+                        or param_min >= param_max
+                    ):
+                        raise
+                    param_min = min(param_min * 2.0, param_max)
+                else:
+                    break
+            if param_min != configured_min:
+                log.info(
+                    "Raised random-allocation calibration minimum from %.4g to "
+                    "%.4g because smaller σ exceeds the PLD grid cap.",
+                    configured_min,
+                    param_min,
+                )
         result = cal.calibrate(
             cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
             objective,
-            param_min=float(ecal["min"]),
-            param_max=float(ecal["max"]),
+            param_min=param_min,
+            param_max=param_max,
             tolerance=float(ecal["tolerance"]),
         )
         log.info(
