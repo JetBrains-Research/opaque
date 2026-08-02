@@ -20,7 +20,8 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 :class:`DpProcess`; compose externally with ``* num_steps`` for
 full-training privacy.  :func:`random_allocation` is the exception — it
 returns a **per-epoch** process covering ``num_bins`` steps, so compose it
-with ``* num_epochs``.
+with ``* num_epochs``. :func:`per_step` provides a conservative per-step view
+when a training loop needs arbitrary stopping points.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`
@@ -40,6 +41,7 @@ from opaque.api.accounting.dpsgd import (
     adaclip,
     gaussian,
     parallel_poisson,
+    per_step,
     poisson,
     random_allocation,
 )
@@ -48,6 +50,7 @@ __all__ = [
     "adaclip",
     "gaussian",
     "parallel_poisson",
+    "per_step",
     "poisson",
     "random_allocation",
 ]

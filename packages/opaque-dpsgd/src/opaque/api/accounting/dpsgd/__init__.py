@@ -9,12 +9,14 @@ from opaque.api.accounting.dpsgd.amplification import (
     poisson,
     random_allocation,
 )
+from opaque.api.accounting.dpsgd.composition import per_step
 from opaque.api.accounting.dpsgd.mechanisms import adaclip, gaussian
 
 __all__ = [
     "adaclip",
     "gaussian",
     "parallel_poisson",
+    "per_step",
     "poisson",
     "random_allocation",
 ]

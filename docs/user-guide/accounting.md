@@ -168,6 +168,14 @@ Composing `* n_steps` instead would charge `num_bins` times too much;
 `epoch.steps_per_epoch` is the conversion factor if you only have a step
 count.
 
+For a loop that composes privacy after every optimizer step, use the
+conservative step view. A partial final epoch is charged as a whole epoch:
+
+```python
+step = dpsgd_acc.per_step(epoch, n_steps=total_steps)
+eps = (step * total_steps).epsilon_at(1e-5)
+```
+
 ### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy

@@ -11,12 +11,14 @@ from opaque.api.accounting.dpsgd.amplification.types import (
     Poisson,
     RandomAllocation,
 )
+from opaque.api.accounting.dpsgd.composition import PerStepRandomAllocation
 from opaque.api.accounting.dpsgd.mechanisms.types import AdaClip, Gaussian
 
 __all__ = [
     "AdaClip",
     "Gaussian",
     "ParallelPoisson",
+    "PerStepRandomAllocation",
     "Poisson",
     "RandomAllocation",
 ]

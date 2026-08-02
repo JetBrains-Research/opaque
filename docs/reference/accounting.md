@@ -243,6 +243,17 @@ epoch = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.5), num_bins=num_bins)
 eps = (epoch * num_epochs).epsilon_at(1e-5)
 ```
 
+### `per_step(random_allocation, *, n_steps) -> DpProcess`
+
+Expose a random-allocation epoch process through the normal per-step
+composition algebra. `step * K` charges `ceil(K / num_bins)` epochs, so a
+partial final epoch remains conservative.
+
+```python
+step = dpsgd_acc.per_step(epoch, n_steps=total_steps)
+eps = (step * total_steps).epsilon_at(1e-5)
+```
+
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy

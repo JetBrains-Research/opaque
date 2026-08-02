@@ -130,7 +130,14 @@ _MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 # Concrete sampling modes (resolved set; ``"auto"`` is the default field
 # value and is replaced by one of these in ``__post_init__``).
 _SAMPLING_MODES: frozenset[str] = frozenset(
-    {"poisson", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}
+    {
+        "poisson",
+        "random_allocation",
+        "b_min_sep",
+        "balls_in_bins",
+        "cyclic_poisson",
+        "sequential",
+    }
 )
 
 # Canonical sampler pairing.  Each mechanism has a single "best" sampler;
@@ -153,8 +160,8 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 # its canonical ``"b_min_sep"`` participation pattern; everything else
 # pins a single sampler.
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
-    "gaussian": frozenset({"poisson"}),
-    "mf_identity": frozenset({"poisson"}),
+    "gaussian": frozenset({"poisson", "random_allocation"}),
+    "mf_identity": frozenset({"poisson", "balls_in_bins"}),
     "mf_band": frozenset({"b_min_sep", "poisson"}),
     "mf_blt": frozenset({"balls_in_bins"}),
     "mf_bisr": frozenset({"balls_in_bins"}),
@@ -981,6 +988,18 @@ class TrainingArguments:
                     f"{sorted(_bad)}; these are owned by "
                     f"privacy_noise_mechanism_kwargs (the strategy recipe) "
                     f"and read off the built amplifier at runtime."
+                )
+            if (
+                self.sampling_mode == "random_allocation"
+                and {
+                    "truncated_batch_size",
+                    "max_batch_size",
+                }
+                & self.sampling_kwargs.keys()
+            ):
+                raise ValueError(
+                    "sampling_kwargs truncated_batch_size/max_batch_size is only "
+                    "supported with sampling_mode='poisson'."
                 )
 
         # --- 12. metric_for_best_model must be eval-side -------------------

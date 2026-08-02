@@ -81,6 +81,7 @@ def _args(
     save_steps: int | None = None,
     noise_multiplier: float = 1.0,
     clipping_norm: float | str = 1.0,
+    sampling_mode: str = "auto",
 ) -> TrainingArguments:
     kwargs = dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
     return TrainingArguments(
@@ -91,6 +92,7 @@ def _args(
         save_strategy="steps" if save_steps else "no",
         privacy_noise_mechanism=mechanism,
         privacy_noise_mechanism_kwargs=kwargs,
+        sampling_mode=sampling_mode,
         privacy_noise_multiplier=noise_multiplier,
         clipping_norm=clipping_norm,
         learning_rate=1e-3,
@@ -132,11 +134,7 @@ class TestDpFtrlTrain:
             data_collator=_collate,
         )
         out = trainer.train()
-        # BallsInBinsSampler skips empty bins (random partition of small
-        # datasets occasionally leaves bins empty), so the realised step
-        # count can fall short of ``max_steps``.  All other mechanisms
-        # hit ``max_steps`` exactly.
-        assert 0 < out.global_step <= max_steps
+        assert out.global_step == max_steps
         # Every MF mechanism reports the same privacy metric surface.
         assert "privacy_epsilon" in out.metrics
         assert out.metrics["privacy_noise_multiplier"] == pytest.approx(1.0)
@@ -144,29 +142,40 @@ class TestDpFtrlTrain:
 
 class TestDpFtrlSamplerDispatch:
     @pytest.mark.parametrize(
-        ("mechanism", "expected_sampler_module_name"),
+        ("mechanism", "sampling_mode", "expected_sampler_module_name"),
         [
-            ("mf_identity", "opaque.api.dpsgd.sampling._poisson"),
-            ("mf_band", "opaque.api.dpftrl.sampling._b_min_sep"),
-            ("mf_blt", "opaque.api.dpftrl.sampling._balls_in_bins"),
-            ("mf_bisr", "opaque.api.dpftrl.sampling._balls_in_bins"),
-            ("mf_bsr", "opaque.api.dpftrl.sampling._balls_in_bins"),
-            ("mf_lambda_cgd", "opaque.api.dpftrl.sampling._balls_in_bins"),
+            ("mf_identity", "auto", "opaque.api.dpsgd.sampling._poisson"),
+            (
+                "mf_identity",
+                "balls_in_bins",
+                "opaque.api.dpftrl.sampling._balls_in_bins",
+            ),
+            (
+                "gaussian",
+                "random_allocation",
+                "opaque.api.dpsgd.sampling._random_allocation",
+            ),
+            ("mf_band", "auto", "opaque.api.dpftrl.sampling._b_min_sep"),
+            ("mf_blt", "auto", "opaque.api.dpftrl.sampling._balls_in_bins"),
+            ("mf_bisr", "auto", "opaque.api.dpftrl.sampling._balls_in_bins"),
+            ("mf_bsr", "auto", "opaque.api.dpftrl.sampling._balls_in_bins"),
+            ("mf_lambda_cgd", "auto", "opaque.api.dpftrl.sampling._balls_in_bins"),
         ],
     )
     def test_sampler_dispatched_via_auto(
-        self, tmp_path, mechanism, expected_sampler_module_name
+        self, tmp_path, mechanism, sampling_mode, expected_sampler_module_name
     ):
         # Argument validation already pins ``sampling_mode``; this test
         # confirms the trainer's ``get_train_dataloader`` builds the
         # right concrete sampler class.  Snapshot the sampler with an
         # ``on_step_begin`` callback (fires after the dataloader and
         # sampler are constructed).
-        max_steps = 4 if mechanism == "mf_identity" else 16
+        max_steps = 4 if mechanism == "mf_identity" and sampling_mode == "auto" else 16
         args = _args(
             output_dir=str(tmp_path / mechanism),
             mechanism=mechanism,
             max_steps=max_steps,
+            sampling_mode=sampling_mode,
         )
         torch.manual_seed(0)
         trainer = DPTrainer(
@@ -189,6 +198,34 @@ class TestDpFtrlSamplerDispatch:
         trainer.train()
         assert "cls" in captured, "sampler was not captured at on_step_begin"
         assert captured["cls"].__module__ == expected_sampler_module_name
+
+
+class TestDpTrainerAllocationModes:
+    @pytest.mark.parametrize(
+        ("mechanism", "sampling_mode"),
+        [
+            ("gaussian", "random_allocation"),
+            ("mf_identity", "balls_in_bins"),
+        ],
+    )
+    def test_trains_complete_schedule(self, tmp_path, mechanism, sampling_mode):
+        args = _args(
+            output_dir=str(tmp_path / f"{mechanism}-{sampling_mode}"),
+            mechanism=mechanism,
+            sampling_mode=sampling_mode,
+            max_steps=16,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        out = trainer.train()
+
+        assert out.global_step == 16
+        assert "privacy_epsilon" in out.metrics
 
 
 class TestDpFtrlCheckpointRoundTrip:
