@@ -218,8 +218,9 @@ calibration, step-wise `acc |= step`, resume recalibration, stop-at-ε.
 | `uv run ruff check packages/` + format | Pending |
 | `cargo test --workspace` | Done (355 passed, last run) |
 | Docs build (`uv sync --group docs` + `mkdocs build --strict`) | Pending |
-| Commit, push `cursor/horizon-allocation-processes-d1f5` | Pending (this turn) |
-| Open/update stacked PR | Pending |
+| Commit, push `cursor/horizon-allocation-processes-d1f5` | Done |
+| Open/update stacked PR | Done (#317) |
+| Example scripts (`train_dpsgd_trainer.py`, `train_dpsgd.py`) | Done (branch) |
 
 **Suggested PR title (Conventional Commits):**
 

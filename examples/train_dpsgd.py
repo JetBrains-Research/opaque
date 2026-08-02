@@ -38,6 +38,13 @@ USAGE:
     --lora-modules q_proj k_proj v_proj o_proj \\
     --audit --audit-canaries 1000 \\
     --no-wandb
+
+  # Redrawn random allocation (1-out-of-b per epoch, horizon accounting)
+  python examples/train_dpsgd.py --preset smoke --sampler random_allocation
+
+  # Global k-out-of-t (each example in K steps over the run)
+  python examples/train_dpsgd.py --preset smoke --sampler k_out_of_t \\
+      --total-participations 2
 """
 
 import argparse
@@ -81,7 +88,7 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import fold_in, key, split
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler, RandomAllocationSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional
 from opaque.scheduling import (
@@ -652,7 +659,25 @@ def parse_args():
         help="Optional cap on per-step batch size (truncated Poisson). "
         "When set, the sampler caps each Poisson draw at this size and the "
         "accountant switches to the matching truncated Poisson-Gaussian PLD. "
-        "Standard plain Poisson when omitted.",
+        "Standard plain Poisson when omitted.  Incompatible with "
+        "``--sampler random_allocation`` or ``k_out_of_t``.",
+    )
+    dp_group.add_argument(
+        "--sampler",
+        type=str,
+        choices=["poisson", "random_allocation", "k_out_of_t"],
+        default="poisson",
+        help="Training participation pattern.  ``poisson`` (default) is "
+        "independent per-step subsampling.  ``random_allocation`` redraws "
+        "1-out-of-b bins each epoch; ``k_out_of_t`` gives each example exactly "
+        "K steps over the run (set ``--total-participations``).",
+    )
+    dp_group.add_argument(
+        "--total-participations",
+        type=int,
+        default=None,
+        metavar="K",
+        help="Required for ``--sampler k_out_of_t``: participations per example.",
     )
     dp_group.add_argument(
         "--noise-mechanism",
@@ -1243,16 +1268,50 @@ def main():
         sample_rate /= world_size
 
     expected_steps_per_epoch = int(global_train_size / args.batch_size)
+    total_steps = args.num_epochs * expected_steps_per_epoch
+    num_bins = max(2, expected_steps_per_epoch)
+    _allocation_samplers = frozenset({"random_allocation", "k_out_of_t"})
+    use_horizon_sampler = args.sampler in _allocation_samplers
+    if use_horizon_sampler:
+        if truncated_batch_size is not None or use_parallel_poisson:
+            raise ValueError(
+                f"--sampler {args.sampler} is incompatible with truncated "
+                "Poisson and parallel_poisson; use plain Poisson or "
+                "examples/train_dpsgd_trainer.py for DDP allocation runs."
+            )
+        if is_ddp:
+            raise ValueError(
+                f"--sampler {args.sampler} is not supported under torchrun in "
+                "this manual-loop script; use examples/train_dpsgd_trainer.py."
+            )
+        if args.sampler == "k_out_of_t":
+            if args.total_participations is None:
+                raise ValueError(
+                    "--total-participations K is required for --sampler k_out_of_t"
+                )
+            if not 1 <= args.total_participations <= total_steps:
+                raise ValueError(
+                    f"total_participations must be in [1, {total_steps}], "
+                    f"got {args.total_participations}"
+                )
 
-    print("\nPoisson sampling setup:")
-    if use_parallel_poisson:
+    print("\nSampling setup:" if use_horizon_sampler else "\nPoisson sampling setup:")
+    if use_parallel_poisson and not use_horizon_sampler:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
-    print(f"  Sampler: poisson")
-    if truncated_batch_size is not None:
+    print(f"  Sampler: {args.sampler}")
+    if use_horizon_sampler:
+        print(f"  Horizon steps: {total_steps}")
+        if args.sampler == "random_allocation":
+            print(f"  num_bins (per epoch): {num_bins}")
+        else:
+            print(f"  total_participations: {args.total_participations}")
+    elif truncated_batch_size is not None:
         print(f"  Truncated batch size (cap): {truncated_batch_size}")
-    print(f"  Sample rate (per rank): {sample_rate:.6f}")
+    if not use_horizon_sampler:
+        print(f"  Sample rate (per rank): {sample_rate:.6f}")
     print(f"  Expected global batch size: {args.batch_size}")
-    print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
+    if not use_horizon_sampler:
+        print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
 
     if args.gradient_checkpointing:
@@ -1479,7 +1538,6 @@ def main():
 
     # Calibrate noise multiplier from target privacy budget
     # sample_rate already computed above
-    total_steps = args.num_epochs * expected_steps_per_epoch
 
     # Compute delta from training set size: δ = 1/n^1.1 (keeps δ below 1/n while
     # being less conservative than the previous 1/n² heuristic on smaller runs).
@@ -1513,7 +1571,24 @@ def main():
     # first-moment-only release.
 
     _unamplified = mechanism
-    if truncated_batch_size is not None:
+    if args.sampler == "random_allocation":
+
+        def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=total_steps):
+            return acc.per_step(
+                dpsgd_acc.random_allocation(_u(nm), num_bins=_nb, n_steps=_ns)
+            )
+
+    elif args.sampler == "k_out_of_t":
+        _k = int(args.total_participations)
+
+        def mechanism(nm, _u=_unamplified, _k=_k, _ns=total_steps):
+            return acc.per_step(
+                dpsgd_acc.k_out_of_t(
+                    _u(nm), total_participations=_k, n_steps=_ns
+                )
+            )
+
+    elif truncated_batch_size is not None:
         mechanism = lambda nm: dpsgd_acc.poisson(
             _unamplified(nm),
             sample_rate=sample_rate,
@@ -1541,8 +1616,10 @@ def main():
             _log_private_second_moment()
     else:
         print("\nCalibrating privacy parameters...")
-        if use_parallel_poisson:
+        if use_parallel_poisson and args.sampler == "poisson":
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
+        if use_horizon_sampler:
+            print(f"  Accounting: {args.sampler} (horizon + per_step)")
         print(f"  Noise mechanism: {args.noise_mechanism}")
         if args.noise_mechanism == "bounded_gaussian":
             print(f"  Noise bound: ±{args.noise_bound}")
@@ -1555,10 +1632,24 @@ def main():
         print("  (This may take 1-3 minutes...)")
 
         start_time = time.time()
+        param_min = args.calibration_min
+        if use_horizon_sampler:
+            while True:
+                try:
+                    (mechanism(param_min) * total_steps).epsilon_at(args.target_delta)
+                except ValueError as exc:
+                    if (
+                        "exceeds max_grid_size" not in str(exc)
+                        or param_min >= args.calibration_max
+                    ):
+                        raise
+                    param_min = min(param_min * 2.0, args.calibration_max)
+                else:
+                    break
         calibration = cal.calibrate(
             cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
             lambda nm: mechanism(nm) * total_steps,
-            param_min=args.calibration_min,
+            param_min=param_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
         )
@@ -1751,29 +1842,43 @@ def main():
             step=0,
         )
 
-    for epoch in range(args.num_epochs):
-        print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
-        print("-" * 80)
-        print("Creating poisson sampler...")
-
-        # Create sampler for this epoch
-        epoch_sampler = PoissonSampler(
-            train_dataset,
-            sample_rate=sample_rate,
-            truncated_batch_size=truncated_batch_size,
-            n_steps=expected_steps_per_epoch,
-            key=fold_in(key(args.seed), rank, epoch),
-        )
+    for epoch in range(args.num_epochs if not use_horizon_sampler else 1):
+        if use_horizon_sampler:
+            print("\nHorizon allocation stream")
+            print("-" * 80)
+            if args.sampler == "random_allocation":
+                epoch_sampler = RandomAllocationSampler(
+                    train_dataset,
+                    num_bins=num_bins,
+                    n_steps=total_steps,
+                    key=key(args.seed),
+                )
+            else:
+                epoch_sampler = KOutOfTSampler(
+                    train_dataset,
+                    total_participations=int(args.total_participations),
+                    n_steps=total_steps,
+                    key=key(args.seed),
+                )
+        else:
+            print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
+            print("-" * 80)
+            print("Creating poisson sampler...")
+            epoch_sampler = PoissonSampler(
+                train_dataset,
+                sample_rate=sample_rate,
+                truncated_batch_size=truncated_batch_size,
+                n_steps=expected_steps_per_epoch,
+                key=fold_in(key(args.seed), rank, epoch),
+            )
         print("Creating DataLoader...")
 
-        # DataLoader with batch_sampler
         epoch_loader = DataLoader(
             train_dataset,
             batch_sampler=epoch_sampler,
             collate_fn=collate,
         )
 
-        # Iterate through Poisson-sampled batches
         for step_idx, batch in enumerate(epoch_loader):
             (input_ids,) = batch
 
@@ -1961,7 +2066,9 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if truncated_batch_size is not None:
+    if use_horizon_sampler:
+        print(f"  Accounting: {args.sampler} (horizon + per_step)")
+    elif truncated_batch_size is not None:
         print(
             f"  Accounting: truncated_poisson (cap={truncated_batch_size}, n={global_train_size})"
         )
