@@ -66,10 +66,10 @@ hardware backend automatically skip when it is unavailable; see the
 [test-marker reference](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md#test-markers-and-filtering)
 for the available selections.
 
-Lint rules that need a dedicated migration (typing, docstrings, exception
-taxonomy, complexity) are tracked in
-[Ruff deferred-rule workstreams](ruff-deferred-workstreams.md) — do not
-enable those families in a drive-by Format Python PR.
+Known audit findings and deferred code-quality work are tracked in
+[GitHub Issues with the `source: audit` label](https://github.com/JetBrains-Research/opaque/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22source%3A%20audit%22).
+Use each issue's package, impact, and severity labels to find the relevant
+workstream before changing repository-wide policy.
 
 ## Submit a pull request
 
