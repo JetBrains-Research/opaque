@@ -836,7 +836,7 @@ def _validate_sampler_cli(parser: argparse.ArgumentParser, args: argparse.Namesp
                 "--max-batch-size (truncated Poisson) is incompatible with "
                 f"--sampler {sampler}"
             )
-    if args.total_participations is not None and sampler not in ("k_out_of_t",):
+    if args.total_participations is not None and sampler != "k_out_of_t":
         parser.error(
             "--total-participations is only used with --sampler k_out_of_t"
         )
