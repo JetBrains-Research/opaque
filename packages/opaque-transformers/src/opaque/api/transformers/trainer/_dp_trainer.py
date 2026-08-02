@@ -3972,6 +3972,13 @@ class DPTrainer:
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
         if a.sampling_mode == "random_allocation":
+            if num_bins < 2:
+                raise ValueError(
+                    f"random_allocation requires num_bins >= 2, but "
+                    f"train_batch_size={expected_batch_size} >= "
+                    f"dataset_size={dataset_size} collapses the epoch to a single "
+                    "bin. Reduce train_batch_size or use a different sampling_mode."
+                )
 
             def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=n_steps):
                 return acc.per_step(
