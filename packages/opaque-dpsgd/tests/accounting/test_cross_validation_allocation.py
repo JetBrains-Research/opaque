@@ -58,7 +58,7 @@ def _reference(fn, sigma: float, t: int) -> float:
 
 def _ours(sigma: float, t: int) -> float:
     return dpsgd_acc.random_allocation(
-        dpsgd_acc.gaussian(sigma), num_bins=t
+        dpsgd_acc.gaussian(sigma), num_bins=t, n_steps=t
     ).epsilon_at(_DELTA)
 
 

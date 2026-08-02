@@ -7,10 +7,10 @@ owns the lifecycle.  The trainer calls these in :meth:`_setup_training`
 :attr:`TrainingArguments.privacy_noise_mechanism` starts with ``"mf_"``.
 
 The MF amplifier returned by :func:`build_amplifier_factory` is the
-*raw* whole-process accountant (a :class:`DpFtrlProcess`); the trainer
+    *raw* whole-process accountant (a :class:`DpHorizonProcess`); the trainer
 queries ``(n_steps, min_sep, max_participations)`` off it to build the
 matching :func:`opaque.dpftrl.noise.mf_gaussian_noise` and then wraps
-it with :func:`opaque.dpftrl.accounting.per_step` for the
+it with :func:`opaque.accounting.per_step` for the
 ``acc |= step`` composition idiom.  See
 :func:`build_step_mechanism_factory`.
 """
@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from opaque.accounting import per_step
 from opaque.dpftrl import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -38,14 +39,11 @@ from opaque.dpftrl.accounting import (
 from opaque.dpftrl.accounting import (
     balls_in_bins as _ftrl_balls_in_bins,
 )
-from opaque.dpftrl.accounting import (
-    mf_gaussian,
-    per_step,
-)
+from opaque.dpftrl.accounting import mf_gaussian
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,7 +56,7 @@ class MFContext:
     """DP-FTRL provenance carried through the training loop.
 
     ``strategy`` is the built BandMF / BLT recipe; ``amplifier_factory``
-    produces the raw DpFtrlProcess for a calibrated multiplier so callers
+    produces the raw DpHorizonProcess for a calibrated multiplier so callers
     (noise construction, sampler construction, checkpoint save) can read
     ``(n_steps, min_sep, max_participations, sampling_prob)`` off it on
     demand — the recipe + the amplifier are the single source of truth
@@ -127,7 +125,7 @@ def build_amplifier_factory(
     dataset_size: int,
     truncated_batch_size: int | None,
 ) -> Callable[[float], Any]:
-    """Return ``nm → DpFtrlProcess`` — the *raw* amplifier instance.
+    """Return ``nm → DpHorizonProcess`` — the *raw* amplifier instance.
 
     The trainer holds the result on its training context and queries it
     with the calibrated noise multiplier at noise-function construction
@@ -182,12 +180,12 @@ def build_amplifier_factory(
 def build_step_mechanism_factory(
     raw_amplifier_factory: Callable[[float], Any],
 ) -> Callable[[float], Any]:
-    """Wrap ``nm → DpFtrlProcess`` with ``per_step`` for ``acc |= step``.
+    """Wrap ``nm → DpHorizonProcess`` with ``per_step`` for ``acc |= step``.
 
     The wrapped per-step view materialises as the true K-step PLD of the
     deployed N-step mechanism on its ``K``-prefix, so
     ``Repeated(per_step(proc), K).pld()`` equals
-    ``proc._pld_at_horizon(K)``.  Lets the DP-FTRL training loop use the
+    ``proc.pld_at(K)``.  Lets the DP-FTRL training loop use the
     same accountant composition idiom as DP-SGD.
     """
 
@@ -227,6 +225,13 @@ def build_sampler(
             sample_rate=sample_rate,
             n_steps=n_steps,
             truncated_batch_size=truncated_batch_size,
+            key=key,
+        )
+    if sampling_mode == "random_allocation":
+        return RandomAllocationSampler(
+            dataset,
+            num_bins=num_bins,
+            n_steps=n_steps,
             key=key,
         )
     if sampling_mode == "b_min_sep":

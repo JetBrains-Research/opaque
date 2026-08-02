@@ -1316,6 +1316,8 @@ class DPTrainer:
             sample_rate,
             clip_norm,
             dataset_size,
+            n_steps=total_steps,
+            num_bins=expected_steps_per_epoch,
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
@@ -3909,18 +3911,19 @@ class DPTrainer:
         clip_norm: Any,
         dataset_size: int,
         *,
+        n_steps: int,
+        num_bins: int,
         mf_amplifier_factory: Callable[[float], Any] | None = None,
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
-        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): the
-        Poisson amplification covers both plain Poisson sampling and the
-        truncated variant; ``dpsgd_acc.poisson`` dispatches internally
-        when ``truncated_batch_size`` / ``dataset_size`` are supplied.
+        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
+        amplification covers plain and truncated Poisson; random allocation
+        returns a horizon process adapted through generic ``per_step``.
 
         DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
         amplifier factory (built in :meth:`_setup_training`) with
-        :func:`opaque.dpftrl.accounting.per_step` so each call returns a
+        :func:`opaque.accounting.per_step` so each call returns a
         per-step composable :class:`DpProcess` that materialises as the
         true K-step PLD of the deployed N-step mechanism under
         ``acc |= step`` accumulation.
@@ -3968,7 +3971,18 @@ class DPTrainer:
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if tb_cap is not None:
+        if a.sampling_mode == "random_allocation":
+
+            def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=n_steps):
+                return acc.per_step(
+                    dpsgd_acc.random_allocation(
+                        _u(nm),
+                        num_bins=_nb,
+                        n_steps=_ns,
+                    )
+                )
+
+        elif tb_cap is not None:
 
             def mechanism(
                 nm,
@@ -4035,11 +4049,34 @@ class DPTrainer:
                 return _prefix | (mechanism(nm) * _rem)
 
         ecal = a.noise_calibration_kwargs
+        param_min = float(ecal["min"])
+        param_max = float(ecal["max"])
+        if a.sampling_mode == "random_allocation":
+            configured_min = param_min
+            while True:
+                try:
+                    objective(param_min).epsilon_at(target_delta)
+                except ValueError as exc:
+                    if (
+                        "exceeds max_grid_size" not in str(exc)
+                        or param_min >= param_max
+                    ):
+                        raise
+                    param_min = min(param_min * 2.0, param_max)
+                else:
+                    break
+            if param_min != configured_min:
+                log.info(
+                    "Raised random-allocation calibration minimum from %.4g to "
+                    "%.4g because smaller σ exceeds the PLD grid cap.",
+                    configured_min,
+                    param_min,
+                )
         result = cal.calibrate(
             cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
             objective,
-            param_min=float(ecal["min"]),
-            param_max=float(ecal["max"]),
+            param_min=param_min,
+            param_max=param_max,
             tolerance=float(ecal["tolerance"]),
         )
         log.info(

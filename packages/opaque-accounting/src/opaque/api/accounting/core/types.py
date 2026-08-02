@@ -34,10 +34,12 @@ from opaque.api.accounting.core._budgets import (
     EpsilonBudget,
     RiskBudget,
 )
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core.calibration import CalibrateResult
 from opaque.api.accounting.core.composition.types import (
     CachedProcess,
     Composed,
+    PerStep,
     Repeated,
 )
 from opaque.api.accounting.core.discretization import DiscretizationConfig
@@ -52,6 +54,7 @@ __all__ = [
     "Accountant",
     # Algebra base
     "DpProcess",
+    "DpHorizonProcess",
     # Budgets
     "Budget",
     "EpsilonBudget",
@@ -68,6 +71,7 @@ __all__ = [
     "NonPrivate",
     # Composition
     "Composed",
+    "PerStep",
     "Repeated",
     "CachedProcess",
 ]

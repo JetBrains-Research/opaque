@@ -134,6 +134,26 @@ impl GeomPmf {
         out
     }
 
+    /// Add a deterministic non-negative value to this geometric random variable.
+    pub(crate) fn add_constant(&self, value: f64, dir: Rounding) -> Result<GeomPmf> {
+        if value < 0.0 || value.is_nan() {
+            return Err(PldError::InvalidParameter(format!(
+                "constant must be non-negative, got {value}"
+            )));
+        }
+        if value == 0.0 {
+            return Ok(self.clone());
+        }
+        let constant = GeomPmf {
+            log_v_min: value.ln(),
+            log_ratio: self.log_ratio,
+            probs: vec![1.0],
+            zero_mass: 0.0,
+            infinity_mass: 0.0,
+        };
+        self.conv(&constant, dir)
+    }
+
     /// Directional output bin offsets indexed by `d = i - j`.
     ///
     /// With a common geometric ratio `R`, `logsumexp(A+iR, B+jR)` is

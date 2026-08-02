@@ -71,6 +71,10 @@ Known audit findings and deferred code-quality work are tracked in
 Use each issue's package, impact, and severity labels to find the relevant
 workstream before changing repository-wide policy.
 
+The [horizon allocation and accounting refactor plan](horizon-allocation-plan.md)
+tracks `DpHorizonProcess`, `per_step`, random allocation, and k-out-of-t work
+phases for contributors.
+
 ## Submit a pull request
 
 Use a focused branch from your fork, add regression coverage for behavior

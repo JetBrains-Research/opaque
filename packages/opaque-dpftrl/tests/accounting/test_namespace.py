@@ -16,7 +16,6 @@ _HEADLINE = (
     "poisson",
     "b_min_sep",
     "balls_in_bins",
-    "per_step",
 )
 
 _TYPES = (
@@ -24,8 +23,6 @@ _TYPES = (
     "CyclicPoisson",
     "BMinSep",
     "BallsInBins",
-    "DpFtrlProcess",
-    "PerStep",
 )
 
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from torch.utils.data import Dataset
 
-from opaque.api.accounting.dpftrl._base import DpFtrlProcess
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.transformers.trainer import _dpftrl
 from opaque.dpftrl import (
     BallsInBinsSampler,
@@ -29,7 +29,7 @@ from opaque.dpftrl.noise.types import (
     IdentityStrategy,
     LambdaCgdStrategy,
 )
-from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
 from opaque.random import key
 
 
@@ -128,7 +128,7 @@ class TestBuildAmplifierFactory:
             truncated_batch_size=None,
         )
         proc = amp(1.0)
-        assert isinstance(proc, DpFtrlProcess)
+        assert isinstance(proc, DpHorizonProcess)
         assert proc.n_steps == 100
 
     def test_band_b_min_sep(self):
@@ -187,7 +187,7 @@ class TestPerStepWrapper:
             truncated_batch_size=None,
         )
         step_factory = _dpftrl.build_step_mechanism_factory(amp)
-        from opaque.api.accounting.dpftrl.composition._per_step import PerStep
+        from opaque.api.accounting.core.composition._per_step import PerStep
 
         assert isinstance(step_factory(1.0), PerStep)
 
@@ -223,6 +223,22 @@ class TestBuildSampler:
             expected_batch_size=4,
         )
         assert isinstance(sampler, PoissonSampler)
+
+    def test_random_allocation(self):
+        dataset = _ListDataset(64)
+        sampler = _dpftrl.build_sampler(
+            sampling_mode="random_allocation",
+            dataset=dataset,
+            sample_rate=0.1,
+            n_steps=8,
+            key=key(0),
+            sampling_kwargs=None,
+            mf=None,
+            noise_multiplier=None,
+            num_bins=4,
+            expected_batch_size=4,
+        )
+        assert isinstance(sampler, RandomAllocationSampler)
 
     def test_b_min_sep_reads_bands_and_sampling_prob_from_amplifier(self):
         from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
