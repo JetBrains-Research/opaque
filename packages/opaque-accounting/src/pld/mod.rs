@@ -6,6 +6,7 @@
 
 pub(crate) mod metrics;
 pub mod pmf;
+pub(crate) mod realization;
 
 pub use pmf::Pmf;
 

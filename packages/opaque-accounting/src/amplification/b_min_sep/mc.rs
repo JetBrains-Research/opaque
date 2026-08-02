@@ -312,8 +312,8 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
@@ -415,8 +415,8 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size);
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size);
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
+    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }

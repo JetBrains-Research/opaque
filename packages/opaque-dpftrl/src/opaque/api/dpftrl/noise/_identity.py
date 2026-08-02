@@ -31,11 +31,12 @@ class IdentityStrategy:
         return c
 
     def gram_matrix(self, **_) -> tuple[float, ...]:
-        # The BnB Identity path uses ``bnb_mc_pld_identity`` (exploits
-        # ``G = num_epochs · I_b``); this method shouldn't be called.
+        # The BnB Identity path never materialises the gram: it is exactly
+        # ``num_epochs · I_b``, so the dominating pair collapses onto random
+        # allocation and goes through the analytic transform instead.
         raise NotImplementedError(
             "IdentityStrategy does not materialize a gram matrix; BnB Identity "
-            "uses ``bnb_mc_pld_identity`` directly."
+            "uses ``random_allocation_gaussian_pld`` directly."
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:

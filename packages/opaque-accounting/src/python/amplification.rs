@@ -121,55 +121,6 @@ pub fn py_bnb_mc_pld(
     Ok(PyPld::new(pld))
 }
 
-/// Identity-specialized BnB Monte Carlo PLD with optional importance sampling.
-///
-/// Specialised for the BnB-Identity dominating pair (`C = I` ⇒ Gram is
-/// `num_epochs · I_b`, diagonal). Skips the Cholesky step, fixes the shifted
-/// bin to index 0 by symmetry, and optionally tilts the proposal on the
-/// shifted-bin standard-normal coordinate to concentrate samples in the
-/// large-`Y` tail (Importance Sampling).
-///
-/// Args:
-///     num_bins (int): Number of bins ``b ≥ 2``.
-///     num_epochs (int): Per-bin participation count ``E ≥ 1``.
-///     sigma (float): Raw noise multiplier ``σ > 0``.
-///     importance_tilt (float): Tilt parameter ``τ`` for the IS proposal on
-///         the shifted-bin coordinate ``z_0`` (under ``P``). ``0`` disables
-///         IS (plain identity-specialised MC). Positive values reduce MC
-///         variance for typical privacy regimes by oversampling the
-///         large-``Y`` tail; the importance weight reweights the estimator
-///         back to ``P``.
-///     config (DiscretizationConfig): Discretisation configuration
-///         (``num_mc_samples``, ``seed``).
-///
-/// Returns:
-///     Pld: The privacy loss distribution (asymmetric, remove + add).
-///
-/// Raises:
-///     ValueError: If parameters or configuration are invalid.
-///     RuntimeError: If sampling or PLD construction encounters a numerical failure.
-#[pyfunction]
-#[pyo3(
-    name = "bnb_mc_pld_identity",
-    signature = (num_bins, num_epochs, sigma, importance_tilt, config)
-)]
-pub fn py_bnb_mc_pld_identity(
-    num_bins: usize,
-    num_epochs: usize,
-    sigma: f64,
-    importance_tilt: f64,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::amplification::bnb_mc_pld_identity(
-        num_bins,
-        num_epochs,
-        sigma,
-        importance_tilt,
-        &config.inner,
-    )?;
-    Ok(PyPld::new(pld))
-}
-
 /// Monte Carlo PLD for BandMF with warm-start b-min-sep subsampling (Dong & Ganesh, arXiv:2602.09338).
 ///
 /// Args:
@@ -243,6 +194,47 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
         n_steps,
         p,
         sigma,
+        &config.inner,
+    )?;
+    Ok(PyPld::new(pld))
+}
+
+/// Compute the PLD for random allocation applied to the Gaussian mechanism.
+///
+/// In k-out-of-t random allocation each record is used in k steps chosen
+/// uniformly at random from t. Unlike Monte Carlo, this is deterministic,
+/// composable, and reproducible across thread counts.
+///
+/// Exact for k = 1. For k > 1 the result is a valid **upper bound** rather
+/// than the exact k-out-of-t PLD: the t steps are split into k blocks and the
+/// record is placed once per block. Joint convexity of the hockey-stick
+/// divergence makes that an upper bound, because a uniformly random partition
+/// into blocks induces exactly the uniform distribution over k-subsets.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
+///     t (int): Steps per allocation round (number of bins), > 0.
+///     k (int): Steps each record participates in, in [1, t]. Values above 1
+///         return the block upper bound described above.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The amplified privacy loss distribution.
+///
+/// Raises:
+///     ValueError: If any parameter is out of range or the grid is too large.
+#[pyfunction]
+#[pyo3(name = "random_allocation_gaussian_pld", signature = (noise_multiplier, t, k, config))]
+pub fn py_random_allocation_gaussian_pld(
+    noise_multiplier: f64,
+    t: usize,
+    k: usize,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::random_allocation_gaussian_pld(
+        noise_multiplier,
+        t,
+        k,
         &config.inner,
     )?;
     Ok(PyPld::new(pld))

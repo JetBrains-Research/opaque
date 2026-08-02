@@ -1,6 +1,6 @@
 # Sampling
 
-Sampling primitives live in `opaque.dpsgd.sampling` (Poisson) and
+Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation) and
 `opaque.dpftrl.sampling` (cyclic Poisson with optional ``bands``, b-min-sep, balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
 privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
@@ -19,23 +19,29 @@ Opaque provides these sampling strategies:
    batches and memory; accounting must use the truncated-Poisson PLD (weaker
    than plain Poisson at the same `sample_rate`).
 
-2. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
+2. **Random Allocation — DP-SGD** (`opaque.dpsgd.sampling.RandomAllocationSampler`):
+   each epoch, every example independently picks one of `num_bins` bins, and
+   the epoch yields those bins as batches. The assignment is **redrawn every
+   epoch**. Bin sizes are Binomial, so some batches are empty and are emitted
+   as such. Amplifies strictly more than Poisson at the matched rate `1/num_bins`.
+
+3. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
    ``bands`` disjoint groups; step ``i`` samples only group ``i % bands``, with
    independent inclusion at ``sample_rate``.  Use ``bands=1`` for identity MF
    (full dataset each step); for BandMF, match ``bands`` to the MF strategy.
 
-3. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
+4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
    across epochs** (required for BnB accounting). Bin sizes are variable
    (Binomial); some bins may be empty. Used with DP-λCGD, BISR, BSR, and
    BLT mechanisms.
 
-4. **Sequential Batch Sampling** (`SequentialBatchSampler`): iterates
+5. **Sequential Batch Sampling** (`SequentialBatchSampler`): iterates
    through the dataset in fixed-size contiguous batches with no randomness.
    The dataset should be pre-shuffled once before constructing the sampler.
    Used with the BLT mechanism.
 
-5. **b-min-sep** (`BMinSepSampler`): warm-start minimum-separation Poisson
+6. **b-min-sep** (`BMinSepSampler`): warm-start minimum-separation Poisson
    subsampling for BandMF (arXiv:2602.09338). Use with `dpftrl_acc.b_min_sep`.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
@@ -71,6 +77,48 @@ Truncated Poisson (when `truncated_batch_size` is set) — account with
 `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate,
 truncated_batch_size=batch, dataset_size=n)` to use the matching
 truncated-Poisson PLD.
+
+## RandomAllocationSampler (DP-SGD)
+
+```python
+from opaque.dpsgd.sampling import RandomAllocationSampler
+from opaque.random import key
+
+num_bins = dataset_size // batch_size
+sampler = RandomAllocationSampler(
+    data_source,
+    num_bins=num_bins,
+    n_steps=num_epochs * num_bins,
+    key=key(42),
+)
+loader = DataLoader(dataset, batch_sampler=sampler)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data_source` | dataset with `len()` | required | The training dataset |
+| `num_bins` | `int` | required | Bins per epoch (≥ 2). Typically `dataset_size / batch_size` |
+| `n_steps` | `int` or `None` | `None` | Total number of batches to yield. Must be a positive multiple of `num_bins`. `None` = infinite |
+| `key` | `RngKey` | required | RNG key for reproducible sampling |
+
+Each epoch's `num_bins` batches partition the dataset exactly, and the
+assignment is **redrawn every epoch**. Bin sizes are Binomial, so some
+batches are empty; they are emitted rather than compacted away, because
+dropping them would change every record's participation separation and
+invalidate the accounting.
+
+Account with `dpsgd_acc.random_allocation(mechanism, num_bins=num_bins) *
+num_epochs` — the process is a whole-**epoch** atom, unlike `poisson`,
+which is per-step.
+
+!!! warning "Not the same scheme as `BallsInBinsSampler`"
+
+    `opaque.dpftrl.sampling.BallsInBinsSampler` draws the bin assignment
+    once and reuses it for every epoch, because the matrix-mechanism
+    dominating pair needs a known separation between an example's
+    participations. `RandomAllocationSampler` redraws per epoch, which is
+    valid only because DP-SGD noise is uncorrelated across steps — and is
+    strictly better there. Pair each sampler only with its own accountant.
 
 ## BallsInBinsSampler
 
@@ -176,6 +224,11 @@ loader = DataLoader(shard, batch_sampler=sampler)
 ## API Documentation
 
 ::: opaque.dpsgd.sampling.PoissonSampler
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.dpsgd.sampling.RandomAllocationSampler
     options:
       show_source: true
       heading_level: 3

@@ -1,4 +1,5 @@
-"""Tests for DP-SGD amplification — Poisson (with optional truncation), ParallelPoisson."""
+"""DP-SGD amplification — Poisson (optionally truncated), ParallelPoisson,
+RandomAllocation."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -11,6 +12,7 @@ from opaque.api.accounting.core._base import DpProcess
 from opaque.dpsgd.accounting.amplification.types import (
     ParallelPoisson,
     Poisson,
+    RandomAllocation,
 )
 from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 
@@ -207,3 +209,112 @@ class TestParallelPoissonAutoTruncation:
         eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)
 
         assert eps_loose >= eps_tight - 1e-10
+
+
+# ── Random allocation (per-epoch atom) ───────────────────────────────
+
+
+class TestRandomAllocationDataclass:
+    """RandomAllocation frozen dataclass."""
+
+    def test_fields(self):
+        g = Gaussian(0.8)
+        r = RandomAllocation(g, 16)
+        assert r.inner is g
+        assert r.num_bins == 16
+
+    def test_frozen(self):
+        r = RandomAllocation(Gaussian(0.8), 16)
+        with pytest.raises(FrozenInstanceError):
+            r.num_bins = 32  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(RandomAllocation(Gaussian(0.8), 16), DpProcess)
+
+    def test_equality(self):
+        assert RandomAllocation(Gaussian(0.8), 16) == RandomAllocation(
+            Gaussian(0.8), 16
+        )
+        assert RandomAllocation(Gaussian(0.8), 16) != RandomAllocation(
+            Gaussian(0.8), 32
+        )
+
+    def test_steps_per_epoch_is_num_bins(self):
+        """The conversion factor users need to turn steps into epochs."""
+        assert RandomAllocation(Gaussian(0.8), 16).steps_per_epoch == 16
+
+    def test_validates_on_direct_construction(self):
+        """Deserialization calls ``cls(**kwargs)``, bypassing the factory, so
+        the bound has to live in ``__post_init__``."""
+        with pytest.raises(ValueError, match="num_bins"):
+            RandomAllocation(Gaussian(0.8), 1)
+
+    @pytest.mark.slow
+    def test_pld_returns_valid(self):
+        eps = RandomAllocation(Gaussian(1.0), 8).pld().epsilon_at(1e-8)
+        assert math.isfinite(eps)
+        assert eps > 0
+
+
+class TestRandomAllocationConstructor:
+    """dpsgd_acc.random_allocation() takes (inner, num_bins=...)."""
+
+    def test_returns_random_allocation(self):
+        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16)
+        assert isinstance(r, RandomAllocation)
+        assert r.num_bins == 16
+
+    def test_num_bins_is_keyword_only(self):
+        with pytest.raises(TypeError):
+            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), 16)  # type: ignore[misc]
+
+    def test_rejects_non_gaussian(self):
+        with pytest.raises(TypeError, match="Gaussian"):
+            dpsgd_acc.random_allocation("bad", num_bins=16)  # type: ignore[arg-type]
+
+    def test_rejects_num_bins_below_two(self):
+        with pytest.raises(ValueError, match="num_bins"):
+            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=1)
+
+    @pytest.mark.slow
+    def test_accepts_adaclip(self):
+        r = dpsgd_acc.random_allocation(
+            dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.0), expected_batch_size=256),
+            num_bins=8,
+        )
+        eps = r.epsilon_at(1e-8)
+        assert math.isfinite(eps)
+        assert eps > 0
+
+    def test_nonprivate_inner_is_infinite(self):
+        r = dpsgd_acc.random_allocation(acc.nonprivate(), num_bins=8)
+        assert math.isinf(r.epsilon_at(1e-8))
+
+    def test_zero_noise_gaussian_is_infinite(self):
+        """``Gaussian(0)`` short-circuits before reaching the native primitive,
+        which requires ``σ > 0``."""
+        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.0), num_bins=8)
+        assert math.isinf(r.epsilon_at(1e-8))
+
+
+class TestRandomAllocationTightness:
+    """The reason the process exists: it beats Poisson at the matched rate."""
+
+    @pytest.mark.slow
+    def test_below_poisson_at_matched_rate(self):
+        b, sigma, delta = 16, 1.0, 1e-8
+        ra = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(sigma), num_bins=b)
+        po = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), 1.0 / b)
+        assert ra.epsilon_at(delta) < (po * b).epsilon_at(delta)
+
+    @pytest.mark.slow
+    def test_monotone_in_num_bins(self):
+        """More bins to hide among, less privacy loss per epoch."""
+        sigma, delta = 1.0, 1e-8
+        eps = [
+            dpsgd_acc.random_allocation(
+                dpsgd_acc.gaussian(sigma), num_bins=b
+            ).epsilon_at(delta)
+            for b in (4, 8, 16)
+        ]
+        assert eps[0] > eps[1] > eps[2]

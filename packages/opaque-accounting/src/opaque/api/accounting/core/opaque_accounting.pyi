@@ -318,6 +318,39 @@ def parallel_poisson_gaussian_pld(
         The amplified privacy loss distribution.
     """
 
+def random_allocation_gaussian_pld(
+    noise_multiplier: float,
+    t: int,
+    k: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """PLD for random allocation applied to the Gaussian mechanism.
+
+    In k-out-of-t random allocation each record is used in k steps chosen
+    uniformly at random from t. Deterministic, composable, and reproducible
+    across thread counts, unlike the Monte Carlo balls-in-bins accountant.
+
+    Exact for ``k = 1``. For ``k > 1`` the result is a valid **upper bound**
+    rather than the exact k-out-of-t PLD: the t steps are split into k blocks
+    and the record is placed once per block. Joint convexity of the
+    hockey-stick divergence makes that an upper bound, because a uniformly
+    random partition into blocks induces exactly the uniform distribution over
+    k-subsets.
+
+    Args:
+        noise_multiplier: σ/Δ ratio, must be > 0.
+        t: Steps per allocation round (number of bins), > 0.
+        k: Steps each record participates in, in [1, t]. Values above 1 return
+            the block upper bound described above.
+        config: PLD discretization configuration.
+
+    Returns:
+        The amplified privacy loss distribution.
+
+    Raises:
+        ValueError: If a parameter is out of range or the grid is too large.
+    """
+
 def balls_in_bins_gaussian_pld(
     noise_multiplier: float,
     num_bins: int,
@@ -410,40 +443,6 @@ def bnb_mc_pld(
     Returns:
         The privacy loss distribution (asymmetric).
     """
-
-def bnb_mc_pld_identity(
-    num_bins: int,
-    num_epochs: int,
-    sigma: float,
-    importance_tilt: float,
-    config: DiscretizationConfig,
-) -> Pld:
-    """Identity-specialised BnB PLD with optional importance sampling.
-
-    Specialised for the BnB-Identity dominating pair (``C = I`` ⇒ Gram is
-    ``num_epochs · I_b``, diagonal). Skips the Cholesky step, fixes the
-    shifted bin to index 0 by symmetry, and optionally tilts the proposal
-    on the shifted-bin standard-normal coordinate to concentrate samples
-    in the large-``Y`` tail.
-
-    Args:
-        num_bins: Number of bins ``b ≥ 2``.
-        num_epochs: Per-bin participation count ``E ≥ 1``.
-        sigma: Raw noise multiplier ``σ > 0``.
-        importance_tilt: Importance-sampling tilt ``τ`` for the shifted-bin
-            coordinate ``z_0`` under ``P``. ``0`` disables IS (plain
-            identity-specialised MC). Positive values reduce MC variance
-            for typical privacy regimes by oversampling the large-``Y`` tail.
-        config: PLD discretisation configuration (carries ``num_mc_samples``,
-            ``seed``).
-
-    Returns:
-        The privacy loss distribution (asymmetric).
-    """
-
-# ---------------------------------------------------------------------------
-# Matrix factorization functions
-# ---------------------------------------------------------------------------
 
 def mf_gaussian_pld(
     noise_multiplier: float,
