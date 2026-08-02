@@ -1,7 +1,9 @@
 # What the random-allocation machinery unlocks elsewhere in Opaque
 
-**Status:** survey / research note. Nothing here is implemented. It follows on from
-`random-allocation-accounting.md`, which covers the work that shipped.
+**Status:** survey / research note. Most candidates remain unimplemented. The
+safe-only API hardening, analytic survival-tail fix, and geometric convolution
+index table from §2.2 have landed; `random-allocation-accounting.md` covers
+the shipped transform.
 
 **Question asked:** now that the FS26 random-allocation transform, `disc_dist`
 (stochastic domination) and `GeomPmf` (geometric-grid exp-PLD convolution) exist in the
@@ -71,25 +73,34 @@ Ranked by value/effort. Every entry passed an adversarial verification pass; whe
 
 **Blocks:** every Gram-based candidate below reads the same Gram.
 
-#### 2.2 `geom-conv-index-table` — 8.6-11.7× on the transform's dominant cost
+#### 2.2 `geom-conv-index-table` — landed for the transform's dominant cost
 
 **What.** Replace the `log_add` in `GeomPmf::conv`'s O(n²) core with a precomputed integer index table.
 
 **Mechanism (PROVEN, derived and reproduced).** `packages/opaque-accounting/src/pld/pmf/geom.rs:185` computes `pos = (log_add(la, b.log_value(j)) - log_v_min)/log_ratio` — one `exp` + one `ln_1p` per pair. Both operands are forced to share `log_ratio` (`geom.rs:113-118`) and `log_value(i) = log_v_min + i·log_ratio` (`geom.rs:55`). With `d = i−j`, `pos(i,j) = j + C(d)` where `C(d) = (B − M + softplus((A−B)+dR))/R`; `j` integer gives `ceil(j+C) = j+ceil(C)`. So `idx(i,j) = j + K[i−j]` for a table of `2n−1` integers. `dC/dd = sigmoid(·) ∈ (0,1)` proves `K` non-decreasing with steps in {0,1}, so the scatter is sequential, not random.
 
-**Measured in the real crate (PROVEN):** 8.6-11.7× end-to-end on `random_allocation_gaussian_pld`, all 351 Rust tests passing unmodified, ε drift ≤5e-5. Against 60-dps mpmath truth over 603,513 pairs the table commits **0** rounding-direction violations; the *current* expression commits 2,730.
+**Measured in the real crate (PROVEN):** the pre-landing study found
+8.6-11.7× end-to-end on `random_allocation_gaussian_pld`, all 351 Rust tests
+passing unmodified, and ε drift ≤5e-5. Against 60-dps mpmath truth over
+603,513 pairs the table committed **0** rounding-direction violations; the
+pre-fix expression committed 2,730.
 
 **Named consumer (PROVEN).** `calibration.py:84` bisects σ at tolerance 1e-6 and the `lru_cache`s at `_random_allocation.py:77` / `_balls_in_bins.py:112` miss on every probe because σ is in the key. A ~30-probe calibration of a `RandomAllocation` or identity `BallsInBins` process goes from ~3.5 minutes to ~21 seconds. That is the gap phase 2 opened when it traded a 0.04 s MC point estimate for a 6.8-13 s bound.
 
-**Preconditions (corrected).** The proposal's rounding argument is stated at the wrong layer and its empirical claim reverses by operand geometry:
-- In the `A==B` self-conv geometry (`geom.rs:267`) the current code rounds one bin too far at `i==j`; in the `A≠B` geometry (`geom.rs:262`, `random_allocation.rs:100`) it is the *table* that rounds high on 6,618 of 8,194 diagonal entries. `d=0` must be special-cased on the exact identity `C(0)=0`, not handled by a widened guard.
-- The directional guard must bound the whole `(B−M+softplus)/R` expression (measured error 2.3-3.0e-12 index units, dominated by the f64 error of the anchor `M` at `geom.rs:125`, not by `softplus`).
-- Provable domination additionally requires rounding the *anchor* at `geom.rs:125` safely — a separate one-line fix neither version makes today.
-- `geom.rs:197`'s `acc[(idx.max(0.0)) as usize]` clamps negative indices to 0 in *both* directions, which rounds **up** under `Rounding::Down`. Dead today; the table makes it reachable (`K_down[0] = −1` observed). Must route to `zero_mass` like `geom.rs:145`.
+**Preconditions (corrected and implemented).** The table special-cases the
+exact `d=0` identity, directionally guards both the output anchor and table
+position, and routes negative down-rounded indices to `zero_mass`. The
+published transform remains safe-only: its downward rounding is the private
+intermediate required by the add direction.
 
-None of these are live privacy defects — both residuals sit ~13 orders below the measured sandwich width — but they are the difference between "faster" and "provably safe".
+These details are the difference between "faster" and "provably safe".
 
-**Cost.** ~80 lines in one file, no API change. The merged `raise-MAX_CONV_GRID` claim rides on it: `MAX_CONV_GRID = 8192` (`packages/opaque-accounting/src/amplification/random_allocation.rs:44`) is the binding accuracy constraint and `discretization` is inert for σ ≲ 25 (**PROVEN**: refining 1e-3 → 1e-5 moves the σ=2 sandwich only 3.19% → 2.90%).
+**Measured landing result.** At σ=2, t=64 with the default configuration,
+the old 8192-bin transform took 3.98 s and 39.4 MiB peak RSS. The table-backed
+8192-bin transform took 0.48 s; raising `MAX_CONV_GRID` to 16,384 took 1.91 s
+and 40.0 MiB. The larger grid changed ε from 0.33453 to 0.33203, β(0.3) from
+0.62734 to 0.65023, and advantage from 0.02903 to 0.02776, so the 2× grid is
+both faster than the prior implementation and materially tighter.
 
 ### Tier 2 — the actual DP-FTRL answer
 
@@ -231,7 +242,7 @@ Flagging because it is directly responsive to the question and was never adversa
 | `epsilon-bracket-audit-join`, `audit-three-number-ladder` | Both entirely downstream of a composable lower bound (§2.8), which was itself downgraded to LOW. Nothing to verify until that exists. Correctly identify their own hard precondition (valid only where the pair is tight — k=1 allocation, identity BnB, per Chua Thm 3.1). |
 | `calibrate-bracket-and-early-stop`, `bracket-linearity-regression`, `alpha-from-one-cheap-probe` | All downstream of the same bracket; the α-linearity is already measured at ×1.95-2.01, and the cost curve they optimise is changed by §2.2. |
 | `dual-mass-gate` | 7.6× violation fully explained (ulp quantisation of a second difference amplified by `e^{|l_min|}`) and **unreachable today** — `pmf_delta`/`pmf_epsilon`/`pmf_beta` never touch the contaminated buckets. Ships as asserts plus a documented negative result. |
-| `disc-dist-survival-tail` | Real defect (931 zeroed right-tail bins, 2.8e-15 dropped mass, `infinity_mass` computing to exactly 0.0) with ~7 orders of margin at δ=1e-8. 40-line accuracy fix, changes no shipped number. |
+| `disc-dist-survival-tail` | **Fixed:** analytic survival probabilities now populate right-tail bins and the conservative `infinity_mass` atom without `1 - CDF` cancellation. |
 | `emit-pld-at-transform-resolution` | Admitted ε penalty (+0.13% to +0.56%); loosens the reported number to save composition time. |
 | `progressive-alpha-calibration`, `chernoff-orders-from-distribution-scale` | Both non-regressing by construction (coarse α over-noises; a bad Chernoff order gives a weaker bound). Performance only. |
 | `clean-probs-swallows-nan`, `disc-dist-unasserted-realization-preconditions`, `cyclic-cholesky-residual-blind-to-dropped-pattern` | Defensive hardening on unreachable branches, or a reported quantity that changes no output. Do them; don't staff them. |

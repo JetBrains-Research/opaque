@@ -7,6 +7,10 @@ onto them, and `RandomAllocationSampler` + `dpsgd_acc.random_allocation` for
 DP-SGD. Phases 3, 4, 6, 7 and 8 are still proposals; see the table in §8 for
 what each still needs.
 
+**Safe-only hardening:** the native transform now publishes only the
+conservative PLD. The directionally downward geometric operation remains
+private to the add-direction computation, where `-ln` reverses its order.
+
 **Scope.** How to extend Opaque's balls-in-bins support in two directions the
 Feldman–Shenfeld line of work now makes possible:
 
