@@ -2774,7 +2774,7 @@ serialized by the nearest base-class handler rather than dropped.
 (<code>torch.nn.Parameter</code> is common enough to get its own exact-type handler that
 preserves the subclass and its <code>requires_grad</code> flag on restore, so it does
 not rely on the <code>__mro__</code> fallback.) A leaf that is neither registered nor a
-generic container (dataclass / NamedTuple / tuple / list / dict) nor a
+generic container (dataclass / NamedTuple / tuple / list / mapping) nor a
 primitive raises <code>TypeError</code> on both save and restore instead of being
 silently skipped.
 Genuinely inert leaves that the template reproduces (vendor structure handles
@@ -3188,7 +3188,7 @@ handler.  Returns <code>None</code> when nothing in the MRO is registered.</p>
 
         <p>Serialise <code>obj</code> to a flat <code>dict[str, Any]</code>.</p>
 <p>Registered types use their exact-type handler; everything else is
-walked structurally (dataclass, NamedTuple, tuple, list, dict,
+walked structurally (dataclass, NamedTuple, tuple, list, mapping,
 primitives). Opaque non-containers are dropped — the load is
 template-driven and reads them back from the template.</p>
 
@@ -3209,7 +3209,7 @@ template-driven and reads them back from the template.</p>
 <a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialise ``obj`` to a flat ``dict[str, Any]``.</span>
 <a id="__codelineno-0-76" name="__codelineno-0-76"></a>
 <a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="sd">    Registered types use their exact-type handler; everything else is</span>
-<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    walked structurally (dataclass, NamedTuple, tuple, list, dict,</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    walked structurally (dataclass, NamedTuple, tuple, list, mapping,</span>
 <a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">    primitives). Opaque non-containers are dropped — the load is</span>
 <a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">    template-driven and reads them back from the template.</span>
 <a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">    &quot;&quot;&quot;</span>

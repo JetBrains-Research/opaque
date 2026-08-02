@@ -5188,12 +5188,7 @@ interface for step tracking and RNG key management.</p>
 
               <details class="quote">
                 <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/types.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-167">167</a></span>
-<span class="normal"><a href="#__codelineno-0-168">168</a></span>
-<span class="normal"><a href="#__codelineno-0-169">169</a></span>
-<span class="normal"><a href="#__codelineno-0-170">170</a></span>
-<span class="normal"><a href="#__codelineno-0-171">171</a></span>
-<span class="normal"><a href="#__codelineno-0-172">172</a></span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-172">172</a></span>
 <span class="normal"><a href="#__codelineno-0-173">173</a></span>
 <span class="normal"><a href="#__codelineno-0-174">174</a></span>
 <span class="normal"><a href="#__codelineno-0-175">175</a></span>
@@ -5204,23 +5199,28 @@ interface for step tracking and RNG key management.</p>
 <span class="normal"><a href="#__codelineno-0-180">180</a></span>
 <span class="normal"><a href="#__codelineno-0-181">181</a></span>
 <span class="normal"><a href="#__codelineno-0-182">182</a></span>
-<span class="normal"><a href="#__codelineno-0-183">183</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="k">class</span><span class="w"> </span><span class="nc">NoiseState</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for noise state.</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="sd">    All noise functions (Gaussian, optionally bounded; MF) return a</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="sd">    state object that inherits from this class, providing a unified</span>
-<a id="__codelineno-0-172" name="__codelineno-0-172"></a><span class="sd">    interface for step tracking and RNG key management.</span>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="sd">    Attributes:</span>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">        _step_counter: Number of ``noise_fn`` calls made.</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">        _rng_key: Immutable RNG key for deterministic per-step derivation.</span>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    &quot;&quot;&quot;</span>
+<span class="normal"><a href="#__codelineno-0-183">183</a></span>
+<span class="normal"><a href="#__codelineno-0-184">184</a></span>
+<span class="normal"><a href="#__codelineno-0-185">185</a></span>
+<span class="normal"><a href="#__codelineno-0-186">186</a></span>
+<span class="normal"><a href="#__codelineno-0-187">187</a></span>
+<span class="normal"><a href="#__codelineno-0-188">188</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-172" name="__codelineno-0-172"></a><span class="k">class</span><span class="w"> </span><span class="nc">NoiseState</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for noise state.</span>
+<a id="__codelineno-0-174" name="__codelineno-0-174"></a>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">    All noise functions (Gaussian, optionally bounded; MF) return a</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">    state object that inherits from this class, providing a unified</span>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    interface for step tracking and RNG key management.</span>
 <a id="__codelineno-0-178" name="__codelineno-0-178"></a>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a>    <span class="n">_step_counter</span><span class="p">:</span> <span class="nb">int</span>
-<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of ``noise_fn`` calls made.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a>
-<a id="__codelineno-0-182" name="__codelineno-0-182"></a>    <span class="n">_rng_key</span><span class="p">:</span> <span class="n">RngKey</span>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable RNG key for deterministic per-step derivation.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">    Attributes:</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">        _step_counter: Number of ``noise_fn`` calls made.</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">        _rng_key: Immutable RNG key for deterministic per-step derivation.</span>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a>    <span class="n">_step_counter</span><span class="p">:</span> <span class="nb">int</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of ``noise_fn`` calls made.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a>    <span class="n">_rng_key</span><span class="p">:</span> <span class="n">RngKey</span>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable RNG key for deterministic per-step derivation.&quot;&quot;&quot;</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
@@ -5310,29 +5310,29 @@ for optimizers with a second moment accumulator.</p>
 
               <details class="quote">
                 <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/types.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-429">429</a></span>
-<span class="normal"><a href="#__codelineno-0-430">430</a></span>
-<span class="normal"><a href="#__codelineno-0-431">431</a></span>
-<span class="normal"><a href="#__codelineno-0-432">432</a></span>
-<span class="normal"><a href="#__codelineno-0-433">433</a></span>
-<span class="normal"><a href="#__codelineno-0-434">434</a></span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-434">434</a></span>
 <span class="normal"><a href="#__codelineno-0-435">435</a></span>
 <span class="normal"><a href="#__codelineno-0-436">436</a></span>
 <span class="normal"><a href="#__codelineno-0-437">437</a></span>
 <span class="normal"><a href="#__codelineno-0-438">438</a></span>
 <span class="normal"><a href="#__codelineno-0-439">439</a></span>
-<span class="normal"><a href="#__codelineno-0-440">440</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-429" name="__codelineno-0-429"></a><span class="k">class</span><span class="w"> </span><span class="nc">SecondMomentNoiseOutput</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
-<a id="__codelineno-0-430" name="__codelineno-0-430"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Noise output with private first and second moment streams.</span>
-<a id="__codelineno-0-431" name="__codelineno-0-431"></a>
-<a id="__codelineno-0-432" name="__codelineno-0-432"></a><span class="sd">    Attributes:</span>
-<a id="__codelineno-0-433" name="__codelineno-0-433"></a><span class="sd">        noisy_grads: Noised clipped gradients for the optimizer&#39;s first</span>
-<a id="__codelineno-0-434" name="__codelineno-0-434"></a><span class="sd">            moment / update direction.</span>
-<a id="__codelineno-0-435" name="__codelineno-0-435"></a><span class="sd">        noisy_squared_grads: Noised element-wise squared clipped gradients</span>
-<a id="__codelineno-0-436" name="__codelineno-0-436"></a><span class="sd">            for optimizers with a second moment accumulator.</span>
-<a id="__codelineno-0-437" name="__codelineno-0-437"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-438" name="__codelineno-0-438"></a>
-<a id="__codelineno-0-439" name="__codelineno-0-439"></a>    <span class="n">noisy_grads</span><span class="p">:</span> <span class="n">NoisedPytree</span>
-<a id="__codelineno-0-440" name="__codelineno-0-440"></a>    <span class="n">noisy_squared_grads</span><span class="p">:</span> <span class="n">NoisedPytree</span>
+<span class="normal"><a href="#__codelineno-0-440">440</a></span>
+<span class="normal"><a href="#__codelineno-0-441">441</a></span>
+<span class="normal"><a href="#__codelineno-0-442">442</a></span>
+<span class="normal"><a href="#__codelineno-0-443">443</a></span>
+<span class="normal"><a href="#__codelineno-0-444">444</a></span>
+<span class="normal"><a href="#__codelineno-0-445">445</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-434" name="__codelineno-0-434"></a><span class="k">class</span><span class="w"> </span><span class="nc">SecondMomentNoiseOutput</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+<a id="__codelineno-0-435" name="__codelineno-0-435"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Noise output with private first and second moment streams.</span>
+<a id="__codelineno-0-436" name="__codelineno-0-436"></a>
+<a id="__codelineno-0-437" name="__codelineno-0-437"></a><span class="sd">    Attributes:</span>
+<a id="__codelineno-0-438" name="__codelineno-0-438"></a><span class="sd">        noisy_grads: Noised clipped gradients for the optimizer&#39;s first</span>
+<a id="__codelineno-0-439" name="__codelineno-0-439"></a><span class="sd">            moment / update direction.</span>
+<a id="__codelineno-0-440" name="__codelineno-0-440"></a><span class="sd">        noisy_squared_grads: Noised element-wise squared clipped gradients</span>
+<a id="__codelineno-0-441" name="__codelineno-0-441"></a><span class="sd">            for optimizers with a second moment accumulator.</span>
+<a id="__codelineno-0-442" name="__codelineno-0-442"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-443" name="__codelineno-0-443"></a>
+<a id="__codelineno-0-444" name="__codelineno-0-444"></a>    <span class="n">noisy_grads</span><span class="p">:</span> <span class="n">NoisedPytree</span>
+<a id="__codelineno-0-445" name="__codelineno-0-445"></a>    <span class="n">noisy_squared_grads</span><span class="p">:</span> <span class="n">NoisedPytree</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
