@@ -17,6 +17,7 @@ _HEADLINE = (
     "adaclip",
     "poisson",
     "parallel_poisson",
+    "per_step",
     "random_allocation",
 )
 
@@ -25,6 +26,7 @@ _TYPES = (
     "AdaClip",
     "Poisson",
     "ParallelPoisson",
+    "PerStepRandomAllocation",
     "RandomAllocation",
 )
 
