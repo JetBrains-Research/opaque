@@ -322,7 +322,6 @@ def random_allocation_gaussian_pld(
     noise_multiplier: float,
     t: int,
     k: int,
-    upper: bool,
     config: DiscretizationConfig,
 ) -> Pld:
     """PLD for random allocation applied to the Gaussian mechanism.
@@ -343,8 +342,6 @@ def random_allocation_gaussian_pld(
         t: Steps per allocation round (number of bins), > 0.
         k: Steps each record participates in, in [1, t]. Values above 1 return
             the block upper bound described above.
-        upper: True for a valid upper bound; False for the matching lower
-            bound, which brackets the discretization error.
         config: PLD discretization configuration.
 
     Returns:

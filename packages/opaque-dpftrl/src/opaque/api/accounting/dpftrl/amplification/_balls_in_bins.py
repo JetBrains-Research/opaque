@@ -174,7 +174,6 @@ class BallsInBins(DpFtrlProcess):
                 sigma_eff,
                 self.num_bins,
                 1,
-                True,  # upper bound; the lower variant is for test brackets
                 native_cfg,
             )
 

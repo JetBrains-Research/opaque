@@ -216,8 +216,6 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
 ///     t (int): Steps per allocation round (number of bins), > 0.
 ///     k (int): Steps each record participates in, in [1, t]. Values above 1
 ///         return the block upper bound described above.
-///     upper (bool): True for a valid upper bound; False for the matching
-///         lower bound, which brackets the discretization error.
 ///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
@@ -226,19 +224,17 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
 /// Raises:
 ///     ValueError: If any parameter is out of range or the grid is too large.
 #[pyfunction]
-#[pyo3(name = "random_allocation_gaussian_pld", signature = (noise_multiplier, t, k, upper, config))]
+#[pyo3(name = "random_allocation_gaussian_pld", signature = (noise_multiplier, t, k, config))]
 pub fn py_random_allocation_gaussian_pld(
     noise_multiplier: f64,
     t: usize,
     k: usize,
-    upper: bool,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld = crate::amplification::random_allocation_gaussian_pld(
         noise_multiplier,
         t,
         k,
-        upper,
         &config.inner,
     )?;
     Ok(PyPld::new(pld))

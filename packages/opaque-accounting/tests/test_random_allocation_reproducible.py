@@ -20,6 +20,9 @@ import sys
 
 import pytest
 
+from opaque.api.accounting.core import _native
+from opaque.api.accounting.core.discretization import get_discretization
+
 _THREAD_COUNTS = ("1", "2", "8")
 
 _SCRIPT = """
@@ -29,7 +32,7 @@ from opaque.api.accounting.core.discretization import get_discretization
 cfg = get_discretization().to_native()
 out = []
 for sigma, t in ((1.0, 8), (2.0, 16)):
-    pld = _native.random_allocation_gaussian_pld(sigma, t, 1, True, cfg)
+    pld = _native.random_allocation_gaussian_pld(sigma, t, 1, cfg)
     out.append(repr(pld.epsilon_at(1e-8)))
 print(" ".join(out))
 """
@@ -60,3 +63,9 @@ def test_epsilon_is_bit_identical_across_thread_counts():
             f"RAYON_NUM_THREADS={n} gave {got}, "
             f"RAYON_NUM_THREADS={_THREAD_COUNTS[0]} gave {baseline}"
         )
+
+
+def test_native_allocation_api_has_no_optimistic_selector():
+    cfg = get_discretization().to_native()
+    with pytest.raises(TypeError):
+        _native.random_allocation_gaussian_pld(1.0, 8, 1, True, cfg)
