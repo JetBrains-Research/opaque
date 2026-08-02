@@ -3086,6 +3086,27 @@
 <li><strong>Claim inventory.</strong> Approximately 20 documented guarantees are false as written (§1.3). Withdrawing a claim is a 10-minute edit and is <em>always</em> available as an interim mitigation while the underlying fix is engineered. Use it aggressively; do not let a 2-week fix gate a 10-minute retraction.</li>
 </ol>
 <hr />
+<p><strong>Decision 3 (added by the FS26 survey) — what does <code>strategy.sensitivity()</code> mean?</strong></p>
+<p><code>BandMfStrategy.sensitivity()</code> returns exactly 1.0 for every participation context
+(OPQ-177), because <code>_toeplitz.py:570</code> normalises the coefficients to unit norm and the
+method returns that norm. <code>BsrStrategy</code> over the same contexts returns 2.236 → 4.472. So
+the two strategies do not agree on what the method means, and <code>MfGaussian.pld</code> consumes it
+as if they did.</p>
+<p>Pick one and enforce it repo-wide:</p>
+<ul>
+<li><strong>(a) <code>sensitivity()</code> is single-participation.</strong> Then <code>_poisson.py:160</code> and
+  <code>_b_min_sep/__init__.py:146</code> are already correct, the four tests asserting <code>== 1.0</code> stay,
+  and <code>MfGaussian.pld</code> must stop treating the return value as participation-aware — either
+  computing the multi-participation sensitivity itself, or refusing a strategy it cannot
+  price. BSR then needs its own single-participation accessor.</li>
+<li><strong>(b) <code>sensitivity()</code> is participation-aware.</strong> Then BandMF must actually use <code>min_sep</code>
+  and <code>max_participations</code>, the four tests change, <code>types.py:39</code> is rewritten, and both
+  single-participation callers need an explicit <code>max_participations=1</code>.</li>
+</ul>
+<p>(a) is the smaller diff and matches the majority of call sites. Either way the deliverable
+is the same invariant test: <strong>whatever <code>MfGaussian.pld</code> charges must be non-decreasing in
+<code>max_participations</code>, for every strategy.</strong> That test is what makes this class of defect
+impossible to reintroduce, and it does not exist today.</p>
 <h2 id="1-phase-0-stop-the-bleeding-target-5-working-days">1. Phase 0 — Stop the bleeding (target: 5 working days)<a class="headerlink" href="#1-phase-0-stop-the-bleeding-target-5-working-days" title="Permanent link">&para;</a></h2>
 <p>Three parallel tracks. Nothing here should be blocked on design work.</p>
 <h3 id="11-one-line-one-function-fixes-that-change-today">1.1 ✅ One-line / one-function fixes that change ε <em>today</em><a class="headerlink" href="#11-one-line-one-function-fixes-that-change-today" title="Permanent link">&para;</a></h3>
@@ -3154,12 +3175,27 @@
 <td><code>engine/clipping/_distributed.py:59-82</code></td>
 <td><strong>One empty Poisson batch permanently desynchronizes the process group</strong> (critical)</td>
 </tr>
+<tr>
+<td>BLT balls-in-bins Gram → <code>normalized=False</code> (OPQ-178)</td>
+<td><code>dpftrl/noise/_blt.py:111</code> + <code>.../amplification/_balls_in_bins.py:198</code></td>
+<td>Accountant prices the column-normalised encoder while the raw one is deployed — <strong>ε under-reported 1.59×</strong>, measured</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Effort: 3–4 engineer-days</strong>, plus regression tests (another 2). These are unrelated to each other — parallelize across whoever is available.</p>
+<blockquote>
+<p><strong>Two FS26-survey findings deliberately kept OUT of this table.</strong> OPQ-177 (BandMF
+<code>sensitivity()</code> ≡ 1.0) changes ε by more than anything above, but it is a <strong>contract
+decision</strong>, not a one-liner: two callers legitimately want the single-participation
+value, four shipped tests assert <code>== 1.0</code>, and <code>types.py:39</code> documents the drop as
+intended. It belongs in §0.2 alongside the other decisions-before-code. OPQ-179
+(signed vs <code>|C|</code> inner products) must not be turned into an assert until BLT's
+coefficient signs are confirmed, or it hard-fails BLT at runtime.</p>
+</blockquote>
 <h4 id="accounting-remediation-status-phase-0">Accounting remediation status (Phase 0)<a class="headerlink" href="#accounting-remediation-status-phase-0" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Safe-only PLDs:</strong> <code>DiscretizationConfig</code>, PMFs, and all Python process APIs no longer expose estimate mode. Exact atoms, coarsening, truncation, and Monte Carlo histograms take the upper-bound path, and unsupported legacy keywords fail explicitly.</li>
+<li><strong>Random allocation:</strong> the native transform no longer exposes a lower-result selector. Its analytic input discretization is upper-bound-only, preserves log-survival tail mass, and the private downward geometric operation is used only to construct the safe add direction. The geometric convolution now uses a directionally guarded index table, routes downward underflow to <code>zero_mass</code>, and supports a 16,384-bin internal grid within the prior transform's runtime envelope.</li>
 <li><strong>Exact mechanisms:</strong> <code>eps_delta_pld</code> uses ceiling placement, so a finite exact atom never falls below its declared ε; identity uses the same single safe policy.</li>
 <li><strong>Calibration / budget:</strong> <code>calibrate()</code> returns the proven-safe bracket endpoint with one-sided acceptance; <code>budget_exceeded</code> compares in the correct direction for all three budget types.</li>
 <li><strong>CachedProcess:</strong> <code>repeated_pld</code> relays to <code>inner.repeated_pld</code>, so <code>cached(per_step(...)) * K</code> keeps the DP-FTRL horizon PLD instead of K-fold single-step composition.</li>
@@ -3236,6 +3272,21 @@ phases.</p>
 <li><strong>Estimate-Verify-Release (EVR).</strong> Keep the current estimator for proposing ε/noise, then verify the candidate on independent samples using the papers' concentration bound for both adjacency directions. Failed verification selects more noise or an analytically safe fallback, with verifier failure folded into δ. This follows the published formal construction and is better suited to calibration, but certifies a fixed <code>(ε,δ)</code> target rather than a reusable PLD.</li>
 </ol>
 <p>Either design must make Monte-Carlo uncertainty caller-visible and restore the skipped invariants before any BnB/b-min-sep ε claim. Memoizing a running maximum does not fix the underlying issue.</p>
+<p><strong>Sharpened by the FS26 survey (OPQ-182 and the merged evidence).</strong> The failure is a hard
+<strong>cap</strong>, not a slow convergence: with <code>G = E·I</code> (b=16, E=4, σ=1) <code>bnb_mc_pld</code> ε is flat at
+<strong>9.064 for δ = 1e-8, 1e-11 and 1e-14</strong>, while the exact identity path over the same
+mechanism gives <strong>9.98242 → 12.20753 → 14.12360</strong>. Because <code>infinity_mass</code> is identically
+0, <em>no sample budget closes that gap</em> — which retires "just raise <code>num_mc_samples</code>" as an
+answer. At production δ=1e-8 the under-report is 9.2%. Two consequences for this cluster:
+(a) the deterministic identity path now provides an <strong>exact oracle</strong> to test the UCB
+construction against — feed <code>E·I_b</code> to <code>bnb_mc_pld</code> and require the corrected estimator to
+bracket <code>random_allocation_gaussian_pld(σ/√E, b, 1, ·)</code>, which is the strongest test
+available and did not exist when this cluster was written; (b) OPQ-182 (thread-count
+dependence at fixed seed, 11.9% spread) should land in the same change, since both are in
+the same file and a UCB over a non-reproducible sample set is still not auditable.
+One staleness note: this cluster's <code>identity.rs</code> / <code>weighted_samples_to_pmf</code> references are
+now dead — that file was deleted when the identity path moved to the deterministic
+transform. <code>monte_carlo.rs</code> and <code>b_min_sep/mc.rs</code> remain affected.</p>
 <h3 id="rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test">RC-5 — MF noise engines have no horizon guard and no correlation test<a class="headerlink" href="#rc-5-mf-noise-engines-have-no-horizon-guard-and-no-correlation-test" title="Permanent link">&para;</a></h3>
 <p><strong>Resolves:</strong> λ-CGD zero noise at step n (×2); streaming MF no horizon guard; <code>_column_norm</code> returning 0/NaN; dense engine redrawing base Gaussians (×2 reports — zero cross-step correlation, i.e. <em>not matrix-factorization noise at all</em>); BISR truncating C to <code>bandwidth</code> instead of <code>n_steps</code>; <code>_momentum_workload_coef</code> applying the LR schedule along the lag axis.</p>
 <p><strong>Change:</strong> thread <code>n_steps</code> into <code>_matrix_factorization_noise</code>/<code>_make_raw_mf_noise</code> and raise in all three <code>noise_fn</code>s. Derive base z_j from a per-<strong>column</strong> key <code>fold_in(key, j)</code>, not a per-step key. Add an <strong>empirical covariance test</strong>: sample the noise sequence and assert Cov ≈ σ²C⁻¹(C⁻¹)ᵀ, run against dense <em>and</em> streaming engines. That single test catches all four correlation/truncation bugs and prevents the next one.</p>

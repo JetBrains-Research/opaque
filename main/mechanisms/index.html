@@ -2821,15 +2821,17 @@ mechanisms support all amplification types:</p>
 <thead>
 <tr>
 <th>Mechanism</th>
-<th style="text-align: center;"><code>opaque.dpsgd.accounting.poisson</code></th>
-<th style="text-align: center;"><code>opaque.dpsgd.accounting.poisson</code> (truncated)</th>
-<th style="text-align: center;"><code>opaque.dpftrl.accounting.poisson</code></th>
-<th style="text-align: center;"><code>opaque.dpftrl.accounting.balls_in_bins</code></th>
+<th style="text-align: center;"><code>dpsgd_acc.poisson</code></th>
+<th style="text-align: center;"><code>dpsgd_acc.poisson</code> (truncated)</th>
+<th style="text-align: center;"><code>dpsgd_acc.random_allocation</code></th>
+<th style="text-align: center;"><code>dpftrl_acc.poisson</code></th>
+<th style="text-align: center;"><code>dpftrl_acc.balls_in_bins</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Gaussian</td>
+<td style="text-align: center;">Yes</td>
 <td style="text-align: center;">Yes</td>
 <td style="text-align: center;">Yes</td>
 <td style="text-align: center;">—</td>
@@ -2839,18 +2841,29 @@ mechanisms support all amplification types:</p>
 <td>BandMF</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">Yes</td>
 <td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Identity MF</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
 </tr>
 <tr>
 <td>BLT</td>
 <td style="text-align: center;"><em>internal</em></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">Yes</td>
 </tr>
 <tr>
 <td>DP-λCGD</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2861,10 +2874,12 @@ mechanisms support all amplification types:</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">Yes</td>
 </tr>
 <tr>
 <td>BSR</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2879,13 +2894,19 @@ mechanisms support all amplification types:</p>
   <code>truncated_batch_size</code> and <code>dataset_size</code>; caps batches (weaker
   privacy than plain Poisson at the same <span class="arithmatex">\(q\)</span> unless noise is
   recalibrated).</li>
+<li><strong><code>opaque.dpsgd.accounting.random_allocation</code></strong>: DP-SGD
+  1-out-of-<code>num_bins</code> random allocation, redrawn every epoch. Returns a
+  <strong>per-epoch</strong> process (compose with <code>* num_epochs</code>); amplifies more
+  than Poisson at the matched rate <code>1 / num_bins</code>.</li>
 <li><strong><code>opaque.dpftrl.accounting.poisson</code></strong>: DP-FTRL whole-process Poisson
   amplification (<code>BandMf</code> / <code>IdentityMf</code> inner, <code>n_steps</code> required).
   For <code>BandMf</code> this is the cyclic-participation analysis
   (<span class="arithmatex">\(\lceil n/b\rceil\)</span> independent groups).</li>
 <li><strong><code>opaque.dpftrl.accounting.balls_in_bins</code></strong>: Random-partition
-  amplification. Each epoch, examples are randomly assigned to bins.
-  Used with BLT, DP-λCGD, and BISR.</li>
+  amplification with the assignment <strong>fixed across epochs</strong>. Used with
+  BLT, DP-λCGD, BISR, BSR, and identity MF. Not interchangeable with
+  <code>dpsgd_acc.random_allocation</code>, which redraws each epoch — the two
+  schemes have different samplers and different accountants.</li>
 <li><strong>internal</strong>: BLT handles multi-participation patterns (min-sep)
   within its own sensitivity computation — no external amplification
   wrapper needed. BLT also supports <code>balls_in_bins</code> with a
