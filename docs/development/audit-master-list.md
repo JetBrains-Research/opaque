@@ -303,7 +303,7 @@ Not requested, but the maintainer is working through this issue by issue, so:
 
 ---
 
-## 6. Added during the FS26 random-allocation review (OPQ-177 … OPQ-185)
+## 6. Added during the FS26 random-allocation review (OPQ-177 … OPQ-186)
 
 Verdicts marked **CONFIRMED** were reproduced by running the shipped API or by
 reading the cited lines in this session; **PLAUSIBLE** means the code mechanism
@@ -330,6 +330,8 @@ was confirmed but the numerical consequence was not independently measured.
 **OPQ-184 — RESOLVED — random allocation exposed a caller-selectable dominated PLD despite Opaque's safe-only accounting policy.** `packages/opaque-accounting/src/amplification/random_allocation.rs`; `src/python/amplification.rs`; `opaque_accounting.pyi` · privacy-correctness · ε:yes · **CONFIRMED**. The native `random_allocation_gaussian_pld(..., upper=False, ...)` entry point returned a lower numerical result as an ordinary composable `Pld`, recreating the removed `pessimistic_estimate=False` escape hatch under a new name. **Fix:** remove the selector from Rust, PyO3, stubs, and callers; keep downward rounding only as the internal lower bound on the exponentiated sum required before the add direction applies `-ln`. The native regression test confirms the removed extra argument raises `TypeError`.
 
 **OPQ-185 — RESOLVED — `disc_dist` lost conservative right-tail mass through `1 - CDF` cancellation.** `packages/opaque-accounting/src/pld/realization.rs` · privacy-correctness · ε:yes · **CONFIRMED**. At the transform's extreme analytic tails, finite-precision CDF values round to one; subtracting them from one zeroed interior tail bins and `infinity_mass`, moving nonzero privacy-loss probability into finite support. **Fix:** expose analytic log-survival on loss realizations and form upper-half bin masses from survival differences in log space. The regression test pins a nonzero `infinity_mass` and mass conservation at β=`1e-50`.
+
+**OPQ-186 — RESOLVED — `BallsInBinsSampler` dropped empty bin slots, so its executed trainer schedule could be shorter than the `num_bins`-slot accountant schedule.** `packages/opaque-dpftrl/src/opaque/api/dpftrl/sampling/_balls_in_bins.py` · privacy-correctness · ε:yes · **CONFIRMED**. Each example is independently assigned to a fixed bin, so empty bins occur with nonzero probability; the sampler filtered them out and emitted only non-empty batches while `balls_in_bins(..., num_bins, n_steps)` prices every bin slot. **Fix:** retain empty bins as empty batches, make `len()` report the declared remaining slots, and add a one-example/two-bin regression test covering fixed assignments across epochs.
 
 ### Evidence added to an existing finding
 
