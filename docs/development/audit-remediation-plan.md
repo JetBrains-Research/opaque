@@ -95,6 +95,7 @@ Order by (impact ÷ diff size). All of these are ≤ 1 day each and several are 
 #### Accounting remediation status (Phase 0)
 
 - **Safe-only PLDs:** `DiscretizationConfig`, PMFs, and all Python process APIs no longer expose estimate mode. Exact atoms, coarsening, truncation, and Monte Carlo histograms take the upper-bound path, and unsupported legacy keywords fail explicitly.
+- **Random allocation:** the native transform no longer exposes a lower-result selector. Its analytic input discretization is upper-bound-only, preserves log-survival tail mass, and the private downward geometric operation is used only to construct the safe add direction. The geometric convolution now uses a directionally guarded index table, routes downward underflow to `zero_mass`, and supports a 16,384-bin internal grid within the prior transform's runtime envelope.
 - **Exact mechanisms:** `eps_delta_pld` uses ceiling placement, so a finite exact atom never falls below its declared ε; identity uses the same single safe policy.
 - **Calibration / budget:** `calibrate()` returns the proven-safe bracket endpoint with one-sided acceptance; `budget_exceeded` compares in the correct direction for all three budget types.
 - **CachedProcess:** `repeated_pld` relays to `inner.repeated_pld`, so `cached(per_step(...)) * K` keeps the DP-FTRL horizon PLD instead of K-fold single-step composition.
