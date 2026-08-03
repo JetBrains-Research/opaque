@@ -81,16 +81,21 @@ def _args(
     save_steps: int | None = None,
     noise_multiplier: float = 1.0,
     clipping_norm: float | str = 1.0,
+    sampling_mode: str = "auto",
+    sampling_kwargs: dict[str, object] | None = None,
+    per_device_train_batch_size: int = 4,
 ) -> TrainingArguments:
     kwargs = dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
     return TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=per_device_train_batch_size,
         max_steps=max_steps,
         save_steps=save_steps,
         save_strategy="steps" if save_steps else "no",
         privacy_noise_mechanism=mechanism,
         privacy_noise_mechanism_kwargs=kwargs,
+        sampling_mode=sampling_mode,
+        sampling_kwargs=sampling_kwargs,
         privacy_noise_multiplier=noise_multiplier,
         clipping_norm=clipping_norm,
         learning_rate=1e-3,
@@ -132,11 +137,7 @@ class TestDpFtrlTrain:
             data_collator=_collate,
         )
         out = trainer.train()
-        # BallsInBinsSampler skips empty bins (random partition of small
-        # datasets occasionally leaves bins empty), so the realised step
-        # count can fall short of ``max_steps``.  All other mechanisms
-        # hit ``max_steps`` exactly.
-        assert 0 < out.global_step <= max_steps
+        assert out.global_step == max_steps
         # Every MF mechanism reports the same privacy metric surface.
         assert "privacy_epsilon" in out.metrics
         assert out.metrics["privacy_noise_multiplier"] == pytest.approx(1.0)
@@ -189,6 +190,56 @@ class TestDpFtrlSamplerDispatch:
         trainer.train()
         assert "cls" in captured, "sampler was not captured at on_step_begin"
         assert captured["cls"].__module__ == expected_sampler_module_name
+
+
+class TestDpTrainerAllocationModes:
+    @pytest.mark.parametrize(
+        ("mechanism", "sampling_mode", "max_steps"),
+        [
+            ("gaussian", "random_allocation", 18),
+            ("gaussian", "k_out_of_t", 10),
+            ("mf_identity", "balls_in_bins", 16),
+        ],
+    )
+    def test_trains_complete_schedule(
+        self, tmp_path, mechanism, sampling_mode, max_steps
+    ):
+        kwargs = {}
+        if sampling_mode == "k_out_of_t":
+            kwargs["sampling_kwargs"] = {"total_participations": 2}
+        args = _args(
+            output_dir=str(tmp_path / f"{mechanism}-{sampling_mode}"),
+            mechanism=mechanism,
+            sampling_mode=sampling_mode,
+            max_steps=max_steps,
+            **kwargs,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        out = trainer.train()
+        assert out.global_step == max_steps
+        assert "privacy_epsilon" in out.metrics
+
+    def test_random_allocation_rejects_single_bin_epoch(self, tmp_path):
+        args = _args(
+            output_dir=str(tmp_path / "gaussian-random-allocation-single-bin"),
+            mechanism="gaussian",
+            sampling_mode="random_allocation",
+            max_steps=4,
+            per_device_train_batch_size=64,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(n=64),
+            data_collator=_collate,
+        )
+        with pytest.raises(ValueError, match="random_allocation requires num_bins >= 2"):
+            trainer.train()
 
 
 class TestDpFtrlCheckpointRoundTrip:

@@ -398,6 +398,47 @@ class TestClippingAndSamplingSurfaces:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="sequential")
 
+    def test_gaussian_accepts_random_allocation(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_mode="random_allocation",
+        )
+        assert args.sampling_mode == "random_allocation"
+
+    def test_gaussian_accepts_k_out_of_t(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_mode="k_out_of_t",
+            sampling_kwargs={"total_participations": 2},
+        )
+        assert args.sampling_mode == "k_out_of_t"
+
+    def test_k_out_of_t_requires_total_participations(self):
+        with pytest.raises(ValueError, match="total_participations"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                sampling_mode="k_out_of_t",
+            )
+
+    def test_k_out_of_t_rejects_truncated_poisson_kwargs(self):
+        with pytest.raises(ValueError, match="truncated_batch_size"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={
+                    "total_participations": 2,
+                    "truncated_batch_size": 4,
+                },
+            )
+
+    def test_mf_identity_accepts_balls_in_bins(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            privacy_noise_mechanism="mf_identity",
+            sampling_mode="balls_in_bins",
+        )
+        assert args.sampling_mode == "balls_in_bins"
+
     def test_sampling_mode_auto_resolves_to_poisson_for_gaussian(self):
         # ``"auto"`` (the default) resolves to the canonical sampler for
         # the chosen mechanism — ``"poisson"`` for the DP-SGD
@@ -551,7 +592,7 @@ class TestNoiseCalibrationKwargs:
 
     def test_defaults_and_override(self):
         base = TrainingArguments(privacy_noise_multiplier=1.0)
-        assert base.noise_calibration_kwargs["min"] == 0.01
+        assert base.noise_calibration_kwargs["min"] == 0.11
         assert base.noise_calibration_kwargs["max"] == 10.0
         assert base.noise_calibration_kwargs["tolerance"] == 1e-3
         tuned = TrainingArguments(
