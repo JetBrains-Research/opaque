@@ -15,9 +15,12 @@ torchopt = pytest.importorskip("torchopt")
 
 from opaque.optimizers import (
     adafactor,
+    adagrad,
     adamw,
     ademamix,
     lion,
+    radam,
+    rmsprop,
     schedule_free,
 )
 from opaque.serialization import from_state_dict, state_dict
@@ -64,7 +67,7 @@ class TestAdamW:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = adamw(lr=1e-3)
+        opt = adamw(lr=1e-3, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
             opt,
             params,
@@ -97,7 +100,7 @@ class TestAdamW:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_step_and_phi_preserved(self, params, grads):
-        opt = adamw(lr=1e-3)
+        opt = adamw(lr=1e-3, noise_bias_correction=True)
         state = opt.init(params)
         for _ in range(7):
             _, state = opt.update(
@@ -110,6 +113,8 @@ class TestAdamW:
         restored = from_state_dict(template, sd)
         # Adam state is at chain index 0 (decoupled WD).
         assert restored[0].step == 7
+        assert isinstance(state[0].phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
         assert restored[0].phi == pytest.approx(state[0].phi)
 
     def test_per_group_phi_round_trip_nested(self):
@@ -214,7 +219,7 @@ class TestAdEMAMix:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = ademamix(lr=1e-3)
+        opt = ademamix(lr=1e-3, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
             opt,
             params,
@@ -222,6 +227,23 @@ class TestAdEMAMix:
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_phi_preserved(self, params, grads):
+        opt = ademamix(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(params)
+        for _ in range(7):
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=0.4),
+                state,
+                params=params,
+            )
+        sd = state_dict(state)
+        template = opt.init(params)
+        restored = from_state_dict(template, sd)
+        assert restored[0].step == 7
+        assert isinstance(state[0].phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
+        assert restored[0].phi == pytest.approx(state[0].phi)
 
 
 class TestAdafactor:
@@ -288,6 +310,110 @@ class TestAdafactor:
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
+
+
+class TestRAdam:
+    def test_round_trip_vanilla(self, params, grads):
+        u_orig, u_rest = _round_trip(radam(lr=1e-3), params, grads)
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_round_trip_bc(self, params, grads):
+        opt = radam(lr=1e-3, noise_bias_correction=True)
+        u_orig, u_rest = _round_trip(
+            opt,
+            params,
+            noised(grads, max_norm=1.0, noise_stddev=0.3),
+        )
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_phi_preserved(self, params, grads):
+        opt = radam(lr=1e-3, noise_bias_correction=True)
+        state = opt.init(params)
+        for _ in range(7):
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=0.3),
+                state,
+                params=params,
+            )
+        sd = state_dict(state)
+        template = opt.init(params)
+        restored = from_state_dict(template, sd)
+        # RAdam default uses L2 WD (decoupled_weight_decay=False), so the
+        # chain is (wd, moment, clip, neg_lr) — moment state is at index 1.
+        assert restored[1].step == 7
+        assert isinstance(state[1].phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state[1].phi.values())
+        assert restored[1].phi == pytest.approx(state[1].phi)
+
+
+class TestRMSprop:
+    def test_round_trip_vanilla(self, params, grads):
+        u_orig, u_rest = _round_trip(rmsprop(lr=1e-2), params, grads)
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_round_trip_bc(self, params, grads):
+        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
+        u_orig, u_rest = _round_trip(
+            opt,
+            params,
+            noised(grads, max_norm=1.0, noise_stddev=0.3),
+        )
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_phi_preserved(self, params, grads):
+        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
+        state = opt.init(params)
+        for _ in range(5):
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=0.3),
+                state,
+                params=params,
+            )
+        sd = state_dict(state)
+        template = opt.init(params)
+        restored = from_state_dict(template, sd)
+        assert restored[0].step == 5
+        assert isinstance(state[0].phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
+        assert restored[0].phi == pytest.approx(state[0].phi)
+
+
+class TestAdagrad:
+    def test_round_trip_vanilla(self, params, grads):
+        u_orig, u_rest = _round_trip(adagrad(lr=1e-2), params, grads)
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_round_trip_bc(self, params, grads):
+        opt = adagrad(lr=1e-2, noise_bias_correction=True)
+        u_orig, u_rest = _round_trip(
+            opt,
+            params,
+            noised(grads, max_norm=1.0, noise_stddev=0.3),
+        )
+        for k in u_orig:
+            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+    def test_phi_acc_preserved(self, params, grads):
+        opt = adagrad(lr=1e-2, noise_bias_correction=True)
+        state = opt.init(params)
+        for _ in range(5):
+            _, state = opt.update(
+                noised(grads, max_norm=1.0, noise_stddev=0.3),
+                state,
+                params=params,
+            )
+        sd = state_dict(state)
+        template = opt.init(params)
+        restored = from_state_dict(template, sd)
+        assert restored[0].step == 5
+        assert isinstance(state[0].phi_acc, dict)
+        assert all(v != pytest.approx(0.0) for v in state[0].phi_acc.values())
+        assert restored[0].phi_acc == pytest.approx(state[0].phi_acc)
 
 
 class TestScheduleFree:
