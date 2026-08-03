@@ -23,16 +23,21 @@ pub struct PyDiscretizationConfig {
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]
-    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, max_conv_grid=32_768, num_mc_samples=100_000, seed=42))]
+    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, num_mc_samples=100_000, seed=42, max_conv_grid=32_768))]
     fn new(
         discretization: f64,
         log_mass_truncation_bound: f64,
         max_grid_size: usize,
         tail_mass_truncation: f64,
-        max_conv_grid: usize,
         num_mc_samples: usize,
         seed: u64,
+        max_conv_grid: usize,
     ) -> PyResult<Self> {
+        if max_conv_grid == 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "max_conv_grid must be > 0",
+            ));
+        }
         let mut inner = DiscretizationConfig::new(discretization, log_mass_truncation_bound)?
             .with_max_grid_size(max_grid_size)
             .with_max_conv_grid(max_conv_grid);

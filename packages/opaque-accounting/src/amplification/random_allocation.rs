@@ -49,7 +49,12 @@ impl Accuracy {
         loss: &L,
         config: &DiscretizationConfig,
         t: usize,
-    ) -> Self {
+    ) -> Result<Self> {
+        if config.max_conv_grid == 0 {
+            return Err(PldError::InvalidParameter(
+                "max_conv_grid must be > 0".into(),
+            ));
+        }
         // β is split across the t copies that get convolved together.
         let beta_total = (0.5 * config.log_mass_truncation_bound.exp()).clamp(1e-300, 0.49);
         let beta = (beta_total / t as f64).clamp(1e-300, 0.49);
@@ -60,10 +65,10 @@ impl Accuracy {
         let log_beta = beta.ln();
         let span = loss.quantile(log_beta, true) - loss.quantile(log_beta, false);
         let alpha_floor = span / config.max_conv_grid as f64;
-        Accuracy {
+        Ok(Accuracy {
             alpha: config.discretization.max(alpha_floor),
             beta,
-        }
+        })
     }
 }
 
@@ -199,7 +204,7 @@ pub fn random_allocation_gaussian_prefix_pld(
 
     let loss = NormalLoss::gaussian(noise_multiplier);
     let neg_dual = NormalLoss::gaussian_neg_dual(noise_multiplier);
-    let acc = Accuracy::derive(&loss, config, released_steps);
+    let acc = Accuracy::derive(&loss, config, released_steps)?;
     let l = disc_dist(&loss, acc.alpha, acc.beta, config.max_grid_size)?;
     let d = disc_dist(&neg_dual, acc.alpha, acc.beta, config.max_grid_size)?;
     let e_l = GeomPmf::from_pmf_exp(&l)?;
@@ -462,7 +467,7 @@ pub fn random_allocation_gaussian_pld(
         if rounds == 0 || steps == 0 {
             continue;
         }
-        let acc = Accuracy::derive(&loss, config, steps);
+        let acc = Accuracy::derive(&loss, config, steps)?;
         let pmf_remove =
             alloc_remove(&loss, &neg_dual, steps, &acc, config, config.discretization)?;
         let pmf_add = alloc_add(&loss, steps, &acc, config, config.discretization)?;
@@ -731,6 +736,9 @@ mod tests {
         assert!(random_allocation_gaussian_pld(1.0, 0, 1, &c).is_err());
         assert!(random_allocation_gaussian_pld(1.0, 8, 0, &c).is_err());
         assert!(random_allocation_gaussian_pld(1.0, 8, 9, &c).is_err());
+        // max_conv_grid = 0 must be rejected before the span/0 division.
+        let c_zero = DiscretizationConfig::default().with_max_conv_grid(0);
+        assert!(random_allocation_gaussian_pld(1.0, 8, 1, &c_zero).is_err());
     }
 
     /// At t=1 the transform equals the base Gaussian (no allocation
