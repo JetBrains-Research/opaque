@@ -28,6 +28,7 @@
 use crate::discretization::DiscretizationConfig;
 use crate::error::{PldError, Result};
 use crate::pld::pmf::geom::GeomPmf;
+use crate::pld::pmf::Pmf;
 use crate::pld::realization::{disc_dist, LossRealization, NormalLoss, Rounding};
 use crate::pld::PrivacyLossDistribution;
 
@@ -87,7 +88,12 @@ fn alloc_remove<L: LossRealization + ?Sized>(
 ) -> Result<crate::pld::pmf::Pmf> {
     let l = disc_dist(loss, acc.alpha, acc.beta, config.max_grid_size)?;
     if t == 1 {
-        return Ok(l);
+        return GeomPmf::from_pmf_exp(&l)?.into_pmf_log(
+            1.0,
+            out_disc,
+            config.max_grid_size,
+            Rounding::Up,
+        );
     }
     // disc-dist(-D): the negated dual, taken analytically.
     let d = disc_dist(neg_dual, acc.alpha, acc.beta, config.max_grid_size)?;
@@ -111,7 +117,12 @@ fn alloc_add<L: LossRealization + ?Sized>(
 ) -> Result<crate::pld::pmf::Pmf> {
     let l = disc_dist(loss, acc.alpha, acc.beta, config.max_grid_size)?;
     if t == 1 {
-        return Ok(l);
+        return GeomPmf::from_pmf_exp_neg(&l)?.into_pmf_neg_log(
+            1.0,
+            out_disc,
+            config.max_grid_size,
+            Rounding::Up,
+        );
     }
     let e_l = GeomPmf::from_pmf_exp_neg(&l)?;
     // An upper bound on -ln(S) needs a *lower* bound on S, so the inner
@@ -119,6 +130,271 @@ fn alloc_add<L: LossRealization + ?Sized>(
     // the safe result, not a caller-selectable optimistic estimate.
     let e_t = e_l.self_conv(t, Rounding::Down)?;
     e_t.into_pmf_neg_log(t as f64, out_disc, config.max_grid_size, Rounding::Up)
+}
+
+fn weighted_mix_pmfs(parts: &[(f64, Pmf)]) -> Result<Pmf> {
+    let first = parts
+        .first()
+        .ok_or_else(|| PldError::InvalidParameter("empty PMF mixture".into()))?;
+    let discretization = first.1.discretization;
+    if parts
+        .iter()
+        .any(|(_, p)| p.discretization != discretization)
+    {
+        return Err(PldError::DiscretizationMismatch(
+            discretization,
+            parts
+                .iter()
+                .find(|(_, p)| p.discretization != discretization)
+                .unwrap()
+                .1
+                .discretization,
+        ));
+    }
+    let lo = parts.iter().map(|(_, p)| p.lower_loss_index).min().unwrap();
+    let hi = parts
+        .iter()
+        .map(|(_, p)| p.lower_loss_index + p.probs.len() as i64 - 1)
+        .max()
+        .unwrap();
+    let mut probs = vec![0.0; (hi - lo + 1) as usize];
+    let mut infinity_mass = 0.0;
+    let mut negative_infinity_mass = 0.0;
+    let mut total_weight = 0.0;
+    let mut max_grid_size = 0;
+    for (weight, pmf) in parts {
+        if *weight < 0.0 || !weight.is_finite() {
+            return Err(PldError::InvalidParameter(format!(
+                "mixture weight must be finite and non-negative, got {weight}"
+            )));
+        }
+        total_weight += weight;
+        let offset = (pmf.lower_loss_index - lo) as usize;
+        for (i, mass) in pmf.probs.iter().enumerate() {
+            probs[offset + i] += weight * mass;
+        }
+        infinity_mass += weight * pmf.infinity_mass;
+        negative_infinity_mass += weight * pmf.negative_infinity_mass;
+        max_grid_size = max_grid_size.max(pmf.max_grid_size);
+    }
+    if (total_weight - 1.0).abs() > 1e-9 {
+        return Err(PldError::InvalidParameter(format!(
+            "mixture weights must sum to one, got {total_weight}"
+        )));
+    }
+    Ok(Pmf {
+        discretization,
+        lower_loss_index: lo,
+        probs,
+        infinity_mass,
+        negative_infinity_mass,
+        max_grid_size,
+        right_tail_budget: 0.0,
+        left_tail_budget: 0.0,
+    })
+}
+
+/// Exact prefix PLD for the first `released_steps` of a 1-out-of-`total_steps`
+/// Gaussian random allocation.
+pub fn random_allocation_gaussian_prefix_pld(
+    noise_multiplier: f64,
+    total_steps: usize,
+    released_steps: usize,
+    config: &DiscretizationConfig,
+) -> Result<PrivacyLossDistribution> {
+    validate_prefix_params(noise_multiplier, total_steps, released_steps)?;
+    if released_steps == total_steps {
+        return random_allocation_gaussian_pld(noise_multiplier, total_steps, 1, config);
+    }
+
+    let loss = NormalLoss::gaussian(noise_multiplier);
+    let neg_dual = NormalLoss::gaussian_neg_dual(noise_multiplier);
+    let acc = Accuracy::derive(&loss, config, released_steps);
+    let l = disc_dist(&loss, acc.alpha, acc.beta, config.max_grid_size)?;
+    let d = disc_dist(&neg_dual, acc.alpha, acc.beta, config.max_grid_size)?;
+    let e_l = GeomPmf::from_pmf_exp(&l)?;
+    let e_d = GeomPmf::from_pmf_exp(&d)?;
+    let inactive = total_steps - released_steps;
+
+    let q_sum = e_d
+        .self_conv(released_steps, Rounding::Up)?
+        .add_constant(inactive as f64, Rounding::Up)?;
+    let active_sum = if released_steps == 1 {
+        e_l
+    } else {
+        e_d.self_conv(released_steps - 1, Rounding::Up)?
+            .conv(&e_l, Rounding::Up)?
+    }
+    .add_constant(inactive as f64, Rounding::Up)?;
+
+    let pmf_q = q_sum.into_pmf_log(
+        total_steps as f64,
+        config.discretization,
+        config.max_grid_size,
+        Rounding::Up,
+    )?;
+    let pmf_active = active_sum.into_pmf_log(
+        total_steps as f64,
+        config.discretization,
+        config.max_grid_size,
+        Rounding::Up,
+    )?;
+    let lambda = released_steps as f64 / total_steps as f64;
+    let pmf_remove = weighted_mix_pmfs(&[(1.0 - lambda, pmf_q), (lambda, pmf_active)])?;
+
+    let add_sum = GeomPmf::from_pmf_exp_neg(&l)?
+        .self_conv(released_steps, Rounding::Down)?
+        .add_constant(inactive as f64, Rounding::Down)?;
+    let pmf_add = add_sum.into_pmf_neg_log(
+        total_steps as f64,
+        config.discretization,
+        config.max_grid_size,
+        Rounding::Up,
+    )?;
+    let tail = config.tail_mass_truncation / 2.0;
+    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add).with_tail_budgets(tail, tail))
+}
+
+/// Conservative prefix PLD for global `k`-out-of-`t` Gaussian allocation.
+///
+/// The prefix participation count is hypergeometric: conditional on
+/// `released_steps` of the total `total_steps` having been released, the
+/// number of participations `j` follows Hyp(`total_steps`,
+/// `total_participations`, `released_steps`).
+///
+/// For `total_participations == 1`: delegates to
+/// `random_allocation_gaussian_prefix_pld` (exact).
+///
+/// For `total_participations > 1` with `released_steps < total_steps`: bounds
+/// by monotonicity — evaluates `random_allocation_gaussian_pld(σ,
+/// released_steps, cap)` where `cap` is the largest likely support point of
+/// the hypergeometric distribution (after trimming a small tail) and folds in
+/// the trimmed mass as a failure probability.  This bound can be significantly
+/// over-conservative for small `released_steps / total_steps` ratios; the
+/// Python wrapper snaps `k > 1` prefix queries to the full-horizon block bound
+/// instead, which is only 3–45 % conservative.
+pub fn k_out_of_t_gaussian_prefix_pld(
+    noise_multiplier: f64,
+    total_steps: usize,
+    total_participations: usize,
+    released_steps: usize,
+    config: &DiscretizationConfig,
+) -> Result<PrivacyLossDistribution> {
+    validate_prefix_params(noise_multiplier, total_steps, released_steps)?;
+    if total_participations == 0 || total_participations > total_steps {
+        return Err(PldError::InvalidParameter(format!(
+            "total_participations must be in [1, total_steps={total_steps}], got {total_participations}"
+        )));
+    }
+    if released_steps == total_steps {
+        return random_allocation_gaussian_pld(
+            noise_multiplier,
+            total_steps,
+            total_participations,
+            config,
+        );
+    }
+    if total_participations == 1 {
+        return random_allocation_gaussian_prefix_pld(
+            noise_multiplier,
+            total_steps,
+            released_steps,
+            config,
+        );
+    }
+
+    let probabilities: Vec<(usize, f64)> =
+        hypergeometric_log_weights(total_steps, total_participations, released_steps)
+            .into_iter()
+            .map(|(j, log_weight)| (j, log_weight.exp()))
+            .collect();
+    let tail_target = config.tail_mass_truncation / 2.0;
+    let mut tail_mass = 0.0;
+    let mut cap = probabilities.last().unwrap().0;
+    for (j, probability) in probabilities.iter().rev() {
+        if tail_mass + probability > tail_target {
+            cap = *j;
+            break;
+        }
+        tail_mass += probability;
+    }
+    cap = cap.max(1);
+    let pld = random_allocation_gaussian_pld(noise_multiplier, released_steps, cap, config)?;
+    Ok(add_failure_probability(pld, tail_mass))
+}
+
+fn add_failure_probability(
+    mut pld: PrivacyLossDistribution,
+    failure_probability: f64,
+) -> PrivacyLossDistribution {
+    if failure_probability <= 0.0 {
+        return pld;
+    }
+    let head_mass = 1.0 - failure_probability;
+    let update = |pmf: &mut Pmf| {
+        for probability in &mut pmf.probs {
+            *probability *= head_mass;
+        }
+        pmf.negative_infinity_mass *= head_mass;
+        pmf.infinity_mass = head_mass * pmf.infinity_mass + failure_probability;
+    };
+    update(&mut pld.pmf_remove);
+    if let Some(pmf_add) = &mut pld.pmf_add {
+        update(pmf_add);
+    }
+    pld
+}
+
+fn hypergeometric_log_weights(
+    population: usize,
+    successes: usize,
+    draws: usize,
+) -> Vec<(usize, f64)> {
+    let j_min = successes.saturating_sub(population - draws);
+    let j_max = successes.min(draws);
+    let denominator = log_binomial(population, successes);
+    (j_min..=j_max)
+        .map(|j| {
+            (
+                j,
+                log_binomial(draws, j) + log_binomial(population - draws, successes - j)
+                    - denominator,
+            )
+        })
+        .collect()
+}
+
+fn log_binomial(n: usize, k: usize) -> f64 {
+    if k > n {
+        return f64::NEG_INFINITY;
+    }
+    let k = k.min(n - k);
+    (1..=k)
+        .map(|i| ((n - k + i) as f64).ln() - (i as f64).ln())
+        .sum()
+}
+
+fn validate_prefix_params(
+    noise_multiplier: f64,
+    total_steps: usize,
+    released_steps: usize,
+) -> Result<()> {
+    if noise_multiplier.is_nan() || noise_multiplier <= 0.0 {
+        return Err(PldError::InvalidParameter(format!(
+            "noise_multiplier must be > 0, got {noise_multiplier}"
+        )));
+    }
+    if total_steps == 0 {
+        return Err(PldError::InvalidParameter(
+            "total_steps must be >= 1".into(),
+        ));
+    }
+    if released_steps == 0 || released_steps > total_steps {
+        return Err(PldError::InvalidParameter(format!(
+            "released_steps must be in [1, total_steps={total_steps}], got {released_steps}"
+        )));
+    }
+    Ok(())
 }
 
 /// PLD of `k`-out-of-`t` random allocation applied to the Gaussian mechanism.
@@ -258,6 +534,60 @@ mod tests {
             .unwrap()
             .epsilon_at(1e-8);
         assert!(b < a, "more noise should lower eps: {} vs {}", b, a);
+    }
+
+    #[test]
+    fn test_prefix_endpoints_and_monotonicity() {
+        let c = cfg();
+        let sigma = 1.0;
+        let t = 8;
+        let full = random_allocation_gaussian_pld(sigma, t, 1, &c)
+            .unwrap()
+            .epsilon_at(1e-8);
+        let mut prev = 0.0;
+        for released in 1..=t {
+            let eps = random_allocation_gaussian_prefix_pld(sigma, t, released, &c)
+                .unwrap()
+                .epsilon_at(1e-8);
+            assert!(eps >= prev - 1e-9, "{released}: {eps} < {prev}");
+            assert!(eps <= full + 1e-9, "{released}: {eps} > {full}");
+            prev = eps;
+        }
+        assert!((prev - full).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_one_step_prefix_matches_poisson() {
+        let c = cfg();
+        for &(sigma, total) in &[(1.0, 8_usize), (2.0, 16)] {
+            let prefix = random_allocation_gaussian_prefix_pld(sigma, total, 1, &c)
+                .unwrap()
+                .epsilon_at(1e-8);
+            let poisson = poisson_gaussian_pld(sigma, 1.0 / total as f64, &c)
+                .unwrap()
+                .epsilon_at(1e-8);
+            assert!(
+                (prefix - poisson).abs() < 2e-3,
+                "sigma={sigma}, total={total}: {prefix} vs {poisson}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_k_out_of_t_prefix_is_finite_and_matches_full_horizon() {
+        let c = cfg();
+        let mut last = 0.0;
+        for released in 1..=6 {
+            let epsilon = k_out_of_t_gaussian_prefix_pld(1.5, 6, 2, released, &c)
+                .unwrap()
+                .epsilon_at(1e-6);
+            assert!(epsilon.is_finite() && epsilon > 0.0);
+            last = epsilon;
+        }
+        let full = random_allocation_gaussian_pld(1.5, 6, 2, &c)
+            .unwrap()
+            .epsilon_at(1e-6);
+        assert!((last - full).abs() < 1e-9);
     }
 
     /// Golden values, cross-validated against an independent Python

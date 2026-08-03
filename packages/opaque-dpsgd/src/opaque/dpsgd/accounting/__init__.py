@@ -10,6 +10,7 @@ Mechanisms (in :mod:`opaque.dpsgd.accounting.mechanisms`):
 
 Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
+- :func:`k_out_of_t` — global balanced allocation over a declared horizon.
 - :func:`poisson` — Poisson subsampling. Set ``truncated_batch_size``
   and ``dataset_size`` together for the truncated-Poisson production form.
 - :func:`parallel_poisson` — Poisson subsampling under parallel workers.
@@ -18,9 +19,9 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
 :func:`poisson` and :func:`parallel_poisson` return a **per-step**
 :class:`DpProcess`; compose externally with ``* num_steps`` for
-full-training privacy.  :func:`random_allocation` is the exception — it
-returns a **per-epoch** process covering ``num_bins`` steps, so compose it
-with ``* num_epochs``.
+full-training privacy. Allocation factories return
+:class:`opaque.accounting.types.DpHorizonProcess` objects and expose prefix
+privacy via ``pld_at`` / :func:`opaque.accounting.per_step`.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`
@@ -39,6 +40,7 @@ Example::
 from opaque.api.accounting.dpsgd import (
     adaclip,
     gaussian,
+    k_out_of_t,
     parallel_poisson,
     poisson,
     random_allocation,
@@ -47,6 +49,7 @@ from opaque.api.accounting.dpsgd import (
 __all__ = [
     "adaclip",
     "gaussian",
+    "k_out_of_t",
     "parallel_poisson",
     "poisson",
     "random_allocation",

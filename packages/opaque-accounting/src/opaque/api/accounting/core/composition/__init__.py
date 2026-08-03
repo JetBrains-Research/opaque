@@ -18,6 +18,7 @@ from opaque.api.accounting.core.composition._cached import cached
 from opaque.api.accounting.core.composition._composed import (
     Composed,  # noqa: F401  -- register in _PROCESS_REGISTRY
 )
+from opaque.api.accounting.core.composition._per_step import per_step
 from opaque.api.accounting.core.composition._repeated import (
     Repeated,  # noqa: F401  -- register in _PROCESS_REGISTRY
 )
@@ -70,4 +71,4 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
     return left | right
 
 
-__all__ = ["cached", "compose", "repeat"]
+__all__ = ["cached", "compose", "per_step", "repeat"]

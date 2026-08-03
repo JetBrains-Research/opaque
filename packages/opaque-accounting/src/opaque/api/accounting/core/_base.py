@@ -91,7 +91,7 @@ class DpProcess(ABC):
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Auto-register concrete dataclass subclasses in the global registry.
 
-        Skips abstract intermediates (``DpFtrlProcess`` etc.) that aren't
+        Skips abstract intermediates (``DpHorizonProcess`` etc.) that aren't
         dataclasses — they have no fields to serialize and can't be
         instantiated anyway.
         """
