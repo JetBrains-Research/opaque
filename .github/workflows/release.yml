@@ -258,9 +258,33 @@ jobs:
       - name: Validate internal opaque pins
         run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
+  validate-accounting-artifacts:
+    name: Validate accounting artifact policy
+    needs: [build-native-wheels, build-accounting-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download accounting artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: wheels-opaque-accounting-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Validate accounting artifact policy
+        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist, validate-release-wheels]
+    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist, validate-release-wheels, validate-accounting-artifacts]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

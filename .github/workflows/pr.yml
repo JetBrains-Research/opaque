@@ -502,9 +502,30 @@ jobs:
       - name: Validate internal opaque pins
         run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
+  validate-accounting-artifacts:
+    name: Validate accounting artifact policy
+    needs: [build-preview-native, build-preview-accounting-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download accounting artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: preview-wheels-opaque-accounting-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Validate accounting artifact policy
+        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-opaque, build-preview-native, build-preview-accounting-sdist, validate-preview-wheels]
+    needs: [build-preview-python, build-preview-opaque, build-preview-native, build-preview-accounting-sdist, validate-preview-wheels, validate-accounting-artifacts]
     runs-on: ubuntu-latest
     steps:
       # Best-effort: merge the per-package wheels into one artifact and delete
