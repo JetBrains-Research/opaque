@@ -7,5 +7,3 @@ opaque.accounting.per_step in new code.
 """
 
 from opaque.api.accounting.core.composition._per_step import PerStep, per_step
-
-__all__ = ["PerStep", "per_step"]
