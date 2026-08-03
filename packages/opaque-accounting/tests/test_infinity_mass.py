@@ -1,10 +1,10 @@
 """Tests for ``Pld.infinity_mass`` — the δ floor observable.
 
 After enough compositions, ``delta_at(large_epsilon) == infinity_mass``
-because the tail-truncation budget (``tail_mass_truncation / 2``) is absorbed
-into ``infinity_mass`` by successive ``self_compose`` calls.  This verifies
-that the floor is correctly reflected in the property across all four
-amplification paths that set tail budgets.
+because the tail-truncation budget (``tail_mass_truncation/2``) is absorbed
+into ``infinity_mass`` by successive ``self_compose`` calls.  Tests cover
+both symmetric (``gaussian_pld``) and asymmetric (``poisson_gaussian_pld``)
+PLDs to exercise the worst-case-over-adjacencies path.
 """
 
 from __future__ import annotations
@@ -60,3 +60,23 @@ def test_infinity_mass_increases_monotonically_with_composition():
         composed = base.self_compose(k)
         assert composed.infinity_mass >= prev
         prev = composed.infinity_mass
+
+
+def test_infinity_mass_asymmetric_pld_worst_case():
+    """Poisson-subsampled PLD is asymmetric; infinity_mass must reflect the
+    worst-case adjacency (max over remove/add) and still saturate at the floor."""
+    from opaque.api.accounting.core.opaque_accounting import (
+        DiscretizationConfig,
+        poisson_gaussian_pld,
+    )
+
+    config = DiscretizationConfig(tail_mass_truncation=TAIL_MASS_TRUNCATION)
+    pld = poisson_gaussian_pld(1.1, 0.01, config)
+    composed = pld.self_compose(20)
+    floor = composed.infinity_mass
+    assert floor == pytest.approx(EXPECTED_FLOOR, rel=1e-3)
+    # delta_at a large epsilon equals infinity_mass
+    assert composed.delta_at(100.0) == pytest.approx(floor, rel=1e-6)
+    # delta_at(ε) >= infinity_mass for all ε
+    for epsilon in [0.0, 0.5, 2.0, 50.0]:
+        assert composed.delta_at(epsilon) >= floor - 1e-30
