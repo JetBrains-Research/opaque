@@ -44,6 +44,10 @@ impl PyPld {
 
     /// Smallest delta achieving (epsilon, delta)-DP.
     ///
+    /// Always returns at least ``infinity_mass``; if the returned value equals
+    /// ``infinity_mass``, the tail-truncation budget is exhausted and the true
+    /// δ may be smaller than what is reported.
+    ///
     /// Args:
     ///     epsilon (float): Privacy budget. Must be >= 0.
     ///
@@ -52,6 +56,16 @@ impl PyPld {
     #[pyo3(text_signature = "(self, epsilon)")]
     fn delta_at(&self, epsilon: f64) -> f64 {
         self.inner.delta_at(epsilon)
+    }
+
+    /// Worst-case infinity mass over both adjacency types.
+    ///
+    /// ``delta_at(ε)`` is always ≥ ``infinity_mass``; equality means the
+    /// configured tail-truncation budget is exhausted and the true δ may be
+    /// smaller.
+    #[getter]
+    fn infinity_mass(&self) -> f64 {
+        self.inner.infinity_mass()
     }
 
     /// Total-variation advantage.

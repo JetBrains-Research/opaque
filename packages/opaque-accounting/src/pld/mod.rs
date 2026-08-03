@@ -211,6 +211,15 @@ impl PrivacyLossDistribution {
         metrics::delta(self, epsilon).clamp(0.0, 1.0)
     }
 
+    /// Worst-case infinity mass over both adjacency types.
+    ///
+    /// `delta_at(ε)` is always ≥ `infinity_mass`; if the two values are equal,
+    /// the configured tail truncation budget has been exhausted and the true δ
+    /// may be smaller than what is returned.
+    pub fn infinity_mass(&self) -> f64 {
+        metrics::infinity_mass(self)
+    }
+
     /// Get epsilon for a given delta
     ///
     /// Computes the minimum ε such that the mechanism is (ε, δ)-DP.
