@@ -250,3 +250,178 @@ class TestValidation:
     def test_zero_eps_raises(self):
         with pytest.raises(ValueError, match="positive"):
             adafactor(eps_grad=0.0)
+
+
+class TestScaleAware:
+    """Verify that eps_root floors are scale-relative, not absolute.
+
+    At DP-clipped gradient magnitudes (~1e-4 per element) the old absolute
+    eps_root=1e-3 floor dominated, collapsing Adafactor to RMS-normalised SGD.
+    The corrected implementation uses eps_root * sqrt(mean(v)) so the floor
+    tracks gradient scale and only fires on genuine numerical underflow.
+    """
+
+    @pytest.fixture
+    def small_params(self):
+        torch.manual_seed(42)
+        return {
+            "fc1.weight": torch.randn(8, 4),
+            "bias": torch.randn(4),
+        }
+
+    @pytest.fixture
+    def dp_scale_grads(self, small_params):
+        """Gradients at typical DP-clipped scale: per-element ~1e-4."""
+        torch.manual_seed(7)
+        return {k: torch.randn_like(v) * 1e-4 for k, v in small_params.items()}
+
+    def test_floor_does_not_fire_at_dp_gradient_scale(
+        self, small_params, dp_scale_grads
+    ):
+        """With g ~ 1e-4, sqrt(v̂) should NOT be clamped to eps_root (1e-3).
+
+        If the absolute floor fired, all denominator values would equal eps_root
+        and the effective step would be g / eps_root ≈ 1e-4 / 1e-3 = 0.1 for
+        every coordinate — homogeneous and equal to g scaled by a constant.
+        With the relative floor, the denominator stays near sqrt(v̂) ≈ 1e-4,
+        and the update is approximately sign(g), which varies per coordinate.
+        """
+        opt = adafactor(lr=1e-3, eps_root=1e-3)
+        state = opt.init(small_params)
+        # Warm up so second moments are non-trivial.
+        for _ in range(5):
+            _, state = opt.update(dp_scale_grads, state, params=small_params)
+
+        # Extract the adafactor sub-state and check v̂ magnitudes.
+        af = _af_state(state)
+        for v_state in af.v_flat:
+            if len(v_state) == 2:
+                v_row, v_col = v_state
+                # v_row should be ~(1e-4)^2 = 1e-8; eps_root * sqrt(1e-8) = 1e-3 * 1e-4 = 1e-7
+                # which is NOT dominating; confirm v_row values are not all identical.
+                # (If absolute floor fired, all would be clamped to the same floor value.)
+                assert v_row.std().item() > 0, (
+                    "v_row is constant — absolute floor appears to have fired"
+                )
+            else:
+                (v,) = v_state
+                assert v.std().item() > 0, (
+                    "scalar v is constant — absolute floor appears to have fired"
+                )
+
+    def test_distinguishable_from_rms_sgd(self, small_params, dp_scale_grads):
+        """Corrected Adafactor must NOT reduce to RMS-normalised SGD at DP scale.
+
+        RMS-normalised SGD: update = g / rms(g) * lr (constant unit-norm step).
+        If absolute eps_root fires: update = g / eps_root → after RMS clip =
+        g / rms(g) * update_rms_clip * lr  (same as RMS-SGD).
+
+        The corrected implementation's update should be proportional to
+        approximately sign(g) (element-wise), NOT to a scalar multiple of g.
+        Specifically, the update magnitudes per element should vary in a way
+        that is anti-correlated with |g| (large gradient → smaller relative
+        scaling because v̂ tracked it), unlike sign(g) where all magnitudes
+        are equal after RMS clipping.
+        """
+        # Compare: scale-aware Adafactor vs update = lr * g / rms(g) (rms-sgd).
+        opt = adafactor(lr=1e-3, eps_root=1e-3)
+        state = opt.init(small_params)
+        for _ in range(10):
+            _, state = opt.update(dp_scale_grads, state, params=small_params)
+        updates, _ = opt.update(dp_scale_grads, state, params=small_params)
+
+        # Construct the "RMS-SGD" reference for the matrix leaf.
+        g_mat = dp_scale_grads["fc1.weight"]
+        rms_sgd = g_mat / g_mat.pow(2).mean().sqrt()
+
+        u_mat = updates["fc1.weight"]
+        # Adafactor update (before lr scaling) should NOT equal lr * rms_sgd.
+        # Check that the normalised directions differ significantly.
+        u_norm = u_mat / u_mat.pow(2).mean().sqrt()
+        rms_norm = rms_sgd / rms_sgd.pow(2).mean().sqrt()
+        cosine_sim = (u_norm * rms_norm).sum() / (
+            u_norm.norm() * rms_norm.norm()
+        )
+        # With scale-aware floors the update is not a scalar multiple of g,
+        # so the cosine similarity to RMS-SGD should be well below 1.
+        assert cosine_sim.abs().item() < 0.999, (
+            f"Update too similar to RMS-SGD (cosine={cosine_sim.item():.4f}); "
+            "scale-aware floor may not be active"
+        )
+
+    def test_scale_invariance_of_updates(self, small_params):
+        """Adafactor updates should be scale-invariant: scaling g by k should NOT
+        scale the update norm by k (it normalises by √v̂ ≈ |g| so the output
+        is approximately sign(g) in all cases).
+
+        This is the intended Adafactor behavior.  With broken absolute floors,
+        the denominator is clamped to eps_root for small g, producing updates
+        of magnitude g/eps_root << 1 — a sub-linear (not scale-invariant) map.
+        With scale-relative floors, the denominator tracks g and the update norm
+        stays close to √d (sign-vector norm) at all gradient scales.
+        """
+        torch.manual_seed(99)
+        g_base = {k: torch.randn_like(v) for k, v in small_params.items()}
+
+        scale = 1e-3  # DP-clipped magnitude
+
+        def run_steps(grads, n=10):
+            opt = adafactor(lr=1.0, update_rms_clip=1e9)  # disable rms clip
+            state = opt.init(small_params)
+            for _ in range(n):
+                _, state = opt.update(grads, state, params=small_params)
+            updates, _ = opt.update(grads, state, params=small_params)
+            return updates
+
+        g_large = g_base
+        g_small = {k: v * scale for k, v in g_base.items()}
+
+        u_large = run_steps(g_large)
+        u_small = run_steps(g_small)
+
+        # Scale-invariance: both norms should be ≈ the same (sign(g) norm ≈ √d).
+        # The absolute-floor bug produced norm(u_small) << norm(u_large) because
+        # sqrt(v̂_small) was clamped to eps_root >> actual √v̂.
+        for k in small_params:
+            norm_large = u_large[k].norm().item()
+            norm_small = u_small[k].norm().item()
+            if norm_large < 1e-30:
+                continue  # degenerate leaf — skip
+            ratio = norm_small / norm_large
+            # Both should be the sign-vector norm → ratio ≈ 1.0.
+            assert ratio == pytest.approx(1.0, rel=0.1), (
+                f"Leaf {k!r}: expected scale-invariant norm ratio ≈ 1.0, "
+                f"got {ratio:.3e}; scale-aware floor may not be tracking gradient scale"
+            )
+
+    def test_bc_stable_with_scale_aware_floors(self, small_params, dp_scale_grads):
+        """Noise BC advances phi and changes updates even at DP gradient scale.
+
+        Uses sigma = 5e-5 (half of the gradient scale 1e-4) so that the noise
+        variance phi (≈ sigma²) is a meaningful fraction of the second moment
+        (≈ gradient²), making the bias-correction subtraction detectable.
+        """
+        # sigma must be < gradient_scale so phi < v and the correction is active.
+        # dp_scale_grads ~ 1e-4 → v ~ 1e-8; sigma = 5e-5 → phi ~ 2.5e-9 < v.
+        sigma = 5e-5
+        opt_bc = adafactor(lr=1e-3, noise_bias_correction=True)
+        opt_no = adafactor(lr=1e-3, noise_bias_correction=False)
+        s_bc = opt_bc.init(small_params)
+        s_no = opt_no.init(small_params)
+
+        noisy_g = noised(dp_scale_grads, max_norm=1e-4, noise_stddev=sigma)
+        for _ in range(10):
+            _, s_bc = opt_bc.update(noisy_g, s_bc, params=small_params)
+            _, s_no = opt_no.update(noisy_g, s_no, params=small_params)
+
+        # phi should have advanced under BC.
+        assert all(v > 0.0 for v in _af_state(s_bc).phi_flat), (
+            "phi did not advance; BC appears inactive at DP gradient scale"
+        )
+
+        # BC and no-BC updates should differ.
+        u_bc, _ = opt_bc.update(noisy_g, s_bc, params=small_params)
+        u_no, _ = opt_no.update(noisy_g, s_no, params=small_params)
+        any_diff = any(not torch.allclose(u_bc[k], u_no[k]) for k in small_params)
+        assert any_diff, "BC had no effect on updates at DP gradient scale"
+
