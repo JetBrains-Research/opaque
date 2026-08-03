@@ -65,15 +65,16 @@ def test_truncated_poisson_state_dict_structure():
 
 
 def test_random_allocation_state_dict_structure():
-    proc = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16)
+    proc = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16, n_steps=64)
     state = cast(dict, state_dict(proc))
     assert state["type"] == "RandomAllocation"
     assert state["num_bins"] == 16
+    assert state["n_steps"] == 64
     assert state["inner"]["type"] == "Gaussian"
 
 
 def test_random_allocation_round_trip():
-    proc = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16)
+    proc = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16, n_steps=64)
     restored = from_state_dict(_PROCESS_TEMPLATE, state_dict(proc))
     assert isinstance(restored, RandomAllocation)
     assert restored == proc

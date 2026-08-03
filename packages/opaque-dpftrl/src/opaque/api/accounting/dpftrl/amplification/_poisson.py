@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core.discretization import get_discretization
-from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
@@ -38,7 +38,7 @@ _Inner = MfGaussian
 
 
 @dataclass(frozen=True, slots=True)
-class CyclicPoisson(DpFtrlProcess):
+class CyclicPoisson(DpHorizonProcess):
     """Poisson-amplified MF mechanism — total privacy cost over ``n_steps``.
 
     For ``BandMfStrategy`` inner, ``num_groups = ceil(n_steps / bands)``
@@ -128,7 +128,7 @@ class CyclicPoisson(DpFtrlProcess):
                 )
 
     @functools.lru_cache(maxsize=8)
-    def _pld_at_horizon(
+    def pld_at(
         self,
         n_steps: int,
         *,
@@ -196,7 +196,7 @@ class CyclicPoisson(DpFtrlProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
     ) -> Pld:
-        return self._pld_at_horizon(
+        return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,

@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core.discretization import get_discretization
-from opaque.api.accounting.dpftrl._base import DpFtrlProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 
@@ -56,7 +56,7 @@ def participation_p_from_per_example_rate(p0: float, bands: int) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class BMinSep(DpFtrlProcess):
+class BMinSep(DpHorizonProcess):
     """Monte Carlo PLD for BandMF + warm-start b-min-sep subsampling."""
 
     inner: _Inner
@@ -96,7 +96,7 @@ class BMinSep(DpFtrlProcess):
         return participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)
 
     @functools.lru_cache(maxsize=8)
-    def _pld_at_horizon(
+    def pld_at(
         self,
         n_steps: int,
         *,
@@ -195,7 +195,7 @@ class BMinSep(DpFtrlProcess):
         seed: int | None = None,
     ) -> Pld:
         """Return a point estimate, not an upper confidence bound."""
-        return self._pld_at_horizon(
+        return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,

@@ -1,14 +1,14 @@
-"""Contract tests for :class:`PerStep` / :func:`per_step`.
+"""Contract tests for :class:`PerStep` / :func:`opaque.accounting.per_step`.
 
-``PerStep`` wraps a whole-process :class:`DpFtrlProcess` so the K-fold
-:class:`Repeated` node materialises as ``proc._pld_at_horizon(K)`` (the
+``PerStep`` wraps a whole-process :class:`DpHorizonProcess` so the K-fold
+:class:`Repeated` node materialises as ``proc.pld_at(K)`` (the
 K-prefix bound on the deployed N-step mechanism) rather than the K-fold
 self-composition of a single-step PLD.
 
 These tests cover the contract:
 
-- ``PerStep(proc).pld() == proc._pld_at_horizon(1)``.
-- ``Repeated(PerStep(proc), K).pld() == proc._pld_at_horizon(K)`` for
+- ``PerStep(proc).pld() == proc.pld_at(1)``.
+- ``Repeated(PerStep(proc), K).pld() == proc.pld_at(K)`` for
   any 1 ≤ K ≤ ``n_steps``.
 - ``Repeated(PerStep(proc), n_steps).pld() == proc.pld()`` (full-process
   equivalence).
@@ -28,8 +28,8 @@ import pytest
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
+from opaque.api.accounting.core.composition._per_step import PerStep
 from opaque.api.accounting.core.composition.types import Repeated
-from opaque.api.accounting.dpftrl.composition import PerStep
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     blt_strategy,
@@ -39,7 +39,8 @@ from opaque.dpftrl.noise import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from opaque.dpftrl.accounting.types import DpFtrlProcess
+    from opaque.api.accounting.core._horizon import DpHorizonProcess
+
 
 _DELTA = 1e-5
 _MC_KW = {"num_mc_samples": 4000, "seed": 17}
@@ -52,10 +53,10 @@ _MC_KW = {"num_mc_samples": 4000, "seed": 17}
 
 class TestPerStepDeterministic:
     """Exact equivalences between ``PerStep`` materialisation and
-    ``proc._pld_at_horizon(K)`` on a non-MC path.
+    ``proc.pld_at(K)`` on a non-MC path.
     """
 
-    def _proc(self, n_steps: int = 100) -> DpFtrlProcess:
+    def _proc(self, n_steps: int = 100) -> DpHorizonProcess:
         return ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, identity_strategy()),
             sample_rate=0.01,
@@ -64,32 +65,32 @@ class TestPerStepDeterministic:
 
     def test_factory_returns_per_step(self):
         proc = self._proc()
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         assert isinstance(step, PerStep)
-        assert step.proc is proc
+        assert step.process is proc
 
-    def test_factory_rejects_non_dpftrl(self):
-        with pytest.raises(TypeError, match="DpFtrlProcess"):
-            ftrl_acc.per_step(acc.identity())
+    def test_factory_rejects_non_horizon_process(self):
+        with pytest.raises(TypeError, match="DpHorizonProcess"):
+            acc.per_step(acc.identity())
 
     def test_pld_equals_pld_at_horizon_1(self):
         proc = self._proc(100)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_step = step.epsilon_at(_DELTA)
-        e_at_1 = proc._pld_at_horizon(1).epsilon_at(_DELTA)
+        e_at_1 = proc.pld_at(1).epsilon_at(_DELTA)
         assert math.isclose(e_step, e_at_1, rel_tol=1e-9)
 
     @pytest.mark.parametrize("K", [1, 2, 7, 50, 99])
     def test_repeated_equals_pld_at_horizon_K(self, K: int):
         proc = self._proc(100)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_repeated = (step * K).epsilon_at(_DELTA)
-        e_at_K = proc._pld_at_horizon(K).epsilon_at(_DELTA)
+        e_at_K = proc.pld_at(K).epsilon_at(_DELTA)
         assert math.isclose(e_repeated, e_at_K, rel_tol=1e-9)
 
     def test_full_horizon_equals_full_proc(self):
         proc = self._proc(100)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_full_step = (step * 100).epsilon_at(_DELTA)
         e_full_proc = proc.epsilon_at(_DELTA)
         assert math.isclose(e_full_step, e_full_proc, rel_tol=1e-9)
@@ -101,7 +102,7 @@ class TestPerStepDeterministic:
 
 
 class TestPerStepAccountant:
-    def _proc(self, n_steps: int = 50) -> DpFtrlProcess:
+    def _proc(self, n_steps: int = 50) -> DpHorizonProcess:
         return ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, identity_strategy()),
             sample_rate=0.01,
@@ -110,7 +111,7 @@ class TestPerStepAccountant:
 
     def test_loop_matches_explicit_repeat(self):
         proc = self._proc(50)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
 
         loop_acc = Accountant()
         for _ in range(50):
@@ -127,7 +128,7 @@ class TestPerStepAccountant:
 
     def test_loop_matches_full_proc(self):
         proc = self._proc(50)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
 
         loop_acc = Accountant()
         for _ in range(50):
@@ -146,7 +147,7 @@ class TestPerStepAccountant:
 
     def test_merge_collapses_to_repeated(self):
         proc = self._proc(50)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         # Two ``|`` compositions of the same leaf collapse via merge.
         composed = step | step
         assert isinstance(composed, Repeated)
@@ -155,12 +156,12 @@ class TestPerStepAccountant:
 
 
 # ---------------------------------------------------------------------------
-# Overflow and heterogeneous mixing: errors raised at the right boundary.
+# Overflow and heterogeneous mixing.
 # ---------------------------------------------------------------------------
 
 
 class TestPerStepErrors:
-    def _proc(self, n_steps: int = 50, nm: float = 1.0) -> DpFtrlProcess:
+    def _proc(self, n_steps: int = 50, nm: float = 1.0) -> DpHorizonProcess:
         return ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(nm, identity_strategy()),
             sample_rate=0.01,
@@ -169,17 +170,17 @@ class TestPerStepErrors:
 
     def test_overflow_at_materialisation(self):
         proc = self._proc(50)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         # The Repeated node builds fine; the raise happens at .pld() /
-        # .epsilon_at() when ``_pld_at_horizon(count)`` is called.
+        # .epsilon_at() when ``pld_at(count)`` is called.
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 51).epsilon_at(_DELTA)
 
-    def test_heterogeneous_compose_raises(self):
-        step_a = ftrl_acc.per_step(self._proc(nm=1.0))
-        step_b = ftrl_acc.per_step(self._proc(nm=2.0))
-        with pytest.raises(ValueError, match="different process"):
-            step_a | step_b
+    def test_heterogeneous_compose_preserves_both_processes(self):
+        step_a = acc.per_step(self._proc(nm=1.0))
+        step_b = acc.per_step(self._proc(nm=2.0))
+        composed = step_a | step_b
+        assert math.isfinite(composed.epsilon_at(_DELTA))
 
     def test_distinct_objects_with_equal_fields_still_compose(self):
         # Structural equality, not identity: two separately-constructed procs
@@ -189,23 +190,23 @@ class TestPerStepErrors:
         proc_b = self._proc(nm=1.0)
         assert proc_a == proc_b
         assert proc_a is not proc_b
-        step_a = ftrl_acc.per_step(proc_a)
-        step_b = ftrl_acc.per_step(proc_b)
+        step_a = acc.per_step(proc_a)
+        step_b = acc.per_step(proc_b)
         result = step_a | step_b
         assert isinstance(result, Repeated)
         assert result.count == 2
 
     def test_same_proc_object_composes(self):
         proc = self._proc(nm=1.0)
-        step_a = ftrl_acc.per_step(proc)
-        step_b = ftrl_acc.per_step(proc)
+        step_a = acc.per_step(proc)
+        step_b = acc.per_step(proc)
         result = step_a | step_b
         assert isinstance(result, Repeated)
         assert result.count == 2
 
     def test_zero_count_raises(self):
         proc = self._proc(50)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         # __mul__ rejects count < 1 at construction.
         with pytest.raises(ValueError, match="count must be >= 1"):
             step * 0
@@ -218,7 +219,7 @@ class TestPerStepErrors:
 # ---------------------------------------------------------------------------
 
 
-_AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
+_AMPLIFICATIONS: dict[str, tuple[Callable[..., DpHorizonProcess], bool]] = {
     "CyclicPoisson": (
         lambda: ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, identity_strategy()),
@@ -268,7 +269,7 @@ class TestPerStepCrossAmp:
     def test_repeated_at_full_horizon_matches_proc(self, amp: str):
         factory, _ = _AMPLIFICATIONS[amp]
         proc = factory()
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
 
         e_full_via_step = (step * proc.n_steps).epsilon_at(_DELTA)
         e_full_direct = proc.epsilon_at(_DELTA)
@@ -279,11 +280,11 @@ class TestPerStepCrossAmp:
         factory, _ = _AMPLIFICATIONS[amp]
         proc = factory()
         K = max(1, proc.n_steps // 2)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
 
         e_repeated = (step * K).epsilon_at(_DELTA)
-        e_at_K = proc._pld_at_horizon(K).epsilon_at(_DELTA)
-        # Both paths route through the same _pld_at_horizon(K) call
+        e_at_K = proc.pld_at(K).epsilon_at(_DELTA)
+        # Both paths route through the same pld_at(K) call
         # (PerStep.repeated_pld is exactly that), so deterministic
         # equivalence; MC paths use the same global seed.
         assert math.isclose(e_repeated, e_at_K, rel_tol=1e-9)
@@ -304,7 +305,7 @@ class TestCachedPerStepRepeatedPld:
     PLD) cannot mask a missing ``CachedProcess.repeated_pld`` relay.
     """
 
-    def _band_proc(self, *, n_steps: int = 128, bands: int = 16) -> DpFtrlProcess:
+    def _band_proc(self, *, n_steps: int = 128, bands: int = 16) -> DpHorizonProcess:
         return ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=bands)),
             sample_rate=0.01,
@@ -313,7 +314,7 @@ class TestCachedPerStepRepeatedPld:
 
     def test_cached_repeated_matches_uncached(self):
         proc = self._band_proc()
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         K = proc.n_steps
 
         e_uncached = (step * K).epsilon_at(_DELTA)
@@ -323,11 +324,11 @@ class TestCachedPerStepRepeatedPld:
     def test_cached_repeated_pld_is_horizon_not_self_compose(self):
         """Guard against the pre-fix failure mode (~2× inflated ε)."""
         proc = self._band_proc()
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         K = proc.n_steps
 
         e_cached = (acc.cached(step) * K).epsilon_at(_DELTA)
-        e_horizon = proc._pld_at_horizon(K).epsilon_at(_DELTA)
+        e_horizon = proc.pld_at(K).epsilon_at(_DELTA)
         # Wrong path would be step.pld().self_compose(K) ≈ 2× horizon.
         e_wrong = step.pld().self_compose(K).epsilon_at(_DELTA)
         assert math.isclose(e_cached, e_horizon, rel_tol=0.0, abs_tol=0.0)
@@ -340,13 +341,13 @@ class TestCachedPerStepRepeatedPld:
 
 
 class TestSerializationRegistryHardening:
-    """Abstract intermediates (``DpFtrlProcess``, etc.) are not dataclasses
+    """Abstract intermediates (``DpHorizonProcess``, etc.) are not dataclasses
     and have no fields to serialize; they must not pollute the registry."""
 
     def test_abstract_bases_not_registered(self):
         from opaque.api.accounting.core._base import _PROCESS_REGISTRY
 
-        assert "DpFtrlProcess" not in _PROCESS_REGISTRY
+        assert "DpHorizonProcess" not in _PROCESS_REGISTRY
         # Concrete classes still register normally.
         assert "CyclicPoisson" in _PROCESS_REGISTRY
         assert "BallsInBins" in _PROCESS_REGISTRY
