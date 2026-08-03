@@ -140,17 +140,89 @@ rm -f Cargo.toml.bak
 
 # --- opaque: pin sub-packages to the same version ---------------------------
 # The `opaque` distribution lives in the workspace-root pyproject.toml.
-# Use `%` as sed delimiter so regex alternation `|` doesn't collide.
-sed -i.bak -E \
-  -e "s%opaque-([a-z-]+)==0\.0\.0\.dev0%opaque-\1==$VERSION%g" \
-  -e "s%opaque-([a-z-]+)(\[[a-z,-]+\])==0\.0\.0\.dev0%opaque-\1\2==$VERSION%g" \
-  -e "s%opaque-([a-z-]+)>=0\.0\.0\.dev0%opaque-\1==$VERSION%g" \
-  -e "s%opaque-([a-z-]+)(\[[a-z,-]+\])>=0\.0\.0\.dev0%opaque-\1\2==$VERSION%g" \
-  pyproject.toml
-rm -f pyproject.toml.bak
+python3 - <<'PY' "$VERSION"
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+import tomllib
+
+
+VERSION = sys.argv[1]
+SENTINEL_SUFFIX = ">=0.0.0.dev0"
+ROOT_PYPROJECT = Path("pyproject.toml")
+
+PIN_TARGETS = (
+    (("project", "dependencies"), "opaque-engine>=0.0.0.dev0"),
+    (("project", "dependencies"), "opaque-accounting>=0.0.0.dev0"),
+    (("project", "dependencies"), "opaque-dpsgd>=0.0.0.dev0"),
+    (("project", "dependencies"), "opaque-optimizers>=0.0.0.dev0"),
+    (("project", "dependencies"), "opaque-patches>=0.0.0.dev0"),
+    (("project", "optional-dependencies", "auditing"), "opaque-auditing>=0.0.0.dev0"),
+    (("project", "optional-dependencies", "dpftrl"), "opaque-dpftrl>=0.0.0.dev0"),
+    (("project", "optional-dependencies", "alignment"), "opaque-alignment>=0.0.0.dev0"),
+    (("project", "optional-dependencies", "transformers"), "opaque-transformers>=0.0.0.dev0"),
+    (("project", "optional-dependencies", "transformers"), "opaque-patches[transformers]>=0.0.0.dev0"),
+)
+
+
+def project_list(data: dict[str, object], path: tuple[str, ...]) -> list[str]:
+    current: object = data
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            joined = ".".join(path)
+            raise SystemExit(f"ERROR: pyproject.toml is missing [{joined}]")
+        current = current[key]
+    if not isinstance(current, list):
+        joined = ".".join(path)
+        raise SystemExit(f"ERROR: pyproject.toml entry {joined} is not a list")
+    if any(not isinstance(item, str) for item in current):
+        joined = ".".join(path)
+        raise SystemExit(f"ERROR: pyproject.toml entry {joined} must contain only strings")
+    return current
+
+
+text = ROOT_PYPROJECT.read_text(encoding="utf-8")
+data = tomllib.loads(text)
+
+for path, sentinel in PIN_TARGETS:
+    items = project_list(data, path)
+    count = items.count(sentinel)
+    if count != 1:
+        joined = ".".join(path)
+        raise SystemExit(
+            f"ERROR: expected {sentinel!r} exactly once in {joined}, found {count}"
+        )
+    pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
+    quoted_sentinel = f'"{sentinel}"'
+    quoted_pinned = f'"{pinned}"'
+    if quoted_sentinel not in text:
+        raise SystemExit(
+            f"ERROR: {sentinel!r} is present in parsed metadata but missing from pyproject.toml text"
+        )
+    text = text.replace(quoted_sentinel, quoted_pinned, 1)
+
+updated = tomllib.loads(text)
+for path, sentinel in PIN_TARGETS:
+    items = project_list(updated, path)
+    pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
+    count = items.count(pinned)
+    if count != 1:
+        joined = ".".join(path)
+        raise SystemExit(
+            f"ERROR: expected pinned requirement {pinned!r} exactly once in {joined}, found {count}"
+        )
+    if sentinel in items:
+        joined = ".".join(path)
+        raise SystemExit(
+            f"ERROR: unreplaced sentinel {sentinel!r} remains in {joined}"
+        )
+
+ROOT_PYPROJECT.write_text(text, encoding="utf-8")
+PY
 
 echo "Updated version pins:"
-grep -E "^version = \"|opaque-[a-z-]+" packages/opaque-accounting/pyproject.toml packages/opaque-accounting/Cargo.toml pyproject.toml | sed 's|^|  |'
+grep -E "^version = \"|opaque-[a-z-]+" packages/opaque-accounting/pyproject.toml Cargo.toml pyproject.toml | sed 's|^|  |'
 
 # --- export for downstream build steps --------------------------------------
 # setuptools-scm would otherwise re-derive the version from the now-dirty
