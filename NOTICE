@@ -84,4 +84,5 @@ under the Apache License, Version 2.0. Simplified to drop bias /
 Kahan / VocabOrdering / dLSE / shift handling and adapted to Opaque's
 vmap-friendly autograd dispatch.
 
+  packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py
   packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py
