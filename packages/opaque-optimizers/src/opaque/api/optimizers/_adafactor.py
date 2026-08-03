@@ -130,8 +130,20 @@ def _approx_v_hat(
     Following Shazeer & Stern (2018, Algorithm 4).  The mean (rather
     than sum) keeps the factored estimate scale-invariant so the
     approximation matches the full second moment on rank-1 inputs.
+
+    The ``r_mean`` floor is **scale-relative**: ``eps_root`` is applied as a
+    fraction of ``mean(v_row)`` (the global scale of the row factor, which at
+    steady state tracks the gradient second moment).  This keeps the floor in
+    the same units as ``r_mean`` itself and prevents it from firing spuriously
+    when gradients are small in absolute terms (e.g. after DP clipping) while
+    still guarding against genuine numerical underflow.
     """
-    r_mean = v_row.mean(dim=-1, keepdim=True).clamp(min=eps_root)
+    r_mean = v_row.mean(dim=-1, keepdim=True)
+    # Scale-relative floor: eps_root * E[v_row].  At steady state
+    # E[v_row] ≈ E[g²], so the floor tracks the gradient second-moment scale.
+    # The inner clamp(1e-30) guards the initial step where v_row is all zeros.
+    v_row_scale = v_row.mean().clamp(min=1e-30)
+    r_mean = r_mean.clamp(min=eps_root * v_row_scale)
     return (v_row / r_mean).unsqueeze(-1) * v_col.unsqueeze(-2)
 
 
@@ -229,7 +241,11 @@ def _scale_by_adafactor(
                     v_row_eff = new_v_row
                     v_col_eff = new_v_col
                 v_hat = _approx_v_hat(v_row_eff, v_col_eff, eps_root)
-                update = g / v_hat.sqrt().clamp(min=eps_root)
+                # Scale-relative floor: eps_root as a fraction of √mean(v̂).
+                # Fires only when individual elements are eps_root² times smaller
+                # than the mean — genuine numerical underflow, not a scale mismatch.
+                v_hat_scale = v_hat.mean().clamp(min=1e-30).sqrt()
+                update = g / v_hat.sqrt().clamp(min=eps_root * v_hat_scale)
                 new_v_flat.append((new_v_row, new_v_col))
             else:
                 (v,) = v_state
@@ -239,7 +255,9 @@ def _scale_by_adafactor(
                     v_eff = torch.where(corr > 0, corr, new_v)
                 else:
                     v_eff = new_v
-                update = g / v_eff.sqrt().clamp(min=eps_root)
+                # Scale-relative floor: eps_root as a fraction of √mean(v_eff).
+                v_eff_scale = v_eff.mean().clamp(min=1e-30).sqrt()
+                update = g / v_eff.sqrt().clamp(min=eps_root * v_eff_scale)
                 new_v_flat.append((new_v,))
 
             # RMS clip (Adafactor's "update clipping").
@@ -299,8 +317,13 @@ def adafactor(
             decay slower with step.
         eps_grad: Stability constant added to ``g²`` before factoring;
             paper default 1e-30.
-        eps_root: Stability constant inside the ``√v̂`` denominator;
-            paper default 1e-3.
+        eps_root: Stability constant for the ``√v̂`` denominator floor; paper
+            default 1e-3.  The floor is **scale-relative**: it is applied as
+            ``eps_root × √mean(v̂)`` rather than as an absolute constant.  This
+            ensures the floor tracks the gradient scale and does not fire
+            spuriously when gradients are small in absolute magnitude (e.g.
+            after DP per-record clipping), which would otherwise reduce the
+            optimizer to RMS-normalised SGD.
         weight_decay: Decoupled weight-decay coefficient by default.
         update_rms_clip: RMS clip threshold on the moment-scaled update;
             paper default 1.0 (Adafactor bakes this in).
