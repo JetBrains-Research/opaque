@@ -239,15 +239,16 @@ def adaptive_clipped_grad(
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
         >>> from opaque.api.dpsgd.clipping import adaptive_clipped_grad
-        >>> from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state
         >>> from opaque.distributed import sum_gradients
+        >>> from opaque.distributed import sync
         >>> from opaque.random import key
         >>> from opaque.api.dpsgd.sampling import PoissonSampler
         >>>
-        >>> # Initialize distributed
+        >>> # Initialize distributed first (typically via torchrun).
         >>> dist.init_process_group(backend='nccl')
         >>>
-        >>> # Create adaptive clipping (local-only function)
+        >>> # Create adaptive clipping (local-only function).
+        >>> # Distributed callers must synchronize the state explicitly.
         >>> grad_fn, clip_state = adaptive_clipped_grad(
         ...     loss_fn,
         ...     key=key(0),
@@ -260,8 +261,8 @@ def adaptive_clipped_grad(
         >>> for batch_x, batch_y in dataloader:
         ...     # Each device: compute clipped gradients and local adaptive state
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        ...     # Explicit sync step for adaptive clipping state
-        ...     clip_state = sync_adaptive_clip_state(clip_state)
+        ...     # Explicit sync step for adaptive clipping state.
+        ...     clip_state = sync(clip_state)
         ...
         ...     # Sum clipped gradients across devices
         ...     grad = sum_gradients(grad)
