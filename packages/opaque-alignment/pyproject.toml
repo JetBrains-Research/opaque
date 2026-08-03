@@ -36,8 +36,8 @@ dependencies = [
     # (`opaque.api.alignment.dpo.reference._precompute`). Already pulled in
     # transitively by transformers; declared directly because we import it.
     "safetensors>=0.4",
-    "opaque-engine",
-    "opaque-base",
+    "opaque-engine>=0.0.0.dev0",
+    "opaque-base>=0.0.0.dev0",
     # NO opaque-patches: alignment-specific kernels live inside this package
     #   (Opaque_FusedLinearPreference is self-contained pure-PyTorch).
     # NO opaque-dpsgd, NO opaque-dpftrl, NO opaque-optimizers
@@ -48,7 +48,7 @@ dependencies = [
 [project.optional-dependencies]
 # Recipe path for SFT users who want opaque_linear_cross_entropy_loss memory
 # optimization. Not needed for the alignment primitives themselves.
-patches = ["opaque-patches"]
+patches = ["opaque-patches>=0.0.0.dev0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

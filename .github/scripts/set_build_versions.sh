@@ -8,10 +8,11 @@
 #      setuptools-scm.
 #   2. `packages/opaque-accounting/Cargo.toml` — the Rust crate version must
 #      match the Python wheel version for the PyO3 extension.
-#   3. `pyproject.toml` (workspace root) — the `opaque` distribution pins
-#      its sub-packages with `opaque-*==<version>` so `pip install opaque`
-#      resolves consistently. These pins need rewriting for dev/release
-#      builds because dynamic versioning can't expand them.
+#   3. Every Python package `pyproject.toml` that depends on another
+#      `opaque-*` wheel — these internal runtime dependencies must be pinned to
+#      the synchronized build version in published metadata, both for the root
+#      `opaque` umbrella wheel and for cross-package dependencies between leaf
+#      wheels.
 #
 # For Python sub-packages the script also exports
 # `SETUPTOOLS_SCM_PRETEND_VERSION` via `$GITHUB_ENV` so every wheel carries
@@ -138,8 +139,7 @@ rm -f packages/opaque-accounting/pyproject.toml.bak
 sed -i.bak -E "s%^version = \"[^\"]+\"%version = \"$CARGO_VERSION\"%" Cargo.toml
 rm -f Cargo.toml.bak
 
-# --- opaque: pin sub-packages to the same version ---------------------------
-# The `opaque` distribution lives in the workspace-root pyproject.toml.
+# --- opaque: pin internal wheel dependencies to the same version ------------
 python3 - <<'PY' "$VERSION"
 from __future__ import annotations
 
@@ -150,19 +150,9 @@ import tomllib
 
 VERSION = sys.argv[1]
 SENTINEL_SUFFIX = ">=0.0.0.dev0"
-ROOT_PYPROJECT = Path("pyproject.toml")
-
-PIN_TARGETS = (
-    (("project", "dependencies"), "opaque-engine>=0.0.0.dev0"),
-    (("project", "dependencies"), "opaque-accounting>=0.0.0.dev0"),
-    (("project", "dependencies"), "opaque-dpsgd>=0.0.0.dev0"),
-    (("project", "dependencies"), "opaque-optimizers>=0.0.0.dev0"),
-    (("project", "dependencies"), "opaque-patches>=0.0.0.dev0"),
-    (("project", "optional-dependencies", "auditing"), "opaque-auditing>=0.0.0.dev0"),
-    (("project", "optional-dependencies", "dpftrl"), "opaque-dpftrl>=0.0.0.dev0"),
-    (("project", "optional-dependencies", "alignment"), "opaque-alignment>=0.0.0.dev0"),
-    (("project", "optional-dependencies", "transformers"), "opaque-transformers>=0.0.0.dev0"),
-    (("project", "optional-dependencies", "transformers"), "opaque-patches[transformers]>=0.0.0.dev0"),
+PYPROJECTS = (
+    Path("pyproject.toml"),
+    *sorted(Path("packages").glob("*/pyproject.toml")),
 )
 
 
@@ -182,47 +172,84 @@ def project_list(data: dict[str, object], path: tuple[str, ...]) -> list[str]:
     return current
 
 
-text = ROOT_PYPROJECT.read_text(encoding="utf-8")
-data = tomllib.loads(text)
+def internal_dependency_targets(
+    pyproject_path: Path,
+    data: dict[str, object],
+) -> list[tuple[tuple[str, ...], str]]:
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise SystemExit(f"ERROR: {pyproject_path} is missing [project]")
 
-for path, sentinel in PIN_TARGETS:
-    items = project_list(data, path)
-    count = items.count(sentinel)
-    if count != 1:
-        joined = ".".join(path)
-        raise SystemExit(
-            f"ERROR: expected {sentinel!r} exactly once in {joined}, found {count}"
-        )
-    pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
-    quoted_sentinel = f'"{sentinel}"'
-    quoted_pinned = f'"{pinned}"'
-    if quoted_sentinel not in text:
-        raise SystemExit(
-            f"ERROR: {sentinel!r} is present in parsed metadata but missing from pyproject.toml text"
-        )
-    text = text.replace(quoted_sentinel, quoted_pinned, 1)
+    targets: list[tuple[tuple[str, ...], str]] = []
 
-updated = tomllib.loads(text)
-for path, sentinel in PIN_TARGETS:
-    items = project_list(updated, path)
-    pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
-    count = items.count(pinned)
-    if count != 1:
-        joined = ".".join(path)
-        raise SystemExit(
-            f"ERROR: expected pinned requirement {pinned!r} exactly once in {joined}, found {count}"
-        )
-    if sentinel in items:
-        joined = ".".join(path)
-        raise SystemExit(
-            f"ERROR: unreplaced sentinel {sentinel!r} remains in {joined}"
-        )
+    if "dependencies" in project:
+        for requirement in project_list(data, ("project", "dependencies")):
+            if requirement.startswith("opaque-"):
+                targets.append((("project", "dependencies"), requirement))
 
-ROOT_PYPROJECT.write_text(text, encoding="utf-8")
+    optional = project.get("optional-dependencies", {})
+    if optional and not isinstance(optional, dict):
+        raise SystemExit(
+            f"ERROR: {pyproject_path} entry project.optional-dependencies is not a table"
+        )
+    if isinstance(optional, dict):
+        for extra_name in optional:
+            path = ("project", "optional-dependencies", extra_name)
+            for requirement in project_list(data, path):
+                if requirement.startswith("opaque-"):
+                    targets.append((path, requirement))
+
+    return targets
+
+
+for pyproject_path in PYPROJECTS:
+    text = pyproject_path.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    pin_targets = internal_dependency_targets(pyproject_path, data)
+
+    for path, sentinel in pin_targets:
+        joined = ".".join(path)
+        if not sentinel.endswith(SENTINEL_SUFFIX):
+            raise SystemExit(
+                "ERROR: expected rewriteable sentinel for internal dependency "
+                f"{sentinel!r} in {pyproject_path}:{joined}"
+            )
+        count = project_list(data, path).count(sentinel)
+        if count != 1:
+            raise SystemExit(
+                f"ERROR: expected {sentinel!r} exactly once in {pyproject_path}:{joined}, found {count}"
+            )
+        pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
+        quoted_sentinel = f'"{sentinel}"'
+        quoted_pinned = f'"{pinned}"'
+        if quoted_sentinel not in text:
+            raise SystemExit(
+                "ERROR: internal dependency is present in parsed metadata but "
+                f"missing from source text: {pyproject_path}:{sentinel!r}"
+            )
+        text = text.replace(quoted_sentinel, quoted_pinned, 1)
+
+    updated = tomllib.loads(text)
+    for path, sentinel in pin_targets:
+        joined = ".".join(path)
+        items = project_list(updated, path)
+        pinned = sentinel.removesuffix(SENTINEL_SUFFIX) + f"=={VERSION}"
+        count = items.count(pinned)
+        if count != 1:
+            raise SystemExit(
+                "ERROR: expected pinned requirement "
+                f"{pinned!r} exactly once in {pyproject_path}:{joined}, found {count}"
+            )
+        if sentinel in items:
+            raise SystemExit(
+                f"ERROR: unreplaced sentinel {sentinel!r} remains in {pyproject_path}:{joined}"
+            )
+
+    pyproject_path.write_text(text, encoding="utf-8")
 PY
 
 echo "Updated version pins:"
-grep -E "^version = \"|opaque-[a-z-]+" packages/opaque-accounting/pyproject.toml Cargo.toml pyproject.toml | sed 's|^|  |'
+grep -E "^version = \"|opaque-[a-z-]+" Cargo.toml pyproject.toml packages/*/pyproject.toml | sed 's|^|  |'
 
 # --- export for downstream build steps --------------------------------------
 # setuptools-scm would otherwise re-derive the version from the now-dirty

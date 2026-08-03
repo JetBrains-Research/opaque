@@ -24,12 +24,12 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.9.0",
-    "opaque-engine",
-    "opaque-accounting",
+    "opaque-engine>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
-optimizers = ["opaque-optimizers"]
+optimizers = ["opaque-optimizers>=0.0.0.dev0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
