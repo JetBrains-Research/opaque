@@ -5,12 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-transformers"
 dynamic = ["version"]
-description = "Hugging Face compatibility layer for Opaque."
+description = "Hugging Face trainer integration for Opaque: DP-aware training loop, TRL-style SFT/DPO support, and Hugging Face compatibility layers."
 readme = "README.md"
-requires-python = ">=3.11"
-license = { file = "LICENSE" }
-authors = [
-    { name = "Opaque Authors", email = "federated-compute@jetbrains.com" },
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = [
+    "differential-privacy",
+    "huggingface",
+    "transformers",
+    "pytorch",
+    "privacy",
+    "machine-learning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
 ]
 dependencies = [
     "transformers>=4.57.0,<6",

@@ -113,9 +113,12 @@ opaque-alignment = { workspace = true }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation
-# against reference DP libs). Package runtime dependencies (Triton, torchopt,
+# against reference DP libs). Package runtime dependencies (torchopt,
 # transformers, peft) live in each package's [dependencies] or
-# [project.optional-dependencies] and compose via `--extra`.
+# [project.optional-dependencies] and compose via `--extra`. Triton is not
+# explicitly declared — it is a platform-gated transitive dependency of
+# `opaque-patches` kernels (only resolved on Linux x86_64 with CUDA) and
+# auto-disabled on CPU/MPS hosts when absent.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
   "pytest>=7.0.0",

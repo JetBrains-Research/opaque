@@ -1,18 +1,23 @@
 # opaque-transformers
 
-HuggingFace Transformers integration for Opaque: vmap-compatibility and
-fused-kernel patches for LLaMA / Llama 3, Mistral, Qwen2/3, Phi-3,
-Gemma(2), Granite, Cohere(2), and GPT-2.
+Hugging Face trainer integration for Opaque: DP-aware training loop
+(`opaque.transformers.trainer.DPTrainer`) with TRL-style SFT/DPO support
+(`opaque.transformers.trl`) and Hugging Face compatibility layers.
 
 ## Install
 
 ```bash
-pip install opaque-transformers                 # patches only
-pip install "opaque-transformers[kernels]"      # + Triton fused kernels
-pip install "opaque-transformers[peft]"         # + PEFT / LoRA support
+pip install opaque-transformers                 # trainer integration
+pip install "opaque-transformers[trl]"          # + TRL config conversion
 ```
 
-Depends on `opaque-core`, `opaque-patches`, `opaque-dpsgd`, and `transformers>=4.57`.
+Depends on `opaque-engine`, `opaque-patches`, `opaque-dpsgd`, `opaque-dpftrl`,
+`opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, and
+`transformers>=4.57`.
+
+For Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy), install
+`opaque-patches[transformers]` — kernels are a dependency of `opaque-patches`
+and gate on CUDA + Triton at runtime.
 
 ## Quick start
 
