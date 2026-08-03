@@ -1,5 +1,5 @@
 """Membership inference attack scoring façade."""
 
-from opaque.api.auditing.attacks import loss_scores
+from opaque.api.auditing.attacks import gradient_scores, loss_scores
 
-__all__ = ["loss_scores"]
+__all__ = ["gradient_scores", "loss_scores"]

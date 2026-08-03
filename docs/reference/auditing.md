@@ -76,6 +76,55 @@ scores = auditing.loss_scores(
 
 ---
 
+### gradient_scores
+
+```python
+auditing.gradient_scores(
+    loss_fn, *args, *,
+    batch_argnums, dataloader,
+    reference_scores=None,
+) -> np.ndarray
+```
+
+Compute per-example membership scores as negative squared gradient norm.
+Higher score = smaller gradient norm = more likely a training member.
+
+This is a white-box attack that differentiates with respect to the first
+`loss_fn` argument (model parameters). Therefore `0` must not appear in
+`batch_argnums`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `loss_fn` | `Callable` | required | Per-example scalar loss function |
+| `*args` | any | — | Non-batched arguments; first arg is differentiated |
+| `batch_argnums` | `tuple[int, ...]` | required | Batched argument indices; must exclude 0 |
+| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
+| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract |
+
+**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+
+```python
+ref = auditing.gradient_scores(
+    loss_fn, initial_params,
+    batch_argnums=(1,),
+    dataloader=canary_loader,
+)
+scores = auditing.gradient_scores(
+    loss_fn, trained_params,
+    batch_argnums=(1,),
+    dataloader=canary_loader,
+    reference_scores=ref,
+)
+```
+
+The scorer is also available from the attacks namespace:
+
+```python
+from opaque.auditing.attacks import gradient_scores
+```
+
+---
+
 ### one_run
 
 ```python
@@ -320,6 +369,7 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 |---|---|
 | `auditing.coin_flip(dataset, ...)` | Coin-flip partition → `CoinFlip` |
 | `auditing.loss_scores(loss_fn, ...)` | Membership scores → `np.ndarray` |
+| `auditing.gradient_scores(loss_fn, ...)` | White-box membership scores → `np.ndarray` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
 | `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
