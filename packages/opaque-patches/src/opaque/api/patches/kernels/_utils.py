@@ -4,7 +4,7 @@
 # Kernel utilities extracted from the Unsloth project
 # (Apache-2.0; https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/utils.py)
 # and adapted for standalone use in opaque kernels without the Unsloth runtime.
-# See NOTICE in the repository root.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Kernel utilities - self-contained, no unsloth runtime dependency.
 
 Extracted from unsloth/kernels/utils.py for standalone use in opaque kernels.

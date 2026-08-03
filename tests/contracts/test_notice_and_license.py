@@ -31,19 +31,23 @@ PACKAGES = [p.name for p in sorted(PACKAGES_DIR.iterdir()) if p.is_dir()]
 
 @pytest.mark.parametrize("pkg", PACKAGES)
 def test_package_has_license(pkg: str) -> None:
-    """packages/<pkg>/LICENSE must exist so wheels ship the Apache-2.0 text."""
-    assert (PACKAGES_DIR / pkg / "LICENSE").is_file(), (
-        f"packages/{pkg}/LICENSE is missing — add it so the wheel ships the "
-        "Apache-2.0 license text."
+    """packages/<pkg>/ must contain a LICEN[SC]E* file for wheel auto-discovery."""
+    pkg_dir = PACKAGES_DIR / pkg
+    matches = list(pkg_dir.glob("LICEN[SC]E*"))
+    assert matches, (
+        f"packages/{pkg}/ has no LICEN[SC]E* file — add one so the wheel ships "
+        "the Apache-2.0 license text."
     )
 
 
 @pytest.mark.parametrize("pkg", PACKAGES)
 def test_package_has_notice(pkg: str) -> None:
-    """packages/<pkg>/NOTICE must exist so wheels ship attribution information."""
-    assert (PACKAGES_DIR / pkg / "NOTICE").is_file(), (
-        f"packages/{pkg}/NOTICE is missing — add a NOTICE file so the wheel "
-        "ships copyright and attribution information."
+    """packages/<pkg>/ must contain a NOTICE* file for wheel auto-discovery."""
+    pkg_dir = PACKAGES_DIR / pkg
+    matches = list(pkg_dir.glob("NOTICE*"))
+    assert matches, (
+        f"packages/{pkg}/ has no NOTICE* file — add one so the wheel ships "
+        "copyright and attribution information."
     )
 
 
