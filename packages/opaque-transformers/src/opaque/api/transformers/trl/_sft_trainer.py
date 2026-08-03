@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Trainer structure and method layout adapted from Hugging Face TRL
+# (Apache-2.0; https://github.com/huggingface/trl), then modified for
+# Opaque's per-example DP training flow.
+# See ../../../../../NOTICE in this package for the full attribution.
 """``SFTTrainer`` — supervised fine-tuning on :class:`DPTrainer`.
 
 Mirrors ``trl.SFTTrainer`` in structure and method names — ``_prepare_dataset``

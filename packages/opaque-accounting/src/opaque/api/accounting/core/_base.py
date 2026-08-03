@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# DP process algebra and privacy-metric surface adapted in part from
+# Google DP Accounting (Apache-2.0;
+# https://github.com/google/differential-privacy/tree/main/python/dp_accounting),
+# then reworked for Opaque's PLD-native process composition model.
+# See ../../../../../NOTICE in this package for the full attribution.
 """DpProcess: stateless composable DP process algebra.
 
 Mechanism constructors store parameters as frozen-dataclass fields.

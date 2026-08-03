@@ -1,3 +1,15 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# General kernel utilities (the section above "Linear cross-entropy utilities")
+# are extracted from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/utils.py)
+# and adapted for standalone use in opaque kernels without the Unsloth runtime.
+#
+# Linear cross-entropy utilities (the section below) are ported from Apple's
+# cut_cross_entropy project (Apache-2.0; https://github.com/apple/ml-cross-entropy).
+#
+# See ../../../../../NOTICE in this package for the full attribution.
 """Kernel utilities - self-contained, no unsloth runtime dependency.
 
 Extracted from unsloth/kernels/utils.py for standalone use in opaque kernels.
@@ -95,7 +107,9 @@ def needs_long_indexing(n_elements: int) -> bool:
 
 
 # =============================================================================
-# Linear cross-entropy utilities (ported from cut_cross_entropy)
+# Linear cross-entropy utilities
+# Ported from Apple's cut_cross_entropy project
+# (Apache-2.0; https://github.com/apple/ml-cross-entropy)
 # =============================================================================
 
 

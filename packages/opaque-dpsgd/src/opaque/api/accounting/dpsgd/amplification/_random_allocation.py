@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Random-allocation accounting structure adapted in part from the ICML 2026
+# reference implementation for "Efficient privacy loss accounting for
+# subsampling and random allocation" (Apache-2.0), then reworked for
+# Opaque's DP-SGD PLD accounting API.
+# See ../../../../../../NOTICE in this package for the full attribution.
 """Random-allocation amplification over a declared DP-SGD horizon.
 
 Each epoch, every example independently picks one of ``num_bins`` bins and

@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Budget abstractions and alpha/beta/advantage-oriented accounting surface
+# adapted in part from Google DP Accounting (Apache-2.0;
+# https://github.com/google/differential-privacy/tree/main/python/dp_accounting),
+# then reworked for Opaque's PLD-native process API.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Privacy budgets for calibration and accountant budget tracking.
 
 A **Budget** is a privacy metric paired with a threshold — e.g. "ε ≤ 3 at
