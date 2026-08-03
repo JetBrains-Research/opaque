@@ -157,24 +157,26 @@ jobs:
         package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
         target:
           - platform: linux
-            arch: amd64
+            arch: x86_64
             runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: 2_28
           - platform: linux
-            arch: arm64
+            arch: aarch64
             runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: 2_28
           - platform: macos
             arch: arm64
             runner: macos-latest
+            target: aarch64-apple-darwin
+            manylinux: off
 
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.release.tag_name }}
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v6
         with:
@@ -184,8 +186,18 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        run: |
-          cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          working-directory: ${{ matrix.package.path }}
+          target: ${{ matrix.target.target }}
+          manylinux: ${{ matrix.target.manylinux }}
+          args: >-
+            --release
+            --locked
+            --interpreter python3.11
+            --out ../../dist
+            --compatibility pypi
 
       - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v6
@@ -194,9 +206,38 @@ jobs:
           path: dist/*.whl
           retention-days: 90
 
+  build-accounting-sdist:
+    name: Build opaque-accounting sdist @ ${{ github.event.release.tag_name }}
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Preflight — rewrite opaque pins + accounting version from tag
+        run: bash .github/scripts/set_build_versions.sh
+
+      - name: Build sdist
+        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
+
+      - name: Upload sdist to artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-opaque-accounting-sdist
+          path: dist/*.tar.gz
+          retention-days: 90
+
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels]
+    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6
@@ -226,8 +267,8 @@ jobs:
 
       - name: List wheels
         run: |
-          echo "Releasing ${{ github.event.release.tag_name }}. Wheels:"
-          ls -lh dist/*.whl
+          echo "Releasing ${{ github.event.release.tag_name }}. Artifacts:"
+          ls -lh dist/*.whl dist/*.tar.gz
 
       - name: Authenticate to GCP
         id: gcp-auth
@@ -247,11 +288,11 @@ jobs:
         run: |
           uv publish \
             --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
-            dist/*.whl
+            dist/*.whl dist/*.tar.gz
 
       - name: Attach wheels to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" dist/*.whl \
+          gh release upload "${{ github.event.release.tag_name }}" dist/*.whl dist/*.tar.gz \
             --clobber --repo "$GITHUB_REPOSITORY"

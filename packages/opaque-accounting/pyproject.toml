@@ -35,4 +35,12 @@ opaque-base = { workspace = true }
 features = ["python-extension"]
 module-name = "opaque.api.accounting.core.opaque_accounting"
 python-source = "src"
-python-packages = ["opaque.accounting", "opaque.api.accounting.core"]
+python-packages = ["opaque/accounting", "opaque/api/accounting/core"]
+exclude = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.pyo",
+]
+
+[tool.maturin.target.aarch64-apple-darwin]
+macos-deployment-target = "11.0"
