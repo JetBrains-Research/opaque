@@ -130,7 +130,15 @@ _MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 # Concrete sampling modes (resolved set; ``"auto"`` is the default field
 # value and is replaced by one of these in ``__post_init__``).
 _SAMPLING_MODES: frozenset[str] = frozenset(
-    {"poisson", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}
+    {
+        "poisson",
+        "random_allocation",
+        "k_out_of_t",
+        "b_min_sep",
+        "balls_in_bins",
+        "cyclic_poisson",
+        "sequential",
+    }
 )
 
 # Canonical sampler pairing.  Each mechanism has a single "best" sampler;
@@ -153,8 +161,8 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 # its canonical ``"b_min_sep"`` participation pattern; everything else
 # pins a single sampler.
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
-    "gaussian": frozenset({"poisson"}),
-    "mf_identity": frozenset({"poisson"}),
+    "gaussian": frozenset({"poisson", "random_allocation", "k_out_of_t"}),
+    "mf_identity": frozenset({"poisson", "balls_in_bins"}),
     "mf_band": frozenset({"b_min_sep", "poisson"}),
     "mf_blt": frozenset({"balls_in_bins"}),
     "mf_bisr": frozenset({"balls_in_bins"}),
@@ -545,7 +553,7 @@ class TrainingArguments:
             if getattr(self, _name) is None:
                 setattr(self, _name, {})
         _nc = self.noise_calibration_kwargs
-        for _k, _default in (("min", 0.01), ("max", 10.0), ("tolerance", 1e-3)):
+        for _k, _default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
             _nc.setdefault(_k, _default)
 
         # --- 2. Strategy validation -----------------------------------------
@@ -982,6 +990,32 @@ class TrainingArguments:
                     f"privacy_noise_mechanism_kwargs (the strategy recipe) "
                     f"and read off the built amplifier at runtime."
                 )
+            if self.sampling_mode == "k_out_of_t" and "total_participations" not in (
+                self.sampling_kwargs
+            ):
+                raise ValueError(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'total_participations' (each example participates in exactly "
+                    "that many optimizer steps, chosen uniformly over the run)."
+                )
+            if (
+                self.sampling_mode in ("random_allocation", "k_out_of_t")
+                and {
+                    "truncated_batch_size",
+                    "max_batch_size",
+                }
+                & self.sampling_kwargs.keys()
+            ):
+                raise ValueError(
+                    "sampling_kwargs truncated_batch_size/max_batch_size is only "
+                    "supported with sampling_mode='poisson'."
+                )
+        elif self.sampling_mode == "k_out_of_t":
+            raise ValueError(
+                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                "'total_participations' (each example participates in exactly "
+                "that many optimizer steps, chosen uniformly over the run)."
+            )
 
         # --- 12. metric_for_best_model must be eval-side -------------------
         if self.load_best_model_at_end and self.metric_for_best_model:

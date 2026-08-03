@@ -1989,7 +1989,7 @@ def main():
     if args.mechanism == "none":
         step_proc = acc.identity()
     else:
-        step_proc = dpftrl_acc.per_step(acct_mechanism(noise_multiplier))
+        step_proc = acc.per_step(acct_mechanism(noise_multiplier))
     accounting = Accountant()
 
     # Compute reference (untrained) scores for auditing before any training.

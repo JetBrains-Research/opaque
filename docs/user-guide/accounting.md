@@ -145,7 +145,7 @@ step = dpsgd_acc.parallel_poisson(
 )
 ```
 
-### `dpsgd_acc.random_allocation(inner, *, num_bins)`
+### `dpsgd_acc.random_allocation(inner, *, num_bins, n_steps)`
 
 1-out-of-`num_bins` random allocation, the scheme
 `opaque.dpsgd.sampling.RandomAllocationSampler` implements: each epoch,
@@ -154,19 +154,28 @@ epoch. Amplifies strictly more than `poisson()` at the matched rate
 `1 / num_bins`, and is computed by an exact PLD transform rather than
 Monte Carlo.
 
-**This is the one DP-SGD factory that returns a per-epoch process**, not a
-per-step one — it already covers `num_bins` steps. Compose with
-`* num_epochs`:
+This returns a whole-horizon process with exact prefix accounting, including
+partial final epochs:
 
 ```python
 num_bins = dataset_size // batch_size
-epoch = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=num_bins)
-eps = (epoch * num_epochs).epsilon_at(1e-5)
+process = dpsgd_acc.random_allocation(
+    dpsgd_acc.gaussian(0.8),
+    num_bins=num_bins,
+    n_steps=total_steps,
+)
+eps = process.epsilon_at(1e-5)
 ```
 
-Composing `* n_steps` instead would charge `num_bins` times too much;
-`epoch.steps_per_epoch` is the conversion factor if you only have a step
-count.
+Use `acc.per_step(process)` in a loop that composes privacy after each
+optimizer step.
+
+### `dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)`
+
+Global balanced allocation: every record participates in exactly `k` uniform
+steps of the declared `t`-step horizon. `pld_at(K)` accounts the
+hypergeometric prefix mixture; the full `k>1` PLD uses the conservative
+Feldman–Shenfeld block reduction.
 
 ### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
@@ -476,7 +485,7 @@ accumulated process exceeds the budget.
 DP-FTRL accountants are *whole-process* (`dpftrl_acc.poisson` / `b_min_sep` /
 `balls_in_bins` already cover all `n_steps` rounds), so feeding the bare
 process to `acct |= step` would over-count. Wrap the process with
-`dpftrl_acc.per_step(...)` to get a step-shaped adapter whose
+`acc.per_step(...)` to get a step-shaped adapter whose
 `per_step(proc) * K` materialises the strategy-aware K-prefix PLD (rather
 than the K-fold composition of a single-step PLD, which would double-count
 the workload coefficients):
@@ -493,7 +502,7 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01,
     n_steps=15_624,
 )
-step = dpftrl_acc.per_step(proc)
+step = acc.per_step(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:
