@@ -159,9 +159,9 @@ dist_utils.sum_gradients_(grads)
 
 ## Adaptive clipping
 
-`adaptive_clipped_grad` is local-only -- it does not communicate. To keep
-the clip norm consistent across ranks, explicitly synchronize the state
-after each step:
+`adaptive_clipped_grad` is local-only -- it does not communicate or
+auto-detect DDP. To keep the clip norm consistent across ranks, explicitly
+synchronize the state after each step:
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
