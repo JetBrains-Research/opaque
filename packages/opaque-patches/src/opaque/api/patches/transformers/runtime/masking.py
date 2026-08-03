@@ -194,20 +194,25 @@ def vmap_create_sliding_window_causal_mask(
 ) -> torch.Tensor | None:
     """vmap-compatible ``create_sliding_window_causal_mask``.
 
-    The stock implementation calls into ``BlockMask`` / Flex Attention helpers
-    that rely on data-dependent control flow incompatible with vmap. Models
-    that build a ``causal_mask_mapping`` with both ``full_attention`` and
-    ``sliding_attention`` entries (Gemma2, Gemma3) feed the result into the
-    same eager-attention path we already cover, so collapsing the sliding
-    branch onto the regular causal mask is functionally correct for the
-    forward + backward + per-example-grad paths Opaque exercises (eager
-    attention re-applies the supplied mask additively; tightening that mask
-    further is the only thing the sliding variant adds, and it does not
-    affect gradient or output shapes).
+    The stock implementation uses BlockMask / Flex Attention helpers that rely
+    on data-dependent control flow incompatible with vmap.  This replacement
+    builds a dense additive mask that enforces both the causal constraint
+    (no future attention) and the sliding-window look-back limit
+    (``config.sliding_window``).
+
+    For each query at absolute position ``q_abs`` (given by ``cache_position``),
+    key positions ``k_abs < q_abs - sliding_window + 1`` are set to ``-inf``.
+    The causal upper-triangle is already blocked by the underlying
+    ``vmap_create_causal_mask``; this function only adds the look-back limit.
+
+    Signature is version-agnostic: v4 uses ``input_embeds`` + ``cache_position``,
+    v5 renames to ``inputs_embeds`` and drops ``cache_position``.
     """
-    return vmap_create_causal_mask(
+    input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
+
+    causal_mask = vmap_create_causal_mask(
         config,
-        inputs_embeds=inputs_embeds if inputs_embeds is not None else input_embeds,
+        inputs_embeds=input_embeds,
         attention_mask=attention_mask,
         past_key_values=past_key_values,
         position_ids=position_ids,
@@ -215,6 +220,63 @@ def vmap_create_sliding_window_causal_mask(
         and_mask_function=and_mask_function,
         cache_position=cache_position,
     )
+
+    if causal_mask is None:
+        return None
+
+    sliding_window = getattr(config, "sliding_window", None)
+    if sliding_window is None:
+        return causal_mask
+
+    # causal_mask shape: (batch_size, 1, seq_len, target_length)
+    seq_len = causal_mask.shape[-2]
+    device = input_embeds.device
+    mask_dtype = causal_mask.dtype
+
+    past_seen_tokens = _safe_seq_length(past_key_values)
+
+    # Re-derive cache_position the same way vmap_create_causal_mask does.
+    if cache_position is None:
+        cache_position = torch.arange(
+            past_seen_tokens, past_seen_tokens + seq_len, device=device
+        )
+
+    # Absolute positions for every key slot in column order.
+    # vmap_create_causal_mask lays the key dimension out as:
+    #   cols 0..seq_len-1        → current tokens at cache_position[0..seq_len-1]
+    #   cols seq_len..target_length-1 → past cached tokens at absolute positions 0..past_seen_tokens-1
+    # (When past_seen_tokens == 0 the second slice is empty and
+    #  key_abs_positions == cache_position == torch.arange(seq_len).)
+    cache_pos_flat = cache_position.view(-1)
+    if cache_pos_flat.shape[0] == seq_len:
+        # Normal or vmap-without-batch-dim: cache_position is (seq_len,).
+        query_abs_positions = cache_pos_flat  # (seq_len,)
+        key_abs_positions = torch.cat(
+            [cache_pos_flat, torch.arange(past_seen_tokens, device=device)]
+        )  # (target_length,)
+    else:
+        # vmap-with-batch-dim: cache_position is (batch * seq_len,).
+        # Fall back to contiguous positions starting at past_seen_tokens.
+        query_abs_positions = torch.arange(
+            past_seen_tokens, past_seen_tokens + seq_len, device=device
+        )
+        key_abs_positions = torch.cat(
+            [query_abs_positions, torch.arange(past_seen_tokens, device=device)]
+        )  # (target_length,)
+
+    # window_in_mask[q, k] = True  iff  k_abs >= q_abs - sliding_window + 1
+    # shape: (seq_len, target_length)
+    window_in_mask = key_abs_positions.unsqueeze(0) >= (
+        query_abs_positions.unsqueeze(1) - sliding_window + 1
+    )
+
+    # Broadcast to (1, 1, seq_len, target_length) and block out-of-window slots.
+    causal_mask = causal_mask.masked_fill(
+        ~window_in_mask.unsqueeze(0).unsqueeze(0),
+        torch.finfo(mask_dtype).min,
+    )
+
+    return causal_mask
 
 
 def _vmap_safe_ignore_causal_mask_sdpa(
