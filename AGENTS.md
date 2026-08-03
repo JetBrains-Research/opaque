@@ -43,7 +43,9 @@ deps. `pip install opaque-accounting` alone is **torch-free** (only
 
 ## Namespace contract
 
-Nine rules (rules 1 + 2 + 6 enforced in CI under `tests/contracts/`):
+Nine namespace/package conventions (the PEP 420 namespace invariant,
+façade-only export discipline, and explicit-`__all__` discipline are
+enforced in CI under `tests/contracts/`):
 
 1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
    or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420

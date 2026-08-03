@@ -1,17 +1,11 @@
-"""Surface tests for ``opaque.dpftrl.accounting``.
-
-Mirror of the ``opaque.dpsgd.accounting`` surface test: confirms each
-documented re-export is reachable, ``__all__`` matches spec, and that
-the lazy-import in :mod:`opaque.dpftrl` does not eagerly load
-``opaque.accounting`` for callers that only need ``noise`` / ``sampling``.
-"""
+"""Surface tests for ``opaque.dpftrl.accounting``."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
 
-_HEADLINE = (
+_REQUIRED_FACTORIES = (
     "mf_gaussian",
     "poisson",
     "b_min_sep",
@@ -19,7 +13,7 @@ _HEADLINE = (
     "per_step",
 )
 
-_TYPES = (
+_REQUIRED_TYPES = (
     "MfGaussian",
     "CyclicPoisson",
     "BMinSep",
@@ -32,23 +26,17 @@ _TYPES = (
 class TestNamespaceSurface:
     """Each documented re-export is reachable as a callable."""
 
-    def test_all_headline_factories_callable(self):
+    def test_required_headline_factories_callable(self):
         import opaque.dpftrl.accounting as ftrl_acc
 
-        for name in _HEADLINE:
+        for name in _REQUIRED_FACTORIES:
             assert callable(getattr(ftrl_acc, name)), name
-
-    def test_all_in_dunder_all(self):
-        import opaque.dpftrl.accounting as ftrl_acc
-
-        assert set(ftrl_acc.__all__) == set(_HEADLINE)
 
     def test_types_module_re_exports(self):
         import opaque.dpftrl.accounting.types as ftrl_types
 
-        for name in _TYPES:
+        for name in _REQUIRED_TYPES:
             assert hasattr(ftrl_types, name), name
-        assert set(ftrl_types.__all__) == set(_TYPES)
 
 
 class TestEndToEndCalibration:

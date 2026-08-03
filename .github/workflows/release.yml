@@ -31,6 +31,23 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME is on main — proceeding."
 
+  discover-packages:
+    name: Discover package matrices
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    outputs:
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Discover packages
+        id: discover
+        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
+
   release-tests:
     name: Release tests
     needs: [tag-guard]
@@ -67,22 +84,13 @@ jobs:
           -n auto --dist loadscope
 
   build-python-wheel:
-    name: Build ${{ matrix.package }} @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard]
+    name: Build ${{ matrix.package.dist }} @ ${{ github.event.release.tag_name }}
+    needs: [tag-guard, discover-packages]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - opaque-base
-          - opaque-engine
-          - opaque-optimizers
-          - opaque-dpsgd
-          - opaque-dpftrl
-          - opaque-auditing
-          - opaque-alignment
-          - opaque-patches
-          - opaque-transformers
+        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
 
     steps:
       - uses: actions/checkout@v5
@@ -101,12 +109,12 @@ jobs:
 
       - name: Build wheel
         run: |
-          cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
+          cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-${{ matrix.package }}
+          name: wheels-${{ matrix.package.dist }}
           path: dist/*.whl
           retention-days: 90
 
@@ -139,14 +147,15 @@ jobs:
           path: dist/opaque-*.whl
           retention-days: 90
 
-  build-opaque-accounting:
-    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }} @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard]
-    runs-on: ${{ matrix.runner }}
+  build-native-wheels:
+    name: Build ${{ matrix.package.dist }} - ${{ matrix.target.platform }}/${{ matrix.target.arch }} @ ${{ github.event.release.tag_name }}
+    needs: [tag-guard, discover-packages]
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
+        target:
           - platform: linux
             arch: amd64
             runner: ubuntu-latest
@@ -176,18 +185,18 @@ jobs:
 
       - name: Build wheel
         run: |
-          cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
+          cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/*opaque_accounting*.whl
+          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*.whl
           retention-days: 90
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-wheel, build-opaque-accounting]
+    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6
