@@ -2407,9 +2407,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#random_allocationinner-num_bins-dpprocess" class="md-nav__link">
+  <a href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      random_allocation(inner, *, num_bins) -&gt; DpProcess
+      random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess
     </span>
   </a>
   
@@ -3016,9 +3025,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#random_allocationinner-num_bins-dpprocess" class="md-nav__link">
+  <a href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      random_allocation(inner, *, num_bins) -&gt; DpProcess
+      random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" class="md-nav__link">
+    <span class="md-ellipsis">
+      k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess
     </span>
   </a>
   
@@ -3575,26 +3593,31 @@ Like <code>poisson()</code> (plain or truncated), this is a full wrapper.</p>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="random_allocationinner-num_bins-dpprocess"><code>random_allocation(inner, *, num_bins) -&gt; DpProcess</code><a class="headerlink" href="#random_allocationinner-num_bins-dpprocess" title="Permanent link">&para;</a></h3>
+<h3 id="random_allocationinner-num_bins-n_steps-dphorizonprocess"><code>random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess</code><a class="headerlink" href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" title="Permanent link">&para;</a></h3>
 <p>1-out-of-<code>num_bins</code> random allocation: each epoch, every example lands in
 exactly one of <code>num_bins</code> batches, with the assignment redrawn each epoch.
 Pairs with <code>opaque.dpsgd.sampling.RandomAllocationSampler</code>.</p>
-<p>Unlike every other DP-SGD amplification factory, this returns a
-<strong>per-epoch</strong> process covering <code>num_bins</code> steps. Compose with
-<code>* num_epochs</code>; composing <code>* n_steps</code> over-charges by a factor of
-<code>num_bins</code>. <code>steps_per_epoch</code> on the returned process is the conversion
-factor.</p>
+<p>The process covers the declared horizon and implements exact <code>pld_at(K)</code>
+prefix accounting, including partial final epochs. Use
+<code>acc.per_step(process)</code> for ordinary step-wise training loops.</p>
 <p>Computed by the exact PLD transform of Feldman &amp; Shenfeld (2026) —
 deterministic, with no Monte Carlo sampling. It is strictly tighter than
 <code>poisson()</code> at the matched rate <code>1 / num_bins</code>.</p>
 <ul>
 <li><code>inner</code> (Gaussian | AdaClip | NonPrivate): Base mechanism</li>
 <li><code>num_bins</code> (int): Bins per epoch (≥ 2), matching the sampler's <code>num_bins</code></li>
+<li><code>n_steps</code> (int): Total optimizer-step horizon</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">num_bins</span> <span class="o">=</span> <span class="n">dataset_size</span> <span class="o">//</span> <span class="n">batch_size</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">epoch</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">num_bins</span><span class="o">=</span><span class="n">num_bins</span><span class="p">)</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">)</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">num_bins</span><span class="o">=</span><span class="n">num_bins</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
+<h3 id="k_out_of_tinner-total_participations-n_steps-dphorizonprocess"><code>k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess</code><a class="headerlink" href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" title="Permanent link">&para;</a></h3>
+<p>Global balanced allocation: every record participates in exactly k uniformly
+chosen steps. Prefix accounting uses the hypergeometric participation-count
+mixture with conservative component PLDs.</p>
 <h3 id="adaclipinner-fraction_noise_std-expected_batch_size-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an <code>AdaClip</code> process composable with <code>poisson()</code>
@@ -3764,26 +3787,25 @@ transform — deterministic, no sampling. For correlated-noise strategies
 <a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">),</span> <span class="n">num_bins</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="per_stepproc-perstep"><code>per_step(proc) -&gt; PerStep</code><a class="headerlink" href="#per_stepproc-perstep" title="Permanent link">&para;</a></h3>
-<p>Adapter that wraps a whole-process DP-FTRL accountant so it composes
-step-by-step under <code>Accountant</code>'s <code>acct |= step</code> idiom (the DP-SGD path
-shape). <code>per_step(proc) * K</code> materialises the strategy-aware K-prefix
-PLD via <code>proc._pld_at_horizon(K)</code>. For analytic PLDs, this is bounded above
+<p>Adapter that wraps a whole-horizon accountant so it composes step-by-step
+under <code>Accountant</code>'s <code>acct |= step</code> idiom. <code>per_step(proc) * K</code> materialises
+the process-aware K-prefix PLD via <code>proc.pld_at(K)</code>. For analytic PLDs, this
+is bounded above
 by <code>proc.epsilon_at(δ)</code> and monotone non-decreasing in K by post-processing
 on the deployed N-step mechanism. b-min-sep and correlated-strategy
 Balls-in-Bins remain Monte Carlo point estimates pending the RC-4 confidence
 correction, so this guarantee is not asserted for their reported ε values;
-identity Balls-in-Bins is analytic and does carry it. <code>K &gt; proc.n_steps</code> raises;
-<code>PerStep</code> only composes with other <code>PerStep</code> instances wrapping the
-<em>same</em> underlying process.</p>
+identity Balls-in-Bins is analytic and does carry it. <code>K &gt; proc.n_steps</code>
+raises.</p>
 <ul>
-<li><code>proc</code> (DpFtrlProcess): The whole-process accountant
+<li><code>proc</code> (DpHorizonProcess): The whole-process accountant
   (<code>dpftrl_acc.poisson(...)</code>, <code>b_min_sep(...)</code>, <code>balls_in_bins(...)</code>).</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
 <a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
 <a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">15_624</span><span class="p">,</span>
 <a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="p">)</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
 <a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="n">eps_K</span> <span class="o">=</span> <span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1_000</span><span class="p">)</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># analytic PLD: K-step ε ≤ proc.epsilon_at(δ)</span>
 </code></pre></div>
 <hr />

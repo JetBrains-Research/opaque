@@ -2873,8 +2873,9 @@ mechanisms support all amplification types:</p>
   recalibrated).</li>
 <li><strong><code>opaque.dpsgd.accounting.random_allocation</code></strong>: DP-SGD
   1-out-of-<code>num_bins</code> random allocation, redrawn every epoch. Returns a
-  <strong>per-epoch</strong> process (compose with <code>* num_epochs</code>); amplifies more
-  than Poisson at the matched rate <code>1 / num_bins</code>.</li>
+  whole-horizon process with exact prefix accounting.</li>
+<li><strong><code>opaque.dpsgd.accounting.k_out_of_t</code></strong>: global balanced allocation where
+  each record participates in exactly k uniform steps of the horizon.</li>
 <li><strong><code>opaque.dpftrl.accounting.poisson</code></strong>: DP-FTRL whole-process Poisson
   amplification (<code>BandMf</code> / <code>IdentityMf</code> inner, <code>n_steps</code> required).
   For <code>BandMf</code> this is the cyclic-participation analysis

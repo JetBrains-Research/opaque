@@ -993,6 +993,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#global-k-out-of-t-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Global k-out-of-t allocation
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2868,6 +2877,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#global-k-out-of-t-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Global k-out-of-t allocation
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3309,13 +3327,13 @@ rather than skipped: compacting them away would make each record's real
 participation separation <code>len(nonempty)</code> instead of <code>num_bins</code>, which the
 accounting assumes. Empty batches are handled downstream by the engine's
 collate path.</p>
-<p>Privacy accounting — a whole-<strong>epoch</strong> atom, so compose with
-<code>* num_epochs</code>, not <code>* n_steps</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">epoch</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span>
+<p>Privacy accounting uses a whole-horizon process with exact prefix bounds:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">num_bins</span><span class="p">,</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">)</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">training</span> <span class="o">=</span> <span class="n">epoch</span> <span class="o">*</span> <span class="n">num_epochs</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">)</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">process</span><span class="p">)</span>
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Not the same scheme as <code>BallsInBinsSampler</code></p>
@@ -3327,6 +3345,11 @@ it is strictly better. Pair each sampler only with its own accountant:
 <code>RandomAllocationSampler</code> with <code>dpsgd_acc.random_allocation</code>,
 <code>BallsInBinsSampler</code> with <code>dpftrl_acc.balls_in_bins</code>.</p>
 </div>
+<h3 id="global-k-out-of-t-allocation">Global k-out-of-t allocation<a class="headerlink" href="#global-k-out-of-t-allocation" title="Permanent link">&para;</a></h3>
+<p><code>KOutOfTSampler</code> chooses exactly k distinct steps from a declared t-step
+horizon independently for every record. It uses O(dataset-size) streaming
+state and pairs with <code>dpsgd_acc.k_out_of_t</code>. This is different from redrawing
+one bin per epoch.</p>
 <h2 id="balls-in-bins-sampling">Balls-in-Bins sampling<a class="headerlink" href="#balls-in-bins-sampling" title="Permanent link">&para;</a></h2>
 <h3 id="ballsinbinssampler"><code>BallsInBinsSampler</code><a class="headerlink" href="#ballsinbinssampler" title="Permanent link">&para;</a></h3>
 <p>Each example is independently assigned to one of <code>num_bins</code> bins (Binomial

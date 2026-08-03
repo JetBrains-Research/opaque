@@ -2980,11 +2980,11 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 <tbody>
 <tr>
 <td><code>sampling_mode</code></td>
-<td><code>"auto"</code> (default) pairs the sampler with <code>privacy_noise_mechanism</code>; explicit values <code>{"poisson", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}</code> are validated against the mechanism's allow-list.</td>
+<td><code>"auto"</code> (default) pairs the sampler with <code>privacy_noise_mechanism</code>; explicit values <code>{"poisson", "random_allocation", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}</code> are validated against the mechanism's allow-list.</td>
 </tr>
 <tr>
 <td><code>sampling_kwargs</code></td>
-<td>Forwarded to the sampler.  <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code> (weaker privacy at the same <code>q</code> unless recalibrated).</td>
+<td>Forwarded to the sampler. <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code> and is unavailable for random allocation.</td>
 </tr>
 <tr>
 <td><code>clipping_mode</code></td>
@@ -3054,6 +3054,13 @@ the strategy kwargs:</p>
 </tr>
 </tbody>
 </table>
+<p><code>"auto"</code> remains Poisson for Gaussian and identity MF. Gaussian explicitly
+accepts <code>sampling_mode="random_allocation"</code> and <code>sampling_mode="k_out_of_t"</code>.
+For k-out-of-t, set <code>sampling_kwargs={"total_participations": k}</code> so each
+example participates in exactly <code>k</code> optimizer steps (uniform over the run).
+Identity MF explicitly accepts <code>sampling_mode="balls_in_bins"</code>. Horizon modes
+are adapted to the trainer's step-wise accountant through
+<code>opaque.accounting.per_step</code>.</p>
 <p>So the minimal DP-FTRL configuration is one field:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span><span class="n">privacy_noise_mechanism</span><span class="o">=</span><span class="s2">&quot;mf_band&quot;</span><span class="p">)</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># sampling_mode resolves to &quot;b_min_sep&quot;</span>
