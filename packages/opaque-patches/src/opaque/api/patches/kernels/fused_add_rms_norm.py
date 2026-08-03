@@ -5,7 +5,7 @@
 # Fused residual add + RMSNorm Triton kernels derive from the Liger Kernel
 # project (BSD-2-Clause, Copyright LinkedIn Corporation). See:
 # https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/fused_add_rms_norm.py
-# See ./../../../../../../NOTICE in the repository root.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Fused (hidden + residual) + RMSNorm with vmap(grad(...)) support (DP-SGD)."""
 
 from __future__ import annotations

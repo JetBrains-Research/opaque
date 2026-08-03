@@ -4,9 +4,9 @@ Opaque
 Copyright 2025 Opaque Authors
 
 Licensed under the Apache License, Version 2.0 (the "License"); see
-LICENSE in the project root for the full text.
+LICENSE in this directory for the full text.
 
-This product includes software developed by third parties whose
+This package includes software developed by third parties whose
 licenses and copyright notices are reproduced below. Per-file SPDX and
 copyright headers in the relevant source files identify which third
 party each file derives from.
@@ -23,8 +23,8 @@ License. They carry an SPDX-License-Identifier of
 "Apache-2.0 AND BSD-2-Clause" and the LinkedIn copyright line in their
 file headers.
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py
+  opaque/api/patches/kernels/rms_norm.py
+  opaque/api/patches/kernels/fused_add_rms_norm.py
 
 BSD 2-Clause License text:
 
@@ -65,12 +65,12 @@ project (https://github.com/unslothai/unsloth), distributed under the
 Apache License, Version 2.0. Adapted to Opaque's vmap-friendly
 new-style autograd dispatch (Opaque_* + _Backward + setup_context).
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/swiglu.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/geglu.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/cross_entropy.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/lora.py
+  opaque/api/patches/kernels/_utils.py
+  opaque/api/patches/kernels/swiglu.py
+  opaque/api/patches/kernels/geglu.py
+  opaque/api/patches/kernels/rope_embedding.py
+  opaque/api/patches/kernels/cross_entropy.py
+  opaque/api/patches/kernels/lora.py
 
 
 ------------------------------------------------------------------------
@@ -84,4 +84,4 @@ under the Apache License, Version 2.0. Simplified to drop bias /
 Kahan / VocabOrdering / dLSE / shift handling and adapted to Opaque's
 vmap-friendly autograd dispatch.
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py
+  opaque/api/patches/kernels/linear_cross_entropy.py

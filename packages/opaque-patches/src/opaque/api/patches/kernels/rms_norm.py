@@ -6,7 +6,7 @@
 # Copyright LinkedIn Corporation), which incorporated prior Unsloth Apache-2.0
 # RMSNorm code. See:
 # https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/rms_norm.py
-# See ./../../../../../../NOTICE in the repository root.
+# See ../../../../../NOTICE in this package for the full attribution.
 """RMSNorm Triton kernel with vmap(grad(...)) support (DP-SGD)."""
 
 from __future__ import annotations
