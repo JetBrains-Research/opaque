@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Config surface and field semantics adapted from Hugging Face TRL
+# (Apache-2.0; https://github.com/huggingface/trl), then modified for
+# Opaque's per-example DP training flow.
+# See ../../../../../NOTICE in this package for the full attribution.
 """``SFTConfig`` — training arguments for :class:`SFTTrainer`.
 
 Mirrors ``trl.SFTConfig`` for the subset meaningful under per-example DP,

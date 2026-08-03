@@ -86,3 +86,31 @@ vmap-friendly autograd dispatch.
 
   packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py
   packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py
+
+
+------------------------------------------------------------------------
+Hugging Face Transformers (Apache-2.0)
+------------------------------------------------------------------------
+
+The following files contain trainer/config structure adapted from
+Hugging Face Transformers (https://github.com/huggingface/transformers),
+distributed under the Apache License, Version 2.0, and then modified for
+Opaque's functional per-example DP training flow:
+
+  packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py
+  packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py
+
+
+------------------------------------------------------------------------
+Hugging Face TRL (Apache-2.0)
+------------------------------------------------------------------------
+
+The following files contain trainer/config structure adapted from
+Hugging Face TRL (https://github.com/huggingface/trl), distributed under
+the Apache License, Version 2.0, and then modified for Opaque's
+per-example DP flow:
+
+  packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_trainer.py
+  packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_trainer.py
+  packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_config.py
+  packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_config.py

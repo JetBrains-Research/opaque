@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Argument surface and compatibility semantics adapted from Hugging Face
+# Transformers TrainingArguments (Apache-2.0;
+# https://github.com/huggingface/transformers), then constrained to the
+# DP-meaningful subset used by Opaque's trainer stack.
+# See ../../../../../NOTICE in this package for the full attribution.
 """DP training arguments — standalone dataclass for :class:`DPTrainer`.
 
 ``TrainingArguments`` is a plain ``@dataclass`` (no

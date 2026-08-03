@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Trainer control-flow and public method surface adapted from Hugging Face
+# Transformers Trainer (Apache-2.0; https://github.com/huggingface/transformers),
+# then reworked around Opaque's functional per-example DP training flow.
+# See ../../../../../NOTICE in this package for the full attribution.
 """DP-SGD Trainer for HuggingFace models.
 
 Provides :class:`DPTrainer` — a differentially private, HF-Trainer-parity

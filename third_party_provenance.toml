@@ -1,0 +1,96 @@
+[metadata]
+version = 1
+owner = "opaque"
+purpose = "Conservative provenance inventory for copied/adapted/inspired third-party material."
+
+[[upstreams]]
+name = "Liger Kernel"
+homepage = "https://github.com/linkedin/Liger-Kernel"
+license = "BSD-2-Clause"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py",
+]
+
+[[upstreams]]
+name = "Unsloth"
+homepage = "https://github.com/unslothai/unsloth"
+license = "Apache-2.0"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/swiglu.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/geglu.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/cross_entropy.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/lora.py",
+]
+
+[[upstreams]]
+name = "Apple cut_cross_entropy"
+homepage = "https://github.com/apple/ml-cross-entropy"
+license = "Apache-2.0"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py",
+  "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+]
+
+[[upstreams]]
+name = "Hugging Face Transformers"
+homepage = "https://github.com/huggingface/transformers"
+license = "Apache-2.0"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+  "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py",
+]
+
+[[upstreams]]
+name = "Hugging Face TRL"
+homepage = "https://github.com/huggingface/trl"
+license = "Apache-2.0"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_trainer.py",
+  "packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_trainer.py",
+  "packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_config.py",
+  "packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_config.py",
+]
+
+[[upstreams]]
+name = "Google DP Accounting"
+homepage = "https://github.com/google/differential-privacy/tree/main/python/dp_accounting"
+license = "Apache-2.0"
+disposition = "inspired"
+requires_notice = false
+files = [
+  "packages/opaque-dpsgd/tests/accounting/test_cross_validation.py",
+]
+
+[[upstreams]]
+name = "JAX Privacy"
+homepage = "https://github.com/deepmind/jax_privacy"
+license = "Apache-2.0"
+disposition = "inspired"
+requires_notice = false
+files = [
+  "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py",
+  "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py",
+]
+
+[[upstreams]]
+name = "riskcal"
+homepage = "https://github.com/google-research/riskcal"
+license = "MIT"
+disposition = "inspired"
+requires_notice = false
+files = [
+  "packages/opaque-dpsgd/tests/accounting/test_cross_validation.py",
+]

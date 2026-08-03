@@ -7,12 +7,15 @@ Validates:
    pre-requisite for correct wheel contents.
 2. Every source path listed in the root NOTICE resolves to an existing file.
 3. Every in-file NOTICE backreference (``../../../../../NOTICE`` style) that
-   appears in kernel source files resolves to an existing NOTICE file.
+   appears in package source files resolves to an existing NOTICE file.
+4. The provenance inventory is well-formed and every NOTICE-required
+   provenance path is listed in root NOTICE or package NOTICE.
 """
 
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -20,6 +23,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
 ROOT_NOTICE = REPO_ROOT / "NOTICE"
+PROVENANCE_TOML = REPO_ROOT / "third_party_provenance.toml"
 
 PACKAGES = [p.name for p in sorted(PACKAGES_DIR.iterdir()) if p.is_dir()]
 
@@ -67,6 +71,16 @@ def _extract_notice_file_paths(notice_path: Path) -> list[str]:
     return paths
 
 
+def _extract_package_notice_file_paths(notice_path: Path, package: str) -> list[str]:
+    """Return indented source paths from a package NOTICE as repo-relative paths."""
+    paths: list[str] = []
+    for line in notice_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^  (opaque/.+\.py)$", line)
+        if m:
+            paths.append(f"packages/{package}/src/{m.group(1)}")
+    return paths
+
+
 _ROOT_NOTICE_PATHS = _extract_notice_file_paths(ROOT_NOTICE)
 
 
@@ -92,12 +106,12 @@ def _find_notice_backrefs() -> list[tuple[str, str]]:
     the source path is relative to the repo root.
     """
     results: list[tuple[str, str]] = []
-    kernel_dir = PACKAGES_DIR / "opaque-patches" / "src"
-    for py_file in kernel_dir.rglob("*.py"):
-        text = py_file.read_text(encoding="utf-8")
-        for m in re.finditer(r"See (\.\.[\./]+NOTICE)", text):
-            rel_source = py_file.relative_to(REPO_ROOT).as_posix()
-            results.append((rel_source, m.group(1)))
+    for src_dir in PACKAGES_DIR.glob("*/src"):
+        for py_file in src_dir.rglob("*.py"):
+            text = py_file.read_text(encoding="utf-8")
+            for m in re.finditer(r"See (\.\.[\./]+NOTICE)", text):
+                rel_source = py_file.relative_to(REPO_ROOT).as_posix()
+                results.append((rel_source, m.group(1)))
     return results
 
 
@@ -115,3 +129,44 @@ def test_kernel_notice_backref_resolves(src_rel: str, notice_rel: str) -> None:
         "Fix the relative path to point to the package-level NOTICE."
     )
 
+
+def test_provenance_inventory_is_well_formed() -> None:
+    """third_party_provenance.toml must parse and point to existing files."""
+    data = tomllib.loads(PROVENANCE_TOML.read_text(encoding="utf-8"))
+    assert "upstreams" in data
+    assert isinstance(data["upstreams"], list)
+    for upstream in data["upstreams"]:
+        assert isinstance(upstream["name"], str)
+        assert upstream["name"]
+        assert isinstance(upstream["homepage"], str)
+        assert upstream["homepage"]
+        assert isinstance(upstream["license"], str)
+        assert upstream["license"]
+        assert upstream["disposition"] in {"copied", "adapted", "inspired"}
+        assert isinstance(upstream["requires_notice"], bool)
+        assert isinstance(upstream["files"], list)
+        assert upstream["files"]
+        for rel in upstream["files"]:
+            assert (REPO_ROOT / rel).is_file(), (
+                f"third_party_provenance.toml lists '{rel}' but it does not exist."
+            )
+
+
+def test_notice_required_provenance_entries_are_listed_in_notice_files() -> None:
+    """Every provenance entry requiring NOTICE must be listed in root or package NOTICE."""
+    data = tomllib.loads(PROVENANCE_TOML.read_text(encoding="utf-8"))
+    root_paths = set(_extract_notice_file_paths(ROOT_NOTICE))
+    package_paths: set[str] = set()
+    for pkg in PACKAGES:
+        pkg_notice = PACKAGES_DIR / pkg / "NOTICE"
+        package_paths.update(_extract_package_notice_file_paths(pkg_notice, pkg))
+    listed = root_paths | package_paths
+
+    for upstream in data["upstreams"]:
+        if not upstream["requires_notice"]:
+            continue
+        for rel in upstream["files"]:
+            assert rel in listed, (
+                f"NOTICE-required provenance file '{rel}' is not listed in root NOTICE "
+                "or its package NOTICE."
+            )
