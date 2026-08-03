@@ -7,7 +7,7 @@ owns the lifecycle.  The trainer calls these in :meth:`_setup_training`
 :attr:`TrainingArguments.privacy_noise_mechanism` starts with ``"mf_"``.
 
 The MF amplifier returned by :func:`build_amplifier_factory` is the
-    *raw* whole-process accountant (a :class:`DpHorizonProcess`); the trainer
+*raw* whole-process accountant (a :class:`DpHorizonProcess`); the trainer
 queries ``(n_steps, min_sep, max_participations)`` off it to build the
 matching :func:`opaque.dpftrl.noise.mf_gaussian_noise` and then wraps
 it with :func:`opaque.accounting.per_step` for the

@@ -50,6 +50,7 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
+import math
 import os
 import sys
 import time
@@ -1269,12 +1270,18 @@ def main():
     if use_parallel_poisson:
         sample_rate /= world_size
 
-    expected_steps_per_epoch = int(global_train_size / args.batch_size)
+    expected_steps_per_epoch = math.ceil(global_train_size / args.batch_size)
     total_steps = args.num_epochs * expected_steps_per_epoch
     num_bins = max(2, expected_steps_per_epoch)
     _allocation_samplers = frozenset({"random_allocation", "k_out_of_t"})
     use_horizon_sampler = args.sampler in _allocation_samplers
     if use_horizon_sampler:
+        if total_steps < 1:
+            raise ValueError(
+                f"--sampler {args.sampler} requires at least 1 training step, "
+                f"but num_epochs={args.num_epochs} and batch_size={args.batch_size} "
+                f"yield total_steps={total_steps}."
+            )
         if truncated_batch_size is not None or use_parallel_poisson:
             raise ValueError(
                 f"--sampler {args.sampler} is incompatible with truncated "
