@@ -53,7 +53,9 @@ Example::
     eps = step.epsilon_at(1e-5)
 """
 
-from opaque.api.accounting.core.composition._per_step import per_step
+from opaque.api.accounting.core.composition._per_step import (
+    per_step as per_step,
+)
 from opaque.api.accounting.dpftrl import (
     b_min_sep,
     balls_in_bins,
@@ -65,6 +67,5 @@ __all__ = [
     "b_min_sep",
     "balls_in_bins",
     "mf_gaussian",
-    "per_step",
     "poisson",
 ]
