@@ -63,6 +63,7 @@ class TestAllocationStructure:
 
     def test_num_epochs(self):
         assert _make(n_steps=32).num_epochs == 4
+        assert _make(n_steps=12).num_epochs == 2
         assert _make(n_steps=None).num_epochs is None
 
 
@@ -75,9 +76,14 @@ class TestValidation:
         with pytest.raises(ValueError, match="num_bins"):
             RandomAllocationSampler(_ds(), 1, 4, key=key(0))
 
-    def test_rejects_n_steps_not_multiple_of_num_bins(self):
-        with pytest.raises(ValueError, match="multiple of"):
-            RandomAllocationSampler(_ds(), 8, 12, key=key(0))
+    def test_allows_partial_final_epoch(self):
+        sampler = RandomAllocationSampler(_ds(), 8, 12, key=key(0))
+
+        batches = list(sampler)
+
+        assert len(batches) == 12
+        assert sorted(chain(*batches[:8])) == list(range(_N))
+        assert len(batches[8:]) == 4
 
     def test_requires_keyword_only_key(self):
         with pytest.raises(TypeError):
