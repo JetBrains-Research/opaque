@@ -12,12 +12,12 @@ copyright headers in the relevant source files identify which third
 party each file derives from.
 
 
-------------------------------------------------------------------------
-Apple random-allocation prototype (Apache-2.0)
+Random-allocation reference implementation (Apache-2.0)
 ------------------------------------------------------------------------
 
 The following files contain random-allocation accounting/sampling
-structure adapted from an Apple random-allocation prototype repository,
+structure adapted from the ICML 2026 reference implementation for
+"Efficient privacy loss accounting for subsampling and random allocation",
 distributed under the Apache License, Version 2.0, and then reworked for
 Opaque's DP-SGD accounting and sampler APIs:
 

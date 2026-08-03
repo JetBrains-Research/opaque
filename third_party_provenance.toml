@@ -78,8 +78,8 @@ files = [
 ]
 
 [[upstreams]]
-name = "Apple random-allocation prototype"
-homepage = "https://github.com/apple"
+name = "Random-allocation reference implementation"
+homepage = "ICML 2026 reference implementation for \"Efficient privacy loss accounting for subsampling and random allocation\""
 license = "Apache-2.0"
 disposition = "adapted"
 requires_notice = true
