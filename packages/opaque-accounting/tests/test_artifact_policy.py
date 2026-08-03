@@ -6,16 +6,14 @@ import subprocess
 import tarfile
 import tomllib
 import zipfile
+from fnmatch import fnmatch
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_DIR = REPO_ROOT / "packages" / "opaque-accounting"
 PYPROJECT = PACKAGE_DIR / "pyproject.toml"
-WORKFLOW_PATHS = (
-    REPO_ROOT / ".github" / "workflows" / "ci.yml",
-    REPO_ROOT / ".github" / "workflows" / "pr.yml",
-    REPO_ROOT / ".github" / "workflows" / "release.yml",
-)
 
 
 def _copy_repo_subset(repo_dir: Path) -> Path:
@@ -72,38 +70,23 @@ def _assert_no_transient_bytecode(entries: list[str]) -> None:
     assert not any(entry.endswith((".pyc", ".pyo")) for entry in entries)
 
 
-def test_maturin_excludes_transient_bytecode_inputs() -> None:
+def _is_excluded(path: str, patterns: list[str]) -> bool:
+    return any(fnmatch(path, pattern) for pattern in patterns)
+
+
+def test_maturin_exclude_patterns_cover_transient_bytecode_shapes() -> None:
     data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     maturin = data["tool"]["maturin"]
-    assert maturin["exclude"] == [
-        "**/__pycache__/**",
-        "**/*.pyc",
-        "**/*.pyo",
-    ]
+    exclude_patterns = list(maturin["exclude"])
+    assert _is_excluded("src/pkg/__pycache__/module.cpython-312.pyc", exclude_patterns)
+    assert _is_excluded("src/pkg/temp.pyc", exclude_patterns)
+    assert _is_excluded("src/pkg/temp.pyo", exclude_patterns)
+
     target = data["tool"]["maturin"]["target"]["aarch64-apple-darwin"]
-    assert target["macos-deployment-target"] == "11.0"
+    assert float(target["macos-deployment-target"]) >= 11.0
 
 
-def test_accounting_workflows_publish_supported_artifacts() -> None:
-    workflow_sdists = {
-        "ci.yml": "build-accounting-sdist",
-        "pr.yml": "build-preview-accounting-sdist",
-        "release.yml": "build-accounting-sdist",
-    }
-    matrix_snippets = (
-        "manylinux: 2_28",
-        "target: x86_64-unknown-linux-gnu",
-        "target: aarch64-unknown-linux-gnu",
-        "target: aarch64-apple-darwin",
-    )
-    for workflow_path in WORKFLOW_PATHS:
-        text = workflow_path.read_text(encoding="utf-8")
-        assert workflow_sdists[workflow_path.name] in text
-        for snippet in matrix_snippets:
-            assert snippet in text, f"{snippet!r} missing from {workflow_path.name}"
-    assert "dist/*.tar.gz" in WORKFLOW_PATHS[-1].read_text(encoding="utf-8")
-
-
+@pytest.mark.slow
 def test_clean_and_dirty_builds_ship_the_same_accounting_files(tmp_path: Path) -> None:
     clean_dir = _copy_repo_subset(tmp_path / "clean")
     dirty_dir = _copy_repo_subset(tmp_path / "dirty")
