@@ -592,7 +592,7 @@ class TestNoiseCalibrationKwargs:
 
     def test_defaults_and_override(self):
         base = TrainingArguments(privacy_noise_multiplier=1.0)
-        assert base.noise_calibration_kwargs["min"] == 0.01
+        assert base.noise_calibration_kwargs["min"] == 0.11
         assert base.noise_calibration_kwargs["max"] == 10.0
         assert base.noise_calibration_kwargs["tolerance"] == 1e-3
         tuned = TrainingArguments(

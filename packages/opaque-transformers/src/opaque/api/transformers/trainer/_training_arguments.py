@@ -553,7 +553,7 @@ class TrainingArguments:
             if getattr(self, _name) is None:
                 setattr(self, _name, {})
         _nc = self.noise_calibration_kwargs
-        for _k, _default in (("min", 0.01), ("max", 10.0), ("tolerance", 1e-3)):
+        for _k, _default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
             _nc.setdefault(_k, _default)
 
         # --- 2. Strategy validation -----------------------------------------

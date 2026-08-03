@@ -4081,28 +4081,6 @@ class DPTrainer:
         ecal = a.noise_calibration_kwargs
         param_min = float(ecal["min"])
         param_max = float(ecal["max"])
-        if a.sampling_mode in ("random_allocation", "k_out_of_t"):
-            configured_min = param_min
-            while True:
-                try:
-                    objective(param_min).epsilon_at(target_delta)
-                except ValueError as exc:
-                    if (
-                        "exceeds max_grid_size" not in str(exc)
-                        or param_min >= param_max
-                    ):
-                        raise
-                    param_min = min(param_min * 2.0, param_max)
-                else:
-                    break
-            if param_min != configured_min:
-                log.info(
-                    "Raised %s calibration minimum from %.4g to "
-                    "%.4g because smaller σ exceeds the PLD grid cap.",
-                    a.sampling_mode,
-                    configured_min,
-                    param_min,
-                )
         result = cal.calibrate(
             cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
             objective,
