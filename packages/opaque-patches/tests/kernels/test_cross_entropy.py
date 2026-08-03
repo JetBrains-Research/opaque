@@ -160,6 +160,31 @@ class TestCrossEntropyBackward:
             label="logits.grad",
         )
 
+    def test_backward_does_not_mutate_forward_logits(self, mellum_config):
+        """Backward must leave the saved forward logits tensor untouched."""
+        torch.manual_seed(42)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+        vocab = mellum_config["vocab_size"]
+
+        logits = torch.randn(
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        logits_before = logits.detach().clone()
+        labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
+
+        out = opaque_cross_entropy(logits, labels)
+        out.backward()
+
+        assert torch.equal(logits.detach(), logits_before), (
+            "Backward mutated the forward logits tensor"
+        )
+
     def test_backward_ignores_masked_labels(self, mellum_config):
         """Verify -100 labels produce zero gradient (not softmax probs)."""
         torch.manual_seed(42)
