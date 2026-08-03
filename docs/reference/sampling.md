@@ -107,10 +107,10 @@ batches are empty; they are emitted rather than compacted away, because
 dropping them would change every record's participation separation and
 invalidate the accounting.
 
-Account with `dpsgd_acc.random_allocation(mechanism, num_bins=num_bins) *
-num_epochs` for whole epochs — the process is a whole-**epoch** atom, unlike
-`poisson`, which is per-step. A partial final epoch must conservatively be
-charged as one whole additional epoch.
+Account with
+`dpsgd_acc.random_allocation(mechanism, num_bins=num_bins, n_steps=n_steps)`.
+The process computes exact prefix privacy for partial final epochs; use
+`acc.per_step(process)` in a step-wise loop.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 
@@ -120,6 +120,23 @@ charged as one whole additional epoch.
     participations. `RandomAllocationSampler` redraws per epoch, which is
     valid only because DP-SGD noise is uncorrelated across steps — and is
     strictly better there. Pair each sampler only with its own accountant.
+
+## KOutOfTSampler (DP-SGD)
+
+```python
+from opaque.dpsgd.sampling import KOutOfTSampler
+
+sampler = KOutOfTSampler(
+    dataset,
+    total_participations=4,
+    n_steps=100,
+    key=key(42),
+)
+```
+
+Every example chooses exactly `total_participations` distinct steps uniformly
+from the complete horizon. Pair it with `dpsgd_acc.k_out_of_t(...)`. Unlike
+epoch-redrawn random allocation, this is one global allocation plan.
 
 ## BallsInBinsSampler
 

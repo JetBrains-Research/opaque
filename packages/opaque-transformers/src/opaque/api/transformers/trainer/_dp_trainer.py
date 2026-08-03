@@ -1316,6 +1316,8 @@ class DPTrainer:
             sample_rate,
             clip_norm,
             dataset_size,
+            n_steps=total_steps,
+            num_bins=expected_steps_per_epoch,
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
@@ -3909,18 +3911,19 @@ class DPTrainer:
         clip_norm: Any,
         dataset_size: int,
         *,
+        n_steps: int,
+        num_bins: int,
         mf_amplifier_factory: Callable[[float], Any] | None = None,
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
-        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): the
-        Poisson amplification covers both plain Poisson sampling and the
-        truncated variant; ``dpsgd_acc.poisson`` dispatches internally
-        when ``truncated_batch_size`` / ``dataset_size`` are supplied.
+        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
+        amplification covers plain and truncated Poisson; random allocation
+        returns a horizon process adapted through generic ``per_step``.
 
         DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
         amplifier factory (built in :meth:`_setup_training`) with
-        :func:`opaque.dpftrl.accounting.per_step` so each call returns a
+        :func:`opaque.accounting.per_step` so each call returns a
         per-step composable :class:`DpProcess` that materialises as the
         true K-step PLD of the deployed N-step mechanism under
         ``acc |= step`` accumulation.
@@ -3968,7 +3971,48 @@ class DPTrainer:
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if tb_cap is not None:
+        if a.sampling_mode == "random_allocation":
+            if num_bins < 2:
+                raise ValueError(
+                    f"random_allocation requires num_bins >= 2, but "
+                    f"train_batch_size={expected_batch_size} >= "
+                    f"dataset_size={dataset_size} collapses the epoch to a single "
+                    "bin. Reduce train_batch_size or use a different sampling_mode."
+                )
+
+            def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=n_steps):
+                return acc.per_step(
+                    dpsgd_acc.random_allocation(
+                        _u(nm),
+                        num_bins=_nb,
+                        n_steps=_ns,
+                    )
+                )
+
+        elif a.sampling_mode == "k_out_of_t":
+            k_raw = sk.get("total_participations")
+            if k_raw is None:
+                raise ValueError(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'total_participations'."
+                )
+            total_k = int(k_raw)
+            if not 1 <= total_k <= n_steps:
+                raise ValueError(
+                    "total_participations must be in "
+                    f"[1, n_steps={n_steps}], got {total_k}."
+                )
+
+            def mechanism(nm, _u=_unamplified, _k=total_k, _ns=n_steps):
+                return acc.per_step(
+                    dpsgd_acc.k_out_of_t(
+                        _u(nm),
+                        total_participations=_k,
+                        n_steps=_ns,
+                    )
+                )
+
+        elif tb_cap is not None:
 
             def mechanism(
                 nm,
@@ -4035,11 +4079,13 @@ class DPTrainer:
                 return _prefix | (mechanism(nm) * _rem)
 
         ecal = a.noise_calibration_kwargs
+        param_min = float(ecal["min"])
+        param_max = float(ecal["max"])
         result = cal.calibrate(
             cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
             objective,
-            param_min=float(ecal["min"]),
-            param_max=float(ecal["max"]),
+            param_min=param_min,
+            param_max=param_max,
             tolerance=float(ecal["tolerance"]),
         )
         log.info(

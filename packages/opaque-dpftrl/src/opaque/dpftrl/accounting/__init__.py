@@ -67,5 +67,6 @@ __all__ = [
     "b_min_sep",
     "balls_in_bins",
     "mf_gaussian",
+    "per_step",
     "poisson",
 ]
