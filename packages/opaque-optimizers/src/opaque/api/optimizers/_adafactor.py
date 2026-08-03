@@ -132,16 +132,17 @@ def _approx_v_hat(
     approximation matches the full second moment on rank-1 inputs.
 
     The ``r_mean`` floor is **scale-relative**: ``eps_root`` is applied as a
-    fraction of ``√mean(v_row)`` (the global scale of the row factor, which at
-    steady state tracks the gradient RMS).  This prevents the floor from firing
-    spuriously when gradients are small in absolute terms (e.g. after DP
-    clipping) while still guarding against genuine numerical underflow.
+    fraction of ``mean(v_row)`` (the global scale of the row factor, which at
+    steady state tracks the gradient second moment).  This keeps the floor in
+    the same units as ``r_mean`` itself and prevents it from firing spuriously
+    when gradients are small in absolute terms (e.g. after DP clipping) while
+    still guarding against genuine numerical underflow.
     """
     r_mean = v_row.mean(dim=-1, keepdim=True)
-    # Scale-relative floor: eps_root * sqrt(E[v_row]).  At steady state
-    # E[v_row] ≈ E[g²] = g_rms², so the floor tracks the gradient RMS.
+    # Scale-relative floor: eps_root * E[v_row].  At steady state
+    # E[v_row] ≈ E[g²], so the floor tracks the gradient second-moment scale.
     # The inner clamp(1e-30) guards the initial step where v_row is all zeros.
-    v_row_scale = v_row.mean().clamp(min=1e-30).sqrt()
+    v_row_scale = v_row.mean().clamp(min=1e-30)
     r_mean = r_mean.clamp(min=eps_root * v_row_scale)
     return (v_row / r_mean).unsqueeze(-1) * v_col.unsqueeze(-2)
 

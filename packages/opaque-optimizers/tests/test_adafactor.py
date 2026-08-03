@@ -278,36 +278,28 @@ class TestScaleAware:
     def test_floor_does_not_fire_at_dp_gradient_scale(
         self, small_params, dp_scale_grads
     ):
-        """With g ~ 1e-4, sqrt(v̂) should NOT be clamped to eps_root (1e-3).
+        """With g ~ 1e-4, the update should not collapse to ``g / eps_root``.
 
-        If the absolute floor fired, all denominator values would equal eps_root
-        and the effective step would be g / eps_root ≈ 1e-4 / 1e-3 = 0.1 for
-        every coordinate — homogeneous and equal to g scaled by a constant.
-        With the relative floor, the denominator stays near sqrt(v̂) ≈ 1e-4,
-        and the update is approximately sign(g), which varies per coordinate.
+        Under the broken absolute-floor behavior, ``sqrt(v̂)`` was clamped to
+        ``eps_root = 1e-3`` for nearly every coordinate, so the update reduced
+        to ``g / eps_root``.  The scale-relative floor should keep the
+        denominator near ``sqrt(v̂) ≈ |g|`` instead, producing a materially
+        different update.
         """
-        opt = adafactor(lr=1e-3, eps_root=1e-3)
+        opt = adafactor(lr=1.0, eps_root=1e-3, update_rms_clip=1e9)
         state = opt.init(small_params)
-        # Warm up so second moments are non-trivial.
         for _ in range(5):
             _, state = opt.update(dp_scale_grads, state, params=small_params)
+        updates, _ = opt.update(dp_scale_grads, state, params=small_params)
 
-        # Extract the adafactor sub-state and check v̂ magnitudes.
-        af = _af_state(state)
-        for v_state in af.v_flat:
-            if len(v_state) == 2:
-                v_row, v_col = v_state
-                # v_row should be ~(1e-4)^2 = 1e-8; eps_root * sqrt(1e-8) = 1e-3 * 1e-4 = 1e-7
-                # which is NOT dominating; confirm v_row values are not all identical.
-                # (If absolute floor fired, all would be clamped to the same floor value.)
-                assert v_row.std().item() > 0, (
-                    "v_row is constant — absolute floor appears to have fired"
-                )
-            else:
-                (v,) = v_state
-                assert v.std().item() > 0, (
-                    "scalar v is constant — absolute floor appears to have fired"
-                )
+        for name, grad in dp_scale_grads.items():
+            floored = grad / 1e-3
+            actual_norm = updates[name].norm().item()
+            floored_norm = floored.norm().item()
+            assert actual_norm > 4.0 * floored_norm, (
+                f"Leaf {name!r}: update norm {actual_norm:.3e} is too close to "
+                f"the broken absolute-floor behavior {floored_norm:.3e}"
+            )
 
     def test_distinguishable_from_rms_sgd(self, small_params, dp_scale_grads):
         """Corrected Adafactor must NOT reduce to RMS-normalised SGD at DP scale.
@@ -339,9 +331,7 @@ class TestScaleAware:
         # Check that the normalised directions differ significantly.
         u_norm = u_mat / u_mat.pow(2).mean().sqrt()
         rms_norm = rms_sgd / rms_sgd.pow(2).mean().sqrt()
-        cosine_sim = (u_norm * rms_norm).sum() / (
-            u_norm.norm() * rms_norm.norm()
-        )
+        cosine_sim = (u_norm * rms_norm).sum() / (u_norm.norm() * rms_norm.norm())
         # With scale-aware floors the update is not a scalar multiple of g,
         # so the cosine similarity to RMS-SGD should be well below 1.
         assert cosine_sim.abs().item() < 0.999, (
@@ -424,4 +414,3 @@ class TestScaleAware:
         u_no, _ = opt_no.update(noisy_g, s_no, params=small_params)
         any_diff = any(not torch.allclose(u_bc[k], u_no[k]) for k in small_params)
         assert any_diff, "BC had no effect on updates at DP gradient scale"
-
