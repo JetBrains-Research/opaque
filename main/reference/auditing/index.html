@@ -2481,6 +2481,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#gradient_scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      gradient_scores
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#one_run" class="md-nav__link">
     <span class="md-ellipsis">
       one_run
@@ -2929,6 +2938,15 @@
   <a href="#loss_scores" class="md-nav__link">
     <span class="md-ellipsis">
       loss_scores
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gradient_scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      gradient_scores
     </span>
   </a>
   
@@ -4397,8 +4415,79 @@ to handle dict-style batches (e.g., HuggingFace).</p>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="p">)</span>
 </code></pre></div>
 <hr />
+<h3 id="gradient_scores">gradient_scores<a class="headerlink" href="#gradient_scores" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">batch_argnums</span><span class="p">,</span> <span class="n">dataloader</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+</code></pre></div>
+<p>Compute per-example membership scores as negative squared gradient norm.
+Higher score = smaller gradient norm = more likely a training member.</p>
+<p>This is a white-box attack that differentiates with respect to the first
+<code>loss_fn</code> argument (model parameters). Therefore <code>0</code> must not appear in
+<code>batch_argnums</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>loss_fn</code></td>
+<td><code>Callable</code></td>
+<td>required</td>
+<td>Per-example scalar loss function</td>
+</tr>
+<tr>
+<td><code>*args</code></td>
+<td>any</td>
+<td>—</td>
+<td>Non-batched arguments; first arg is differentiated</td>
+</tr>
+<tr>
+<td><code>batch_argnums</code></td>
+<td><code>tuple[int, ...]</code></td>
+<td>required</td>
+<td>Batched argument indices; must exclude 0</td>
+</tr>
+<tr>
+<td><code>dataloader</code></td>
+<td>iterable</td>
+<td>required</td>
+<td>Yields tensors or tuples of tensors</td>
+</tr>
+<tr>
+<td><code>reference_scores</code></td>
+<td><code>np.ndarray</code></td>
+<td><code>None</code></td>
+<td>Baseline scores to subtract</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong> <code>np.ndarray</code> of shape <code>(n,)</code>. Higher = more likely member.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">initial_params</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref</span><span class="p">,</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="p">)</span>
+</code></pre></div>
+<p>The scorer is also available from the attacks namespace:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.auditing.attacks</span><span class="w"> </span><span class="kn">import</span> <span class="n">gradient_scores</span>
+</code></pre></div>
+<hr />
 <h3 id="one_run">one_run<a class="headerlink" href="#one_run" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OneRunEstimate</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OneRunEstimate</span>
 </code></pre></div>
 <p>Build a one-run privacy estimate from canary scores. Splits scores by
 the coin-flip partition, precomputes the Pareto-optimal ROC frontier,
@@ -4427,12 +4516,12 @@ and returns a frozen estimate.</p>
 </tr>
 </tbody>
 </table>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
 </code></pre></div>
 <hr />
 <h2 id="coinflip">CoinFlip<a class="headerlink" href="#coinflip" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">CoinFlip</span><span class="p">(</span><span class="n">canary_indices</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">CoinFlip</span><span class="p">(</span><span class="n">canary_indices</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
 </code></pre></div>
 <p>Coin-flip partitioning for canary-based privacy auditing. Each canary
 is independently included or excluded with probability 0.5.</p>
@@ -4468,17 +4557,17 @@ is independently included or excluded with probability 0.5.</p>
 </tbody>
 </table>
 <h3 id="train_indices">train_indices<a class="headerlink" href="#train_indices" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="n">dataset_size</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="n">dataset_size</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
 </code></pre></div>
 <p>All indices except held-out canaries. Returns <code>list[int]</code> for HuggingFace
 <code>dataset.select()</code>.</p>
 <h3 id="split_scores">split_scores<a class="headerlink" href="#split_scores" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">cf</span><span class="o">.</span><span class="n">split_scores</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">cf</span><span class="o">.</span><span class="n">split_scores</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
 </code></pre></div>
 <p>Split per-canary scores into <code>(in_scores, out_scores)</code>.</p>
 <hr />
 <h2 id="onerunestimate">OneRunEstimate<a class="headerlink" href="#onerunestimate" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">OneRunEstimate</span>  <span class="c1"># frozen dataclass</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">OneRunEstimate</span>  <span class="c1"># frozen dataclass</span>
 </code></pre></div>
 <p>Precomputed one-run audit estimate, returned by <code>auditing.one_run()</code>.
 Holds the Pareto-optimal threshold structure and exposes:</p>
@@ -4511,48 +4600,48 @@ Holds the Pareto-optimal threshold structure and exposes:</p>
 </tbody>
 </table>
 <h3 id="epsilon_at">epsilon_at<a class="headerlink" href="#epsilon_at" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Epsilon lower bound from the default μ-GDP audit method. Equivalent to
 <code>self.gdp().epsilon_at(...)</code>. Requires <code>delta &gt; 0</code>. For non-Gaussian-DP
 mechanisms use <code>self.eps_delta().epsilon_at(...)</code> explicitly.</p>
 <h3 id="delta_at">delta_at<a class="headerlink" href="#delta_at" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>δ(ε) from the default μ-GDP audit method. Equivalent to
 <code>self.gdp().delta_at(...)</code>.</p>
 <h3 id="beta_at">beta_at<a class="headerlink" href="#beta_at" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Theoretical f-DP β at α under the inferred μ̂-GDP. Equivalent to
 <code>self.gdp().beta_at(...)</code>. For the empirical attack ROC β, see
 <a href="#attack_beta_at"><code>attack_beta_at</code></a>.</p>
 <h3 id="advantage">advantage<a class="headerlink" href="#advantage" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">advantage</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">advantage</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Total-variation advantage at the inferred μ̂-GDP. Equivalent to
 <code>self.gdp().advantage()</code>.</p>
 <h3 id="eps_delta">eps_delta<a class="headerlink" href="#eps_delta" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">EpsDeltaMethod</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">EpsDeltaMethod</span>
 </code></pre></div>
 <p>Mechanism-agnostic (ε, δ)-DP order-statistics audit method
 (Xiang et al. 2025). Use for non-Gaussian-DP mechanisms or pure ε-DP
 auditing. See <a href="#epsdeltamethod">EpsDeltaMethod</a> below.</p>
 <h3 id="gdp">gdp<a class="headerlink" href="#gdp" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">grid_size</span><span class="o">=</span><span class="mi">10_000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GdpMethod</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">grid_size</span><span class="o">=</span><span class="mi">10_000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GdpMethod</span>
 </code></pre></div>
 <p>μ-GDP order-statistics audit method (Xiang et al. 2025) with a tunable
 integration grid. The top-level <code>epsilon_at</code> / <code>delta_at</code> / <code>beta_at</code> /
 <code>advantage</code> are shortcuts for <code>gdp()</code> with the default <code>grid_size</code>. See
 <a href="#gdpmethod">GdpMethod</a> below.</p>
 <h3 id="attack_auc">attack_auc<a class="headerlink" href="#attack_auc" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">confidence</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">confidence</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
 <p>Empirical ROC AUC of the membership inference attack. Returns point
 estimate by default, or <code>(lower, upper)</code> CI tuple when <code>confidence</code> is
 provided. Independent of the audit method.</p>
 <h3 id="attack_beta_at">attack_beta_at<a class="headerlink" href="#attack_beta_at" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
 </code></pre></div>
 <p>Empirical attack β at given FPR: <code>1 − TPR</code> interpolated from the
 Pareto-optimal ROC frontier. Distinct from
@@ -4563,14 +4652,14 @@ inferred μ̂-GDP.</p>
 <p>Returned by <code>estimate.eps_delta()</code>. Exposes the two query directions
 along the audit's (ε, δ) boundary.</p>
 <h3 id="epsilon_at_1">epsilon_at<a class="headerlink" href="#epsilon_at_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">method</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">method</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Largest ε the audit can certify at the given δ. <code>delta=0</code> is allowed
 (pure ε-DP). When <code>threshold</code> is provided, accuracy is evaluated at that
 specific score threshold; otherwise the Pareto-optimal threshold
 maximising TP + TN is used.</p>
 <h3 id="delta_at_1">delta_at<a class="headerlink" href="#delta_at_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">method</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">method</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Largest δ at which the audit certifies ε ≥ <code>epsilon</code>. Returns <code>0.0</code> when
 <code>epsilon</code> is unreachable even at δ=0.</p>
@@ -4602,22 +4691,22 @@ single inferred μ̂.</p>
 </tbody>
 </table>
 <h3 id="epsilon_at_2">epsilon_at<a class="headerlink" href="#epsilon_at_2" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">method</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">method</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Largest ε the audit can certify at the given δ. Requires <code>delta &gt; 0</code>
 (μ-GDP is incompatible with pure ε-DP).</p>
 <h3 id="delta_at_2">delta_at<a class="headerlink" href="#delta_at_2" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">method</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="n">method</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>δ(ε) under the inferred μ̂-GDP guarantee, via the closed-form GDP relation.</p>
 <h3 id="beta_at_1">beta_at<a class="headerlink" href="#beta_at_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">method</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="n">method</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>f-DP Type-II error at α under the inferred μ̂-GDP:
 β(α; μ) = Φ(Φ⁻¹(1 − α) − μ̂). Theoretical β of the post-audit guarantee,
 distinct from <code>OneRunEstimate.attack_beta_at</code> (empirical attack ROC).</p>
 <h3 id="advantage_1">advantage<a class="headerlink" href="#advantage_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">method</span><span class="o">.</span><span class="n">advantage</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="n">method</span><span class="o">.</span><span class="n">advantage</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span>
 </code></pre></div>
 <p>Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1.</p>
 <hr />
@@ -4637,6 +4726,10 @@ distinct from <code>OneRunEstimate.attack_beta_at</code> (empirical attack ROC).
 <tr>
 <td><code>auditing.loss_scores(loss_fn, ...)</code></td>
 <td>Membership scores → <code>np.ndarray</code></td>
+</tr>
+<tr>
+<td><code>auditing.gradient_scores(loss_fn, ...)</code></td>
+<td>White-box membership scores → <code>np.ndarray</code></td>
 </tr>
 <tr>
 <td><code>auditing.one_run(scores, coin_flip=cf)</code></td>
