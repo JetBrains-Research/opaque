@@ -230,7 +230,6 @@ def vmap_create_sliding_window_causal_mask(
 
     # causal_mask shape: (batch_size, 1, seq_len, target_length)
     seq_len = causal_mask.shape[-2]
-    target_length = causal_mask.shape[-1]
     device = input_embeds.device
     mask_dtype = causal_mask.dtype
 
@@ -242,19 +241,28 @@ def vmap_create_sliding_window_causal_mask(
             past_seen_tokens, past_seen_tokens + seq_len, device=device
         )
 
-    # Absolute positions for every key slot (0 .. target_length-1).
-    key_abs_positions = torch.arange(target_length, device=device)  # (target_length,)
-
+    # Absolute positions for every key slot in column order.
+    # vmap_create_causal_mask lays the key dimension out as:
+    #   cols 0..seq_len-1        → current tokens at cache_position[0..seq_len-1]
+    #   cols seq_len..target_length-1 → past cached tokens at absolute positions 0..past_seen_tokens-1
+    # (When past_seen_tokens == 0 the second slice is empty and
+    #  key_abs_positions == cache_position == torch.arange(seq_len).)
     cache_pos_flat = cache_position.view(-1)
     if cache_pos_flat.shape[0] == seq_len:
         # Normal or vmap-without-batch-dim: cache_position is (seq_len,).
         query_abs_positions = cache_pos_flat  # (seq_len,)
+        key_abs_positions = torch.cat(
+            [cache_pos_flat, torch.arange(past_seen_tokens, device=device)]
+        )  # (target_length,)
     else:
         # vmap-with-batch-dim: cache_position is (batch * seq_len,).
         # Fall back to contiguous positions starting at past_seen_tokens.
         query_abs_positions = torch.arange(
             past_seen_tokens, past_seen_tokens + seq_len, device=device
         )
+        key_abs_positions = torch.cat(
+            [query_abs_positions, torch.arange(past_seen_tokens, device=device)]
+        )  # (target_length,)
 
     # window_in_mask[q, k] = True  iff  k_abs >= q_abs - sliding_window + 1
     # shape: (seq_len, target_length)

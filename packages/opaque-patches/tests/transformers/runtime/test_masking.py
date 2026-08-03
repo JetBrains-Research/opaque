@@ -195,3 +195,44 @@ class TestSlidingWindowCausalMask:
         )
         assert mask is not None
         assert torch.equal(mask, causal_mask)
+
+    def test_cached_kv_window_uses_correct_absolute_positions(self):
+        # With past_seen_tokens=3, seq_len=2, sliding_window=2:
+        # vmap_create_causal_mask lays out the key dim as:
+        #   cols 0-1: current tokens at abs positions 3, 4  (cache_position)
+        #   cols 2-4: past cached tokens at abs positions 0, 1, 2
+        # Query at abs pos 4 (q_idx=1), window=2 → lower bound = 3.
+        # → col 0 (abs 3) ✓, col 1 (abs 4) ✓ (future — blocked by causal),
+        #   col 2 (abs 0) ✗, col 3 (abs 1) ✗, col 4 (abs 2) ✗.
+        seq_len = 2
+        past_seen_tokens = 3
+        sliding_window = 2
+        config = type(
+            "Cfg",
+            (),
+            {"_attn_implementation": "eager", "sliding_window": sliding_window},
+        )()
+        input_embeds = torch.randn(1, seq_len, 8)
+        cache_position = torch.arange(past_seen_tokens, past_seen_tokens + seq_len)
+
+        # Provide a minimal DynamicCache-like object so past_seen_tokens is read.
+        class _FakeCache:
+            def get_seq_length(self):
+                return past_seen_tokens
+
+        mask = vmap_create_sliding_window_causal_mask(
+            config,
+            inputs_embeds=input_embeds,
+            past_key_values=_FakeCache(),
+            cache_position=cache_position,
+        )
+        neg_inf = torch.finfo(mask.dtype).min
+        target_length = past_seen_tokens + seq_len  # 5
+
+        assert mask.shape == (1, 1, seq_len, target_length)
+
+        # q=1 (abs pos 4): can see col 0 (abs pos 3, in window), not cols 2-4 (abs 0-2)
+        assert mask[0, 0, 1, 0] == 0.0, "col 0 (abs 3) should be in window"
+        assert mask[0, 0, 1, 2] == neg_inf, "col 2 (abs 0) should be out of window"
+        assert mask[0, 0, 1, 3] == neg_inf, "col 3 (abs 1) should be out of window"
+        assert mask[0, 0, 1, 4] == neg_inf, "col 4 (abs 2) should be out of window"
