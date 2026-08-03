@@ -1,4 +1,4 @@
-"""K-prefix invariants for :meth:`DpFtrlProcess._pld_at_horizon` (= ``per_step(proc) * K``).
+"""K-prefix invariants for :meth:`DpHorizonProcess.pld_at`.
 
 The K-prefix bound is the deployed-and-stopped-early mechanism: the
 K-step PLD is evaluated using the N-tuned strategy coefficients and the
@@ -6,16 +6,15 @@ post-processing inequality on the K-prefix projection of the N-step
 output stream.  This file asserts the invariants that flow from that
 construction:
 
-- ``ε(_pld_at_horizon(0))         == 0`` (empty accountant).
-- ``ε(_pld_at_horizon(N))         == proc.epsilon_at(δ)``.
+- ``ε(pld_at(0))         == 0`` (empty accountant).
+- ``ε(pld_at(N))         == proc.epsilon_at(δ)``.
 - ``K1 ≤ K2 ⇒ ε(K1) ≤ ε(K2)`` (monotone; MC paths within slack).
 - ``ε(K) ≤ ε(self)`` for ``K ≤ N`` (bounded by full).
 - For K = G · atomic_unit + r with r ∈ [0, atomic_unit):
   ``ε(G·M) ≤ ε(K) ≤ ε((G+1)·M)`` (sandwich; closed-form paths only).
 
-Implemented as ``(per_step(proc) * K).epsilon_at(δ)`` since
-``_pld_at_horizon`` is internal — but the assertions probe the same
-worker.
+Implemented as ``(per_step(proc) * K).epsilon_at(δ)`` through the generic
+horizon adapter.
 """
 
 from __future__ import annotations
@@ -26,14 +25,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core.mechanisms.types import Identity
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.dpftrl.accounting.types import (
     BallsInBins,
     BMinSep,
     CyclicPoisson,
-    DpFtrlProcess,
 )
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -51,12 +51,12 @@ _DELTA = 1e-5
 _MC_KW = {"num_mc_samples": 4000, "seed": 17}
 
 
-def _atomic_unit(proc: DpFtrlProcess) -> int:
+def _atomic_unit(proc: DpHorizonProcess) -> int:
     """Diagnostic — the K-rounding granularity for this amplifier."""
     return int(proc.atomic_unit)
 
 
-def _eps_at(proc: DpFtrlProcess, K: int, delta: float) -> float:
+def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
     """K-step ε via ``per_step(proc) * K`` — the public API surface.
 
     MC kwargs are read off the global ``acc.set_discretization`` config
@@ -65,7 +65,7 @@ def _eps_at(proc: DpFtrlProcess, K: int, delta: float) -> float:
     """
     if K <= 0:
         return Identity().epsilon_at(delta)
-    step = ftrl_acc.per_step(proc)
+    step = acc.per_step(proc)
     return (step * K).epsilon_at(delta)
 
 
@@ -77,8 +77,6 @@ def _seed_mc():
     discretization kwargs; MC sample budget / seed must come from the
     global config.  Set globally for the duration of the test.
     """
-    import opaque.accounting as acc
-
     acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
     yield
     acc.set_discretization()  # restore defaults
@@ -114,7 +112,7 @@ class TestCyclicPoissonIdentity:
 
     def test_overshoot_step_raises(self):
         proc = self._proc(100)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 10_000).epsilon_at(_DELTA)
 
@@ -279,8 +277,8 @@ class TestBallsInBinsIdentity:
 #
 # DP-FTRL accounting is defined by combining an amplification factory with
 # an inner mechanism and dispatching by ``match self.inner.strategy``
-# inside the amplification's ``_pld_at_horizon``.  These tests mirror that
-# structure: every (amp, inner) pair that ``_pld_at_horizon`` should
+# inside the amplification's ``pld_at``. These tests mirror that structure:
+# every (amp, inner) pair that ``pld_at`` should
 # support is exercised against the same invariants.
 #
 # To add a new supported pair: register the amp / inner factory below and
@@ -288,7 +286,7 @@ class TestBallsInBinsIdentity:
 # ---------------------------------------------------------------------------
 
 
-_AMPLIFICATIONS: dict[str, tuple[Callable[..., DpFtrlProcess], bool]] = {
+_AMPLIFICATIONS: dict[str, tuple[Callable[..., DpHorizonProcess], bool]] = {
     "CyclicPoisson": (
         lambda inner: ftrl_acc.poisson(inner, sample_rate=0.01, n_steps=64),
         False,
@@ -316,7 +314,7 @@ _MECHANISMS: dict[str, Callable[[], object]] = {
 }
 
 
-# Pairs where ``_pld_at_horizon`` returns a usable K-step PLD for any K.
+# Pairs where ``pld_at`` returns a usable K-step PLD for any K.
 _SUPPORTED_PAIRS: list[tuple[str, str]] = [
     ("CyclicPoisson", "IdentityMf"),
     ("CyclicPoisson", "BandMf"),
@@ -329,7 +327,7 @@ _SUPPORTED_PAIRS: list[tuple[str, str]] = [
 ]
 
 
-def _build(amp: str, mech: str) -> DpFtrlProcess:
+def _build(amp: str, mech: str) -> DpHorizonProcess:
     factory, _ = _AMPLIFICATIONS[amp]
     return factory(_MECHANISMS[mech]())
 
@@ -342,15 +340,15 @@ def _pld_kwargs(amp: str) -> dict:
     return _MC_KW if _is_mc(amp) else {}
 
 
-def _eps_via_step(proc: DpFtrlProcess, K: int, delta: float) -> float:
+def _eps_via_step(proc: DpHorizonProcess, K: int, delta: float) -> float:
     """K-step ε via ``per_step(proc) * K`` — the public idiom."""
     if K <= 0:
         return Identity().epsilon_at(delta)
-    step = ftrl_acc.per_step(proc)
+    step = acc.per_step(proc)
     return (step * K).epsilon_at(delta)
 
 
-def _is_mc_proc(proc: DpFtrlProcess) -> bool:
+def _is_mc_proc(proc: DpHorizonProcess) -> bool:
     """Whether ``proc`` evaluates its PLD by Monte Carlo.
 
     ``BallsInBins`` is strategy-dependent: the identity inner uses the
@@ -362,7 +360,7 @@ def _is_mc_proc(proc: DpFtrlProcess) -> bool:
     return isinstance(proc, BMinSep)
 
 
-def _eps_full(proc: DpFtrlProcess, delta: float) -> float:
+def _eps_full(proc: DpHorizonProcess, delta: float) -> float:
     """Full-horizon ε direct off ``proc`` (MC kwargs forwarded on the leaf)."""
     if _is_mc_proc(proc):
         return proc.pld(**_MC_KW).epsilon_at(delta)
@@ -393,7 +391,7 @@ class TestKPrefixInvariants:
     @pytest.mark.usefixtures("_seed_mc")
     def test_inherits_dp_ftrl_process(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        assert isinstance(proc, DpFtrlProcess)
+        assert isinstance(proc, DpHorizonProcess)
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_step_zero_is_identity_eps(self, amp: str, mech: str):
@@ -410,7 +408,7 @@ class TestKPrefixInvariants:
     @pytest.mark.usefixtures("_seed_mc")
     def test_overshoot_step_raises(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
@@ -465,7 +463,7 @@ class TestKPrefixInvariants:
     @pytest.mark.usefixtures("_seed_mc")
     def test_supports_composition(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
         combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
         assert math.isfinite(combined.epsilon_at(_DELTA))
@@ -505,7 +503,7 @@ class TestRecipeDrivenGramRegen:
         full = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         direct = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_at = (step * _REGEN_K).epsilon_at(_DELTA)
         e_dir = (
             _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
@@ -519,7 +517,7 @@ class TestRecipeDrivenGramRegen:
         full = bisr_strategy(bandwidth=2)
         direct = bisr_strategy(bandwidth=2)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_at = (step * _REGEN_K).epsilon_at(_DELTA)
         e_dir = (
             _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
@@ -533,7 +531,7 @@ class TestRecipeDrivenGramRegen:
         full = lambda_cgd_strategy(lambda_=0.5)
         direct = lambda_cgd_strategy(lambda_=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = ftrl_acc.per_step(proc)
+        step = acc.per_step(proc)
         e_at = (step * _REGEN_K).epsilon_at(_DELTA)
         e_dir = (
             _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)

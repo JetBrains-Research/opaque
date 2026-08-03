@@ -18,9 +18,9 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
 :func:`poisson` and :func:`parallel_poisson` return a **per-step**
 :class:`DpProcess`; compose externally with ``* num_steps`` for
-full-training privacy.  :func:`random_allocation` is the exception — it
-returns a **per-epoch** process covering ``num_bins`` steps, so compose it
-with ``* num_epochs``.
+full-training privacy. :func:`random_allocation` returns a
+:class:`opaque.accounting.types.DpHorizonProcess` object and exposes prefix
+privacy via ``pld_at`` / :func:`opaque.accounting.per_step`.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`

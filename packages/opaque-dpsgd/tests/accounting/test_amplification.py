@@ -219,81 +219,85 @@ class TestRandomAllocationDataclass:
 
     def test_fields(self):
         g = Gaussian(0.8)
-        r = RandomAllocation(g, 16)
+        r = RandomAllocation(g, 16, 64)
         assert r.inner is g
         assert r.num_bins == 16
+        assert r.n_steps == 64
 
     def test_frozen(self):
-        r = RandomAllocation(Gaussian(0.8), 16)
+        r = RandomAllocation(Gaussian(0.8), 16, 64)
         with pytest.raises(FrozenInstanceError):
             r.num_bins = 32  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(RandomAllocation(Gaussian(0.8), 16), DpProcess)
+        assert isinstance(RandomAllocation(Gaussian(0.8), 16, 64), DpProcess)
 
     def test_equality(self):
-        assert RandomAllocation(Gaussian(0.8), 16) == RandomAllocation(
-            Gaussian(0.8), 16
+        assert RandomAllocation(Gaussian(0.8), 16, 64) == RandomAllocation(
+            Gaussian(0.8), 16, 64
         )
-        assert RandomAllocation(Gaussian(0.8), 16) != RandomAllocation(
-            Gaussian(0.8), 32
+        assert RandomAllocation(Gaussian(0.8), 16, 64) != RandomAllocation(
+            Gaussian(0.8), 32, 64
         )
 
     def test_steps_per_epoch_is_num_bins(self):
         """The conversion factor users need to turn steps into epochs."""
-        assert RandomAllocation(Gaussian(0.8), 16).steps_per_epoch == 16
+        assert RandomAllocation(Gaussian(0.8), 16, 64).steps_per_epoch == 16
 
     def test_validates_on_direct_construction(self):
         """Deserialization calls ``cls(**kwargs)``, bypassing the factory, so
         the bound has to live in ``__post_init__``."""
         with pytest.raises(ValueError, match="num_bins"):
-            RandomAllocation(Gaussian(0.8), 1)
+            RandomAllocation(Gaussian(0.8), 1, 64)
 
     @pytest.mark.slow
     def test_pld_returns_valid(self):
-        eps = RandomAllocation(Gaussian(1.0), 8).pld().epsilon_at(1e-8)
+        eps = RandomAllocation(Gaussian(1.0), 8, 32).pld().epsilon_at(1e-8)
         assert math.isfinite(eps)
         assert eps > 0
 
 
 class TestRandomAllocationConstructor:
-    """dpsgd_acc.random_allocation() takes (inner, num_bins=...)."""
+    """dpsgd_acc.random_allocation() takes a declared horizon."""
 
     def test_returns_random_allocation(self):
-        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=16)
+        r = dpsgd_acc.random_allocation(
+            dpsgd_acc.gaussian(0.8), num_bins=16, n_steps=64
+        )
         assert isinstance(r, RandomAllocation)
         assert r.num_bins == 16
 
     def test_num_bins_is_keyword_only(self):
         with pytest.raises(TypeError):
-            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), 16)  # type: ignore[misc]
+            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), 16, 64)  # type: ignore[misc]
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian"):
-            dpsgd_acc.random_allocation("bad", num_bins=16)  # type: ignore[arg-type]
+            dpsgd_acc.random_allocation("bad", num_bins=16, n_steps=64)  # type: ignore[arg-type]
 
     def test_rejects_num_bins_below_two(self):
         with pytest.raises(ValueError, match="num_bins"):
-            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=1)
+            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=1, n_steps=64)
 
     @pytest.mark.slow
     def test_accepts_adaclip(self):
         r = dpsgd_acc.random_allocation(
             dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.0), expected_batch_size=256),
             num_bins=8,
+            n_steps=32,
         )
         eps = r.epsilon_at(1e-8)
         assert math.isfinite(eps)
         assert eps > 0
 
     def test_nonprivate_inner_is_infinite(self):
-        r = dpsgd_acc.random_allocation(acc.nonprivate(), num_bins=8)
+        r = dpsgd_acc.random_allocation(acc.nonprivate(), num_bins=8, n_steps=32)
         assert math.isinf(r.epsilon_at(1e-8))
 
     def test_zero_noise_gaussian_is_infinite(self):
         """``Gaussian(0)`` short-circuits before reaching the native primitive,
         which requires ``σ > 0``."""
-        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.0), num_bins=8)
+        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.0), num_bins=8, n_steps=32)
         assert math.isinf(r.epsilon_at(1e-8))
 
 
@@ -303,7 +307,9 @@ class TestRandomAllocationTightness:
     @pytest.mark.slow
     def test_below_poisson_at_matched_rate(self):
         b, sigma, delta = 16, 1.0, 1e-8
-        ra = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(sigma), num_bins=b)
+        ra = dpsgd_acc.random_allocation(
+            dpsgd_acc.gaussian(sigma), num_bins=b, n_steps=b
+        )
         po = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), 1.0 / b)
         assert ra.epsilon_at(delta) < (po * b).epsilon_at(delta)
 
@@ -313,8 +319,20 @@ class TestRandomAllocationTightness:
         sigma, delta = 1.0, 1e-8
         eps = [
             dpsgd_acc.random_allocation(
-                dpsgd_acc.gaussian(sigma), num_bins=b
+                dpsgd_acc.gaussian(sigma), num_bins=b, n_steps=b
             ).epsilon_at(delta)
             for b in (4, 8, 16)
         ]
         assert eps[0] > eps[1] > eps[2]
+
+    @pytest.mark.slow
+    def test_prefix_is_monotone_and_one_step_matches_poisson(self):
+        process = dpsgd_acc.random_allocation(
+            dpsgd_acc.gaussian(1.0),
+            num_bins=8,
+            n_steps=12,
+        )
+        values = [process.pld_at(k).epsilon_at(1e-8) for k in range(1, 13)]
+        assert values == sorted(values)
+        poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), 1 / 8)
+        assert values[0] == pytest.approx(poisson.epsilon_at(1e-8), abs=2e-3)

@@ -11,6 +11,7 @@ use crate::numerics::special::gaussian_log_cdf;
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
+use super::discrete_mixture::{binomial_log_probs, truncate_upper_tail};
 use super::poisson::poisson_gaussian_pld;
 use super::{validate_noise_multiplier, validate_rate};
 
@@ -62,21 +63,8 @@ pub fn parallel_poisson_gaussian_pld(
     let one_sided_x_tail_mass = 0.5 * log_mass.exp();
 
     let full_log_probs = binomial_log_probs(microbatches, rate);
-    let effective_k =
-        auto_k_max_from_x_tail_mass(&full_log_probs, microbatches, one_sided_x_tail_mass);
-    let (normalized_log_probs, head_mass, tail_mass) = if effective_k < microbatches {
-        let head_log_probs = &full_log_probs[..=effective_k];
-        let head_log_mass = log_sumexp(head_log_probs);
-        let head_mass = head_log_mass.exp();
-        let tail_mass = (1.0 - head_mass).clamp(0.0, 1.0);
-        let normalized: Vec<f64> = head_log_probs
-            .iter()
-            .map(|&lp| lp - head_log_mass)
-            .collect();
-        (normalized, head_mass, tail_mass)
-    } else {
-        (full_log_probs, 1.0, 0.0)
-    };
+    let (normalized_log_probs, head_mass, tail_mass) =
+        truncate_upper_tail(&full_log_probs, one_sided_x_tail_mass);
 
     let c = MixtureConstants::from_log_probs(sigma, normalized_log_probs);
 
@@ -88,29 +76,6 @@ pub fn parallel_poisson_gaussian_pld(
         Ok((head_mass * delta_head + tail_mass).clamp(0.0, 1.0))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
-}
-
-fn auto_k_max_from_x_tail_mass(
-    full_log_probs: &[f64],
-    microbatches: usize,
-    one_sided_x_tail_mass: f64,
-) -> usize {
-    // `log_mass_truncation_bound` parameterizes x-space truncation as a two-sided
-    // mass budget. For one-sided K-tail truncation, use half that mass.
-    let tail_target = one_sided_x_tail_mass.clamp(0.0, 1.0);
-    if tail_target <= 0.0 {
-        return microbatches;
-    }
-
-    let mut head_mass = 0.0;
-    for (k, &lp) in full_log_probs.iter().enumerate() {
-        head_mass += lp.exp();
-        let tail_mass = (1.0 - head_mass).max(0.0);
-        if tail_mass <= tail_target {
-            return k.min(microbatches);
-        }
-    }
-    microbatches
 }
 
 // ===========================================================================
@@ -130,25 +95,38 @@ struct MixtureConstants {
 
 impl MixtureConstants {
     fn from_log_probs(sigma: f64, log_probs: Vec<f64>) -> Self {
-        let variance = sigma * sigma;
         let m = log_probs.len() - 1;
         let sensitivities: Vec<f64> = (0..=m).map(|k| k as f64).collect();
+        Self::new(sigma, log_probs, sensitivities)
+    }
 
-        let precomputed_remove: Vec<f64> = (0..=m)
-            .map(|k| {
-                let s = k as f64;
-                log_probs[k] + s * (-0.5 * s) / variance
+    fn new(sigma: f64, log_probs: Vec<f64>, sensitivities: Vec<f64>) -> Self {
+        assert_eq!(log_probs.len(), sensitivities.len());
+        let variance = sigma * sigma;
+
+        let precomputed_remove: Vec<f64> = log_probs
+            .iter()
+            .zip(&sensitivities)
+            .map(|(&log_probability, &sensitivity)| {
+                log_probability - 0.5 * sensitivity * sensitivity / variance
             })
             .collect();
 
-        let precomputed_add: Vec<f64> = (0..=m)
-            .map(|k| {
-                let s = k as f64;
-                log_probs[k] - s * (0.5 * s) / variance
+        let precomputed_add: Vec<f64> = log_probs
+            .iter()
+            .zip(&sensitivities)
+            .map(|(&log_probability, &sensitivity)| {
+                log_probability - 0.5 * sensitivity * sensitivity / variance
             })
             .collect();
 
-        let sampling_prob = 1.0 - log_probs[0].exp();
+        let sampling_prob = log_probs
+            .iter()
+            .zip(&sensitivities)
+            .filter(|(_, sensitivity)| **sensitivity > 0.0)
+            .map(|(log_probability, _)| log_probability.exp())
+            .sum::<f64>()
+            .min(1.0);
 
         MixtureConstants {
             log_probs,
@@ -162,27 +140,16 @@ impl MixtureConstants {
     }
 
     fn max_sensitivity(&self) -> f64 {
-        *self.sensitivities.last().unwrap()
+        self.sensitivities.iter().copied().fold(0.0, f64::max)
     }
 
     fn min_positive_sensitivity(&self) -> f64 {
-        1.0
+        self.sensitivities
+            .iter()
+            .copied()
+            .filter(|value| *value > 0.0)
+            .fold(f64::INFINITY, f64::min)
     }
-}
-
-/// Stable log Binom(k; m, q) via recurrence.
-fn binomial_log_probs(m: usize, q: f64) -> Vec<f64> {
-    let mut log_probs = Vec::with_capacity(m + 1);
-    let log_1mq = (1.0 - q).ln();
-    let log_q_ratio = (q / (1.0 - q)).ln();
-
-    log_probs.push(m as f64 * log_1mq);
-    for k in 1..=m {
-        let prev = log_probs[k - 1];
-        let log_binom_ratio = ((m - k + 1) as f64 / k as f64).ln();
-        log_probs.push(prev + log_binom_ratio + log_q_ratio);
-    }
-    log_probs
 }
 
 /// Privacy loss at point x for mixture Gaussian.
@@ -501,39 +468,17 @@ mod tests {
         assert_relative_eq!(delta_rem, 0.15768284088654105, epsilon = 1e-6);
     }
 
+    #[test]
+    fn test_mixture_sensitivity_bounds_are_data_driven() {
+        let mixture = make_test_constants(1.0, &[0.0, 3.0, 0.5, 2.0], &[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(mixture.min_positive_sensitivity(), 0.5);
+        assert_eq!(mixture.max_sensitivity(), 3.0);
+        assert_relative_eq!(mixture.sampling_prob, 0.9, epsilon = 1e-12);
+    }
+
     /// Helper: construct MixtureConstants from arbitrary sensitivities and probs.
     fn make_test_constants(sigma: f64, sensitivities: &[f64], probs: &[f64]) -> MixtureConstants {
-        let variance = sigma * sigma;
         let log_probs: Vec<f64> = probs.iter().map(|&p| p.ln()).collect();
-
-        let precomputed_remove: Vec<f64> = sensitivities
-            .iter()
-            .zip(log_probs.iter())
-            .map(|(&s, &lp)| lp + s * (-0.5 * s) / variance)
-            .collect();
-
-        let precomputed_add: Vec<f64> = sensitivities
-            .iter()
-            .zip(log_probs.iter())
-            .map(|(&s, &lp)| lp - s * (0.5 * s) / variance)
-            .collect();
-
-        let sampling_prob: f64 = sensitivities
-            .iter()
-            .zip(probs.iter())
-            .filter(|(&s, _)| s > 0.0)
-            .map(|(_, &p)| p)
-            .sum::<f64>()
-            .min(1.0);
-
-        MixtureConstants {
-            log_probs,
-            sensitivities: sensitivities.to_vec(),
-            precomputed_remove,
-            precomputed_add,
-            sigma,
-            variance,
-            sampling_prob,
-        }
+        MixtureConstants::new(sigma, log_probs, sensitivities.to_vec())
     }
 }
