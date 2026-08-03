@@ -8,7 +8,8 @@ version = "0.0.0.dev0"
 description = "High-performance differential privacy accounting using Privacy Loss Distributions"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"
-authors = [{name = "Opaque Contributors"}]
+authors = [{ name = "Opaque Contributors" }]
+keywords = ["differential-privacy", "privacy-loss-distribution", "pld"]
 dependencies = [
     "opaque-base>=0.0.0.dev0",
 ]
