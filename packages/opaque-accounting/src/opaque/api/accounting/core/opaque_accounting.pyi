@@ -4,7 +4,7 @@
 Rust computes PLDs; Python owns composition and dispatch.
 
 The extension exports two classes (:class:`Pld` and :class:`DiscretizationConfig`)
-and seven functions for creating PLDs from mechanism parameters.
+and several functions for creating PLDs from mechanism parameters.
 
 Example::
 
@@ -49,11 +49,24 @@ class Pld:
     def delta_at(self, epsilon: float) -> float:
         """Smallest δ achieving (ε, δ)-DP.
 
+        Always returns at least ``infinity_mass``; if the returned value equals
+        ``infinity_mass``, the tail-truncation budget is exhausted and the true
+        δ may be smaller than what is reported.
+
         Args:
             epsilon: Privacy budget. Must be >= 0.
 
         Returns:
             Delta value.
+        """
+
+    @property
+    def infinity_mass(self) -> float:
+        """Worst-case infinity mass over both adjacency types.
+
+        ``delta_at(ε)`` is always ≥ ``infinity_mass``; equality means the
+        configured tail-truncation budget is exhausted and the true δ may be
+        smaller.
         """
 
     def advantage(self) -> float:

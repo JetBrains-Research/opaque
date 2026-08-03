@@ -27,6 +27,14 @@ pub(crate) fn delta(pld: &PrivacyLossDistribution, epsilon: f64) -> f64 {
     }
 }
 
+/// Worst-case infinity_mass over both adjacencies.
+pub(crate) fn infinity_mass(pld: &PrivacyLossDistribution) -> f64 {
+    match &pld.pmf_add {
+        None => pld.pmf_remove.infinity_mass,
+        Some(pmf_add) => pld.pmf_remove.infinity_mass.max(pmf_add.infinity_mass),
+    }
+}
+
 /// Compute the minimum epsilon for a target delta (worst-case over adjacencies)
 pub(crate) fn epsilon(pld: &PrivacyLossDistribution, target_delta: f64) -> f64 {
     let epsilon_remove = pmf_epsilon(&pld.pmf_remove, target_delta);
