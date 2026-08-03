@@ -438,9 +438,33 @@ jobs:
           path: dist/*.whl
           retention-days: 14
 
+  validate-preview-wheels:
+    name: Validate preview wheel metadata
+    needs: [build-preview-python, build-preview-opaque, build-preview-native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependency
+        run: python3 -m pip install --disable-pip-version-check packaging
+
+      - name: Download preview wheels
+        uses: actions/download-artifact@v6
+        with:
+          pattern: preview-wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Validate internal opaque pins
+        run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-opaque, build-preview-native]
+    needs: [build-preview-python, build-preview-opaque, build-preview-native, validate-preview-wheels]
     runs-on: ubuntu-latest
     steps:
       # Best-effort: merge the per-package wheels into one artifact and delete
