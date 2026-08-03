@@ -6,4 +6,9 @@ Import the aliases from here for existing code; prefer
 opaque.accounting.per_step in new code.
 """
 
-from opaque.api.accounting.core.composition._per_step import PerStep, per_step
+from opaque.api.accounting.core.composition._per_step import (
+    PerStep as PerStep,
+)
+from opaque.api.accounting.core.composition._per_step import (
+    per_step as per_step,
+)
