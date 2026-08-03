@@ -234,9 +234,33 @@ jobs:
           path: dist/*.tar.gz
           retention-days: 90
 
+  validate-release-wheels:
+    name: Validate release wheel metadata
+    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download release wheels
+        uses: actions/download-artifact@v6
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Validate internal opaque pins
+        run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist]
+    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist, validate-release-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6
@@ -248,7 +272,7 @@ jobs:
 
   publish:
     name: Publish to GCP + attach Release assets
-    needs: [merge-wheels, release-tests]
+    needs: [merge-wheels, release-tests, validate-release-wheels]
     runs-on: ubuntu-latest
     environment: release
     permissions:

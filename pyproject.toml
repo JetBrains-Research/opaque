@@ -31,20 +31,23 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "opaque-engine",
-    "opaque-accounting",
-    "opaque-dpsgd",
-    "opaque-optimizers",
-    "opaque-patches",
+    # Build preflight rewrites these sentinel specs to exact synchronized wheel
+    # pins for preview/release artifacts while local workspace installs continue
+    # to resolve against the editable members below.
+    "opaque-engine>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
+    "opaque-dpsgd>=0.0.0.dev0",
+    "opaque-optimizers>=0.0.0.dev0",
+    "opaque-patches>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
-auditing = ["opaque-auditing"]
-dpftrl = ["opaque-dpftrl"]
-alignment = ["opaque-alignment"]
+auditing = ["opaque-auditing>=0.0.0.dev0"]
+dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
+alignment = ["opaque-alignment>=0.0.0.dev0"]
 transformers = [
-    "opaque-transformers",
-    "opaque-patches[transformers]",
+    "opaque-transformers>=0.0.0.dev0",
+    "opaque-patches[transformers]>=0.0.0.dev0",
 ]
 all = [
     "opaque[auditing]",

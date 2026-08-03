@@ -16,13 +16,13 @@ dependencies = [
     "transformers>=4.57.0,<6",
     "peft>=0.13.0",
     "datasets>=2.0.0",
-    "opaque-engine",
-    "opaque-patches",
-    "opaque-dpsgd",
-    "opaque-dpftrl",
-    "opaque-accounting",
-    "opaque-optimizers",
-    "opaque-alignment",
+    "opaque-engine>=0.0.0.dev0",
+    "opaque-patches>=0.0.0.dev0",
+    "opaque-dpsgd>=0.0.0.dev0",
+    "opaque-dpftrl>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
+    "opaque-optimizers>=0.0.0.dev0",
+    "opaque-alignment>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
