@@ -40,7 +40,7 @@ def _outputs() -> dict[str, object]:
                 {"name": package["name"], "paths": package["path"]}
                 for package in packages
             ),
-            {"name": "contracts", "paths": "tests"},
+            {"name": "repo-tests", "paths": "tests"},
         ],
         "python_build_packages": [
             {

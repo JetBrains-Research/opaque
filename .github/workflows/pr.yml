@@ -95,7 +95,7 @@ jobs:
         # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
         # Discover one shard per package from packages/*/pyproject.toml so the
         # matrix expands automatically when wheels are added or removed. The
-        # repo-level tests/ tree stays on its own explicit "contracts" shard.
+        # repo-level tests/ tree stays on its own explicit "repo-tests" shard.
         shard: ${{ fromJSON(needs.discover-packages.outputs.test_shards) }}
         device:
           - name: cpu
