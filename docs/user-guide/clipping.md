@@ -247,9 +247,11 @@ eps = training.epsilon_at(1e-5)
 ### Distributed adaptive clipping
 
 In distributed training, the clip norm must be consistent across devices.
-After each step, synchronize the state:
+`adaptive_clipped_grad` does not auto-detect DDP; after each step,
+synchronize the state:
 
 ```python
+import opaque.distributed as dist_utils
 from opaque.distributed import sync
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)

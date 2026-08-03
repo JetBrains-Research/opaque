@@ -159,12 +159,14 @@ dist_utils.sum_gradients_(grads)
 
 ## Adaptive clipping
 
-`adaptive_clipped_grad` is local-only -- it does not communicate. To keep
-the clip norm consistent across ranks, explicitly synchronize the state
-after each step:
+`adaptive_clipped_grad` is local-only -- it does not communicate or
+auto-detect DDP. To keep the clip norm consistent across ranks, explicitly
+synchronize the state after each step:
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
+import opaque.distributed as dist_utils
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.distributed import sync
 from opaque.random import key
 
@@ -175,6 +177,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
     normalize_by=batch_size,
     key=key(7),
 )
+noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
 # In the training loop:
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
