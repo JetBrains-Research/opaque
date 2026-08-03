@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
-from opaque.api.accounting.dpftrl._base import DpFtrlProcess
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
 from opaque.api.dpftrl.noise._blt import BltStrategy
@@ -61,7 +61,7 @@ _CorrelatedStrategies = (BltStrategy, BsrStrategy, BisrStrategy, LambdaCgdStrate
 
 
 @dataclass(frozen=True, slots=True)
-class BallsInBins(DpFtrlProcess):
+class BallsInBins(DpHorizonProcess):
     """Balls-in-Bins amplified MF mechanism — **total** privacy cost.
 
     The returned PLD covers all ``n_steps`` training rounds (= ``num_bins``
@@ -110,7 +110,7 @@ class BallsInBins(DpFtrlProcess):
         return self.num_bins
 
     @functools.lru_cache(maxsize=8)
-    def _pld_at_horizon(
+    def pld_at(
         self,
         n_steps: int,
         *,
@@ -222,7 +222,7 @@ class BallsInBins(DpFtrlProcess):
         seed: int | None = None,
     ) -> Pld:
         """Return a point estimate, not an upper confidence bound."""
-        return self._pld_at_horizon(
+        return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,

@@ -12,6 +12,7 @@
 
 mod b_min_sep;
 pub mod balls_in_bins;
+mod discrete_mixture;
 mod parallel_poisson;
 pub(crate) mod poisson;
 mod random_allocation;
@@ -25,7 +26,10 @@ pub use b_min_sep::{
 pub use balls_in_bins::bnb_mc_pld;
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
-pub use random_allocation::random_allocation_gaussian_pld;
+pub use random_allocation::{
+    k_out_of_t_gaussian_prefix_pld, random_allocation_gaussian_pld,
+    random_allocation_gaussian_prefix_pld,
+};
 pub use truncated_poisson::truncated_poisson_gaussian_pld;
 
 use crate::error::{PldError, Result};

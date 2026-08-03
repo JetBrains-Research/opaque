@@ -27,15 +27,9 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
   Balls-in-Bins sampling.  Required keywords: ``num_bins``, ``n_steps``
   (must be a positive multiple of ``num_bins``).
 
-Composition adapter:
-
-- :func:`per_step` — wrap a whole-process DP-FTRL accountant as a
-  composable per-step atom so DP-FTRL training loops can adopt the
-  ``acc |= step`` accountant idiom while still getting strategy-aware
-  K-step privacy accounting.
-
 Cross-cutting primitives (composition, calibration) live at
-:mod:`opaque.accounting`.
+:mod:`opaque.accounting`, including :func:`opaque.accounting.per_step` for
+adapting a whole-horizon process to ``acc |= step`` loops.
 
 The amplification dataclass is named ``CyclicPoisson`` (rather than ``Poisson``)
 to avoid a class-name collision with
@@ -59,11 +53,13 @@ Example::
     eps = step.epsilon_at(1e-5)
 """
 
+from opaque.api.accounting.core.composition._per_step import (
+    per_step as per_step,
+)
 from opaque.api.accounting.dpftrl import (
     b_min_sep,
     balls_in_bins,
     mf_gaussian,
-    per_step,
     poisson,
 )
 
@@ -71,6 +67,5 @@ __all__ = [
     "b_min_sep",
     "balls_in_bins",
     "mf_gaussian",
-    "per_step",
     "poisson",
 ]

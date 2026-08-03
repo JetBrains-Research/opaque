@@ -7,9 +7,9 @@ differently, and the difference is exactly one square root:
   whole run in one shot, at ``(σ/√E, t=b)``.  With ``C = I`` the Lemma 3.2
   mixture means are orthogonal with norm ``√E``, so the ``E`` epochs collapse
   into a single allocation against effective noise ``σ/√E``.
-- ``dpsgd_acc.random_allocation(gaussian(σ), num_bins=b) * E`` accounts one
-  epoch at ``(σ, t=b)`` and composes ``E`` of them, which is valid because the
-  DP-SGD sampler redraws its assignment every epoch.
+- ``dpsgd_acc.random_allocation(gaussian(σ), num_bins=b, n_steps=b·E)``
+  composes independent epoch allocations because the DP-SGD sampler redraws
+  its assignment every epoch.
 
 At ``E = 1`` the two reduce to the same call, so they must agree to the last
 bit.  That is the one cheap check that catches a ``σ_eff`` mix-up in either
@@ -37,8 +37,12 @@ def _bnb(sigma: float, b: int, epochs: int):
 
 
 def _alloc(sigma: float, b: int, epochs: int):
-    """Per-epoch redrawn random allocation (scheme B)."""
-    return dpsgd_acc.random_allocation(dpsgd_acc.gaussian(sigma), num_bins=b) * epochs
+    """Whole-horizon redrawn random allocation (scheme B)."""
+    return dpsgd_acc.random_allocation(
+        dpsgd_acc.gaussian(sigma),
+        num_bins=b,
+        n_steps=b * epochs,
+    )
 
 
 @pytest.mark.slow
