@@ -139,7 +139,6 @@ class TestSlidingWindowCausalMask:
     def test_within_window_causal_positions_are_zero(self):
         # seq_len=4, sliding_window=2; positions 0..3
         mask = self._make_mask(seq_len=4, sliding_window=2)
-        neg_inf = torch.finfo(mask.dtype).min
         # q=0, k=0: causal (k==q) and in-window (0 >= 0-2+1=-1) → 0.0
         assert mask[0, 0, 0, 0] == 0.0
         # q=1, k=1: in-window → 0.0
@@ -196,4 +195,3 @@ class TestSlidingWindowCausalMask:
         )
         assert mask is not None
         assert torch.equal(mask, causal_mask)
-
