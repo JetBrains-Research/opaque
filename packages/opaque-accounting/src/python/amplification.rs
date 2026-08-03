@@ -257,3 +257,23 @@ pub fn py_random_allocation_gaussian_prefix_pld(
     )?;
     Ok(PyPld::new(pld))
 }
+
+/// Compute a conservative prefix PLD for global k-out-of-t allocation.
+#[pyfunction]
+#[pyo3(name = "k_out_of_t_gaussian_prefix_pld", signature = (noise_multiplier, total_steps, total_participations, released_steps, config))]
+pub fn py_k_out_of_t_gaussian_prefix_pld(
+    noise_multiplier: f64,
+    total_steps: usize,
+    total_participations: usize,
+    released_steps: usize,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::k_out_of_t_gaussian_prefix_pld(
+        noise_multiplier,
+        total_steps,
+        total_participations,
+        released_steps,
+        &config.inner,
+    )?;
+    Ok(PyPld::new(pld))
+}

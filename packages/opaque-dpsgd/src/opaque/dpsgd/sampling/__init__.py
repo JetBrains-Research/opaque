@@ -9,8 +9,15 @@ use matching accounting).
 bins every epoch, redrawing the assignment each time. It amplifies more
 than Poisson at the matched rate ``1/num_bins``; pair it with
 ``opaque.dpsgd.accounting.random_allocation``.
+
+:class:`KOutOfTSampler` chooses exactly ``total_participations`` steps from a
+declared horizon uniformly for every record.
 """
 
-from opaque.api.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
+from opaque.api.dpsgd.sampling import (
+    KOutOfTSampler,
+    PoissonSampler,
+    RandomAllocationSampler,
+)
 
-__all__ = ["PoissonSampler", "RandomAllocationSampler"]
+__all__ = ["KOutOfTSampler", "PoissonSampler", "RandomAllocationSampler"]
