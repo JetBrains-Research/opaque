@@ -89,6 +89,35 @@ vmap-friendly autograd dispatch.
 
 
 ------------------------------------------------------------------------
+Google DP Accounting (Apache-2.0)
+------------------------------------------------------------------------
+
+The following files contain accounting structure and privacy-metric
+surface adapted from Google DP Accounting
+(https://github.com/google/differential-privacy/tree/main/python/dp_accounting),
+distributed under the Apache License, Version 2.0, and then reworked for
+Opaque's PLD process algebra and native backend:
+
+  packages/opaque-accounting/src/opaque/api/accounting/core/_base.py
+  packages/opaque-accounting/src/opaque/api/accounting/core/_accountant.py
+  packages/opaque-accounting/src/opaque/api/accounting/core/_budgets.py
+  packages/opaque-accounting/src/opaque/api/accounting/core/calibration.py
+
+
+------------------------------------------------------------------------
+Apple random-allocation prototype (Apache-2.0)
+------------------------------------------------------------------------
+
+The following files contain random-allocation accounting/sampling
+structure adapted from an Apple random-allocation prototype repository,
+distributed under the Apache License, Version 2.0, and then reworked for
+Opaque's DP-SGD accounting and sampler APIs:
+
+  packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py
+  packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py
+
+
+------------------------------------------------------------------------
 Hugging Face Transformers (Apache-2.0)
 ------------------------------------------------------------------------
 

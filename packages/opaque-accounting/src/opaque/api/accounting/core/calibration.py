@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Calibration workflow and budget-driven privacy search adapted in part from
+# Google DP Accounting (Apache-2.0;
+# https://github.com/google/differential-privacy/tree/main/python/dp_accounting),
+# then reworked for Opaque's process algebra and native PLD backend.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Binary search calibration for finding parameters that achieve target privacy.
 
 This module provides a generic binary search framework.  Privacy budget

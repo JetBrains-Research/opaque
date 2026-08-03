@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Random-allocation sampler structure adapted in part from an Apple
+# random-allocation prototype repository (Apache-2.0), then reworked for
+# Opaque's DP-SGD sampler API.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Random-allocation sampler for DP-SGD.
 
 Each epoch every example independently picks one of ``num_bins`` bins

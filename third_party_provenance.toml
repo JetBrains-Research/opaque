@@ -68,10 +68,24 @@ files = [
 name = "Google DP Accounting"
 homepage = "https://github.com/google/differential-privacy/tree/main/python/dp_accounting"
 license = "Apache-2.0"
-disposition = "inspired"
-requires_notice = false
+disposition = "adapted"
+requires_notice = true
 files = [
-  "packages/opaque-dpsgd/tests/accounting/test_cross_validation.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_base.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_accountant.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_budgets.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/calibration.py",
+]
+
+[[upstreams]]
+name = "Apple random-allocation prototype"
+homepage = "https://github.com/apple"
+license = "Apache-2.0"
+disposition = "adapted"
+requires_notice = true
+files = [
+  "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py",
+  "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py",
 ]
 
 [[upstreams]]
@@ -81,8 +95,9 @@ license = "Apache-2.0"
 disposition = "inspired"
 requires_notice = false
 files = [
-  "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py",
-  "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py",
+  "packages/opaque-engine/src/opaque/api/engine/functional/__init__.py",
+  "packages/opaque-engine/src/opaque/api/engine/random/_engine.py",
+  "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py",
 ]
 
 [[upstreams]]
@@ -92,5 +107,9 @@ license = "MIT"
 disposition = "inspired"
 requires_notice = false
 files = [
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_base.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_accountant.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/_budgets.py",
+  "packages/opaque-accounting/src/opaque/api/accounting/core/calibration.py",
   "packages/opaque-dpsgd/tests/accounting/test_cross_validation.py",
 ]

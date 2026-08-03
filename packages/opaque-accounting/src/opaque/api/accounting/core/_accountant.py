@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Accountant structure and public privacy-metric API adapted in part from
+# Google DP Accounting (Apache-2.0;
+# https://github.com/google/differential-privacy/tree/main/python/dp_accounting),
+# then reworked for Opaque's immutable accountant model.
+# See ../../../../../NOTICE in this package for the full attribution.
 """Functional DP process accountant for training loops.
 
 An Accountant tracks the accumulated privacy loss from composed DP processes.
