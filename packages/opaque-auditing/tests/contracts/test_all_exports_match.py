@@ -8,8 +8,8 @@ import types
 
 import pytest
 
-import opaque.auditing
 import opaque.api.auditing
+import opaque.auditing
 
 _ROOTS = (opaque.auditing, opaque.api.auditing)
 
