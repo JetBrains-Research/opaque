@@ -3498,12 +3498,14 @@ rate query). Account for it using <code>dpsgd_acc.adaclip()</code>:</p>
 </code></pre></div>
 <h3 id="distributed-adaptive-clipping">Distributed adaptive clipping<a class="headerlink" href="#distributed-adaptive-clipping" title="Permanent link">&para;</a></h3>
 <p>In distributed training, the clip norm must be consistent across devices.
-After each step, synchronize the state:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">clip_state</span> <span class="o">=</span> <span class="n">sync</span><span class="p">(</span><span class="n">clip_state</span><span class="p">)</span>  <span class="c1"># aggregate counts across ranks</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
+<code>adaptive_clipped_grad</code> does not auto-detect DDP; after each step,
+synchronize the state:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist_utils</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">clip_state</span> <span class="o">=</span> <span class="n">sync</span><span class="p">(</span><span class="n">clip_state</span><span class="p">)</span>  <span class="c1"># aggregate counts across ranks</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
 </code></pre></div>
 <p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally, which aggregates
 counts across ranks, recomputes the global clipping rate,

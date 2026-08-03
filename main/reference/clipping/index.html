@@ -3964,15 +3964,16 @@ steps under Poisson sampling.</p>
 <p>Example with distributed training (DDP with Poisson sampling):
     &gt;&gt;&gt; import torch.distributed as dist
     &gt;&gt;&gt; from opaque.api.dpsgd.clipping import adaptive_clipped_grad
-    &gt;&gt;&gt; from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state
     &gt;&gt;&gt; from opaque.distributed import sum_gradients
+    &gt;&gt;&gt; from opaque.distributed import sync
     &gt;&gt;&gt; from opaque.random import key
     &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSampler
     &gt;&gt;&gt;
-    &gt;&gt;&gt; # Initialize distributed
+    &gt;&gt;&gt; # Initialize distributed first (typically via torchrun).
     &gt;&gt;&gt; dist.init_process_group(backend='nccl')
     &gt;&gt;&gt;
-    &gt;&gt;&gt; # Create adaptive clipping (local-only function)
+    &gt;&gt;&gt; # Create adaptive clipping (local-only function).
+    &gt;&gt;&gt; # Distributed callers must synchronize the state explicitly.
     &gt;&gt;&gt; grad_fn, clip_state = adaptive_clipped_grad(
     ...     loss_fn,
     ...     key=key(0),
@@ -3985,8 +3986,8 @@ steps under Poisson sampling.</p>
     &gt;&gt;&gt; for batch_x, batch_y in dataloader:
     ...     # Each device: compute clipped gradients and local adaptive state
     ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-    ...     # Explicit sync step for adaptive clipping state
-    ...     clip_state = sync_adaptive_clip_state(clip_state)
+    ...     # Explicit sync step for adaptive clipping state.
+    ...     clip_state = sync(clip_state)
     ...
     ...     # Sum clipped gradients across devices
     ...     grad = sum_gradients(grad)
@@ -4421,7 +4422,8 @@ Clipping", NeurIPS 2021.</p>
 <span class="normal"><a href="#__codelineno-0-544">544</a></span>
 <span class="normal"><a href="#__codelineno-0-545">545</a></span>
 <span class="normal"><a href="#__codelineno-0-546">546</a></span>
-<span class="normal"><a href="#__codelineno-0-547">547</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="k">def</span><span class="w"> </span><span class="nf">adaptive_clipped_grad</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-547">547</a></span>
+<span class="normal"><a href="#__codelineno-0-548">548</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="k">def</span><span class="w"> </span><span class="nf">adaptive_clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-0-132" name="__codelineno-0-132"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
 <a id="__codelineno-0-133" name="__codelineno-0-133"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-0-134" name="__codelineno-0-134"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -4532,312 +4534,313 @@ Clipping", NeurIPS 2021.</p>
 <a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">    Example with distributed training (DDP with Poisson sampling):</span>
 <a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        &gt;&gt;&gt; import torch.distributed as dist</span>
 <a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.clipping import adaptive_clipped_grad</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state</span>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">        &gt;&gt;&gt; from opaque.distributed import sum_gradients</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">        &gt;&gt;&gt; from opaque.distributed import sum_gradients</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">        &gt;&gt;&gt; from opaque.distributed import sync</span>
 <a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">        &gt;&gt;&gt; from opaque.random import key</span>
 <a id="__codelineno-0-245" name="__codelineno-0-245"></a><span class="sd">        &gt;&gt;&gt; from opaque.api.dpsgd.sampling import PoissonSampler</span>
 <a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">        &gt;&gt;&gt; # Initialize distributed</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">        &gt;&gt;&gt; # Initialize distributed first (typically via torchrun).</span>
 <a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">        &gt;&gt;&gt; dist.init_process_group(backend=&#39;nccl&#39;)</span>
 <a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">        &gt;&gt;&gt; # Create adaptive clipping (local-only function)</span>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        &gt;&gt;&gt; grad_fn, clip_state = adaptive_clipped_grad(</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        ...     loss_fn,</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ...     key=key(0),</span>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        ...     batch_argnums=(1, 2),</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">        ... )</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        &gt;&gt;&gt; # Use Poisson sampling (different batch sizes on each device)</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        &gt;&gt;&gt; sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        &gt;&gt;&gt; for batch_x, batch_y in dataloader:</span>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        ...     # Each device: compute clipped gradients and local adaptive state</span>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)</span>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        ...     # Explicit sync step for adaptive clipping state</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ...     clip_state = sync_adaptive_clip_state(clip_state)</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ...</span>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        ...     # Sum clipped gradients across devices</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ...     grad = sum_gradients(grad)</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        ...</span>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        ...     # Add noise and update</span>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        ...     noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(2))</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">        ...     noisy_grad, noise_state = noise_fn(grad, noise_state)</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        ...     # ... optimizer step</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">        Andrew et al., &quot;Differentially Private Learning with Adaptive</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">        Clipping&quot;, NeurIPS 2021.</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-278" name="__codelineno-0-278"></a>    <span class="c1"># Validate parameters</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>        <span class="k">for</span> <span class="n">gname</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">initial_clipping_norm</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>            <span class="k">if</span> <span class="n">val</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                    <span class="sa">f</span><span class="s2">&quot;initial_clipping_norm must be positive for all groups, &quot;</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> for group &#39;</span><span class="si">{</span><span class="n">gname</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                <span class="p">)</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a>    <span class="k">elif</span> <span class="n">initial_clipping_norm</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>            <span class="sa">f</span><span class="s2">&quot;initial_clipping_norm must be positive, got </span><span class="si">{</span><span class="n">initial_clipping_norm</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>        <span class="p">)</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">target_quantile</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;target_quantile must be in (0, 1), got </span><span class="si">{</span><span class="n">target_quantile</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a>    <span class="k">if</span> <span class="n">learning_rate</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;learning_rate must be positive, got </span><span class="si">{</span><span class="n">learning_rate</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a>    <span class="k">if</span> <span class="n">clipping_norm_min</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;clipping_norm_min must be positive, got </span><span class="si">{</span><span class="n">clipping_norm_min</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>    <span class="k">if</span> <span class="n">clipping_norm_max</span> <span class="o">&lt;=</span> <span class="n">clipping_norm_min</span><span class="p">:</span>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>            <span class="sa">f</span><span class="s2">&quot;clipping_norm_max (</span><span class="si">{</span><span class="n">clipping_norm_max</span><span class="si">}</span><span class="s2">) must be &gt; clipping_norm_min (</span><span class="si">{</span><span class="n">clipping_norm_min</span><span class="si">}</span><span class="s2">)&quot;</span>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a>        <span class="p">)</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a>    <span class="k">if</span> <span class="n">fraction_noise_std</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a>            <span class="sa">f</span><span class="s2">&quot;fraction_noise_std must be positive, got </span><span class="si">{</span><span class="n">fraction_noise_std</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>        <span class="p">)</span>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>    <span class="c1"># Normalize argnums/batch_argnums for empty-batch detection.</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a>    <span class="n">argnums_tuple</span> <span class="o">=</span> <span class="n">normalize_to_tuple</span><span class="p">(</span><span class="n">argnums</span><span class="p">)</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a>    <span class="n">batch_argnums_raw</span> <span class="o">=</span> <span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;batch_argnums&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="n">batch_argnums_tuple</span> <span class="o">=</span> <span class="n">normalize_to_tuple</span><span class="p">(</span><span class="n">batch_argnums_raw</span><span class="p">)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a>    <span class="c1"># Read static config that the empty-batch path needs to compute max_norms</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a>    <span class="c1"># without going through ``clipped_grad`` itself.</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a>    <span class="n">normalize_by</span> <span class="o">=</span> <span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;normalize_by&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a>    <span class="n">second_moment</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;second_moment&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a>    <span class="c1"># Validate the same static args ``clipped_grad`` validates at factory time,</span>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a>    <span class="c1"># so misconfigurations (e.g. ``normalize_by &lt;= 0`` or argnums/batch_argnums</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a>    <span class="c1"># collisions) fail at construction here rather than first surfacing on the</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a>    <span class="c1"># next non-empty step — keeping empty- and non-empty-batch failure modes</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a>    <span class="c1"># consistent.</span>
-<a id="__codelineno-0-320" name="__codelineno-0-320"></a>    <span class="n">_validate_static_args</span><span class="p">(</span><span class="n">argnums</span><span class="p">,</span> <span class="n">batch_argnums_raw</span><span class="p">,</span> <span class="n">normalize_by</span><span class="p">)</span>
-<a id="__codelineno-0-321" name="__codelineno-0-321"></a>    <span class="n">output_bound</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">clipping_norm</span><span class="p">:</span> <span class="n">clipping_norm</span> <span class="o">/</span> <span class="n">normalize_by</span>  <span class="c1"># noqa: E731</span>
-<a id="__codelineno-0-322" name="__codelineno-0-322"></a>
-<a id="__codelineno-0-323" name="__codelineno-0-323"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_output_squared_bound</span><span class="p">(</span><span class="n">clipping_norm</span><span class="p">):</span>
-<a id="__codelineno-0-324" name="__codelineno-0-324"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">clipping_norm</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">)</span> <span class="o">/</span> <span class="n">normalize_by</span>
-<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a>    <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-0-327" name="__codelineno-0-327"></a>        <span class="s2">&quot;target_quantile&quot;</span><span class="p">:</span> <span class="n">target_quantile</span><span class="p">,</span>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a>        <span class="s2">&quot;learning_rate&quot;</span><span class="p">:</span> <span class="n">learning_rate</span><span class="p">,</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a>        <span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">:</span> <span class="n">clipping_norm_min</span><span class="p">,</span>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>        <span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">:</span> <span class="n">clipping_norm_max</span><span class="p">,</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a>        <span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">:</span> <span class="n">fraction_noise_std</span><span class="p">,</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a>    <span class="p">}</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a>    <span class="n">is_per_group</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">)</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_empty_num_clipped</span><span class="p">():</span>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a>        <span class="k">if</span> <span class="n">is_per_group</span><span class="p">:</span>
-<a id="__codelineno-0-338" name="__codelineno-0-338"></a>            <span class="k">return</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
-<a id="__codelineno-0-339" name="__codelineno-0-339"></a>        <span class="k">return</span> <span class="mf">0.0</span>
-<a id="__codelineno-0-340" name="__codelineno-0-340"></a>
-<a id="__codelineno-0-341" name="__codelineno-0-341"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_empty_batch_state</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AdaptiveClipState</span><span class="p">:</span>
-<a id="__codelineno-0-342" name="__codelineno-0-342"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Build new state for an empty batch: clip_norm preserved, step bumped.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-343" name="__codelineno-0-343"></a>        <span class="k">return</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
-<a id="__codelineno-0-344" name="__codelineno-0-344"></a>            <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-345" name="__codelineno-0-345"></a>            <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-346" name="__codelineno-0-346"></a>            <span class="n">_step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-347" name="__codelineno-0-347"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
-<a id="__codelineno-0-348" name="__codelineno-0-348"></a>            <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-349" name="__codelineno-0-349"></a>            <span class="n">_learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-350" name="__codelineno-0-350"></a>            <span class="n">_target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-351" name="__codelineno-0-351"></a>            <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-352" name="__codelineno-0-352"></a>            <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-353" name="__codelineno-0-353"></a>            <span class="n">_num_clipped</span><span class="o">=</span><span class="n">_empty_num_clipped</span><span class="p">(),</span>
-<a id="__codelineno-0-354" name="__codelineno-0-354"></a>            <span class="n">_batch_size</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-355" name="__codelineno-0-355"></a>        <span class="p">)</span>
-<a id="__codelineno-0-356" name="__codelineno-0-356"></a>
-<a id="__codelineno-0-357" name="__codelineno-0-357"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-358" name="__codelineno-0-358"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute clipped gradients with adaptive threshold.</span>
-<a id="__codelineno-0-359" name="__codelineno-0-359"></a>
-<a id="__codelineno-0-360" name="__codelineno-0-360"></a><span class="sd">        Args:</span>
-<a id="__codelineno-0-361" name="__codelineno-0-361"></a><span class="sd">            *args: Positional arguments to pass to the loss function.</span>
-<a id="__codelineno-0-362" name="__codelineno-0-362"></a><span class="sd">            state: Current AdaptiveClipState.</span>
-<a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="sd">            **kwargs: Keyword arguments to pass to the loss function.</span>
-<a id="__codelineno-0-364" name="__codelineno-0-364"></a>
-<a id="__codelineno-0-365" name="__codelineno-0-365"></a><span class="sd">        Returns:</span>
-<a id="__codelineno-0-366" name="__codelineno-0-366"></a><span class="sd">            If return_aux:</span>
-<a id="__codelineno-0-367" name="__codelineno-0-367"></a><span class="sd">                ((grad, aux), new_state)</span>
-<a id="__codelineno-0-368" name="__codelineno-0-368"></a><span class="sd">            Else:</span>
-<a id="__codelineno-0-369" name="__codelineno-0-369"></a><span class="sd">                (grad, new_state)</span>
-<a id="__codelineno-0-370" name="__codelineno-0-370"></a><span class="sd">        &quot;&quot;&quot;</span>
-<a id="__codelineno-0-371" name="__codelineno-0-371"></a>        <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::adaptive_clipped_grad&quot;</span><span class="p">):</span>
-<a id="__codelineno-0-372" name="__codelineno-0-372"></a>            <span class="k">return</span> <span class="n">_grad_fn_impl</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-373" name="__codelineno-0-373"></a>
-<a id="__codelineno-0-374" name="__codelineno-0-374"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_grad_fn_impl</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-375" name="__codelineno-0-375"></a>        <span class="c1"># Empty batch: zero grads, no adaptation, step still incremented.</span>
-<a id="__codelineno-0-376" name="__codelineno-0-376"></a>        <span class="c1"># When ``second_moment=True`` was forwarded to the inner ``clipped_grad``,</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="c1"># mirror its empty-batch shape (paired ``SecondMomentClippingOutput``) so</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="c1"># downstream noise + optimizer dispatch stays paired across empty and</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>        <span class="c1"># non-empty steps. The squared-stream sensitivity is C^2/normalize_by, the</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="c1"># same bound ``clipped_grad`` would attach on a non-empty step.</span>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>        <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-382" name="__codelineno-0-382"></a>            <span class="n">new_state</span> <span class="o">=</span> <span class="n">_empty_batch_state</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-0-383" name="__codelineno-0-383"></a>            <span class="n">grads</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span>
-<a id="__codelineno-0-384" name="__codelineno-0-384"></a>                <span class="n">zero_grads_like</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">argnums_tuple</span><span class="p">),</span>
-<a id="__codelineno-0-385" name="__codelineno-0-385"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">output_bound</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">),</span>
-<a id="__codelineno-0-386" name="__codelineno-0-386"></a>            <span class="p">)</span>
-<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-388" name="__codelineno-0-388"></a>                <span class="n">grads</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
-<a id="__codelineno-0-389" name="__codelineno-0-389"></a>                    <span class="n">grads</span><span class="o">=</span><span class="n">grads</span><span class="p">,</span>
-<a id="__codelineno-0-390" name="__codelineno-0-390"></a>                    <span class="n">squared_grads</span><span class="o">=</span><span class="n">clipped</span><span class="p">(</span>
-<a id="__codelineno-0-391" name="__codelineno-0-391"></a>                        <span class="n">zero_grads_like</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">argnums_tuple</span><span class="p">),</span>
-<a id="__codelineno-0-392" name="__codelineno-0-392"></a>                        <span class="n">max_norm</span><span class="o">=</span><span class="n">_output_squared_bound</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">),</span>
-<a id="__codelineno-0-393" name="__codelineno-0-393"></a>                    <span class="p">),</span>
-<a id="__codelineno-0-394" name="__codelineno-0-394"></a>                <span class="p">)</span>
-<a id="__codelineno-0-395" name="__codelineno-0-395"></a>            <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-396" name="__codelineno-0-396"></a>                <span class="n">empty</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-397" name="__codelineno-0-397"></a>                <span class="n">adaptive_aux</span> <span class="o">=</span> <span class="n">AdaptiveClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-398" name="__codelineno-0-398"></a>                    <span class="n">loss_values</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
-<a id="__codelineno-0-399" name="__codelineno-0-399"></a>                    <span class="n">grad_norms</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
-<a id="__codelineno-0-400" name="__codelineno-0-400"></a>                    <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
-<a id="__codelineno-0-401" name="__codelineno-0-401"></a>                    <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-402" name="__codelineno-0-402"></a>                    <span class="n">clipping_rate</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-403" name="__codelineno-0-403"></a>                <span class="p">)</span>
-<a id="__codelineno-0-404" name="__codelineno-0-404"></a>                <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">adaptive_aux</span><span class="p">),</span> <span class="n">new_state</span>
-<a id="__codelineno-0-405" name="__codelineno-0-405"></a>            <span class="k">return</span> <span class="n">grads</span><span class="p">,</span> <span class="n">new_state</span>
-<a id="__codelineno-0-406" name="__codelineno-0-406"></a>
-<a id="__codelineno-0-407" name="__codelineno-0-407"></a>        <span class="c1"># Compute gradients with current threshold</span>
-<a id="__codelineno-0-408" name="__codelineno-0-408"></a>        <span class="c1"># Force grad_norms computation to update the threshold</span>
-<a id="__codelineno-0-409" name="__codelineno-0-409"></a>        <span class="n">user_wants_return_aux</span> <span class="o">=</span> <span class="n">return_aux</span>
-<a id="__codelineno-0-410" name="__codelineno-0-410"></a>        <span class="n">clipped_result</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
-<a id="__codelineno-0-411" name="__codelineno-0-411"></a>            <span class="s2">&quot;tuple[Callable, Any]&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-412" name="__codelineno-0-412"></a>            <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-0-413" name="__codelineno-0-413"></a>                <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-0-414" name="__codelineno-0-414"></a>                <span class="n">argnums</span><span class="o">=</span><span class="n">argnums</span><span class="p">,</span>
-<a id="__codelineno-0-415" name="__codelineno-0-415"></a>                <span class="n">has_aux</span><span class="o">=</span><span class="n">has_aux</span><span class="p">,</span>
-<a id="__codelineno-0-416" name="__codelineno-0-416"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-417" name="__codelineno-0-417"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">user_wants_return_aux</span><span class="p">,</span>
-<a id="__codelineno-0-418" name="__codelineno-0-418"></a>                <span class="n">_force_grad_norms</span><span class="o">=</span><span class="ow">not</span> <span class="n">user_wants_return_aux</span><span class="p">,</span>
-<a id="__codelineno-0-419" name="__codelineno-0-419"></a>                <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="n">pre_clipping_transform</span><span class="p">,</span>
-<a id="__codelineno-0-420" name="__codelineno-0-420"></a>                <span class="o">**</span><span class="n">clipped_grad_kwargs</span><span class="p">,</span>
-<a id="__codelineno-0-421" name="__codelineno-0-421"></a>            <span class="p">),</span>
-<a id="__codelineno-0-422" name="__codelineno-0-422"></a>        <span class="p">)</span>
-<a id="__codelineno-0-423" name="__codelineno-0-423"></a>        <span class="n">inner_fn</span><span class="p">,</span> <span class="n">inner_state</span> <span class="o">=</span> <span class="n">clipped_result</span>
-<a id="__codelineno-0-424" name="__codelineno-0-424"></a>
-<a id="__codelineno-0-425" name="__codelineno-0-425"></a>        <span class="n">result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">inner_state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-426" name="__codelineno-0-426"></a>
-<a id="__codelineno-0-427" name="__codelineno-0-427"></a>        <span class="c1"># Extract gradients and auxiliary output</span>
-<a id="__codelineno-0-428" name="__codelineno-0-428"></a>        <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-429" name="__codelineno-0-429"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
-<a id="__codelineno-0-430" name="__codelineno-0-430"></a>            <span class="n">grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-431" name="__codelineno-0-431"></a>            <span class="n">grad_norms</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">grad_norms</span>
-<a id="__codelineno-0-432" name="__codelineno-0-432"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-433" name="__codelineno-0-433"></a>            <span class="n">grads</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-434" name="__codelineno-0-434"></a>            <span class="n">grad_norms</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-435" name="__codelineno-0-435"></a>
-<a id="__codelineno-0-436" name="__codelineno-0-436"></a>        <span class="n">batch_size</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span>
-<a id="__codelineno-0-437" name="__codelineno-0-437"></a>
-<a id="__codelineno-0-438" name="__codelineno-0-438"></a>        <span class="k">if</span> <span class="n">is_per_group</span> <span class="ow">and</span> <span class="n">grad_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-439" name="__codelineno-0-439"></a>            <span class="c1"># --- Per-group adaptive path ---</span>
-<a id="__codelineno-0-440" name="__codelineno-0-440"></a>            <span class="n">current_pg</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
-<a id="__codelineno-0-441" name="__codelineno-0-441"></a>            <span class="n">group_norms</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-442" name="__codelineno-0-442"></a>
-<a id="__codelineno-0-443" name="__codelineno-0-443"></a>            <span class="k">if</span> <span class="n">group_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">batch_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-444" name="__codelineno-0-444"></a>                <span class="n">per_group_num_clipped</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-445" name="__codelineno-0-445"></a>                <span class="n">new_values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-446" name="__codelineno-0-446"></a>                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">gname</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">current_pg</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">keys</span><span class="p">())):</span>
-<a id="__codelineno-0-447" name="__codelineno-0-447"></a>                    <span class="n">threshold</span> <span class="o">=</span> <span class="n">current_pg</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span>
-<a id="__codelineno-0-448" name="__codelineno-0-448"></a>                    <span class="n">gnorms</span> <span class="o">=</span> <span class="n">group_norms</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span>
-<a id="__codelineno-0-449" name="__codelineno-0-449"></a>                    <span class="n">nc</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">gnorms</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-<a id="__codelineno-0-450" name="__codelineno-0-450"></a>                    <span class="n">per_group_num_clipped</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span> <span class="o">=</span> <span class="n">nc</span>
-<a id="__codelineno-0-451" name="__codelineno-0-451"></a>                    <span class="n">rate</span> <span class="o">=</span> <span class="n">nc</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">batch_size</span><span class="p">))</span>
-<a id="__codelineno-0-452" name="__codelineno-0-452"></a>
-<a id="__codelineno-0-453" name="__codelineno-0-453"></a>                    <span class="c1"># Independent noise per group: fold in both step and group index</span>
-<a id="__codelineno-0-454" name="__codelineno-0-454"></a>                    <span class="n">group_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">_step</span><span class="p">),</span> <span class="n">i</span><span class="p">)</span>
-<a id="__codelineno-0-455" name="__codelineno-0-455"></a>                    <span class="n">generator</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">group_key</span><span class="p">)</span>
-<a id="__codelineno-0-456" name="__codelineno-0-456"></a>                    <span class="n">noise</span> <span class="o">=</span> <span class="p">(</span>
-<a id="__codelineno-0-457" name="__codelineno-0-457"></a>                        <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-<a id="__codelineno-0-458" name="__codelineno-0-458"></a>                        <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">]</span>
-<a id="__codelineno-0-459" name="__codelineno-0-459"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-460" name="__codelineno-0-460"></a>                    <span class="n">noisy_rate</span> <span class="o">=</span> <span class="n">rate</span> <span class="o">+</span> <span class="n">noise</span>
-<a id="__codelineno-0-461" name="__codelineno-0-461"></a>
-<a id="__codelineno-0-462" name="__codelineno-0-462"></a>                    <span class="n">new_values</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span> <span class="o">=</span> <span class="n">_adaptive_clipping_norm_update</span><span class="p">(</span>
-<a id="__codelineno-0-463" name="__codelineno-0-463"></a>                        <span class="n">base_clipping_norm</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
-<a id="__codelineno-0-464" name="__codelineno-0-464"></a>                        <span class="n">noisy_clipping_rate</span><span class="o">=</span><span class="n">noisy_rate</span><span class="p">,</span>
-<a id="__codelineno-0-465" name="__codelineno-0-465"></a>                        <span class="n">target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-466" name="__codelineno-0-466"></a>                        <span class="n">learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-467" name="__codelineno-0-467"></a>                        <span class="n">clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-468" name="__codelineno-0-468"></a>                        <span class="n">clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-469" name="__codelineno-0-469"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-470" name="__codelineno-0-470"></a>
-<a id="__codelineno-0-471" name="__codelineno-0-471"></a>                <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">PerGroup</span><span class="p">(</span>
-<a id="__codelineno-0-472" name="__codelineno-0-472"></a>                    <span class="n">groups</span><span class="o">=</span><span class="n">current_pg</span><span class="o">.</span><span class="n">groups</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">new_values</span>
-<a id="__codelineno-0-473" name="__codelineno-0-473"></a>                <span class="p">)</span>
-<a id="__codelineno-0-474" name="__codelineno-0-474"></a>                <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">per_group_num_clipped</span>
-<a id="__codelineno-0-475" name="__codelineno-0-475"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-476" name="__codelineno-0-476"></a>                <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
-<a id="__codelineno-0-477" name="__codelineno-0-477"></a>                <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">_empty_num_clipped</span><span class="p">()</span>
-<a id="__codelineno-0-478" name="__codelineno-0-478"></a>        <span class="k">elif</span> <span class="n">grad_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-479" name="__codelineno-0-479"></a>            <span class="c1"># --- Scalar adaptive path (original) ---</span>
-<a id="__codelineno-0-480" name="__codelineno-0-480"></a>            <span class="n">num_clipped</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">grad_norms</span> <span class="o">&gt;</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-<a id="__codelineno-0-481" name="__codelineno-0-481"></a>            <span class="n">clipping_rate</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-482" name="__codelineno-0-482"></a>
-<a id="__codelineno-0-483" name="__codelineno-0-483"></a>            <span class="n">noisy_clipping_rate</span> <span class="o">=</span> <span class="n">_sample_noisy_clipping_rate</span><span class="p">(</span>
-<a id="__codelineno-0-484" name="__codelineno-0-484"></a>                <span class="n">clipping_rate</span><span class="p">,</span>
-<a id="__codelineno-0-485" name="__codelineno-0-485"></a>                <span class="n">key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
-<a id="__codelineno-0-486" name="__codelineno-0-486"></a>                <span class="n">step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span><span class="p">,</span>
-<a id="__codelineno-0-487" name="__codelineno-0-487"></a>                <span class="n">fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-488" name="__codelineno-0-488"></a>            <span class="p">)</span>
-<a id="__codelineno-0-489" name="__codelineno-0-489"></a>
-<a id="__codelineno-0-490" name="__codelineno-0-490"></a>            <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">_adaptive_clipping_norm_update</span><span class="p">(</span>
-<a id="__codelineno-0-491" name="__codelineno-0-491"></a>                <span class="n">base_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-492" name="__codelineno-0-492"></a>                <span class="n">noisy_clipping_rate</span><span class="o">=</span><span class="n">noisy_clipping_rate</span><span class="p">,</span>
-<a id="__codelineno-0-493" name="__codelineno-0-493"></a>                <span class="n">target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-494" name="__codelineno-0-494"></a>                <span class="n">learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-495" name="__codelineno-0-495"></a>                <span class="n">clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-496" name="__codelineno-0-496"></a>                <span class="n">clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-497" name="__codelineno-0-497"></a>            <span class="p">)</span>
-<a id="__codelineno-0-498" name="__codelineno-0-498"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-499" name="__codelineno-0-499"></a>            <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
-<a id="__codelineno-0-500" name="__codelineno-0-500"></a>            <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">_empty_num_clipped</span><span class="p">()</span>
-<a id="__codelineno-0-501" name="__codelineno-0-501"></a>
-<a id="__codelineno-0-502" name="__codelineno-0-502"></a>        <span class="n">new_state</span> <span class="o">=</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
-<a id="__codelineno-0-503" name="__codelineno-0-503"></a>            <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-504" name="__codelineno-0-504"></a>            <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">new_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-505" name="__codelineno-0-505"></a>            <span class="n">_step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-506" name="__codelineno-0-506"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
-<a id="__codelineno-0-507" name="__codelineno-0-507"></a>            <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-508" name="__codelineno-0-508"></a>            <span class="n">_learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-509" name="__codelineno-0-509"></a>            <span class="n">_target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-510" name="__codelineno-0-510"></a>            <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-511" name="__codelineno-0-511"></a>            <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-512" name="__codelineno-0-512"></a>            <span class="n">_num_clipped</span><span class="o">=</span><span class="n">num_clipped</span><span class="p">,</span>
-<a id="__codelineno-0-513" name="__codelineno-0-513"></a>            <span class="n">_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-514" name="__codelineno-0-514"></a>        <span class="p">)</span>
-<a id="__codelineno-0-515" name="__codelineno-0-515"></a>
-<a id="__codelineno-0-516" name="__codelineno-0-516"></a>        <span class="k">if</span> <span class="n">user_wants_return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-517" name="__codelineno-0-517"></a>            <span class="n">adaptive_aux</span> <span class="o">=</span> <span class="n">AdaptiveClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-518" name="__codelineno-0-518"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">loss_values</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-519" name="__codelineno-0-519"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">grad_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-520" name="__codelineno-0-520"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-521" name="__codelineno-0-521"></a>                    <span class="n">aux</span><span class="o">.</span><span class="n">clipped_grad_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-522" name="__codelineno-0-522"></a>                <span class="p">),</span>
-<a id="__codelineno-0-523" name="__codelineno-0-523"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">loss_aux</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-524" name="__codelineno-0-524"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-525" name="__codelineno-0-525"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-526" name="__codelineno-0-526"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-527" name="__codelineno-0-527"></a>            <span class="p">)</span>
-<a id="__codelineno-0-528" name="__codelineno-0-528"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">adaptive_aux</span><span class="p">),</span> <span class="n">new_state</span>
-<a id="__codelineno-0-529" name="__codelineno-0-529"></a>
-<a id="__codelineno-0-530" name="__codelineno-0-530"></a>        <span class="k">return</span> <span class="n">grads</span><span class="p">,</span> <span class="n">new_state</span>
-<a id="__codelineno-0-531" name="__codelineno-0-531"></a>
-<a id="__codelineno-0-532" name="__codelineno-0-532"></a>    <span class="c1"># Create initial state</span>
-<a id="__codelineno-0-533" name="__codelineno-0-533"></a>    <span class="n">initial_state</span> <span class="o">=</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
-<a id="__codelineno-0-534" name="__codelineno-0-534"></a>        <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">initial_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-535" name="__codelineno-0-535"></a>        <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">initial_clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-536" name="__codelineno-0-536"></a>        <span class="n">_step</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-0-537" name="__codelineno-0-537"></a>        <span class="n">_rng_key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
-<a id="__codelineno-0-538" name="__codelineno-0-538"></a>        <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">fraction_noise_std</span><span class="p">,</span>
-<a id="__codelineno-0-539" name="__codelineno-0-539"></a>        <span class="n">_learning_rate</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">,</span>
-<a id="__codelineno-0-540" name="__codelineno-0-540"></a>        <span class="n">_target_quantile</span><span class="o">=</span><span class="n">target_quantile</span><span class="p">,</span>
-<a id="__codelineno-0-541" name="__codelineno-0-541"></a>        <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">clipping_norm_min</span><span class="p">,</span>
-<a id="__codelineno-0-542" name="__codelineno-0-542"></a>        <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">clipping_norm_max</span><span class="p">,</span>
-<a id="__codelineno-0-543" name="__codelineno-0-543"></a>        <span class="n">_num_clipped</span><span class="o">=</span><span class="n">_empty_num_clipped</span><span class="p">(),</span>
-<a id="__codelineno-0-544" name="__codelineno-0-544"></a>        <span class="n">_batch_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-0-545" name="__codelineno-0-545"></a>    <span class="p">)</span>
-<a id="__codelineno-0-546" name="__codelineno-0-546"></a>
-<a id="__codelineno-0-547" name="__codelineno-0-547"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">initial_state</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a><span class="sd">        &gt;&gt;&gt; # Create adaptive clipping (local-only function).</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">        &gt;&gt;&gt; # Distributed callers must synchronize the state explicitly.</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        &gt;&gt;&gt; grad_fn, clip_state = adaptive_clipped_grad(</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        ...     loss_fn,</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        ...     key=key(0),</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">        ...     batch_argnums=(1, 2),</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">        ... )</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        &gt;&gt;&gt;</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        &gt;&gt;&gt; # Use Poisson sampling (different batch sizes on each device)</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        &gt;&gt;&gt; sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        &gt;&gt;&gt;</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">        &gt;&gt;&gt; for batch_x, batch_y in dataloader:</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        ...     # Each device: compute clipped gradients and local adaptive state</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        ...     # Explicit sync step for adaptive clipping state.</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        ...     clip_state = sync(clip_state)</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        ...</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ...     # Sum clipped gradients across devices</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        ...     grad = sum_gradients(grad)</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        ...</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        ...     # Add noise and update</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">        ...     noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(2))</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        ...     noisy_grad, noise_state = noise_fn(grad, noise_state)</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">        ...     # ... optimizer step</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">    References:</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">        Andrew et al., &quot;Differentially Private Learning with Adaptive</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        Clipping&quot;, NeurIPS 2021.</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>    <span class="c1"># Validate parameters</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">):</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="k">for</span> <span class="n">gname</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">initial_clipping_norm</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>            <span class="k">if</span> <span class="n">val</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                    <span class="sa">f</span><span class="s2">&quot;initial_clipping_norm must be positive for all groups, &quot;</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> for group &#39;</span><span class="si">{</span><span class="n">gname</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                <span class="p">)</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>    <span class="k">elif</span> <span class="n">initial_clipping_norm</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>            <span class="sa">f</span><span class="s2">&quot;initial_clipping_norm must be positive, got </span><span class="si">{</span><span class="n">initial_clipping_norm</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>        <span class="p">)</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">target_quantile</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;target_quantile must be in (0, 1), got </span><span class="si">{</span><span class="n">target_quantile</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>    <span class="k">if</span> <span class="n">learning_rate</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;learning_rate must be positive, got </span><span class="si">{</span><span class="n">learning_rate</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>    <span class="k">if</span> <span class="n">clipping_norm_min</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;clipping_norm_min must be positive, got </span><span class="si">{</span><span class="n">clipping_norm_min</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>    <span class="k">if</span> <span class="n">clipping_norm_max</span> <span class="o">&lt;=</span> <span class="n">clipping_norm_min</span><span class="p">:</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>            <span class="sa">f</span><span class="s2">&quot;clipping_norm_max (</span><span class="si">{</span><span class="n">clipping_norm_max</span><span class="si">}</span><span class="s2">) must be &gt; clipping_norm_min (</span><span class="si">{</span><span class="n">clipping_norm_min</span><span class="si">}</span><span class="s2">)&quot;</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>        <span class="p">)</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>    <span class="k">if</span> <span class="n">fraction_noise_std</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>            <span class="sa">f</span><span class="s2">&quot;fraction_noise_std must be positive, got </span><span class="si">{</span><span class="n">fraction_noise_std</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>        <span class="p">)</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>    <span class="c1"># Normalize argnums/batch_argnums for empty-batch detection.</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>    <span class="n">argnums_tuple</span> <span class="o">=</span> <span class="n">normalize_to_tuple</span><span class="p">(</span><span class="n">argnums</span><span class="p">)</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="n">batch_argnums_raw</span> <span class="o">=</span> <span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;batch_argnums&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>    <span class="n">batch_argnums_tuple</span> <span class="o">=</span> <span class="n">normalize_to_tuple</span><span class="p">(</span><span class="n">batch_argnums_raw</span><span class="p">)</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>    <span class="c1"># Read static config that the empty-batch path needs to compute max_norms</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>    <span class="c1"># without going through ``clipped_grad`` itself.</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>    <span class="n">normalize_by</span> <span class="o">=</span> <span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;normalize_by&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>    <span class="n">second_moment</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">clipped_grad_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;second_moment&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>    <span class="c1"># Validate the same static args ``clipped_grad`` validates at factory time,</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>    <span class="c1"># so misconfigurations (e.g. ``normalize_by &lt;= 0`` or argnums/batch_argnums</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>    <span class="c1"># collisions) fail at construction here rather than first surfacing on the</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>    <span class="c1"># next non-empty step — keeping empty- and non-empty-batch failure modes</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>    <span class="c1"># consistent.</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>    <span class="n">_validate_static_args</span><span class="p">(</span><span class="n">argnums</span><span class="p">,</span> <span class="n">batch_argnums_raw</span><span class="p">,</span> <span class="n">normalize_by</span><span class="p">)</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>    <span class="n">output_bound</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">clipping_norm</span><span class="p">:</span> <span class="n">clipping_norm</span> <span class="o">/</span> <span class="n">normalize_by</span>  <span class="c1"># noqa: E731</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_output_squared_bound</span><span class="p">(</span><span class="n">clipping_norm</span><span class="p">):</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">clipping_norm</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">)</span> <span class="o">/</span> <span class="n">normalize_by</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>    <span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>        <span class="s2">&quot;target_quantile&quot;</span><span class="p">:</span> <span class="n">target_quantile</span><span class="p">,</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>        <span class="s2">&quot;learning_rate&quot;</span><span class="p">:</span> <span class="n">learning_rate</span><span class="p">,</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>        <span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">:</span> <span class="n">clipping_norm_min</span><span class="p">,</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>        <span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">:</span> <span class="n">clipping_norm_max</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>        <span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">:</span> <span class="n">fraction_noise_std</span><span class="p">,</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>    <span class="p">}</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>    <span class="n">is_per_group</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="p">,</span> <span class="n">PerGroup</span><span class="p">)</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_empty_num_clipped</span><span class="p">():</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>        <span class="k">if</span> <span class="n">is_per_group</span><span class="p">:</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>            <span class="k">return</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">initial_clipping_norm</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>        <span class="k">return</span> <span class="mf">0.0</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_empty_batch_state</span><span class="p">(</span><span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AdaptiveClipState</span><span class="p">:</span>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Build new state for an empty batch: clip_norm preserved, step bumped.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a>        <span class="k">return</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a>            <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-346" name="__codelineno-0-346"></a>            <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a>            <span class="n">_step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a>            <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a>            <span class="n">_learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a>            <span class="n">_target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a>            <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a>            <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-354" name="__codelineno-0-354"></a>            <span class="n">_num_clipped</span><span class="o">=</span><span class="n">_empty_num_clipped</span><span class="p">(),</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a>            <span class="n">_batch_size</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a>        <span class="p">)</span>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute clipped gradients with adaptive threshold.</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a><span class="sd">        Args:</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a><span class="sd">            *args: Positional arguments to pass to the loss function.</span>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="sd">            state: Current AdaptiveClipState.</span>
+<a id="__codelineno-0-364" name="__codelineno-0-364"></a><span class="sd">            **kwargs: Keyword arguments to pass to the loss function.</span>
+<a id="__codelineno-0-365" name="__codelineno-0-365"></a>
+<a id="__codelineno-0-366" name="__codelineno-0-366"></a><span class="sd">        Returns:</span>
+<a id="__codelineno-0-367" name="__codelineno-0-367"></a><span class="sd">            If return_aux:</span>
+<a id="__codelineno-0-368" name="__codelineno-0-368"></a><span class="sd">                ((grad, aux), new_state)</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a><span class="sd">            Else:</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a><span class="sd">                (grad, new_state)</span>
+<a id="__codelineno-0-371" name="__codelineno-0-371"></a><span class="sd">        &quot;&quot;&quot;</span>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>        <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::adaptive_clipped_grad&quot;</span><span class="p">):</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>            <span class="k">return</span> <span class="n">_grad_fn_impl</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_grad_fn_impl</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">AdaptiveClipState</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>        <span class="c1"># Empty batch: zero grads, no adaptation, step still incremented.</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="c1"># When ``second_moment=True`` was forwarded to the inner ``clipped_grad``,</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="c1"># mirror its empty-batch shape (paired ``SecondMomentClippingOutput``) so</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>        <span class="c1"># downstream noise + optimizer dispatch stays paired across empty and</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="c1"># non-empty steps. The squared-stream sensitivity is C^2/normalize_by, the</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>        <span class="c1"># same bound ``clipped_grad`` would attach on a non-empty step.</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>        <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>            <span class="n">new_state</span> <span class="o">=</span> <span class="n">_empty_batch_state</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>            <span class="n">grads</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>                <span class="n">zero_grads_like</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">argnums_tuple</span><span class="p">),</span>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>                <span class="n">max_norm</span><span class="o">=</span><span class="n">output_bound</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">),</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="p">)</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a>                <span class="n">grads</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a>                    <span class="n">grads</span><span class="o">=</span><span class="n">grads</span><span class="p">,</span>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>                    <span class="n">squared_grads</span><span class="o">=</span><span class="n">clipped</span><span class="p">(</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a>                        <span class="n">zero_grads_like</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">argnums_tuple</span><span class="p">),</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a>                        <span class="n">max_norm</span><span class="o">=</span><span class="n">_output_squared_bound</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">),</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>                    <span class="p">),</span>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a>                <span class="p">)</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a>            <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a>                <span class="n">empty</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a>                <span class="n">adaptive_aux</span> <span class="o">=</span> <span class="n">AdaptiveClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-399" name="__codelineno-0-399"></a>                    <span class="n">loss_values</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
+<a id="__codelineno-0-400" name="__codelineno-0-400"></a>                    <span class="n">grad_norms</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
+<a id="__codelineno-0-401" name="__codelineno-0-401"></a>                    <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">empty</span><span class="p">,</span>
+<a id="__codelineno-0-402" name="__codelineno-0-402"></a>                    <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-403" name="__codelineno-0-403"></a>                    <span class="n">clipping_rate</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-0-404" name="__codelineno-0-404"></a>                <span class="p">)</span>
+<a id="__codelineno-0-405" name="__codelineno-0-405"></a>                <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">adaptive_aux</span><span class="p">),</span> <span class="n">new_state</span>
+<a id="__codelineno-0-406" name="__codelineno-0-406"></a>            <span class="k">return</span> <span class="n">grads</span><span class="p">,</span> <span class="n">new_state</span>
+<a id="__codelineno-0-407" name="__codelineno-0-407"></a>
+<a id="__codelineno-0-408" name="__codelineno-0-408"></a>        <span class="c1"># Compute gradients with current threshold</span>
+<a id="__codelineno-0-409" name="__codelineno-0-409"></a>        <span class="c1"># Force grad_norms computation to update the threshold</span>
+<a id="__codelineno-0-410" name="__codelineno-0-410"></a>        <span class="n">user_wants_return_aux</span> <span class="o">=</span> <span class="n">return_aux</span>
+<a id="__codelineno-0-411" name="__codelineno-0-411"></a>        <span class="n">clipped_result</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+<a id="__codelineno-0-412" name="__codelineno-0-412"></a>            <span class="s2">&quot;tuple[Callable, Any]&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-413" name="__codelineno-0-413"></a>            <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-414" name="__codelineno-0-414"></a>                <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-0-415" name="__codelineno-0-415"></a>                <span class="n">argnums</span><span class="o">=</span><span class="n">argnums</span><span class="p">,</span>
+<a id="__codelineno-0-416" name="__codelineno-0-416"></a>                <span class="n">has_aux</span><span class="o">=</span><span class="n">has_aux</span><span class="p">,</span>
+<a id="__codelineno-0-417" name="__codelineno-0-417"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-418" name="__codelineno-0-418"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">user_wants_return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-419" name="__codelineno-0-419"></a>                <span class="n">_force_grad_norms</span><span class="o">=</span><span class="ow">not</span> <span class="n">user_wants_return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-420" name="__codelineno-0-420"></a>                <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="n">pre_clipping_transform</span><span class="p">,</span>
+<a id="__codelineno-0-421" name="__codelineno-0-421"></a>                <span class="o">**</span><span class="n">clipped_grad_kwargs</span><span class="p">,</span>
+<a id="__codelineno-0-422" name="__codelineno-0-422"></a>            <span class="p">),</span>
+<a id="__codelineno-0-423" name="__codelineno-0-423"></a>        <span class="p">)</span>
+<a id="__codelineno-0-424" name="__codelineno-0-424"></a>        <span class="n">inner_fn</span><span class="p">,</span> <span class="n">inner_state</span> <span class="o">=</span> <span class="n">clipped_result</span>
+<a id="__codelineno-0-425" name="__codelineno-0-425"></a>
+<a id="__codelineno-0-426" name="__codelineno-0-426"></a>        <span class="n">result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">inner_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">inner_state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-427" name="__codelineno-0-427"></a>
+<a id="__codelineno-0-428" name="__codelineno-0-428"></a>        <span class="c1"># Extract gradients and auxiliary output</span>
+<a id="__codelineno-0-429" name="__codelineno-0-429"></a>        <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-430" name="__codelineno-0-430"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+<a id="__codelineno-0-431" name="__codelineno-0-431"></a>            <span class="n">grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-432" name="__codelineno-0-432"></a>            <span class="n">grad_norms</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">grad_norms</span>
+<a id="__codelineno-0-433" name="__codelineno-0-433"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-434" name="__codelineno-0-434"></a>            <span class="n">grads</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-435" name="__codelineno-0-435"></a>            <span class="n">grad_norms</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-436" name="__codelineno-0-436"></a>
+<a id="__codelineno-0-437" name="__codelineno-0-437"></a>        <span class="n">batch_size</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span>
+<a id="__codelineno-0-438" name="__codelineno-0-438"></a>
+<a id="__codelineno-0-439" name="__codelineno-0-439"></a>        <span class="k">if</span> <span class="n">is_per_group</span> <span class="ow">and</span> <span class="n">grad_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-440" name="__codelineno-0-440"></a>            <span class="c1"># --- Per-group adaptive path ---</span>
+<a id="__codelineno-0-441" name="__codelineno-0-441"></a>            <span class="n">current_pg</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
+<a id="__codelineno-0-442" name="__codelineno-0-442"></a>            <span class="n">group_norms</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-443" name="__codelineno-0-443"></a>
+<a id="__codelineno-0-444" name="__codelineno-0-444"></a>            <span class="k">if</span> <span class="n">group_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">batch_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-445" name="__codelineno-0-445"></a>                <span class="n">per_group_num_clipped</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-446" name="__codelineno-0-446"></a>                <span class="n">new_values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-447" name="__codelineno-0-447"></a>                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">gname</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">current_pg</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">keys</span><span class="p">())):</span>
+<a id="__codelineno-0-448" name="__codelineno-0-448"></a>                    <span class="n">threshold</span> <span class="o">=</span> <span class="n">current_pg</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span>
+<a id="__codelineno-0-449" name="__codelineno-0-449"></a>                    <span class="n">gnorms</span> <span class="o">=</span> <span class="n">group_norms</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span>
+<a id="__codelineno-0-450" name="__codelineno-0-450"></a>                    <span class="n">nc</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">gnorms</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+<a id="__codelineno-0-451" name="__codelineno-0-451"></a>                    <span class="n">per_group_num_clipped</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span> <span class="o">=</span> <span class="n">nc</span>
+<a id="__codelineno-0-452" name="__codelineno-0-452"></a>                    <span class="n">rate</span> <span class="o">=</span> <span class="n">nc</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">batch_size</span><span class="p">))</span>
+<a id="__codelineno-0-453" name="__codelineno-0-453"></a>
+<a id="__codelineno-0-454" name="__codelineno-0-454"></a>                    <span class="c1"># Independent noise per group: fold in both step and group index</span>
+<a id="__codelineno-0-455" name="__codelineno-0-455"></a>                    <span class="n">group_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">_step</span><span class="p">),</span> <span class="n">i</span><span class="p">)</span>
+<a id="__codelineno-0-456" name="__codelineno-0-456"></a>                    <span class="n">generator</span> <span class="o">=</span> <span class="n">generator_from_key</span><span class="p">(</span><span class="n">group_key</span><span class="p">)</span>
+<a id="__codelineno-0-457" name="__codelineno-0-457"></a>                    <span class="n">noise</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-458" name="__codelineno-0-458"></a>                        <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+<a id="__codelineno-0-459" name="__codelineno-0-459"></a>                        <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">]</span>
+<a id="__codelineno-0-460" name="__codelineno-0-460"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-461" name="__codelineno-0-461"></a>                    <span class="n">noisy_rate</span> <span class="o">=</span> <span class="n">rate</span> <span class="o">+</span> <span class="n">noise</span>
+<a id="__codelineno-0-462" name="__codelineno-0-462"></a>
+<a id="__codelineno-0-463" name="__codelineno-0-463"></a>                    <span class="n">new_values</span><span class="p">[</span><span class="n">gname</span><span class="p">]</span> <span class="o">=</span> <span class="n">_adaptive_clipping_norm_update</span><span class="p">(</span>
+<a id="__codelineno-0-464" name="__codelineno-0-464"></a>                        <span class="n">base_clipping_norm</span><span class="o">=</span><span class="n">threshold</span><span class="p">,</span>
+<a id="__codelineno-0-465" name="__codelineno-0-465"></a>                        <span class="n">noisy_clipping_rate</span><span class="o">=</span><span class="n">noisy_rate</span><span class="p">,</span>
+<a id="__codelineno-0-466" name="__codelineno-0-466"></a>                        <span class="n">target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-467" name="__codelineno-0-467"></a>                        <span class="n">learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-468" name="__codelineno-0-468"></a>                        <span class="n">clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-469" name="__codelineno-0-469"></a>                        <span class="n">clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-470" name="__codelineno-0-470"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-471" name="__codelineno-0-471"></a>
+<a id="__codelineno-0-472" name="__codelineno-0-472"></a>                <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">PerGroup</span><span class="p">(</span>
+<a id="__codelineno-0-473" name="__codelineno-0-473"></a>                    <span class="n">groups</span><span class="o">=</span><span class="n">current_pg</span><span class="o">.</span><span class="n">groups</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">new_values</span>
+<a id="__codelineno-0-474" name="__codelineno-0-474"></a>                <span class="p">)</span>
+<a id="__codelineno-0-475" name="__codelineno-0-475"></a>                <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">per_group_num_clipped</span>
+<a id="__codelineno-0-476" name="__codelineno-0-476"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-477" name="__codelineno-0-477"></a>                <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
+<a id="__codelineno-0-478" name="__codelineno-0-478"></a>                <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">_empty_num_clipped</span><span class="p">()</span>
+<a id="__codelineno-0-479" name="__codelineno-0-479"></a>        <span class="k">elif</span> <span class="n">grad_norms</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-480" name="__codelineno-0-480"></a>            <span class="c1"># --- Scalar adaptive path (original) ---</span>
+<a id="__codelineno-0-481" name="__codelineno-0-481"></a>            <span class="n">num_clipped</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">grad_norms</span> <span class="o">&gt;</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+<a id="__codelineno-0-482" name="__codelineno-0-482"></a>            <span class="n">clipping_rate</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-483" name="__codelineno-0-483"></a>
+<a id="__codelineno-0-484" name="__codelineno-0-484"></a>            <span class="n">noisy_clipping_rate</span> <span class="o">=</span> <span class="n">_sample_noisy_clipping_rate</span><span class="p">(</span>
+<a id="__codelineno-0-485" name="__codelineno-0-485"></a>                <span class="n">clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-486" name="__codelineno-0-486"></a>                <span class="n">key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
+<a id="__codelineno-0-487" name="__codelineno-0-487"></a>                <span class="n">step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span><span class="p">,</span>
+<a id="__codelineno-0-488" name="__codelineno-0-488"></a>                <span class="n">fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-489" name="__codelineno-0-489"></a>            <span class="p">)</span>
+<a id="__codelineno-0-490" name="__codelineno-0-490"></a>
+<a id="__codelineno-0-491" name="__codelineno-0-491"></a>            <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">_adaptive_clipping_norm_update</span><span class="p">(</span>
+<a id="__codelineno-0-492" name="__codelineno-0-492"></a>                <span class="n">base_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-493" name="__codelineno-0-493"></a>                <span class="n">noisy_clipping_rate</span><span class="o">=</span><span class="n">noisy_clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-494" name="__codelineno-0-494"></a>                <span class="n">target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-495" name="__codelineno-0-495"></a>                <span class="n">learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-496" name="__codelineno-0-496"></a>                <span class="n">clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-497" name="__codelineno-0-497"></a>                <span class="n">clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-498" name="__codelineno-0-498"></a>            <span class="p">)</span>
+<a id="__codelineno-0-499" name="__codelineno-0-499"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-500" name="__codelineno-0-500"></a>            <span class="n">new_clipping_norm</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span>
+<a id="__codelineno-0-501" name="__codelineno-0-501"></a>            <span class="n">num_clipped</span> <span class="o">=</span> <span class="n">_empty_num_clipped</span><span class="p">()</span>
+<a id="__codelineno-0-502" name="__codelineno-0-502"></a>
+<a id="__codelineno-0-503" name="__codelineno-0-503"></a>        <span class="n">new_state</span> <span class="o">=</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
+<a id="__codelineno-0-504" name="__codelineno-0-504"></a>            <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_next_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-505" name="__codelineno-0-505"></a>            <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">new_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-506" name="__codelineno-0-506"></a>            <span class="n">_step</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-507" name="__codelineno-0-507"></a>            <span class="n">_rng_key</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">_rng_key</span><span class="p">,</span>
+<a id="__codelineno-0-508" name="__codelineno-0-508"></a>            <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;fraction_noise_std&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-509" name="__codelineno-0-509"></a>            <span class="n">_learning_rate</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;learning_rate&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-510" name="__codelineno-0-510"></a>            <span class="n">_target_quantile</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;target_quantile&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-511" name="__codelineno-0-511"></a>            <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_min&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-512" name="__codelineno-0-512"></a>            <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;clipping_norm_max&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-513" name="__codelineno-0-513"></a>            <span class="n">_num_clipped</span><span class="o">=</span><span class="n">num_clipped</span><span class="p">,</span>
+<a id="__codelineno-0-514" name="__codelineno-0-514"></a>            <span class="n">_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-515" name="__codelineno-0-515"></a>        <span class="p">)</span>
+<a id="__codelineno-0-516" name="__codelineno-0-516"></a>
+<a id="__codelineno-0-517" name="__codelineno-0-517"></a>        <span class="k">if</span> <span class="n">user_wants_return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-518" name="__codelineno-0-518"></a>            <span class="n">adaptive_aux</span> <span class="o">=</span> <span class="n">AdaptiveClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-519" name="__codelineno-0-519"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">loss_values</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-520" name="__codelineno-0-520"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">grad_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-521" name="__codelineno-0-521"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-522" name="__codelineno-0-522"></a>                    <span class="n">aux</span><span class="o">.</span><span class="n">clipped_grad_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-523" name="__codelineno-0-523"></a>                <span class="p">),</span>
+<a id="__codelineno-0-524" name="__codelineno-0-524"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">loss_aux</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-525" name="__codelineno-0-525"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-526" name="__codelineno-0-526"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-527" name="__codelineno-0-527"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-528" name="__codelineno-0-528"></a>            <span class="p">)</span>
+<a id="__codelineno-0-529" name="__codelineno-0-529"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">adaptive_aux</span><span class="p">),</span> <span class="n">new_state</span>
+<a id="__codelineno-0-530" name="__codelineno-0-530"></a>
+<a id="__codelineno-0-531" name="__codelineno-0-531"></a>        <span class="k">return</span> <span class="n">grads</span><span class="p">,</span> <span class="n">new_state</span>
+<a id="__codelineno-0-532" name="__codelineno-0-532"></a>
+<a id="__codelineno-0-533" name="__codelineno-0-533"></a>    <span class="c1"># Create initial state</span>
+<a id="__codelineno-0-534" name="__codelineno-0-534"></a>    <span class="n">initial_state</span> <span class="o">=</span> <span class="n">AdaptiveClipState</span><span class="p">(</span>
+<a id="__codelineno-0-535" name="__codelineno-0-535"></a>        <span class="n">_current_clipping_norm</span><span class="o">=</span><span class="n">initial_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-536" name="__codelineno-0-536"></a>        <span class="n">_next_clipping_norm</span><span class="o">=</span><span class="n">initial_clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-537" name="__codelineno-0-537"></a>        <span class="n">_step</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-538" name="__codelineno-0-538"></a>        <span class="n">_rng_key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
+<a id="__codelineno-0-539" name="__codelineno-0-539"></a>        <span class="n">_fraction_noise_std</span><span class="o">=</span><span class="n">fraction_noise_std</span><span class="p">,</span>
+<a id="__codelineno-0-540" name="__codelineno-0-540"></a>        <span class="n">_learning_rate</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">,</span>
+<a id="__codelineno-0-541" name="__codelineno-0-541"></a>        <span class="n">_target_quantile</span><span class="o">=</span><span class="n">target_quantile</span><span class="p">,</span>
+<a id="__codelineno-0-542" name="__codelineno-0-542"></a>        <span class="n">_clipping_norm_min</span><span class="o">=</span><span class="n">clipping_norm_min</span><span class="p">,</span>
+<a id="__codelineno-0-543" name="__codelineno-0-543"></a>        <span class="n">_clipping_norm_max</span><span class="o">=</span><span class="n">clipping_norm_max</span><span class="p">,</span>
+<a id="__codelineno-0-544" name="__codelineno-0-544"></a>        <span class="n">_num_clipped</span><span class="o">=</span><span class="n">_empty_num_clipped</span><span class="p">(),</span>
+<a id="__codelineno-0-545" name="__codelineno-0-545"></a>        <span class="n">_batch_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-546" name="__codelineno-0-546"></a>    <span class="p">)</span>
+<a id="__codelineno-0-547" name="__codelineno-0-547"></a>
+<a id="__codelineno-0-548" name="__codelineno-0-548"></a>    <span class="k">return</span> <span class="n">grad_fn</span><span class="p">,</span> <span class="n">initial_state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
