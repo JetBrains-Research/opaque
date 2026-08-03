@@ -30,7 +30,9 @@ def _copy_repo_subset(repo_dir: Path) -> Path:
     return package_dir
 
 
-def _build_artifacts(package_dir: Path, out_dir: Path, target_dir: Path) -> tuple[Path, Path]:
+def _build_artifacts(
+    package_dir: Path, out_dir: Path, target_dir: Path
+) -> tuple[Path, Path]:
     proc = subprocess.run(
         ["uv", "build", "--wheel", "--sdist", "--out-dir", str(out_dir)],
         cwd=package_dir,
@@ -106,7 +108,9 @@ def test_clean_and_dirty_builds_ship_the_same_accounting_files(tmp_path: Path) -
     clean_dir = _copy_repo_subset(tmp_path / "clean")
     dirty_dir = _copy_repo_subset(tmp_path / "dirty")
 
-    dirty_cache = dirty_dir / "src" / "opaque" / "api" / "accounting" / "core" / "__pycache__"
+    dirty_cache = (
+        dirty_dir / "src" / "opaque" / "api" / "accounting" / "core" / "__pycache__"
+    )
     dirty_cache.mkdir(parents=True, exist_ok=True)
     (dirty_cache / "leak.cpython-312.pyc").write_bytes(b"opaque")
     (dirty_dir / "src" / "opaque" / "accounting" / "temp.pyo").write_bytes(b"opaque")
