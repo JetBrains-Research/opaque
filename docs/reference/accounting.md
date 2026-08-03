@@ -218,17 +218,15 @@ step = dpsgd_acc.parallel_poisson(
 )
 ```
 
-### `random_allocation(inner, *, num_bins) -> DpProcess`
+### `random_allocation(inner, *, num_bins, n_steps) -> DpHorizonProcess`
 
 1-out-of-`num_bins` random allocation: each epoch, every example lands in
 exactly one of `num_bins` batches, with the assignment redrawn each epoch.
 Pairs with `opaque.dpsgd.sampling.RandomAllocationSampler`.
 
-Unlike every other DP-SGD amplification factory, this returns a
-**per-epoch** process covering `num_bins` steps. Compose with
-`* num_epochs`; composing `* n_steps` over-charges by a factor of
-`num_bins`. `steps_per_epoch` on the returned process is the conversion
-factor.
+The process covers the declared horizon and implements exact `pld_at(K)`
+prefix accounting, including partial final epochs. Use
+`acc.per_step(process)` for ordinary step-wise training loops.
 
 Computed by the exact PLD transform of Feldman & Shenfeld (2026) —
 deterministic, with no Monte Carlo sampling. It is strictly tighter than
@@ -236,12 +234,21 @@ deterministic, with no Monte Carlo sampling. It is strictly tighter than
 
 - `inner` (Gaussian | AdaClip | NonPrivate): Base mechanism
 - `num_bins` (int): Bins per epoch (≥ 2), matching the sampler's `num_bins`
+- `n_steps` (int): Total optimizer-step horizon
 
 ```python
 num_bins = dataset_size // batch_size
-epoch = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.5), num_bins=num_bins)
-eps = (epoch * num_epochs).epsilon_at(1e-5)
+process = dpsgd_acc.random_allocation(
+    dpsgd_acc.gaussian(0.5), num_bins=num_bins, n_steps=total_steps,
+)
+eps = process.epsilon_at(1e-5)
 ```
+
+### `k_out_of_t(inner, *, total_participations, n_steps) -> DpHorizonProcess`
+
+Global balanced allocation: every record participates in exactly k uniformly
+chosen steps. Prefix accounting uses the hypergeometric participation-count
+mixture with conservative component PLDs.
 
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
@@ -454,19 +461,18 @@ proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epoch
 
 ### `per_step(proc) -> PerStep`
 
-Adapter that wraps a whole-process DP-FTRL accountant so it composes
-step-by-step under `Accountant`'s `acct |= step` idiom (the DP-SGD path
-shape). `per_step(proc) * K` materialises the strategy-aware K-prefix
-PLD via `proc._pld_at_horizon(K)`. For analytic PLDs, this is bounded above
+Adapter that wraps a whole-horizon accountant so it composes step-by-step
+under `Accountant`'s `acct |= step` idiom. `per_step(proc) * K` materialises
+the process-aware K-prefix PLD via `proc.pld_at(K)`. For analytic PLDs, this
+is bounded above
 by `proc.epsilon_at(δ)` and monotone non-decreasing in K by post-processing
 on the deployed N-step mechanism. b-min-sep and correlated-strategy
 Balls-in-Bins remain Monte Carlo point estimates pending the RC-4 confidence
 correction, so this guarantee is not asserted for their reported ε values;
-identity Balls-in-Bins is analytic and does carry it. `K > proc.n_steps` raises;
-`PerStep` only composes with other `PerStep` instances wrapping the
-*same* underlying process.
+identity Balls-in-Bins is analytic and does carry it. `K > proc.n_steps`
+raises.
 
-- `proc` (DpFtrlProcess): The whole-process accountant
+- `proc` (DpHorizonProcess): The whole-process accountant
   (`dpftrl_acc.poisson(...)`, `b_min_sep(...)`, `balls_in_bins(...)`).
 
 ```python
@@ -474,7 +480,7 @@ proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(0.8, strategy),
     sample_rate=0.01, n_steps=15_624,
 )
-step = dpftrl_acc.per_step(proc)
+step = acc.per_step(proc)
 eps_K = (step * 1_000).epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
 ```
 

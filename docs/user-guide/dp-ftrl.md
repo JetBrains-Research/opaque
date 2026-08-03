@@ -108,7 +108,7 @@ how DP correctness is preserved.
 
 DP-FTRL processes are *whole-process*: feeding the bare process to
 `Accountant`'s `acct |= step` would over-count. Wrap with
-`dpftrl_acc.per_step(...)` to get a step-shaped adapter whose
+`acc.per_step(...)` to get a step-shaped adapter whose
 `per_step(proc) * K` materialises the strategy-aware K-prefix PLD —
 identical in shape to the DP-SGD `acct |= step` idiom but with the
 correct K-step bound under MF correlations:
@@ -119,7 +119,7 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01,
     n_steps=1000,
 )
-step = dpftrl_acc.per_step(proc)
+step = acc.per_step(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:

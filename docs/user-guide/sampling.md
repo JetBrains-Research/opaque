@@ -237,15 +237,15 @@ participation separation `len(nonempty)` instead of `num_bins`, which the
 accounting assumes. Empty batches are handled downstream by the engine's
 collate path.
 
-Privacy accounting — a whole-**epoch** atom, so compose with
-`* num_epochs`, not `* n_steps`:
+Privacy accounting uses a whole-horizon process with exact prefix bounds:
 
 ```python
-epoch = dpsgd_acc.random_allocation(
+process = dpsgd_acc.random_allocation(
     dpsgd_acc.gaussian(noise_multiplier),
     num_bins=num_bins,
+    n_steps=n_steps,
 )
-training = epoch * num_epochs
+step = acc.per_step(process)
 ```
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
@@ -257,6 +257,13 @@ training = epoch * num_epochs
     it is strictly better. Pair each sampler only with its own accountant:
     `RandomAllocationSampler` with `dpsgd_acc.random_allocation`,
     `BallsInBinsSampler` with `dpftrl_acc.balls_in_bins`.
+
+### Global k-out-of-t allocation
+
+`KOutOfTSampler` chooses exactly k distinct steps from a declared t-step
+horizon independently for every record. It uses O(dataset-size) streaming
+state and pairs with `dpsgd_acc.k_out_of_t`. This is different from redrawing
+one bin per epoch.
 
 ## Balls-in-Bins sampling
 

@@ -25,6 +25,14 @@ USAGE:
 
   # Disable W&B/HF reporting callbacks
   python examples/train_dpsgd_trainer.py --preset smoke --no-wandb
+
+  # Gaussian DP-SGD with redrawn random allocation (horizon accounting)
+  python examples/train_dpsgd_trainer.py --preset smoke \\
+      --noise-mechanism gaussian --sampler random_allocation
+
+  # Global k-out-of-t allocation (requires --total-participations)
+  python examples/train_dpsgd_trainer.py --preset smoke \\
+      --noise-mechanism gaussian --sampler k_out_of_t --total-participations 2
 """
 
 from __future__ import annotations
@@ -547,15 +555,36 @@ def parse_args() -> argparse.Namespace:
     dp_group.add_argument(
         "--sampler",
         type=str,
-        choices=["auto", "poisson", "b_min_sep", "balls_in_bins"],
+        choices=[
+            "auto",
+            "poisson",
+            "random_allocation",
+            "k_out_of_t",
+            "b_min_sep",
+            "balls_in_bins",
+        ],
         default="auto",
         help=(
             "Per-step participation pattern.  ``auto`` (default) lets the "
             "trainer pick the canonical sampler for the chosen "
             "``--noise-mechanism`` (poisson for gaussian / mf_identity, "
             "b_min_sep for mf_band, balls_in_bins for mf_blt / mf_bisr / "
-            "mf_bsr / mf_lambda_cgd).  Explicit overrides are validated "
-            "by ``DPTrainingArguments`` against the mechanism's allow-list."
+            "mf_bsr / mf_lambda_cgd).  Gaussian also accepts "
+            "``random_allocation`` (redrawn 1-out-of-b bins per epoch) and "
+            "``k_out_of_t`` (uniform k participations over the run; pair with "
+            "``--total-participations``).  Explicit overrides are validated "
+            "by ``TrainingArguments`` against the mechanism allow-list."
+        ),
+    )
+    dp_group.add_argument(
+        "--total-participations",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "For ``--sampler k_out_of_t``: each training example participates "
+            "in exactly K optimizer steps, chosen uniformly over the "
+            "declared run length.  Required when that sampler is selected."
         ),
     )
     dp_group.add_argument(
@@ -787,7 +816,39 @@ def parse_args() -> argparse.Namespace:
         if fallback_value is not None:
             args.clipping_norm = fallback_value
 
+    _validate_sampler_cli(parser, args)
+
     return args
+
+
+def _validate_sampler_cli(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    sampler = args.sampler
+    if sampler == "k_out_of_t" and args.total_participations is None:
+        parser.error("--sampler k_out_of_t requires --total-participations K")
+    if sampler in ("random_allocation", "k_out_of_t"):
+        if args.noise_mechanism != "gaussian":
+            parser.error(
+                f"--sampler {sampler} is only supported with "
+                "--noise-mechanism gaussian"
+            )
+        if args.max_batch_size is not None:
+            parser.error(
+                "--max-batch-size (truncated Poisson) is incompatible with "
+                f"--sampler {sampler}"
+            )
+    if args.total_participations is not None and sampler != "k_out_of_t":
+        parser.error(
+            "--total-participations is only used with --sampler k_out_of_t"
+        )
+
+
+def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
+    sk: dict[str, Any] = {}
+    if args.max_batch_size is not None:
+        sk["max_batch_size"] = args.max_batch_size
+    if args.sampler == "k_out_of_t":
+        sk["total_participations"] = int(args.total_participations)
+    return sk
 
 
 def _resolve_trainer_batching(args: argparse.Namespace) -> int:
@@ -1049,11 +1110,7 @@ def main() -> int:
             "gamma": args.auto_clipping_gamma,
         },
         sampling_mode=args.sampler,
-        sampling_kwargs=(
-            {"max_batch_size": args.max_batch_size}
-            if args.max_batch_size is not None
-            else {}
-        ),
+        sampling_kwargs=_sampling_kwargs_for_trainer(args),
         privacy_noise_mechanism=args.noise_mechanism,
         privacy_noise_mechanism_kwargs=args.noise_mechanism_kwargs or {},
         privacy_noise_radius=args.noise_radius,
@@ -1081,6 +1138,9 @@ def main() -> int:
     print(f"  Clipping mode: {training_args.clipping_mode}")
     print(f"  Clip norm (clipping_norm): {training_args.clipping_norm}")
     print(f"  Noise mechanism: {training_args.privacy_noise_mechanism}")
+    print(f"  Sampling mode: {training_args.sampling_mode}")
+    if training_args.sampling_kwargs:
+        print(f"  Sampling kwargs: {training_args.sampling_kwargs}")
     print(f"  Target epsilon: {training_args.privacy_target_epsilon}")
     print(f"  Target delta: {training_args.privacy_target_delta or 'auto'}")
     print(f"  Save strategy: {training_args.save_strategy}")
