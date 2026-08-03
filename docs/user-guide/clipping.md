@@ -251,6 +251,7 @@ In distributed training, the clip norm must be consistent across devices.
 synchronize the state:
 
 ```python
+import opaque.distributed as dist_utils
 from opaque.distributed import sync
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
