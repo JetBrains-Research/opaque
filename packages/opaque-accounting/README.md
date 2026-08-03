@@ -17,7 +17,7 @@ python -c "from opaque.accounting import identity; print(identity().epsilon_at(1
 
 Algorithm factories such as ``gaussian`` / ``poisson`` live in
 ``opaque-dpsgd`` / ``opaque-dpftrl``; install those packages to use them.
-The accounting wheel pulls in ``opaque-core`` for shared checkpoint helpers
+The accounting wheel pulls in ``opaque-base`` for shared checkpoint helpers
 (:mod:`opaque.serialization`).
 
 The engine uses the Privacy Loss Distribution (PLD) framework with
@@ -92,6 +92,18 @@ let step = poisson_gaussian_pld(0.5, 0.01, &config)?;
 let training = step.self_compose(1000);
 println!("epsilon = {:.4}", training.epsilon_at(1e-5));
 ```
+
+## Published artifacts
+
+Release builds publish:
+
+- an sdist for source builds;
+- `manylinux_2_28` wheels for Linux `x86_64` and `aarch64`;
+- a macOS 11+ `arm64` wheel.
+
+Unsupported platforms are explicit today: Windows, macOS `x86_64`, and
+non-`manylinux_2_28` / `musllinux` Linux wheels are not published for
+`opaque-accounting`.
 
 ## Architecture
 

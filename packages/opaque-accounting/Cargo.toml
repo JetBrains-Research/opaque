@@ -8,6 +8,11 @@ description = "High-performance differential privacy accounting using Privacy Lo
 repository.workspace = true
 keywords.workspace = true
 rust-version = "1.70"
+exclude = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.pyo",
+]
 
 [lib]
 name = "opaque_accounting"

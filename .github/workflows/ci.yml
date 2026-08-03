@@ -191,21 +191,60 @@ jobs:
         package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
         target:
           - platform: linux
-            arch: amd64
+            arch: x86_64
             runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: 2_28
           - platform: linux
-            arch: arm64
+            arch: aarch64
             runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: 2_28
           - platform: macos
             arch: arm64
             runner: macos-latest
+            target: aarch64-apple-darwin
+            manylinux: off
 
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Preflight — set build versions from git
+        run: bash .github/scripts/set_build_versions.sh
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          working-directory: ${{ matrix.package.path }}
+          target: ${{ matrix.target.target }}
+          manylinux: ${{ matrix.target.manylinux }}
+          args: >-
+            --release
+            --interpreter python3.11
+            --out ../../dist
+            --compatibility pypi
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*.whl
+          retention-days: 30
+
+  build-accounting-sdist:
+    name: Build opaque-accounting sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -216,19 +255,19 @@ jobs:
       - name: Preflight — set build versions from git
         run: bash .github/scripts/set_build_versions.sh
 
-      - name: Build wheel
-        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
+      - name: Build sdist
+        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
 
-      - name: Upload wheel
+      - name: Upload sdist
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: dist/*.whl
+          name: wheels-opaque-accounting-sdist
+          path: dist/*.tar.gz
           retention-days: 30
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheels, build-opaque-wheel, build-native-wheels]
+    needs: [build-python-wheels, build-opaque-wheel, build-native-wheels, build-accounting-sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6
@@ -256,8 +295,8 @@ jobs:
           name: dev-wheels
           path: dist/
 
-      - name: List wheels
-        run: ls -lh dist/*.whl
+      - name: List artifacts
+        run: ls -lh dist/*.whl dist/*.tar.gz
 
       - name: Authenticate to GCP
         id: gcp-auth
@@ -277,7 +316,7 @@ jobs:
         run: |
           uv publish \
             --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
-            dist/*.whl
+            dist/*.whl dist/*.tar.gz
 
   # ---------------------------------------------------------------------------
   # Upsert the draft GitHub Release for the next version. The draft is the

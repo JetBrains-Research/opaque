@@ -18,6 +18,11 @@ epsilon = training.epsilon_at(1e-5)
 The underlying implementation uses Google's PLD accounting via the
 `opaque-accounting` Rust crate (PyO3 bindings).
 
+Published `opaque-accounting` artifacts are an sdist, `manylinux_2_28`
+Linux wheels for `x86_64` and `aarch64`, and a macOS 11+ `arm64` wheel.
+Windows, macOS `x86_64`, and `musllinux` wheels are intentionally not
+published at the moment.
+
 **See also**: [Privacy Accounting User Guide](../user-guide/accounting.md)
 
 ---
