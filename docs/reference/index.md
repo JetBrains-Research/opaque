@@ -221,6 +221,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |--------------------------------------|---------------------------------|------------------------------------------------|
 | `auditing.coin_flip()`               | Designate canaries + partition  | [Guide](../user-guide/auditing.md)             |
 | `auditing.loss_scores()`            | Compute membership scores       | [Guide](../user-guide/auditing.md)             |
+| `auditing.gradient_scores()`        | Compute white-box membership scores | [Guide](../user-guide/auditing.md)         |
 | `auditing.one_run()`                | Build one-run estimate          | [Guide](../user-guide/auditing.md)             |
 | `OneRunEstimate.epsilon_at()`       | ε bound (μ-GDP default)         | [Guide](../user-guide/auditing.md)             |
 | `OneRunEstimate.delta_at()`         | δ at given ε (μ-GDP default)    | [Guide](../user-guide/auditing.md)             |
