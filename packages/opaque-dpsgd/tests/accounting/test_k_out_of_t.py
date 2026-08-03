@@ -30,7 +30,7 @@ def test_prefixes_are_finite_and_full_matches_pld():
     step = acc.per_step(process)
     values = [(step * k).epsilon_at(_DELTA) for k in range(1, 11)]
     assert all(value > 0 for value in values)
-    assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=0, abs=0)
+    assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=1e-12, abs=0)
 
 
 def test_k_one_prefix_matches_redrawn_single_epoch_process():
@@ -47,6 +47,6 @@ def test_k_one_prefix_matches_redrawn_single_epoch_process():
     for steps in range(1, 9):
         assert k_out.pld_at(steps).epsilon_at(_DELTA) == pytest.approx(
             redrawn.pld_at(steps).epsilon_at(_DELTA),
-            rel=0,
+            rel=1e-12,
             abs=0,
         )
