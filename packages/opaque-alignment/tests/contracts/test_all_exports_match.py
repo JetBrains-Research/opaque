@@ -1,4 +1,4 @@
-"""AGENTS.md rule 6 enforcement for the alignment namespaces.
+"""Explicit-``__all__`` export-discipline checks for the alignment namespaces.
 
 For every package (``__init__.py``) and every public module (a ``.py`` file
 whose name does not start with ``_``) under ``opaque.alignment.*`` and
@@ -9,8 +9,9 @@ whose name does not start with ``_``) under ``opaque.alignment.*`` and
 - no public, non-submodule attribute leaks outside ``__all__``.
 
 Submodule attributes (bound as a side effect of importing a subpackage) and
-private (underscore-prefixed) impl modules are exempt — rule 6 governs
-``__init__.py`` files and the public façade surface, not private helpers.
+private (underscore-prefixed) impl modules are exempt — this discipline
+governs ``__init__.py`` files and the public façade surface, not private
+helpers.
 """
 
 from __future__ import annotations
@@ -59,7 +60,8 @@ def test_module_exports_match(module_name: str) -> None:
         f"{module_name}: in __all__ but not importable: {sorted(missing)}"
     )
 
-    # The no-leak discipline (rule 6 / rule 2) governs the importable SURFACE:
+    # The explicit-``__all__`` and façade-only-export disciplines govern the
+    # importable SURFACE:
     # package ``__init__.py`` modules (impl + façade) and the entire public
     # façade namespace (``opaque.alignment.*``). Internal impl helper modules
     # (e.g. ``opaque.api.alignment.dpo.kernel._dpo_dispatch`` composing building
@@ -89,6 +91,7 @@ def test_module_exports_match(module_name: str) -> None:
         and _is_package_surface(getattr(mod, name))
     }
     assert not leaked, (
-        f"{module_name}: public names not in __all__ (rule 6 violation): "
+        f"{module_name}: public names not in __all__ "
+        f"(explicit-__all__ discipline violation): "
         f"{sorted(leaked)}"
     )

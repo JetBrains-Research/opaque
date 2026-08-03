@@ -1,7 +1,8 @@
 """SFT collator impl — the language-modeling collator factory.
 
 ``language_modeling_collator`` is a factory returning a stateless collate
-callable (AGENTS.md rule 9). Its output schema (:class:`LMBatch`) lives in
+callable, following the repo convention that public builders prefer factory
+functions over user-instantiated classes. Its output schema (:class:`LMBatch`) lives in
 :mod:`opaque.api.alignment.sft.collator.types`.
 """
 

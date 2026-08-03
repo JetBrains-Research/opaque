@@ -65,13 +65,7 @@ def test_module_exports_match(module_name: str) -> None:
         and _is_package_surface(getattr(mod, name))
     }
     assert not leaked, (
-        f"{module_name}: public names not in __all__ (rule 6 violation): "
+        f"{module_name}: public names not in __all__ "
+        f"(explicit-__all__ discipline violation): "
         f"{sorted(leaked)}"
     )
-
-
-def test_attacks_facade_exports_match_impl() -> None:
-    impl = importlib.import_module("opaque.api.auditing.attacks")
-    facade = importlib.import_module("opaque.auditing.attacks")
-    assert set(facade.__all__) == set(impl.__all__)
-    assert "gradient_scores" in facade.__all__

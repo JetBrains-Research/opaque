@@ -10,6 +10,20 @@ concurrency:
   cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
 
 jobs:
+  discover-packages:
+    name: Discover package matrices
+    runs-on: ubuntu-latest
+    outputs:
+      test_shards: ${{ steps.discover.outputs.test_shards }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Discover packages
+        id: discover
+        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------------
   # Tests. Same matrix as the PR gate, but includes `slow` tests and adds a
   # GPU lane. Test failures block publishing, except for the explicitly soft
@@ -37,25 +51,14 @@ jobs:
   # marker. The GPU platform stays a single unsharded, serial, soft leg.
   python-tests:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
+    needs: [discover-packages]
     runs-on: ${{ matrix.device.os }}
     continue-on-error: ${{ matrix.soft == true }}
     timeout-minutes: 40  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - name: transformers
-            paths: packages/opaque-transformers
-          - name: dpsgd
-            paths: packages/opaque-dpsgd
-          - name: patches
-            paths: packages/opaque-patches
-          - name: rest
-            paths: >-
-              packages/opaque-base packages/opaque-engine
-              packages/opaque-optimizers packages/opaque-dpftrl
-              packages/opaque-auditing packages/opaque-accounting
-              packages/opaque-alignment tests
+        shard: ${{ fromJSON(needs.discover-packages.outputs.test_shards) }}
         device:
           - name: cpu
             label: CPU
@@ -119,21 +122,13 @@ jobs:
   # Release builds live in release.yml (triggered on `v*` tag push).
   # ---------------------------------------------------------------------------
   build-python-wheels:
-    name: Build ${{ matrix.package }}
+    name: Build ${{ matrix.package.dist }}
+    needs: [discover-packages]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - opaque-base
-          - opaque-engine
-          - opaque-optimizers
-          - opaque-dpsgd
-          - opaque-dpftrl
-          - opaque-auditing
-          - opaque-alignment
-          - opaque-patches
-          - opaque-transformers
+        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
 
     steps:
       - uses: actions/checkout@v5
@@ -150,12 +145,12 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
+        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-${{ matrix.package }}
+          name: wheels-${{ matrix.package.dist }}
           path: dist/*.whl
           retention-days: 30
 
@@ -186,13 +181,15 @@ jobs:
           path: dist/opaque-*.whl
           retention-days: 30
 
-  build-accounting-wheels:
-    name: Build opaque-accounting — ${{ matrix.platform }}/${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+  build-native-wheels:
+    name: Build ${{ matrix.package.dist }} — ${{ matrix.target.platform }}/${{ matrix.target.arch }}
+    needs: [discover-packages]
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
+        target:
           - platform: linux
             arch: amd64
             runner: ubuntu-latest
@@ -220,18 +217,18 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
+        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/*opaque_accounting*.whl
+          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*.whl
           retention-days: 30
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheels, build-opaque-wheel, build-accounting-wheels]
+    needs: [build-python-wheels, build-opaque-wheel, build-native-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

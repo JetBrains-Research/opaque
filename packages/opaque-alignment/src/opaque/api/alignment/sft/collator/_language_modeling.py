@@ -6,8 +6,9 @@ language model forward pass.
 
 The public API is the factory function :func:`language_modeling_collator`; a
 private :class:`_LMCollator` class inside this module handles the
-implementation.  Callers must never instantiate :class:`_LMCollator` directly
-(AGENTS.md rule 9: no user-instantiated classes).
+implementation. Callers must never instantiate :class:`_LMCollator` directly;
+public builders in this repo are exposed as factory functions rather than
+user-instantiated classes.
 
 Design notes
 ------------

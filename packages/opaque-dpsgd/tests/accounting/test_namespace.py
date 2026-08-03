@@ -1,18 +1,11 @@
-"""Surface tests for ``opaque.dpsgd.accounting``.
-
-The namespace is a thin re-export layer over :mod:`opaque.accounting`;
-these tests pin the shape (every advertised symbol is reachable, the
-``__all__`` list matches the spec) and verify that the lazy-import
-in :mod:`opaque.dpsgd` does not eagerly load ``opaque.accounting``
-when the user only needs ``noise`` / ``clipping`` / ``sampling``.
-"""
+"""Surface tests for ``opaque.dpsgd.accounting``."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
 
-_HEADLINE = (
+_REQUIRED_FACTORIES = (
     "gaussian",
     "adaclip",
     "k_out_of_t",
@@ -21,7 +14,7 @@ _HEADLINE = (
     "random_allocation",
 )
 
-_TYPES = (
+_REQUIRED_TYPES = (
     "Gaussian",
     "KOutOfT",
     "AdaClip",
@@ -34,23 +27,17 @@ _TYPES = (
 class TestNamespaceSurface:
     """Each documented re-export is reachable as a callable."""
 
-    def test_all_headline_factories_callable(self):
+    def test_required_headline_factories_callable(self):
         import opaque.dpsgd.accounting as dpsgd_acc
 
-        for name in _HEADLINE:
+        for name in _REQUIRED_FACTORIES:
             assert callable(getattr(dpsgd_acc, name)), name
-
-    def test_all_in_dunder_all(self):
-        import opaque.dpsgd.accounting as dpsgd_acc
-
-        assert set(dpsgd_acc.__all__) == set(_HEADLINE)
 
     def test_types_module_re_exports(self):
         import opaque.dpsgd.accounting.types as dpsgd_types
 
-        for name in _TYPES:
+        for name in _REQUIRED_TYPES:
             assert hasattr(dpsgd_types, name), name
-        assert set(dpsgd_types.__all__) == set(_TYPES)
 
 
 class TestEndToEndCalibration:

@@ -44,6 +44,20 @@ jobs:
           subjectPatternError: |
             The subject after the colon should start with a lowercase letter.
 
+  discover-packages:
+    name: Discover package matrices
+    runs-on: ubuntu-latest
+    outputs:
+      test_shards: ${{ steps.discover.outputs.test_shards }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Discover packages
+        id: discover
+        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
+
   rust-tests:
     name: Rust tests
     runs-on: ubuntu-latest
@@ -72,27 +86,17 @@ jobs:
   # The self-hosted GPU lane is a separate fork-guarded job below.
   python-tests:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
+    needs: [discover-packages]
     runs-on: ${{ matrix.device.os }}
     timeout-minutes: 30  # safety net: a hung/preempted runner fails fast
     strategy:
       fail-fast: false
       matrix:
         # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
-        # `rest` is the catch-all for every package not split into its own
-        # shard, plus the repo-level tests/ tree.
-        shard:
-          - name: transformers
-            paths: packages/opaque-transformers
-          - name: dpsgd
-            paths: packages/opaque-dpsgd
-          - name: patches
-            paths: packages/opaque-patches
-          - name: rest
-            paths: >-
-              packages/opaque-base packages/opaque-engine
-              packages/opaque-optimizers packages/opaque-dpftrl
-              packages/opaque-auditing packages/opaque-accounting
-              packages/opaque-alignment tests
+        # Discover one shard per package from packages/*/pyproject.toml so the
+        # matrix expands automatically when wheels are added or removed. The
+        # repo-level tests/ tree stays on its own explicit "repo-tests" shard.
+        shard: ${{ fromJSON(needs.discover-packages.outputs.test_shards) }}
         device:
           - name: cpu
             label: CPU
@@ -331,22 +335,13 @@ jobs:
           echo "Preview version: $VERSION"
 
   build-preview-python:
-    name: Build preview ${{ matrix.package }}
-    needs: [compute-preview-version]
+    name: Build preview ${{ matrix.package.dist }}
+    needs: [compute-preview-version, discover-packages]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - opaque-base
-          - opaque-engine
-          - opaque-optimizers
-          - opaque-dpsgd
-          - opaque-dpftrl
-          - opaque-auditing
-          - opaque-alignment
-          - opaque-patches
-          - opaque-transformers
+        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -362,12 +357,12 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
 
       - name: Build wheel
-        run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
+        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
-          name: preview-wheels-${{ matrix.package }}
+          name: preview-wheels-${{ matrix.package.dist }}
           path: dist/*.whl
           retention-days: 14
 
@@ -399,14 +394,15 @@ jobs:
           path: dist/opaque-*.whl
           retention-days: 14
 
-  build-preview-accounting:
-    name: Build preview opaque-accounting — ${{ matrix.platform }}/${{ matrix.arch }}
-    needs: [compute-preview-version]
-    runs-on: ${{ matrix.runner }}
+  build-preview-native:
+    name: Build preview ${{ matrix.package.dist }} — ${{ matrix.target.platform }}/${{ matrix.target.arch }}
+    needs: [compute-preview-version, discover-packages]
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
+        target:
           - platform: linux
             arch: amd64
             runner: ubuntu-latest
@@ -433,18 +429,18 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
 
       - name: Build wheel
-        run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
+        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
-          name: preview-wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/*opaque_accounting*.whl
+          name: preview-wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*.whl
           retention-days: 14
 
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-opaque, build-preview-accounting]
+    needs: [build-preview-python, build-preview-opaque, build-preview-native]
     runs-on: ubuntu-latest
     steps:
       # Best-effort: merge the per-package wheels into one artifact and delete
