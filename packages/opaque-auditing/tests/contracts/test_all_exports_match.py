@@ -3,19 +3,37 @@
 from __future__ import annotations
 
 import importlib
+import pkgutil
 import types
 
 import pytest
 
-_MODULES = (
-    "opaque.api.auditing.attacks",
-    "opaque.auditing.attacks",
-    "opaque.api.auditing",
-    "opaque.auditing",
-)
+import opaque.auditing
+import opaque.api.auditing
+
+_ROOTS = (opaque.auditing, opaque.api.auditing)
 
 
-@pytest.mark.parametrize("module_name", _MODULES)
+def _iter_checked_modules(root: types.ModuleType):
+    """Yield the root and every sub-package / public module beneath it."""
+    yield root.__name__
+    if not hasattr(root, "__path__"):
+        return
+    for info in pkgutil.walk_packages(root.__path__, root.__name__ + "."):
+        leaf = info.name.rsplit(".", 1)[-1]
+        if leaf.startswith("_"):
+            continue
+        yield info.name
+
+
+def _module_names() -> list[str]:
+    names: list[str] = []
+    for root in _ROOTS:
+        names.extend(_iter_checked_modules(root))
+    return sorted(set(names))
+
+
+@pytest.mark.parametrize("module_name", _module_names())
 def test_module_exports_match(module_name: str) -> None:
     mod = importlib.import_module(module_name)
 
