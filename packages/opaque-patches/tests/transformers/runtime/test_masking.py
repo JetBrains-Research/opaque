@@ -3,6 +3,10 @@ import pytest
 pytest.importorskip("transformers")
 import torch
 
+from opaque.api.patches.transformers.runtime.masking import (
+    vmap_create_causal_mask,
+    vmap_create_sliding_window_causal_mask,
+)
 from opaque.patches import apply_runtime_patches
 
 
@@ -100,3 +104,96 @@ def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
     original_fn_2 = getattr(patched_fn_2, "_original", None)
     assert patched_fn_2 is patched_fn
     assert original_fn_2 is original_fn
+
+
+class TestSlidingWindowCausalMask:
+    """vmap_create_sliding_window_causal_mask enforces the look-back limit."""
+
+    class _EagerConfig:
+        _attn_implementation = "eager"
+        sliding_window = 2
+
+    class _EagerConfigNoWindow:
+        _attn_implementation = "eager"
+
+    def _make_mask(self, seq_len, sliding_window=2, past_seen_tokens=0):
+        config = type(
+            "Cfg",
+            (),
+            {"_attn_implementation": "eager", "sliding_window": sliding_window},
+        )()
+        input_embeds = torch.randn(1, seq_len, 8)
+        cache_position = torch.arange(past_seen_tokens, past_seen_tokens + seq_len)
+        return vmap_create_sliding_window_causal_mask(
+            config,
+            inputs_embeds=input_embeds,
+            attention_mask=None,
+            past_key_values=None,
+            cache_position=cache_position,
+        )
+
+    def test_shape(self):
+        mask = self._make_mask(seq_len=4, sliding_window=2)
+        assert mask.shape == (1, 1, 4, 4)
+
+    def test_within_window_causal_positions_are_zero(self):
+        # seq_len=4, sliding_window=2; positions 0..3
+        mask = self._make_mask(seq_len=4, sliding_window=2)
+        neg_inf = torch.finfo(mask.dtype).min
+        # q=0, k=0: causal (k==q) and in-window (0 >= 0-2+1=-1) → 0.0
+        assert mask[0, 0, 0, 0] == 0.0
+        # q=1, k=1: in-window → 0.0
+        assert mask[0, 0, 1, 1] == 0.0
+        # q=2, k=1: causal (k<q), in-window (1 >= 2-2+1=1) → 0.0
+        assert mask[0, 0, 2, 1] == 0.0
+        # q=3, k=2: causal, in-window (2 >= 3-2+1=2) → 0.0
+        assert mask[0, 0, 3, 2] == 0.0
+
+    def test_outside_window_positions_are_neg_inf(self):
+        # seq_len=4, sliding_window=2
+        mask = self._make_mask(seq_len=4, sliding_window=2)
+        neg_inf = torch.finfo(mask.dtype).min
+        # q=2, k=0: causal, but out-of-window (0 < 2-2+1=1) → -inf
+        assert mask[0, 0, 2, 0] == neg_inf
+        # q=3, k=0: out-of-window (0 < 3-2+1=2) → -inf
+        assert mask[0, 0, 3, 0] == neg_inf
+        # q=3, k=1: out-of-window (1 < 3-2+1=2) → -inf
+        assert mask[0, 0, 3, 1] == neg_inf
+
+    def test_anti_causal_positions_remain_neg_inf(self):
+        # Future tokens must always be -inf regardless of window.
+        mask = self._make_mask(seq_len=4, sliding_window=100)
+        neg_inf = torch.finfo(mask.dtype).min
+        # q=0, k=1 (future)
+        assert mask[0, 0, 0, 1] == neg_inf
+        assert mask[0, 0, 0, 3] == neg_inf
+        assert mask[0, 0, 1, 2] == neg_inf
+
+    def test_window_larger_than_seq_reduces_to_causal(self):
+        # When sliding_window >= seq_len, the result equals plain causal mask.
+        seq_len = 4
+        causal_cfg = type("Cfg", (), {"_attn_implementation": "eager"})()
+        input_embeds = torch.randn(1, seq_len, 8)
+        cache_position = torch.arange(seq_len)
+        causal_mask = vmap_create_causal_mask(
+            causal_cfg, inputs_embeds=input_embeds, cache_position=cache_position
+        )
+        sliding_mask = self._make_mask(seq_len=seq_len, sliding_window=seq_len + 10)
+        assert torch.equal(causal_mask, sliding_mask)
+
+    def test_none_passthrough_when_no_sliding_window_attr(self):
+        # Without config.sliding_window the function must return the causal mask
+        # unchanged (not None just because the attribute is absent).
+        config = type("Cfg", (), {"_attn_implementation": "eager"})()
+        input_embeds = torch.randn(1, 4, 8)
+        cache_position = torch.arange(4)
+        mask = vmap_create_sliding_window_causal_mask(
+            config, inputs_embeds=input_embeds, cache_position=cache_position
+        )
+        # Should be a valid mask (not None) equal to the plain causal mask.
+        causal_mask = vmap_create_causal_mask(
+            config, inputs_embeds=input_embeds, cache_position=cache_position
+        )
+        assert mask is not None
+        assert torch.equal(mask, causal_mask)
+
