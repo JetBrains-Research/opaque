@@ -22,7 +22,11 @@ def _copy_repo_subset(repo_dir: Path) -> Path:
     (repo_dir / "packages").mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "Cargo.toml", repo_dir / "Cargo.toml")
     package_dir = repo_dir / "packages" / "opaque-accounting"
-    shutil.copytree(PACKAGE_DIR, package_dir)
+    shutil.copytree(
+        PACKAGE_DIR,
+        package_dir,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
     return package_dir
 
 
@@ -63,7 +67,7 @@ def _sdist_entries(path: Path) -> list[str]:
 
 def _assert_no_transient_bytecode(entries: list[str]) -> None:
     assert not any("__pycache__" in entry for entry in entries)
-    assert not any(entry.endswith(".pyc") or entry.endswith(".pyo") for entry in entries)
+    assert not any(entry.endswith((".pyc", ".pyo")) for entry in entries)
 
 
 def test_maturin_excludes_transient_bytecode_inputs() -> None:
@@ -103,7 +107,7 @@ def test_clean_and_dirty_builds_ship_the_same_accounting_files(tmp_path: Path) -
     dirty_dir = _copy_repo_subset(tmp_path / "dirty")
 
     dirty_cache = dirty_dir / "src" / "opaque" / "api" / "accounting" / "core" / "__pycache__"
-    dirty_cache.mkdir(parents=True)
+    dirty_cache.mkdir(parents=True, exist_ok=True)
     (dirty_cache / "leak.cpython-312.pyc").write_bytes(b"opaque")
     (dirty_dir / "src" / "opaque" / "accounting" / "temp.pyo").write_bytes(b"opaque")
 

@@ -194,7 +194,6 @@ jobs:
           manylinux: ${{ matrix.target.manylinux }}
           args: >-
             --release
-            --locked
             --interpreter python3.11
             --out ../../dist
             --compatibility pypi
