@@ -359,6 +359,15 @@ def random_allocation_gaussian_prefix_pld(
 ) -> Pld:
     """PLD for a released prefix of 1-out-of-total_steps allocation."""
 
+def k_out_of_t_gaussian_prefix_pld(
+    noise_multiplier: float,
+    total_steps: int,
+    total_participations: int,
+    released_steps: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Conservative prefix PLD for global k-out-of-t allocation."""
+
 def balls_in_bins_gaussian_pld(
     noise_multiplier: float,
     num_bins: int,

@@ -15,6 +15,7 @@ import sys
 _HEADLINE = (
     "gaussian",
     "adaclip",
+    "k_out_of_t",
     "poisson",
     "parallel_poisson",
     "random_allocation",
@@ -22,6 +23,7 @@ _HEADLINE = (
 
 _TYPES = (
     "Gaussian",
+    "KOutOfT",
     "AdaClip",
     "Poisson",
     "ParallelPoisson",
