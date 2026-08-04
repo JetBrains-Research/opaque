@@ -5760,9 +5760,9 @@ clip-noise-step.</p>
 <tbody>
 <tr>
 <td><code>privacy_target_epsilon</code></td>
-<td><code>float</code></td>
-<td><code>8.0</code></td>
-<td>User target ε.  Calibration searches for the smallest noise multiplier that achieves this.</td>
+<td><code>float \| None</code></td>
+<td><code>None</code></td>
+<td>User target ε.  When set, calibration searches for the smallest noise multiplier that achieves this.</td>
 </tr>
 <tr>
 <td><code>privacy_target_delta</code></td>
@@ -5784,19 +5784,19 @@ clip-noise-step.</p>
 </tr>
 <tr>
 <td><code>clipping_kwargs</code></td>
-<td><code>dict[str, Any]</code></td>
+<td><code>dict[str, Any] \| str</code></td>
 <td><code>{}</code></td>
-<td>Adaptive / auto kwargs (<code>target_clipping_rate</code>, <code>norm_max</code>, <code>gamma</code>).</td>
+<td>Adaptive / auto kwargs (<code>target_clipping_rate</code>, <code>norm_max</code>, <code>gamma</code>).  Also accepts JSON string or HF-style comma-separated string.</td>
 </tr>
 <tr>
 <td><code>sampling_mode</code></td>
 <td><code>str</code></td>
-<td><code>"poisson"</code></td>
-<td>Only <code>"poisson"</code> is supported.</td>
+<td><code>"auto"</code></td>
+<td>Resolved from <code>privacy_noise_mechanism</code> via a mechanism→sampler lookup table.  Explicit overrides: <code>"poisson"</code>, <code>"random_allocation"</code>, <code>"k_out_of_t"</code> (gaussian); <code>"b_min_sep"</code> (mf_band); <code>"balls_in_bins"</code> (mf_blt/bisr/bsr/lambda_cgd).</td>
 </tr>
 <tr>
 <td><code>sampling_kwargs</code></td>
-<td><code>dict[str, Any]</code></td>
+<td><code>dict[str, Any] \| str</code></td>
 <td><code>{}</code></td>
 <td>Sampler kwargs.  <code>truncated_batch_size</code> caps Poisson draws.</td>
 </tr>
@@ -5804,13 +5804,13 @@ clip-noise-step.</p>
 <td><code>privacy_noise_mechanism</code></td>
 <td><code>str</code></td>
 <td><code>"gaussian"</code></td>
-<td>Only <code>"gaussian"</code> is supported.</td>
+<td>One of <code>{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}</code>.</td>
 </tr>
 <tr>
 <td><code>privacy_noise_multiplier</code></td>
 <td><code>float \| None</code></td>
 <td><code>None</code></td>
-<td>Fixed σ.  When unset, calibration searches.</td>
+<td>Fixed σ.  When unset (and <code>privacy_target_epsilon</code> is set), calibration searches.</td>
 </tr>
 <tr>
 <td><code>privacy_noise_radius</code></td>
@@ -5820,15 +5820,15 @@ clip-noise-step.</p>
 </tr>
 <tr>
 <td><code>privacy_noise_mechanism_kwargs</code></td>
-<td><code>dict[str, Any]</code></td>
+<td><code>dict[str, Any] \| str</code></td>
 <td><code>{}</code></td>
-<td>Forwarded into <code>gaussian_noise</code> (e.g. <code>bound</code> for the bounded variant).</td>
+<td>Forwarded into the noise mechanism factory (e.g. <code>bound</code> for bounded Gaussian).</td>
 </tr>
 <tr>
 <td><code>noise_calibration_kwargs</code></td>
-<td><code>dict[str, Any]</code></td>
+<td><code>dict[str, Any] \| str</code></td>
 <td><code>{}</code></td>
-<td>Calibration search bounds; defaults <code>{"min": 0.01, "max": 10.0, "tolerance": 1e-3}</code>.</td>
+<td>Calibration search bounds.  When empty, <code>__post_init__</code> injects <code>{"min": 0.01, "max": 10.0, "tolerance": 1e-3}</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -5908,7 +5908,7 @@ clip-noise-step.</p>
 <td><code>gradient_checkpointing</code></td>
 <td><code>bool</code></td>
 <td><code>False</code></td>
-<td>Activation recomputation.  Pair with <code>use_reentrant=False</code> for vmap-safety.</td>
+<td>Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.  Pair with <code>gradient_checkpointing_kwargs={"use_reentrant": False}</code> for vmap-safety.</td>
 </tr>
 <tr>
 <td><code>gradient_checkpointing_kwargs</code></td>
@@ -5955,9 +5955,9 @@ clip-noise-step.</p>
 </tr>
 <tr>
 <td><code>per_device_eval_batch_size</code></td>
-<td><code>int</code></td>
-<td><code>8</code></td>
-<td>Eval batch size (fixed, not Poisson).</td>
+<td><code>int \| None</code></td>
+<td><code>None</code></td>
+<td>Eval batch size (fixed, not Poisson).  When <code>None</code>, defaults to <code>per_device_train_batch_size</code> in <code>__post_init__</code>.</td>
 </tr>
 <tr>
 <td><code>eval_accumulation_steps</code></td>
@@ -6015,8 +6015,8 @@ clip-noise-step.</p>
 <td><code>None</code></td>
 </tr>
 <tr>
-<td><code>lr_scheduler_type</code></td>
-<td><code>SchedulerType \| str</code></td>
+<td><code>lr_scheduler</code></td>
+<td><code>SchedulerType \| str \| Schedule</code></td>
 <td><code>"linear"</code></td>
 </tr>
 <tr>
@@ -6679,13 +6679,13 @@ optimizer.</p>
 <td><code>loss_type</code></td>
 <td><code>str</code></td>
 <td><code>"nll"</code></td>
-<td><code>"nll"</code> (CE) or <code>"dft"</code> (Dynamic Fine-Tuning).  Unknown values fail at the loss dispatch.</td>
+<td><code>"nll"</code> (CE), <code>"dft"</code> (Dynamic Fine-Tuning), or <code>"chunked_nll"</code> (fused logits-free CE).  Unknown values fail at the loss dispatch.</td>
 </tr>
 <tr>
 <td><code>log_completion_metrics</code></td>
 <td><code>bool</code></td>
 <td><code>True</code></td>
-<td>Log per-step <code>entropy</code> / <code>mean_token_accuracy</code>; <code>False</code> skips them.</td>
+<td>Log per-step <code>entropy</code> / <code>mean_token_accuracy</code>; <code>False</code> skips them.  Also enables fused logits-free loss paths when <code>False</code>.</td>
 </tr>
 <tr>
 <td><code>logging_steps</code></td>
@@ -6696,8 +6696,14 @@ optimizer.</p>
 <tr>
 <td><code>gradient_checkpointing</code></td>
 <td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.</td>
+</tr>
+<tr>
+<td><code>use_performance_kernels</code></td>
+<td><code>bool</code></td>
 <td><code>True</code></td>
-<td>TRL default (overrides base <code>False</code>).</td>
+<td>Opaque-specific: enable model-level Triton kernels (<code>rope</code>, <code>rms_norm</code>, <code>activation</code>, <code>cross_entropy</code>) by default.  CUDA + Triton only; no-op on CPU/MPS.  Overrides base <code>False</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -6909,8 +6915,14 @@ derived from <code>loss_type</code>.</p>
 <tr>
 <td><code>gradient_checkpointing</code></td>
 <td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.</td>
+</tr>
+<tr>
+<td><code>use_performance_kernels</code></td>
+<td><code>bool</code></td>
 <td><code>True</code></td>
-<td>TRL default.</td>
+<td>Opaque-specific: enable model-level Triton kernels (<code>rope</code>, <code>rms_norm</code>, <code>activation</code>, <code>cross_entropy</code>) by default.  CUDA + Triton only; no-op on CPU/MPS.  Overrides base <code>False</code>.</td>
 </tr>
 </tbody>
 </table>
