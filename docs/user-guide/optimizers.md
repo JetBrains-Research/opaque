@@ -238,12 +238,13 @@ from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.optimizers import adamw
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
-strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
-second_strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.999)
+strategy = band_mf_strategy(bands=8, momentum=0.9)
+second_strategy = band_mf_strategy(bands=8, momentum=0.999)
 
 # Noise: passing second_moment_strategy creates two MF streams (g, g²).
 noise_fn, noise_state = mf_gaussian_noise(
     grad_template, strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
     second_moment_strategy=second_strategy,
@@ -275,7 +276,7 @@ is sensitivity-proportional, so the joint Mahalanobis budget collapses to
 a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
-strategy = band_mf_strategy(n_steps=n, bands=bands)
+strategy = band_mf_strategy(bands=bands)
 mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
 process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```

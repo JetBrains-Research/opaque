@@ -545,7 +545,8 @@ grad_fn, clip_state = auto_clipped_grad(
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
-    band_mf_strategy(n_steps=num_steps, bands=4),
+    band_mf_strategy(bands=4),
+    n_steps=num_steps,
     noise_multiplier=noise_multiplier,
     key=key(0),
 )

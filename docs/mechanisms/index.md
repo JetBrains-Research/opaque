@@ -73,6 +73,13 @@ Subsampling amplification reduces per-step privacy cost. Not all
 mechanisms support all amplification types:
 
 | Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.random_allocation` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
+|-----------|:-:|:-:|:-:|:-:|:-:|
+| BandMF    | No | No | No | Yes | No |
+| BLT       | No | No | No | No | Yes |
+| λCGD      | No | No | No | No | Yes |
+| BSR       | No | No | No | No | Yes |
+| BISR      | No | No | No | No | Yes |
+| Identity  | Yes | Yes | Yes | Yes | Yes |
 |-----------|:-----------:|:---------------------:|:-------------------:|:-------------------:|:-----------------:|
 | Gaussian | Yes | Yes | Yes | — | — |
 | BandMF | — | — | — | Yes | — |
@@ -120,7 +127,7 @@ gauss = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---
 # BandMF: strategy computes sensitivity and coefficients
-band_s = band_mf_strategy(n_steps=1000, bands=10)
+band_s = band_mf_strategy(bands=10)
 band = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, band_s),
     sample_rate=0.01,
@@ -128,11 +135,9 @@ band = dpftrl_acc.poisson(
 )
 
 # DP-λCGD: strategy.as_mechanism populates the accounting
-lcgd_s = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=1000, min_sep=100, max_participations=5,
-)
+lcgd_s = lambda_cgd_strategy(lambda_=0.9)
 lcgd = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, lcgd_s),
+    dpftrl_acc.mf_gaussian(1.0, lcgd_s),
     num_bins=100, n_steps=500,
 )
 

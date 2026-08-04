@@ -50,7 +50,7 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 # DP-FTRL
 from opaque.dpftrl import accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
@@ -353,7 +353,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(1e-5)
 ```
@@ -365,19 +365,19 @@ BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Build via `ftrl_acc.mf_gaussian(noise_multiplier, strategy)` — the strategy owns
+Build via `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)` — the strategy owns
 sensitivity, Gram matrix, coefficients, min_sep, and max_participations:
 
 ```python
 from opaque.dpftrl.noise import blt_strategy
-strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
+strategy = blt_strategy(max_buffers=10)
 
 # Unamplified — single-Gaussian PLD
-proc = ftrl_acc.mf_gaussian(1.0, strategy)
+proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=1000, n_steps=5000,
 )
 ```
@@ -387,12 +387,9 @@ The same `as_mechanism` API works for `lambda_cgd_strategy`,
 
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
-strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
-)
+strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 ```
@@ -410,13 +407,12 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 - `n_steps` (int, keyword-only): Total number of training rounds.
 
 ```python
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
-eps = proc.epsilon_at(1e-5)
 ```
 
 ### `b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -> DpProcess`
@@ -456,7 +452,7 @@ strategy = lambda_cgd_strategy(
     min_sep=steps_per_epoch, max_participations=num_epochs,
 )
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 

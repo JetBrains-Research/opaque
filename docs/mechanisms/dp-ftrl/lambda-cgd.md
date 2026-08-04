@@ -38,7 +38,7 @@ strategy = lambda_cgd_strategy(
 
 # 2. Build accounting mechanism via strategy.as_mechanism
 training = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -83,14 +83,12 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
 
-strategy = lambda_cgd_strategy(
-    lambda_=0.9,
+strategy = lambda_cgd_strategy(lambda_=0.9)
+noise_fn, state = mf_gaussian_noise(
+    grad_template, strategy,
     n_steps=total_steps,
     min_sep=steps_per_epoch,
     max_participations=num_epochs,
-)
-noise_fn, state = mf_gaussian_noise(
-    grad_template, strategy,
     noise_multiplier=noise_multiplier,
     key=key(seed),
 )
