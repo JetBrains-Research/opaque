@@ -170,14 +170,17 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
+      - name: Assert CUDA available
+       run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+
       - name: pytest
-        run: >-
-          uv run pytest packages tests
-          -m "cuda and not slow"
-          -rs
-          --cov=opaque
-          --cov-report=xml:coverage.xml
-          -q
+       run: >-
+         uv run pytest packages tests
+         -m "cuda and not slow"
+         -rs
+         --cov=opaque
+         --cov-report=xml:coverage.xml
+         -q
 
       - uses: codecov/codecov-action@v4
         with:
@@ -198,15 +201,26 @@ jobs:
     steps:
       - name: Require all test legs to pass
         run: |
-          cpu_mps="${{ needs.python-tests.result }}"
-          gpu="${{ needs.python-tests-gpu.result }}"
-          echo "python-tests matrix result: $cpu_mps"
-          echo "python-tests-gpu result: $gpu"
-          test "$cpu_mps" = "success"
-          # GPU is skipped for fork PRs — only require success when it actually ran
-          if [[ "$gpu" != "skipped" ]]; then
-            test "$gpu" = "success"
-          fi
+         is_fork="false"
+         if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+           is_fork="true"
+         fi
+         cpu_mps="${{ needs.python-tests.result }}"
+         gpu="${{ needs.python-tests-gpu.result }}"
+         echo "python-tests matrix result: $cpu_mps"
+         echo "python-tests-gpu result: $gpu"
+         echo "is_fork_pr: $is_fork"
+         test "$cpu_mps" = "success"
+         if [[ "$is_fork" == "true" ]]; then
+           # Fork PRs never get GPU runner allocation — skipped is expected
+           if [[ "$gpu" != "skipped" ]]; then
+             echo "ERROR: GPU job should be skipped for fork PRs but got: $gpu"
+             exit 1
+           fi
+         else
+           # Repo PRs must have GPU tests pass
+           test "$gpu" = "success"
+         fi
 
   smoke-imports:
     name: Cross-package import smoke test

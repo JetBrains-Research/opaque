@@ -52,7 +52,6 @@ jobs:
     name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     needs: [discover-packages]
     runs-on: ${{ matrix.device.os }}
-    continue-on-error: ${{ matrix.soft == true }}
     timeout-minutes: 40  # safety net; slow tests make these jobs longer than the PR gate
     strategy:
       fail-fast: false
@@ -99,14 +98,18 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
+      - name: Assert CUDA available
+       if: matrix.device.name == 'gpu'
+       run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+
       - name: pytest
-        run: |
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            ${{ matrix.device.xdist }} \
-            --cov=opaque \
-            --cov-report=xml:coverage.xml \
-            -q
+       run: |
+         uv run pytest ${{ matrix.shard.paths }} \
+           -m "${{ matrix.device.marker }}" \
+           ${{ matrix.device.xdist }} \
+           --cov=opaque \
+           --cov-report=xml:coverage.xml \
+           -q
 
       - uses: codecov/codecov-action@v4
         with:
