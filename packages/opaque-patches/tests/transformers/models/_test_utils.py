@@ -168,3 +168,297 @@ def experts_forward_patched(modeling_module):
         None,
     )
     return cls is not None and hasattr(cls.forward, "__opaque_patched__")
+
+
+# ----------------------------------------------------------------------------
+# Parity helpers — compare patched vs unpatched models
+# ----------------------------------------------------------------------------
+
+# Tolerances keyed by (dtype_str, has_softcapping).
+# Softcapping families use slightly relaxed fp32 tolerances because the
+# patched eager attention may accumulate a few extra rounding steps.
+_FP32_TOLERANCES = {"rtol": 1e-5, "atol": 1e-6}
+_SOFTCAP_FP32_TOLERANCES = {"rtol": 1e-4, "atol": 1e-5}
+_BF16_TOLERANCES = {"rtol": 1e-2, "atol": 1e-2}
+
+
+def _get_tolerances(dtype: torch.dtype, softcapping: bool = False) -> dict:
+    """Return dtype-specific tolerances for allclose assertions."""
+    if dtype == torch.bfloat16:
+        return _BF16_TOLERANCES
+    elif softcapping:
+        return _SOFTCAP_FP32_TOLERANCES
+    else:
+        return _FP32_TOLERANCES
+
+
+def _get_param_names(model) -> list[str]:
+    """Return sorted list of fully-qualified parameter names."""
+    return sorted(k for k, _ in model.named_parameters())
+
+
+def _get_params_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    """Return {name: param} for all parameters, sorted by name."""
+    return dict(model.named_parameters())
+
+
+def _collect_grads(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    """Return {name: grad} for all parameters that have a gradient."""
+    return {name: p.grad for name, p in model.named_parameters() if p.grad is not None}
+
+
+def build_patched_model_pair(
+    config_cls,
+    model_cls,
+    device,
+    attn_impl: str = "sdpa",
+    config_kwargs: dict | None = None,
+    apply_model_patches_kwargs: dict | None = None,
+):
+    """Build two tiny models: one unpatched, one patched, with identical weights.
+
+    ``config_kwargs`` is the full config dict — defaults to
+    ``get_tiny_config_kwargs()`` when ``None``.  Pass a custom dict (e.g. with
+    ``num_key_value_heads`` removed) for families like GPT2 that lack GQA.
+
+    Returns ``(unpatched_model, patched_model)``.
+    """
+    import copy
+
+    from opaque.patches import apply_model_patches
+
+    if config_kwargs is None:
+        config_kwargs = get_tiny_config_kwargs()
+    config = config_cls(**config_kwargs)
+    config._attn_implementation = attn_impl
+
+    try:
+        model = model_cls(config).to(device)
+    except ValueError as e:
+        if attn_impl == "eager" or "scaled_dot_product" not in str(e):
+            raise
+        config._attn_implementation = "eager"
+        model = model_cls(config).to(device)
+
+    unpatched = model
+    patched = copy.deepcopy(unpatched)
+    apply_model_patches_kwargs = apply_model_patches_kwargs or {"eager_attention": True}
+    apply_model_patches(patched, **apply_model_patches_kwargs)
+    return unpatched, patched
+
+
+def _assert_tensors_close(
+    name: str,
+    actual: torch.Tensor,
+    expected: torch.Tensor,
+    rtol: float,
+    atol: float,
+    label: str = "",
+) -> None:
+    """Assert two tensors are close; on failure, print per-element stats."""
+    diff = (actual.float() - expected.float()).abs()
+    abs_err = diff.max().item()
+    expected_abs = expected.float().abs()
+    mask = expected_abs >= 1e-6
+    if mask.sum() > 0:
+        rel_err = (diff[mask] / expected_abs[mask]).max().item()
+    else:
+        rel_err = float("nan")
+
+    prefix = f"{label}: " if label else ""
+    try:
+        torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+    except AssertionError:
+        raise AssertionError(
+            f"{prefix}{name} mismatch: abs_err={abs_err:.2e}, rel_err={rel_err:.2e}"
+            f" (rtol={rtol:.0e}, atol={atol:.0e})"
+        ) from None
+
+
+def assert_parity_forward(
+    model_cls,
+    config_cls,
+    device,
+    attn_impl: str = "sdpa",
+    config_kwargs: dict | None = None,
+    softcapping: bool = False,
+    label: str = "",
+    apply_model_patches_kwargs: dict | None = None,
+    dtype: torch.dtype | None = None,
+):
+    """Compare forward logits between patched and unpatched models."""
+    torch.manual_seed(0)
+    unpatched, patched = build_patched_model_pair(
+        config_cls,
+        model_cls,
+        device,
+        attn_impl=attn_impl,
+        config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
+    )
+    if dtype is not None:
+        unpatched = unpatched.to(dtype)
+        patched = patched.to(dtype)
+
+    unpatched.eval()
+    patched.eval()
+    vocab = unpatched.config.vocab_size
+    input_ids = torch.randint(0, vocab, (2, 10), device=device)
+    attention_mask = torch.ones_like(input_ids)
+
+    with torch.no_grad():
+        logits_ref = unpatched(
+            input_ids=input_ids, attention_mask=attention_mask
+        ).logits
+        logits_test = patched(input_ids=input_ids, attention_mask=attention_mask).logits
+
+    assert logits_ref.shape == logits_test.shape, (
+        f"{label} shape mismatch: {logits_ref.shape} vs {logits_test.shape}"
+    )
+    actual_dtype = logits_test.dtype
+    tolerances = _get_tolerances(actual_dtype, softcapping)
+    _assert_tensors_close(
+        "forward logits",
+        logits_test,
+        logits_ref,
+        rtol=tolerances["rtol"],
+        atol=tolerances["atol"],
+        label=label,
+    )
+
+
+def assert_parity_grad(
+    model_cls,
+    config_cls,
+    device,
+    attn_impl: str = "sdpa",
+    config_kwargs: dict | None = None,
+    softcapping: bool = False,
+    label: str = "",
+    apply_model_patches_kwargs: dict | None = None,
+    dtype: torch.dtype | None = None,
+):
+    """Compare per-parameter gradients between patched and unpatched models."""
+    torch.manual_seed(0)
+    unpatched, patched = build_patched_model_pair(
+        config_cls,
+        model_cls,
+        device,
+        attn_impl=attn_impl,
+        config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
+    )
+    if dtype is not None:
+        unpatched = unpatched.to(dtype)
+        patched = patched.to(dtype)
+
+    unpatched.train()
+    patched.train()
+    vocab = unpatched.config.vocab_size
+    input_ids = torch.randint(0, vocab, (2, 10), device=device)
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+
+    # --- unpatched backward ---
+    loss_ref = unpatched(
+        input_ids=input_ids, attention_mask=attention_mask, labels=labels
+    ).loss
+    loss_ref.backward()
+    grads_ref = _collect_grads(unpatched)
+
+    # --- patched backward ---
+    loss_test = patched(
+        input_ids=input_ids, attention_mask=attention_mask, labels=labels
+    ).loss
+    loss_test.backward()
+    grads_test = _collect_grads(patched)
+
+    actual_dtype = dtype or next(patched.parameters()).dtype
+    tolerances = _get_tolerances(actual_dtype, softcapping)
+
+    param_names_ref = set(grads_ref.keys())
+    param_names_test = set(grads_test.keys())
+    assert param_names_ref == param_names_test, (
+        f"{label} gradient key mismatch: extra={param_names_test - param_names_ref}, "
+        f"missing={param_names_ref - param_names_test}"
+    )
+
+    for name in sorted(grads_ref):
+        _assert_tensors_close(
+            f"backward grad {name}",
+            grads_test[name],
+            grads_ref[name],
+            rtol=tolerances["rtol"],
+            atol=tolerances["atol"],
+            label=label,
+        )
+
+
+def assert_parity_vmap_grad(
+    model_cls,
+    config_cls,
+    device,
+    attn_impl: str = "sdpa",
+    config_kwargs: dict | None = None,
+    softcapping: bool = False,
+    label: str = "",
+    apply_model_patches_kwargs: dict | None = None,
+    dtype: torch.dtype | None = None,
+):
+    """Compare vmap(grad) clipped gradients between patched and unpatched models."""
+    torch.manual_seed(0)
+    unpatched, patched = build_patched_model_pair(
+        config_cls,
+        model_cls,
+        device,
+        attn_impl=attn_impl,
+        config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
+    )
+    if dtype is not None:
+        unpatched = unpatched.to(dtype)
+        patched = patched.to(dtype)
+
+    unpatched.train()
+    patched.train()
+    batch, seq, vocab = 4, 12, unpatched.config.vocab_size
+    input_ids = torch.randint(0, vocab, (batch, seq), device=device)
+    attention_mask = torch.ones(batch, seq, dtype=torch.long, device=device)
+    labels = input_ids.clone()
+
+    def _vmap_grads(model):
+        fmodel, trainable, frozen = make_functional(
+            model, disable_autograd_tracking=True, partition_trainable=True
+        )
+
+        def per_example_loss(trainable_params, frozen_params, ids, mask, lbls):
+            all_params = {**frozen_params, **trainable_params}
+            outputs = fmodel(all_params, ids, attention_mask=mask, labels=lbls)
+            return outputs.loss
+
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
+        )
+        grads, _state = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
+        return grads
+
+    grads_ref = _vmap_grads(unpatched)
+    grads_test = _vmap_grads(patched)
+
+    actual_dtype = dtype or next(patched.parameters()).dtype
+    tolerances = _get_tolerances(actual_dtype, softcapping)
+
+    assert set(grads_ref.pytree.keys()) == set(grads_test.pytree.keys()), (
+        f"{label} vmap_grad key mismatch"
+    )
+    for name in sorted(grads_ref.pytree):
+        _assert_tensors_close(
+            f"vmap_grad {name}",
+            grads_test.pytree[name],
+            grads_ref.pytree[name],
+            rtol=tolerances["rtol"],
+            atol=tolerances["atol"],
+            label=label,
+        )
