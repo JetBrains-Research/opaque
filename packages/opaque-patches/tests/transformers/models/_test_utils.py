@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared utilities for testing vmap and gradients on models."""
 
+from contextlib import contextmanager
+
 import torch
 
 from opaque.api.engine.clipping import clipped_grad
@@ -213,7 +215,6 @@ def build_patched_model_pair(
     device,
     attn_impl: str = "sdpa",
     config_kwargs: dict | None = None,
-    apply_model_patches_kwargs: dict | None = None,
 ):
     """Build two tiny models with identical weights.
 
@@ -221,7 +222,7 @@ def build_patched_model_pair(
     ``get_tiny_config_kwargs()`` when ``None``.  Pass a custom dict (e.g. with
     ``num_key_value_heads`` removed) for families like GPT2 that lack GQA.
 
-    Returns ``(unpatched_model, patched_model)``.
+    Returns ``(upstream_model, patchable_model)``.
     """
     import copy
 
@@ -238,8 +239,45 @@ def build_patched_model_pair(
         config._attn_implementation = "eager"
         model = model_cls(config).to(device)
 
-    unpatched = model
-    patched = copy.deepcopy(unpatched)
+    return model, copy.deepcopy(model)
+
+
+@contextmanager
+def parity_model_patches(
+    model: torch.nn.Module, apply_model_patches_kwargs: dict | None = None
+):
+    """Apply class-level model patches without installing global runtime patches."""
+    from opaque.api.patches.transformers._router import apply_transformers_model_patches
+
+    original_forwards = {
+        type(module): type(module).forward for module in model.modules()
+    }
+    try:
+        apply_transformers_model_patches(
+            model, **(apply_model_patches_kwargs or {"eager_attention": True})
+        )
+        yield
+    finally:
+        for module_cls, forward in original_forwards.items():
+            module_cls.forward = forward
+
+
+def build_runtime_patched_model_pair(
+    config_cls,
+    model_cls,
+    device,
+    attn_impl: str = "sdpa",
+    config_kwargs: dict | None = None,
+    apply_model_patches_kwargs: dict | None = None,
+):
+    """Build a pair sharing runtime shims required for upstream vmap support."""
+    unpatched, patched = build_patched_model_pair(
+        config_cls,
+        model_cls,
+        device,
+        attn_impl=attn_impl,
+        config_kwargs=config_kwargs,
+    )
     from opaque.patches import apply_model_patches
 
     apply_model_patches(
@@ -295,7 +333,6 @@ def assert_parity_forward(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
-        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -311,7 +348,10 @@ def assert_parity_forward(
         logits_ref = unpatched(
             input_ids=input_ids, attention_mask=attention_mask
         ).logits
-        logits_test = patched(input_ids=input_ids, attention_mask=attention_mask).logits
+        with parity_model_patches(patched, apply_model_patches_kwargs):
+            logits_test = patched(
+                input_ids=input_ids, attention_mask=attention_mask
+            ).logits
 
     assert logits_ref.shape == logits_test.shape, (
         f"{label} shape mismatch: {logits_ref.shape} vs {logits_test.shape}"
@@ -347,7 +387,6 @@ def assert_parity_grad(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
-        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -368,11 +407,12 @@ def assert_parity_grad(
     grads_ref = _collect_grads(unpatched)
 
     # --- patched backward ---
-    loss_test = patched(
-        input_ids=input_ids, attention_mask=attention_mask, labels=labels
-    ).loss
-    loss_test.backward()
-    grads_test = _collect_grads(patched)
+    with parity_model_patches(patched, apply_model_patches_kwargs):
+        loss_test = patched(
+            input_ids=input_ids, attention_mask=attention_mask, labels=labels
+        ).loss
+        loss_test.backward()
+        grads_test = _collect_grads(patched)
 
     actual_dtype = dtype or next(patched.parameters()).dtype
     tolerances = _get_tolerances(actual_dtype, softcapping)
@@ -406,9 +446,9 @@ def assert_parity_vmap_grad(
     apply_model_patches_kwargs: dict | None = None,
     dtype: torch.dtype | None = None,
 ):
-    """Compare vmap(grad) clipped gradients between patched and unpatched models."""
+    """Compare vmap gradients against an upstream runtime-compatible reference."""
     torch.manual_seed(0)
-    unpatched, patched = build_patched_model_pair(
+    unpatched, patched = build_runtime_patched_model_pair(
         config_cls,
         model_cls,
         device,
