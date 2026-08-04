@@ -29,6 +29,12 @@ from opaque.api.patches.kernels.lora import (
     Opaque_LoRA_MLP,
     Opaque_LoRA_QKV,
     Opaque_LoRA_W,
+    _LoRAMLPBackward,
+    _LoRAMLPBackwardLite,
+    _LoRAQKVBackward,
+    _LoRAQKVBackwardLite,
+    _LoRAWBackward,
+    _LoRAWBackwardLite,
 )
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
@@ -126,6 +132,214 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
         X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, ACTIVATION_SWIGLU
     )
     return result[0]
+
+
+@pytest.mark.parametrize(
+    ("vmap_rule", "in_dims"),
+    [
+        (Opaque_LoRA_W.vmap, (0, 0, None, None, None)),
+        (_LoRAWBackward.vmap, (0, 0, None, 0, None, None)),
+        (_LoRAWBackwardLite.vmap, (0, None, None, 0, None)),
+        (
+            Opaque_LoRA_QKV.vmap,
+            (0, None, None, None, None, None, None, None, None, None, None, None, 0),
+        ),
+        (
+            _LoRAQKVBackward.vmap,
+            (
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ),
+        (
+            _LoRAQKVBackwardLite.vmap,
+            (
+                0,
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+            ),
+        ),
+        (
+            Opaque_LoRA_MLP.vmap,
+            (
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+            ),
+        ),
+        (
+            _LoRAMLPBackward.vmap,
+            (
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                0,
+                None,
+            ),
+        ),
+        (
+            _LoRAMLPBackwardLite.vmap,
+            (
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                0,
+                0,
+            ),
+        ),
+    ],
+)
+def test_vmap_rules_reject_mapped_parameters(vmap_rule, in_dims):
+    """Forward and backward vmap rules accept only activation batch dimensions."""
+    with pytest.raises(ValueError, match="vmap requires"):
+        vmap_rule(None, in_dims, *(None for _ in in_dims))
+
+
+def test_rectangular_linear_and_qkv_vmap_gradients_match_pytorch(assert_precision):
+    """Rectangular LoRA projections preserve eager and vmapped input gradients."""
+    torch.manual_seed(42)
+    vmap_batch, batch, seq, hidden, output, rank = (2, 2, 3, 8, 5, 2)
+    kw = {"device": "cuda", "dtype": torch.float32}
+    X = torch.randn(vmap_batch, batch, seq, hidden, **kw)
+    Wq, Aq, Bq = (
+        _kaiming_weight(output, hidden, **kw),
+        _lora_weight(hidden, rank, **kw),
+        _lora_weight(rank, output, **kw),
+    )
+    Wk, Ak, Bk = (
+        _kaiming_weight(output, hidden, **kw),
+        _lora_weight(hidden, rank, **kw),
+        _lora_weight(rank, output, **kw),
+    )
+    Wv, Av, Bv = (
+        _kaiming_weight(output, hidden, **kw),
+        _lora_weight(hidden, rank, **kw),
+        _lora_weight(rank, output, **kw),
+    )
+
+    assert_precision(
+        opaque_lora_linear(X[0], Wq, Aq, Bq, SCALING),
+        pytorch_lora_linear(X[0], Wq, Aq, Bq, SCALING),
+        rtol=RTOL_LORA_FWD,
+        atol=ATOL_LORA_FWD,
+        label="rectangular linear output",
+    )
+
+    def linear_pt(x):
+        return pytorch_lora_linear(x, Wq, Aq, Bq, SCALING).square().mean()
+
+    def linear_op(x):
+        return opaque_lora_linear(x, Wq, Aq, Bq, SCALING).square().mean()
+
+    assert_precision(
+        vmap(grad(linear_op))(X),
+        vmap(grad(linear_pt))(X),
+        rtol=RTOL_LORA_BWD,
+        atol=ATOL_LORA_BWD,
+        label="rectangular linear vmapped X.grad",
+    )
+
+    assert_precision(
+        torch.stack(
+            opaque_lora_qkv(
+                X[0], Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            )
+        ),
+        torch.stack(
+            pytorch_lora_qkv(
+                X[0], Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            )
+        ),
+        rtol=RTOL_LORA_FWD,
+        atol=ATOL_LORA_FWD,
+        label="rectangular QKV output",
+    )
+
+    def qkv_pt(x):
+        return sum(
+            projection.square().mean()
+            for projection in pytorch_lora_qkv(
+                x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            )
+        )
+
+    def qkv_op(x):
+        return sum(
+            projection.square().mean()
+            for projection in opaque_lora_qkv(
+                x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            )
+        )
+
+    assert_precision(
+        vmap(grad(qkv_op))(X),
+        vmap(grad(qkv_pt))(X),
+        rtol=RTOL_LORA_BWD,
+        atol=ATOL_LORA_BWD,
+        label="rectangular QKV vmapped X.grad",
+    )
 
 
 # ============================================================================
@@ -912,6 +1126,124 @@ class TestLoRAMLPVmapForward:
 
 class TestLoRAMLPVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
+
+    def test_rectangular_projections_match_pytorch(self, assert_precision):
+        """Eager and vmapped gradients support distinct MLP input/output widths."""
+        torch.manual_seed(42)
+        vmap_batch, batch, seq, hidden, intermediate, output, rank = (
+            2,
+            2,
+            3,
+            8,
+            12,
+            5,
+            2,
+        )
+        kw = {"device": "cuda", "dtype": torch.float32}
+
+        Wg = _kaiming_weight(intermediate, hidden, **kw)
+        Ag = _lora_weight(hidden, rank, **kw).requires_grad_(True)
+        Bg = _lora_weight(rank, intermediate, **kw).requires_grad_(True)
+        Wu = _kaiming_weight(intermediate, hidden, **kw)
+        Au = _lora_weight(hidden, rank, **kw).requires_grad_(True)
+        Bu = _lora_weight(rank, intermediate, **kw).requires_grad_(True)
+        Wd = _kaiming_weight(output, intermediate, **kw)
+        Ad = _lora_weight(intermediate, rank, **kw).requires_grad_(True)
+        Bd = _lora_weight(rank, output, **kw).requires_grad_(True)
+
+        X_pt = torch.randn(batch, seq, hidden, **kw, requires_grad=True)
+        out_pt = pytorch_lora_mlp(
+            X_pt, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING
+        )
+        out_pt.square().mean().backward()
+
+        X_op = X_pt.detach().clone().requires_grad_(True)
+        lora_op = [
+            p.detach().clone().requires_grad_(True) for p in (Ag, Bg, Au, Bu, Ad, Bd)
+        ]
+        out_op = opaque_lora_mlp(
+            X_op,
+            Wg,
+            lora_op[0],
+            lora_op[1],
+            SCALING,
+            Wu,
+            lora_op[2],
+            lora_op[3],
+            SCALING,
+            Wd,
+            lora_op[4],
+            lora_op[5],
+            SCALING,
+        )
+        out_op.square().mean().backward()
+
+        assert_precision(
+            out_op,
+            out_pt,
+            rtol=RTOL_LORA_MLP_FWD,
+            atol=ATOL_LORA_MLP_FWD,
+            label="output",
+        )
+        assert_precision(
+            X_op.grad,
+            X_pt.grad,
+            rtol=RTOL_LORA_MLP_BWD,
+            atol=ATOL_LORA_MLP_BWD,
+            label="X.grad",
+        )
+
+        X_vmap = torch.randn(vmap_batch, batch, seq, hidden, **kw)
+
+        def f_pt(x):
+            return (
+                pytorch_lora_mlp(
+                    x,
+                    Wg,
+                    Ag.detach(),
+                    Bg.detach(),
+                    SCALING,
+                    Wu,
+                    Au.detach(),
+                    Bu.detach(),
+                    SCALING,
+                    Wd,
+                    Ad.detach(),
+                    Bd.detach(),
+                    SCALING,
+                )
+                .square()
+                .mean()
+            )
+
+        def f_op(x):
+            return (
+                opaque_lora_mlp(
+                    x,
+                    Wg,
+                    Ag.detach(),
+                    Bg.detach(),
+                    SCALING,
+                    Wu,
+                    Au.detach(),
+                    Bu.detach(),
+                    SCALING,
+                    Wd,
+                    Ad.detach(),
+                    Bd.detach(),
+                    SCALING,
+                )
+                .square()
+                .mean()
+            )
+
+        assert_precision(
+            vmap(grad(f_op))(X_vmap),
+            vmap(grad(f_pt))(X_vmap),
+            rtol=RTOL_LORA_MLP_BWD,
+            atol=ATOL_LORA_MLP_BWD,
+            label="vmapped X.grad",
+        )
 
     def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""

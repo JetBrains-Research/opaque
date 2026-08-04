@@ -60,6 +60,17 @@ _ACTIVATION_NAMES = {
 }
 
 
+def _validate_vmap_dims(in_dims, *, name, batched_indices):
+    """Reject vmap layouts that cannot preserve the fused-kernel semantics."""
+    for index, batch_dim in enumerate(in_dims):
+        expected = 0 if index in batched_indices else None
+        if batch_dim != expected:
+            raise ValueError(
+                f"{name} vmap requires inputs {sorted(batched_indices)} to be batched "
+                f"at dim 0 and all other inputs to be unbatched, got {in_dims}"
+            )
+
+
 def _lora_w_backward_impl(grad_out, X, W, A, B, scaling):
     """Shared LoRA_W backward logic used by both forward and vmap paths.
 
@@ -129,7 +140,7 @@ class _LoRAWBackward(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_out, X, W, A, B, scaling):
-        _grad_out_bdim, _X_bdim, _W_bdim, _A_bdim, _B_bdim, _scaling_bdim = in_dims
+        _validate_vmap_dims(in_dims, name="_LoRAWBackward", batched_indices={0, 1})
 
         B_vmap = X.shape[0]
         hidden_dim = X.shape[-1]
@@ -191,11 +202,12 @@ class _LoRAWBackwardLite(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_out, W, A, B, scaling):
-        grad_out_bdim, _W_bdim, _A_bdim, _B_bdim, _scaling_bdim = in_dims
+        _validate_vmap_dims(in_dims, name="_LoRAWBackwardLite", batched_indices={0})
+        grad_out_bdim = in_dims[0]
 
         grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
         dX = _lora_w_backward_lite(grad_out_merged, W, A, B, scaling)
-        dX = dX.reshape(grad_out.shape)
+        dX = dX.reshape(*grad_out.shape[:-1], W.shape[1])
         return dX, grad_out_bdim
 
 
@@ -259,16 +271,8 @@ class Opaque_LoRA_W(torch.autograd.Function):
         of custom backward rules. For linear operations, this approach
         gives identical gradients while being just as fast as non-vmapped code.
         """
-        X_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
-
-        if X_bdim != 0:
-            raise ValueError(f"X should be batched at dim 0, got {X_bdim}")
-        if W_bdim is not None:
-            raise ValueError("W (base weight) should not be batched")
-        if A_bdim is not None or B_bdim is not None:
-            raise ValueError("LoRA weights should not be batched in vmap")
-        if scaling_bdim is not None:
-            raise ValueError("scaling should not be batched")
+        _validate_vmap_dims(in_dims, name="Opaque_LoRA_W", batched_indices={0})
+        X_bdim = in_dims[0]
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
@@ -397,8 +401,9 @@ class _LoRAQKVBackward(torch.autograd.Function):
         Bv,
         Sv,
     ):
-        _grad_Q_bdim = in_dims[0]
-        _X_bdim = in_dims[3]
+        _validate_vmap_dims(
+            in_dims, name="_LoRAQKVBackward", batched_indices={0, 1, 2, 3}
+        )
 
         B_vmap = X.shape[0]
         hidden_dim = X.shape[-1]
@@ -541,8 +546,10 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
         Bv,
         Sv,
     ):
+        _validate_vmap_dims(
+            in_dims, name="_LoRAQKVBackwardLite", batched_indices={0, 1, 2}
+        )
         grad_Q_bdim = in_dims[0]
-        batched_shape = grad_Q.shape
 
         grad_Q_merged = grad_Q.reshape(-1, *grad_Q.shape[2:])
         grad_K_merged = grad_K.reshape(-1, *grad_K.shape[2:])
@@ -565,7 +572,7 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
             Bv,
             Sv,
         )
-        dX = dX.reshape(batched_shape)
+        dX = dX.reshape(*grad_Q.shape[:-1], Wq.shape[1])
         return dX, grad_Q_bdim
 
 
@@ -678,14 +685,8 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     @staticmethod
     def vmap(info, in_dims, X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
         """Efficient vmap rule: merge vmap batch into regular batch."""
+        _validate_vmap_dims(in_dims, name="Opaque_LoRA_QKV", batched_indices={0})
         X_bdim = in_dims[0]
-
-        if X_bdim != 0:
-            raise ValueError(f"X should be batched at dim 0, got {X_bdim}")
-
-        for i, bdim in enumerate(in_dims[1:], 1):
-            if bdim is not None:
-                raise ValueError(f"Input {i} should not be batched")
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
@@ -871,8 +872,9 @@ class _LoRAMLPBackward(torch.autograd.Function):
         up,
         activation_type,
     ):
-        _grad_out_bdim = in_dims[0]
-        _X_bdim = in_dims[1]
+        _validate_vmap_dims(
+            in_dims, name="_LoRAMLPBackward", batched_indices={0, 1, 14, 15}
+        )
 
         B_vmap = X.shape[0]
         hidden_dim = X.shape[-1]
@@ -1044,8 +1046,10 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
         up,
         activation_type,
     ):
+        _validate_vmap_dims(
+            in_dims, name="_LoRAMLPBackwardLite", batched_indices={0, 13, 14}
+        )
         grad_out_bdim = in_dims[0]
-        batched_shape = grad_out.shape
 
         grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
         gate_merged = gate.reshape(-1, *gate.shape[2:])
@@ -1069,7 +1073,7 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
             up_merged,
             activation_type,
         )
-        dX = dX.reshape(batched_shape)
+        dX = dX.reshape(*grad_out.shape[:-1], Wg.shape[1])
         return dX, grad_out_bdim
 
 
@@ -1219,15 +1223,8 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         dispatched from Opaque_LoRA_MLP.backward(). No autograd graph needed here,
         so we can use addmm_ and direct Triton activation kernels.
         """
+        _validate_vmap_dims(in_dims, name="Opaque_LoRA_MLP", batched_indices={0})
         X_bdim = in_dims[0]
-
-        if X_bdim != 0:
-            raise ValueError(f"X should be batched at dim 0, got {X_bdim}")
-
-        # in_dims has 14 elements (13 original + activation_type)
-        for i, bdim in enumerate(in_dims[1:13], 1):
-            if bdim is not None:
-                raise ValueError(f"Input {i} should not be batched")
 
         # Merge vmap batch into regular batch
         original_shape = X.shape

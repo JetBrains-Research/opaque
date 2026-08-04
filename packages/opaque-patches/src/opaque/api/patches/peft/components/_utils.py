@@ -76,7 +76,7 @@ def _no_lora_dropout(module, proj_name):
 
 
 def _no_bias(module, proj_name):
-    """Check that a projection has no bias (required for fused QKV kernel)."""
+    """Check that a projection has no bias (required for fused LoRA kernels)."""
     proj = getattr(module, proj_name, None)
     if proj is None:
         return False
