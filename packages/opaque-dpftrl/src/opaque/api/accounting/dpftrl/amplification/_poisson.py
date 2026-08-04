@@ -197,12 +197,14 @@ class CyclicPoisson(DpHorizonProcess):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         )
 
 
