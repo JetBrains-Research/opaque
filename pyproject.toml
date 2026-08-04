@@ -49,11 +49,13 @@ transformers = [
     "opaque-transformers>=0.0.0.dev0",
     "opaque-patches[transformers]>=0.0.0.dev0",
 ]
+trl = ["opaque-transformers[trl]>=0.0.0.dev0"]
 all = [
     "opaque[auditing]",
     "opaque[dpftrl]",
     "opaque[alignment]",
-    "opaque[transformers]"
+    "opaque[transformers]",
+    "opaque[trl]",
 ]
 
 # The ``opaque`` namespace is pure PEP 420, composed by whichever
