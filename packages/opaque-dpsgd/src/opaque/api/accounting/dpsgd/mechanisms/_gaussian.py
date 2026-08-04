@@ -24,11 +24,13 @@ class Gaussian(DpProcess):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         )
         if self.noise_multiplier == 0:
             return _native.non_private_pld(config.to_native())
