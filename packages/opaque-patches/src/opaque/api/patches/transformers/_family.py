@@ -80,6 +80,7 @@ def make_apply_family_patches(
     module_path: str,
     repeat_kv_replacement: Callable | None = vmap_repeat_kv,
     eager_attention_replacement: Callable | None = vmap_eager_attention_forward,
+    sdpa_attention_replacement: Callable | None = None,
     rope_replacement: Callable | None = _opaque_apply_rotary_pos_emb,
     masking_module_patcher: Callable | None = apply_module_masking_patch,
 ) -> Callable:
@@ -104,6 +105,9 @@ def make_apply_family_patches(
         eager_attention_replacement: Replacement for
             ``mod.eager_attention_forward``.  Default: opaque's
             ``vmap_eager_attention_forward``.  ``None`` skips.
+        sdpa_attention_replacement: Replacement for the ``"sdpa"`` entry in
+            ``mod.ALL_ATTENTION_FUNCTIONS``. ``None`` leaves the shared SDPA
+            implementation untouched.
         rope_replacement: Replacement for ``mod.apply_rotary_pos_emb``.
             Default: opaque's ``_opaque_apply_rotary_pos_emb``.  ``None``
             skips.
@@ -164,6 +168,11 @@ def make_apply_family_patches(
                 mod, "eager_attention_forward"
             ):
                 mod.eager_attention_forward = eager_attention_replacement
+                patched = True
+            if sdpa_attention_replacement is not None and hasattr(
+                mod, "ALL_ATTENTION_FUNCTIONS"
+            ):
+                mod.ALL_ATTENTION_FUNCTIONS["sdpa"] = sdpa_attention_replacement
                 patched = True
             if masking_module_patcher is not None:
                 masking_result = masking_module_patcher(mod)
