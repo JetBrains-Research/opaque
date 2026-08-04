@@ -2242,7 +2242,7 @@ all = [
     { name = "opaque-auditing" },
     { name = "opaque-dpftrl" },
     { name = "opaque-patches", extra = ["transformers"] },
-    { name = "opaque-transformers" },
+    { name = "opaque-transformers", extra = ["trl"] },
 ]
 auditing = [
     { name = "opaque-auditing" },
@@ -2253,6 +2253,9 @@ dpftrl = [
 transformers = [
     { name = "opaque-patches", extra = ["transformers"] },
     { name = "opaque-transformers" },
+]
+trl = [
+    { name = "opaque-transformers", extra = ["trl"] },
 ]
 
 [package.dev-dependencies]
@@ -2292,6 +2295,7 @@ requires-dist = [
     { name = "opaque", extras = ["auditing"], marker = "extra == 'all'" },
     { name = "opaque", extras = ["dpftrl"], marker = "extra == 'all'" },
     { name = "opaque", extras = ["transformers"], marker = "extra == 'all'" },
+    { name = "opaque", extras = ["trl"], marker = "extra == 'all'" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-alignment", marker = "extra == 'alignment'", editable = "packages/opaque-alignment" },
     { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
@@ -2302,8 +2306,9 @@ requires-dist = [
     { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
+    { name = "opaque-transformers", extras = ["trl"], marker = "extra == 'trl'", editable = "packages/opaque-transformers" },
 ]
-provides-extras = ["auditing", "dpftrl", "alignment", "transformers", "all"]
+provides-extras = ["auditing", "dpftrl", "alignment", "transformers", "trl", "all"]
 
 [package.metadata.requires-dev]
 dev = [
