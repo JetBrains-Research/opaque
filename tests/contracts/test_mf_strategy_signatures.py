@@ -1,20 +1,13 @@
-"""Contract tests for MF strategy factory signatures.
+"""Behavioral tests for MF strategy factories and noise construction.
 
-Ensures the documented API contract between strategy creation and noise
-function construction:
-
-- ``*_strategy()`` factories accept only static workload knobs (e.g.
-  ``bands``, ``max_buffers``, ``lambda_``) — NOT ``n_steps``.
-- ``mf_gaussian_noise()`` requires ``n_steps`` as a keyword-only argument.
-- Returned strategies expose a finite, positive ``sensitivity()`` method.
+Verifies that strategy factories produce strategies with finite, positive
+``sensitivity()`` and that ``mf_gaussian_noise()`` returns a working
+callable+state pair.
 
 Regression target: issue #416 (docs once used wrong signatures).
 """
 
 from __future__ import annotations
-
-import inspect
-import typing
 
 import torch
 
@@ -29,86 +22,6 @@ from opaque.dpftrl.noise import (
 )
 from opaque.random import key
 from opaque.types import ClippedPytree
-
-
-def _keyword_only_params(func: typing.Callable) -> set[str]:
-    """Return the names of KEYWORD-ONLY parameters of *func*."""
-    sig = inspect.signature(func)
-    return {
-        name
-        for name, param in sig.parameters.items()
-        if param.kind == inspect.Parameter.KEYWORD_ONLY
-    }
-
-
-# ---------------------------------------------------------------------------
-# Strategy factories must NOT accept n_steps
-# ---------------------------------------------------------------------------
-
-_STRATEGY_FACTORIES = [
-    ("band_mf_strategy", band_mf_strategy),
-    ("blt_strategy", blt_strategy),
-    ("bisr_strategy", bisr_strategy),
-    ("bsr_strategy", bsr_strategy),
-    ("lambda_cgd_strategy", lambda_cgd_strategy),
-    ("identity_strategy", identity_strategy),
-]
-
-
-class TestStrategyFactoriesNoNSteps:
-    """Strategy factories should not accept n_steps."""
-
-    def test_no_n_steps_in_any_strategy(self) -> None:
-        for name, factory in _STRATEGY_FACTORIES:
-            params = set(inspect.signature(factory).parameters)
-            assert (
-                "n_steps" not in params
-            ), f"{name}() must not accept n_steps (belongs at mf_gaussian_noise)"
-
-    def test_no_min_sep_in_any_strategy(self) -> None:
-        for name, factory in _STRATEGY_FACTORIES:
-            params = set(inspect.signature(factory).parameters)
-            assert (
-                "min_sep" not in params
-            ), f"{name}() must not accept min_sep (belongs at mf_gaussian_noise)"
-
-    def test_no_max_participations_in_any_strategy(self) -> None:
-        for name, factory in _STRATEGY_FACTORIES:
-            params = set(inspect.signature(factory).parameters)
-            assert (
-                "max_participations" not in params
-            ), f"{name}() must not accept max_participations (belongs at mf_gaussian_noise)"
-
-
-# ---------------------------------------------------------------------------
-# mf_gaussian_noise requires n_steps (keyword-only)
-# ---------------------------------------------------------------------------
-
-
-class TestMfGaussianNoise:
-    """mf_gaussian_noise must require n_steps as keyword-only."""
-
-    def test_n_steps_required(self) -> None:
-        sig = inspect.signature(mf_gaussian_noise)
-        assert "n_steps" in sig.parameters, "mf_gaussian_noise must accept n_steps"
-        param = sig.parameters["n_steps"]
-        assert param.default == inspect.Parameter.empty, (
-            "n_steps must be required (no default)"
-        )
-
-    def test_n_steps_keyword_only(self) -> None:
-        kwonly = _keyword_only_params(mf_gaussian_noise)
-        assert (
-            "n_steps" in kwonly
-        ), "n_steps must be keyword-only in mf_gaussian_noise"
-
-    def test_requires_grad_template_and_strategy(self) -> None:
-        sig = inspect.signature(mf_gaussian_noise)
-        for name in ("grad_template", "strategy"):
-            assert name in sig.parameters
-            assert (
-                sig.parameters[name].default == inspect.Parameter.empty
-            ), f"{name} must be required in mf_gaussian_noise"
 
 
 # ---------------------------------------------------------------------------

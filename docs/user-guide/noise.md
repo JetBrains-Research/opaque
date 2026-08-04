@@ -530,12 +530,13 @@ noise_fn, state = mf_gaussian_noise(
 ### Sensitivity
 
 The sensitivity is computed internally by each strategy factory. You can
-inspect it via the `sensitivity` attribute:
+inspect it by calling the `sensitivity()` method with the participation context:
 
 ```python
 strategy = band_mf_strategy(bands=10)
-assert strategy.sensitivity(n_steps=500) >= 0.5, "sensitivity should be reasonable"
 print(strategy.sensitivity(n_steps=500))  # typically 1.0 for normalized strategies
+# Some strategies (BiSR, BSR, lambda_CGD) also require min_sep and max_participations:
+# print(strategy.sensitivity(n_steps=500, min_sep=10, max_participations=5))
 ```
 
 ### Comparison: DP-SGD vs MF strategies

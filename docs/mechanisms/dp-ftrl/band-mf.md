@@ -251,7 +251,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
-strategy = band_mf_strategy(bands)
+strategy = band_mf_strategy(bands=bands)
 noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
     n_steps=n_steps,
