@@ -151,7 +151,6 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: GPU-runner-001
-    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -171,6 +170,9 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
+      - name: Assert CUDA available
+        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+
       - name: pytest
         run: >-
           uv run pytest packages tests
@@ -188,21 +190,22 @@ jobs:
 
   # Single aggregating status check — the ONE job to mark required in branch
   # protection. `needs.python-tests.result` is `success` only when every
-  # hosted-runner leg passed, so this gate reflects CPU + MPS only. The
-  # separately guarded GPU job remains non-blocking. Shards/platforms can be
-  # added or renamed without touching the protection rule. `if: always()` makes
-  # the gate report a failure (instead of being skipped) when a shard fails.
+  # hosted-runner leg passed. The GPU leg is required for repo PRs but skipped
+  # for fork PRs (`python-tests-gpu.if` gate). `if: always()` makes the gate
+  # report a failure (instead of being skipped) when a shard fails.
   python-tests-gate:
     name: Python tests
-    if: always()
-    needs: [python-tests]
+    if: >-
+      always() &&
+      needs.python-tests.result == 'success' &&
+      (
+        needs.python-tests-gpu.result == 'success' ||
+        needs.python-tests-gpu.result == 'skipped'
+      )
+    needs: [python-tests, python-tests-gpu]
     runs-on: ubuntu-latest
     steps:
-      - name: Require all (non-GPU) test legs to pass
-        run: |
-          result="${{ needs.python-tests.result }}"
-          echo "python-tests matrix result: $result"
-          test "$result" = "success"
+      - run: echo "All test legs passed or were legitimately skipped"
 
   smoke-imports:
     name: Cross-package import smoke test
