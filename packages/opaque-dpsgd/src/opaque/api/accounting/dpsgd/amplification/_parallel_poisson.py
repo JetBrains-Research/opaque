@@ -27,6 +27,7 @@ class ParallelPoisson(DpProcess):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -34,6 +35,7 @@ class ParallelPoisson(DpProcess):
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         )
 
         native_cfg = config.to_native()

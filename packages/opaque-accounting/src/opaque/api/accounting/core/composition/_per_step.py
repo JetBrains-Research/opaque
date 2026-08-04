@@ -22,12 +22,14 @@ class PerStep(DpProcess):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         return self.process.pld_at(
             1,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         )
 
     def repeated_pld(
@@ -37,6 +39,7 @@ class PerStep(DpProcess):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         if count < 1:
             raise ValueError(f"count ({count}) must be >= 1")
@@ -51,6 +54,7 @@ class PerStep(DpProcess):
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         )
 
 

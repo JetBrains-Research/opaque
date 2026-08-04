@@ -17,6 +17,7 @@ class DiscretizationConfig:
         max_grid_size: Maximum grid bins before automatic coarsening.
         num_mc_samples: Number of Monte Carlo samples for MC-based accounting.
         seed: RNG seed for Monte Carlo reproducibility.
+        max_conv_grid: Maximum convolution grid size for random-allocation PLD transform.
     """
 
     discretization: float = 1e-4
@@ -25,16 +26,18 @@ class DiscretizationConfig:
     tail_mass_truncation: float = 1e-15
     num_mc_samples: int = 100_000
     seed: int = 42
+    max_conv_grid: int = 32_768
 
     def to_native(self) -> _native.DiscretizationConfig:
         """Convert to Rust DiscretizationConfig for FFI calls."""
         return _native.DiscretizationConfig(
-            discretization=self.discretization,
-            log_mass_truncation_bound=self.log_x_mass_truncation_bound,
-            max_grid_size=self.max_grid_size,
-            tail_mass_truncation=self.tail_mass_truncation,
-            num_mc_samples=self.num_mc_samples,
-            seed=self.seed,
+            self.discretization,
+            self.log_x_mass_truncation_bound,
+            self.max_grid_size,
+            self.tail_mass_truncation,
+            self.num_mc_samples,
+            self.seed,
+            self.max_conv_grid,
         )
 
 
@@ -55,6 +58,7 @@ def set_discretization(
     tail_mass_truncation: float = 1e-15,
     num_mc_samples: int = 100_000,
     seed: int = 42,
+    max_conv_grid: int = 32_768,
 ) -> None:
     """Set module-level default discretization parameters.
 
@@ -88,6 +92,7 @@ def set_discretization(
         tail_mass_truncation=tail_mass_truncation,
         num_mc_samples=num_mc_samples,
         seed=seed,
+        max_conv_grid=max_conv_grid,
     )
 
 
@@ -99,6 +104,7 @@ def get_discretization(
     tail_mass_truncation: float | None = None,
     num_mc_samples: int | None = None,
     seed: int | None = None,
+    max_conv_grid: int | None = None,
 ) -> DiscretizationConfig:
     """Get discretization config with hierarchical resolution.
 
@@ -139,6 +145,7 @@ def get_discretization(
         and tail_mass_truncation is None
         and num_mc_samples is None
         and seed is None
+        and max_conv_grid is None
     ):
         return base
 
@@ -162,4 +169,7 @@ def get_discretization(
         if num_mc_samples is not None
         else base.num_mc_samples,
         seed=seed if seed is not None else base.seed,
+        max_conv_grid=max_conv_grid
+        if max_conv_grid is not None
+        else base.max_conv_grid,
     )

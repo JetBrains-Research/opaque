@@ -116,6 +116,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         """Compute the Privacy Loss Distribution.
 
@@ -127,6 +128,7 @@ class DpProcess(ABC):
             discretization: Grid spacing for PLD (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         ...
 
@@ -137,6 +139,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> float:
         """Smallest ε achieving (ε, δ)-DP.
 
@@ -145,11 +148,13 @@ class DpProcess(ABC):
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).epsilon_at(delta)
 
     def delta_at(
@@ -159,6 +164,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> float:
         """Smallest δ achieving (ε, δ)-DP.
 
@@ -167,11 +173,13 @@ class DpProcess(ABC):
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).delta_at(epsilon)
 
     def advantage(
@@ -180,6 +188,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> float:
         """Total-variation advantage (f-DP).
 
@@ -187,11 +196,13 @@ class DpProcess(ABC):
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).advantage()
 
     def beta_at(
@@ -201,6 +212,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> float:
         """Type-II error at given Type-I error α.
 
@@ -209,11 +221,13 @@ class DpProcess(ABC):
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).beta_at(alpha)
 
     def risk_at(
@@ -223,6 +237,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> float:
         """Bayes risk under optimal adversary.
 
@@ -231,11 +246,13 @@ class DpProcess(ABC):
             discretization: Grid spacing (query-time override).
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
+            max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).risk_at(prior)
 
     # -- Composition operators -----------------------------------------------
@@ -255,6 +272,7 @@ class DpProcess(ABC):
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
     ) -> Pld:
         """PLD for ``count`` independent applications of this process.
 
@@ -268,6 +286,7 @@ class DpProcess(ABC):
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
+            max_conv_grid=max_conv_grid,
         ).self_compose(count)
 
     def __mul__(self, count: int) -> DpProcess:

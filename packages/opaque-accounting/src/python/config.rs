@@ -23,7 +23,7 @@ pub struct PyDiscretizationConfig {
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]
-    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, num_mc_samples=100_000, seed=42))]
+    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, num_mc_samples=100_000, seed=42, max_conv_grid=32_768))]
     fn new(
         discretization: f64,
         log_mass_truncation_bound: f64,
@@ -31,9 +31,16 @@ impl PyDiscretizationConfig {
         tail_mass_truncation: f64,
         num_mc_samples: usize,
         seed: u64,
+        max_conv_grid: usize,
     ) -> PyResult<Self> {
+        if max_conv_grid == 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "max_conv_grid must be > 0",
+            ));
+        }
         let mut inner = DiscretizationConfig::new(discretization, log_mass_truncation_bound)?
-            .with_max_grid_size(max_grid_size);
+            .with_max_grid_size(max_grid_size)
+            .with_max_conv_grid(max_conv_grid);
         inner.tail_mass_truncation = tail_mass_truncation;
         inner.num_mc_samples = num_mc_samples;
         inner.seed = seed;
@@ -56,6 +63,11 @@ impl PyDiscretizationConfig {
     }
 
     #[getter]
+    fn max_conv_grid(&self) -> usize {
+        self.inner.max_conv_grid
+    }
+
+    #[getter]
     fn tail_mass_truncation(&self) -> f64 {
         self.inner.tail_mass_truncation
     }
@@ -72,10 +84,11 @@ impl PyDiscretizationConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, max_grid_size={}, tail_mass_truncation={}, num_mc_samples={}, seed={})",
+            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, max_grid_size={}, tail_mass_truncation={}, max_conv_grid={}, num_mc_samples={}, seed={})",
             self.inner.discretization, self.inner.log_mass_truncation_bound,
             self.inner.max_grid_size,
             self.inner.tail_mass_truncation,
+            self.inner.max_conv_grid,
             self.inner.num_mc_samples, self.inner.seed,
         )
     }
@@ -85,6 +98,7 @@ impl PyDiscretizationConfig {
             && self.inner.log_mass_truncation_bound == other.inner.log_mass_truncation_bound
             && self.inner.max_grid_size == other.inner.max_grid_size
             && self.inner.tail_mass_truncation == other.inner.tail_mass_truncation
+            && self.inner.max_conv_grid == other.inner.max_conv_grid
             && self.inner.num_mc_samples == other.inner.num_mc_samples
             && self.inner.seed == other.inner.seed
     }
@@ -99,6 +113,7 @@ impl PyDiscretizationConfig {
             .hash(&mut hasher);
         self.inner.max_grid_size.hash(&mut hasher);
         self.inner.tail_mass_truncation.to_bits().hash(&mut hasher);
+        self.inner.max_conv_grid.hash(&mut hasher);
         self.inner.num_mc_samples.hash(&mut hasher);
         self.inner.seed.hash(&mut hasher);
         hasher.finish()
