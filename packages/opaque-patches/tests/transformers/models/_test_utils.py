@@ -295,6 +295,7 @@ def assert_parity_forward(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -346,6 +347,7 @@ def assert_parity_grad(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -412,6 +414,7 @@ def assert_parity_vmap_grad(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
+        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
