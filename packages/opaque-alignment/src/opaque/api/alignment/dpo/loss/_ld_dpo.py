@@ -14,18 +14,18 @@ bias into the preference signal.  LD-DPO splits each completion's logp into a
 (weighted by ``alpha`` ∈ ``[0, 1]``).  Setting ``alpha < 1`` damps the tail's
 contribution, desensitising the objective to completion length::
 
-    pos    = arange(T)
-    weight = where(pos < shared_prefix_len, 1.0, alpha)
+    pos    = completion_mask.cumsum(-1)
+    weight = where((pos >= 1) & (pos <= shared_prefix_len), 1.0, alpha)
     logp   = (per_token_logps * completion_mask * weight).sum(-1)
 
 At ``alpha = 1`` this reduces to the plain masked-sum sequence logp; at
 ``alpha = 0`` only the shared-prefix tokens contribute.
 
-The position weighting is built with ``torch.arange`` + ``torch.where``.
-``shared_prefix_len`` may be a Python ``int`` or a per-example tensor; it is
-broadcast against the position axis, so a per-example tensor of shape
-``(..., 1)`` (or any shape that broadcasts against ``(T,)``) selects a
-different prefix per example.
+Positions are completion-relative: prompt and padding positions remain zero,
+while completion tokens are numbered ``1, 2, ...``. ``shared_prefix_len`` may
+be a Python ``int`` or a per-example tensor; it is broadcast against the
+position axis, so a per-example tensor of shape ``(..., 1)`` selects a
+different prefix length per example.
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ def ld_dpo_split(
     tokens beyond the prefix by ``alpha``, then masked-sums over the sequence
     axis::
 
-        pos    = arange(T)
-        weight = where(pos < shared_prefix_len, 1.0, alpha)
+        pos    = completion_mask.cumsum(-1)
+        weight = where((pos >= 1) & (pos <= shared_prefix_len), 1.0, alpha)
         return (per_token_logps * completion_mask * weight).sum(-1)
 
     Args:
@@ -60,8 +60,8 @@ def ld_dpo_split(
         shared_prefix_len: Length of the shared/public prefix. A Python
             ``int`` (same prefix for every example) or a per-example tensor
             that broadcasts against the position axis ``(T,)`` (e.g. shape
-            ``(..., 1)``). Positions ``< shared_prefix_len`` are weighted
-            ``1.0``; positions ``>= shared_prefix_len`` are weighted ``alpha``.
+            ``(..., 1)``). The first ``shared_prefix_len`` completion tokens are
+            weighted ``1.0``; later completion tokens are weighted ``alpha``.
         alpha: Weight on the length-desensitised tail, typically ``∈ [0, 1]``.
             ``alpha = 1`` recovers the plain masked-sum; ``alpha = 0`` keeps
             only the prefix tokens.
@@ -70,11 +70,13 @@ def ld_dpo_split(
         Float tensor of shape ``(...)`` (one length-desensitised logp per
         sequence).
     """
-    seq_len = per_token_logps.shape[-1]
-    pos = torch.arange(seq_len, device=per_token_logps.device)
-    # `shared_prefix_len` may be int or a per-example tensor; comparison +
-    # `torch.where` broadcast against the position axis.
-    is_prefix = pos < shared_prefix_len
+    mask = completion_mask.to(per_token_logps.dtype)
+    completion_pos = (completion_mask != 0).cumsum(dim=-1)
+    prefix_len = shared_prefix_len
+    if isinstance(prefix_len, torch.Tensor):
+        while prefix_len.ndim < completion_pos.ndim:
+            prefix_len = prefix_len.unsqueeze(-1)
+    is_prefix = (completion_pos >= 1) & (completion_pos <= prefix_len)
     weight = torch.where(
         is_prefix,
         torch.ones((), dtype=per_token_logps.dtype, device=per_token_logps.device),
@@ -82,5 +84,5 @@ def ld_dpo_split(
             (), alpha, dtype=per_token_logps.dtype, device=per_token_logps.device
         ),
     )
-    masked = per_token_logps * completion_mask.to(per_token_logps.dtype) * weight
+    masked = per_token_logps * mask * weight
     return masked.sum(dim=-1)

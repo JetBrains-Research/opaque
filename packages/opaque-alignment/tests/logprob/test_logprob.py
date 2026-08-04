@@ -359,18 +359,40 @@ def test_ld_alpha_one_recovers_plain_sum() -> None:
 
 
 def test_ld_alpha_zero_keeps_only_prefix() -> None:
-    """ld_alpha=0.0 keeps only shifted positions < shared_prefix_len."""
+    """ld_alpha=0.0 keeps the first shared_prefix_len completion tokens."""
     torch.manual_seed(1)
     logits = torch.randn(8, 13)
     ids = torch.randint(0, 13, (8,))
     cmask = torch.ones(8)
     prefix = 4
     ld = sequence_logp(logits, ids, cmask, ld_alpha=0.0, shared_prefix_len=prefix)
-    # Reference: per-token logp over shifted positions < prefix, masked-summed.
+    # Reference: first `prefix` completion-token logps, independent of prompt.
     per_token = selective_log_softmax(logits[:-1], ids[1:])
-    pos = torch.arange(per_token.shape[-1])
-    want = (per_token * cmask[1:] * (pos < prefix)).sum(-1)
+    completion_pos = cmask[1:].cumsum(-1)
+    want = (per_token * cmask[1:] * (completion_pos <= prefix)).sum(-1)
     torch.testing.assert_close(ld, want)
+
+
+def test_ld_alpha_positions_are_completion_relative() -> None:
+    """Prompt positions do not consume the shared completion-token count."""
+    torch.manual_seed(2)
+    logits = torch.randn(8, 13)
+    ids = torch.randint(0, 13, (8,))
+    cmask = torch.tensor([0, 0, 0, 1, 1, 1, 1, 0])
+    per_token = selective_log_softmax(logits[:-1], ids[1:])
+    target_mask = cmask[1:]
+    completion_pos = target_mask.cumsum(-1)
+    weight = torch.where(completion_pos <= 2, 1.0, 0.25) * target_mask
+    want = (per_token * weight).sum()
+
+    got = sequence_logp(
+        logits,
+        ids,
+        cmask,
+        ld_alpha=0.25,
+        shared_prefix_len=2,
+    )
+    torch.testing.assert_close(got, want)
 
 
 def test_ld_alpha_requires_shared_prefix_len() -> None:

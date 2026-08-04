@@ -650,8 +650,15 @@ class DPOTrainer(DPTrainer):
             c_logits = forward(cids, cmask)
             r_logits = forward(rids, rmask)
 
-        ref_chosen = sequence_logp(c_logits, cids, ccmask)
-        ref_rejected = sequence_logp(r_logits, rids, rcmask)
+        c_lp_kwargs: dict[str, Any] = {}
+        r_lp_kwargs: dict[str, Any] = {}
+        if self._ld_alpha is not None:
+            c_sp, r_sp = self._ld_shared_prefix(ccmask, rcmask)
+            c_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": c_sp}
+            r_lp_kwargs = {"ld_alpha": self._ld_alpha, "shared_prefix_len": r_sp}
+
+        ref_chosen = sequence_logp(c_logits, cids, ccmask, **c_lp_kwargs)
+        ref_rejected = sequence_logp(r_logits, rids, rcmask, **r_lp_kwargs)
         if to_cpu:
             return {
                 "ref_chosen_logps": ref_chosen.detach().float().cpu(),
@@ -739,7 +746,7 @@ class DPOTrainer(DPTrainer):
         chosen_completion_mask: torch.Tensor,
         rejected_completion_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Per-side LD-DPO shared-prefix length (shifted): prompt + shared span.
+        """Per-side LD-DPO shared-prefix length in completion tokens.
 
         Tokens up to ``shared`` (the shorter of the two completions) keep weight
         ``1``; the verbose tail is damped by ``ld_alpha`` inside ``sequence_logp``.
@@ -747,9 +754,7 @@ class DPOTrainer(DPTrainer):
         c = chosen_completion_mask[..., 1:]
         r = rejected_completion_mask[..., 1:]
         shared = torch.minimum((c != 0).sum(-1), (r != 0).sum(-1))
-        c_start = torch.argmax((c != 0).to(torch.int32), dim=-1)
-        r_start = torch.argmax((r != 0).to(torch.int32), dim=-1)
-        return c_start + shared, r_start + shared
+        return shared, shared
 
     def dpo_loss(
         self,
