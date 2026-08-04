@@ -22,6 +22,36 @@ ATOL = 0.0001
 class TestFusedLoRAMLP:
     """Test fused LoRA MLP patching via Opaque_LoRA_MLP kernel."""
 
+    def test_biased_up_projection_is_not_fused(self, device):
+        """MLPs with an up-projection bias must retain their original forward."""
+        from transformers import LlamaConfig
+
+        config = LlamaConfig(
+            vocab_size=64,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            max_position_embeddings=64,
+            mlp_bias=True,
+        )
+        model = AutoModelForCausalLM.from_config(config)
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.0,
+                target_modules=["gate_proj", "up_proj", "down_proj"],
+            ),
+        ).to(device)
+
+        mlp = model.model.model.layers[0].mlp
+        assert mlp.up_proj.base_layer.bias is not None
+        apply_model_patches(model, performance=False, compat=True, lora=True)
+        assert "forward" not in vars(mlp)
+
     def test_fused_lora_mlp_forward(self, device):
         """Fused LoRA MLP forward should match PyTorch matmul reference."""
         from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
