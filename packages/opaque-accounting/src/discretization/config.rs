@@ -61,6 +61,22 @@ pub struct DiscretizationConfig {
     /// Default: 1e-15, matching Google dp_accounting's `tail_mass_truncation`.
     pub tail_mass_truncation: f64,
 
+    /// Maximum interior grid for the random-allocation convolution transform.
+    ///
+    /// The random-allocation PLD transform (`random_allocation_gaussian_pld` and
+    /// related functions) operates on a geometric grid. Its convolution step is
+    /// O(G²) rather than O(G log G), so it uses a separate budget from the
+    /// FFT-based composition grid (`max_grid_size`).
+    ///
+    /// The certified ε interval width follows W ≈ c/G; the cost grows as G².
+    /// Doubling this cap halves the interval at ~4× the convolution cost for
+    /// configurations where the cap binds. A finer grid can only tighten (or
+    /// leave unchanged) the upper bound — it never loosens it.
+    ///
+    /// Default: 32 768. Set higher (e.g. 65 536) for tighter bounds at
+    /// production depth (large t), or lower for faster exploratory runs.
+    pub max_conv_grid: usize,
+
     /// Number of Monte Carlo samples for MC-based PLD computation.
     ///
     /// Used by BnB Monte Carlo and b-min-sep accounting.
@@ -99,6 +115,7 @@ impl DiscretizationConfig {
             log_mass_truncation_bound,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
+            max_conv_grid: 32_768,
             num_mc_samples: 100_000,
             seed: 42,
         })
@@ -107,6 +124,12 @@ impl DiscretizationConfig {
     /// Builder method to override the maximum grid size
     pub fn with_max_grid_size(mut self, max_grid_size: usize) -> Self {
         self.max_grid_size = max_grid_size;
+        self
+    }
+
+    /// Builder method to override the random-allocation convolution grid cap.
+    pub fn with_max_conv_grid(mut self, max_conv_grid: usize) -> Self {
+        self.max_conv_grid = max_conv_grid;
         self
     }
 
@@ -133,6 +156,7 @@ impl Default for DiscretizationConfig {
             log_mass_truncation_bound: -50.0,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
+            max_conv_grid: 32_768,
             num_mc_samples: 100_000,
             seed: 42,
         }
@@ -168,6 +192,7 @@ mod tests {
         let config = DiscretizationConfig::default();
         assert_eq!(config.discretization, 1e-4);
         assert_eq!(config.log_mass_truncation_bound, -50.0);
+        assert_eq!(config.max_conv_grid, 32_768);
     }
 
     #[test]

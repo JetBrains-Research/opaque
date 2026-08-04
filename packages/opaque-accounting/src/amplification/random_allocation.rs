@@ -32,18 +32,6 @@ use crate::pld::pmf::Pmf;
 use crate::pld::realization::{disc_dist, LossRealization, NormalLoss, Rounding};
 use crate::pld::PrivacyLossDistribution;
 
-/// Largest interior grid this transform will build.
-///
-/// Unlike composition, which is `O(n log n)` via FFT, the exp-PLD convolution
-/// is a direct `O(n²)` pass — sums of geometric-grid values are not on the grid
-/// (see `crate::pld::pmf::geom`). At Opaque's default `discretization = 1e-4`
-/// the grid would be ~2·10⁵ points and a single convolution ~4·10¹⁰ operations.
-///
-/// So the transform picks the finest width it can afford rather than inheriting
-/// the FFT-tuned default. Its accuracy is cross-validated against an independent
-/// implementation of the same transform.
-const MAX_CONV_GRID: usize = 16_384;
-
 /// Accuracy knobs derived from the caller's existing discretisation config.
 ///
 /// `(α, β)` are numerical accuracy parameters, not privacy parameters, so they
@@ -61,19 +49,26 @@ impl Accuracy {
         loss: &L,
         config: &DiscretizationConfig,
         t: usize,
-    ) -> Self {
+    ) -> Result<Self> {
+        if config.max_conv_grid == 0 {
+            return Err(PldError::InvalidParameter(
+                "max_conv_grid must be > 0".into(),
+            ));
+        }
         // β is split across the t copies that get convolved together.
         let beta_total = (0.5 * config.log_mass_truncation_bound.exp()).clamp(1e-300, 0.49);
         let beta = (beta_total / t as f64).clamp(1e-300, 0.49);
 
         // Widen α if the requested resolution would exceed the work budget.
+        // config.max_conv_grid is the O(G²) grid cap for this transform;
+        // it is separate from config.max_grid_size (the FFT-composition cap).
         let log_beta = beta.ln();
         let span = loss.quantile(log_beta, true) - loss.quantile(log_beta, false);
-        let alpha_floor = span / MAX_CONV_GRID as f64;
-        Accuracy {
+        let alpha_floor = span / config.max_conv_grid as f64;
+        Ok(Accuracy {
             alpha: config.discretization.max(alpha_floor),
             beta,
-        }
+        })
     }
 }
 
@@ -209,7 +204,7 @@ pub fn random_allocation_gaussian_prefix_pld(
 
     let loss = NormalLoss::gaussian(noise_multiplier);
     let neg_dual = NormalLoss::gaussian_neg_dual(noise_multiplier);
-    let acc = Accuracy::derive(&loss, config, released_steps);
+    let acc = Accuracy::derive(&loss, config, released_steps)?;
     let l = disc_dist(&loss, acc.alpha, acc.beta, config.max_grid_size)?;
     let d = disc_dist(&neg_dual, acc.alpha, acc.beta, config.max_grid_size)?;
     let e_l = GeomPmf::from_pmf_exp(&l)?;
@@ -472,7 +467,7 @@ pub fn random_allocation_gaussian_pld(
         if rounds == 0 || steps == 0 {
             continue;
         }
-        let acc = Accuracy::derive(&loss, config, steps);
+        let acc = Accuracy::derive(&loss, config, steps)?;
         let pmf_remove =
             alloc_remove(&loss, &neg_dual, steps, &acc, config, config.discretization)?;
         let pmf_add = alloc_add(&loss, steps, &acc, config, config.discretization)?;
@@ -741,5 +736,58 @@ mod tests {
         assert!(random_allocation_gaussian_pld(1.0, 0, 1, &c).is_err());
         assert!(random_allocation_gaussian_pld(1.0, 8, 0, &c).is_err());
         assert!(random_allocation_gaussian_pld(1.0, 8, 9, &c).is_err());
+        // max_conv_grid = 0 must be rejected before the span/0 division.
+        let c_zero = DiscretizationConfig::default().with_max_conv_grid(0);
+        assert!(random_allocation_gaussian_pld(1.0, 8, 1, &c_zero).is_err());
+    }
+
+    /// At t=1 the transform equals the base Gaussian (no allocation
+    /// amplification), so the upper bound must be ≥ the Gaussian ε regardless
+    /// of grid size (soundness check from the issue).
+    #[test]
+    fn test_t_one_upper_bound_sound_across_grid_sizes() {
+        for &sigma in &[0.5, 1.0, 2.0] {
+            let exact = crate::mechanisms::gaussian_pld(sigma, &cfg())
+                .unwrap()
+                .epsilon_at(1e-8);
+            for &g in &[4096_usize, 8192, 16384, 32768] {
+                let c = DiscretizationConfig::default().with_max_conv_grid(g);
+                let upper = random_allocation_gaussian_pld(sigma, 1, 1, &c)
+                    .unwrap()
+                    .epsilon_at(1e-8);
+                assert!(
+                    upper >= exact - 1e-9,
+                    "σ={} G={}: upper bound {} below exact Gaussian {}",
+                    sigma,
+                    g,
+                    upper,
+                    exact
+                );
+            }
+        }
+    }
+
+    /// A larger max_conv_grid cap produces a tighter (lower or equal) ε
+    /// upper bound — it never loosens the bound.
+    #[test]
+    fn test_larger_max_conv_grid_tightens_bound() {
+        let c_coarse = DiscretizationConfig::default().with_max_conv_grid(8_192);
+        let c_fine = DiscretizationConfig::default().with_max_conv_grid(32_768);
+        for &(sigma, t) in &[(2.0_f64, 64_usize), (1.0, 128)] {
+            let eps_coarse = random_allocation_gaussian_pld(sigma, t, 1, &c_coarse)
+                .unwrap()
+                .epsilon_at(1e-8);
+            let eps_fine = random_allocation_gaussian_pld(sigma, t, 1, &c_fine)
+                .unwrap()
+                .epsilon_at(1e-8);
+            assert!(
+                eps_fine <= eps_coarse + 1e-9,
+                "σ={} t={}: finer grid gave looser bound: {} > {}",
+                sigma,
+                t,
+                eps_fine,
+                eps_coarse
+            );
+        }
     }
 }
