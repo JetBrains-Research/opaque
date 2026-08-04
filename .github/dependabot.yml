@@ -22,7 +22,7 @@ updates:
 
   # Update Rust dependencies
   - package-ecosystem: "cargo"
-    directory: "packages/opaque-accounting"
+    directory: "/packages/opaque-accounting"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -62,7 +62,7 @@ updates:
 
   # opaque-base — stdlib-only currently, included for future deps
   - package-ecosystem: "pip"
-    directory: "packages/opaque-base"
+    directory: "/packages/opaque-base"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -78,7 +78,7 @@ updates:
 
   # opaque-accounting — Python deps are only opaque-base, included for future deps
   - package-ecosystem: "pip"
-    directory: "packages/opaque-accounting"
+    directory: "/packages/opaque-accounting"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -94,7 +94,7 @@ updates:
 
   # opaque-engine — torch, numpy, optree
   - package-ecosystem: "pip"
-    directory: "packages/opaque-engine"
+    directory: "/packages/opaque-engine"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -113,7 +113,7 @@ updates:
 
   # opaque-optimizers — torchopt
   - package-ecosystem: "pip"
-    directory: "packages/opaque-optimizers"
+    directory: "/packages/opaque-optimizers"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -129,7 +129,7 @@ updates:
 
   # opaque-dpsgd — torch
   - package-ecosystem: "pip"
-    directory: "packages/opaque-dpsgd"
+    directory: "/packages/opaque-dpsgd"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -148,7 +148,7 @@ updates:
 
   # opaque-dpftrl — torch, scipy
   - package-ecosystem: "pip"
-    directory: "packages/opaque-dpftrl"
+    directory: "/packages/opaque-dpftrl"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -167,7 +167,7 @@ updates:
 
   # opaque-auditing — torch, scipy
   - package-ecosystem: "pip"
-    directory: "packages/opaque-auditing"
+    directory: "/packages/opaque-auditing"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -186,7 +186,7 @@ updates:
 
   # opaque-patches — torch, transformers, peft, triton
   - package-ecosystem: "pip"
-    directory: "packages/opaque-patches"
+    directory: "/packages/opaque-patches"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -207,7 +207,7 @@ updates:
 
   # opaque-transformers — transformers, peft, datasets
   - package-ecosystem: "pip"
-    directory: "packages/opaque-transformers"
+    directory: "/packages/opaque-transformers"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -226,7 +226,7 @@ updates:
 
   # opaque-alignment — torch, transformers, datasets, peft, safetensors
   - package-ecosystem: "pip"
-    directory: "packages/opaque-alignment"
+    directory: "/packages/opaque-alignment"
     schedule:
       interval: "weekly"
       day: "monday"
