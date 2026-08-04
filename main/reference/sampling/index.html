@@ -3765,7 +3765,7 @@ epoch-redrawn random allocation, this is one global allocation plan.</p>
 across epochs</strong> (required for BnB dominating-pair accounting). Empty bins
 are emitted as empty batches so every accounted bin slot executes.</p>
 <p>Account with <code>dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)</code> where
-<code>mechanism</code> is <code>ftrl_acc.mf_gaussian(nm, strategy)</code> for <code>lambda_cgd_strategy</code>,
+<code>mechanism</code> is <code>dpftrl_acc.mf_gaussian(nm, strategy)</code> for <code>lambda_cgd_strategy</code>,
 <code>bisr_strategy</code>, <code>blt_strategy</code>, <code>bsr_strategy</code>, or <code>dpftrl_acc.mf_gaussian(..., identity_strategy())</code>.</p>
 <h2 id="cyclicpoissonsampler-dp-ftrl">CyclicPoissonSampler (DP-FTRL)<a class="headerlink" href="#cyclicpoissonsampler-dp-ftrl" title="Permanent link">&para;</a></h2>
 <p>Partitions the dataset into <code>bands</code> groups and, at step <code>i</code>, draws only
