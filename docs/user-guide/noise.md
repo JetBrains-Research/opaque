@@ -361,10 +361,11 @@ workload. Uses ``dpftrl_acc.poisson`` for privacy accounting.
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
-strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
+strategy = band_mf_strategy(bands=10, momentum=0.95)
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -380,15 +381,13 @@ buffers. Supports multi-epoch training via `min_sep` and `max_participations`.
 from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
-strategy = blt_strategy(
-    n_steps=10000,
-    min_sep=100,
-    max_participations=5,
-    max_buffers=10,
-)
+strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=10000,
+    min_sep=100,
+    max_participations=5,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -412,6 +411,7 @@ strategy = lambda_cgd_strategy(
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -434,6 +434,7 @@ strategy = bisr_strategy(
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -452,6 +453,7 @@ strategy = identity_strategy()
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -472,7 +474,7 @@ import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and coefficients
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
@@ -481,14 +483,9 @@ proc = dpftrl_acc.poisson(
 eps = proc.epsilon_at(1e-5)
 
 # DP-λCGD / BISR / BLT — strategy.as_mechanism populates the accounting
-strategy = lambda_cgd_strategy(
-    lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
-)
+strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -498,7 +495,7 @@ proc = dpftrl_acc.balls_in_bins(
 # sensitivity-proportional Mahalanobis budget; calibrate against the same
 # MF mechanism PLD used for the first-moment-only release.
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -518,14 +515,13 @@ sensitivity bounds:
 from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
-strategy = blt_strategy(
-    n_steps=5000,
-    min_sep=100,  # minimum steps between participations
-    max_participations=5,  # 5 epochs
-)
+strategy = blt_strategy(max_buffers=10)
 noise_fn, state = mf_gaussian_noise(
     grad_template,
     strategy,
+    n_steps=5000,
+    min_sep=100,  # minimum steps between participations
+    max_participations=5,  # 5 epochs
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -534,11 +530,13 @@ noise_fn, state = mf_gaussian_noise(
 ### Sensitivity
 
 The sensitivity is computed internally by each strategy factory. You can
-inspect it via the `sensitivity` attribute:
+inspect it by calling the `sensitivity()` method with the participation context:
 
 ```python
-strategy = band_mf_strategy(n_steps=1000, bands=10)
-print(strategy.sensitivity)  # typically 1.0 for normalized strategies
+strategy = band_mf_strategy(bands=10)
+print(strategy.sensitivity(n_steps=500))  # typically 1.0 for normalized strategies
+# Some strategies (BiSR, BSR, lambda_CGD) also require min_sep and max_participations:
+# print(strategy.sensitivity(n_steps=500, min_sep=10, max_participations=5))
 ```
 
 ### Comparison: DP-SGD vs MF strategies

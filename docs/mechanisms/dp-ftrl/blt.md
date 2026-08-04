@@ -120,10 +120,11 @@ from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key
 
 # Single participation
-strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
+strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
+    n_steps=10000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -136,12 +137,13 @@ for step in range(10000):
 
 ```python
 # Multi-epoch: each user participates up to 5 times, ≥100 steps apart
-strategy = blt_strategy(
-    n_steps=5000, min_sep=100, max_participations=5,
-)
+strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
+    n_steps=5000,
+    min_sep=100,
+    max_participations=5,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -157,24 +159,23 @@ import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import blt_strategy
 
-strategy = blt_strategy(
-    n_steps=5000, min_sep=100, max_participations=5,
-)
+strategy = blt_strategy(max_buffers=10)
 
 # Unamplified BLT
-proc = ftrl_acc.mf_gaussian(1.0, strategy)
+proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 # With Balls-in-Bins amplification (recommended)
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=100, n_steps=500,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    `ftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
+    `dpftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
     (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
     from the optimized BLT parameters and the participation pattern.
 

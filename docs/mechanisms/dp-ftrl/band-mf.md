@@ -99,13 +99,15 @@ This is computed efficiently with 2 FFTs (self-composition).
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
+print(f"Epsilon (δ=1e-5): {eps:.2f}")
 ```
 
 | Amplification | Supported | Notes |
@@ -169,10 +171,11 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
+    n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -193,7 +196,7 @@ components in sync:
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 
 # BandMF with Poisson amplification (recommended)
 proc = dpftrl_acc.poisson(
@@ -202,10 +205,11 @@ proc = dpftrl_acc.poisson(
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
 !!! note
-    Always use `strategy.sensitivity` and `strategy.num_groups` rather than
+    Always use `strategy.sensitivity(n_steps=...)` and `strategy.num_groups` rather than
     hardcoded values. The strategy computes these from the optimized Toeplitz
     coefficients.
 
@@ -247,9 +251,10 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
-strategy = band_mf_strategy(n_steps, bands)
+strategy = band_mf_strategy(bands=bands)
 noise_fn, noise_state = mf_gaussian_noise(
     params, strategy,
+    n_steps=n_steps,
     noise_multiplier=result.param,
     key=key_noise,
 )

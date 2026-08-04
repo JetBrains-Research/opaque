@@ -102,11 +102,12 @@ a paired output that Opaque optimizers route automatically:
 from opaque.dpftrl.noise import blt_strategy, mf_gaussian_noise
 from opaque.optimizers import adamw
 
-strategy = blt_strategy(n_steps=1000, ...)
-second_strategy = blt_strategy(n_steps=1000, ...)
+strategy = blt_strategy(max_buffers=10)
+second_strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
   grad_template,
   strategy,
+  n_steps=1000,
   noise_multiplier=noise_multiplier,
   key=key(42),
   second_moment_strategy=second_strategy,

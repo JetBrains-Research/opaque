@@ -235,7 +235,7 @@ The workflow is:
    bands, participation pattern, momentum, etc.).
 2. The strategy computes `sensitivity` and `gram_matrix` internally from
    the strategy matrix C.
-3. Pass `strategy.sensitivity` and `strategy.gram_matrix` to the accounting
+3. Pass `strategy.sensitivity(n_steps=...)` and `strategy.gram_matrix` to the accounting
    constructor.
 
 This separation ensures that noise generation and privacy accounting always
@@ -281,17 +281,16 @@ the amplifier supplies the participation context.  Wrap in
 `dpftrl_acc.balls_in_bins(...)` (BnB) for the full PLD:
 
 ```python
-strategy = blt_strategy(
-    n_steps=10000, min_sep=1000, max_participations=5,
-)
+strategy = blt_strategy(max_buffers=10)
 
 # Unamplified — single-Gaussian PLD
-proc = ftrl_acc.mf_gaussian(1.0, strategy)
+proc = dpftrl_acc.mf_gaussian(1.0, strategy)
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=1000, n_steps=5000,
 )
 ```
@@ -300,15 +299,13 @@ The same pattern works for `lambda_cgd_strategy`, `bisr_strategy`, and
 `bsr_strategy`:
 
 ```python
-strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
-)
+strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
 ### `dpftrl_acc.poisson(inner, sample_rate, *, n_steps)`
@@ -320,13 +317,14 @@ Cyclic when the inner is `BandMf` with `bands > 1` (decomposes into
 when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 
 ```python
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     sample_rate=0.01,
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
 ### `dpftrl_acc.balls_in_bins(inner, num_bins, n_steps)`
@@ -346,16 +344,14 @@ assignment every epoch. Do not mix the two: this accountant is for the
 fixed-assignment sampler `opaque.dpftrl.sampling.BallsInBinsSampler`.
 
 ```python
-strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
-)
+strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
+assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
 ### Calibrating MF noise
@@ -365,7 +361,7 @@ the accounting mechanism from strategy-derived quantities. The strategy is
 created once, and the calibration lambda varies only `noise_multiplier`:
 
 ```python
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),

@@ -33,7 +33,7 @@ strategy = bisr_strategy(
 
 # 2. Build accounting mechanism via strategy.as_mechanism
 training = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -55,7 +55,7 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise σ |
-| `sensitivity` | From `strategy.sensitivity` — L2 sensitivity of the BISR strategy |
+| `sensitivity` | From `strategy.sensitivity(n_steps=...)` — L2 sensitivity of the BISR strategy |
 | `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
 
 ### BISR coefficients
@@ -80,13 +80,13 @@ from opaque.random import key
 
 strategy = bisr_strategy(
     bandwidth=4,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
     momentum=0.9,
 )
 noise_fn, state = mf_gaussian_noise(
     grad_template, strategy,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
     noise_multiplier=noise_multiplier,
     key=key(seed),
 )

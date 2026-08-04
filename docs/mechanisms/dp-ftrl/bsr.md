@@ -28,7 +28,7 @@ strategy = bsr_strategy(
 )
 
 training = dpftrl_acc.balls_in_bins(
-    ftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -51,7 +51,7 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise \(\sigma\) |
-| `sensitivity` | From `strategy.sensitivity` |
+| `sensitivity` | From `strategy.sensitivity(n_steps=...)` |
 | `gram_matrix` | From `strategy.gram_matrix` for BnB Monte Carlo |
 
 ## Noise generation
@@ -62,15 +62,15 @@ from opaque.random import key
 
 strategy = bsr_strategy(
     bandwidth=8,
-    n_steps=1000,
-    min_sep=195,
-    max_participations=8,
     alpha=1.0,
     beta=0.95,
 )
 noise_fn, state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
+    n_steps=1000,
+    min_sep=195,
+    max_participations=8,
     noise_multiplier=noise_multiplier,
     key=key(seed),
 )

@@ -59,7 +59,7 @@ from opaque.dpftrl.noise import (
     identity_strategy,   # no correlation; baseline
 )
 
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 ```
 
 See [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) for the
@@ -76,7 +76,7 @@ import opaque.accounting as acc                  # cross-cutting
 import opaque.dpftrl.accounting as dpftrl_acc    # DP-FTRL factories
 
 # Same strategy that will go into mf_gaussian_noise below.
-strategy = band_mf_strategy(n_steps=1000, bands=10)
+strategy = band_mf_strategy(bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
@@ -192,6 +192,7 @@ warmup_grads, _ = grad_fn(params, warmup_batch, state=clip_state)
 noise_fn, noise_state = mf_gaussian_noise(
     warmup_grads,
     strategy,                       # same object you used in accounting
+    n_steps=1000,                   # total training steps
     noise_multiplier=noise_multiplier,
     key=key(0),
 )
