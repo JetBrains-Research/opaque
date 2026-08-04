@@ -16,6 +16,10 @@ from __future__ import annotations
 from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
+from opaque.api.patches.transformers.components.attention import (
+    vmap_eager_attention_forward_gemma2,
+    vmap_sdpa_attention_forward_gemma2,
+)
 
 _MODULE_PATH = "transformers.models.gemma2.modeling_gemma2"
 
@@ -23,6 +27,8 @@ _MODULE_PATH = "transformers.models.gemma2.modeling_gemma2"
 apply_gemma2_family_patches = make_apply_family_patches(
     family="gemma2",
     module_path=_MODULE_PATH,
+    eager_attention_replacement=vmap_eager_attention_forward_gemma2,
+    sdpa_attention_replacement=vmap_sdpa_attention_forward_gemma2,
 )
 
 

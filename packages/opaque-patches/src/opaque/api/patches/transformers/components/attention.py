@@ -157,6 +157,45 @@ def vmap_eager_attention_forward_gemma2(
     return attn_output, attn_weights
 
 
+def vmap_sdpa_attention_forward_gemma2(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    dropout: float = 0.0,
+    scaling: float | None = None,
+    softcap: float | None = None,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Use eager attention when Gemma2's softcap cannot be expressed by SDPA."""
+    if softcap is not None:
+        return vmap_eager_attention_forward_gemma2(
+            module,
+            query,
+            key,
+            value,
+            attention_mask,
+            dropout=dropout,
+            scaling=scaling,
+            softcap=softcap,
+            **kwargs,
+        )
+
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+    return sdpa_attention_forward(
+        module,
+        query,
+        key,
+        value,
+        attention_mask,
+        dropout=dropout,
+        scaling=scaling,
+        **kwargs,
+    )
+
+
 def _make_vmap_compatible_init(original_init):
     """Create a vmap-compatible init for DynamicCache."""
 

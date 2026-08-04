@@ -13,9 +13,59 @@ Known incompatibilities (not tested):
 import torch
 
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.patches.transformers.components.attention import (
+    vmap_eager_attention_forward_gemma2,
+    vmap_sdpa_attention_forward_gemma2,
+)
 from opaque.functional import make_functional
 
 from ..._helpers import prepare_lora_model, run_clipped_grad_test
+
+
+class _Gemma2Attention(torch.nn.Module):
+    num_key_value_groups = 1
+
+
+def _gemma2_softcap_inputs():
+    query = torch.tensor([[[[0.25, 0.0], [1.0, 0.0], [4.0, 0.0]]]])
+    key = torch.tensor([[[[1.0, 0.0], [-1.0, 0.0], [3.0, 0.0]]]])
+    value = torch.tensor([[[[1.0, 2.0], [3.0, 5.0], [7.0, 11.0]]]])
+    return query, key, value
+
+
+def _expected_gemma2_softcap_attention(query, key, value, softcap):
+    scores = query @ key.transpose(-2, -1)
+    scores = softcap * torch.tanh(scores / softcap)
+    weights = torch.softmax(scores, dim=-1)
+    return weights @ value, weights
+
+
+def _assert_gemma2_softcap_attention(attention):
+    query, key, value = (tensor.requires_grad_() for tensor in _gemma2_softcap_inputs())
+    output, weights = attention(
+        _Gemma2Attention(), query, key, value, None, scaling=1.0, softcap=1.0
+    )
+    ref_query, ref_key, ref_value = (
+        tensor.requires_grad_() for tensor in _gemma2_softcap_inputs()
+    )
+    expected_output, expected_weights = _expected_gemma2_softcap_attention(
+        ref_query, ref_key, ref_value, 1.0
+    )
+
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+    torch.testing.assert_close(weights, expected_weights)
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        expected_output.square().sum(), (ref_query, ref_key, ref_value)
+    )
+    for actual, expected in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual, expected)
+
+
+def test_gemma2_softcap_attention_matches_reference():
+    """Keep scaled scores near and far beyond the cap before softmax."""
+    _assert_gemma2_softcap_attention(vmap_eager_attention_forward_gemma2)
+    _assert_gemma2_softcap_attention(vmap_sdpa_attention_forward_gemma2)
 
 
 class TestAttentionImplementations:
