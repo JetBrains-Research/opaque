@@ -7,17 +7,16 @@ Implements the BCO-pair variant from:
     Preference Learning" (see TRL ``loss_type="bco_pair"``).
 
 The BCO loss frames DPO as a binary classification problem with an optional
-reward baseline ``delta``.  TRL computes ``delta`` as a running cross-batch
-mean reward; in ``opaque-alignment`` it is exposed as an **optional detached
-scalar keyword argument** (default ``0.0``) so the function stays strictly
-per-example.
-
-Formula:
+reward baseline ``delta``. TRL computes ``delta`` as a running cross-batch
+mean reward and applies it externally (outside ``bco_pair``). In
+``opaque-alignment`` the baseline is exposed as an **optional detached scalar
+keyword argument** (default ``0.0``) so the function stays strictly
+per-example and matches the BCO paper's formula:
 
     loss = −log σ(β · chosen_lr − δ) − log σ(−(β · rejected_lr − δ))
 
 where δ is the reward baseline (caller responsibility: detach + broadcast).
-
+When ``delta=0.0`` (the default) this is identical to TRL's ``bco_pair``.
 This is a pure loss.
 """
 

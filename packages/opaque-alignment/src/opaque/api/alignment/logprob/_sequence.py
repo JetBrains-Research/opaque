@@ -33,7 +33,7 @@ def sequence_logp(
     completion_mask: torch.Tensor,
     *,
     ld_alpha: float | None = None,
-    shared_prefix_len: torch.Tensor | None = None,
+    shared_prefix_len: int | torch.Tensor | None = None,
     length_normalized: bool = False,
 ) -> torch.Tensor:
     """Sum (or per-token mean) of completion-token log-probabilities per sequence.
@@ -79,11 +79,14 @@ def sequence_logp(
     if ld_alpha is not None:
         if shared_prefix_len is None:
             raise ValueError("ld_alpha (LD-DPO) requires shared_prefix_len")
-        # Weight shifted positions < shared_prefix_len by 1.0, the rest by
-        # ld_alpha (the dpo.loss.ld_dpo_split weighting, applied from logits).
-        pos = torch.arange(per_token_logp.shape[-1], device=per_token_logp.device)
+        completion_pos = (target_mask != 0).cumsum(dim=-1)
+        prefix_len = shared_prefix_len
+        if isinstance(prefix_len, torch.Tensor):
+            while prefix_len.ndim < completion_pos.ndim:
+                prefix_len = prefix_len.unsqueeze(-1)
+        is_prefix = (completion_pos >= 1) & (completion_pos <= prefix_len)
         ld_weight = torch.where(
-            pos < shared_prefix_len,
+            is_prefix,
             torch.ones((), dtype=per_token_logp.dtype, device=per_token_logp.device),
             torch.full(
                 (), ld_alpha, dtype=per_token_logp.dtype, device=per_token_logp.device

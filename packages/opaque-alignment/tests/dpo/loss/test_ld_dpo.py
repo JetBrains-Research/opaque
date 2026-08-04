@@ -51,12 +51,21 @@ def test_ld_dpo_alpha_zero_prefix_only() -> None:
 
 
 def test_ld_dpo_tail_weighting() -> None:
-    """Tail tokens (pos >= prefix) are weighted by alpha."""
+    """Completion tokens after the shared prefix are weighted by alpha."""
     logps = torch.tensor([[-1.0, -2.0, -3.0, -4.0]])
     mask = torch.tensor([[1.0, 1.0, 1.0, 1.0]])
     out = ld_dpo_split(logps, mask, shared_prefix_len=2, alpha=0.5)
     # prefix: -1 + -2 = -3 ; tail: 0.5 * (-3 + -4) = -3.5 ; total -6.5.
     assert torch.allclose(out, torch.tensor([-6.5]), atol=1e-6)
+
+
+def test_ld_dpo_positions_are_completion_relative() -> None:
+    """Prompt offset does not consume the shared completion-token count."""
+    logps = torch.tensor([[-10.0, -20.0, -1.0, -2.0, -3.0]])
+    mask = torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0]])
+    out = ld_dpo_split(logps, mask, shared_prefix_len=2, alpha=0.5)
+    # First two completion tokens are shared; only the third is damped.
+    assert torch.allclose(out, torch.tensor([-4.5]), atol=1e-6)
 
 
 def test_ld_dpo_per_example_tensor_prefix() -> None:

@@ -93,3 +93,32 @@ class TestDpoBcoPair:
         out = bco_loss(c, r, beta=0.2, delta=0.1)
         assert out.shape == (8,)
         assert torch.isfinite(out).all()
+
+    # ------------------------------------------------------------------
+    # TRL parity: opaque bco_loss(delta=0) == TRL bco_pair
+    # ------------------------------------------------------------------
+
+    def test_trl_parity_delta_zero(self) -> None:
+        """With delta=0, opaque bco_loss matches TRL's bco_pair formula.
+
+        TRL's bco_pair:
+            chosen_rewards = beta * chosen_logratios
+            rejected_rewards = beta * rejected_logratios
+            loss = -logsig(chosen_rewards) - logsig(-rejected_rewards)
+        """
+        c = _T(0.5)
+        r = _T(-0.3)
+        beta = 0.1
+        # TRL-style computation (no delta in the loss itself):
+        trl_loss = -F.logsigmoid(beta * c) - F.logsigmoid(-(beta * r))
+        out = bco_loss(c, r, beta=beta, delta=0.0)
+        assert torch.allclose(out, trl_loss, atol=1e-6)
+
+    def test_trl_parity_batched(self) -> None:
+        """Batched: opaque bco_loss(delta=0) matches TRL elementwise."""
+        c = torch.tensor([0.5, -0.2, 1.0, 0.0])
+        r = torch.tensor([-0.3, 0.1, -0.5, 0.0])
+        beta = 0.1
+        trl_loss = -F.logsigmoid(beta * c) - F.logsigmoid(-(beta * r))
+        out = bco_loss(c, r, beta=beta, delta=0.0)
+        assert torch.allclose(out, trl_loss, atol=1e-6)

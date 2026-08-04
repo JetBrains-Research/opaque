@@ -1390,6 +1390,60 @@ def test_dpo_fused_eligible_resolves_handles(tmp_path):
     assert trainer._lm_head_param_name == "lm_head.weight"
 
 
+def test_dpo_ld_shared_prefix_is_completion_relative():
+    chosen_mask = torch.tensor([[0, 0, 0, 1, 1, 1]])
+    rejected_mask = torch.tensor([[0, 1, 1, 0, 0, 0]])
+    chosen_prefix, rejected_prefix = DPOTrainer._ld_shared_prefix(
+        chosen_mask, rejected_mask
+    )
+    torch.testing.assert_close(chosen_prefix, torch.tensor([2]))
+    torch.testing.assert_close(rejected_prefix, torch.tensor([2]))
+
+
+def test_dpo_reference_logps_apply_ld_weighting():
+    trainer = object.__new__(DPOTrainer)
+    object.__setattr__(trainer, "_ld_alpha", 0.25)
+    ref_model = _tiny_model().eval()
+    batch = {
+        "chosen_input_ids": torch.tensor([[1, 2, 3, 4, 5, 6]]),
+        "chosen_attention_mask": torch.ones(1, 6, dtype=torch.long),
+        "chosen_completion_mask": torch.tensor([[0, 0, 1, 1, 1, 1]]),
+        "rejected_input_ids": torch.tensor([[1, 2, 7, 8, 0, 0]]),
+        "rejected_attention_mask": torch.tensor([[1, 1, 1, 1, 0, 0]]),
+        "rejected_completion_mask": torch.tensor([[0, 0, 1, 1, 0, 0]]),
+    }
+
+    with torch.no_grad():
+        result = trainer.compute_ref_log_probs(
+            batch, ref_model, null_ref=False, to_cpu=False
+        )
+        chosen_logits = ref_model(
+            input_ids=batch["chosen_input_ids"],
+            attention_mask=batch["chosen_attention_mask"],
+        ).logits
+        rejected_logits = ref_model(
+            input_ids=batch["rejected_input_ids"],
+            attention_mask=batch["rejected_attention_mask"],
+        ).logits
+
+    expected_chosen = sequence_logp(
+        chosen_logits,
+        batch["chosen_input_ids"],
+        batch["chosen_completion_mask"],
+        ld_alpha=0.25,
+        shared_prefix_len=2,
+    )
+    expected_rejected = sequence_logp(
+        rejected_logits,
+        batch["rejected_input_ids"],
+        batch["rejected_completion_mask"],
+        ld_alpha=0.25,
+        shared_prefix_len=2,
+    )
+    torch.testing.assert_close(result["ref_chosen_logps"], expected_chosen)
+    torch.testing.assert_close(result["ref_rejected_logps"], expected_rejected)
+
+
 @pytest.mark.parametrize(
     "extra",
     [
