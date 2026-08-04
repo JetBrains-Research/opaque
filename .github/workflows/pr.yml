@@ -171,16 +171,16 @@ jobs:
         run: uv sync --group dev --all-packages --extra all
 
       - name: Assert CUDA available
-       run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
-       run: >-
-         uv run pytest packages tests
-         -m "cuda and not slow"
-         -rs
-         --cov=opaque
-         --cov-report=xml:coverage.xml
-         -q
+        run: >-
+          uv run pytest packages tests
+          -m "cuda and not slow"
+          -rs
+          --cov=opaque
+          --cov-report=xml:coverage.xml
+          -q
 
       - uses: codecov/codecov-action@v4
         with:
