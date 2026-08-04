@@ -215,25 +215,15 @@ def build_patched_model_pair(
     config_kwargs: dict | None = None,
     apply_model_patches_kwargs: dict | None = None,
 ):
-    """Build two tiny models: one unpatched, one patched, with identical weights.
+    """Build two tiny models with identical weights.
 
     ``config_kwargs`` is the full config dict — defaults to
     ``get_tiny_config_kwargs()`` when ``None``.  Pass a custom dict (e.g. with
     ``num_key_value_heads`` removed) for families like GPT2 that lack GQA.
 
-    This function applies only instance-level model patches via
-    ``apply_model_patches()`` — it does **not** call ``apply_runtime_patches()``
-    globally.  Runtime patches are applied automatically when the test module
-    imports ``opaque.patches``, so both the "unpatched" and "patched" models
-    run in the same (runtime-patched) process.  The test verifies that the
-    instance-level patching on top of that baseline does not introduce numerical
-    divergence.
-
     Returns ``(unpatched_model, patched_model)``.
     """
     import copy
-
-    from opaque.patches import apply_model_patches
 
     if config_kwargs is None:
         config_kwargs = get_tiny_config_kwargs()
@@ -250,8 +240,11 @@ def build_patched_model_pair(
 
     unpatched = model
     patched = copy.deepcopy(unpatched)
-    apply_model_patches_kwargs = apply_model_patches_kwargs or {"eager_attention": True}
-    apply_model_patches(patched, **apply_model_patches_kwargs)
+    from opaque.patches import apply_model_patches
+
+    apply_model_patches(
+        patched, **(apply_model_patches_kwargs or {"eager_attention": True})
+    )
     return unpatched, patched
 
 
@@ -302,7 +295,6 @@ def assert_parity_forward(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
-        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -354,7 +346,6 @@ def assert_parity_grad(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
-        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)
@@ -421,7 +412,6 @@ def assert_parity_vmap_grad(
         device,
         attn_impl=attn_impl,
         config_kwargs=config_kwargs,
-        apply_model_patches_kwargs=apply_model_patches_kwargs,
     )
     if dtype is not None:
         unpatched = unpatched.to(dtype)

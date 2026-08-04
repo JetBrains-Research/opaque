@@ -146,6 +146,11 @@ def _base_config_kwargs(family: str) -> dict:
     return kwargs
 
 
+def _parity_dtype(device: torch.device) -> torch.dtype | None:
+    """Exercise CUDA kernels at bf16 precision while retaining CPU/MPS coverage."""
+    return torch.bfloat16 if device.type == "cuda" else None
+
+
 # ===========================================================================
 # Core parity tests — parameterized over all registered families
 # ===========================================================================
@@ -211,6 +216,7 @@ def test_forward_logits_parity(family, impl, device):
             config_kwargs=config_kwargs,
             softcapping=softcapping,
             label=f"{family} [{impl}]",
+            dtype=_parity_dtype(device),
         )
     except Exception as e:
         raise AssertionError(f"{family} [{impl}] forward parity failed") from e
@@ -234,6 +240,7 @@ def test_backward_grads_parity(family, device):
             config_kwargs=config_kwargs,
             softcapping=softcapping,
             label=f"{family}",
+            dtype=_parity_dtype(device),
         )
     except Exception as e:
         raise AssertionError(f"{family} backward grad parity failed") from e
@@ -257,6 +264,7 @@ def test_vmap_grad_parity(family, device):
             config_kwargs=config_kwargs,
             softcapping=softcapping,
             label=f"{family}",
+            dtype=_parity_dtype(device),
         )
     except Exception as e:
         raise AssertionError(f"{family} vmap grad parity failed") from e
@@ -282,6 +290,7 @@ def test_sliding_window_parity(family, device):
             device,
             config_kwargs=config_kwargs,
             label=f"{family} [sliding_window]",
+            dtype=_parity_dtype(device),
         )
     except Exception as e:
         raise AssertionError(f"{family} sliding window parity failed") from e
@@ -303,6 +312,7 @@ def test_softcapping_parity(family, device):
             config_kwargs=config_kwargs,
             softcapping=True,
             label=f"{family} [softcapping]",
+            dtype=_parity_dtype(device),
         )
         assert_parity_grad(
             model_cls,
@@ -311,6 +321,7 @@ def test_softcapping_parity(family, device):
             config_kwargs=config_kwargs,
             softcapping=True,
             label=f"{family} [softcapping]",
+            dtype=_parity_dtype(device),
         )
     except Exception as e:
         raise AssertionError(f"{family} softcapping parity failed") from e
@@ -328,6 +339,10 @@ def test_kv_cache_parity(family, device):
         config_kwargs=base_kwargs,
         apply_model_patches_kwargs={"eager_attention": True},
     )
+    dtype = _parity_dtype(device)
+    if dtype is not None:
+        unpatched = unpatched.to(dtype)
+        patched = patched.to(dtype)
     unpatched.eval()
     patched.eval()
 
@@ -377,6 +392,10 @@ def test_lora_forward_parity(family, device):
         config_kwargs=base_kwargs,
         apply_model_patches_kwargs={"eager_attention": True},
     )
+    dtype = _parity_dtype(device)
+    if dtype is not None:
+        unpatched = unpatched.to(dtype)
+        patched = patched.to(dtype)
 
     # Apply LoRA to both models with identical config.
     lora_config = peft.LoraConfig(
@@ -388,11 +407,6 @@ def test_lora_forward_parity(family, device):
     unpatched = peft.get_peft_model(unpatched, lora_config)
     patched = peft.get_peft_model(patched, lora_config)
 
-    # Re-apply opaque patches to the patched model after PEFT wrapping.
-    from opaque.patches import apply_model_patches
-
-    apply_model_patches(patched, eager_attention=True, lora=True)
-
     torch.manual_seed(0)
     vocab = unpatched.config.vocab_size
     input_ids = torch.randint(0, vocab, (2, 8), device=device)
@@ -400,6 +414,11 @@ def test_lora_forward_parity(family, device):
 
     unpatched.eval()
     patched.eval()
+    # Re-apply opaque patches to the patched model after PEFT wrapping.
+    from opaque.patches import apply_model_patches
+
+    apply_model_patches(patched, eager_attention=True, lora=True)
+
     with torch.no_grad():
         logits_ref = unpatched(
             input_ids=input_ids, attention_mask=attention_mask
@@ -407,7 +426,8 @@ def test_lora_forward_parity(family, device):
         logits_test = patched(input_ids=input_ids, attention_mask=attention_mask).logits
 
     assert logits_ref.shape == logits_test.shape
-    assert torch.allclose(logits_test, logits_ref, rtol=1e-4, atol=1e-5), (
+    rtol, atol = (1e-2, 1e-2) if dtype is torch.bfloat16 else (1e-4, 1e-5)
+    assert torch.allclose(logits_test, logits_ref, rtol=rtol, atol=atol), (
         f"{family} LoRA forward mismatch: max diff "
         f"{(logits_test - logits_ref).abs().max().item():.2e}"
     )
