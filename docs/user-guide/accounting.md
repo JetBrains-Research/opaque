@@ -235,7 +235,7 @@ The workflow is:
    bands, participation pattern, momentum, etc.).
 2. The strategy computes `sensitivity` and `gram_matrix` internally from
    the strategy matrix C.
-3. Pass `strategy.sensitivity` and `strategy.gram_matrix` to the accounting
+3. Pass `strategy.sensitivity(n_steps=...)` and `strategy.gram_matrix` to the accounting
    constructor.
 
 This separation ensures that noise generation and privacy accounting always

@@ -534,8 +534,8 @@ inspect it via the `sensitivity` attribute:
 
 ```python
 strategy = band_mf_strategy(bands=10)
-assert strategy.sensitivity >= 0.5, "sensitivity should be reasonable"
-print(strategy.sensitivity)  # typically 1.0 for normalized strategies
+assert strategy.sensitivity(n_steps=500) >= 0.5, "sensitivity should be reasonable"
+print(strategy.sensitivity(n_steps=500))  # typically 1.0 for normalized strategies
 ```
 
 ### Comparison: DP-SGD vs MF strategies

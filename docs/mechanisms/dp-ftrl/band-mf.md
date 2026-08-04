@@ -209,7 +209,7 @@ assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
 !!! note
-    Always use `strategy.sensitivity` and `strategy.num_groups` rather than
+    Always use `strategy.sensitivity(n_steps=...)` and `strategy.num_groups` rather than
     hardcoded values. The strategy computes these from the optimized Toeplitz
     coefficients.
 

@@ -60,7 +60,7 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise σ (calibrated or fixed) |
-| `sensitivity` | From `strategy.sensitivity` — L2 sensitivity of C |
+| `sensitivity` | From `strategy.sensitivity(n_steps=...)` — L2 sensitivity of C |
 | `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
 
 ### Sensitivity

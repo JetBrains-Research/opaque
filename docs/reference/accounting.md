@@ -348,7 +348,7 @@ BandMF mechanism for Poisson and b-min-sep amplification. Takes
 band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity`.
+- `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
 - `coefficients` (tuple[float, ...]): From `strategy.coefficients`.
 
 ```python

@@ -51,7 +51,7 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise \(\sigma\) |
-| `sensitivity` | From `strategy.sensitivity` |
+| `sensitivity` | From `strategy.sensitivity(n_steps=...)` |
 | `gram_matrix` | From `strategy.gram_matrix` for BnB Monte Carlo |
 
 ## Noise generation
