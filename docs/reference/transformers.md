@@ -170,18 +170,18 @@ Dataclass surface.  Every field listed here exists on
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `privacy_target_epsilon` | `float` | `8.0` | User target ε.  Calibration searches for the smallest noise multiplier that achieves this. |
+| `privacy_target_epsilon` | `float \| None` | `None` | User target ε.  When set, calibration searches for the smallest noise multiplier that achieves this. |
 | `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / (10 * dataset_size)` when unset. |
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
-| `clipping_kwargs` | `dict[str, Any]` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
-| `sampling_mode` | `str` | `"poisson"` | Only `"poisson"` is supported. |
-| `sampling_kwargs` | `dict[str, Any]` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
-| `privacy_noise_mechanism` | `str` | `"gaussian"` | Only `"gaussian"` is supported. |
-| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset, calibration searches. |
+| `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table.  Explicit overrides: `"poisson"`, `"random_allocation"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
+| `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
+| `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
+| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
 | `privacy_noise_radius` | `float` | `3.0` | Calibration search bound. |
-| `privacy_noise_mechanism_kwargs` | `dict[str, Any]` | `{}` | Forwarded into `gaussian_noise` (e.g. `bound` for the bounded variant). |
-| `noise_calibration_kwargs` | `dict[str, Any]` | `{}` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
+| `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
+| `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
 
 ### Patches and kernels
 
@@ -200,7 +200,7 @@ Dataclass surface.  Every field listed here exists on
 | `bf16` | `bool` | `False` | bf16 autocast on the loss closure. |
 | `bf16_full_eval` | `bool` | `False` | Cast model to bf16 for eval scope only. |
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
-| `gradient_checkpointing` | `bool` | `False` | Activation recomputation.  Pair with `use_reentrant=False` for vmap-safety. |
+| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.  Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` for vmap-safety. |
 | `gradient_checkpointing_kwargs` | `dict \| str \| None` | `None` | Forwarded to `model.gradient_checkpointing_enable(...)`. |
 | `torch_compile` | `bool` | `False` | Wrap the per-example loss closure with `torch.compile`.  Tries `fullgraph=True` first; falls back with a warning. |
 | `torch_compile_backend` | `str \| None` | `None` | Defaults to `"inductor"` when compile is on. |
@@ -211,7 +211,7 @@ Dataclass surface.  Every field listed here exists on
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `per_device_train_batch_size` | `int` | `8` | Per-rank logical Poisson batch size. |
-| `per_device_eval_batch_size` | `int` | `8` | Eval batch size (fixed, not Poisson). |
+| `per_device_eval_batch_size` | `int \| None` | `None` | Eval batch size (fixed, not Poisson).  When `None`, defaults to `per_device_train_batch_size` in `__post_init__`. |
 | `eval_accumulation_steps` | `int \| None` | `None` | Move accumulated eval tensors to CPU every N batches. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
 | `auto_find_microbatch_size` | `bool` | `False` | On OOM, halve the microbatch size and retry.  Logical batch and privacy unchanged. |
@@ -225,7 +225,7 @@ Dataclass surface.  Every field listed here exists on
 | `adam_beta1` / `adam_beta2` / `adam_epsilon` | `float` | `0.9` / `0.999` / `1e-8` |
 | `optim` | `str` | `"adamw"` |
 | `optim_args` | `dict \| str \| None` | `None` |
-| `lr_scheduler_type` | `SchedulerType \| str` | `"linear"` |
+| `lr_scheduler` | `SchedulerType \| str \| Schedule` | `"linear"` |
 | `lr_scheduler_kwargs` | `dict \| str \| None` | `{}` |
 | `warmup_ratio` | `float` | `0.0` |
 | `warmup_steps` | `int` | `0` |
@@ -469,10 +469,11 @@ SFT-specific fields on top of `TrainingArguments`.
 | `pad_to_multiple_of` | `int \| None` | `None` | Round the padded batch length up to a multiple. |
 | `dataset_num_proc` | `int \| None` | `None` | Processes for `datasets.map` preprocessing. |
 | `chat_template_path` | `str \| None` | `None` | Tokenizer dir / Jinja file whose chat template + special tokens are cloned onto `processing_class` (resizes embeddings). |
-| `loss_type` | `str` | `"nll"` | `"nll"` (CE) or `"dft"` (Dynamic Fine-Tuning).  Unknown values fail at the loss dispatch. |
-| `log_completion_metrics` | `bool` | `True` | Log per-step `entropy` / `mean_token_accuracy`; `False` skips them. |
+| `loss_type` | `str` | `"nll"` | `"nll"` (CE), `"dft"` (Dynamic Fine-Tuning), or `"chunked_nll"` (fused logits-free CE).  Unknown values fail at the loss dispatch. |
+| `log_completion_metrics` | `bool` | `True` | Log per-step `entropy` / `mean_token_accuracy`; `False` skips them.  Also enables fused logits-free loss paths when `False`. |
 | `logging_steps` | `float` | `10` | TRL default (overrides base `500`). |
-| `gradient_checkpointing` | `bool` | `True` | TRL default (overrides base `False`). |
+| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit. |
+| `use_performance_kernels` | `bool` | `True` | Opaque-specific: enable model-level Triton kernels (`rope`, `rms_norm`, `activation`, `cross_entropy`) by default.  CUDA + Triton only; no-op on CPU/MPS.  Overrides base `False`. |
 
 `__post_init__` pins `remove_unused_columns=False` (the collator consumes
 raw columns) and auto-enables `bf16` when the hardware supports it and no
@@ -539,7 +540,8 @@ DPO-specific fields on top of `TrainingArguments`.
 | `dataset_num_proc` | `int \| None` | `None` | Processes for `datasets.map` preprocessing. |
 | `log_completion_metrics` | `bool` | `True` | Log per-step `logits/*` / `entropy` / `mean_token_accuracy`; rewards + `logps/*` are always logged. |
 | `logging_steps` | `float` | `10` | TRL default. |
-| `gradient_checkpointing` | `bool` | `True` | TRL default. |
+| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit. |
+| `use_performance_kernels` | `bool` | `True` | Opaque-specific: enable model-level Triton kernels (`rope`, `rms_norm`, `activation`, `cross_entropy`) by default.  CUDA + Triton only; no-op on CPU/MPS.  Overrides base `False`. |
 
 The reference-free heads are `{"chosen_nll", "simpo", "cpo", "orpo"}` (TRL's
 `sft` is `chosen_nll` here); a run is reference-free iff *every* configured
