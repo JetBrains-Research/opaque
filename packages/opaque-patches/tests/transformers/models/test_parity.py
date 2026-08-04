@@ -146,14 +146,6 @@ def _base_config_kwargs(family: str) -> dict:
     return kwargs
 
 
-@pytest.fixture(scope="module")
-def _apply_opaque_parity_patches():
-    """Apply runtime patches once per module so eager attention works."""
-    from opaque.patches import apply_runtime_patches
-
-    apply_runtime_patches()
-
-
 # ===========================================================================
 # Core parity tests — parameterized over all registered families
 # ===========================================================================
@@ -221,7 +213,7 @@ def test_forward_logits_parity(family, impl, device):
             label=f"{family} [{impl}]",
         )
     except Exception as e:
-        raise pytest.fail(f"{family} [{impl}] forward parity failed") from e
+        raise AssertionError(f"{family} [{impl}] forward parity failed") from e
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -244,7 +236,7 @@ def test_backward_grads_parity(family, device):
             label=f"{family}",
         )
     except Exception as e:
-        raise pytest.fail(f"{family} backward grad parity failed") from e
+        raise AssertionError(f"{family} backward grad parity failed") from e
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -267,7 +259,7 @@ def test_vmap_grad_parity(family, device):
             label=f"{family}",
         )
     except Exception as e:
-        raise pytest.fail(f"{family} vmap grad parity failed") from e
+        raise AssertionError(f"{family} vmap grad parity failed") from e
 
 
 # ===========================================================================
@@ -292,7 +284,7 @@ def test_sliding_window_parity(family, device):
             label=f"{family} [sliding_window]",
         )
     except Exception as e:
-        raise pytest.fail(f"{family} sliding window parity failed") from e
+        raise AssertionError(f"{family} sliding window parity failed") from e
 
 
 @pytest.mark.parametrize("family", sorted(_SOFTCAP_FAMILIES))
@@ -321,7 +313,7 @@ def test_softcapping_parity(family, device):
             label=f"{family} [softcapping]",
         )
     except Exception as e:
-        raise pytest.fail(f"{family} softcapping parity failed") from e
+        raise AssertionError(f"{family} softcapping parity failed") from e
 
 
 @pytest.mark.parametrize("family", ["llama", "qwen2"])
