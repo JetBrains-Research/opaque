@@ -5,39 +5,46 @@ from __future__ import annotations
 import subprocess
 import sys
 
-_REQUIRED_FACTORIES = (
-    "gaussian",
-    "adaclip",
-    "k_out_of_t",
-    "poisson",
-    "parallel_poisson",
-    "random_allocation",
-)
-
-_REQUIRED_TYPES = (
-    "Gaussian",
-    "KOutOfT",
-    "AdaClip",
-    "Poisson",
-    "ParallelPoisson",
-    "RandomAllocation",
-)
-
 
 class TestNamespaceSurface:
-    """Each documented re-export is reachable as a callable."""
+    """The declared public surface is importable, callable, and leak-free.
 
-    def test_required_headline_factories_callable(self):
+    Anchored on ``__all__`` (what ``import *`` exposes and facade discipline
+    enforces) rather than a frozen name snapshot, so legitimate renames don't
+    break the test while genuinely broken re-exports still do.
+    """
+
+    def test_all_declared_factories_callable(self):
         import opaque.dpsgd.accounting as dpsgd_acc
 
-        for name in _REQUIRED_FACTORIES:
+        assert dpsgd_acc.__all__, "accounting facade must declare __all__"
+        for name in dpsgd_acc.__all__:
             assert callable(getattr(dpsgd_acc, name)), name
 
-    def test_types_module_re_exports(self):
+    def test_all_declared_types_importable(self):
         import opaque.dpsgd.accounting.types as dpsgd_types
 
-        for name in _REQUIRED_TYPES:
+        assert dpsgd_types.__all__, "types facade must declare __all__"
+        for name in dpsgd_types.__all__:
             assert hasattr(dpsgd_types, name), name
+
+    def test_no_public_leak_outside_all(self):
+        import types
+
+        import opaque.dpsgd.accounting as dpsgd_acc
+
+        declared = set(dpsgd_acc.__all__)
+        leaked = {
+            name
+            for name in dir(dpsgd_acc)
+            if not name.startswith("_")
+            and name not in declared
+            and not isinstance(getattr(dpsgd_acc, name), types.ModuleType)
+            and (getattr(getattr(dpsgd_acc, name), "__module__", "") or "").startswith(
+                "opaque"
+            )
+        }
+        assert not leaked, f"public names not in __all__: {sorted(leaked)}"
 
 
 class TestEndToEndCalibration:
