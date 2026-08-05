@@ -7342,18 +7342,31 @@ Smaller values sharpen the transition between the two components.</p>
 
 <details class="note" open>
   <summary>Note</summary>
-  <p>The exponential component overflows float32 when <code>logits ≪ 0</code>.  To
-prevent NaN/Inf while preserving gradient locality, the
-logits passed to <code>torch.exp</code> are clamped from below at
-<code>-_EXP_CLAMP</code> (80).  This keeps <code>exp(-logits)</code> ≤ <code>exp(80)
-≈ 5.5e34</code>, which is within the float32 range.  At large negative
-logits, the modulation gate simultaneously drives towards 0, so the
-clamping is numerically inconsequential for the loss magnitude.</p>
+  <p>The exponential component overflows half precision when <code>logits ≪ 0</code>.
+To prevent NaN/Inf while preserving gradient locality, the logits passed
+to <code>torch.exp</code> are clamped from below at a dtype-specific bound:
+<code>11</code> for <code>float16</code> and <code>80</code> otherwise.  This keeps the
+exponential finite in the active compute dtype while leaving the
+representable region unchanged.</p>
 </details>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_discopop.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-48">48</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-34">34</a></span>
+<span class="normal"><a href="#__codelineno-0-35">35</a></span>
+<span class="normal"><a href="#__codelineno-0-36">36</a></span>
+<span class="normal"><a href="#__codelineno-0-37">37</a></span>
+<span class="normal"><a href="#__codelineno-0-38">38</a></span>
+<span class="normal"><a href="#__codelineno-0-39">39</a></span>
+<span class="normal"><a href="#__codelineno-0-40">40</a></span>
+<span class="normal"><a href="#__codelineno-0-41">41</a></span>
+<span class="normal"><a href="#__codelineno-0-42">42</a></span>
+<span class="normal"><a href="#__codelineno-0-43">43</a></span>
+<span class="normal"><a href="#__codelineno-0-44">44</a></span>
+<span class="normal"><a href="#__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#__codelineno-0-48">48</a></span>
 <span class="normal"><a href="#__codelineno-0-49">49</a></span>
 <span class="normal"><a href="#__codelineno-0-50">50</a></span>
 <span class="normal"><a href="#__codelineno-0-51">51</a></span>
@@ -7383,67 +7396,51 @@ clamping is numerically inconsequential for the loss magnitude.</p>
 <span class="normal"><a href="#__codelineno-0-75">75</a></span>
 <span class="normal"><a href="#__codelineno-0-76">76</a></span>
 <span class="normal"><a href="#__codelineno-0-77">77</a></span>
-<span class="normal"><a href="#__codelineno-0-78">78</a></span>
-<span class="normal"><a href="#__codelineno-0-79">79</a></span>
-<span class="normal"><a href="#__codelineno-0-80">80</a></span>
-<span class="normal"><a href="#__codelineno-0-81">81</a></span>
-<span class="normal"><a href="#__codelineno-0-82">82</a></span>
-<span class="normal"><a href="#__codelineno-0-83">83</a></span>
-<span class="normal"><a href="#__codelineno-0-84">84</a></span>
-<span class="normal"><a href="#__codelineno-0-85">85</a></span>
-<span class="normal"><a href="#__codelineno-0-86">86</a></span>
-<span class="normal"><a href="#__codelineno-0-87">87</a></span>
-<span class="normal"><a href="#__codelineno-0-88">88</a></span>
-<span class="normal"><a href="#__codelineno-0-89">89</a></span>
-<span class="normal"><a href="#__codelineno-0-90">90</a></span>
-<span class="normal"><a href="#__codelineno-0-91">91</a></span>
-<span class="normal"><a href="#__codelineno-0-92">92</a></span>
-<span class="normal"><a href="#__codelineno-0-93">93</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="k">def</span><span class="w"> </span><span class="nf">discopop_loss</span><span class="p">(</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a>    <span class="n">chosen_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a>    <span class="n">rejected_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a>    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a>    <span class="n">discopop_tau</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;DiscoPOP per-example loss (Azar 2024 / NeurIPS 2024).</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">    Blends a logistic component ``-log σ(β·Δ)`` and an exponential component</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">    ``exp(-β·Δ)`` using a soft gate parameterised by temperature *τ*::</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">        logits    = (chosen_logratio - rejected_logratio) * beta</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">        gate      = σ(logits / τ)          # → 1 for large positive logits</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        logistic  = -log σ(logits)</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        exp_comp  = exp(-logits)            # clamped to avoid overflow</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        L         = logistic * (1 - gate) + exp_comp * gate</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">        chosen_logratio: Per-example scalar log-ratio for the chosen</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">            completion.  May be 0-dim or ``(B,)``.</span>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">        rejected_logratio: Per-example scalar log-ratio for the rejected</span>
-<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">            completion.  Same shape as *chosen_logratio*.</span>
-<a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">        beta: KL-regularisation temperature (DPO β).</span>
-<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">        discopop_tau: Modulation temperature *τ* (default ``0.05``).</span>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">            Smaller values sharpen the transition between the two components.</span>
-<a id="__codelineno-0-74" name="__codelineno-0-74"></a>
-<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
-<a id="__codelineno-0-77" name="__codelineno-0-77"></a>
-<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    Note:</span>
-<a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">        The exponential component overflows float32 when ``logits ≪ 0``.  To</span>
-<a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">        prevent NaN/Inf while preserving gradient locality, the</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">        logits passed to ``torch.exp`` are clamped from below at</span>
-<a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">        ``-_EXP_CLAMP`` (80).  This keeps ``exp(-logits)`` ≤ ``exp(80)</span>
-<a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">        ≈ 5.5e34``, which is within the float32 range.  At large negative</span>
-<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">        logits, the modulation gate simultaneously drives towards 0, so the</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">        clamping is numerically inconsequential for the loss magnitude.</span>
-<a id="__codelineno-0-86" name="__codelineno-0-86"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-87" name="__codelineno-0-87"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">rejected_logratio</span><span class="p">)</span> <span class="o">*</span> <span class="n">beta</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a>    <span class="c1"># Clamp logits for the exp component to avoid overflow when logits &lt;&lt; 0.</span>
-<a id="__codelineno-0-89" name="__codelineno-0-89"></a>    <span class="n">logits_clamped</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=-</span><span class="n">_EXP_CLAMP</span><span class="p">)</span>
-<a id="__codelineno-0-90" name="__codelineno-0-90"></a>    <span class="n">modulation</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">discopop_tau</span><span class="p">)</span>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a>    <span class="n">logistic_component</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a>    <span class="n">exp_component</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">logits_clamped</span><span class="p">)</span>
-<a id="__codelineno-0-93" name="__codelineno-0-93"></a>    <span class="k">return</span> <span class="n">logistic_component</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">modulation</span><span class="p">)</span> <span class="o">+</span> <span class="n">exp_component</span> <span class="o">*</span> <span class="n">modulation</span>
+<span class="normal"><a href="#__codelineno-0-78">78</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="k">def</span><span class="w"> </span><span class="nf">discopop_loss</span><span class="p">(</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="n">chosen_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">rejected_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a>    <span class="n">discopop_tau</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;DiscoPOP per-example loss (Azar 2024 / NeurIPS 2024).</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">    Blends a logistic component ``-log σ(β·Δ)`` and an exponential component</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">    ``exp(-β·Δ)`` using a soft gate parameterised by temperature *τ*::</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45"></a>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">        logits    = (chosen_logratio - rejected_logratio) * beta</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">        gate      = σ(logits / τ)          # → 1 for large positive logits</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">        logistic  = -log σ(logits)</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">        exp_comp  = exp(-logits)            # clamped to avoid overflow</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        L         = logistic * (1 - gate) + exp_comp * gate</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        chosen_logratio: Per-example scalar log-ratio for the chosen</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">            completion.  May be 0-dim or ``(B,)``.</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">        rejected_logratio: Per-example scalar log-ratio for the rejected</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">            completion.  Same shape as *chosen_logratio*.</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        beta: KL-regularisation temperature (DPO β).</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        discopop_tau: Modulation temperature *τ* (default ``0.05``).</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">            Smaller values sharpen the transition between the two components.</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">    Note:</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        The exponential component overflows half precision when ``logits ≪ 0``.</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">        To prevent NaN/Inf while preserving gradient locality, the logits passed</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">        to ``torch.exp`` are clamped from below at a dtype-specific bound:</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">        ``11`` for ``float16`` and ``80`` otherwise.  This keeps the</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">        exponential finite in the active compute dtype while leaving the</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">        representable region unchanged.</span>
+<a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-72" name="__codelineno-0-72"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">rejected_logratio</span><span class="p">)</span> <span class="o">*</span> <span class="n">beta</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a>    <span class="n">exp_clamp</span> <span class="o">=</span> <span class="n">_exp_clamp_for_dtype</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a>    <span class="n">logits_clamped</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=-</span><span class="n">exp_clamp</span><span class="p">)</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a>    <span class="n">modulation</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">discopop_tau</span><span class="p">)</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a>    <span class="n">logistic_component</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77"></a>    <span class="n">exp_component</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">logits_clamped</span><span class="p">)</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a>    <span class="k">return</span> <span class="n">logistic_component</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">modulation</span><span class="p">)</span> <span class="o">+</span> <span class="n">exp_component</span> <span class="o">*</span> <span class="n">modulation</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
