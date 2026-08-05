@@ -118,7 +118,7 @@ jobs:
           fail_ci_if_error: false
 
   # Aggregating gate for Python tests. This is an independent required check
-  # (alongside rust-tests) for branch protection and gating wheel builds.
+  # (alongside rust-tests-gate) that gates wheel builds and publishing.
   python-tests-gate:
     name: Python tests
     if: always()
@@ -132,9 +132,9 @@ jobs:
           test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
 
   # Aggregating gate for Rust tests. This is an independent required check
-  # (alongside python-tests-gate) for branch protection and gating wheel builds.
+  # (alongside python-tests-gate) that gates wheel builds and publishing.
   rust-tests-gate:
-    name: Rust tests
+    name: Rust tests gate
     if: always()
     needs: [rust-tests]
     runs-on: ubuntu-latest
@@ -185,6 +185,7 @@ jobs:
 
   build-opaque-wheel:
     name: Build opaque
+    needs: [python-tests-gate, rust-tests-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -212,7 +213,7 @@ jobs:
 
   build-native-wheels:
     name: Build ${{ matrix.package.dist }} — ${{ matrix.target.platform }}/${{ matrix.target.arch }}
-    needs: [discover-packages]
+    needs: [discover-packages, python-tests-gate, rust-tests-gate]
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
@@ -269,6 +270,7 @@ jobs:
 
   build-accounting-sdist:
     name: Build opaque-accounting sdist
+    needs: [python-tests-gate, rust-tests-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
