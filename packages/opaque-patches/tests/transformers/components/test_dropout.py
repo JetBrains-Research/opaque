@@ -75,3 +75,14 @@ def test_batchify_requires_registered_family_for_unknown_model():
 
     with pytest.raises(ValueError, match="dropout/batchify patches require"):
         apply_model_patches(_Unknown(), batchify=True, compat=False, performance=False)
+
+
+def test_unknown_registered_family_requires_explicit_opt_out():
+    class _Unknown(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = type("Config", (), {"model_type": "unknown"})()
+
+    from opaque.patches import apply_model_patches
+
+    apply_model_patches(_Unknown(), compat=False, performance=False)

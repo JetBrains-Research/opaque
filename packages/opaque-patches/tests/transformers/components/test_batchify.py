@@ -2,7 +2,6 @@ import pytest
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM
 
-from opaque.api.patches.transformers.components.batchify import _batchify_forward
 from opaque.patches import apply_model_patches
 
 pytestmark = pytest.mark.skipif(
@@ -24,6 +23,10 @@ class TestBatchifyForward:
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
         apply_model_patches(model, performance=False, compat=True)
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
+
         model.forward = _batchify_forward(model.forward)
         seq_len = 8
         input_ids = torch.randint(0, config.vocab_size, (seq_len,))
@@ -42,6 +45,10 @@ class TestBatchifyForward:
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
         apply_model_patches(model, performance=False, compat=True)
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
+
         model.forward = _batchify_forward(model.forward)
         batch, seq_len = (3, 8)
         input_ids = torch.randint(0, config.vocab_size, (batch, seq_len))
@@ -57,6 +64,10 @@ class TestBatchifyForward:
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
         apply_model_patches(model, performance=False, compat=True)
+        from opaque.api.patches.transformers.components.batchify import (
+            _batchify_forward,
+        )
+
         model.forward = _batchify_forward(model.forward)
         seq_len = 8
         input_ids = torch.randint(0, config.vocab_size, (seq_len,))

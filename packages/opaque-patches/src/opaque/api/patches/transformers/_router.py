@@ -117,24 +117,17 @@ def apply_transformers_model_patches(
     batchify = kwargs.get("batchify", compat)
 
     family = detect_family(model)
-    if family is None:
+    apply_fn = get_family_apply_fn(family) if family is not None else None
+    if family is None or apply_fn is None:
         if dropout or batchify:
             raise ValueError(
                 "opaque: dropout/batchify patches require a registered transformers "
                 f"family; got {type(model).__name__}"
             )
         logger.debug(
-            "opaque: model family for %s is unknown; no model-level patches applied.",
-            type(model).__name__,
-        )
-        return
-
-    apply_fn = get_family_apply_fn(family)
-    if apply_fn is None:
-        logger.debug(
-            "opaque: no apply function registered for family %s; "
-            "register one via opaque.patches.transformers.register_family",
-            family,
+            "opaque: no registered apply function for model family %s; "
+            "no model-level patches applied.",
+            family or type(model).__name__,
         )
         return
 
