@@ -360,12 +360,16 @@ HF_DROP_FIELDS: dict[str, str] = {
         "``past_key_values`` cache, and training rarely needs it anyway. "
         "Opaque forces ``model.config.use_cache = False`` regardless."
     ),
-    # HF-deprecated runtime flags.
-    # Private / runtime-computed HF fields.
     # New HF features outside the opaque path.
     "parallelism_config": "HF parallelism config is not used by opaque.",
+    "optim_target_modules": "Galore-target-modules selection is not on the opaque optim path.",
     "batch_eval_metrics": "Streaming-eval metric callback is not used by opaque.",
     "eval_use_gather_object": "HF Accelerate-only eval gather; not used by opaque.",
+    # Hub settings.
+    "hub_strategy": (
+        "Opaque only supports end-of-training push via ``push_to_hub=True``; "
+        "any HF ``hub_strategy`` setting is ignored."
+    ),
     # Accelerate-driven config: opaque manages distribution natively.
     "accelerator_config": (
         "Accelerate-driven config is not used; opaque uses ``ddp_backend`` directly."
