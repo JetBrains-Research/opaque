@@ -117,22 +117,33 @@ jobs:
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
 
-  # Single aggregating status check — ensures test failures block publishing.
-  # All test legs (CPU, MPS, GPU) must pass or be skipped appropriately.
+  # Aggregating gate for Python tests. This is an independent required check
+  # (alongside rust-tests) for branch protection and gating wheel builds.
   python-tests-gate:
-    name: Python tests gate
+    name: Python tests
     if: always()
-    needs: [python-tests, rust-tests]
+    needs: [python-tests]
     runs-on: ubuntu-latest
     steps:
-      - name: Check test results
+      - name: Check Python test results
         run: |
-          python_result="${{ needs.python-tests.result }}"
-          rust_result="${{ needs.rust-tests.result }}"
-          echo "python-tests result: $python_result"
-          echo "rust-tests result: $rust_result"
-          [[ "$python_result" == "success" ]] || (echo "ERROR: Python tests failed"; exit 1)
-          [[ "$rust_result" == "success" ]] || (echo "ERROR: Rust tests failed"; exit 1)
+          result="${{ needs.python-tests.result }}"
+          echo "python-tests matrix result: $result"
+          test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
+
+  # Aggregating gate for Rust tests. This is an independent required check
+  # (alongside python-tests-gate) for branch protection and gating wheel builds.
+  rust-tests-gate:
+    name: Rust tests
+    if: always()
+    needs: [rust-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Rust test results
+        run: |
+          result="${{ needs.rust-tests.result }}"
+          echo "rust-tests result: $result"
+          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
@@ -141,7 +152,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-python-wheels:
     name: Build ${{ matrix.package.dist }}
-    needs: [discover-packages, python-tests-gate]
+    needs: [discover-packages, python-tests-gate, rust-tests-gate]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -297,7 +308,7 @@ jobs:
 
   publish-dev-wheels:
     name: Publish dev wheels to GCP
-    needs: [merge-wheels, python-tests-gate]
+    needs: [merge-wheels, python-tests-gate, rust-tests-gate]
     runs-on: ubuntu-latest
     environment: release
     permissions:
