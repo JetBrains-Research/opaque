@@ -499,9 +499,14 @@ class DPTrainer:
         )
         # ``DefaultFlowCallback`` doesn't recognise ``save_strategy="best"``;
         # auto-inject the matching callback so user callbacks aren't required
-        # to know about this gap.  Gated on the trainer-side snapshot so the
+        # to know about this gap.  Also inject it for ``load_best_model_at_end``
+        # (with a real save cadence): otherwise the best metric can land on an
+        # eval-only step with no checkpoint folder, leaving best unloadable
+        # (issue #386).  Gated on the trainer-side snapshot so the
         # demoted-to-``"no"`` case (output_dir is None) doesn't install it.
-        if self.args.save_strategy == "best":
+        if self.args.save_strategy == "best" or (
+            self.args.load_best_model_at_end and self.args.save_strategy != "no"
+        ):
             self._callback_handler.add_callback(BestModelSaveCallback())
         if args.debug and "underflow_overflow" in str(args.debug):
             from transformers.debug_utils import DebugUnderflowOverflow
