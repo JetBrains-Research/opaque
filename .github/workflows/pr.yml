@@ -195,17 +195,27 @@ jobs:
   # report a failure (instead of being skipped) when a shard fails.
   python-tests-gate:
     name: Python tests
-    if: >-
-      always() &&
-      needs.python-tests.result == 'success' &&
-      (
-        needs.python-tests-gpu.result == 'success' ||
-        needs.python-tests-gpu.result == 'skipped'
-      )
+    if: always()
     needs: [python-tests, python-tests-gpu]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "All test legs passed or were legitimately skipped"
+      - name: Require all test legs to pass
+        run: |
+          cpu_mps="${{ needs.python-tests.result }}"
+          gpu="${{ needs.python-tests-gpu.result }}"
+          echo "python-tests matrix result: $cpu_mps"
+          echo "python-tests-gpu result: $gpu"
+          test "$cpu_mps" = "success" || (echo "ERROR: CPU/MPS tests failed"; exit 1)
+          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+            # Fork PRs never get GPU runner allocation — skipped is expected
+            if [[ "$gpu" != "skipped" ]]; then
+              echo "ERROR: GPU job should be skipped for fork PRs but got: $gpu"
+              exit 1
+            fi
+          else
+            # Repo PRs must have GPU tests pass
+            test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
+          fi
 
   smoke-imports:
     name: Cross-package import smoke test
