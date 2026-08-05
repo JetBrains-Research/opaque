@@ -418,6 +418,10 @@ class DPTrainer:
         # case (rank=0, world=1, is_distributed=False).
         self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
         _distributed.validate_ddp_backend(self.args, self._ddp)
+        # Apply per-rank logging verbosity now that rank/world is known
+        # (HF parity: main process uses ``log_level``, replicas use
+        # ``log_level_replica``).
+        _distributed.apply_logging(self.args, self._ddp)
         # HF parity (``Trainer._wrap_model``): place the model on the
         # resolved device.  ``model.to`` is a no-op when the model is
         # already there, so this is safe for callers who pre-placed.
