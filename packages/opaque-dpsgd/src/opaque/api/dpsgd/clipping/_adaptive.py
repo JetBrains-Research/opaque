@@ -221,6 +221,8 @@ def adaptive_clipped_grad(
         >>> opt_state = optimizer.init(params)
         >>>
         >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(1))
+        >>> # ``dataloader`` yields (x, y) batches (e.g. a torch DataLoader).
+        >>> dataloader = [(torch.randn(4, 10), torch.randn(4)) for _ in range(3)]
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -238,14 +240,16 @@ def adaptive_clipped_grad(
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
-        >>> from opaque.api.dpsgd.clipping import adaptive_clipped_grad
-        >>> from opaque.distributed import sum_gradients
-        >>> from opaque.distributed import sync
-        >>> from opaque.random import key
-        >>> from opaque.api.dpsgd.sampling import PoissonSampler
+        >>> from torch.utils.data import DataLoader
+        >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
+        >>> from opaque.dpsgd.noise import gaussian_noise
+        >>> from opaque.dpsgd.sampling import PoissonSampler
+        >>> from opaque.distributed import local_shard, sum_gradients, sync
+        >>> from opaque.random import fold_in, key
         >>>
         >>> # Initialize distributed first (typically via torchrun).
         >>> dist.init_process_group(backend='nccl')
+        >>> rank, world_size = dist.get_rank(), dist.get_world_size()
         >>>
         >>> # Create adaptive clipping (local-only function).
         >>> # Distributed callers must synchronize the state explicitly.
@@ -254,11 +258,16 @@ def adaptive_clipped_grad(
         ...     key=key(0),
         ...     batch_argnums=(1, 2),
         ... )
+        >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(2))
         >>>
-        >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
+        >>> # Poisson sampling: shard per rank, derive a per-rank sampling key.
+        >>> shard = local_shard(dataset, rank=rank, world_size=world_size)
+        >>> sampler = PoissonSampler(
+        ...     shard, sample_rate=0.01, key=fold_in(key(42), rank)
+        ... )
+        >>> loader = DataLoader(shard, batch_sampler=sampler)
         >>>
-        >>> for batch_x, batch_y in dataloader:
+        >>> for batch_x, batch_y in loader:
         ...     # Each device: compute clipped gradients and local adaptive state
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         ...     # Explicit sync step for adaptive clipping state.
@@ -268,7 +277,6 @@ def adaptive_clipped_grad(
         ...     grad = sum_gradients(grad)
         ...
         ...     # Add noise and update
-        ...     noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(2))
         ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
