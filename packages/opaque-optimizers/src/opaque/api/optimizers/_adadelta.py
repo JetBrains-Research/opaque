@@ -32,8 +32,9 @@ moments, so subtraction at any step is consistent with the EMA history.
 
 Memory cost: ``2 · |params|`` tensors for the second moments (same as
 vanilla).  Optional bias-correction state (``φ_g``, ``φ_dx``) is
-allocated only when ``noise_bias_correction=True``, adding ~``|params|``
-elements per leaf.
+allocated only when ``noise_bias_correction=True``, adding
+~``|params|`` elements total (``φ_dx`` is a per-element tensor,
+``φ_g`` is a scalar or dict per leaf).
 
 The derivation is a straightforward propagation of Gaussian variance
 through the linear scaling step; no published prior, but the math is
@@ -86,8 +87,8 @@ class AdadeltaState:
         v_g: Squared-gradient EMA ``E[g²]`` (pytree matching params).
         v_dx: Squared-update EMA ``E[Δx²]`` (pytree matching params).
         phi_g: Gradient-noise-variance EMA — allocated only when
-            ``noise_bias_correction=True``. When enabled, is either a scalar
-            or ``dict[ParamPath, float]`` depending on per-group noise.
+            ``noise_bias_correction=True``. When BC is enabled, always
+            initialized as ``dict[ParamPath, float]`` (per-leaf storage).
             Stays ``None`` when BC is disabled.
         phi_dx: Update-noise-variance EMA.  Per-element pytree matching
             params (allocated only when ``noise_bias_correction=True``).
@@ -134,7 +135,15 @@ def _scale_by_adadelta(
         else:
             phi_dx = None
             phi_g = None
-        return AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
+        state = AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
+        # Validate state consistency: BC enabled but state has None phi fields.
+        if noise_bias_correction and state.phi_dx is None:
+            raise ValueError(
+                "Attempted to initialize Adadelta with noise_bias_correction=True "
+                "but state.phi_dx is None. This indicates a configuration mismatch "
+                "or a corrupted checkpoint. Re-initialize state or disable BC."
+            )
+        return state
 
     def update_fn(
         updates: Any,
