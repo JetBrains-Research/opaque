@@ -90,7 +90,11 @@ def _convert_trl_config(
     baseline_output_dir = source_values.get("output_dir") or tempfile.mkdtemp(
         prefix="opaque_trl_baseline_"
     )
-    baseline = type(trl_cfg)(output_dir=baseline_output_dir)
+    # Pass use_cpu=True if the source config has it, to avoid bf16 validation errors on CPU runners.
+    baseline_kwargs = {"output_dir": baseline_output_dir}
+    if source_values.get("use_cpu"):
+        baseline_kwargs["use_cpu"] = True
+    baseline = type(trl_cfg)(**baseline_kwargs)
     source_defaults = _get_dataclass_field_values(baseline)
 
     # The HF-base field names are the union of the HF manifest's buckets

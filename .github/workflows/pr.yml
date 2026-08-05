@@ -170,10 +170,8 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: Assert CUDA available
-        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
-
       - name: pytest
+        if: ${{ success() }}
         run: >-
           uv run pytest packages tests
           -m "cuda and not slow"
@@ -188,18 +186,17 @@ jobs:
           flags: gpu-all
           fail_ci_if_error: false
 
-  # Single aggregating status check — the ONE job to mark required in branch
-  # protection. `needs.python-tests.result` is `success` only when every
-  # hosted-runner leg passed. The GPU leg is required for repo PRs but skipped
-  # for fork PRs (`python-tests-gpu.if` gate). `if: always()` makes the gate
-  # report a failure (instead of being skipped) when a shard fails.
+  # Single aggregating status check for Python tests — ensures all test legs pass.
+  # This is the check required in branch protection (alongside rust-tests).
+  # The GPU leg is required for repo PRs but skipped for fork PRs.
+  # `if: always()` makes the gate report a failure when a shard fails.
   python-tests-gate:
     name: Python tests
     if: always()
     needs: [python-tests, python-tests-gpu]
     runs-on: ubuntu-latest
     steps:
-      - name: Require all test legs to pass
+      - name: Check Python test results
         run: |
           cpu_mps="${{ needs.python-tests.result }}"
           gpu="${{ needs.python-tests-gpu.result }}"

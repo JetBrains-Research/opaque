@@ -51,7 +51,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
     {
         # Output / scope
         "output_dir",
-        "overwrite_output_dir",
         # Batch sizes
         "per_device_eval_batch_size",
         "eval_accumulation_steps",
@@ -80,7 +79,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "save_strategy",
         "save_steps",
         "save_total_limit",
-        "save_safetensors",
         "save_on_each_node",
         "save_only_model",
         "restore_callback_states_from_checkpoint",
@@ -90,7 +88,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "full_determinism",
         # Precision
         "use_cpu",
-        "use_mps_device",
         "bf16",
         "bf16_full_eval",
         "tf32",
@@ -154,7 +151,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "gradient_checkpointing",
         "gradient_checkpointing_kwargs",
         "skip_memory_metrics",
-        "include_tokens_per_second",
         "include_num_input_tokens_seen",
         "debug",
         "resume_from_checkpoint",
@@ -166,15 +162,8 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
 # RENAME — HF name → opaque name; value preserved.
 # ---------------------------------------------------------------------------
 HF_RENAME_MAP: dict[str, str] = {
-    # HF deprecated ``per_gpu_*`` long ago in favor of ``per_device_*``;
-    # accept the deprecated name and rename silently.
-    "per_gpu_train_batch_size": "per_device_train_batch_size",
-    "per_gpu_eval_batch_size": "per_device_eval_batch_size",
     # Opaque dropped the ``_type`` suffix on the scheduler kind.
     "lr_scheduler_type": "lr_scheduler",
-    # HF's legacy ``push_to_hub_*`` aliases (kept for old-config compat).
-    "push_to_hub_model_id": "hub_model_id",
-    "push_to_hub_token": "hub_token",
 }
 
 
@@ -283,11 +272,6 @@ def _liger_to_perf_kernels(hf: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _adafactor_to_optim(hf: dict[str, Any]) -> dict[str, Any]:
-    """Legacy ``adafactor=True`` boolean → opaque ``optim='adafactor'``."""
-    return {"optim": "adafactor"} if hf.get("adafactor") else {}
-
-
 HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "per_device_train_batch_size": _batch_collapse,
     "gradient_accumulation_steps": _batch_collapse,
@@ -296,7 +280,6 @@ HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "max_grad_norm": _max_grad_norm_to_clipping,
     "use_liger_kernel": _liger_to_perf_kernels,
     "liger_kernel_config": _liger_to_perf_kernels,
-    "adafactor": _adafactor_to_optim,
 }
 
 
@@ -313,15 +296,6 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
     "fp16_full_eval": _reject_if_truthy(
         "Use ``bf16_full_eval=True``; opaque does not support fp16."
     ),
-    "fp16_opt_level": _reject_if_truthy(
-        "Apex fp16 opt levels are not supported; opaque is bf16-only."
-    ),
-    "fp16_backend": _reject_if_truthy(
-        "Apex fp16 backends are not supported; opaque is bf16-only."
-    ),
-    "half_precision_backend": _reject_if_truthy(
-        "Apex half-precision backends are not supported; opaque is bf16-only."
-    ),
     # Distributed / sharding integrations not on the per-example DP path.
     "fsdp": _reject_if_truthy(
         "FSDP is not supported on the per-example DP-SGD path. Use the "
@@ -330,10 +304,6 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
     "fsdp_config": _reject_if_truthy(
         "FSDP config is not supported; opaque uses per-example DDP only."
     ),
-    "fsdp_transformer_layer_cls_to_wrap": _reject_if_truthy(
-        "FSDP layer-class wrapping is not supported."
-    ),
-    "fsdp_min_num_params": _reject_if_truthy("FSDP wrapping policy is not supported."),
     "deepspeed": _reject_if_truthy(
         "DeepSpeed is not supported on the per-example DP-SGD path."
     ),
@@ -363,18 +333,8 @@ HF_DROP_FIELDS: dict[str, str] = {
     "do_train": "HF deprecated runtime-gating booleans; call trainer.train() directly.",
     "do_eval": "HF deprecated runtime-gating booleans; call trainer.evaluate() directly.",
     "do_predict": "HF deprecated runtime-gating booleans; call trainer.predict() directly.",
-    # TPU support is not on the opaque path.
-    "tpu_num_cores": "Opaque has no TPU support.",
-    "tpu_metrics_debug": "Removed in HF 4.x; opaque has no TPU support.",
-    # XPU (Intel GPU) backend not exposed by opaque.
-    # SageMaker compat.
-    "mp_parameters": "SageMaker model-parallel parameters are not used by opaque.",
     # Length-based grouping is incompatible with Poisson sampling.
     "length_column_name": (
-        "Length-grouped batching is incompatible with Poisson subsampling "
-        "and is not used by opaque."
-    ),
-    "group_by_length": (
         "Length-grouped batching is incompatible with Poisson subsampling "
         "and is not used by opaque."
     ),
@@ -395,34 +355,17 @@ HF_DROP_FIELDS: dict[str, str] = {
         "manages cross-rank sync via direct ``torch.distributed.all_reduce`` "
         "calls, so PyTorch's DDP static-graph optimization has no effect here."
     ),
-    # HF stats / metric callbacks not in opaque.
-    "include_inputs_for_metrics": (
-        "Opaque does not feed inputs into ``compute_metrics``; use "
-        "``include_for_metrics=['inputs']`` instead."
-    ),
-    "jit_mode_eval": "JIT mode is not supported on opaque's per-example path.",
     "use_cache": (
         "Opaque's per-example vmap+grad path can't carry the stateful "
         "``past_key_values`` cache, and training rarely needs it anyway. "
         "Opaque forces ``model.config.use_cache = False`` regardless."
     ),
-    "use_legacy_prediction_loop": (
-        "Opaque uses its own prediction loop; the HF legacy flag has no effect."
-    ),
-    # HF-deprecated runtime flags.
-    "no_cuda": "Deprecated in HF; use ``use_cpu`` (opaque's equivalent).",
-    "past_index": "Legacy field for seq2seq past-state index; not used.",
-    # Private / runtime-computed HF fields.
-    "_n_gpu": "Private HF field, runtime-computed; opaque computes its own.",
     # New HF features outside the opaque path.
     "parallelism_config": "HF parallelism config is not used by opaque.",
-    "torchdynamo": "Deprecated; use ``torch_compile=True``.",
-    "ray_scope": "Ray Tune integration is not used by opaque.",
     "optim_target_modules": "Galore-target-modules selection is not on the opaque optim path.",
     "batch_eval_metrics": "Streaming-eval metric callback is not used by opaque.",
     "eval_use_gather_object": "HF Accelerate-only eval gather; not used by opaque.",
-    # Hub auto-push and deprecated push_to_hub_organization.
-    "push_to_hub_organization": "Deprecated HF alias; set ``hub_model_id='org/repo'`` instead.",
+    # Hub settings.
     "hub_strategy": (
         "Opaque only supports end-of-training push via ``push_to_hub=True``; "
         "any HF ``hub_strategy`` setting is ignored."

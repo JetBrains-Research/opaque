@@ -113,13 +113,17 @@ def apply_transformers_model_patches(
     """
     if kernels is None:
         kernels = performance
+    # Extract explicitly-passed dropout/batchify (not defaults)
+    dropout_explicit = "dropout" in kwargs
+    batchify_explicit = "batchify" in kwargs
     dropout = kwargs.get("dropout", compat)
     batchify = kwargs.get("batchify", compat)
 
     family = detect_family(model)
     apply_fn = get_family_apply_fn(family) if family is not None else None
     if family is None or apply_fn is None:
-        if dropout or batchify:
+        # Only raise if user explicitly requested dropout/batchify for unknown family
+        if (dropout_explicit and dropout) or (batchify_explicit and batchify):
             raise ValueError(
                 "opaque: dropout/batchify patches require a registered "
                 f"transformers family; got {family!r} ({type(model).__name__})"
