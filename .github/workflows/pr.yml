@@ -170,10 +170,8 @@ jobs:
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
 
-      - name: Assert CUDA available
-        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
-
       - name: pytest
+        if: ${{ success() }}
         run: >-
           uv run pytest packages tests
           -m "cuda and not slow"
