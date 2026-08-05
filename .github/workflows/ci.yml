@@ -99,23 +99,40 @@ jobs:
         run: uv sync --group dev --all-packages --extra all
 
       - name: Assert CUDA available
-       if: matrix.device.name == 'gpu'
-       run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+        if: matrix.device.name == 'gpu'
+        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
-       run: |
-         uv run pytest ${{ matrix.shard.paths }} \
-           -m "${{ matrix.device.marker }}" \
-           ${{ matrix.device.xdist }} \
-           --cov=opaque \
-           --cov-report=xml:coverage.xml \
-           -q
+        run: |
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
+            --cov=opaque \
+            --cov-report=xml:coverage.xml \
+            -q
 
       - uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
+
+  # Single aggregating status check — ensures test failures block publishing.
+  # All test legs (CPU, MPS, GPU) must pass or be skipped appropriately.
+  python-tests-gate:
+    name: Python tests gate
+    if: always()
+    needs: [python-tests, rust-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test results
+        run: |
+          python_result="${{ needs.python-tests.result }}"
+          rust_result="${{ needs.rust-tests.result }}"
+          echo "python-tests result: $python_result"
+          echo "rust-tests result: $rust_result"
+          [[ "$python_result" == "success" ]] || (echo "ERROR: Python tests failed"; exit 1)
+          [[ "$rust_result" == "success" ]] || (echo "ERROR: Rust tests failed"; exit 1)
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
@@ -124,7 +141,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-python-wheels:
     name: Build ${{ matrix.package.dist }}
-    needs: [discover-packages]
+    needs: [discover-packages, python-tests-gate]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -280,7 +297,7 @@ jobs:
 
   publish-dev-wheels:
     name: Publish dev wheels to GCP
-    needs: [merge-wheels, rust-tests, python-tests]
+    needs: [merge-wheels, python-tests-gate]
     runs-on: ubuntu-latest
     environment: release
     permissions:

@@ -191,21 +191,25 @@ jobs:
   # Single aggregating status check — the ONE job to mark required in branch
   # protection. `needs.python-tests.result` is `success` only when every
   # hosted-runner leg passed. The GPU leg is required for repo PRs but skipped
-  # for fork PRs (`python-tests-gpu.if` gate). `if: always()` makes the gate
-  # report a failure (instead of being skipped) when a shard fails.
+  # for fork PRs (`python-tests-gpu.if` gate). Rust tests are included to ensure
+  # native code builds and passes. `if: always()` makes the gate report a
+  # failure (instead of being skipped) when a shard fails.
   python-tests-gate:
-    name: Python tests
+    name: Tests gate
     if: always()
-    needs: [python-tests, python-tests-gpu]
+    needs: [python-tests, python-tests-gpu, rust-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Require all test legs to pass
         run: |
           cpu_mps="${{ needs.python-tests.result }}"
           gpu="${{ needs.python-tests-gpu.result }}"
+          rust="${{ needs.rust-tests.result }}"
           echo "python-tests matrix result: $cpu_mps"
           echo "python-tests-gpu result: $gpu"
+          echo "rust-tests result: $rust"
           test "$cpu_mps" = "success" || (echo "ERROR: CPU/MPS tests failed"; exit 1)
+          test "$rust" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
           if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
             # Fork PRs never get GPU runner allocation — skipped is expected
             if [[ "$gpu" != "skipped" ]]; then
