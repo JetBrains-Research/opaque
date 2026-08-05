@@ -9,8 +9,13 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "src/opaque/api/alignment/dpo/loss/_discopop.py"
-_SPEC = util.spec_from_file_location("opaque_api_alignment_dpo_loss_discopop", _MODULE_PATH)
+_MODULE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "src/opaque/api/alignment/dpo/loss/_discopop.py"
+)
+_SPEC = util.spec_from_file_location(
+    "opaque_api_alignment_dpo_loss_discopop", _MODULE_PATH
+)
 if _SPEC is None or _SPEC.loader is None:
     raise ImportError(f"Cannot load DiscoPOP module from {_MODULE_PATH}")
 _MODULE = util.module_from_spec(_SPEC)
