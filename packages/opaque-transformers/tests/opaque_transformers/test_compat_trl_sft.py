@@ -25,6 +25,7 @@ def _trl_args(tmp_path, **overrides):
         seed=overrides.pop("seed", 42),
         save_strategy="no",
         report_to=[],
+        use_cpu=True,
         **overrides,
     )
 
