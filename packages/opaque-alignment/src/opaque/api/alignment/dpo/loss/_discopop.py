@@ -12,24 +12,9 @@ exponential component via ``L = logistic·(1 − gate) + exp·gate``.  Because
 the **exponential** component dominates when ``β·Δ`` is large positive and the
 **logistic** component dominates when ``β·Δ`` is negative.
 
-**Numerical note — exp overflow.**  When ``logits = β·Δ`` is large
-*negative* (e.g. ``logits → -∞``), the exponential component
-``exp(-logits)`` grows without bound.  At the same time the modulation gate
-``sigmoid(logits / τ) → 0`` for negative logits, so in the limit the
-contribution of the exponential term is ``0 · ∞``, which is numerically
-unstable.  In practice the modulation gate decays exponentially in
-``logits / τ``, so the product is bounded for any finite logits; however,
-at half-precision or for extreme ``beta * |Δ|``, intermediate overflow can
-still occur.
-
-To guard against this, the exponential component is clamped before
-multiplication:  ``exp_component = torch.exp(logits.clamp(max=0) * -1) *
-torch.exp((-logits).clamp(max=80))``.  A simpler and numerically safer
-alternative used here is to express the exponential as
-``exp(-logits.clamp(max=MAX_LOGIT))`` where ``MAX_LOGIT`` is chosen so that
-``exp`` stays in the finite float32 range (``MAX_LOGIT = 80`` gives
-``exp(-MAX_LOGIT) ≈ 1.8e-35``, safely above fp32 underflow but bounded).
-See the inline clamp comment below.
+The exponential branch is clamped to the active compute dtype's safe range so
+half precision cannot overflow while the representable region keeps the same
+formula.
 """
 
 from __future__ import annotations
@@ -39,10 +24,11 @@ import torch.nn.functional as F
 
 __all__ = ["discopop_loss"]
 
-# Maximum absolute value of logits passed to torch.exp(-logits).
-# exp(-logits) overflows float32 for logits < -88.7 (exp(88.7) ≈ 3.4e38).
-# Clamping logits from below at -_EXP_CLAMP keeps exp(-logits) finite.
-_EXP_CLAMP: float = 80.0
+
+def _exp_clamp_for_dtype(dtype: torch.dtype) -> float:
+    if dtype == torch.float16:
+        return 11.0
+    return 80.0
 
 
 def discopop_loss(
@@ -76,17 +62,16 @@ def discopop_loss(
         Per-example scalar loss tensor with the same shape as the inputs.
 
     Note:
-        The exponential component overflows float32 when ``logits ≪ 0``.  To
-        prevent NaN/Inf while preserving gradient locality, the
-        logits passed to ``torch.exp`` are clamped from below at
-        ``-_EXP_CLAMP`` (80).  This keeps ``exp(-logits)`` ≤ ``exp(80)
-        ≈ 5.5e34``, which is within the float32 range.  At large negative
-        logits, the modulation gate simultaneously drives towards 0, so the
-        clamping is numerically inconsequential for the loss magnitude.
+        The exponential component overflows half precision when ``logits ≪ 0``.
+        To prevent NaN/Inf while preserving gradient locality, the logits passed
+        to ``torch.exp`` are clamped from below at a dtype-specific bound:
+        ``11`` for ``float16`` and ``80`` otherwise.  This keeps the
+        exponential finite in the active compute dtype while leaving the
+        representable region unchanged.
     """
     logits = (chosen_logratio - rejected_logratio) * beta
-    # Clamp logits for the exp component to avoid overflow when logits << 0.
-    logits_clamped = logits.clamp(min=-_EXP_CLAMP)
+    exp_clamp = _exp_clamp_for_dtype(logits.dtype)
+    logits_clamped = logits.clamp(min=-exp_clamp)
     modulation = torch.sigmoid(logits / discopop_tau)
     logistic_component = -F.logsigmoid(logits)
     exp_component = torch.exp(-logits_clamped)
