@@ -93,7 +93,7 @@ class TestDpoDiscopop:
             assert chosen.grad is not None
             assert torch.isfinite(chosen.grad).all()
 
-    def test_discopop_nan_locality(self) -> None:
+    def test_discopop_nan_injection_locality(self) -> None:
         chosen = torch.tensor([1.0, float("nan"), -0.5, 0.2])
         rejected = torch.tensor([0.0, 0.0, 0.0, 0.0])
         out = discopop_loss(chosen, rejected, beta=1.0)
