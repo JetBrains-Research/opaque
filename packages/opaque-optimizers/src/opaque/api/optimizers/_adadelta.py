@@ -31,9 +31,10 @@ The two φ-EMAs decay at the same rate ``ρ`` as their respective second
 moments, so subtraction at any step is consistent with the EMA history.
 
 Memory cost: ``2 · |params|`` tensors for the second moments (same as
-vanilla) plus one scalar/dict ``φ_g`` and one tensor ``φ_dx`` per leaf
-when BC is active.  Total: roughly 1.5× vanilla Adadelta's footprint —
-still less than Adam's ``m + v + φ``.
+vanilla).  Optional bias-correction state (``φ_g``, ``φ_dx``) is
+allocated only when ``noise_bias_correction=True``, adding
+~``|params|`` elements total (``φ_dx`` is a per-element tensor,
+``φ_g`` is a scalar or dict per leaf).
 
 The derivation is a straightforward propagation of Gaussian variance
 through the linear scaling step; no published prior, but the math is
@@ -82,26 +83,24 @@ _LR = float | Callable[[int], float]
 class AdadeltaState:
     """Immutable state for Adadelta with optional DP bias correction.
 
-    Carries both noise-variance EMAs (``phi_g``, ``phi_dx``) regardless of
-    whether BC is active so the state shape is stable across calls and
-    checkpoints don't depend on call history.
-
     Attributes:
         v_g: Squared-gradient EMA ``E[g²]`` (pytree matching params).
         v_dx: Squared-update EMA ``E[Δx²]`` (pytree matching params).
-        phi_g: Gradient-noise-variance EMA — scalar, or
-            ``dict[ParamPath, float]`` when BC is enabled.  Stays at zero
-            unless a ``NoisedPytree`` update supplies realized σ metadata.
+        phi_g: Gradient-noise-variance EMA — allocated only when
+            ``noise_bias_correction=True``. When BC is enabled, always
+            initialized as ``dict[ParamPath, float]`` (per-leaf storage).
+            Stays ``None`` when BC is disabled.
         phi_dx: Update-noise-variance EMA.  Per-element pytree matching
-            params because the per-step variance ``coef_t² · σ²`` is
-            element-wise even when σ is scalar.
+            params (allocated only when ``noise_bias_correction=True``).
+            The per-step variance ``coef_t² · σ²`` is element-wise even
+            when σ is scalar. Stays ``None`` when BC is disabled.
         step: Number of completed updates.
     """
 
     v_g: TensorPytree
     v_dx: TensorPytree
-    phi_g: float | dict[ParamPath, float]
-    phi_dx: TensorPytree
+    phi_g: float | dict[ParamPath, float] | None
+    phi_dx: TensorPytree | None
     step: int
 
 
@@ -130,11 +129,21 @@ def _scale_by_adadelta(
     def init_fn(params: Any) -> AdadeltaState:
         v_g = tree_map(torch.zeros_like, params)
         v_dx = tree_map(torch.zeros_like, params)
-        phi_dx = tree_map(torch.zeros_like, params)
-        phi_g: float | dict = (
-            init_per_group_phi(params) if noise_bias_correction else 0.0
-        )
-        return AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
+        if noise_bias_correction:
+            phi_dx = tree_map(torch.zeros_like, params)
+            phi_g: float | dict = init_per_group_phi(params)
+        else:
+            phi_dx = None
+            phi_g = None
+        state = AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
+        # Validate state consistency: BC enabled but state has None phi fields.
+        if noise_bias_correction and state.phi_dx is None:
+            raise ValueError(
+                "Attempted to initialize Adadelta with noise_bias_correction=True "
+                "but state.phi_dx is None. This indicates a configuration mismatch "
+                "or a corrupted checkpoint. Re-initialize state or disable BC."
+            )
+        return state
 
     def update_fn(
         updates: Any,
@@ -202,12 +211,20 @@ def _scale_by_adadelta(
         def _phi_g_for(path) -> float:
             if isinstance(new_phi_g, dict):
                 return float(new_phi_g.get(path, 0.0))
+            elif new_phi_g is None:
+                return 0.0
             return float(new_phi_g)
 
         u_paths, u_leaves, u_def = tree_flatten_with_paths(updates)
         _, vg_leaves, _ = tree_flatten_with_paths(new_v_g)
         _, vdx_leaves, vdx_def = tree_flatten_with_paths(state.v_dx)
-        _, phidx_leaves, phidx_def = tree_flatten_with_paths(state.phi_dx)
+
+        # Only flatten phi_dx if it's not None (i.e., BC is active)
+        if new_phi_dx is not None:
+            _, phidx_leaves, phidx_def = tree_flatten_with_paths(new_phi_dx)
+        else:
+            phidx_leaves = [None] * len(u_leaves)
+            phidx_def = None
 
         dx_out: list[Any] = []
         vdx_out: list[Any] = []
@@ -229,7 +246,11 @@ def _scale_by_adadelta(
             if noisy_squared_grads is not None:
                 v_g_corrected = torch.clamp(v_g_corrected, min=0.0)
 
-            if noise_bias_correction and noisy_squared_grads is None:
+            if (
+                noise_bias_correction
+                and noisy_squared_grads is None
+                and phi_dx_node is not None
+            ):
                 corrected_dx = v_dx_node - phi_dx_node
                 v_dx_corrected_prev = torch.where(
                     corrected_dx > 0, corrected_dx, v_dx_node
@@ -245,7 +266,11 @@ def _scale_by_adadelta(
 
             v_dx_new_t = rho * v_dx_node + (1 - rho) * dx * dx
 
-            if noise_bias_correction and noisy_squared_grads is None:
+            if (
+                noise_bias_correction
+                and noisy_squared_grads is None
+                and phi_dx_node is not None
+            ):
                 sigma_sq = (
                     resolve_noise_variance(effective, path)
                     if is_per_group(effective)
@@ -262,18 +287,17 @@ def _scale_by_adadelta(
 
         result_tree = optree.tree_unflatten(u_def, dx_out)
         new_v_dx_tree = optree.tree_unflatten(vdx_def, vdx_out)
-        new_phi_dx_tree = optree.tree_unflatten(phidx_def, phidx_out)
 
-        # In the noisy_squared_grads branch we already declared new_phi_dx;
-        # in the bc-active branch, the walker assembled it.
-        if noisy_squared_grads is None:
-            new_phi_dx = new_phi_dx_tree
+        if new_phi_dx is not None:
+            new_phi_dx_tree = optree.tree_unflatten(phidx_def, phidx_out)
+        else:
+            new_phi_dx_tree = None
 
         return result_tree, AdadeltaState(
             v_g=new_v_g,
             v_dx=new_v_dx_tree,
             phi_g=new_phi_g,
-            phi_dx=new_phi_dx,
+            phi_dx=new_phi_dx_tree,
             step=t,
         )
 
@@ -309,7 +333,8 @@ def adadelta(
             moment scaling); ``False`` folds ``wd · params`` into the
             gradient before moment scaling (L2 regularisation).
         update_rms_clip: Optional StableAdamW-style RMS clip.
-        noise_bias_correction: If ``True``, subtract:
+        noise_bias_correction: If ``True``, maintain and subtract two
+            parallel ρ-EMAs of the realized noise variance:
 
             - ``φ_g``: a ρ-EMA of σ² from ``E[g²]`` (recovers unbiased
               squared-gradient estimate).
@@ -318,8 +343,11 @@ def adadelta(
 
             Both EMAs decay at the same rate ρ as their respective
             second moments, so subtraction is consistent with the EMA
-            history.  Defaults to ``False``; flip on to ablate against
-            vanilla Adadelta under noise.
+            history.  **Memory cost**: when enabled, allocates one
+            scalar/dict ``φ_g`` and one per-element tensor ``φ_dx``
+            per leaf.  Total overhead: ~``|params|`` extra elements.
+            Defaults to ``False``; flip on to ablate against vanilla
+            Adadelta under noise.
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
