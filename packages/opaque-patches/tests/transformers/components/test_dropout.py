@@ -51,3 +51,15 @@ def test_disable_dropout_opt_out():
     model = GPT2LMHeadModel(config)
     apply_model_patches(model, eager_attention=True, dropout=False)
     assert any(mod.p > 0.0 for mod in model.modules() if isinstance(mod, nn.Dropout))
+
+
+def test_disable_dropout_requires_registered_family_for_unknown_model():
+    class _Unknown(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = type("Config", (), {"model_type": "unknown"})()
+
+    from opaque.patches import apply_model_patches
+
+    with pytest.raises(ValueError, match="dropout/batchify patches require"):
+        apply_model_patches(_Unknown(), dropout=True, compat=False, performance=False)
