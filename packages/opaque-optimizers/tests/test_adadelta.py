@@ -66,8 +66,20 @@ class TestVanillaAdadelta:
         state = opt.init(params)
         s = _state(state)
         assert s.step == 0
-        assert s.phi_g == 0.0
-        # phi_dx is per-leaf tensor matching params shape.
+        # When noise_bias_correction=False (default), phi fields should be None
+        assert s.phi_g is None
+        assert s.phi_dx is None
+
+    def test_state_init_with_bc(self, params):
+        """When noise_bias_correction=True, phi fields are allocated."""
+        opt = adadelta(noise_bias_correction=True)
+        state = opt.init(params)
+        s = _state(state)
+        assert s.step == 0
+        # phi_g should be allocated as a dict (per-leaf)
+        assert isinstance(s.phi_g, dict)
+        assert set(s.phi_g.keys()) == {(k,) for k in params}
+        # phi_dx is per-leaf tensor matching params shape
         assert set(s.phi_dx) == set(params)
         for k in params:
             assert s.phi_dx[k].shape == params[k].shape
@@ -154,7 +166,7 @@ class TestNoiseBiasCorrection:
             # phi_dx must be > 0 somewhere by step 20 with σ > 0.
             assert s.phi_dx[k].max() > 0
 
-    def test_phi_g_stays_zero_when_bc_off(self, params, grads):
+    def test_phi_g_stays_none_when_bc_off(self, params, grads):
         opt = adadelta(rho=0.9, noise_bias_correction=False)
         state = opt.init(params)
         for _ in range(20):
@@ -164,16 +176,26 @@ class TestNoiseBiasCorrection:
                 params=params,
             )
         s = _state(state)
-        assert s.phi_g == 0.0
-        for k in params:
-            assert torch.all(s.phi_dx[k] == 0)
+        assert s.phi_g is None
+        assert s.phi_dx is None
 
-    def test_phi_stays_zero_under_clean_grads(self, params, grads):
+    def test_phi_stays_none_under_clean_grads_when_bc_off(self, params, grads):
+        opt = adadelta(rho=0.9, noise_bias_correction=False)
+        state = opt.init(params)
+        for _ in range(20):
+            _, state = opt.update(grads, state, params=params)
+        s = _state(state)
+        # BC off: phi fields should remain None
+        assert s.phi_g is None
+        assert s.phi_dx is None
+
+    def test_phi_stays_zero_under_clean_grads_when_bc_on(self, params, grads):
         opt = adadelta(rho=0.9, noise_bias_correction=True)
         state = opt.init(params)
         for _ in range(20):
             _, state = opt.update(grads, state, params=params)
         s = _state(state)
+        # BC on but clean grads: phi should be initialized but stay at zero
         assert isinstance(s.phi_g, dict)
         assert all(v == 0.0 for v in s.phi_g.values())
         for k in params:
