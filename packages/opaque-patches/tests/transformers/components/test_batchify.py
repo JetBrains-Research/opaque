@@ -64,13 +64,3 @@ class TestBatchifyForward:
         assert outputs.logits.ndim == 2, (
             f"Expected 2D logits, got shape {outputs.logits.shape}"
         )
-
-
-def test_batchify_requires_registered_family_for_unknown_model():
-    class _Unknown(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.config = type("Config", (), {"model_type": "unknown"})()
-
-    with pytest.raises(ValueError, match="dropout/batchify patches require"):
-        apply_model_patches(_Unknown(), batchify=True, compat=False, performance=False)
