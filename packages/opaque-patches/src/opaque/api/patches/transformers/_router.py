@@ -113,27 +113,21 @@ def apply_transformers_model_patches(
     """
     if kernels is None:
         kernels = performance
+    dropout = kwargs.get("dropout", compat)
+    batchify = kwargs.get("batchify", compat)
 
     family = detect_family(model)
-    if family is None:
-        # When the caller asked for compat patches but the model isn't
-        # in any registered family, surface that the request could not
-        # be fulfilled.  ``performance``-only calls stay at debug since
-        # kernel fusions are opportunistic, not contract.
-        log_fn = logger.info if compat else logger.debug
-        log_fn(
-            "opaque: compat patches were requested but model family for %s "
-            "is unknown; no model-level patches applied.",
-            type(model).__name__,
-        )
-        return
-
-    apply_fn = get_family_apply_fn(family)
-    if apply_fn is None:
+    apply_fn = get_family_apply_fn(family) if family is not None else None
+    if family is None or apply_fn is None:
+        if dropout or batchify:
+            raise ValueError(
+                "opaque: dropout/batchify patches require a registered "
+                f"transformers family; got {family!r} ({type(model).__name__})"
+            )
         logger.debug(
-            "opaque: no apply function registered for family %s; "
-            "register one via opaque.patches.transformers.register_family",
-            family,
+            "opaque: no registered apply function for model family %s; "
+            "no model-level patches applied.",
+            family or type(model).__name__,
         )
         return
 
@@ -151,12 +145,11 @@ def apply_transformers_model_patches(
     # and SDPA's fused dropout breaks vmap(grad). Model-wide traversal, so it
     # runs here rather than in the per-class factory. Opt out with
     # ``dropout=False`` (keeps the model's dropout).
-    if kwargs.get("dropout", compat) and model is not None:
+    if dropout and model is not None:
         from opaque.api.patches.transformers.components.dropout import disable_dropout
 
         disable_dropout(model)
 
-    batchify = kwargs.get("batchify", compat)
     # Apply batchify to PeftModel classes if needed
     if batchify and model is not None:
         try:
