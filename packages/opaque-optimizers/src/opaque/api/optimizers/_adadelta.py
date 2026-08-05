@@ -237,7 +237,11 @@ def _scale_by_adadelta(
             if noisy_squared_grads is not None:
                 v_g_corrected = torch.clamp(v_g_corrected, min=0.0)
 
-            if noise_bias_correction and noisy_squared_grads is None and phi_dx_node is not None:
+            if (
+                noise_bias_correction
+                and noisy_squared_grads is None
+                and phi_dx_node is not None
+            ):
                 corrected_dx = v_dx_node - phi_dx_node
                 v_dx_corrected_prev = torch.where(
                     corrected_dx > 0, corrected_dx, v_dx_node
@@ -253,7 +257,11 @@ def _scale_by_adadelta(
 
             v_dx_new_t = rho * v_dx_node + (1 - rho) * dx * dx
 
-            if noise_bias_correction and noisy_squared_grads is None and phi_dx_node is not None:
+            if (
+                noise_bias_correction
+                and noisy_squared_grads is None
+                and phi_dx_node is not None
+            ):
                 sigma_sq = (
                     resolve_noise_variance(effective, path)
                     if is_per_group(effective)
@@ -270,7 +278,7 @@ def _scale_by_adadelta(
 
         result_tree = optree.tree_unflatten(u_def, dx_out)
         new_v_dx_tree = optree.tree_unflatten(vdx_def, vdx_out)
-        
+
         if new_phi_dx is not None:
             new_phi_dx_tree = optree.tree_unflatten(phidx_def, phidx_out)
         else:
