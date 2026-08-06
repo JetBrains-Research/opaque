@@ -36,5 +36,5 @@ default = []
 python-extension = ["pyo3"]
 nightly = []
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "warn"
