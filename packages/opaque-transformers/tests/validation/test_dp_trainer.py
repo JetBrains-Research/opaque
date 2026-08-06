@@ -9,6 +9,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,32 @@ class TestDPTrainerInit:
         assert "attention_mask" in batch
         assert batch["input_ids"].ndim == 2
         assert batch["labels"].ndim == 2
+
+    def test_fractional_num_train_epochs_resolves_steps(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """#382: fractional num_train_epochs must not truncate to 0 steps.
+
+        ``int(0.5) == 0`` made a sub-1-epoch run train zero steps and report
+        success; the fraction must resolve to ``ceil(epochs * steps_per_epoch)``.
+        """
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=-1,  # use the num_train_epochs step-math branch
+                num_train_epochs=0.5,
+                eval_strategy="no",
+                save_strategy="no",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        spe, total, num_epochs = trainer._steps_breakdown(len(tiny_lm_dataset))
+        assert total == math.ceil(0.5 * spe)
+        assert total > 0  # int(0.5) == 0 would have trained nothing
+        assert num_epochs == 1
 
 
 class TestPrivacyBudgetValidation:
