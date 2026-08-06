@@ -1737,3 +1737,37 @@ def test_sft_resolve_fused_handles_bare_model_unchanged():
     assert prefix == "model"  # LlamaForCausalLM.base_model_prefix == "model"
     assert lm_head_name is not None
     assert not lm_head_name.startswith("base_model.")
+
+
+def test_sft_dft_eval_uses_training_objective(tmp_path):
+    """#384: SFT eval with ``loss_type='dft'`` reports the DFT loss, not model CE.
+
+    All eval examples are identical, so ``eval_loss`` equals the per-example DFT
+    loss.  Pre-fix, SFT eval used the model's cross-entropy, so best-model
+    selection ranked checkpoints on the wrong objective.
+    """
+    from opaque.alignment.sft.loss import dft_loss, nll_loss
+
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="dft"),
+        train_dataset=_sft_dataset(),
+        eval_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
+    eval_loss = trainer.evaluate()["eval_loss"]
+
+    batch = trainer._data_collator([{"input_ids": [1, 2, 3, 4, 5, 6]}])
+    batch = {k: v.to(trainer._device) for k, v in batch.items()}
+    trainer._model.eval()  # match eval mode (no dropout) for the reference
+    with torch.no_grad():
+        logits = trainer._model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        ).logits
+    dft_ref = dft_loss(logits, batch["labels"]).mean().item()
+    ce_ref = nll_loss(logits, batch["labels"]).mean().item()
+
+    # bf16 eval: match the DFT loss within tolerance, and be nowhere near CE
+    # (~log V ≈ 4.15 here) — pre-fix eval reported CE.
+    assert eval_loss == pytest.approx(dft_ref, rel=1e-2)
+    assert abs(eval_loss - ce_ref) > 1.0
