@@ -102,6 +102,13 @@ class TestParallelPoissonDataclass:
         with pytest.raises(ValueError, match="num_workers must be a positive integer"):
             ParallelPoisson(Poisson(Gaussian(0.8), 0.01), num_workers)  # type: ignore[arg-type]
 
+    def test_rejects_truncated_poisson_inner(self):
+        truncated = Poisson(
+            Gaussian(0.8), 0.01, truncated_batch_size=128, dataset_size=10_000
+        )
+        with pytest.raises(ValueError, match="does not support truncated"):
+            ParallelPoisson(truncated, 4)
+
 
 # ── Constructor function tests ───────────────────────────────────────
 

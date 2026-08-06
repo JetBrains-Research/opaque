@@ -21,13 +21,17 @@ class ParallelPoisson(DpProcess):
     num_workers: int
 
     def __post_init__(self):
-        if isinstance(self.num_workers, bool) or not isinstance(self.num_workers, int):
+        if (
+            isinstance(self.num_workers, bool)
+            or not isinstance(self.num_workers, int)
+            or self.num_workers < 1
+        ):
             raise ValueError(
                 f"num_workers must be a positive integer, got {self.num_workers}"
             )
-        if self.num_workers < 1:
+        if self.inner.truncated_batch_size is not None:
             raise ValueError(
-                f"num_workers must be a positive integer, got {self.num_workers}"
+                "ParallelPoisson does not support truncated Poisson inner mechanisms."
             )
 
     @functools.lru_cache(maxsize=8)
@@ -95,7 +99,7 @@ def parallel_poisson(
         inner: A :class:`Gaussian`, :class:`AdaClip`, or :class:`NonPrivate` mechanism.
         sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
-            independently.
+            independently. Truncated Poisson accounting is not supported.
 
     Returns:
         A :class:`ParallelPoisson` process.
