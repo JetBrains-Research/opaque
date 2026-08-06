@@ -66,12 +66,16 @@ dataset = compute_ref_logprobs_for_dataset(
 For the example above, the stored metadata contract is:
 
 ```python
-cache_identity = (
-    dataset._fingerprint,                 # or repr(dataset) if no fingerprint
-    repr(("dpo", model_name)),
-    ("ref_chosen_logps", "ref_rejected_logps"),
-)
-cache_file = "<cache_dir>/<sha256(cache_identity)>.safetensors"
+dataset_id = getattr(dataset, "_fingerprint", None)
+if dataset_id is None:
+    dataset_id = repr(dataset)
+
+hasher = hashlib.sha256()
+hasher.update(repr(dataset_id).encode("utf-8"))
+hasher.update(repr(("dpo", model_name)).encode("utf-8"))
+hasher.update(repr(("ref_chosen_logps", "ref_rejected_logps")).encode("utf-8"))
+
+cache_file = f"<cache_dir>/{hasher.hexdigest()}.safetensors"
 ```
 
 When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
