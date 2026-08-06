@@ -3149,7 +3149,8 @@ the workload (see <a href="#choosing-from-measurements">Choosing from measuremen
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1.5e-4</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># StableAdamW (model-wide/global RMS-clipped update, not per-leaf):</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># adamw(..., update_rms_clip=1.0).</span>
 </code></pre></div>
 <p><strong>SGD</strong> (<code>sgd</code>) is the canonical DP baseline. No second
 moment is corrected, but the Opaque wrapper accepts <code>NoisedPytree</code> updates so

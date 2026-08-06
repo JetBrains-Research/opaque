@@ -2923,7 +2923,8 @@ an alternative answer to the same v-update bias.</p>
 </tbody>
 </table>
 <p>Constructor knobs vary per optimizer (e.g. <code>decoupled_weight_decay</code>,
-<code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>); see the docstrings.</p>
+<code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>; this RMS clip is model-wide/global
+over the full update pytree, not per-leaf); see the docstrings.</p>
 <h3 id="not-exposed">Not exposed<a class="headerlink" href="#not-exposed" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>torchopt.adamax</code> — the max-norm tracker <code>v_t = max(β v_{t-1}, |g_t + ξ|)</code>
