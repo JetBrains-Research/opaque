@@ -11760,7 +11760,8 @@ per-example <code>vmap(grad(...))</code> region (it runs a separate forward and/
 <li><code>compute_ref_logprobs_for_dataset(dataset, ref, ...)</code> — the common path: run
   the reference once over the dataset (outer loop), caching per-example
   chosen/rejected sequence logps to a content-addressed <code>.safetensors</code> cache
-  keyed by dataset identity, <code>cache_key</code>, and <code>output_columns</code>. Feed the
+  keyed by dataset identity, a structured model/tokenizer/preprocessing
+  <code>cache_identity</code>, and <code>output_columns</code>. Feed the
   cached <code>ref_chosen_logps</code> / <code>ref_rejected_logps</code> into the per-pair head
   as the log-ratio baseline <code>policy_logp - ref_logp</code>.</li>
 <li><code>null_ref_context(model)</code> / <code>with_disabled_adapter(model)</code> — when the policy
@@ -11795,7 +11796,7 @@ per-example <code>vmap(grad(...))</code> region (it runs a separate forward and/
 
 
 <h4 id="opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">compute_ref_logprobs_for_dataset</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">ref</span><span class="p">,</span> <span class="n">collator</span><span class="p">,</span> <span class="n">output_columns</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">cache_key</span><span class="o">=</span><span class="p">(),</span> <span class="n">cache_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">compute_ref_logprobs_for_dataset</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">ref</span><span class="p">,</span> <span class="n">collator</span><span class="p">,</span> <span class="n">output_columns</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">cache_identity</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">cache_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -11808,7 +11809,7 @@ collated batch, collecting one <code>(B,)</code> tensor per name in
 <code>output_columns</code>, and attaches the concatenated per-example results to
 <code>dataset</code> as new columns. The forward runs under <code>torch.no_grad()</code>.
 Results are cached to a content-addressed <code>.safetensors</code> file keyed on
-<code>(dataset._fingerprint, cache_key, output_columns)</code>.</p>
+<code>(dataset._fingerprint, cache_identity, output_columns)</code>.</p>
 <p><strong>Outside vmap only</strong> — see the module docstring.</p>
 
 
@@ -11898,6 +11899,26 @@ cache fingerprint.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
+                <code>cache_identity</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Deterministic JSON-like identity for <code>ref</code>. The DPO
+trainer supplies its effective reference-model state; dataset
+preparation changes are represented by <code>dataset._fingerprint</code>.
+Mapping order does not affect the fingerprint. Unsupported values
+raise <code>TypeError</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                 <code>batch_size</code>
             </td>
             <td>
@@ -11910,24 +11931,6 @@ cache fingerprint.</p>
             </td>
             <td>
                   <code>8</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>cache_key</code>
-            </td>
-            <td>
-                  <code><span title="tuple">tuple</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Caller-supplied opaque tuple folded into the cache
-fingerprint — the escape hatch against collisions across model
-checkpoints / preprocessing variants. Default <code>()</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code>()</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -11986,48 +11989,7 @@ checkpoints / preprocessing variants. Default <code>()</code>.</p>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/dpo/reference/_precompute.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-161">161</a></span>
-<span class="normal"><a href="#__codelineno-0-162">162</a></span>
-<span class="normal"><a href="#__codelineno-0-163">163</a></span>
-<span class="normal"><a href="#__codelineno-0-164">164</a></span>
-<span class="normal"><a href="#__codelineno-0-165">165</a></span>
-<span class="normal"><a href="#__codelineno-0-166">166</a></span>
-<span class="normal"><a href="#__codelineno-0-167">167</a></span>
-<span class="normal"><a href="#__codelineno-0-168">168</a></span>
-<span class="normal"><a href="#__codelineno-0-169">169</a></span>
-<span class="normal"><a href="#__codelineno-0-170">170</a></span>
-<span class="normal"><a href="#__codelineno-0-171">171</a></span>
-<span class="normal"><a href="#__codelineno-0-172">172</a></span>
-<span class="normal"><a href="#__codelineno-0-173">173</a></span>
-<span class="normal"><a href="#__codelineno-0-174">174</a></span>
-<span class="normal"><a href="#__codelineno-0-175">175</a></span>
-<span class="normal"><a href="#__codelineno-0-176">176</a></span>
-<span class="normal"><a href="#__codelineno-0-177">177</a></span>
-<span class="normal"><a href="#__codelineno-0-178">178</a></span>
-<span class="normal"><a href="#__codelineno-0-179">179</a></span>
-<span class="normal"><a href="#__codelineno-0-180">180</a></span>
-<span class="normal"><a href="#__codelineno-0-181">181</a></span>
-<span class="normal"><a href="#__codelineno-0-182">182</a></span>
-<span class="normal"><a href="#__codelineno-0-183">183</a></span>
-<span class="normal"><a href="#__codelineno-0-184">184</a></span>
-<span class="normal"><a href="#__codelineno-0-185">185</a></span>
-<span class="normal"><a href="#__codelineno-0-186">186</a></span>
-<span class="normal"><a href="#__codelineno-0-187">187</a></span>
-<span class="normal"><a href="#__codelineno-0-188">188</a></span>
-<span class="normal"><a href="#__codelineno-0-189">189</a></span>
-<span class="normal"><a href="#__codelineno-0-190">190</a></span>
-<span class="normal"><a href="#__codelineno-0-191">191</a></span>
-<span class="normal"><a href="#__codelineno-0-192">192</a></span>
-<span class="normal"><a href="#__codelineno-0-193">193</a></span>
-<span class="normal"><a href="#__codelineno-0-194">194</a></span>
-<span class="normal"><a href="#__codelineno-0-195">195</a></span>
-<span class="normal"><a href="#__codelineno-0-196">196</a></span>
-<span class="normal"><a href="#__codelineno-0-197">197</a></span>
-<span class="normal"><a href="#__codelineno-0-198">198</a></span>
-<span class="normal"><a href="#__codelineno-0-199">199</a></span>
-<span class="normal"><a href="#__codelineno-0-200">200</a></span>
-<span class="normal"><a href="#__codelineno-0-201">201</a></span>
-<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-202">202</a></span>
 <span class="normal"><a href="#__codelineno-0-203">203</a></span>
 <span class="normal"><a href="#__codelineno-0-204">204</a></span>
 <span class="normal"><a href="#__codelineno-0-205">205</a></span>
@@ -12083,104 +12045,149 @@ checkpoints / preprocessing variants. Default <code>()</code>.</p>
 <span class="normal"><a href="#__codelineno-0-255">255</a></span>
 <span class="normal"><a href="#__codelineno-0-256">256</a></span>
 <span class="normal"><a href="#__codelineno-0-257">257</a></span>
-<span class="normal"><a href="#__codelineno-0-258">258</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="k">def</span><span class="w"> </span><span class="nf">compute_ref_logprobs_for_dataset</span><span class="p">(</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a>    <span class="n">ref</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a>    <span class="n">collator</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a>    <span class="n">output_columns</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>    <span class="n">cache_key</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">=</span> <span class="p">(),</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>    <span class="n">cache_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute per-example reference logprobs once, with a ``.safetensors`` cache.</span>
-<a id="__codelineno-0-172" name="__codelineno-0-172"></a>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="sd">    Runs a single pass over ``dataset`` calling ``ref(batch)`` for each</span>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="sd">    collated batch, collecting one ``(B,)`` tensor per name in</span>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">    ``output_columns``, and attaches the concatenated per-example results to</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">    ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.</span>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    Results are cached to a content-addressed ``.safetensors`` file keyed on</span>
-<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">    ``(dataset._fingerprint, cache_key, output_columns)``.</span>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a>
-<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">    **Outside vmap only** — see the module docstring.</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a>
-<a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">        dataset: A :class:`datasets.Dataset`. Iterated via a ``DataLoader`` with</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">            ``collator``; the result is returned with ``output_columns`` added</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">            through :meth:`datasets.Dataset.add_column`.</span>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">        ref: A callable mapping a collated batch ``dict[str, Tensor]`` to a dict</span>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">            containing one ``(B,)`` tensor per name in ``output_columns``. A</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="sd">            :class:`PreTrainedModel` is wrapped into such a callable by the</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a><span class="sd">            caller, keeping this mechanism-agnostic.</span>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">        collator: ``Callable[[list[dict]], dict[str, Tensor]]`` producing a</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">            batched dict from a list of raw rows (the same collator later used</span>
-<a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="sd">            for training).</span>
-<a id="__codelineno-0-193" name="__codelineno-0-193"></a><span class="sd">        output_columns: The keys ``ref`` returns, e.g.</span>
-<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">            ``(&quot;ref_chosen_logps&quot;, &quot;ref_rejected_logps&quot;)``. Also folded into the</span>
-<a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="sd">            cache fingerprint.</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="sd">        batch_size: ``DataLoader`` batch size for the forward pass. Default 8.</span>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">        cache_key: Caller-supplied opaque tuple folded into the cache</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">            fingerprint — the escape hatch against collisions across model</span>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">            checkpoints / preprocessing variants. Default ``()``.</span>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">        cache_dir: Directory for the ``.safetensors`` cache. Defaults to</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">            ``&lt;tempdir&gt;/opaque_ref_cache`` (created on first miss).</span>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">        ``dataset`` with one new column per name in ``output_columns``, each of</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        length ``len(dataset)``.</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a>    <span class="n">columns</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">output_columns</span><span class="p">)</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a>    <span class="n">fingerprint</span> <span class="o">=</span> <span class="n">_cache_fingerprint</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">cache_key</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a>    <span class="n">path</span> <span class="o">=</span> <span class="n">_cache_path</span><span class="p">(</span><span class="n">cache_dir</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">)</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a>    <span class="n">cached</span> <span class="o">=</span> <span class="n">_load_cache</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a>    <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a>        <span class="c1"># HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a>        <span class="c1"># bf16 column type, so demote to a Python ``float`` list at the</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="c1"># storage boundary (explicit, single conversion).</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">dataset</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a>        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">cached</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-<a id="__codelineno-0-219" name="__codelineno-0-219"></a>        <span class="k">return</span> <span class="n">result</span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span>
+<span class="normal"><a href="#__codelineno-0-262">262</a></span>
+<span class="normal"><a href="#__codelineno-0-263">263</a></span>
+<span class="normal"><a href="#__codelineno-0-264">264</a></span>
+<span class="normal"><a href="#__codelineno-0-265">265</a></span>
+<span class="normal"><a href="#__codelineno-0-266">266</a></span>
+<span class="normal"><a href="#__codelineno-0-267">267</a></span>
+<span class="normal"><a href="#__codelineno-0-268">268</a></span>
+<span class="normal"><a href="#__codelineno-0-269">269</a></span>
+<span class="normal"><a href="#__codelineno-0-270">270</a></span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span>
+<span class="normal"><a href="#__codelineno-0-272">272</a></span>
+<span class="normal"><a href="#__codelineno-0-273">273</a></span>
+<span class="normal"><a href="#__codelineno-0-274">274</a></span>
+<span class="normal"><a href="#__codelineno-0-275">275</a></span>
+<span class="normal"><a href="#__codelineno-0-276">276</a></span>
+<span class="normal"><a href="#__codelineno-0-277">277</a></span>
+<span class="normal"><a href="#__codelineno-0-278">278</a></span>
+<span class="normal"><a href="#__codelineno-0-279">279</a></span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span>
+<span class="normal"><a href="#__codelineno-0-281">281</a></span>
+<span class="normal"><a href="#__codelineno-0-282">282</a></span>
+<span class="normal"><a href="#__codelineno-0-283">283</a></span>
+<span class="normal"><a href="#__codelineno-0-284">284</a></span>
+<span class="normal"><a href="#__codelineno-0-285">285</a></span>
+<span class="normal"><a href="#__codelineno-0-286">286</a></span>
+<span class="normal"><a href="#__codelineno-0-287">287</a></span>
+<span class="normal"><a href="#__codelineno-0-288">288</a></span>
+<span class="normal"><a href="#__codelineno-0-289">289</a></span>
+<span class="normal"><a href="#__codelineno-0-290">290</a></span>
+<span class="normal"><a href="#__codelineno-0-291">291</a></span>
+<span class="normal"><a href="#__codelineno-0-292">292</a></span>
+<span class="normal"><a href="#__codelineno-0-293">293</a></span>
+<span class="normal"><a href="#__codelineno-0-294">294</a></span>
+<span class="normal"><a href="#__codelineno-0-295">295</a></span>
+<span class="normal"><a href="#__codelineno-0-296">296</a></span>
+<span class="normal"><a href="#__codelineno-0-297">297</a></span>
+<span class="normal"><a href="#__codelineno-0-298">298</a></span>
+<span class="normal"><a href="#__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="k">def</span><span class="w"> </span><span class="nf">compute_ref_logprobs_for_dataset</span><span class="p">(</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="n">ref</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="n">collator</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="n">output_columns</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>    <span class="n">cache_identity</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>    <span class="n">cache_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute per-example reference logprobs once, with a ``.safetensors`` cache.</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="sd">    Runs a single pass over ``dataset`` calling ``ref(batch)`` for each</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">    collated batch, collecting one ``(B,)`` tensor per name in</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="sd">    ``output_columns``, and attaches the concatenated per-example results to</span>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">    ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">    Results are cached to a content-addressed ``.safetensors`` file keyed on</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">    ``(dataset._fingerprint, cache_identity, output_columns)``.</span>
 <a id="__codelineno-0-220" name="__codelineno-0-220"></a>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a>    <span class="c1"># MISS: run the reference forward once over the dataset.</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a>    <span class="n">loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">collator</span><span class="p">)</span>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a>    <span class="n">shards</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">}</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a>        <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a>            <span class="n">out</span> <span class="o">=</span> <span class="n">ref</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a>                <span class="n">value</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a>                    <span class="n">value</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-<a id="__codelineno-0-231" name="__codelineno-0-231"></a>                <span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
-<a id="__codelineno-0-232" name="__codelineno-0-232"></a>
-<a id="__codelineno-0-233" name="__codelineno-0-233"></a>    <span class="c1"># Concatenate local shards, then gather across ranks (identity in 1-proc).</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a>    <span class="n">gathered</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a>    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a>        <span class="n">local</span> <span class="o">=</span> <span class="p">(</span>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a>            <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a>            <span class="k">if</span> <span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a>            <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a>        <span class="p">)</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>        <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather_for_metrics</span><span class="p">(</span><span class="n">local</span><span class="p">)</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a>    <span class="c1"># Only the main process writes the cache; all ranks sync before returning.</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="k">if</span> <span class="n">is_main_process</span><span class="p">():</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a>        <span class="n">cpu_columns</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a>            <span class="n">name</span><span class="p">:</span> <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a>        <span class="p">}</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a>        <span class="n">_save_cache</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">cpu_columns</span><span class="p">)</span>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="n">wait_for_everyone</span><span class="p">()</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">dataset</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a>    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a>        <span class="c1"># Same explicit fp32 demotion at the HF/PyArrow boundary as on the</span>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a>        <span class="c1"># HIT path above. Native dtype is preserved on disk; only the column</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a>        <span class="c1"># exposed to ``datasets`` is downcast.</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a>        <span class="n">values</span> <span class="o">=</span> <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a>    <span class="k">return</span> <span class="n">result</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">    **Outside vmap only** — see the module docstring.</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        dataset: A :class:`datasets.Dataset`. Iterated via a ``DataLoader`` with</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">            ``collator``; the result is returned with ``output_columns`` added</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">            through :meth:`datasets.Dataset.add_column`.</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">        ref: A callable mapping a collated batch ``dict[str, Tensor]`` to a dict</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">            containing one ``(B,)`` tensor per name in ``output_columns``. A</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">            :class:`PreTrainedModel` is wrapped into such a callable by the</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">            caller, keeping this mechanism-agnostic.</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">        collator: ``Callable[[list[dict]], dict[str, Tensor]]`` producing a</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a><span class="sd">            batched dict from a list of raw rows (the same collator later used</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">            for training).</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">        output_columns: The keys ``ref`` returns, e.g.</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">            ``(&quot;ref_chosen_logps&quot;, &quot;ref_rejected_logps&quot;)``. Also folded into the</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">            cache fingerprint.</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        cache_identity: Deterministic JSON-like identity for ``ref``. The DPO</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">            trainer supplies its effective reference-model state; dataset</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">            preparation changes are represented by ``dataset._fingerprint``.</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">            Mapping order does not affect the fingerprint. Unsupported values</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">            raise ``TypeError``.</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">        batch_size: ``DataLoader`` batch size for the forward pass. Default 8.</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="sd">        cache_dir: Directory for the ``.safetensors`` cache. Defaults to</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">            ``&lt;tempdir&gt;/opaque_ref_cache`` (created on first miss).</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">        ``dataset`` with one new column per name in ``output_columns``, each of</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">        length ``len(dataset)``.</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="n">columns</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">output_columns</span><span class="p">)</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="n">fingerprint</span> <span class="o">=</span> <span class="n">_cache_fingerprint</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">cache_identity</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>    <span class="n">path</span> <span class="o">=</span> <span class="n">_cache_path</span><span class="p">(</span><span class="n">cache_dir</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">)</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>    <span class="n">cached</span> <span class="o">=</span> <span class="n">_load_cache</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>    <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>        <span class="c1"># HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>        <span class="c1"># bf16 column type, so demote to a Python ``float`` list at the</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>        <span class="c1"># storage boundary (explicit, single conversion).</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">dataset</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">cached</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a>        <span class="k">return</span> <span class="n">result</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a>    <span class="c1"># MISS: run the reference forward once over the dataset.</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a>    <span class="n">loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">collator</span><span class="p">)</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a>    <span class="n">shards</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">}</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>        <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a>            <span class="n">out</span> <span class="o">=</span> <span class="n">ref</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>                <span class="n">value</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a>                    <span class="n">value</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>                <span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a>    <span class="c1"># Concatenate local shards, then gather across ranks (identity in 1-proc).</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a>    <span class="n">gathered</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a>    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="n">local</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>            <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>            <span class="k">if</span> <span class="n">shards</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>            <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>        <span class="p">)</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>        <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather_for_metrics</span><span class="p">(</span><span class="n">local</span><span class="p">)</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>    <span class="c1"># Only the main process writes the cache; all ranks sync before returning.</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>    <span class="k">if</span> <span class="n">is_main_process</span><span class="p">():</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>        <span class="n">cpu_columns</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>            <span class="n">name</span><span class="p">:</span> <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>        <span class="p">}</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>        <span class="n">_save_cache</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">cpu_columns</span><span class="p">)</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>    <span class="n">wait_for_everyone</span><span class="p">()</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">dataset</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>        <span class="c1"># Same explicit fp32 demotion at the HF/PyArrow boundary as on the</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>        <span class="c1"># HIT path above. Native dtype is preserved on disk; only the column</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>        <span class="c1"># exposed to ``datasets`` is downcast.</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>        <span class="n">values</span> <span class="o">=</span> <span class="n">gathered</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>    <span class="k">return</span> <span class="n">result</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
