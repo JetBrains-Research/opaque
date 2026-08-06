@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.dpsgd.clipping import per_group
 from opaque.random import key
@@ -407,6 +408,39 @@ class TestAdaptivePerGroupMicrobatch:
         assert isinstance(grads, dict)
         assert grads["a"].shape == params["a"].shape
         assert isinstance(clip_state._next_clipping_norm, PerGroup)
+
+    def test_no_aux_microbatch_per_group_streams_stats(self, monkeypatch):
+        """Per-group no-aux adaptive microbatching should not concatenate aux."""
+        original = clipped_fun_module._microbatch_accumulate
+
+        def wrapped(*args, **kwargs):
+            if kwargs.get("return_aux"):
+                raise AssertionError("unexpected per-example aux materialization")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(clipped_fun_module, "_microbatch_accumulate", wrapped)
+
+        loss_fn = _make_per_group_loss_fn()
+        params = {"a": torch.randn(10), "b": torch.randn(5)}
+        pg = _make_per_group(params)
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=pg,
+            key=key(0),
+            batch_argnums=(1, 2),
+            microbatch_size=4,
+            return_aux=False,
+        )
+
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
+
+        assert isinstance(grads, dict)
+        assert clip_state._step == 1
 
 
 class TestAdaptivePerGroupAccounting:
