@@ -2941,8 +2941,9 @@ an alternative answer to the same v-update bias.</p>
 </tbody>
 </table>
 <p>Constructor knobs vary per optimizer (e.g. <code>decoupled_weight_decay</code>,
-<code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>; this RMS clip is model-wide/global
-over the full update pytree, not per-leaf); see the docstrings.</p>
+<code>update_rms_clip</code> on <code>adamw</code>, <code>ademamix</code>, and <code>adafactor</code>). Every
+<code>update_rms_clip</code> is model-wide/global over the full update pytree, not
+per-leaf; see the docstrings.</p>
 <h3 id="foundational-references">Foundational references<a class="headerlink" href="#foundational-references" title="Permanent link">&para;</a></h3>
 <ul>
 <li><a href="https://arxiv.org/abs/1412.6980">Adam: A Method for Stochastic Optimization</a>

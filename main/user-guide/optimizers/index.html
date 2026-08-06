@@ -3140,6 +3140,8 @@ below). Pass <code>NoisedPytree</code> updates from a DP noise mechanism:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adafactor</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">adafactor</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">5e-4</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># `update_rms_clip=1.0` (the default) clips one model-wide/global RMS,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># rather than clipping each parameter leaf independently.</span>
 </code></pre></div>
 <p><strong>AdamW</strong> (<code>adamw</code>) is a good alternative when you want first-moment
 momentum, but is more LR-sensitive than Adafactor: tuning matters.
