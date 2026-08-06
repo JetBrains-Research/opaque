@@ -7,13 +7,16 @@
 # See NOTICE in the repository root.
 """LoRA (Low-Rank Adaptation) kernels with vmap support for DP-SGD.
 
+Implements the low-rank adapter structure from Hu et al., *LoRA: Low-Rank
+Adaptation of Large Language Models* (https://arxiv.org/abs/2106.09685).
+
 Ported from unsloth/kernels/fast_lora.py for vmap compatibility.
 Uses new-style autograd API with setup_context for vmap support.
 
 Three implementations:
 1. LoRA_W: Generic LoRA for single projection (O-proj, etc.)
 2. LoRA_QKV: Fused LoRA for Q, K, V projections
-3. LoRA_MLP: Fused LoRA for MLP (gate, up, down) with SwiGLU
+3. LoRA_MLP: Fused LoRA for MLP (gate, up, down) with SwiGLU / GeGLU
 
 Optimizations (from Unsloth):
 - Triton SwiGLU kernels for activation in LoRA_MLP (forward + backward)

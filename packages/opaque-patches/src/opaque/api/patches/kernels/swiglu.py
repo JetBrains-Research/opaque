@@ -5,7 +5,11 @@
 # (Apache-2.0; https://github.com/unslothai/unsloth) and have been adapted to
 # Opaque's vmap-friendly new-style autograd dispatch. See NOTICE in the
 # repository root.
-"""SwiGLU kernel with vmap support for DP-SGD."""
+"""SwiGLU kernel with vmap support for DP-SGD.
+
+Implements the SwiGLU feed-forward activation from Shazeer,
+*GLU Variants Improve Transformer* (https://arxiv.org/abs/2002.05202).
+"""
 
 import torch
 import triton
