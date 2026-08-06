@@ -48,8 +48,9 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
-from opaque.pytree import tree_leaves, tree_map
-from opaque.types import ClippedPytree, NoisedPytree, SecondMomentClippingOutput
+from opaque.api.engine.pytree import tree_flatten
+from opaque.api.engine.types import ClippedPytree, NoisedPytree, SecondMomentClippingOutput
+from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -194,6 +195,9 @@ def all_finite(updates: Any) -> bool:
     """
 
     def _iter_tensor_containers(value: Any):
+        if isinstance(value, torch.Tensor):
+            yield value
+            return
         if isinstance(value, (ClippedPytree, NoisedPytree)):
             yield from _iter_tensor_containers(value.pytree)
             return
@@ -201,14 +205,17 @@ def all_finite(updates: Any) -> bool:
             yield from _iter_tensor_containers(value.grads)
             yield from _iter_tensor_containers(value.squared_grads)
             return
-        yield value
+        leaves, _ = tree_flatten(value)
+        if not leaves:
+            return
+        for leaf in leaves:
+            yield from _iter_tensor_containers(leaf)
 
-    for container in _iter_tensor_containers(updates):
-        for leaf in tree_leaves(container):
-            if (
-                isinstance(leaf, torch.Tensor)
-                and leaf.is_floating_point()
-                and not torch.isfinite(leaf).all()
-            ):
-                return False
+    for leaf in _iter_tensor_containers(updates):
+        if (
+            isinstance(leaf, torch.Tensor)
+            and leaf.is_floating_point()
+            and not torch.isfinite(leaf).all()
+        ):
+            return False
     return True

@@ -157,6 +157,14 @@ def test_all_finite_false_for_second_moment_clipping_output():
     assert all_finite(grads) is False
 
 
+def test_all_finite_false_for_wrapped_clipped_pytree_inside_plain_pytree():
+    grads = {
+        "outer": clipped({"w": torch.tensor([1.0, float("nan")])}, max_norm=1.0),
+        "step": torch.tensor(1, dtype=torch.int64),
+    }
+    assert all_finite(grads) is False
+
+
 def test_all_finite_false_for_auto_clipped_grad_wrapper_output():
     def loss_fn(param, data):
         return torch.sqrt(param - data).mean()
