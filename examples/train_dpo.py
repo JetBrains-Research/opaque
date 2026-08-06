@@ -15,7 +15,8 @@ W&B — and swaps in the DPO-specific loss, data, and reference machinery from
     logp columns ``ref_chosen_logps`` / ``ref_rejected_logps`` (each ``(B,)``).
   * ``compute_ref_logprobs_for_dataset(...)`` precomputes the frozen reference
     model's per-example logps ONCE, outside the vmap, and caches them to a
-    content-addressed ``.npz`` (so the expensive ref forward runs at most once).
+    content-addressed ``.safetensors`` cache (so the expensive ref forward runs
+    at most once).
     The reference is the LoRA base model: ``null_ref_context(model)`` disables
     the adapter during the precompute so the un-adapted base weights serve as
     the reference.
@@ -89,6 +90,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import os
 import sys
@@ -692,6 +694,22 @@ def _make_ref_callable(model, device=None):
         }
 
     return ref
+
+
+def _base_model_state_digest(model) -> str:
+    """Hash the effective adapter-disabled reference weights."""
+    hasher = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        if ".lora_" in name or ".modules_to_save." in name:
+            continue
+        value = tensor.detach().cpu().contiguous()
+        hasher.update(name.encode("utf-8"))
+        hasher.update(str(value.dtype).encode("ascii"))
+        hasher.update(str(tuple(value.shape)).encode("ascii"))
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
+    return hasher.hexdigest()
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):
@@ -1466,7 +1484,12 @@ def _run_smoke(args):
                 collator=collate,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=batch_size,
-                cache_key=("dpo", "smoke"),
+                cache_identity={
+                    "kind": "dpo-smoke",
+                    "reference": {
+                        "state_sha256": _base_model_state_digest(model),
+                    },
+                },
                 cache_dir=cache_dir,
             )
         rows = list(dataset)  # each row now carries the ref_*_logps columns
@@ -1847,7 +1870,7 @@ def main():
     # --- Precompute reference logps (LoRA base model as frozen reference) -----
     # ``null_ref_context(model)`` disables the LoRA adapter so the un-adapted base
     # weights serve as the reference policy (the canonical LoRA-DPO reference). The
-    # ref forward runs at most once, cached to a content-addressed ``.npz``.
+    # ref forward runs at most once, cached to a content-addressed safetensors file.
     # Reference-free methods skip this entirely.
     if reference_free:
         print("\nReference-free loss selected (skipping reference precompute).")
@@ -1863,6 +1886,13 @@ def main():
             f"cached to {ref_cache_dir})..."
         )
         ref_callable = _make_ref_callable(model, device=device)
+        ref_cache_identity = {
+            "kind": "dpo-reference-logprobs",
+            "reference": {
+                "adapter_mode": "disabled",
+                "state_sha256": _base_model_state_digest(model),
+            },
+        }
         with null_ref_context(model):
             train_dataset = compute_ref_logprobs_for_dataset(
                 train_dataset,
@@ -1870,7 +1900,7 @@ def main():
                 collator=collate_raw,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
-                cache_key=("dpo", args.model_name, "train", args.num_train_samples),
+                cache_identity=ref_cache_identity,
                 cache_dir=ref_cache_dir,
             )
             eval_dataset = compute_ref_logprobs_for_dataset(
@@ -1879,7 +1909,7 @@ def main():
                 collator=collate_raw,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
-                cache_key=("dpo", args.model_name, "eval", args.num_eval_samples),
+                cache_identity=ref_cache_identity,
                 cache_dir=ref_cache_dir,
             )
         print(

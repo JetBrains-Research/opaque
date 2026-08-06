@@ -1041,6 +1041,54 @@ def test_dpo_precompute_attaches_reference_columns(tmp_path):
     assert "ref_rejected_logps" in cols
 
 
+def test_dpo_model_cache_identity_tracks_reference_state():
+    from opaque.api.transformers.trl._dpo_trainer import (
+        _model_cache_identity,
+        _tensor_state_digest,
+    )
+
+    torch.manual_seed(0)
+    reference = _tiny_model()
+    equivalent = _tiny_model()
+    equivalent.load_state_dict(reference.state_dict())
+
+    identity = _model_cache_identity(reference, adapter_mode="explicit")
+    assert identity == _model_cache_identity(equivalent, adapter_mode="explicit")
+
+    with torch.no_grad():
+        next(equivalent.parameters()).add_(1)
+    assert identity != _model_cache_identity(equivalent, adapter_mode="explicit")
+
+    scalar_state = torch.nn.Module()
+    scalar_state.register_buffer("scalar", torch.tensor(1.0))
+    assert _tensor_state_digest(scalar_state)
+
+    bf16_state = torch.nn.Module()
+    bf16_state.register_buffer("buffer", torch.tensor([1.0], dtype=torch.bfloat16))
+    assert _tensor_state_digest(bf16_state)
+
+
+def test_dpo_disabled_adapter_identity_ignores_adapter_weights():
+    from opaque.api.transformers.trl._dpo_trainer import _model_cache_identity
+
+    model = _tiny_peft_model()
+    disabled_identity = _model_cache_identity(model, adapter_mode="disabled")
+    explicit_identity = _model_cache_identity(model, adapter_mode="explicit")
+
+    adapter_parameter = next(
+        parameter for name, parameter in model.named_parameters() if ".lora_" in name
+    )
+    with torch.no_grad():
+        adapter_parameter.add_(1)
+
+    assert disabled_identity == _model_cache_identity(model, adapter_mode="disabled")
+    assert explicit_identity != _model_cache_identity(model, adapter_mode="explicit")
+
+    explicit_identity = _model_cache_identity(model, adapter_mode="explicit")
+    model.disable_adapter_layers()
+    assert explicit_identity != _model_cache_identity(model, adapter_mode="explicit")
+
+
 # ----------------------------------------------------------------------
 # Reference loading: string ref_model + model_init_kwargs threading
 # ----------------------------------------------------------------------

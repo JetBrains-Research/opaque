@@ -2,9 +2,9 @@
 
 Covers the cache round-trip contract (§11.9): the first call runs the
 reference forward (call counter advances) and attaches the requested columns;
-a second call on the *same* dataset + ``cache_key`` + ``output_columns`` is a
+a second call on the *same* dataset + ``cache_identity`` + ``output_columns`` is a
 cache HIT that skips ``ref`` entirely (a fresh counter stays at 0) and returns
-identical column values. Also covers fingerprint sensitivity to ``cache_key``,
+identical column values. Also covers fingerprint sensitivity to ``cache_identity``,
 column presence / length / values,
 and import from the implementation paths.
 """
@@ -84,7 +84,7 @@ def test_cache_round_trip_skips_ref_on_hit(tmp_path) -> None:
     """First call computes; second call (fresh ref) is a HIT and skips ref."""
     dataset = _make_dataset()
     cache_dir = str(tmp_path / "cache")
-    cache_key = ("dpo", "model-v1")
+    cache_identity = {"kind": "dpo", "model": {"id": "model-v1"}}
 
     ref1 = _CountingRef()
     result1 = compute_ref_logprobs_for_dataset(
@@ -93,7 +93,7 @@ def test_cache_round_trip_skips_ref_on_hit(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=cache_key,
+        cache_identity=cache_identity,
         cache_dir=cache_dir,
     )
     # MISS: ref ran over every example.
@@ -111,7 +111,7 @@ def test_cache_round_trip_skips_ref_on_hit(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=cache_key,
+        cache_identity={"model": {"id": "model-v1"}, "kind": "dpo"},
         cache_dir=cache_dir,
     )
     assert ref2.calls == 0, "second call should be a cache HIT and skip ref"
@@ -121,8 +121,8 @@ def test_cache_round_trip_skips_ref_on_hit(tmp_path) -> None:
         assert result1[name] == result2[name]
 
 
-def test_different_cache_key_recomputes(tmp_path) -> None:
-    """A different cache_key is a MISS: ref runs again under a new fingerprint."""
+def test_different_cache_identity_recomputes(tmp_path) -> None:
+    """A nested identity change is a MISS: ref runs under a new fingerprint."""
     dataset = _make_dataset()
     cache_dir = str(tmp_path / "cache")
 
@@ -133,12 +133,12 @@ def test_different_cache_key_recomputes(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=("dpo", "model-A"),
+        cache_identity={"kind": "dpo", "model": {"id": "model-A"}},
         cache_dir=cache_dir,
     )
     assert ref_a.calls > 0
 
-    # Different cache_key => distinct fingerprint => recompute.
+    # Nested identity change => distinct fingerprint => recompute.
     ref_b = _CountingRef()
     compute_ref_logprobs_for_dataset(
         dataset,
@@ -146,17 +146,17 @@ def test_different_cache_key_recomputes(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=("dpo", "model-B"),
+        cache_identity={"kind": "dpo", "model": {"id": "model-B"}},
         cache_dir=cache_dir,
     )
-    assert ref_b.calls > 0, "different cache_key should force recompute (MISS)"
+    assert ref_b.calls > 0, "different cache_identity should force recompute (MISS)"
 
 
 def test_different_output_columns_recomputes(tmp_path) -> None:
     """output_columns participate in the fingerprint: a different set => MISS."""
     dataset = _make_dataset()
     cache_dir = str(tmp_path / "cache")
-    cache_key = ("dpo", "model-v1")
+    cache_identity = {"kind": "dpo", "model": {"id": "model-v1"}}
 
     ref_full = _CountingRef()
     compute_ref_logprobs_for_dataset(
@@ -165,7 +165,7 @@ def test_different_output_columns_recomputes(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=cache_key,
+        cache_identity=cache_identity,
         cache_dir=cache_dir,
     )
     assert ref_full.calls > 0
@@ -178,7 +178,7 @@ def test_different_output_columns_recomputes(tmp_path) -> None:
         _collator,
         ("ref_chosen_logps",),
         batch_size=2,
-        cache_key=cache_key,
+        cache_identity=cache_identity,
         cache_dir=cache_dir,
     )
     assert ref_single.calls > 0, "different output_columns should force a MISS"
@@ -201,7 +201,7 @@ def test_output_columns_present_with_correct_length_and_values(tmp_path) -> None
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=("vals",),
+        cache_identity={"purpose": "values"},
         cache_dir=cache_dir,
     )
 
@@ -224,7 +224,7 @@ def test_cached_values_match_computed_values(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=3,
-        cache_key=("rt",),
+        cache_identity={"purpose": "round-trip"},
         cache_dir=cache_dir,
     )
     # Second call: HIT, values come from the cache file.
@@ -234,7 +234,7 @@ def test_cached_values_match_computed_values(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=3,
-        cache_key=("rt",),
+        cache_identity={"purpose": "round-trip"},
         cache_dir=cache_dir,
     )
     for name in OUTPUT_COLUMNS:
@@ -271,7 +271,7 @@ def test_bfloat16_ref_logps_round_trip(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=("bf16-round-trip",),
+        cache_identity={"purpose": "bf16-round-trip"},
         cache_dir=cache_dir,
     )
 
@@ -294,9 +294,23 @@ def test_missing_cache_dir_is_created(tmp_path) -> None:
         _collator,
         OUTPUT_COLUMNS,
         batch_size=2,
-        cache_key=("mkdir",),
+        cache_identity={"purpose": "mkdir"},
         cache_dir=str(cache_dir),
     )
     assert cache_dir.exists(), "cache_dir should be created on first write"
     cache_files = list(cache_dir.glob("*.safetensors"))
     assert cache_files, "expected a .safetensors cache file to be written"
+
+
+def test_unsupported_cache_identity_value_raises(tmp_path) -> None:
+    dataset = _make_dataset()
+
+    with pytest.raises(TypeError, match="unsupported value"):
+        compute_ref_logprobs_for_dataset(
+            dataset,
+            _CountingRef(),
+            _collator,
+            OUTPUT_COLUMNS,
+            cache_identity={"model": object()},
+            cache_dir=str(tmp_path),
+        )

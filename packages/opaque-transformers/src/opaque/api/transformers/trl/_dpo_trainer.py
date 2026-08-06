@@ -27,7 +27,11 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import hashlib
+import json
+import math
 import uuid
+from collections.abc import Mapping
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any
 
@@ -108,6 +112,105 @@ _SPECIAL_CASED_HEADS = frozenset({"cpo", "orpo"})
 _REF_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
 
+def _json_value(value: Any, *, path: str = "value") -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{path} must not contain non-finite floats")
+        return value
+    if isinstance(value, Mapping):
+        normalized = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    f"{path} mapping keys must be strings, got {type(key)!r}"
+                )
+            normalized[key] = _json_value(item, path=f"{path}.{key}")
+        return normalized
+    if isinstance(value, (list, tuple)):
+        return [
+            _json_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if isinstance(value, (set, frozenset)):
+        normalized = [_json_value(item, path=f"{path}[]") for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(
+                item,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ),
+        )
+    raise TypeError(f"{path} contains unsupported value of type {type(value)!r}")
+
+
+def _tensor_state_digest(model: Any, *, exclude_adapter: bool = False) -> str:
+    """Hash model parameters and buffers without depending on device placement."""
+    hasher = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        if exclude_adapter and _is_adapter_state_name(name):
+            continue
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(f"model state entry {name!r} is not a tensor")
+        if tensor.is_meta:
+            raise ValueError(f"cannot fingerprint meta tensor {name!r}")
+        value = tensor.detach().cpu().contiguous()
+        hasher.update(name.encode("utf-8"))
+        hasher.update(str(value.dtype).encode("ascii"))
+        hasher.update(json.dumps(list(value.shape)).encode("ascii"))
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
+    return hasher.hexdigest()
+
+
+def _is_adapter_state_name(name: str) -> bool:
+    adapter_markers = (
+        ".lora_",
+        ".ia3_",
+        ".loha_",
+        ".lokr_",
+        ".oft_",
+        ".boft_",
+        ".vera_",
+        ".fourierft_",
+        ".hra_",
+        ".modules_to_save.",
+        "prompt_encoder.",
+        "prompt_tokens",
+    )
+    return any(marker in name for marker in adapter_markers)
+
+
+def _model_cache_identity(model: Any, *, adapter_mode: str) -> dict[str, Any]:
+    """Return TRL-style identity for the reference behavior used at inference."""
+    is_peft = _is_peft_model(model)
+    identity: dict[str, Any] = {
+        "adapter_mode": adapter_mode,
+        "state_sha256": _tensor_state_digest(
+            model, exclude_adapter=is_peft and adapter_mode == "disabled"
+        ),
+    }
+    if is_peft and adapter_mode != "disabled":
+        get_model_status = getattr(model, "get_model_status", None)
+        if not callable(get_model_status):
+            raise ValueError(
+                "cannot fingerprint the effective PEFT reference state: "
+                "model does not expose get_model_status()"
+            )
+        adapter_status = get_model_status()
+        identity["adapter_runtime"] = {
+            "enabled": adapter_status.enabled,
+            "active_adapters": _json_value(adapter_status.active_adapters),
+            "merged_adapters": _json_value(adapter_status.merged_adapters),
+        }
+    return identity
+
+
 def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str | None]:
     """Resolve the backbone-prefix + lm_head param-key for the fused logp path.
 
@@ -164,7 +267,11 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
 
 
 class DPOTrainer(DPTrainer):
-    """DP Direct Preference Optimization trainer."""
+    """DP Direct Preference Optimization trainer.
+
+    Reference-logprob caching follows TRL: the prepared dataset fingerprint and
+    the effective reference-model state determine cache reuse.
+    """
 
     def __init__(
         self,
@@ -284,14 +391,9 @@ class DPOTrainer(DPTrainer):
             )
 
         # ---- reference resolvability (before tokenize/precompute) ---------
-        # Cache fingerprint: include max_length (the collator truncates to it at
-        # precompute time, so different lengths must not alias) and a stable
-        # model id. For in-memory models (empty _name_or_path) use a per-run
-        # nonce so distinct models never collide on the cache.
         self._precompute_device = args.device
         name_or_path = getattr(model.config, "_name_or_path", "") or ""
-        model_id = name_or_path or f"inmemory-{uuid.uuid4().hex}"
-        cache_key = ("dpo", model_id, args.max_length)
+        model_id = name_or_path
         batch_size = args.precompute_ref_batch_size or args.per_device_train_batch_size
 
         # A reference-using loss needs a resolvable reference. When none can be
@@ -301,7 +403,7 @@ class DPOTrainer(DPTrainer):
             self._needs_reference
             and ref_model is None
             and not self._is_peft
-            and (not name_or_path or model_id.startswith("inmemory-"))
+            and not name_or_path
         ):
             raise ValueError(
                 "No reference available for a reference-using loss_type: pass "
@@ -342,7 +444,6 @@ class DPOTrainer(DPTrainer):
                 model_id=model_id,
                 collator=data_collator,
                 batch_size=batch_size,
-                cache_key=cache_key,
                 disable_dropout=args.disable_dropout,
             )
             if eval_dataset is not None and not isinstance(eval_dataset, dict):
@@ -353,7 +454,6 @@ class DPOTrainer(DPTrainer):
                     model_id=model_id,
                     collator=data_collator,
                     batch_size=batch_size,
-                    cache_key=(*cache_key, "eval"),
                     disable_dropout=args.disable_dropout,
                 )
 
@@ -503,7 +603,6 @@ class DPOTrainer(DPTrainer):
         model_id: str,
         collator: Callable,
         batch_size: int,
-        cache_key: tuple,
         disable_dropout: bool,
     ) -> Any:
         """Attach ``ref_{chosen,rejected}_logps`` columns via a one-shot pass.
@@ -527,11 +626,14 @@ class DPOTrainer(DPTrainer):
                 ref_model, **self._model_init_kwargs
             )
             owns_ref = True
+            adapter_mode = "explicit"
         elif ref_model is not None:
             ref = ref_model
+            adapter_mode = "explicit"
         elif self._is_peft:
             ref = model  # base model with the adapter disabled at forward time
             null_ref = True
+            adapter_mode = "disabled"
         else:
             from transformers import AutoModelForCausalLM
 
@@ -539,6 +641,12 @@ class DPOTrainer(DPTrainer):
                 model_id, **self._model_init_kwargs
             )
             owns_ref = True
+            adapter_mode = "auto-policy-copy"
+
+        resolved_cache_identity = {
+            "kind": "dpo-reference-logprobs",
+            "reference": _model_cache_identity(ref, adapter_mode=adapter_mode),
+        }
 
         orig_device = next(ref.parameters()).device
         was_training = ref.training
@@ -555,7 +663,7 @@ class DPOTrainer(DPTrainer):
             collator=collator,
             output_columns=_REF_COLUMNS,
             batch_size=batch_size,
-            cache_key=cache_key,
+            cache_identity=resolved_cache_identity,
         )
 
         # Restore caller-visible state. Training reads the cached columns, not
@@ -597,9 +705,9 @@ class DPOTrainer(DPTrainer):
             p.requires_grad_(False)
         self._tr_ref = ref
 
-        nonce = ("trdpo-seed", uuid.uuid4().hex)
+        nonce = uuid.uuid4().hex
 
-        def seed(dataset: Any, suffix: tuple) -> Any:
+        def seed(dataset: Any) -> Any:
             if dataset is None or isinstance(dataset, dict):
                 return dataset
             return compute_ref_logprobs_for_dataset(
@@ -608,10 +716,10 @@ class DPOTrainer(DPTrainer):
                 collator=collator,
                 output_columns=_REF_COLUMNS,
                 batch_size=batch_size,
-                cache_key=nonce + suffix,
+                cache_identity={"kind": "trdpo-seed", "nonce": nonce},
             )
 
-        return seed(train_dataset, ()), seed(eval_dataset, ("eval",))
+        return seed(train_dataset), seed(eval_dataset)
 
     def compute_ref_log_probs(
         self,

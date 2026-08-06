@@ -5,7 +5,7 @@ over a :class:`datasets.Dataset` to materialise per-example reference logprobs
 (e.g. ``ref_chosen_logps`` / ``ref_rejected_logps`` for DPO) and attaches them
 to the dataset as new columns. Results are persisted to a content-addressed
 ``.safetensors`` cache so the (expensive) reference forward runs at most once
-per ``(dataset, cache_key, output_columns)`` triple.
+per ``(dataset, cache_identity, output_columns)`` triple.
 
 **Outside vmap only.** This helper iterates a ``DataLoader``, runs a forward
 pass under ``torch.no_grad()``, gathers across ranks, and writes a file. It must
@@ -17,12 +17,12 @@ into such a callable by the caller (the trainer / example), which keeps this
 module independent of any particular model class and trivially unit-testable
 with a synthetic ``ref``.
 
-**Cache fingerprint.** The cache filename is the SHA-256 of
-``(dataset._fingerprint or repr(dataset), repr(cache_key), tuple(output_columns))``.
-Including ``cache_key`` and ``output_columns`` in the digest is what prevents
-collisions across model checkpoints, preprocessing variants, and differing
-requested column sets — callers vary ``cache_key`` (e.g. ``("dpo", model_name)``)
-as the escape hatch.
+**Cache fingerprint.** The cache filename is the SHA-256 of a versioned,
+canonical encoding of the prepared dataset fingerprint, caller-supplied
+``cache_identity``, and requested output columns. In the DPO trainer the
+identity is the effective reference-model state, matching TRL's cache model.
+Unsupported or non-deterministic values are rejected instead of falling back to
+``repr``.
 
 **On-disk format.** ``safetensors`` is the project standard (also used by
 :class:`opaque.transformers.trainer.DPTrainer` for model weights). Native dtype
@@ -42,7 +42,10 @@ is the identity and ``is_main_process`` is ``True``.
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -59,7 +62,7 @@ from opaque.distributed import (
 from opaque.serialization import from_state_dict, state_dict
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
 __all__ = ["compute_ref_logprobs_for_dataset"]
 
@@ -69,28 +72,66 @@ __all__ = ["compute_ref_logprobs_for_dataset"]
 # OS reclaim it.
 _DEFAULT_CACHE_SUBDIR = "opaque_ref_cache"
 _CACHE_EXT = ".safetensors"
+_CACHE_FINGERPRINT_VERSION = 2
+
+
+def _canonical_identity_value(value: Any, path: str = "cache_identity") -> Any:
+    """Validate and normalize a cache identity into canonical JSON values."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{path} contains a non-finite float")
+        return value
+    if isinstance(value, Mapping):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    f"{path} mapping keys must be strings, got {type(key)!r}"
+                )
+            normalized[key] = _canonical_identity_value(item, f"{path}.{key}")
+        return normalized
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [
+            _canonical_identity_value(item, f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    raise TypeError(
+        f"{path} contains unsupported value {type(value)!r}; use only JSON-like "
+        "scalars, string-keyed mappings, and sequences"
+    )
 
 
 def _cache_fingerprint(
     dataset: Any,
-    cache_key: tuple,
+    cache_identity: Any,
     output_columns: Sequence[str],
 ) -> str:
-    """SHA-256 over the dataset identity, ``cache_key`` and ``output_columns``.
+    """SHA-256 over canonical dataset, reference, and output identities.
 
-    Uses ``dataset._fingerprint`` when present (the ``datasets`` content hash),
-    falling back to ``repr(dataset)``. ``cache_key`` and ``output_columns`` are
-    folded in so two runs that differ only in the requested columns or in the
-    caller-supplied key get distinct cache files.
+    ``datasets.Dataset._fingerprint`` is required because an object ``repr`` can
+    include transient process identity and silently defeat cache correctness.
     """
     dataset_id = getattr(dataset, "_fingerprint", None)
     if dataset_id is None:
-        dataset_id = repr(dataset)
-    hasher = hashlib.sha256()
-    hasher.update(repr(dataset_id).encode("utf-8"))
-    hasher.update(repr(cache_key).encode("utf-8"))
-    hasher.update(repr(tuple(output_columns)).encode("utf-8"))
-    return hasher.hexdigest()
+        raise ValueError(
+            "dataset must expose a deterministic `_fingerprint` for reference caching"
+        )
+    payload = {
+        "version": _CACHE_FINGERPRINT_VERSION,
+        "dataset": str(dataset_id),
+        "identity": _canonical_identity_value(cache_identity),
+        "output_columns": list(output_columns),
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _cache_path(
@@ -164,8 +205,8 @@ def compute_ref_logprobs_for_dataset(
     collator: Callable[[list[dict]], dict[str, torch.Tensor]],
     output_columns: Sequence[str],
     *,
+    cache_identity: Any,
     batch_size: int = 8,
-    cache_key: tuple = (),
     cache_dir: str | None = None,
 ) -> Any:
     """Compute per-example reference logprobs once, with a ``.safetensors`` cache.
@@ -175,7 +216,7 @@ def compute_ref_logprobs_for_dataset(
     ``output_columns``, and attaches the concatenated per-example results to
     ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.
     Results are cached to a content-addressed ``.safetensors`` file keyed on
-    ``(dataset._fingerprint, cache_key, output_columns)``.
+    ``(dataset._fingerprint, cache_identity, output_columns)``.
 
     **Outside vmap only** — see the module docstring.
 
@@ -193,10 +234,12 @@ def compute_ref_logprobs_for_dataset(
         output_columns: The keys ``ref`` returns, e.g.
             ``("ref_chosen_logps", "ref_rejected_logps")``. Also folded into the
             cache fingerprint.
+        cache_identity: Deterministic JSON-like identity for ``ref``. The DPO
+            trainer supplies its effective reference-model state; dataset
+            preparation changes are represented by ``dataset._fingerprint``.
+            Mapping order does not affect the fingerprint. Unsupported values
+            raise ``TypeError``.
         batch_size: ``DataLoader`` batch size for the forward pass. Default 8.
-        cache_key: Caller-supplied opaque tuple folded into the cache
-            fingerprint — the escape hatch against collisions across model
-            checkpoints / preprocessing variants. Default ``()``.
         cache_dir: Directory for the ``.safetensors`` cache. Defaults to
             ``<tempdir>/opaque_ref_cache`` (created on first miss).
 
@@ -205,7 +248,7 @@ def compute_ref_logprobs_for_dataset(
         length ``len(dataset)``.
     """
     columns = tuple(output_columns)
-    fingerprint = _cache_fingerprint(dataset, cache_key, columns)
+    fingerprint = _cache_fingerprint(dataset, cache_identity, columns)
     path = _cache_path(cache_dir, fingerprint)
 
     cached = _load_cache(path, columns)
