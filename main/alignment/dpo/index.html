@@ -2910,7 +2910,7 @@ and return a per-example scalar. <code>sigmoid_loss</code> is the standard DPO o
 and the right default. The others trade off robustness and reference
 handling — <code>hinge_loss</code>, <code>robust_loss</code> (label-smoothed cDPO), <code>ipo_loss</code>,
 <code>discopop_loss</code>, <code>chosen_nll_loss</code> (chosen-completion NLL regularizer for
-MPO/RPO/CPO blends), <code>squarechipo_loss</code>, <code>apo_zero_loss</code>/<code>apo_down_loss</code>,
+MPO/RPO/CPO blends), <code>apo_zero_loss</code>/<code>apo_down_loss</code>,
 <code>exo_loss</code>, <code>nca_loss</code>, <code>bco_loss</code>, <code>sppo_loss</code>. As with SFT, map a config
 string to a head at the CLI boundary (<code>{"sigmoid": sigmoid_loss, ...}</code>) —
 the library exposes direct functions, not a registry. For composite

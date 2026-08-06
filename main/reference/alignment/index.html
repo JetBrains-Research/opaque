@@ -2916,15 +2916,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.alignment.dpo.loss.squarechipo_loss" class="md-nav__link">
-    <span class="md-ellipsis">
-      squarechipo_loss
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#opaque.alignment.dpo.loss.wpo_weights" class="md-nav__link">
     <span class="md-ellipsis">
       wpo_weights
@@ -3552,15 +3543,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.alignment.dpo.loss.squarechipo_loss" class="md-nav__link">
-    <span class="md-ellipsis">
-      squarechipo_loss
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#opaque.alignment.dpo.loss.wpo_weights" class="md-nav__link">
     <span class="md-ellipsis">
       wpo_weights
@@ -3813,7 +3795,6 @@ materialize <code>(T, V)</code> logits (CUDA + half-precision fused kernel with
 <li><strong><code>ipo_loss()</code></strong> — IPO loss (Azar 2024).</li>
 <li><strong><code>discopop_loss()</code></strong> — DiscoPOP loss.</li>
 <li><strong><code>chosen_nll_loss()</code></strong> — chosen-completion NLL regularizer for MPO/RPO blends.</li>
-<li><strong><code>squarechipo_loss()</code></strong> — SquareChiPO loss (arXiv:2505.21395).</li>
 <li><strong><code>apo_zero_loss()</code></strong> / <strong><code>apo_down_loss()</code></strong> — APO-zero / APO-down (arXiv:2408.06266).</li>
 <li><strong><code>exo_loss()</code></strong> — EXO pairwise loss.</li>
 <li><strong><code>nca_loss()</code></strong> — NCA pairwise loss.</li>
@@ -9987,190 +9968,6 @@ non-zero.</p>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    &quot;&quot;&quot;</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a>    <span class="n">target</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">/</span> <span class="n">beta</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">target</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">rejected_logratio</span> <span class="o">+</span> <span class="n">target</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="opaque.alignment.dpo.loss.squarechipo_loss" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">squarechipo_loss</span><span class="p">(</span><span class="n">chosen_logratio</span><span class="p">,</span> <span class="n">rejected_logratio</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">beta</span><span class="p">)</span></code>
-
-<a href="#opaque.alignment.dpo.loss.squarechipo_loss" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>SquareChiPO per-example loss (arXiv:2505.21395).</p>
-<p>Computes the squared deviation of the sigmoid policy ratio from 1::</p>
-<div class="codehilite"><pre><span></span><code>Δ = chosen_logratio - rejected_logratio
-L = 0.5 · (σ(β·Δ) − 1)²
-</code></pre></div>
-
-<p>At <code>Δ = 0</code> (equally preferred pair) this evaluates to
-<code>0.5 · (0.5 − 1)² = 0.125</code>, and the gradient is non-zero,
-providing a learning signal even at the decision boundary.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>chosen_logratio</code>
-            </td>
-            <td>
-                  <code><span title="torch.Tensor">Tensor</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Per-example scalar log-ratio for the chosen
-completion, <code>log π(y_w | x) − log π_ref(y_w | x)</code>.
-May be 0-dim (single example) or <code>(B,)</code> (batch).</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>rejected_logratio</code>
-            </td>
-            <td>
-                  <code><span title="torch.Tensor">Tensor</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Per-example scalar log-ratio for the rejected
-completion, <code>log π(y_l | x) − log π_ref(y_l | x)</code>.
-Same shape as <em>chosen_logratio</em>.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>beta</code>
-            </td>
-            <td>
-                  <code><span title="float">float</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>KL-regularisation temperature (DPO β).  Positive float;
-typical values in [0.01, 0.5].</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="torch.Tensor">Tensor</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Per-example scalar loss tensor with the same shape as the inputs.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-            <details class="quote">
-              <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_squarechipo.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-26">26</a></span>
-<span class="normal"><a href="#__codelineno-0-27">27</a></span>
-<span class="normal"><a href="#__codelineno-0-28">28</a></span>
-<span class="normal"><a href="#__codelineno-0-29">29</a></span>
-<span class="normal"><a href="#__codelineno-0-30">30</a></span>
-<span class="normal"><a href="#__codelineno-0-31">31</a></span>
-<span class="normal"><a href="#__codelineno-0-32">32</a></span>
-<span class="normal"><a href="#__codelineno-0-33">33</a></span>
-<span class="normal"><a href="#__codelineno-0-34">34</a></span>
-<span class="normal"><a href="#__codelineno-0-35">35</a></span>
-<span class="normal"><a href="#__codelineno-0-36">36</a></span>
-<span class="normal"><a href="#__codelineno-0-37">37</a></span>
-<span class="normal"><a href="#__codelineno-0-38">38</a></span>
-<span class="normal"><a href="#__codelineno-0-39">39</a></span>
-<span class="normal"><a href="#__codelineno-0-40">40</a></span>
-<span class="normal"><a href="#__codelineno-0-41">41</a></span>
-<span class="normal"><a href="#__codelineno-0-42">42</a></span>
-<span class="normal"><a href="#__codelineno-0-43">43</a></span>
-<span class="normal"><a href="#__codelineno-0-44">44</a></span>
-<span class="normal"><a href="#__codelineno-0-45">45</a></span>
-<span class="normal"><a href="#__codelineno-0-46">46</a></span>
-<span class="normal"><a href="#__codelineno-0-47">47</a></span>
-<span class="normal"><a href="#__codelineno-0-48">48</a></span>
-<span class="normal"><a href="#__codelineno-0-49">49</a></span>
-<span class="normal"><a href="#__codelineno-0-50">50</a></span>
-<span class="normal"><a href="#__codelineno-0-51">51</a></span>
-<span class="normal"><a href="#__codelineno-0-52">52</a></span>
-<span class="normal"><a href="#__codelineno-0-53">53</a></span>
-<span class="normal"><a href="#__codelineno-0-54">54</a></span>
-<span class="normal"><a href="#__codelineno-0-55">55</a></span>
-<span class="normal"><a href="#__codelineno-0-56">56</a></span>
-<span class="normal"><a href="#__codelineno-0-57">57</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="k">def</span><span class="w"> </span><span class="nf">squarechipo_loss</span><span class="p">(</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27"></a>    <span class="n">chosen_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28"></a>    <span class="n">rejected_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-30" name="__codelineno-0-30"></a>    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;SquareChiPO per-example loss (arXiv:2505.21395).</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33"></a>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">    Computes the squared deviation of the sigmoid policy ratio from 1::</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35"></a>
-<a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">        Δ = chosen_logratio - rejected_logratio</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">        L = 0.5 · (σ(β·Δ) − 1)²</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a>
-<a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="sd">    At ``Δ = 0`` (equally preferred pair) this evaluates to</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    ``0.5 · (0.5 − 1)² = 0.125``, and the gradient is non-zero,</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">    providing a learning signal even at the decision boundary.</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a>
-<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">        chosen_logratio: Per-example scalar log-ratio for the chosen</span>
-<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">            completion, ``log π(y_w | x) − log π_ref(y_w | x)``.</span>
-<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">            May be 0-dim (single example) or ``(B,)`` (batch).</span>
-<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">        rejected_logratio: Per-example scalar log-ratio for the rejected</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">            completion, ``log π(y_l | x) − log π_ref(y_l | x)``.</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">            Same shape as *chosen_logratio*.</span>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        beta: KL-regularisation temperature (DPO β).  Positive float;</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">            typical values in [0.01, 0.5].</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">rejected_logratio</span>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a>    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">logits</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
