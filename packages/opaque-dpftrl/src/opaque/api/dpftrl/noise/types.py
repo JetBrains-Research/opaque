@@ -7,6 +7,7 @@ implements.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -19,15 +20,10 @@ from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
 from opaque.api.dpftrl.noise._second_moment import SecondMomentMFNoiseState
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import torch
 
-    from opaque.random.types import RngKey
-    from opaque.types import PerGroup
-
-    from ._engine import MFNoiseState
     from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix
+    from opaque.random.types import RngKey
 
 
 RawMfNoiseFactory = Callable[
@@ -95,12 +91,12 @@ class MfStrategy(Protocol):
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-        key: "RngKey",
-        compute_dtype: "torch.dtype",
+        key: RngKey,
+        compute_dtype: torch.dtype,
     ) -> (
         tuple[
-            Callable[..., tuple[Any, "MFNoiseState"]],
-            "MFNoiseState",
+            Callable[..., tuple[Any, MFNoiseState]],
+            MFNoiseState,
             Callable[[int], float],
         ]
         | None
