@@ -13,8 +13,9 @@ engine: copilot
 tools:
   bash: [python3, git]
   github:
-    mode: gh-proxy
-    toolsets: [actions]
+    mode: remote
+    github-token: ${{ secrets.GH_AW_GITHUB_TOKEN }}
+    toolsets: [pull_requests, repos, search]
 jobs:
   collect-reference-context:
     runs-on: ubuntu-latest
