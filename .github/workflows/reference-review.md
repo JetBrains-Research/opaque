@@ -6,33 +6,55 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
+  copilot-requests: write
+engine: copilot
 tools:
-  bash:
-    - python3 .github/scripts/collect_reference_review_context.py --base "${{ github.event.pull_request.base.sha }}" --output /tmp/reference_context.json
+  bash: [python3, git]
   github:
-    pull-requests: read
-    pull-request-review-comments: write
-steps:
-  - name: Check out repository
-    uses: actions/checkout@v5
-    with:
-      fetch-depth: 0
-  - name: Set up Python
-    uses: actions/setup-python@v6
-    with:
-      python-version: "3.11"
-artifacts:
-  - /tmp/reference_context.json
+    toolsets: [pull_requests, repos, search]
+jobs:
+  collect-reference-context:
+    runs-on: ubuntu-latest
+    outputs:
+      changed_files: ${{ steps.collect.outputs.changed_files }}
+      reference_entries: ${{ steps.collect.outputs.reference_entries }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Collect reference review context
+        id: collect
+        run: |
+          python3 .github/scripts/collect_reference_review_context.py \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --output /tmp/reference_context.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads(Path("/tmp/reference_context.json").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"changed_files={json.dumps(data['files'])}\n")
+              fh.write(f"reference_entries={json.dumps(data['entries'])}\n")
+          PY
+safe-outputs:
+  create-pull-request-review-comment:
+    max: 20
+    target: "triggering"
+  submit-pull-request-review:
+    allowed-events: [COMMENT]
+    target: "triggering"
 ---
 
 Review the changed pull request diff for free-form paper references.
 
-Use `.github/scripts/collect_reference_review_context.py` output from
-`/tmp/reference_context.json` as your review context. It contains:
+Use the precomputed review context from the `collect-reference-context` job:
 
-- changed files under `README.md`, `docs/`, and `packages/`;
-- reference-like lines extracted from those files.
+- changed files: `${{ needs.collect-reference-context.outputs.changed_files }}`
+- reference-like lines: `${{ needs.collect-reference-context.outputs.reference_entries }}`
 
 You are not required to rely on a local citation registry. Search the repository
 for nearby mentions of the same paper, title, arXiv id, DOI, or author/year
