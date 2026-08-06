@@ -48,6 +48,11 @@ class TestPoissonDataclass:
         assert math.isfinite(eps)
         assert eps > 0
 
+    @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
+    def test_rejects_invalid_sample_rate(self, sample_rate):
+        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+            Poisson(Gaussian(0.8), sample_rate)
+
 
 class TestPoissonTruncatedDataclass:
     """Poisson with truncation switched on."""
@@ -92,6 +97,11 @@ class TestParallelPoissonDataclass:
         assert math.isfinite(eps)
         assert eps > 0
 
+    @pytest.mark.parametrize("num_workers", [0, -1, 1.5, True])
+    def test_rejects_invalid_num_workers(self, num_workers):
+        with pytest.raises(ValueError, match="num_workers must be a positive integer"):
+            ParallelPoisson(Poisson(Gaussian(0.8), 0.01), num_workers)  # type: ignore[arg-type]
+
 
 # ── Constructor function tests ───────────────────────────────────────
 
@@ -111,6 +121,11 @@ class TestPoissonConstructor:
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
             dpsgd_acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
+    def test_rejects_invalid_sample_rate(self, sample_rate):
+        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate)
 
     def test_accepts_adaclip(self):
         step = dpsgd_acc.poisson(
@@ -188,6 +203,20 @@ class TestParallelPoissonConstructor:
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian"):
             dpsgd_acc.parallel_poisson("bad", sample_rate=0.01, num_workers=4)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
+    def test_rejects_invalid_sample_rate(self, sample_rate):
+        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+            dpsgd_acc.parallel_poisson(
+                dpsgd_acc.gaussian(0.8), sample_rate=sample_rate, num_workers=4
+            )
+
+    @pytest.mark.parametrize("num_workers", [0, -1, 1.5, True])
+    def test_rejects_invalid_num_workers(self, num_workers):
+        with pytest.raises(ValueError, match="num_workers must be a positive integer"):
+            dpsgd_acc.parallel_poisson(
+                dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=num_workers
+            )
 
 
 # ── Bounded Gaussian amplification tests ─────────────────────────────
