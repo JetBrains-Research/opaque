@@ -172,12 +172,13 @@ class TestApplyChatTemplateWithMask:
 
         result = apply_chat_template_with_mask(tok, _CONVERSATION)
         tokens = tok.convert_ids_to_tokens(result["input_ids"])
-        token_masks = dict(zip(tokens, result["completion_mask"], strict=True))
+        prompt_tokens = {"You", "are", "helpful", "What", "is", "two", "plus"}
 
-        for prompt_token in ["You", "are", "helpful", "What", "is", "two", "plus"]:
-            assert token_masks[prompt_token] == 0
-        for assistant_token in _ASSISTANT_TOKENS:
-            assert token_masks[assistant_token] == 1
+        for token, mask in zip(tokens, result["completion_mask"], strict=True):
+            if token in prompt_tokens:
+                assert mask == 0
+            elif token in _ASSISTANT_TOKENS:
+                assert mask == 1
 
 
 def get_training_chat_template_for(tok: PreTrainedTokenizerFast) -> str:
