@@ -239,13 +239,14 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"hf_training_arguments.optim={optim_value!r}: Quantized / "
             f"Apex-fused optimizers are not in opaque-engine's torchopt "
-            f"path. Use ``optim='adamw'`` (with ``optim_args={{'fused': True}}`` "
-            f"if you want the fused CUDA path)."
+            f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
+            f"fused CUDA kernel)."
         )
-    if optim_str in {"adamw_torch", "adamw_hf"}:
+    # ``adamw_torch_fused`` maps to plain ``adamw``: opaque's functional torchopt
+    # AdamW exposes no ``fused`` kernel arg, so forwarding ``fused=True`` would
+    # raise ``TypeError`` at optimizer-build time — drop the fused flag (#389).
+    if optim_str in {"adamw_torch", "adamw_hf", "adamw_torch_fused"}:
         return {"optim": "adamw"}
-    if optim_str == "adamw_torch_fused":
-        return {"optim": "adamw", "optim_args": {"fused": True}}
     # Pass through other optimizer names verbatim (as string, not enum).
     return {"optim": optim_str}
 
