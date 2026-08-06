@@ -45,6 +45,7 @@ _VOCAB_WORDS = [
     "system",
     "user",
     "assistant",
+    "model",
     "colon",
     "You",
     "are",
@@ -73,6 +74,14 @@ _ROLE_TEMPLATE = (
     "{% endfor %}"
 )
 
+_GEMMA_TEMPLATE = (
+    "{% for message in messages %}"
+    "{% set role = 'model' if message['role'] == 'assistant' else message['role'] %}"
+    "{{ '<start_of_turn>' + role + '\\n' + message['content'] | trim "
+    "+ '<end_of_turn>\\n' }}"
+    "{% endfor %}"
+)
+
 _CONVERSATION = [
     {"role": "system", "content": "You are helpful"},
     {"role": "user", "content": "What is two plus two"},
@@ -87,7 +96,13 @@ def _make_chat_tokenizer() -> PreTrainedTokenizerFast:
     """Return a word-level :class:`PreTrainedTokenizerFast` for chat tests."""
     tok = Tokenizer(BPE(unk_token="<unk>"))
     tok.pre_tokenizer = Whitespace()
-    tok.add_special_tokens([AddedToken("<unk>", special=True)])
+    tok.add_special_tokens(
+        [
+            AddedToken("<unk>", special=True),
+            AddedToken("<start_of_turn>", special=True),
+            AddedToken("<end_of_turn>", special=True),
+        ]
+    )
     tok.add_tokens(list(_VOCAB_WORDS))
     return PreTrainedTokenizerFast(tokenizer_object=tok, unk_token="<unk>")
 
@@ -148,6 +163,21 @@ class TestApplyChatTemplateWithMask:
 
         with pytest.raises(ValueError, match="generation"):
             apply_chat_template_with_mask(tok, _CONVERSATION)
+
+    def test_gemma_mask_excludes_system_and_user_content(self) -> None:
+        """Gemma's shared render expression masks only assistant content."""
+        tok = _make_chat_tokenizer()
+        tok.chat_template = _GEMMA_TEMPLATE
+        tok.chat_template = get_training_chat_template(tok)
+
+        result = apply_chat_template_with_mask(tok, _CONVERSATION)
+        tokens = tok.convert_ids_to_tokens(result["input_ids"])
+        token_masks = dict(zip(tokens, result["completion_mask"], strict=True))
+
+        for prompt_token in ["You", "are", "helpful", "What", "is", "two", "plus"]:
+            assert token_masks[prompt_token] == 0
+        for assistant_token in _ASSISTANT_TOKENS:
+            assert token_masks[assistant_token] == 1
 
 
 def get_training_chat_template_for(tok: PreTrainedTokenizerFast) -> str:

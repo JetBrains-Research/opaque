@@ -72,10 +72,13 @@ batch = collate([row, ...])  # labels are -100 on prompt + pad tokens
 ```
 
 The collator reads `completion_mask` and sets `labels` to `-100`
-everywhere the mask is `0`, so the loss only sees assistant tokens. The
-markers are mandatory: `apply_chat_template_with_mask` raises if the
-active template lacks `{% generation %}` (HF cannot recover the mask
-otherwise).
+everywhere the mask is `0`, so the loss only sees assistant tokens.
+`get_training_chat_template` recognizes explicit assistant branches and
+supported shared-render templates such as Gemma and Qwen, then validates that
+the generated spans exclude user content. It raises `ValueError` for an
+unsupported template instead of guessing. The markers are mandatory:
+`apply_chat_template_with_mask` raises if the active template lacks
+`{% generation %}` (HF cannot recover the mask otherwise).
 
 ## 2. Per-example loss
 

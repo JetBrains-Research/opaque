@@ -58,6 +58,28 @@ _CHATML_WITH_GEN = (
     "{% endfor %}"
 )
 
+_GEMMA_BRANCH_TEMPLATE = (
+    "{{ bos_token }}"
+    "{% for message in messages %}"
+    "{% if message['role'] == 'assistant' %}"
+    "{% set role = 'model' %}"
+    "{% else %}"
+    "{% set role = message['role'] %}"
+    "{% endif %}"
+    "{{ '<start_of_turn>' + role + '\\n' + message['content'] | trim "
+    "+ '<end_of_turn>\\n' }}"
+    "{% endfor %}"
+)
+
+_GEMMA_INLINE_TEMPLATE = (
+    "{{ bos_token }}"
+    "{% for message in messages %}"
+    "{% set role = 'model' if message['role'] == 'assistant' else message['role'] %}"
+    "{{ '<start_of_turn>' + role + '\\n' + message['content'] | trim "
+    "+ '<end_of_turn>\\n' }}"
+    "{% endfor %}"
+)
+
 
 def _make_fast_tokenizer(
     extra_specials: list[str] | None = None,
@@ -123,16 +145,14 @@ class TestGetTrainingChatTemplate:
         second = get_training_chat_template(tokenizer2)
         assert first == second
 
-    def test_simple_template_no_role_branch(self) -> None:
-        """Template with a simple content expression but no role branch still gets markers."""
+    def test_unsupported_template_raises_instead_of_guessing(self) -> None:
+        """A template with no identifiable assistant path fails explicitly."""
         tokenizer = _make_fast_tokenizer()
-        # Minimal template: just render message content.
         tokenizer.chat_template = (
             "{% for m in messages %}{{ m['content'] }}{% endfor %}"
         )
-        result = get_training_chat_template(tokenizer)
-        assert _GEN_START in result
-        assert _GEN_END in result
+        with pytest.raises(ValueError, match="assistant-only render path"):
+            get_training_chat_template(tokenizer)
 
     def test_raises_on_none_template(self) -> None:
         """ValueError is raised when chat_template is None."""
@@ -244,6 +264,45 @@ class TestGetTrainingChatTemplate:
         joined = "".join(rendered[s:e] for s, e in indices)
         assert "first answer" in joined
         assert "second answer" in joined
+
+    @pytest.mark.parametrize(
+        "template",
+        [_GEMMA_BRANCH_TEMPLATE, _GEMMA_INLINE_TEMPLATE],
+        ids=["branch-role-mapping", "inline-role-mapping"],
+    )
+    def test_gemma_shared_render_marks_only_assistant(self, template: str) -> None:
+        """Gemma's shared turn expression excludes system and user spans."""
+        from transformers.utils.chat_template_utils import (
+            _compile_jinja_template,
+            _render_with_assistant_indices,
+        )
+
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = template
+        result = get_training_chat_template(tokenizer)
+
+        messages = [
+            {"role": "system", "content": "system probe"},
+            {"role": "user", "content": "first user probe"},
+            {"role": "assistant", "content": "first assistant probe"},
+            {"role": "user", "content": "second user probe"},
+            {"role": "assistant", "content": "second assistant probe"},
+        ]
+        original_rendered, original_indices = _render_with_assistant_indices(
+            _compile_jinja_template(template), messages, None, None, False
+        )
+        rendered, indices = _render_with_assistant_indices(
+            _compile_jinja_template(result), messages, None, None, False
+        )
+
+        assert rendered == original_rendered
+        assert original_indices == []
+        generated = "".join(rendered[start:end] for start, end in indices)
+        assert "first assistant probe" in generated
+        assert "second assistant probe" in generated
+        assert "system probe" not in generated
+        assert "first user probe" not in generated
+        assert "second user probe" not in generated
 
 
 # ---------------------------------------------------------------------------
