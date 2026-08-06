@@ -33,10 +33,10 @@ impl PyPld {
             return Err(PyValueError::new_err("count must be greater than zero"));
         }
 
-        let count = u32::try_from(count)
-            .map_err(|_| PyOverflowError::new_err("count must not exceed 4294967295"))?;
+        let overflow = || PyOverflowError::new_err(format!("count must not exceed {}", u32::MAX));
+        let count = u32::try_from(count).map_err(|_| overflow())?;
 
-        Ok(usize::try_from(count).expect("u32 always fits in usize"))
+        usize::try_from(count).map_err(|_| overflow())
     }
 }
 
@@ -140,7 +140,7 @@ impl PyPld {
     ///
     /// Raises:
     ///     ValueError: If count is not positive.
-    ///     OverflowError: If count exceeds the supported FFT exponent range.
+    ///     OverflowError: If count exceeds 2**32 - 1.
     ///
     /// Returns:
     ///     Pld: Self-composed PLD.
