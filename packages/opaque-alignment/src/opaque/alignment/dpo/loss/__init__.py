@@ -45,7 +45,6 @@ from opaque.api.alignment.dpo.loss import (
     sigmoid_loss,
     simpo_loss,
     sppo_loss,
-    squarechipo_loss,
     wpo_weights,
 )
 from opaque.api.alignment.logprob import (
@@ -64,7 +63,6 @@ __all__ = [
     "ipo_loss",
     "discopop_loss",
     "chosen_nll_loss",
-    "squarechipo_loss",
     "apo_zero_loss",
     "apo_down_loss",
     "exo_loss",

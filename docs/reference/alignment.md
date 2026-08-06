@@ -44,7 +44,6 @@ DPO per-pair heads ([`opaque.alignment.dpo.loss`](#api-documentation)):
 - **`ipo_loss()`** — IPO loss (Azar 2024).
 - **`discopop_loss()`** — DiscoPOP loss.
 - **`chosen_nll_loss()`** — chosen-completion NLL regularizer for MPO/RPO blends.
-- **`squarechipo_loss()`** — SquareChiPO loss (arXiv:2505.21395).
 - **`apo_zero_loss()`** / **`apo_down_loss()`** — APO-zero / APO-down (arXiv:2408.06266).
 - **`exo_loss()`** — EXO pairwise loss.
 - **`nca_loss()`** — NCA pairwise loss.

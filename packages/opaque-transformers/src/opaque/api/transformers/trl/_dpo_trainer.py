@@ -54,7 +54,6 @@ from opaque.alignment.dpo.loss import (
     sigmoid_loss,
     simpo_loss,
     sppo_loss,
-    squarechipo_loss,
     wpo_weights,
 )
 from opaque.alignment.dpo.reference import (
@@ -88,7 +87,6 @@ _DPO_HEADS: dict[str, Callable] = {
     "bco_pair": bco_loss,
     "sppo_hard": sppo_loss,
     "discopop": discopop_loss,
-    "squarechipo": squarechipo_loss,
     "simpo": simpo_loss,  # reference-free, length-normalized policy logps
     "chosen_nll": chosen_nll_loss,  # special-cased: consumes chosen_logp, not the ratio
     # ``cpo`` / ``orpo`` are reference-free composites (preference/odds-ratio term

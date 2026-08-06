@@ -35,12 +35,11 @@ from opaque.alignment.dpo.loss import (
     sigmoid_loss,
     simpo_loss,
     sppo_loss,
-    squarechipo_loss,
 )
 
 _BETA = 0.1
 
-# The 14 shipped per-pair DPO variants. ``test_sweep_covers_full_family`` keeps
+# The 13 shipped per-pair DPO variants. ``test_sweep_covers_full_family`` keeps
 # this in sync with the public surface; the ``f_divergence_*`` / ``mpo_combine``
 # / ``wpo_weights`` / ``ld_dpo_split`` helpers are log-ratio preprocessors, not
 # per-pair losses, so they are excluded from the (chosen, rejected) sweep.
@@ -52,7 +51,6 @@ _VARIANTS = {
     "simpo_loss": simpo_loss,
     "discopop_loss": discopop_loss,
     "chosen_nll_loss": chosen_nll_loss,
-    "squarechipo_loss": squarechipo_loss,
     "apo_zero_loss": apo_zero_loss,
     "apo_down_loss": apo_down_loss,
     "exo_loss": exo_loss,
@@ -102,4 +100,4 @@ def test_sweep_covers_full_family() -> None:
     """
     public = set(dpo_loss.__all__)
     assert public - _NON_VARIANTS == set(_VARIANTS)
-    assert len(_VARIANTS) == 14
+    assert len(_VARIANTS) == 13
