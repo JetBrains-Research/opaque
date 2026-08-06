@@ -158,16 +158,8 @@ def _gaussian_linear_combination(
     mechanism key and column ``i`` so it is reused by every row that references
     that column.
     """
-    nonzero = matrix_row != 0
-    first = int(nonzero.long().argmax().item()) if nonzero.any() else 0
-    last = (
-        len(matrix_row) - int(nonzero.flip(0).long().argmax().item())
-        if nonzero.any()
-        else 0
-    )
-
     result = torch.zeros(shape, dtype=dtype, device=device)
-    for idx in range(first, last):
+    for idx in torch.nonzero(matrix_row, as_tuple=False).flatten().tolist():
         coef = matrix_row[idx].to(dtype)
         generator = generator_from_key(
             rng_fold_in(key, "mf_gaussian_column", idx, leaf_index)
