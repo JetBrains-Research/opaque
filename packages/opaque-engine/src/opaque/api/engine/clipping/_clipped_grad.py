@@ -190,6 +190,9 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
+    if return_aux and _return_stats:
+        raise ValueError("_return_stats cannot be combined with return_aux=True")
+
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)

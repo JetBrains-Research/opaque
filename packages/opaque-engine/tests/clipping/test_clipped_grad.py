@@ -46,6 +46,21 @@ def test_clipped_grad_validate_args_empty_batch():
         )
 
 
+def test_clipped_grad_rejects_stats_with_aux():
+    """Aggregate stats are only supported on the no-aux internal path."""
+
+    def loss(params, x):
+        return ((params - x) ** 2).mean()
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        clipped_grad(
+            loss,
+            clipping_norm=1.0,
+            return_aux=True,
+            _return_stats=True,
+        )
+
+
 def test_clipped_grad_basic():
     """Test basic clipped_grad returns gradient."""
 
