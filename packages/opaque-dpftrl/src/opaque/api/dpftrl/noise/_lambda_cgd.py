@@ -124,6 +124,25 @@ class LambdaCgdStrategy:
             "dispatches to _make_lambda_cgd_noise directly."
         )
 
+    def raw_noise_factory(
+        self,
+        grad_template: Any,
+        *,
+        n_steps: int,
+        min_sep: int,
+        max_participations: int | None,
+        key: RngKey,
+        compute_dtype: torch.dtype,
+    ):
+        del min_sep, max_participations
+        return _make_lambda_cgd_noise(
+            grad_template,
+            self,
+            n_steps=n_steps,
+            key=key,
+            compute_dtype=compute_dtype,
+        )
+
     def sensitivity(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> float:

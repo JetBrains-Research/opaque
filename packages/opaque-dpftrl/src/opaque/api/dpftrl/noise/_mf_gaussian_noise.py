@@ -43,7 +43,6 @@ from ._engine import (
     _validate_constant_max_norm,
 )
 from ._identity import IdentityStrategy
-from ._lambda_cgd import LambdaCgdStrategy, _make_lambda_cgd_noise
 from ._second_moment import SecondMomentMFNoiseState, make_second_moment_mf_noise
 
 if TYPE_CHECKING:
@@ -217,10 +216,10 @@ def _make_raw_mf_noise(
 ]:
     """Build the underlying noise function + per-step row-L2 lookup.
 
-    LambdaCgdStrategy uses PRNG replay rather than a streaming matrix —
-    it is the one isinstance check left because the noise primitive
-    differs.  Every other strategy goes through the polymorphic
-    ``streaming_matrix(...)`` surface.
+    Strategies may optionally provide a dedicated runtime noise builder
+    via ``raw_noise_factory(...)`` when the runtime operator is not best
+    expressed by generic ``streaming_matrix(...)`` dispatch.  The generic
+    streaming-matrix path remains the default.
 
     The third return value, ``row_l2_at(step) -> float``, exposes the
     per-step L2 norm of ``C^{-1}``'s row so the wrapping factory can
@@ -229,14 +228,17 @@ def _make_raw_mf_noise(
     ``streaming.row_norms_squared(n_steps)`` once at build time.  λ-CGD:
     closed-form via :func:`_lambda_cgd_row_l2`.
     """
-    if isinstance(strategy, LambdaCgdStrategy):
-        return _make_lambda_cgd_noise(
+    if hasattr(strategy, "raw_noise_factory"):
+        raw = strategy.raw_noise_factory(
             grad_template,
-            strategy,
             n_steps=n_steps,
+            min_sep=min_sep,
+            max_participations=max_participations,
             key=key,
             compute_dtype=compute_dtype,
         )
+        if raw is not None:
+            return raw
     streaming = strategy.streaming_matrix(
         n_steps=n_steps,
         min_sep=min_sep,

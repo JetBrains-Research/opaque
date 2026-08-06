@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -22,8 +22,11 @@ from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from ._toeplitz import inverse_as_streaming_matrix
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
+    from opaque.random.types import RngKey
+
+    from ._engine import MFNoiseState
     from ._streaming_matrix import StreamingMatrix
 
 
@@ -88,6 +91,38 @@ def _recover_strategy_coefficients(inv_coefs: Sequence[float], n: int) -> list[f
     return col
 
 
+def _make_bisr_noise(
+    grad_template: Any,
+    strategy: BisrStrategy,
+    *,
+    n_steps: int,
+    key: RngKey,
+    compute_dtype: torch.dtype = torch.float32,
+) -> tuple[
+    Callable[..., tuple[Any, MFNoiseState]],
+    MFNoiseState,
+    Callable[[int], float],
+]:
+    from ._engine import _check_mf_horizon, _matrix_factorization_noise
+
+    n_steps = int(n_steps)
+    streaming = strategy.streaming_matrix(n_steps=n_steps)
+    noise_fn, state = _matrix_factorization_noise(
+        grad_template,
+        streaming,
+        key=key,
+        compute_dtype=compute_dtype,
+        n_steps=n_steps,
+    )
+    row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
+
+    def row_l2_at(step: int) -> float:
+        _check_mf_horizon(step, n_steps)
+        return float(row_norms[step])
+
+    return noise_fn, state, row_l2_at
+
+
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BisrStrategy:
@@ -139,10 +174,29 @@ class BisrStrategy:
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
         inv = list(self._inv_coefs())
-        strategy_coefs = _native().bisr_strategy_coefficients(inv, self.bandwidth)
+        strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)
         return inverse_as_streaming_matrix(
             torch.tensor(strategy_coefs, dtype=torch.float64),
             column_normalize_for_n=n_steps if self.normalized else None,
+        )
+
+    def raw_noise_factory(
+        self,
+        grad_template: Any,
+        *,
+        n_steps: int,
+        min_sep: int,
+        max_participations: int | None,
+        key: RngKey,
+        compute_dtype: torch.dtype,
+    ):
+        del min_sep, max_participations
+        return _make_bisr_noise(
+            grad_template,
+            self,
+            n_steps=n_steps,
+            key=key,
+            compute_dtype=compute_dtype,
         )
 
     def sensitivity(
