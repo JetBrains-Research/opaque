@@ -10,9 +10,11 @@ import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
+from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 from opaque.serialization import from_state_dict as opaque_from_state_dict
+from opaque.types import clipped
 
 
 class TestParseCheckpointStep:
@@ -228,6 +230,73 @@ class TestDpRuntimeBundle:
         torch.save(fake, path)
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
+
+
+class TestNoiseStreamContinuity:
+    """DP noise draws continue exactly after checkpoint state restoration."""
+
+    @staticmethod
+    def _assert_continuity(tmp_path, make_noise):
+        total_steps = 4
+        checkpoint_step = 2
+        grads = clipped(torch.zeros(8), max_norm=1.0)
+
+        uninterrupted_fn, uninterrupted_state = make_noise()
+        uninterrupted_outputs = []
+        for _ in range(total_steps):
+            output, uninterrupted_state = uninterrupted_fn(grads, uninterrupted_state)
+            uninterrupted_outputs.append(output.pytree)
+
+        interrupted_fn, interrupted_state = make_noise()
+        resumed_outputs = []
+        for _ in range(checkpoint_step):
+            output, interrupted_state = interrupted_fn(grads, interrupted_state)
+            resumed_outputs.append(output.pytree)
+
+        path = str(tmp_path / "dp_runtime.pt")
+        ckpt.save_dp_runtime_state(
+            path,
+            clip_state=FixedClipState(),
+            noise_state=interrupted_state,
+            sampler_state=None,
+            sample_rate=0.1,
+            target_delta=1e-5,
+            noise_multiplier=1.0,
+            expected_steps_per_epoch=1,
+            expected_batch_size=1,
+            total_steps=total_steps,
+        )
+        checkpoint = ckpt.load_dp_runtime_state(path)
+
+        resumed_fn, state_template = make_noise()
+        resumed_state = opaque_from_state_dict(state_template, checkpoint.noise_state)
+        for _ in range(total_steps - checkpoint_step):
+            output, resumed_state = resumed_fn(grads, resumed_state)
+            resumed_outputs.append(output.pytree)
+
+        for uninterrupted, resumed in zip(
+            uninterrupted_outputs, resumed_outputs, strict=True
+        ):
+            assert torch.equal(uninterrupted, resumed)
+        assert not torch.equal(resumed_outputs[checkpoint_step], resumed_outputs[0])
+
+    def test_gaussian_noise_continues_after_resume(self, tmp_path):
+        self._assert_continuity(
+            tmp_path,
+            lambda: gaussian_noise(noise_multiplier=1.0, key=key(42)),
+        )
+
+    def test_band_mf_noise_continues_after_resume(self, tmp_path):
+        self._assert_continuity(
+            tmp_path,
+            lambda: mf_gaussian_noise(
+                torch.zeros(8),
+                band_mf_strategy(bands=2, momentum=0.9),
+                n_steps=4,
+                noise_multiplier=1.0,
+                key=key(42),
+            ),
+        )
 
 
 class TestRuntimeCheckpointDriftMetadata:
