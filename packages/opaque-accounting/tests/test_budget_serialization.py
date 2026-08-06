@@ -7,7 +7,6 @@ import json
 import pytest
 
 import opaque.accounting as acc
-from opaque.api.accounting.core._accountant import Accountant
 from opaque.serialization import from_state_dict, state_dict
 
 
@@ -34,13 +33,12 @@ def test_registered_non_dataclass_budget_round_trips() -> None:
         lambda budget: {"threshold": budget.threshold},
         lambda state: _CustomBudget(float(state["threshold"])),
     )
-    accountant = Accountant(budget=_CustomBudget(2.5))
+    accountant = acc.Accountant(budget=_CustomBudget(2.5))
 
     checkpoint = json.loads(json.dumps(state_dict(accountant)))
-    restored = from_state_dict(Accountant(), checkpoint)
+    restored = from_state_dict(acc.Accountant(), checkpoint)
 
-    assert isinstance(restored._budget, _CustomBudget)
-    assert restored._budget.threshold == 2.5
+    assert state_dict(restored) == checkpoint
 
 
 @pytest.mark.parametrize(
@@ -54,19 +52,20 @@ def test_registered_non_dataclass_budget_round_trips() -> None:
     ],
 )
 def test_builtin_budget_round_trips(budget: object) -> None:
-    restored = from_state_dict(Accountant(), state_dict(Accountant(budget=budget)))
+    checkpoint = state_dict(acc.Accountant(budget=budget))
+    restored = from_state_dict(acc.Accountant(), checkpoint)
 
-    assert restored._budget == budget
+    assert state_dict(restored) == checkpoint
 
 
 def test_unregistered_budget_reports_registration_requirement() -> None:
     with pytest.raises(TypeError, match="register_budget_serializer"):
-        state_dict(Accountant(budget=_UnregisteredBudget(2.5)))
+        state_dict(acc.Accountant(budget=_UnregisteredBudget(2.5)))
 
 
 def test_unknown_budget_checkpoint_type_reports_registration_requirement() -> None:
-    serialized = state_dict(Accountant())
+    serialized = state_dict(acc.Accountant())
     serialized["budget"] = {"type": "example.UnregisteredBudget"}
 
     with pytest.raises(ValueError, match="no budget serializer is registered"):
-        from_state_dict(Accountant(), serialized)
+        from_state_dict(acc.Accountant(), serialized)

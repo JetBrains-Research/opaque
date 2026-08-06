@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -254,6 +255,7 @@ BudgetFromStateDictFn = Callable[[Mapping[str, Any]], Budget]
 _BUDGET_SERIALIZERS: dict[type[Any], tuple[str, BudgetStateDictFn]] = {}
 _BUDGET_DESERIALIZERS: dict[str, BudgetFromStateDictFn] = {}
 _BUDGET_TYPES: dict[str, type[Any]] = {}
+_BUDGET_LOCK = RLock()
 
 
 def _budget_type_name(typ: type[Any]) -> str:
@@ -284,22 +286,24 @@ def register_budget_serializer(
     Raises:
         ValueError: If ``type_name`` is already registered for another type.
     """
-    name = type_name or _budget_type_name(typ)
-    registered_type = _BUDGET_TYPES.get(name)
-    if registered_type is not None and registered_type is not typ:
-        raise ValueError(f"Budget checkpoint type name already registered: {name}")
-    previous = _BUDGET_SERIALIZERS.get(typ)
-    if previous is not None and previous[0] != name:
-        _BUDGET_DESERIALIZERS.pop(previous[0], None)
-        _BUDGET_TYPES.pop(previous[0], None)
-    _BUDGET_SERIALIZERS[typ] = (name, state_dict_fn)
-    _BUDGET_DESERIALIZERS[name] = from_state_dict_fn
-    _BUDGET_TYPES[name] = typ
+    with _BUDGET_LOCK:
+        name = type_name or _budget_type_name(typ)
+        registered_type = _BUDGET_TYPES.get(name)
+        if registered_type is not None and registered_type is not typ:
+            raise ValueError(f"Budget checkpoint type name already registered: {name}")
+        previous = _BUDGET_SERIALIZERS.get(typ)
+        if previous is not None and previous[0] != name:
+            _BUDGET_DESERIALIZERS.pop(previous[0], None)
+            _BUDGET_TYPES.pop(previous[0], None)
+        _BUDGET_SERIALIZERS[typ] = (name, state_dict_fn)
+        _BUDGET_DESERIALIZERS[name] = from_state_dict_fn
+        _BUDGET_TYPES[name] = typ
 
 
 def budget_state_dict(budget: Budget) -> dict[str, Any]:
     """Return self-describing checkpoint state for a registered budget."""
-    serializer = _BUDGET_SERIALIZERS.get(type(budget))
+    with _BUDGET_LOCK:
+        serializer = _BUDGET_SERIALIZERS.get(type(budget))
     if serializer is None:
         raise TypeError(
             f"Cannot serialize budget {_budget_type_name(type(budget))}: "
@@ -325,7 +329,8 @@ def budget_from_state_dict(state: Mapping[str, Any]) -> Budget:
         raise ValueError("Budget checkpoint is missing required key 'type'.") from exc
     if not isinstance(type_name, str):
         raise ValueError("Budget checkpoint key 'type' must be a string.")
-    from_state_dict_fn = _BUDGET_DESERIALIZERS.get(type_name)
+    with _BUDGET_LOCK:
+        from_state_dict_fn = _BUDGET_DESERIALIZERS.get(type_name)
     if from_state_dict_fn is None:
         raise ValueError(
             f"Cannot restore budget type {type_name!r}: no budget serializer is registered."
