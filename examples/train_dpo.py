@@ -15,7 +15,8 @@ W&B — and swaps in the DPO-specific loss, data, and reference machinery from
     logp columns ``ref_chosen_logps`` / ``ref_rejected_logps`` (each ``(B,)``).
   * ``compute_ref_logprobs_for_dataset(...)`` precomputes the frozen reference
     model's per-example logps ONCE, outside the vmap, and caches them to a
-    content-addressed ``.npz`` (so the expensive ref forward runs at most once).
+    content-addressed ``.safetensors`` cache (so the expensive ref forward runs
+    at most once).
     The reference is the LoRA base model: ``null_ref_context(model)`` disables
     the adapter during the precompute so the un-adapted base weights serve as
     the reference.
@@ -89,6 +90,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import os
 import sys
@@ -692,6 +694,20 @@ def _make_ref_callable(model, device=None):
         }
 
     return ref
+
+
+def _base_model_state_digest(model) -> str:
+    """Hash the effective adapter-disabled reference weights."""
+    hasher = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        if ".lora_" in name or ".modules_to_save." in name:
+            continue
+        value = tensor.detach().cpu().contiguous()
+        hasher.update(name.encode("utf-8"))
+        hasher.update(str(value.dtype).encode("ascii"))
+        hasher.update(str(tuple(value.shape)).encode("ascii"))
+        hasher.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return hasher.hexdigest()
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):
@@ -1466,7 +1482,14 @@ def _run_smoke(args):
                 collator=collate,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=batch_size,
-                cache_key=("dpo", "smoke"),
+                cache_identity={
+                    "kind": "dpo-smoke",
+                    "reference": {"kind": "in-memory", "seed": args.seed},
+                    "preprocessing": {
+                        "max_length": max_length,
+                        "pad_token_id": pad_token_id,
+                    },
+                },
                 cache_dir=cache_dir,
             )
         rows = list(dataset)  # each row now carries the ref_*_logps columns
@@ -1847,7 +1870,7 @@ def main():
     # --- Precompute reference logps (LoRA base model as frozen reference) -----
     # ``null_ref_context(model)`` disables the LoRA adapter so the un-adapted base
     # weights serve as the reference policy (the canonical LoRA-DPO reference). The
-    # ref forward runs at most once, cached to a content-addressed ``.npz``.
+    # ref forward runs at most once, cached to a content-addressed safetensors file.
     # Reference-free methods skip this entirely.
     if reference_free:
         print("\nReference-free loss selected (skipping reference precompute).")
@@ -1863,6 +1886,28 @@ def main():
             f"cached to {ref_cache_dir})..."
         )
         ref_callable = _make_ref_callable(model, device=device)
+        ref_cache_identity = {
+            "kind": "dpo-reference-logprobs",
+            "reference": {
+                "source": args.model_name,
+                "revision": getattr(model.config, "_commit_hash", None),
+                "adapter_mode": "disabled",
+                "state_sha256": _base_model_state_digest(model),
+            },
+            "tokenizer": {
+                "source": getattr(tokenizer, "name_or_path", None),
+                "revision": getattr(tokenizer, "_commit_hash", None)
+                or getattr(tokenizer, "init_kwargs", {}).get("_commit_hash"),
+                "chat_template": getattr(tokenizer, "chat_template", None),
+                "pad_token_id": tokenizer.pad_token_id,
+                "bos_token_id": tokenizer.bos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+            },
+            "preprocessing": {
+                "max_length": args.max_length,
+                "pad_token_id": tokenizer.pad_token_id,
+            },
+        }
         with null_ref_context(model):
             train_dataset = compute_ref_logprobs_for_dataset(
                 train_dataset,
@@ -1870,7 +1915,7 @@ def main():
                 collator=collate_raw,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
-                cache_key=("dpo", args.model_name, "train", args.num_train_samples),
+                cache_identity=ref_cache_identity,
                 cache_dir=ref_cache_dir,
             )
             eval_dataset = compute_ref_logprobs_for_dataset(
@@ -1879,7 +1924,7 @@ def main():
                 collator=collate_raw,
                 output_columns=("ref_chosen_logps", "ref_rejected_logps"),
                 batch_size=args.eval_batch_size,
-                cache_key=("dpo", args.model_name, "eval", args.num_eval_samples),
+                cache_identity=ref_cache_identity,
                 cache_dir=ref_cache_dir,
             )
         print(

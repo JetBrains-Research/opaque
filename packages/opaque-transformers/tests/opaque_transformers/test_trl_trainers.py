@@ -1041,6 +1041,138 @@ def test_dpo_precompute_attaches_reference_columns(tmp_path):
     assert "ref_rejected_logps" in cols
 
 
+def test_dpo_model_cache_identity_tracks_reference_state_and_revision():
+    from opaque.api.transformers.trl._dpo_trainer import (
+        _model_cache_identity,
+        _tensor_state_digest,
+    )
+
+    torch.manual_seed(0)
+    reference = _tiny_model()
+    equivalent = _tiny_model()
+    equivalent.load_state_dict(reference.state_dict())
+
+    identity = _model_cache_identity(reference, adapter_mode="explicit")
+    assert identity == _model_cache_identity(equivalent, adapter_mode="explicit")
+
+    with torch.no_grad():
+        next(equivalent.parameters()).add_(1)
+    assert identity != _model_cache_identity(equivalent, adapter_mode="explicit")
+
+    reference.config._name_or_path = "org/reference"
+    reference.config._commit_hash = "commit-a"
+    revision_identity = _model_cache_identity(
+        reference, adapter_mode="explicit", trust_revision=True
+    )
+    assert "state_sha256" not in revision_identity
+
+    reference.config._commit_hash = "commit-b"
+    assert revision_identity != _model_cache_identity(
+        reference, adapter_mode="explicit", trust_revision=True
+    )
+
+    caller_identity = _model_cache_identity(reference, adapter_mode="explicit")
+    assert "state_sha256" in caller_identity
+
+    scalar_state = torch.nn.Module()
+    scalar_state.register_buffer("scalar", torch.tensor(1.0))
+    assert _tensor_state_digest(scalar_state)
+
+
+def test_dpo_tokenizer_cache_identity_tracks_chat_template():
+    from opaque.api.transformers.trl._dpo_trainer import _tokenizer_cache_identity
+
+    tokenizer = _stub_tokenizer()
+    tokenizer.get_vocab = lambda: {"<pad>": 0, "</s>": 1}
+    tokenizer.chat_template = "{{ messages }}"
+    identity = _tokenizer_cache_identity(tokenizer)
+
+    equivalent = _stub_tokenizer()
+    equivalent.get_vocab = lambda: {"</s>": 1, "<pad>": 0}
+    equivalent.chat_template = "{{ messages }}"
+    assert identity == _tokenizer_cache_identity(equivalent)
+
+    equivalent.chat_template = "{{ messages[0] }}"
+    assert identity != _tokenizer_cache_identity(equivalent)
+
+
+def test_dpo_custom_collator_requires_identity_for_cache_reuse():
+    from opaque.api.transformers.trl._dpo_trainer import _collator_cache_identity
+
+    def collator(rows):
+        return rows
+
+    assert _collator_cache_identity(
+        collator, is_default=False
+    ) != _collator_cache_identity(collator, is_default=False)
+
+    collator.cache_identity = {"padding": "longest"}
+    assert _collator_cache_identity(
+        collator, is_default=False
+    ) == _collator_cache_identity(collator, is_default=False)
+
+
+def test_dpo_precompute_cache_identity_tracks_preprocessing(tmp_path, monkeypatch):
+    import opaque.api.transformers.trl._dpo_trainer as dpo_trainer_module
+
+    captured = []
+
+    def capture_identity(dataset, **kwargs):
+        captured.append(kwargs["cache_identity"])
+        size = len(dataset)
+        return dataset.add_column("ref_chosen_logps", [0.0] * size).add_column(
+            "ref_rejected_logps", [0.0] * size
+        )
+
+    monkeypatch.setattr(
+        dpo_trainer_module, "compute_ref_logprobs_for_dataset", capture_identity
+    )
+
+    torch.manual_seed(0)
+    reference = _tiny_model()
+    reference_state = reference.state_dict()
+
+    def construct(*, max_length=8):
+        ref_model = _tiny_model()
+        ref_model.load_state_dict(reference_state)
+        DPOTrainer(
+            model=_tiny_model(),
+            ref_model=ref_model,
+            args=_args(DPOConfig, tmp_path, max_length=max_length, loss_type="sigmoid"),
+            train_dataset=_pref_dataset(),
+            processing_class=_stub_tokenizer(),
+        )
+
+    construct()
+    construct()
+    assert captured[0] == captured[1]
+
+    construct(max_length=7)
+    assert captured[0]["reference"] == captured[2]["reference"]
+    assert captured[0]["preprocessing"] != captured[2]["preprocessing"]
+
+
+def test_dpo_disabled_adapter_identity_ignores_adapter_weights():
+    from opaque.api.transformers.trl._dpo_trainer import _model_cache_identity
+
+    model = _tiny_peft_model()
+    disabled_identity = _model_cache_identity(model, adapter_mode="disabled")
+    explicit_identity = _model_cache_identity(model, adapter_mode="explicit")
+
+    adapter_parameter = next(
+        parameter for name, parameter in model.named_parameters() if ".lora_" in name
+    )
+    with torch.no_grad():
+        adapter_parameter.add_(1)
+
+    assert disabled_identity == _model_cache_identity(model, adapter_mode="disabled")
+    assert explicit_identity != _model_cache_identity(model, adapter_mode="explicit")
+
+    explicit_identity = _model_cache_identity(model, adapter_mode="explicit")
+    model.disable_adapter_layers()
+    assert explicit_identity != _model_cache_identity(model, adapter_mode="explicit")
+
+
 # ----------------------------------------------------------------------
 # Reference loading: string ref_model + model_init_kwargs threading
 # ----------------------------------------------------------------------
