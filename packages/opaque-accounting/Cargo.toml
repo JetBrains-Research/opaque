@@ -35,3 +35,6 @@ approx = "0.5"
 default = []
 python-extension = ["pyo3"]
 nightly = []
+
+[lints]
+workspace = true
