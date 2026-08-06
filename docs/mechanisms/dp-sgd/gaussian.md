@@ -169,7 +169,8 @@ print(f"σ/Δ = {noise_multiplier:.4f}, achieved ε = {result.achieved:.4f}")
 
 Pass ``bound=B`` (or ``bound=(low, high)``) to `gaussian_noise()` to sample
 from a Gaussian renormalized over $[-B, B]$ (or $[\text{low}, \text{high}]$)
-per coordinate — the *bounded Gaussian mechanism* of Chen and Hale (2024).
+per coordinate — the *bounded Gaussian mechanism* of
+[Chen and Hale (2024)](https://arxiv.org/abs/2211.17230).
 Bounds are absolute (same scale as the gradient / clip norm), not multiples
 of $\sigma$. Treat `bound=` as experimental: `dpsgd_acc.gaussian()` does not
 cover this variant.
@@ -200,7 +201,7 @@ eps = training.epsilon_at(delta=1e-5)
 
 - **Abadi et al. (2016)** — [Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133).
   Introduced DP-SGD with the Gaussian mechanism.
-- **Balle, Bell, Gascon, Nissim (2019)** — [The Privacy Blanket of the Shuffle Model](https://arxiv.org/abs/1903.02837).
-  Privacy amplification in the shuffle model.
 - **Balle, Barthe, Gaboardi (2018)** — [Privacy Amplification by Subsampling: Tight Analyses via Couplings and Divergences](https://arxiv.org/abs/1807.01647).
   Poisson subsampling amplification analysis.
+- **Chen and Hale (2024)** — [The Bounded Gaussian Mechanism for Differential Privacy](https://arxiv.org/abs/2211.17230).
+  Introduces the bounded Gaussian mechanism.

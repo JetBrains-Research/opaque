@@ -4,7 +4,8 @@ Entry points:
 
 - :func:`clipped_grad` — differentiate + fixed-threshold clip + sum
 - :func:`auto_clipped_grad` — differentiate + AUTO-S smooth-scale + sum
-  (Bu et al., NeurIPS 2023)
+  (Bu et al., `Automatic Clipping <https://arxiv.org/abs/2206.07136>`_,
+  NeurIPS 2023)
 - :func:`per_group` — build :class:`opaque.types.PerGroup` groupings
 
 Fixed clipping and AUTO-S give a constant, data-independent per-record

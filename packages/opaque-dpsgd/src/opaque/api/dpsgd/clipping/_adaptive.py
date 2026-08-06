@@ -274,7 +274,7 @@ def adaptive_clipped_grad(
 
     References:
         Andrew et al., "Differentially Private Learning with Adaptive
-        Clipping", NeurIPS 2021.
+        Clipping", NeurIPS 2021. https://arxiv.org/abs/1905.03871
     """
     # Validate parameters
     if isinstance(initial_clipping_norm, PerGroup):

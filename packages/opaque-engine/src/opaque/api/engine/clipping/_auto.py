@@ -295,7 +295,8 @@ def auto_clipped_grad(
 
     References:
         Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
-        Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.
+        Private Deep Learning Made Easier and Stronger." NeurIPS 2023.
+        https://arxiv.org/abs/2206.07136
     """
     _validate_auto_params(R, gamma)
 

@@ -1,8 +1,9 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
-Gaussian noise (optionally bounded — Chen and Hale, 2024), adaptive and
-AUTO-S clipping, and the standard + truncated Poisson samplers.  Fixed and
-AUTO-S clipping live in
+Gaussian noise (optionally bounded — Chen and Hale,
+`The Bounded Gaussian Mechanism for Differential Privacy
+<https://arxiv.org/abs/2211.17230>`_, 2024), adaptive and AUTO-S clipping,
+and the standard + truncated Poisson samplers. Fixed and AUTO-S clipping live in
 :mod:`opaque.dpsgd.clipping` (AUTO-S keeps a constant per-record sensitivity
 bound).  Functional optimizers (including the universal ``adamw`` with
 DP bias-correction and private second-moment paths) live in

@@ -3,9 +3,12 @@
 Headline factories:
 
 - :func:`clipped_grad` — fixed-threshold per-example clipping.
-- :func:`auto_clipped_grad` — AUTO-S (Bu et al., NeurIPS 2023).
+- :func:`auto_clipped_grad` — AUTO-S (Bu et al.,
+  `Automatic Clipping <https://arxiv.org/abs/2206.07136>`_, NeurIPS 2023).
 - :func:`per_group` — build :class:`~opaque.types.PerGroup` groupings.
-- :func:`adaptive_clipped_grad` — adaptive clipping (Andrew et al., 2021).
+- :func:`adaptive_clipped_grad` — adaptive clipping (Andrew et al.,
+  `Differentially Private Learning with Adaptive Clipping
+  <https://arxiv.org/abs/1905.03871>`_, 2021).
 
 Adaptive clipping is DP-SGD-only: its threshold drifts across steps,
 which violates the constant-sensitivity assumption matrix-factorization

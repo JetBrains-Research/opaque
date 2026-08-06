@@ -74,9 +74,10 @@ grad_fn, clip_state = clipped_grad(
 ```
 
 For automatic threshold tuning across steps:
-`opaque.dpsgd.clipping.adaptive_clipped_grad` (Andrew et al. 2021).
+`opaque.dpsgd.clipping.adaptive_clipped_grad`
+([Andrew et al., 2021](https://arxiv.org/abs/1905.03871)).
 For AUTO-S smooth scaling: `opaque.dpsgd.clipping.auto_clipped_grad`
-(Bu et al. 2023).
+([Bu et al., 2023](https://arxiv.org/abs/2206.07136)).
 
 ## 3. Noise
 

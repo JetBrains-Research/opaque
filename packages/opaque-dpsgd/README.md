@@ -1,8 +1,8 @@
 # opaque-dpsgd
 
 Differentially Private SGD mechanisms for Opaque: Gaussian noise (optionally
-bounded — Chen and Hale, 2024), clipping (fixed, AUTO-S, adaptive), and Poisson
-subsampling. Clipping entry points live in
+bounded — [Chen and Hale, 2024](https://arxiv.org/abs/2211.17230)), clipping
+(fixed, AUTO-S, adaptive), and Poisson subsampling. Clipping entry points live in
 [`opaque.dpsgd.clipping`](../opaque-core/README.md). Functional optimizers
 (including the universal ``adamw`` with optional DP bias-correction) live in
 [`opaque.optimizers`](../opaque-core/README.md).

@@ -7,7 +7,8 @@ Compatible clipping rules live in :mod:`opaque.dpftrl.clipping` — the MF priva
 proof requires a constant per-step record sensitivity, which both
 :func:`~opaque.dpftrl.clipping.clipped_grad` (fixed threshold) and
 :func:`~opaque.dpftrl.clipping.auto_clipped_grad` (AUTO-S smooth scaling, Bu
-et al. NeurIPS 2023) provide by construction.  The DP-SGD-specific
+et al., `Automatic Clipping <https://arxiv.org/abs/2206.07136>`_, NeurIPS 2023)
+provide by construction. The DP-SGD-specific
 :func:`~opaque.dpsgd.clipping.adaptive_clipped_grad` is *not* compatible:
 its threshold drifts across steps based on the noisy clipping rate, so
 the per-step sensitivity varies and the standard MF analysis breaks.
