@@ -84,6 +84,11 @@ class MfStrategy(Protocol):
         max_participations: int | None,
     ) -> float: ...
 
+
+@runtime_checkable
+class RawMfNoiseFactoryProvider(Protocol):
+    """Optional runtime hook for strategies with dedicated noise builders."""
+
     def raw_noise_factory(
         self,
         grad_template: Any,
@@ -112,6 +117,7 @@ __all__ = [
     "LambdaCgdStrategy",
     "MFNoiseState",
     "MfStrategy",
+    "RawMfNoiseFactoryProvider",
     "RawMfNoiseFactory",
     "SecondMomentMFNoiseState",
 ]

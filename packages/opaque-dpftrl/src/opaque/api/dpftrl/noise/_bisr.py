@@ -174,7 +174,7 @@ class BisrStrategy:
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
         inv = list(self._inv_coefs())
-        strategy_coefs = _native().bisr_strategy_coefficients(inv, self.bandwidth)
+        strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)
         return inverse_as_streaming_matrix(
             torch.tensor(strategy_coefs, dtype=torch.float64),
             column_normalize_for_n=n_steps if self.normalized else None,
