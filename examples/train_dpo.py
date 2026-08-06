@@ -706,7 +706,9 @@ def _base_model_state_digest(model) -> str:
         hasher.update(name.encode("utf-8"))
         hasher.update(str(value.dtype).encode("ascii"))
         hasher.update(str(tuple(value.shape)).encode("ascii"))
-        hasher.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
     return hasher.hexdigest()
 
 

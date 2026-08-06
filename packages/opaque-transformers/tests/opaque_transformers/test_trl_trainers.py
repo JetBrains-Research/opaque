@@ -1063,6 +1063,10 @@ def test_dpo_model_cache_identity_tracks_reference_state():
     scalar_state.register_buffer("scalar", torch.tensor(1.0))
     assert _tensor_state_digest(scalar_state)
 
+    bf16_state = torch.nn.Module()
+    bf16_state.register_buffer("buffer", torch.tensor([1.0], dtype=torch.bfloat16))
+    assert _tensor_state_digest(bf16_state)
+
 
 def test_dpo_disabled_adapter_identity_ignores_adapter_weights():
     from opaque.api.transformers.trl._dpo_trainer import _model_cache_identity

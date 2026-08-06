@@ -162,7 +162,9 @@ def _tensor_state_digest(model: Any, *, exclude_adapter: bool = False) -> str:
         hasher.update(name.encode("utf-8"))
         hasher.update(str(value.dtype).encode("ascii"))
         hasher.update(json.dumps(list(value.shape)).encode("ascii"))
-        hasher.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
     return hasher.hexdigest()
 
 
