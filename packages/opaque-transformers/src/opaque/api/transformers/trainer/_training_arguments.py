@@ -88,6 +88,13 @@ from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
 
+from ._optim import (
+    resolve_optimizer_name as _resolve_optimizer_name,
+)
+from ._optim import (
+    supported_names as _supported_optimizer_names,
+)
+
 # Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
 _INTERVAL_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch")
@@ -198,14 +205,6 @@ _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
     "mf_lambda_cgd": {"lambda_": 0.5},
     "mf_identity": {},
 }
-
-# Optimizer surface is owned by ``_optim``; keep validation logic and
-# aliases in one place so ``TrainingArguments`` and optimizer factory
-# stay in sync.
-from ._optim import (  # noqa: E402, I001
-    resolve_optimizer_name as _resolve_optimizer_name,
-    supported_names as _supported_optimizer_names,
-)
 
 if TYPE_CHECKING:
     from opaque.scheduling.types import Schedule
@@ -1043,7 +1042,7 @@ class TrainingArguments:
         # --- 13. Distributed (DDP) defaults & validation -------------------
         # ``LOCAL_RANK`` env-var fallback for ``local_rank`` (HF parity).
         if self.local_rank == -1:
-            self.local_rank = int(os.environ.get("LOCAL_RANK", -1))
+            self.local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
 
         # ``ddp_backend`` validation mirrors HF's backend surface.
         if (
@@ -1174,7 +1173,7 @@ class TrainingArguments:
             # DDP-aware: bind to the rank's local GPU when launched under
             # torchrun / mp.spawn.  Falls back to ``cuda:0`` for
             # single-process runs.
-            local_rank = int(os.environ.get("LOCAL_RANK", -1))
+            local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
             if local_rank >= 0:
                 return torch.device(f"cuda:{local_rank}")
             return torch.device("cuda:0")
