@@ -4,7 +4,8 @@ import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.api.dpftrl.noise._bisr import BisrStrategy, bisr_strategy
+from opaque.api.dpftrl.noise._bisr import BisrStrategy, _native, bisr_strategy
+from opaque.api.dpftrl.noise._toeplitz import inverse_as_streaming_matrix
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
 from opaque.types import clipped
@@ -66,6 +67,38 @@ class TestBisrStrategy:
         out, _ = noise_fn(clipped({"w": torch.zeros(6)}, max_norm=1.0), state)
         assert calls["count"] == 1
         assert float(out.noise_stddev) > 0
+
+    @pytest.mark.parametrize("bandwidth", [2, 4])
+    @pytest.mark.parametrize("n_steps", [6, 12])
+    def test_runtime_operator_uses_full_horizon_strategy(self, bandwidth, n_steps):
+        strategy = bisr_strategy(bandwidth=bandwidth, normalized=False, momentum=0.3)
+        streaming = strategy.streaming_matrix(n_steps=n_steps)
+        runtime_noise_fn, _, runtime_row_l2_at = strategy.raw_noise_factory(
+            {"w": torch.zeros(1)},
+            n_steps=n_steps,
+            min_sep=1,
+            max_participations=1,
+            key=key(0),
+            compute_dtype=torch.float32,
+        )
+        del runtime_noise_fn
+
+        expected_dense = streaming.materialize(n_steps)
+        runtime_row_l2 = torch.tensor(
+            [runtime_row_l2_at(step) for step in range(n_steps)], dtype=torch.float64
+        )
+        expected_row_l2 = expected_dense.pow(2).sum(dim=1).sqrt()
+
+        torch.testing.assert_close(runtime_row_l2, expected_row_l2)
+
+        full_horizon_strategy_coefs = _native().bisr_strategy_coefficients(
+            list(strategy._inv_coefs()), n_steps
+        )
+        assert len(full_horizon_strategy_coefs) == n_steps
+        manual_streaming = inverse_as_streaming_matrix(
+            torch.tensor(full_horizon_strategy_coefs, dtype=torch.float64)
+        )
+        torch.testing.assert_close(expected_dense, manual_streaming.materialize(n_steps))
 
     def test_matches_old_sensitivity(self):
         assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0

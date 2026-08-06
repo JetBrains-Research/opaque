@@ -228,9 +228,8 @@ def _make_raw_mf_noise(
     ``streaming.row_norms_squared(n_steps)`` once at build time.  λ-CGD:
     closed-form via :func:`_lambda_cgd_row_l2`.
     """
-    raw_noise_factory = getattr(strategy, "raw_noise_factory", None)
-    if raw_noise_factory is not None:
-        raw = raw_noise_factory(
+    if hasattr(strategy, "raw_noise_factory"):
+        raw = strategy.raw_noise_factory(
             grad_template,
             n_steps=n_steps,
             min_sep=min_sep,
