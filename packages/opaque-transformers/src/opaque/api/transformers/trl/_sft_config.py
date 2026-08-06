@@ -111,7 +111,7 @@ class SFTConfig(TrainingArguments):
         # TRL parity: default bf16 on when supported and no precision was set.
         # The base still raises if bf16 was set explicitly on unsupported
         # hardware, so only auto-enable when it's actually available.
-        if not self.bf16 and not self.bf16_full_eval:
+        if not self.use_cpu and not self.bf16 and not self.bf16_full_eval:
             import torch
 
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported():

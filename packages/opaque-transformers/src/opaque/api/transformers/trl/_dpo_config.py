@@ -178,7 +178,8 @@ class DPOConfig(TrainingArguments):
         # only when supported, so the base's explicit-bf16-on-unsupported-hw raise
         # is not retriggered.
         if (
-            not self.bf16
+            not self.use_cpu
+            and not self.bf16
             and torch.cuda.is_available()
             and torch.cuda.is_bf16_supported()
         ):

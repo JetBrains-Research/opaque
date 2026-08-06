@@ -90,6 +90,22 @@ def test_privacy_noise_radius_removed(tmp_path):
         _args(tmp_path, privacy_noise_radius=3.0)
 
 
+def test_hf_baseline_respects_use_cpu_for_runtime_defaults(tmp_path):
+    from transformers import TrainingArguments as HFTrainingArguments
+
+    opaque = TrainingArguments.from_hf(
+        HFTrainingArguments(
+            output_dir=str(tmp_path),
+            use_cpu=True,
+            report_to=[],
+            per_device_train_batch_size=1,
+        ),
+        privacy_noise_multiplier=1.0,
+        clipping_norm=1.0,
+    )
+    assert opaque.use_cpu is True
+
+
 def test_apply_logging_runs_at_trainer_construction(tmp_path, restore_logging):
     """The wiring call site (``DPTrainer.__init__`` -> ``apply_logging``) fires.
 
