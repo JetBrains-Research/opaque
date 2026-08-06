@@ -150,26 +150,54 @@ the null (adaptive-depth α) and negative (W0) results. Motivates the binding-bu
 experiment (r=2: 37 layers→rank 1, 137→2, 22→3; uniform r=2 costs 0.36792 vs
 0.34663 at r=16, so rank is scarce there).
 
-## Result 3 (single seed, replicating): the Rényi ORDER matters, as predicted
+## Result 3 (REPLICATED, n=3): the single-seed α-ordering does NOT survive
 
 Probe-based allocation from the **noised** core spectra, LoRA-XSe, ε=3, matched
-budget — only the scoring order differs:
+budget, seeds 42/43/44:
 
-| scoring | eval/loss | MBPP+ | rank spread |
-|---|---|---|---|
-| **α=∞ (stable rank, noise-robust)** | **0.34691** | **0.683** | 9–23 |
-| α=1 (Shannon, noise-naive) | 0.34766 | 0.630 | 3–23 |
-| W0 (clean weights) | 0.34742 | 0.643 | — |
-| uniform (no allocation) | 0.34663 | 0.635 | 16 |
+| arm | eval/loss mean±sd | MBPP+ mean±sd |
+|---|---|---|
+| **uniform** | **0.34665 ± 0.00013** | 0.609 ± 0.075 |
+| α=∞ (stable rank) | 0.34704 ± 0.00036 | **0.661 ± 0.032** |
+| α=1 (Shannon) | 0.34742 ± 0.00051 | 0.616 ± 0.070 |
 
-- **α=∞ beats α=1 on both axes** (loss −0.00075, MBPP+ +5.3 pts) — the
-  pre-registered H3 ordering, with everything else held constant.
-- **Noised-spectrum scoring beats clean-weight scoring** on both axes.
-- Shannon's allocation is visibly more extreme (floor rank 3 vs 9) — the
-  noise-inflation signature the theory predicts.
-- vs uniform: tied on loss (+0.0003), +4.8 MBPP+ → **not yet a win**.
+Paired per-seed:
+- α=∞ beats α=1 on **loss in 3/3 seeds** (+0.00075/+0.00006/+0.00032) — the
+  predicted direction, but the effect is ~0.0004 and one seed is a tie.
+- α=∞ ≥ uniform on **MBPP+ in 3/3 seeds** (+0.048/+0.008/+0.100) with much lower
+  variance (0.032 vs 0.075; on s44 uniform collapsed to 0.524 while α=∞ held
+  0.624). Suggestive robustness effect, t≈1.9, **not significant at n=3**.
+- **uniform beats both on loss in 3/3 seeds** — allocation does not win.
 
-SINGLE SEED — seeds 43/44 submitted for {uniform, α=∞, α=1}. Treat as provisional.
+**The single-seed "+5.3 MBPP+ for α=∞ over α=1" was noise**: MBPP+ seed spread is
+±0.07, far larger than the effect. Single-seed pass@1 comparisons are unreliable
+in this setup.
+
+## Result 3b: binding budget does not rescue allocation
+
+| r | uniform loss | probe-alloc loss |
+|---|---|---|
+| 2 | **0.36792** | 0.37090 |
+| 4 | **0.34918** | 0.36272 |
+
+Even where rank is scarce, allocation loses. (Note r=4 uniform ≈ 0.34918 is close
+to r=16's 0.34663 — 4 directions per layer nearly suffice, consistent with the
+measured signal rank of 1–3.)
+
+## ⚠ CONFOUND: variable rank changes per-layer scaling
+
+LoRA-XS sets `scaling = lora_alpha / r` **per layer**. Varying r therefore also
+varies each layer's effective scale: with lora_alpha=16, r=23 → 0.70, r=9 → 1.78,
+and α=1's rank-3 layers → **5.3×**. Every allocation arm is thus confounded —
+"more rank" is entangled with "different effective LR" — and the arm with the most
+extreme spread (α=1) is penalised most. This plausibly explains both (a) why all
+allocation variants lose on loss and (b) why α=∞ > α=1, without any appeal to
+signal-tracking quality.
+
+**A valid allocation test requires holding scaling fixed** (per-layer
+`lora_alpha ∝ r`, or rank-stabilized `alpha/√r`). Until then the allocation
+results should be read as *inconclusive-to-negative*, not as a refutation of the
+theory.
 
 ## Result 4: rotation (LoRA-XSe) is the real method-level win
 
