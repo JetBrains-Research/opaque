@@ -22,14 +22,11 @@ from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from ._toeplitz import inverse_as_streaming_matrix
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from opaque.random.types import RngKey
-    from opaque.types import PerGroup
 
     from ._engine import MFNoiseState
-    from collections.abc import Sequence
-
     from ._streaming_matrix import StreamingMatrix
 
 
@@ -96,15 +93,15 @@ def _recover_strategy_coefficients(inv_coefs: Sequence[float], n: int) -> list[f
 
 def _make_bisr_noise(
     grad_template: Any,
-    strategy: "BisrStrategy",
+    strategy: BisrStrategy,
     *,
     n_steps: int,
-    key: "RngKey",
+    key: RngKey,
     compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
-    "Callable[..., tuple[Any, MFNoiseState]]",
-    "MFNoiseState",
-    "Callable[[int], float]",
+    Callable[..., tuple[Any, MFNoiseState]],
+    MFNoiseState,
+    Callable[[int], float],
 ]:
     from ._engine import _check_mf_horizon, _matrix_factorization_noise
 
@@ -190,7 +187,7 @@ class BisrStrategy:
         n_steps: int,
         min_sep: int,
         max_participations: int | None,
-        key: "RngKey",
+        key: RngKey,
         compute_dtype: torch.dtype,
     ):
         del min_sep, max_participations
