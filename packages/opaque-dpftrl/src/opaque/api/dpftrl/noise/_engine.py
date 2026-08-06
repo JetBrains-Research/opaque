@@ -148,12 +148,15 @@ def _gaussian_linear_combination(
     shape: tuple[int, ...],
     dtype: torch.dtype,
     device: torch.device,
-    generator: torch.Generator | None = None,
+    key: RngKey,
+    leaf_index: int,
 ) -> torch.Tensor:
     """Compute a linear combination of standard Gaussian random variables.
 
     Given coefficients [c0, c1, ..., c_{k-1}] and IID z_0, ..., z_{k-1}
-    ~ N(0, I), returns sum_i c_i * z_i.
+    ~ N(0, I), returns sum_i c_i * z_i. Each ``z_i`` is derived from the
+    mechanism key and column ``i`` so it is reused by every row that references
+    that column.
     """
     nonzero = matrix_row != 0
     first = int(nonzero.long().argmax().item()) if nonzero.any() else 0
@@ -166,6 +169,9 @@ def _gaussian_linear_combination(
     result = torch.zeros(shape, dtype=dtype, device=device)
     for idx in range(first, last):
         coef = matrix_row[idx].to(dtype)
+        generator = generator_from_key(
+            rng_fold_in(key, "mf_gaussian_column", idx, leaf_index)
+        )
         try:
             noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
         except RuntimeError as exc:
@@ -295,18 +301,18 @@ def _tensor_mf_noise(
         index = st._inner_state
         step_index = int(index)
         _check_mf_horizon(step_index, horizon)
-        step_key = rng_fold_in(st._rng_key, st._step_counter)
-        g = generator_from_key(step_key)
         matrix_row_base = noising[step_index]
+        import optree
+
+        from opaque.api.engine.pytree import tree_flatten_with_paths
+
+        paths, leaves, treedef = tree_flatten_with_paths(clipped_grads)
 
         if isinstance(stddev, PerGroup):
-            import optree
 
-            from opaque.api.engine.pytree import tree_flatten_with_paths
-
-            paths, leaves, treedef = tree_flatten_with_paths(clipped_grads)
-
-            def add_noise_at_path(path, grad_tensor: torch.Tensor):
+            def add_noise_at_path(
+                path, grad_tensor: torch.Tensor, leaf_index: int
+            ) -> torch.Tensor:
                 eff = stddev.for_path(path)
                 matrix_row = matrix_row_base * eff
                 noise = _gaussian_linear_combination(
@@ -314,33 +320,40 @@ def _tensor_mf_noise(
                     grad_tensor.shape,
                     compute_dtype,
                     grad_tensor.device,
-                    generator=g,
+                    st._rng_key,
+                    leaf_index,
                 )
                 return (grad_tensor + noise).to(grad_tensor.dtype)
 
             noisy_leaves = []
-            for path, v in zip(paths, leaves, strict=True):
+            for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
                 if not isinstance(v, torch.Tensor):
                     raise TypeError(
                         "PerGroup dense MF noise expects tensor leaves; "
                         f"got {type(v).__name__} at path {path!r}."
                     )
-                noisy_leaves.append(add_noise_at_path(path, v))
+                noisy_leaves.append(add_noise_at_path(path, v, leaf_index))
             noisy_grads = optree.tree_unflatten(treedef, noisy_leaves)
         else:
             matrix_row = matrix_row_base * float(stddev)
 
-            def add_noise(grad_tensor):
+            noisy_leaves = []
+            for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
+                if not isinstance(v, torch.Tensor):
+                    raise TypeError(
+                        "Dense MF noise expects tensor leaves; "
+                        f"got {type(v).__name__} at path {path!r}."
+                    )
                 noise = _gaussian_linear_combination(
                     matrix_row,
-                    grad_tensor.shape,
+                    v.shape,
                     compute_dtype,
-                    grad_tensor.device,
-                    generator=g,
+                    v.device,
+                    st._rng_key,
+                    leaf_index,
                 )
-                return (grad_tensor + noise).to(grad_tensor.dtype)
-
-            noisy_grads = tree_map(add_noise, clipped_grads)
+                noisy_leaves.append((v + noise).to(v.dtype))
+            noisy_grads = optree.tree_unflatten(treedef, noisy_leaves)
         new_state = MFNoiseState(
             _inner_state=index + 1,
             _step_counter=st._step_counter + 1,
@@ -379,7 +392,7 @@ def _streaming_mf_noise(
         step = st._step_counter
         if horizon is not None:
             _check_mf_horizon(step, horizon)
-        step_key = rng_fold_in(st._rng_key, step)
+        step_key = rng_fold_in(st._rng_key, "mf_gaussian_column", step)
         g = generator_from_key(step_key)
         s_state = st._inner_state
 
