@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
+from opaque.types import ClippedPytree, NoisedPytree, SecondMomentClippingOutput
 from opaque.pytree import tree_leaves, tree_map
 
 if TYPE_CHECKING:
@@ -191,11 +192,22 @@ def all_finite(updates: Any) -> bool:
     NamedTuple because it operates purely on grads, with no scaler-state
     dependency — same as :func:`opaque.pytree.global_norm`.
     """
-    for leaf in tree_leaves(updates):
-        if (
-            isinstance(leaf, torch.Tensor)
-            and leaf.is_floating_point()
-            and not torch.isfinite(leaf).all()
-        ):
-            return False
+    def _iter_tensor_containers(value: Any):
+        if isinstance(value, (ClippedPytree, NoisedPytree)):
+            yield from _iter_tensor_containers(value.pytree)
+            return
+        if isinstance(value, SecondMomentClippingOutput):
+            yield from _iter_tensor_containers(value.grads)
+            yield from _iter_tensor_containers(value.squared_grads)
+            return
+        yield value
+
+    for container in _iter_tensor_containers(updates):
+        for leaf in tree_leaves(container):
+            if (
+                isinstance(leaf, torch.Tensor)
+                and leaf.is_floating_point()
+                and not torch.isfinite(leaf).all()
+            ):
+                return False
     return True
