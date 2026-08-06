@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 
+import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -252,6 +253,58 @@ def _worker_second_moment_noise_gloo(rank: int, world_size: int, port: int) -> N
 def _spawn_gloo(world_size: int, fn, *args) -> None:
     port = _find_free_port()
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _worker_gather_optional_ragged(rank: int, world_size: int, port: int) -> None:
+    from opaque.api.engine.distributed._state import gather_pytree, gather_tensors
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        optional = None if rank == 0 else {"value": torch.tensor([[1.0, 2.0]])}
+        gathered_optional = gather_pytree(optional)
+        assert torch.equal(
+            gathered_optional["value"],
+            torch.tensor([[1.0, 2.0]]),
+        )
+
+        ragged = torch.full((rank * 2, 2), float(rank))
+        gathered_ragged = gather_tensors(ragged)
+        assert torch.equal(
+            gathered_ragged,
+            torch.tensor([[1.0, 1.0], [1.0, 1.0]]),
+        )
+
+        incompatible_dtype = (
+            torch.ones((1, 2), dtype=torch.float32)
+            if rank == 0
+            else torch.ones((1, 2), dtype=torch.int64)
+        )
+        with pytest.raises(TypeError, match="matching dtypes"):
+            gather_tensors(incompatible_dtype)
+
+        incompatible_shape = (
+            torch.ones((1, 2), dtype=torch.float32)
+            if rank == 0
+            else torch.ones((1, 3), dtype=torch.float32)
+        )
+        with pytest.raises(ValueError, match="non-concatenated dimensions"):
+            gather_tensors(incompatible_shape)
+
+        incompatible_rank = (
+            torch.ones((1, 2), dtype=torch.float32)
+            if rank == 0
+            else torch.ones((1, 2, 1), dtype=torch.float32)
+        )
+        with pytest.raises(ValueError, match="matching tensor ranks"):
+            gather_tensors(incompatible_rank)
+
+        incompatible_structure = (
+            {"value": torch.ones((1, 2))} if rank == 0 else [torch.ones((1, 2))]
+        )
+        with pytest.raises(TypeError, match="matching pytree structures"):
+            gather_pytree(incompatible_structure)
+    finally:
+        _cleanup_ddp()
 
 
 def _worker_sync_aux_empty_batch(rank: int, world_size: int, port: int) -> None:

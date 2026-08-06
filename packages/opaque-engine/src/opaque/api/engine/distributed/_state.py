@@ -21,7 +21,13 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.distributed as dist
 
-from opaque.api.engine.pytree import tree_map
+from opaque.api.engine.pytree import (
+    tree_flatten,
+    tree_leaves,
+    tree_map,
+    tree_structure,
+    tree_unflatten,
+)
 
 from .collectives import all_reduce_, get_world_size, is_distributed
 
@@ -116,35 +122,137 @@ def reduce_scalar(
     return tensor.item()
 
 
+def _cpu_payload(value: Any) -> Any:
+    return tree_map(
+        lambda leaf: leaf.detach().cpu() if isinstance(leaf, torch.Tensor) else leaf,
+        value,
+    )
+
+
+def _validate_gathered_tensor_column(
+    tensors: list[torch.Tensor],
+    *,
+    ranks: list[int],
+    leaf_index: int,
+    dim: int,
+) -> int:
+    reference = tensors[0]
+    if reference.ndim == 0:
+        raise ValueError(
+            "Distributed tensor gathering cannot concatenate scalar tensor "
+            f"leaf {leaf_index}; provide at least one dimension."
+        )
+    normalized_dim = dim if dim >= 0 else reference.ndim + dim
+    if normalized_dim < 0 or normalized_dim >= reference.ndim:
+        raise ValueError(
+            f"Gather dimension {dim} is out of range for tensor leaf {leaf_index} "
+            f"with {reference.ndim} dimensions."
+        )
+
+    reference_rank = ranks[0]
+    for rank, tensor in zip(ranks[1:], tensors[1:], strict=True):
+        if tensor.dtype != reference.dtype:
+            raise TypeError(
+                "Distributed tensor gathering requires matching dtypes; "
+                f"leaf {leaf_index} has {reference.dtype} on rank "
+                f"{reference_rank} and "
+                f"{tensor.dtype} on rank {rank}."
+            )
+        if tensor.ndim != reference.ndim:
+            raise ValueError(
+                "Distributed tensor gathering requires matching tensor ranks; "
+                f"leaf {leaf_index} has {reference.ndim} dimensions on rank "
+                f"{reference_rank} "
+                f"and {tensor.ndim} on rank {rank}."
+            )
+        for axis, (expected, actual) in enumerate(
+            zip(reference.shape, tensor.shape, strict=True)
+        ):
+            if axis != normalized_dim and actual != expected:
+                raise ValueError(
+                    "Distributed tensor gathering requires matching "
+                    "non-concatenated dimensions; "
+                    f"leaf {leaf_index}, axis {axis} has size {expected} on "
+                    f"rank {reference_rank} and {actual} on rank {rank}."
+                )
+    return normalized_dim
+
+
+def _merge_gathered_pytrees(
+    values: list[Any],
+    *,
+    device: torch.device,
+    dim: int,
+) -> Any:
+    """Merge rank-ordered optional tensor pytrees after one object collective."""
+    present = [(rank, value) for rank, value in enumerate(values) if value is not None]
+    if not present:
+        return None
+
+    first_rank, first = present[0]
+    treedef = tree_structure(first)
+    for rank, payload in present[1:]:
+        other = tree_structure(payload)
+        if other != treedef:
+            raise TypeError(
+                "Distributed tensor gathering requires matching pytree "
+                "structures across non-empty ranks; "
+                f"rank {first_rank} has {treedef} and rank {rank} has {other}."
+            )
+
+    leaf_lists = [tree_flatten(payload)[0] for _, payload in present]
+    if not leaf_lists[0]:
+        return first
+
+    merged_leaves: list[torch.Tensor] = []
+    for leaf_index, column in enumerate(zip(*leaf_lists, strict=True)):
+        if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+            raise TypeError(
+                "Distributed tensor gathering supports tensor leaves only; "
+                f"leaf {leaf_index} has types "
+                f"{[type(leaf).__name__ for leaf in column]}."
+            )
+        tensors = list(column)
+        normalized_dim = _validate_gathered_tensor_column(
+            tensors,
+            ranks=[rank for rank, _ in present],
+            leaf_index=leaf_index,
+            dim=dim,
+        )
+        merged_leaves.append(
+            torch.cat(
+                [tensor.to(device) for tensor in tensors],
+                dim=normalized_dim,
+            )
+        )
+    return tree_unflatten(treedef, merged_leaves)
+
+
 def gather_tensors(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
-    """Gather variable-size tensors across ranks and concatenate along ``dim``."""
+    """Gather compatible variable-size tensors and concatenate along ``dim``."""
     if not is_distributed():
         return tensor
 
-    gathered = [None] * get_world_size()
-    dist.all_gather_object(gathered, tensor.cpu())
-
-    gathered_tensors: list[torch.Tensor] = [
-        t.to(tensor.device) for t in gathered if t is not None
-    ]
-    return torch.cat(gathered_tensors, dim=dim)
+    gathered: list[Any] = [None] * get_world_size()
+    dist.all_gather_object(gathered, tensor.detach().cpu())
+    return _merge_gathered_pytrees(gathered, device=tensor.device, dim=dim)
 
 
-def gather_pytree(pytree: Any) -> Any:
-    """Gather each tensor leaf across ranks; preserves ``None`` leaves."""
+def gather_pytree(pytree: Any, dim: int = 0) -> Any:
+    """Gather an optional tensor pytree through one symmetric collective.
+
+    Non-``None`` ranks must provide matching pytree structures and compatible
+    tensor leaves. Rank-local ``None`` payloads contribute no rows while still
+    participating in the collective.
+    """
     if not is_distributed():
         return pytree
 
-    def _gather(leaf: Any) -> Any:
-        if leaf is None:
-            return None
-        if isinstance(leaf, torch.Tensor):
-            return gather_tensors(leaf, dim=0)
-        raise TypeError(
-            f"Distributed aux gathering supports tensor leaves only; got {type(leaf)}."
-        )
-
-    return tree_map(_gather, pytree)
+    local_leaves = tree_leaves(pytree)
+    device = local_leaves[0].device if local_leaves else torch.device("cpu")
+    gathered: list[Any] = [None] * get_world_size()
+    dist.all_gather_object(gathered, _cpu_payload(pytree))
+    return _merge_gathered_pytrees(gathered, device=device, dim=dim)
 
 
 def sync_object(

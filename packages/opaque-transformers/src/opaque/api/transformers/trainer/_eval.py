@@ -294,19 +294,16 @@ class _PredictionAccumulator:
         else:
             losses = None
 
-        # all-gather each tensor pytree across ranks so the
-        # numpy outputs are cluster-wide, not per-rank shards.
+        # All ranks enter the same four collectives even when a rank-local
+        # shard produced no payload. ``gather_pytree`` treats local ``None`` as
+        # an empty contribution while preserving rank order.
         if gather:
             from opaque.api.engine.distributed._state import gather_pytree
 
-            if predictions is not None:
-                predictions = gather_pytree(predictions)
-            if labels is not None:
-                labels = gather_pytree(labels)
-            if inputs is not None:
-                inputs = gather_pytree(inputs)
-            if losses is not None:
-                losses = gather_pytree(losses)
+            predictions = gather_pytree(predictions)
+            labels = gather_pytree(labels)
+            inputs = gather_pytree(inputs)
+            losses = gather_pytree(losses)
 
         # HF parity: ``compute_metrics`` consumes numpy arrays, not
         # ``torch.Tensor``.  ``nested_numpify`` recurses into lists / dicts

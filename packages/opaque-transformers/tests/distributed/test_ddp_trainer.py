@@ -136,6 +136,26 @@ def test_eval_gather_returns_cluster_wide_predictions(tmp_path) -> None:
     _run_ddp("eval_gather", world_size=2, output_dir=str(tmp_path))
 
 
+@pytest.mark.slow
+def test_gloo_eval_gather_matches_reference_for_uneven_shards(tmp_path) -> None:
+    _run_ddp(
+        "eval_gather",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
+@pytest.mark.slow
+def test_gloo_eval_gather_supports_empty_rank_shard(tmp_path) -> None:
+    _run_ddp(
+        "eval_gather_empty_rank",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
 @pytest.mark.cuda
 @pytest.mark.slow
 def test_batch_eval_metrics_runs_cluster_wide(tmp_path) -> None:
