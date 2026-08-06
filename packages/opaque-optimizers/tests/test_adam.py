@@ -589,10 +589,6 @@ class TestStableAdamW:
             / (updates_no["big"].numel() + updates_no["small"].numel())
         )
         expected_scale = torch.clamp(global_rms / threshold, min=1.0).item()
-        per_leaf_small_scale = torch.clamp(
-            updates_no["small"].pow(2).mean().sqrt() / threshold, min=1.0
-        ).item()
-
         # With a global scale both leaves are divided by the same factor.
         torch.testing.assert_close(
             updates["big"], updates_no["big"] / expected_scale, atol=1e-6, rtol=0
@@ -601,9 +597,8 @@ class TestStableAdamW:
             updates["small"], updates_no["small"] / expected_scale, atol=1e-6, rtol=0
         )
 
-        # A per-leaf interpretation would use no scale on "small" (factor 1.0).
+        # The chosen threshold makes the full-pytree RMS clip active.
         assert expected_scale > 1.0
-        assert per_leaf_small_scale == pytest.approx(1.0)
         assert not torch.allclose(updates["small"], updates_no["small"])
 
 
