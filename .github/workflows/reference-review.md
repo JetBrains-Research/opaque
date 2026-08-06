@@ -13,12 +13,13 @@ engine: copilot
 tools:
   bash: [python3, git]
   github:
-    mode: remote
-    github-token: ${{ secrets.GH_AW_GITHUB_TOKEN }}
+    mode: gh-proxy
     toolsets: [pull_requests, repos, search]
 jobs:
   collect-reference-context:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       changed_files: ${{ steps.collect.outputs.changed_files }}
       reference_entries: ${{ steps.collect.outputs.reference_entries }}
