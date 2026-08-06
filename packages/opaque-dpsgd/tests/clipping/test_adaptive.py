@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
+from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree
 
@@ -504,6 +505,45 @@ class TestAdaptiveClippedGrad:
                 state_no_mb._next_clipping_norm,
                 rel_tol=1e-5,
             )
+
+    def test_microbatching_no_aux_does_not_materialize_per_example_aux(
+        self, monkeypatch
+    ):
+        """No-aux adaptive microbatching should stream stats instead of concatenating aux."""
+
+        original = clipped_fun_module._microbatch_accumulate
+
+        def wrapped(*args, **kwargs):
+            if kwargs.get("return_aux"):
+                raise AssertionError("unexpected per-example aux materialization")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(clipped_fun_module, "_microbatch_accumulate", wrapped)
+
+        def loss_fn(params, x, y):
+            pred = x @ params
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=1.0,
+            target_quantile=0.5,
+            learning_rate=0.2,
+            key=key(0),
+            batch_argnums=(1, 2),
+            microbatch_size=4,
+            return_aux=False,
+        )
+
+        params = torch.randn(10, requires_grad=False)
+        batch_x = torch.randn(16, 10)
+        batch_y = torch.randn(16)
+
+        grads, new_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        grads = _unwrap_clipped(grads)
+
+        assert grads.shape == params.shape
+        assert new_state._step == 1
 
     def test_pre_clipping_transform_unscales_for_adaptive_tracker(self):
         """``pre_clipping_transform`` runs before the grad-norm that drives

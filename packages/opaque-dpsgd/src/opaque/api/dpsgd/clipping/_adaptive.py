@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from torch.autograd.profiler import record_function
@@ -20,6 +20,9 @@ from opaque.api.engine.clipping._helpers import (
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
 from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
+
+if TYPE_CHECKING:
+    from opaque.api.engine.clipping._clipped_fun import ClippedFunStats
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -417,6 +420,7 @@ def adaptive_clipped_grad(
                 clipping_norm=state._next_clipping_norm,
                 return_aux=user_wants_return_aux,
                 _force_grad_norms=not user_wants_return_aux,
+                _return_stats=not user_wants_return_aux,
                 pre_clipping_transform=pre_clipping_transform,
                 **clipped_grad_kwargs,
             ),
@@ -427,26 +431,67 @@ def adaptive_clipped_grad(
 
         # Extract gradients and auxiliary output
         aux = None
+        stats: ClippedFunStats | None = None
         if isinstance(result, tuple):
-            grads, aux = result
-            grad_norms = aux.grad_norms
+            if user_wants_return_aux:
+                grads, aux = result
+                grad_norms = aux.grad_norms
+            else:
+                grads, aux, stats = result
+                grad_norms = None
         else:
             grads = result
             grad_norms = None
 
-        batch_size = aux.batch_size if aux is not None else 0
+        batch_size = (
+            aux.batch_size
+            if aux is not None
+            else (stats.batch_size if stats is not None else 0)
+        )
 
-        if is_per_group and grad_norms is not None:
+        if is_per_group and (grad_norms is not None or stats is not None):
             # --- Per-group adaptive path ---
             current_pg = state._next_clipping_norm
-            group_norms = aux.group_norms if aux is not None else None
+            if (
+                stats is not None
+                and isinstance(stats.num_clipped, dict)
+                and batch_size > 0
+            ):
+                per_group_num_clipped = stats.num_clipped
+                per_group_rates = (
+                    stats.clipping_rate if isinstance(stats.clipping_rate, dict) else {}
+                )
+                new_values: dict[str, float] = {}
+                for i, gname in enumerate(sorted(current_pg.values.keys())):
+                    threshold = current_pg.values[gname]
+                    rate = per_group_rates.get(gname, 0.0)
 
-            if group_norms is not None and batch_size > 0:
+                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
+                    generator = generator_from_key(group_key)
+                    noise = (
+                        torch.randn(1, generator=generator).item()
+                        * config["fraction_noise_std"]
+                    )
+                    noisy_rate = rate + noise
+
+                    new_values[gname] = _adaptive_clipping_norm_update(
+                        base_clipping_norm=threshold,
+                        noisy_clipping_rate=noisy_rate,
+                        target_quantile=config["target_quantile"],
+                        learning_rate=config["learning_rate"],
+                        clipping_norm_min=config["clipping_norm_min"],
+                        clipping_norm_max=config["clipping_norm_max"],
+                    )
+                new_clipping_norm = PerGroup(
+                    groups=current_pg.groups, values=new_values
+                )
+                num_clipped = per_group_num_clipped
+            elif aux is not None and aux.group_norms is not None and batch_size > 0:
                 per_group_num_clipped: dict[str, float] = {}
                 new_values: dict[str, float] = {}
                 for i, gname in enumerate(sorted(current_pg.values.keys())):
                     threshold = current_pg.values[gname]
-                    gnorms = group_norms[gname]
+                    gnorms = aux.group_norms[gname]
                     nc = float((gnorms > threshold).sum().item())
                     per_group_num_clipped[gname] = nc
                     rate = nc / max(1.0, float(batch_size))
@@ -476,10 +521,20 @@ def adaptive_clipped_grad(
             else:
                 new_clipping_norm = state._next_clipping_norm
                 num_clipped = _empty_num_clipped()
-        elif grad_norms is not None:
+        elif grad_norms is not None or stats is not None:
             # --- Scalar adaptive path (original) ---
-            num_clipped = float((grad_norms > state._next_clipping_norm).sum().item())
-            clipping_rate = aux.clipping_rate
+            if stats is not None and isinstance(stats.num_clipped, float):
+                num_clipped = stats.num_clipped
+                clipping_rate = (
+                    stats.clipping_rate
+                    if isinstance(stats.clipping_rate, float)
+                    else 0.0
+                )
+            else:
+                num_clipped = float(
+                    (grad_norms > state._next_clipping_norm).sum().item()
+                )
+                clipping_rate = aux.clipping_rate
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(
                 clipping_rate,

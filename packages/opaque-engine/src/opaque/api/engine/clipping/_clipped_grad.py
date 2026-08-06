@@ -90,6 +90,7 @@ def clipped_grad(
     compute_dtype: torch.dtype | None = None,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
+    _return_stats: bool = False,
 ) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
@@ -189,6 +190,9 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
+    if return_aux and _return_stats:
+        raise ValueError("_return_stats cannot be combined with return_aux=True")
+
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)
@@ -250,12 +254,13 @@ def clipped_grad(
         batch_argnums=batch_argnums,
         clipping_norm=clipping_norm,
         normalize_by=normalize_by,
-        return_aux=return_aux or _force_grad_norms,
+        return_aux=return_aux,
         second_moment=second_moment,
         microbatch_size=microbatch_size,
         dtype=dtype,
         compute_dtype=compute_dtype,
         _scale_fn=_scale_fn,
+        _return_stats=_return_stats,
     )
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
@@ -270,16 +275,37 @@ def clipped_grad(
                 (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
             if _force_grad_norms:
                 if isinstance(result, tuple):
-                    clipped_grads, aux = result
+                    if _return_stats:
+                        if len(result) == 3:
+                            clipped_grads, aux, stats = result
+                        else:
+                            clipped_grads, stats = result
+                            aux = None
+                    else:
+                        clipped_grads, aux = result
                     grad_aux = ClippedGradAux(
                         loss_values=None,
-                        grad_norms=aux.norms,
-                        clipped_grad_norms=aux.clipped_norms,
+                        grad_norms=(aux.norms if aux is not None else None),
+                        clipped_grad_norms=(
+                            aux.clipped_norms if aux is not None else None
+                        ),
                         loss_aux=None,
-                        clipping_rate=aux.clipping_rate,
-                        batch_size=aux.batch_size,
-                        group_norms=aux.group_norms,
+                        clipping_rate=(
+                            aux.clipping_rate
+                            if aux is not None
+                            else (
+                                stats.clipping_rate
+                                if isinstance(stats.clipping_rate, float)
+                                else None
+                            )
+                        ),
+                        batch_size=(
+                            aux.batch_size if aux is not None else stats.batch_size
+                        ),
+                        group_norms=(aux.group_norms if aux is not None else None),
                     )
+                    if _return_stats:
+                        return (clipped_grads, grad_aux, stats), returned_state
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
             return result, returned_state
