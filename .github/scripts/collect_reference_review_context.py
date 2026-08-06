@@ -52,7 +52,9 @@ def main() -> int:
     files = _changed_files(args.base)
     entries: list[dict[str, object]] = []
     for rel_path in files:
-        entries.extend(_extract_reference_lines(REPO_ROOT / rel_path))
+        full_path = REPO_ROOT / rel_path
+        if full_path.exists():
+            entries.extend(_extract_reference_lines(full_path))
 
     payload = {"base": args.base, "files": files, "entries": entries}
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
