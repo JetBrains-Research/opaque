@@ -7,7 +7,7 @@ implements.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
@@ -19,9 +19,25 @@ from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
 from opaque.api.dpftrl.noise._second_moment import SecondMomentMFNoiseState
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import torch
 
+    from opaque.random.types import RngKey
+    from opaque.types import PerGroup
+
+    from ._engine import MFNoiseState
     from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix
+
+
+RawMfNoiseFactory = Callable[
+    [Any, "MfStrategy"],
+    tuple[
+        Callable[..., tuple[Any, "MFNoiseState"]],
+        "MFNoiseState",
+        Callable[[int], float],
+    ],
+]
 
 
 @runtime_checkable
@@ -72,6 +88,24 @@ class MfStrategy(Protocol):
         max_participations: int | None,
     ) -> float: ...
 
+    def raw_noise_factory(
+        self,
+        grad_template: Any,
+        *,
+        n_steps: int,
+        min_sep: int,
+        max_participations: int | None,
+        key: "RngKey",
+        compute_dtype: "torch.dtype",
+    ) -> (
+        tuple[
+            Callable[..., tuple[Any, "MFNoiseState"]],
+            "MFNoiseState",
+            Callable[[int], float],
+        ]
+        | None
+    ): ...
+
 
 __all__ = [
     "BandMfStrategy",
@@ -82,5 +116,6 @@ __all__ = [
     "LambdaCgdStrategy",
     "MFNoiseState",
     "MfStrategy",
+    "RawMfNoiseFactory",
     "SecondMomentMFNoiseState",
 ]
