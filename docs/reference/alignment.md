@@ -110,8 +110,9 @@ a `completion_mask` for completion-only loss.
   of the model is frozen). Call it **before** `make_functional` (the embedding
   resize must be captured in the functional snapshot).
 - **`get_training_chat_template()`** — return a chat-template string carrying
-  assistant-turn `{% generation %}` markers so the assistant-token mask is
-  recoverable at tokenization time.
+  validated assistant-turn `{% generation %}` markers so the assistant-token
+  mask is recoverable at tokenization time. Unsupported templates raise instead
+  of falling back to a potentially incorrect mask.
 - **`apply_chat_template_with_mask()`** — tokenize a chat conversation into
   `input_ids` + `completion_mask` (`1` on assistant tokens), the mask consumed
   by `language_modeling_collator(..., completion_only_loss=True)`.
