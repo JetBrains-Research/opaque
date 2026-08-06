@@ -87,12 +87,14 @@ neighboring relation) or $2C$ (under replace-one).
 
 ### Step 3: Noise addition
 
-Gaussian noise with standard deviation $\sigma$ is added to the sum of clipped
-gradients. The noise magnitude is proportional to the sensitivity (the clip
-norm) and the desired privacy level.
+Gaussian noise with standard deviation $\sigma_{\text{abs}}$ is added to the
+sum of clipped gradients. The absolute noise scale is proportional to the
+sensitivity (the clip norm): for clip norm $C$ and noise multiplier $z$,
+$\sigma_{\text{abs}} = zC$.
 
-The ratio $\sigma / C$ is the *noise multiplier*. Larger noise multiplier means
-stronger privacy (smaller $\varepsilon$) but more gradient corruption.
+The dimensionless ratio $z = \sigma_{\text{abs}} / C$ is the *noise
+multiplier*. Larger noise multiplier means stronger privacy (smaller
+$\varepsilon$) but more gradient corruption.
 
 ### Step 4: Parameter update
 
@@ -118,12 +120,15 @@ When the same dataset is used for multiple DP mechanisms (e.g., $T$ steps of
 DP-SGD), the total privacy loss is bounded by *composition theorems*.
 
 **Basic composition**: $\varepsilon$ values add linearly. $T$ steps of
-$\varepsilon_0$-DP gives $T \cdot \varepsilon_0$ total privacy loss. For a
-mechanism with noise multiplier $\sigma$ and sensitivity $C$, a single step
-gives $\varepsilon_0 \approx C / \sigma$, so $T$ steps cost approximately
-$T \cdot C / \sigma$. This bound is correct but extremely loose.
+$\varepsilon_0$-DP gives $T \cdot \varepsilon_0$ total privacy loss. For the
+Gaussian mechanism, the single-step privacy cost is controlled by the **noise
+multiplier** $z = \sigma_{\text{abs}} / C$: increasing $z$ decreases
+$\varepsilon_0$. Holding $z$ fixed keeps the per-step guarantee unchanged even
+if you later rescale both the clip norm and the absolute noise standard
+deviation together. The linear $T \cdot \varepsilon_0$ bound is correct but
+extremely loose.
 
-**Advanced composition** ([Kairouz et al. 2015](https://arxiv.org/abs/1311.0776)):
+**Advanced composition** ([Dwork, Rothblum, and Vadhan 2010](https://theory.stanford.edu/~salil/papers/compose-private.pdf)):
 for $T$ applications of an $(\varepsilon_0, \delta_0)$-DP mechanism, the total
 privacy satisfies $(\varepsilon, T\delta_0 + \delta)$-DP where:
 
@@ -375,6 +380,7 @@ semantics, double the bound when calibrating noise.
 
 - [Abadi et al. 2016 - Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133)
 - [Dong et al. 2019 - Gaussian Differential Privacy](https://arxiv.org/abs/1905.02383)
+- [Dwork, Rothblum, and Vadhan 2010 - Boosting and Differential Privacy](https://theory.stanford.edu/~salil/papers/compose-private.pdf)
 - [Kairouz et al. 2015 - The Composition Theorem for Differential Privacy](https://arxiv.org/abs/1311.0776)
 - [Balle et al. 2020 - Hypothesis Testing Interpretations and the Laplace Mechanism](https://arxiv.org/abs/1905.10731)
 - [Andrew et al. 2021 - Differentially Private Learning with Adaptive Clipping](https://arxiv.org/abs/1905.03871)
