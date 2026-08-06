@@ -3859,8 +3859,9 @@ a <code>completion_mask</code> for completion-only loss.</p>
   of the model is frozen). Call it <strong>before</strong> <code>make_functional</code> (the embedding
   resize must be captured in the functional snapshot).</li>
 <li><strong><code>get_training_chat_template()</code></strong> — return a chat-template string carrying
-  assistant-turn <code>{% generation %}</code> markers so the assistant-token mask is
-  recoverable at tokenization time.</li>
+  validated assistant-turn <code>{% generation %}</code> markers so the assistant-token
+  mask is recoverable at tokenization time. Unsupported templates raise instead
+  of falling back to a potentially incorrect mask.</li>
 <li><strong><code>apply_chat_template_with_mask()</code></strong> — tokenize a chat conversation into
   <code>input_ids</code> + <code>completion_mask</code> (<code>1</code> on assistant tokens), the mask consumed
   by <code>language_modeling_collator(..., completion_only_loss=True)</code>.</li>
@@ -6185,14 +6186,14 @@ returns a per-token boolean mask suitable for <code>assistant_only_loss</code>.<
 <ul>
 <li>If the tokenizer's current template already contains the generation
   marker block, return it unchanged.</li>
-<li>Otherwise, locate the <em>last</em> occurrence of the Jinja2 content expression
-  <code>{{ generation_token }}</code> (the TRL v2 canonical form) or, as a fallback,
-  the last <code>{{ message['content'] }}</code> expression that appears inside the
-  final <code>if … 'assistant' …</code> branch of the template.  Wrap the matched
-  expression with the generation-marker tags.</li>
-<li>If neither pattern is found (non-standard template), wrap the entire
-  template body — between the outer loop end and the final closing brace —
-  with a best-effort marker.  A warning is logged when this fallback fires.</li>
+<li>Otherwise, locate the assistant content expression in an explicit
+  assistant branch, a shared Qwen-style role clause, or a Gemma-style shared
+  render expression that maps the <code>assistant</code> role to <code>model</code>.</li>
+<li>Render each candidate with distinct user and assistant probe text.  Accept
+  it only when the generation spans contain the assistant probe and exclude
+  the user probe.</li>
+<li>Raise :class:<code>ValueError</code> when the template cannot be transformed without
+  guessing.</li>
 </ul>
 
 
@@ -6276,7 +6277,8 @@ non-empty Jinja2 string.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>tokenizer.chat_template</code> is <code>None</code> or empty.</p>
+                <p>If <code>tokenizer.chat_template</code> is <code>None</code> or empty, or if
+its assistant render path cannot be identified and validated.</p>
               </div>
             </td>
           </tr>
@@ -6368,7 +6370,17 @@ non-empty Jinja2 string.</p>
 <span class="normal"><a href="#__codelineno-0-248">248</a></span>
 <span class="normal"><a href="#__codelineno-0-249">249</a></span>
 <span class="normal"><a href="#__codelineno-0-250">250</a></span>
-<span class="normal"><a href="#__codelineno-0-251">251</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_training_chat_template</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">:</span> <span class="n">PreTrainedTokenizerBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
+<span class="normal"><a href="#__codelineno-0-257">257</a></span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_training_chat_template</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">:</span> <span class="n">PreTrainedTokenizerBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a chat-template string with assistant-turn generation markers.</span>
 <a id="__codelineno-0-171" name="__codelineno-0-171"></a>
 <a id="__codelineno-0-172" name="__codelineno-0-172"></a><span class="sd">    Wraps the assistant-turn content of *tokenizer*&#39;s chat template with</span>
@@ -6383,14 +6395,14 @@ non-empty Jinja2 string.</p>
 <a id="__codelineno-0-181" name="__codelineno-0-181"></a>
 <a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="sd">    - If the tokenizer&#39;s current template already contains the generation</span>
 <a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">      marker block, return it unchanged.</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">    - Otherwise, locate the *last* occurrence of the Jinja2 content expression</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">      ``{{ generation_token }}`` (the TRL v2 canonical form) or, as a fallback,</span>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">      the last ``{{ message[&#39;content&#39;] }}`` expression that appears inside the</span>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">      final ``if … &#39;assistant&#39; …`` branch of the template.  Wrap the matched</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="sd">      expression with the generation-marker tags.</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a><span class="sd">    - If neither pattern is found (non-standard template), wrap the entire</span>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">      template body — between the outer loop end and the final closing brace —</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">      with a best-effort marker.  A warning is logged when this fallback fires.</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">    - Otherwise, locate the assistant content expression in an explicit</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">      assistant branch, a shared Qwen-style role clause, or a Gemma-style shared</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">      render expression that maps the ``assistant`` role to ``model``.</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a><span class="sd">    - Render each candidate with distinct user and assistant probe text.  Accept</span>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="sd">      it only when the generation spans contain the assistant probe and exclude</span>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a><span class="sd">      the user probe.</span>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="sd">    - Raise :class:`ValueError` when the template cannot be transformed without</span>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">      guessing.</span>
 <a id="__codelineno-0-192" name="__codelineno-0-192"></a>
 <a id="__codelineno-0-193" name="__codelineno-0-193"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">        tokenizer: A tokenizer whose ``chat_template`` attribute must be a</span>
@@ -6401,56 +6413,66 @@ non-empty Jinja2 string.</p>
 <a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">        ``{% generation %}`` ... ``{% endgeneration %}``.</span>
 <a id="__codelineno-0-200" name="__codelineno-0-200"></a>
 <a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">    Raises:</span>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        ValueError: If ``tokenizer.chat_template`` is ``None`` or empty.</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="n">template</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="s2">&quot;chat_template&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">template</span><span class="p">:</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a>            <span class="s2">&quot;tokenizer.chat_template is not set.  Assign a Jinja2 template &quot;</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a>            <span class="s2">&quot;string to tokenizer.chat_template before calling &quot;</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a>            <span class="s2">&quot;get_training_chat_template.&quot;</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a>        <span class="p">)</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a>    <span class="c1"># Idempotency: already has the marker.</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a>    <span class="k">if</span> <span class="n">_GEN_START</span> <span class="ow">in</span> <span class="n">template</span><span class="p">:</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a>        <span class="k">return</span> <span class="n">template</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a>    <span class="c1"># Strategy 1: wrap {{ generation_token }} — TRL v2 canonical placeholder.</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="n">_GENERATION_TOKEN_EXPR</span> <span class="o">=</span> <span class="s2">&quot;{{ generation_token }}&quot;</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a>    <span class="k">if</span> <span class="n">_GENERATION_TOKEN_EXPR</span> <span class="ow">in</span> <span class="n">template</span><span class="p">:</span>
-<a id="__codelineno-0-219" name="__codelineno-0-219"></a>        <span class="n">candidate</span> <span class="o">=</span> <span class="n">template</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
-<a id="__codelineno-0-220" name="__codelineno-0-220"></a>            <span class="n">_GENERATION_TOKEN_EXPR</span><span class="p">,</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a>            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_GEN_START</span><span class="si">}{</span><span class="n">_GENERATION_TOKEN_EXPR</span><span class="si">}{</span><span class="n">_GEN_END</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a>            <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a>        <span class="p">)</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a>        <span class="k">if</span> <span class="n">_generation_block_renders</span><span class="p">(</span><span class="n">candidate</span><span class="p">):</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a>            <span class="k">return</span> <span class="n">candidate</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>    <span class="c1"># Strategy 2: wrap the assistant content expression inside the assistant</span>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a>    <span class="c1"># conditional block. Handles ChatML, Llama-3, Phi-3, etc.</span>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a>    <span class="n">template_out</span> <span class="o">=</span> <span class="n">_wrap_assistant_content</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a>    <span class="k">if</span> <span class="n">template_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_generation_block_renders</span><span class="p">(</span><span class="n">template_out</span><span class="p">):</span>
-<a id="__codelineno-0-231" name="__codelineno-0-231"></a>        <span class="k">return</span> <span class="n">template_out</span>
-<a id="__codelineno-0-232" name="__codelineno-0-232"></a>
-<a id="__codelineno-0-233" name="__codelineno-0-233"></a>    <span class="c1"># Strategy 2b: shared OR-clause rendering (Qwen2.5-Instruct pattern). When</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a>    <span class="c1"># user/system/assistant turns share one expression inside a multi-condition</span>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a>    <span class="c1"># ``or`` clause, the last assistant mention is the tool-call ``elif`` and</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a>    <span class="c1"># Strategy 2 would wrap an unreachable expression (empty</span>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a>    <span class="c1"># ``generation_indices``). Rewrite the shared expression with an inner</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a>    <span class="c1"># role-guard so only the assistant case renders inside the mask.</span>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a>    <span class="n">template_out</span> <span class="o">=</span> <span class="n">_wrap_shared_or_clause</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a>    <span class="k">if</span> <span class="n">template_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_generation_block_renders</span><span class="p">(</span><span class="n">template_out</span><span class="p">):</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>        <span class="k">return</span> <span class="n">template_out</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a>    <span class="c1"># Strategy 3: best-effort fallback. Wrap the whole template body; unlikely</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="c1"># to yield a correct assistant-only mask but stays syntactically valid.</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a>        <span class="s2">&quot;get_training_chat_template: could not locate the assistant-turn &quot;</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a>        <span class="s2">&quot;content expression in the chat template.  Falling back to wrapping &quot;</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a>        <span class="s2">&quot;the entire template body.  The resulting assistant_tokens_mask may &quot;</span>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a>        <span class="s2">&quot;be incorrect.  Consider setting the template manually.&quot;</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="p">)</span>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_GEN_START</span><span class="si">}{</span><span class="n">template</span><span class="si">}{</span><span class="n">_GEN_END</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        ValueError: If ``tokenizer.chat_template`` is ``None`` or empty, or if</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">            its assistant render path cannot be identified and validated.</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="n">template</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="s2">&quot;chat_template&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">template</span><span class="p">:</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>            <span class="s2">&quot;tokenizer.chat_template is not set.  Assign a Jinja2 template &quot;</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>            <span class="s2">&quot;string to tokenizer.chat_template before calling &quot;</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>            <span class="s2">&quot;get_training_chat_template.&quot;</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>        <span class="p">)</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>    <span class="c1"># Idempotency: already has the marker.</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>    <span class="k">if</span> <span class="n">_GEN_START</span> <span class="ow">in</span> <span class="n">template</span><span class="p">:</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="k">return</span> <span class="n">template</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="c1"># Strategy 1: wrap {{ generation_token }} — TRL v2 canonical placeholder.</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>    <span class="n">_GENERATION_TOKEN_EXPR</span> <span class="o">=</span> <span class="s2">&quot;{{ generation_token }}&quot;</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a>    <span class="k">if</span> <span class="n">_GENERATION_TOKEN_EXPR</span> <span class="ow">in</span> <span class="n">template</span><span class="p">:</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a>        <span class="n">candidate</span> <span class="o">=</span> <span class="n">template</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a>            <span class="n">_GENERATION_TOKEN_EXPR</span><span class="p">,</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_GEN_START</span><span class="si">}{</span><span class="n">_GENERATION_TOKEN_EXPR</span><span class="si">}{</span><span class="n">_GEN_END</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a>            <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>        <span class="p">)</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a>        <span class="k">if</span> <span class="n">_generation_block_marks_only_assistant</span><span class="p">(</span><span class="n">candidate</span><span class="p">):</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a>            <span class="k">return</span> <span class="n">candidate</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>    <span class="c1"># Strategy 2: wrap the assistant content expression inside the assistant</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a>    <span class="c1"># conditional block. Handles ChatML, Llama-3, Phi-3, etc.</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a>    <span class="n">template_out</span> <span class="o">=</span> <span class="n">_wrap_assistant_content</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a>    <span class="k">if</span> <span class="n">template_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_generation_block_marks_only_assistant</span><span class="p">(</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>        <span class="n">template_out</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>    <span class="p">):</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>        <span class="k">return</span> <span class="n">template_out</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>    <span class="c1"># Strategy 3: Gemma maps assistant to the rendered &quot;model&quot; role, then emits</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>    <span class="c1"># every role through one expression outside the role-selection branch.</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a>    <span class="n">template_out</span> <span class="o">=</span> <span class="n">_wrap_gemma_shared_expression</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a>    <span class="k">if</span> <span class="n">template_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_generation_block_marks_only_assistant</span><span class="p">(</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a>        <span class="n">template_out</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a>    <span class="p">):</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a>        <span class="k">return</span> <span class="n">template_out</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="c1"># Strategy 4: shared OR-clause rendering (Qwen2.5-Instruct pattern). When</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="c1"># user/system/assistant turns share one expression inside a multi-condition</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>    <span class="c1"># ``or`` clause, the last assistant mention is the tool-call ``elif`` and</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="c1"># Strategy 2 would wrap an unreachable expression (empty</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a>    <span class="c1"># ``generation_indices``). Rewrite the shared expression with an inner</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="c1"># role-guard so only the assistant case renders inside the mask.</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="n">template_out</span> <span class="o">=</span> <span class="n">_wrap_shared_or_clause</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="k">if</span> <span class="n">template_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_generation_block_marks_only_assistant</span><span class="p">(</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>        <span class="n">template_out</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>    <span class="p">):</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>        <span class="k">return</span> <span class="n">template_out</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>        <span class="s2">&quot;get_training_chat_template: could not identify and validate an &quot;</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>        <span class="s2">&quot;assistant-only render path in the tokenizer&#39;s chat template. &quot;</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a>        <span class="s2">&quot;Provide a template with explicit &#39;{</span><span class="si">% g</span><span class="s2">eneration %}&#39; / &quot;</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>        <span class="s2">&quot;&#39;{</span><span class="si">% e</span><span class="s2">ndgeneration %}&#39; markers.&quot;</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
