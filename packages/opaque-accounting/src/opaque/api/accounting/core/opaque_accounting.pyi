@@ -115,6 +115,10 @@ class Pld:
         Args:
             count: Repetition count. Must be > 0.
 
+        Raises:
+            ValueError: If count is not positive.
+            OverflowError: If count exceeds the supported FFT exponent range.
+
         Returns:
             A new self-composed PLD.
         """

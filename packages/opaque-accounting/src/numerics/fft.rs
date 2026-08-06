@@ -209,7 +209,7 @@ pub fn self_convolve_with_bounds(
     }
 
     if a.len() == 1 {
-        return vec![a[0].powi(count as i32)];
+        return vec![a[0].powf(count as f64)];
     }
 
     let full_result_len = a.len() + (count - 1) * (a.len() - 1);
@@ -334,6 +334,13 @@ mod tests {
         assert_relative_eq!(result[1], 3.0, epsilon = 1e-10);
         assert_relative_eq!(result[2], 3.0, epsilon = 1e-10);
         assert_relative_eq!(result[3], 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_singleton_self_convolution_supports_maximum_exponent() {
+        let result = self_convolve(&[1.0], u32::MAX as usize);
+
+        assert_eq!(result, vec![1.0]);
     }
 
     #[test]
