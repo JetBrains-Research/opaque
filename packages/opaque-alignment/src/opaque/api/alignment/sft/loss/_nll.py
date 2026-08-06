@@ -26,13 +26,10 @@ division** by the per-example token count.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import torch
 
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
-
-if TYPE_CHECKING:
-    import torch
 
 __all__ = ["fused_nll_loss", "nll_loss"]
 
@@ -79,8 +76,13 @@ def nll_loss(
     # Per-token log-probabilities at the (clamped) target indices
     logp = selective_log_softmax(shifted_logits, clamped_labels)  # (..., T-1)
 
-    # Per-example mean NLL over non-ignored tokens; clamp divisor ≥ 1
-    nll = (-logp * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
+    # Per-example mean NLL over non-ignored tokens; accumulate/divide in >= fp32
+    # with an *exact* integer token count so eager matches the fused path: a
+    # half-precision ``mask.sum`` rounds counts >256 in bf16.  ``promote_types``
+    # keeps a float64 reference exact (no downcast). #390
+    acc = torch.promote_types(logp.dtype, torch.float32)
+    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)  # exact int64 count
+    nll = (-logp * mask).to(acc).sum(-1) / n_valid.to(acc)  # (...)
     return nll
 
 

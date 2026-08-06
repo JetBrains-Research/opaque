@@ -99,8 +99,13 @@ def dft_loss(
     # Per-token DFT loss: -p * logp  (p is detached; logp is differentiable)
     per_token = -p * logp  # (..., T-1)
 
-    # Per-example mean over non-ignored tokens; per-example divisor (DP-safe)
-    loss = (per_token * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
+    # Per-example mean over non-ignored tokens; per-example divisor (DP-safe).
+    # Accumulate/divide in >= fp32 with an *exact* integer token count so eager
+    # matches the fused path: a half-precision ``mask.sum`` rounds counts >256 in
+    # bf16.  ``promote_types`` keeps a float64 reference exact (no downcast). #390
+    acc = torch.promote_types(per_token.dtype, torch.float32)
+    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)  # exact int64 count
+    loss = (per_token * mask).to(acc).sum(-1) / n_valid.to(acc)  # (...)
     return loss
 
 

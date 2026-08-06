@@ -359,3 +359,21 @@ def test_fused_dft_lce_path_matches_eager_gpu() -> None:
     g_eager = vmap(grad(lambda h, lab: dft_loss(h @ weight.T, lab)))(hidden, labels)
     assert torch.isfinite(g_fused).all()
     assert torch.allclose(g_fused.float(), g_eager.float(), atol=1e-2, rtol=0.0)
+
+
+def test_dft_divisor_is_exact_token_count_under_bf16():
+    """#390: the per-example divisor is the exact token count, not bf16-rounded.
+
+    Uniform logits make the per-token DFT loss identical at every position, so
+    the per-example mean equals that constant regardless of token count.  256 is
+    bf16-exact but 257 rounds to 256 in bf16, so a half-precision ``mask.sum``
+    divisor would scale the 257-token mean by 257/256 (~0.4%); the exact divisor
+    keeps the two means equal.
+    """
+
+    def _uniform_mean(n_valid: int) -> float:
+        logits = torch.zeros(n_valid + 1, 8, dtype=torch.bfloat16)
+        labels = torch.zeros(n_valid + 1, dtype=torch.long)  # all valid, no -100
+        return dft_loss(logits, labels).item()
+
+    assert _uniform_mean(256) == pytest.approx(_uniform_mean(257), rel=1e-4)
