@@ -296,7 +296,9 @@ def clipped_grad(
                                 else None
                             )
                         ),
-                        batch_size=(aux.batch_size if aux is not None else stats.batch_size),
+                        batch_size=(
+                            aux.batch_size if aux is not None else stats.batch_size
+                        ),
                         group_norms=(aux.group_norms if aux is not None else None),
                     )
                     if _return_stats:

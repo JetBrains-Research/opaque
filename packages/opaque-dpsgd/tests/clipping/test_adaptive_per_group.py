@@ -5,8 +5,8 @@ import math
 import pytest
 import torch
 
-from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
+from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.dpsgd.clipping import per_group
 from opaque.random import key
 from opaque.types import ClippedPytree, PerGroup

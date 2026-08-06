@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from torch.autograd.profiler import record_function
@@ -12,7 +12,6 @@ from opaque.api.engine.clipping._clipped_grad import (
     _validate_static_args,
     clipped_grad,
 )
-from opaque.api.engine.clipping._clipped_fun import ClippedFunStats
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
@@ -21,6 +20,9 @@ from opaque.api.engine.clipping._helpers import (
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
 from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
+
+if TYPE_CHECKING:
+    from opaque.api.engine.clipping._clipped_fun import ClippedFunStats
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -442,13 +444,19 @@ def adaptive_clipped_grad(
             grad_norms = None
 
         batch_size = (
-            aux.batch_size if aux is not None else (stats.batch_size if stats is not None else 0)
+            aux.batch_size
+            if aux is not None
+            else (stats.batch_size if stats is not None else 0)
         )
 
         if is_per_group and (grad_norms is not None or stats is not None):
             # --- Per-group adaptive path ---
             current_pg = state._next_clipping_norm
-            if stats is not None and isinstance(stats.num_clipped, dict) and batch_size > 0:
+            if (
+                stats is not None
+                and isinstance(stats.num_clipped, dict)
+                and batch_size > 0
+            ):
                 per_group_num_clipped = stats.num_clipped
                 per_group_rates = (
                     stats.clipping_rate if isinstance(stats.clipping_rate, dict) else {}
@@ -518,10 +526,14 @@ def adaptive_clipped_grad(
             if stats is not None and isinstance(stats.num_clipped, float):
                 num_clipped = stats.num_clipped
                 clipping_rate = (
-                    stats.clipping_rate if isinstance(stats.clipping_rate, float) else 0.0
+                    stats.clipping_rate
+                    if isinstance(stats.clipping_rate, float)
+                    else 0.0
                 )
             else:
-                num_clipped = float((grad_norms > state._next_clipping_norm).sum().item())
+                num_clipped = float(
+                    (grad_norms > state._next_clipping_norm).sum().item()
+                )
                 clipping_rate = aux.clipping_rate
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(

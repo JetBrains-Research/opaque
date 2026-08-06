@@ -313,6 +313,7 @@ def _microbatch_accumulate_stats_only(
     if isinstance(first_batch_arg, torch.Tensor):
         batch_size = first_batch_arg.shape[0]
     else:
+
         def get_first_tensor(pytree):
             if isinstance(pytree, torch.Tensor):
                 return pytree
@@ -340,9 +341,9 @@ def _microbatch_accumulate_stats_only(
     accumulated_squared = None
     total_batch_size = 0
     if isinstance(clipping_norm, PerGroup):
-        total_num_clipped: float | dict[str, float] = {
-            name: 0.0 for name in clipping_norm.values
-        }
+        total_num_clipped: float | dict[str, float] = dict.fromkeys(
+            clipping_norm.values, 0.0
+        )
     else:
         total_num_clipped = 0.0
 
@@ -422,10 +423,14 @@ def _microbatch_accumulate_stats_only(
     else:
         clipping_rate = total_num_clipped / max(1.0, float(total_batch_size))
 
-    return accumulated_grads, accumulated_squared, ClippedFunStats(
-        num_clipped=total_num_clipped,
-        clipping_rate=clipping_rate,
-        batch_size=total_batch_size,
+    return (
+        accumulated_grads,
+        accumulated_squared,
+        ClippedFunStats(
+            num_clipped=total_num_clipped,
+            clipping_rate=clipping_rate,
+            batch_size=total_batch_size,
+        ),
     )
 
 
@@ -439,8 +444,8 @@ def _compute_clipping_stats(
     batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
     if batch_size == 0:
         if isinstance(clipping_norm, PerGroup):
-            empty_counts = {name: 0.0 for name in clipping_norm.values}
-            empty_rates = {name: 0.0 for name in clipping_norm.values}
+            empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
+            empty_rates = dict.fromkeys(clipping_norm.values, 0.0)
             return ClippedFunStats(
                 num_clipped=empty_counts,
                 clipping_rate=empty_rates,
@@ -461,7 +466,9 @@ def _compute_clipping_stats(
         )
 
     effective_cn = (
-        clipping_norm.effective if isinstance(clipping_norm, PerGroup) else clipping_norm
+        clipping_norm.effective
+        if isinstance(clipping_norm, PerGroup)
+        else clipping_norm
     )
     num_clipped = float((norms > effective_cn).sum().item())
     return ClippedFunStats(
@@ -783,7 +790,8 @@ def clipped_fun(
                 value_aux=aux_dict.get("value_aux"),
                 clipping_rate=(
                     stats.clipping_rate
-                    if isinstance(stats.clipping_rate, float) or stats.clipping_rate is None
+                    if isinstance(stats.clipping_rate, float)
+                    or stats.clipping_rate is None
                     else None
                 ),
                 batch_size=stats.batch_size,

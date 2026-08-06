@@ -5,8 +5,8 @@ import math
 import pytest
 import torch
 
-from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
+from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree
 
@@ -506,7 +506,9 @@ class TestAdaptiveClippedGrad:
                 rel_tol=1e-5,
             )
 
-    def test_microbatching_no_aux_does_not_materialize_per_example_aux(self, monkeypatch):
+    def test_microbatching_no_aux_does_not_materialize_per_example_aux(
+        self, monkeypatch
+    ):
         """No-aux adaptive microbatching should stream stats instead of concatenating aux."""
 
         original = clipped_fun_module._microbatch_accumulate
