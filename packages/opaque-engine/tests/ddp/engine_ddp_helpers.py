@@ -260,12 +260,15 @@ def _worker_gather_optional_ragged(rank: int, world_size: int, port: int) -> Non
 
     _setup_gloo(rank, world_size, port)
     try:
-        optional = None if rank == 0 else {"value": torch.tensor([[1.0, 2.0]])}
+        optional = (
+            None if rank == 0 else {"value": torch.tensor([[1.0, 2.0]]), "aux": None}
+        )
         gathered_optional = gather_pytree(optional)
         assert torch.equal(
             gathered_optional["value"],
             torch.tensor([[1.0, 2.0]]),
         )
+        assert gathered_optional["aux"] is None
 
         ragged = torch.full((rank * 2, 2), float(rank))
         gathered_ragged = gather_tensors(ragged)
