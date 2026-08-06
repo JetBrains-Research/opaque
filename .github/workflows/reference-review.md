@@ -12,6 +12,7 @@ engine: copilot
 tools:
   bash: [python3, git]
   github:
+    mode: gh-proxy
     toolsets: [pull_requests, repos, search]
 jobs:
   collect-reference-context:
