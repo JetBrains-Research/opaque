@@ -125,7 +125,8 @@ toggles.
 
 - **`compute_ref_logprobs_for_dataset()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
   — run the reference once over a dataset, attach per-example logp columns,
-  and cache to a content-addressed `.npz` (a cache hit skips the forward).
+  and cache to a content-addressed `.safetensors` file keyed by dataset
+  identity, `cache_key`, and `output_columns` (a cache hit skips the forward).
 - **`null_ref_context()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
   — context manager that turns a model into its own reference, dispatching
   over the separate-model / `"ref"`-adapter / disabled-adapter / no-op
