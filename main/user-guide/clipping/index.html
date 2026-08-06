@@ -3497,19 +3497,29 @@ rate query). Account for it using <code>dpsgd_acc.adaclip()</code>:</p>
 <a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="distributed-adaptive-clipping">Distributed adaptive clipping<a class="headerlink" href="#distributed-adaptive-clipping" title="Permanent link">&para;</a></h3>
-<p>In distributed training, the clip norm must be consistent across devices.
-<code>adaptive_clipped_grad</code> does not auto-detect DDP; after each step,
-synchronize the state:</p>
+<p>In distributed training, <code>adaptive_clipped_grad</code> stays local to each rank:
+it clips the local batch and records local clipped counts in the returned
+state. To keep the adaptive threshold consistent across devices, synchronize
+that state after every step, before the next adaptive-clipping call:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist_utils</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">clip_state</span> <span class="o">=</span> <span class="n">sync</span><span class="p">(</span><span class="n">clip_state</span><span class="p">)</span>  <span class="c1"># aggregate counts across ranks</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">clip_state</span> <span class="o">=</span> <span class="n">sync</span><span class="p">(</span><span class="n">clip_state</span><span class="p">)</span>  <span class="c1"># required: aggregate counts and update next threshold</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
 </code></pre></div>
-<p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally, which aggregates
-counts across ranks, recomputes the global clipping rate,
-and updates the internal next threshold to be identical on every device.</p>
+<p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally. For
+<code>AdaptiveClipState</code> it:</p>
+<ol>
+<li>sums each rank's local <code>num_clipped</code> and local batch size,</li>
+<li>recomputes the global clipping rate from those aggregated totals, and</li>
+<li>updates the internal next threshold so every rank uses the same adaptive
+   clip norm on the following step.</li>
+</ol>
+<p>This is what makes distributed adaptive clipping correct even when local
+batches are uneven, such as under Poisson sampling. The clipped output's
+current DP bound still lives on <code>grads.max_norm</code>; the synchronized state only
+controls the next step's threshold.</p>
 <h2 id="loss-function-requirements">Loss function requirements<a class="headerlink" href="#loss-function-requirements" title="Permanent link">&para;</a></h2>
 <p>The loss function passed to <code>clipped_grad</code> must:</p>
 <ol>

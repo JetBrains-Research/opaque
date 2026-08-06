@@ -3570,7 +3570,7 @@ differential privacy.</p>
 object. It auto-dispatches to the right function based on type:</p>
 <ul>
 <li><strong><code>sync(FixedClipState | AutoClipState)</code></strong> → marker-state passthrough.</li>
-<li><strong><code>sync(AdaptiveClipState)</code></strong> → aggregates counts and recomputes the internal adaptive threshold.</li>
+<li><strong><code>sync(AdaptiveClipState)</code></strong> → sums local clipped counts and batch sizes across ranks, recomputes the global clipping rate, and updates the internal next adaptive threshold identically on every rank.</li>
 <li><strong><code>sync(ClippedFunAux | ClippedGradAux | AutoClippedFunAux | AutoClippedGradAux | AdaptiveClippedGradAux)</code></strong> → gathers aux across ranks.</li>
 </ul>
 <p>Dispatch resolves by exact type and then by <code>__mro__</code>, so any subclass of a
