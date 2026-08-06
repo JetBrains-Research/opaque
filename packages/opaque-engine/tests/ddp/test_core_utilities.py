@@ -266,6 +266,7 @@ class TestModuleExports:
     def test_declared_exports_are_callable(self, module_name):
         module = importlib.import_module(module_name)
 
-        assert module.__all__, f"{module_name} must declare __all__"
-        for name in module.__all__:
+        exports = getattr(module, "__all__", None)
+        assert exports, f"{module_name} must declare __all__"
+        for name in exports:
             assert callable(getattr(module, name)), f"{module_name}.{name}"

@@ -12,15 +12,17 @@ class TestNamespaceSurface:
     def test_all_declared_factories_callable(self):
         import opaque.dpftrl.accounting as ftrl_acc
 
-        assert ftrl_acc.__all__, "accounting facade must declare __all__"
-        for name in ftrl_acc.__all__:
+        exports = getattr(ftrl_acc, "__all__", None)
+        assert exports, "accounting facade must declare __all__"
+        for name in exports:
             assert callable(getattr(ftrl_acc, name)), name
 
     def test_all_declared_types_importable(self):
         import opaque.dpftrl.accounting.types as ftrl_types
 
-        assert ftrl_types.__all__, "types facade must declare __all__"
-        for name in ftrl_types.__all__:
+        exports = getattr(ftrl_types, "__all__", None)
+        assert exports, "types facade must declare __all__"
+        for name in exports:
             assert hasattr(ftrl_types, name), name
 
     def test_no_public_leak_outside_all(self):

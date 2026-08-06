@@ -12,15 +12,17 @@ class TestNamespaceSurface:
     def test_all_declared_factories_callable(self):
         import opaque.dpsgd.accounting as dpsgd_acc
 
-        assert dpsgd_acc.__all__, "accounting facade must declare __all__"
-        for name in dpsgd_acc.__all__:
+        exports = getattr(dpsgd_acc, "__all__", None)
+        assert exports, "accounting facade must declare __all__"
+        for name in exports:
             assert callable(getattr(dpsgd_acc, name)), name
 
     def test_all_declared_types_importable(self):
         import opaque.dpsgd.accounting.types as dpsgd_types
 
-        assert dpsgd_types.__all__, "types facade must declare __all__"
-        for name in dpsgd_types.__all__:
+        exports = getattr(dpsgd_types, "__all__", None)
+        assert exports, "types facade must declare __all__"
+        for name in exports:
             assert hasattr(dpsgd_types, name), name
 
     def test_no_public_leak_outside_all(self):
