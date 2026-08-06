@@ -208,11 +208,11 @@ eps = proc.epsilon_at(delta=1e-5)
 
 ## References
 
-- **Choquette-Choo et al. (2024)** — [Optimal Matrix-Factorization Mechanisms with Applications to Group Privacy](https://arxiv.org/abs/2404.16706).
+- **Dvijotham et al. (2024)** — [Efficient and Near-Optimal Noise Generation for Streaming Differential Privacy](https://arxiv.org/abs/2404.16706).
   BLT mechanism with buffered linear Toeplitz optimization.
-- **Choquette-Choo et al. (2024)** — [Multi-Epoch Matrix Factorization Mechanisms for Private Machine Learning](https://arxiv.org/abs/2408.08868).
-  Multi-epoch sensitivity analysis for BLT.
-- **Dvijotham et al. (2024)** — [Efficient and Near-Optimal Noise Generation for Streaming Differential Privacy](https://arxiv.org/abs/2405.13763).
-  BSR paper with Toeplitz min-sep sensitivity theorem.
+- **McMahan et al. (2024)** — [A Hassle-free Algorithm for Private Learning in Practice: Don't Use Tree Aggregation, Use BLTs](https://arxiv.org/abs/2408.08868).
+  Multi-epoch BLT extension and practical evaluation.
+- **Kalinin, Lampert (2024)** — [Banded Square Root Matrix Factorization for Differentially Private Model Training](https://arxiv.org/abs/2405.13763).
+  BSR paper; Theorem 2 gives Toeplitz min-sep sensitivity for multi-participation.
 - **Kairouz et al. (2021)** — [Practical and Private (Deep) Learning without Sampling or Shuffling](https://arxiv.org/abs/2103.00039).
   DP-FTRL framework.

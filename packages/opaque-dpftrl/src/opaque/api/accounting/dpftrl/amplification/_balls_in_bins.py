@@ -29,7 +29,8 @@ The returned process represents the **total** privacy cost across
 all ``n_steps`` rounds.  Do NOT compose further externally.
 
 References:
-    - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
+    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD":
+      https://arxiv.org/abs/2412.16802
     - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
       for Matrix Mechanisms"
 """

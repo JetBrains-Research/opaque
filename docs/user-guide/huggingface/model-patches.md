@@ -8,6 +8,13 @@ backward path.  It predates and operates independently of
 trainer, a hand-rolled training loop, a custom orchestration layer)
 can use the same APIs.
 
+The fused kernels preserve separate software provenance from scholarly method
+attribution. In this guide, the relevant primary papers are
+[LoRA](https://arxiv.org/abs/2106.09685), [RoPE / RoFormer](https://arxiv.org/abs/2104.09864),
+[RMSNorm](https://arxiv.org/abs/1910.07467), and
+[GLU Variants Improve Transformer](https://arxiv.org/abs/2002.05202) for the
+SwiGLU / GeGLU activations used by patched model families.
+
 Two concerns are handled:
 
 - **Compat patches** — vmap-safety rewrites for attention, causal
@@ -259,7 +266,8 @@ fused backward that reads 3 tensors and writes 2–3 in a single pass.
 
 Fused RoPE applies rotary embeddings to Q and K tensors
 simultaneously.  Supports grouped-query attention (GQA) where Q and
-K have different head counts.
+K have different head counts. The underlying position encoding follows
+[*RoFormer: Enhanced Transformer with Rotary Position Embedding*](https://arxiv.org/abs/2104.09864).
 
 Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi-3, Gemma, Gemma2,
 Granite.
@@ -326,7 +334,8 @@ are detected and `peft=True` is passed to `apply_model_patches`:
 `opaque_lora_w` patches `peft.tuners.lora.Linear.forward` and applies
 to all LoRA layers.  `opaque_lora_qkv` and `opaque_lora_mlp` are
 auto-fused when all projections in an attention block or MLP block
-have LoRA adapters with no bias.
+have LoRA adapters with no bias. These kernels implement the low-rank adapter
+structure from [*LoRA: Low-Rank Adaptation of Large Language Models*](https://arxiv.org/abs/2106.09685).
 
 QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
 Cohere2.  Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm),

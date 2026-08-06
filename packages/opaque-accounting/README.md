@@ -181,16 +181,15 @@ pytest tests/ -v
 
 - Doroshenko et al., ["Connect the Dots: Tighter Discrete Approximations of Privacy Loss Distributions"](https://arxiv.org/abs/2207.04380), PoPETs 2022
 - Abadi et al., ["Deep Learning with Differential Privacy"](https://arxiv.org/abs/1607.00133), CCS 2016
-- Koskela et al., ["Tight Differential Privacy for Discrete-Valued Mechanisms"](https://arxiv.org/abs/2106.08567), AISTATS 2021
-- Andrew et al., ["Differentially Private Learning with Adaptive Clipping"](https://arxiv.org/abs/2106.07136), NeurIPS 2021
-- Dong et al., ["Gaussian Differential Privacy"](https://arxiv.org/abs/1905.02383), JRSS-B 2022
+- Koskela et al., ["Tight Differential Privacy for Discrete-Valued Mechanisms and for the Subsampled Gaussian Mechanism Using FFT"](https://arxiv.org/abs/2006.07134), AISTATS 2021
+- Andrew et al., ["Differentially Private Learning with Adaptive Clipping"](https://proceedings.neurips.cc/paper/2021/hash/91cff01af640a24e7f9f7a5ab407889f-Abstract.html), NeurIPS 2021
+- Dong et al., ["Gaussian Differential Privacy"](https://arxiv.org/abs/1905.02383), 2019
 
 ## License
 
 Apache-2.0
 
-## References
+## Related links
 
-- [Privacy Loss Distributions](https://arxiv.org/abs/1702.08896)
-- [Main opaque library](../opaque/) – PyTorch DP-SGD implementation
+- [Main opaque library](../opaque/) - PyTorch differential privacy library
 - [maturin documentation](https://www.maturin.rs/)

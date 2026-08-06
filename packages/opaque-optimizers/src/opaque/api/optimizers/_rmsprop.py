@@ -1,5 +1,9 @@
 """RMSprop optimizer with optional DP-aware bias correction.
 
+RMSprop was introduced in Tieleman and Hinton's 2012 Coursera lecture notes,
+`Lecture 6.5-rmsprop: Divide the gradient by a running average of its recent
+magnitude <https://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf>`_.
+
 Hinton's RMSprop: pure second-moment EMA, no first moment::
 
     nu_t = α nu_{t-1} + (1 − α) g_t²

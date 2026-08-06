@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """EXO (Efficient Exact Optimisation) pairwise DPO loss.
 
-Implements the EXO-pair variant from:
-    Ji et al., "EXOML: Efficient Exact Optimisation for Machine Learning"
-    (see TRL ``loss_type="exo_pair"``).
+Implements the simplified pairwise EXO objective from:
+    Ji et al., "Towards Efficient Exact Optimization of Language Model
+    Alignment" (arXiv:2402.00856, Eq. 16; see TRL ``loss_type="exo_pair"``).
 
 The EXO loss is a KL-weighted cross-entropy between the soft preference
 distribution and the label-smoothed target distribution.  With label
@@ -42,7 +42,7 @@ def exo_loss(
     beta: float,
     label_smoothing: float = 1e-3,
 ) -> torch.Tensor:
-    """EXO pairwise loss.
+    """EXO pairwise loss (arXiv:2402.00856, simplified pairwise variant).
 
     Args:
         chosen_logratio: Per-example scalar ``log π(y_w|x) − log π_ref(y_w|x)``.

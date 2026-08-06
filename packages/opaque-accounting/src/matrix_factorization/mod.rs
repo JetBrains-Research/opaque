@@ -35,7 +35,7 @@
 //! # References
 //!
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
-//! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
+//! - BLT: Dvijotham et al. (2024) <https://arxiv.org/abs/2404.16706>
 //! - DP-λCGD: Kalinin et al. (2026) <https://arxiv.org/abs/2601.22334>
 //! - BISR: Kalinin et al. (2026) <https://arxiv.org/abs/2505.12128>
 //! - MC BnB: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2410.06266>

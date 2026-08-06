@@ -5,7 +5,7 @@ bandwidth 2 to arbitrary bandwidth p ≥ 2. The inverse of the strategy matrix
 C^{-1} is a banded Toeplitz matrix whose coefficients are analytically determined
 from the inverse square root of the workload matrix.
 
-- **Paper**: [Back to Square Roots: Banded Inverse Square Root for DP Matrix Factorization](https://arxiv.org/abs/2505.12128)
+- **Paper**: [Back to Square Roots: An Optimal Bound on the Matrix Factorization Error for Multi-Epoch Differentially Private SGD](https://arxiv.org/abs/2505.12128)
 - **Strategy matrix**: Inverse is banded Toeplitz with bandwidth p
 - **Memory**: p-1 noise vectors (via PRNG replay or small buffer)
 - **Optimality**: Asymptotically optimal (matches upper and lower bounds)

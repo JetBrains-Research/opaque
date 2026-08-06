@@ -13,8 +13,8 @@ is the column norm of :math:`C_\\lambda` at step t.  Instead of storing
 zero additional memory overhead compared to DP-SGD.
 
 References:
-    - Kalinin et al. (2026) "DP-lambda-CGD: Leveraging Correlated Gradients
-      for Improved DP-SGD" https://arxiv.org/abs/2601.22334
+    - Kalinin et al. (2026) "DP-λCGD: Efficient Noise Correlation for
+      Differentially Private Model Training" https://arxiv.org/abs/2601.22334
 """
 
 from __future__ import annotations

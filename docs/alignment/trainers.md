@@ -10,6 +10,15 @@ one clip-noise-step. The alignment collators, losses, and reference helpers are
 the same primitives the by-hand guides use; the trainer is the orchestration
 layer.
 
+The supported `loss_type` values map onto the corresponding alignment papers:
+[DPO](https://arxiv.org/abs/2305.18290), [IPO](https://arxiv.org/abs/2310.12036),
+[DiscoPOP](https://arxiv.org/abs/2406.08414), [SimPO](https://arxiv.org/abs/2405.14734),
+[ORPO](https://arxiv.org/abs/2403.07691), [WPO](https://arxiv.org/abs/2406.11827),
+[LD-DPO](https://arxiv.org/abs/2409.06411), [APO](https://arxiv.org/abs/2408.06266),
+[SquareChiPO](https://arxiv.org/abs/2505.21395), [NCA](https://arxiv.org/abs/2402.05369),
+[BCO](https://arxiv.org/abs/2404.04656), [SPPO](https://arxiv.org/abs/2405.00675),
+and [Dynamic Fine-Tuning](https://arxiv.org/abs/2508.05629).
+
 ```python
 from opaque.transformers.trl import SFTConfig, SFTTrainer
 from opaque.transformers.trl import DPOConfig, DPOTrainer
@@ -269,7 +278,7 @@ These are flat fields on `DPOConfig`, composing on top of the head(s):
   The weight is detached and per-example, so per-example DP is preserved.
 - **LD-DPO** — `ld_alpha` (a float in `[0, 1]`, `None` ⇒ standard DPO)
   length-desensitizes the sequence log-prob by damping the verbose tail of each
-  completion beyond the shared-prefix length (arXiv:2409.10524).
+  completion beyond the shared-prefix length (arXiv:2409.06411).
 - **f-divergence** — `f_divergence_type` selects the regularizer:
   `"reverse_kl"` (default, standard DPO), `"forward_kl"`, `"js_divergence"`, or
   `"alpha_divergence"`. For the α-divergence, `f_alpha_divergence_coef`

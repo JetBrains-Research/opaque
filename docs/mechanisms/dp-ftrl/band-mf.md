@@ -296,7 +296,7 @@ for batch in loader:
 
 ## References
 
-- **Choquette-Choo et al. (2023)** — [Multi-Epoch Matrix Factorization Mechanisms for Private Machine Learning](https://arxiv.org/abs/2306.08153).
+- **Choquette-Choo et al. (2023)** — [(Amplified) Banded Matrix Factorization: A unified approach to private training](https://arxiv.org/abs/2306.08153).
   BandMF mechanism with banded Toeplitz optimization and cyclic Poisson
   amplification.
 - **Kairouz et al. (2021)** — [Practical and Private (Deep) Learning without Sampling or Shuffling](https://arxiv.org/abs/2103.00039).

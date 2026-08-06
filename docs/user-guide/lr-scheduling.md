@@ -154,8 +154,8 @@ schedule = with_warmup(1e-3, transition_steps=500)
 ## Restarts
 
 [`with_restarts`](../reference/schedules.md#with_restarts) replays a
-schedule `num_cycles` times over a window.  Combined with cosine you
-get SGDR (Loshchilov & Hutter, 2017):
+schedule `num_cycles` times over a window. Combined with cosine you get
+[SGDR](https://arxiv.org/abs/1608.03983) (Loshchilov & Hutter, 2017):
 
 ```python
 from opaque.scheduling import cosine_schedule, with_restarts
@@ -174,9 +174,10 @@ way as any other decay.
 ## Warmup-Stable-Decay (WSD)
 
 [`warmup_stable_decay`](../reference/schedules.md#warmup_stable_decay)
-implements the three-phase schedule from Hägele et al. 2024
-("Scaling Laws and Compute-Optimal Training Beyond Fixed Training
-Durations") and the MiniCPM paper:
+implements the three-phase schedule from Hägele et al.'s 2024
+[Scaling Laws and Compute-Optimal Training Beyond Fixed Training
+Durations](https://arxiv.org/abs/2405.18392). MiniCPM also adopts this
+schedule:
 
 1. **Warmup** — ramp from `0` to `init_value` over `num_warmup_steps`.
 2. **Stable** — constant at `init_value` for `num_stable_steps`.

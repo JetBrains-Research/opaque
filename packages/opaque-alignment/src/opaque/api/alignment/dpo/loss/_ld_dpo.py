@@ -4,8 +4,9 @@
 
 Implements the length-desensitisation decomposition from:
 
-    Liu, Q., Wang, X., Wang, Y., Lan, Y., Mao, X., Cao, Z., & Hu, X. (2024).
-    Length Desensitization in Direct Preference Optimization. arXiv:2409.10524.
+    Liu, W., Bai, Y., Han, C., Weng, R., Xu, J., Cao, X., Wang, J., & Cai, X.
+    (2024). Length Desensitization in Direct Preference Optimization.
+    arXiv:2409.06411.
 
 LD-DPO observes that vanilla DPO is biased by completion length: longer
 completions accumulate more (signed) log-prob mass, which entangles a verbose
@@ -41,7 +42,7 @@ def ld_dpo_split(
     shared_prefix_len: torch.Tensor | int,
     alpha: float,
 ) -> torch.Tensor:
-    """Length-desensitised sequence logp split (LD-DPO, arXiv:2409.10524).
+    """Length-desensitised sequence logp split (LD-DPO, arXiv:2409.06411).
 
     Weights completion tokens at the shared-prefix positions by ``1.0`` and
     tokens beyond the prefix by ``alpha``, then masked-sums over the sequence

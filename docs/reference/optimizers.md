@@ -57,6 +57,19 @@ Constructor knobs vary per optimizer (e.g. `decoupled_weight_decay`,
 `update_rms_clip` on `adamw` and `ademamix`; this RMS clip is model-wide/global
 over the full update pytree, not per-leaf); see the docstrings.
 
+### Foundational references
+
+- [Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)
+  — Kingma and Ba (2015); the basis for `adam`.
+- [Decoupled Weight Decay Regularization](https://arxiv.org/abs/1711.05101)
+  — Loshchilov and Hutter (2019); introduces AdamW.
+- [Stable and low-precision training for large-scale vision-language models](https://arxiv.org/abs/2304.13013)
+  — Wortsman et al. (2023); introduces StableAdamW's update-RMS clipping.
+- [Adaptive Subgradient Methods for Online Learning and Stochastic Optimization](https://jmlr.org/papers/v12/duchi11a.html)
+  — Duchi, Hazan, and Singer (2011); introduces Adagrad.
+- [Lecture 6.5-rmsprop: Divide the gradient by a running average of its recent magnitude](https://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf)
+  — Tieleman and Hinton (2012) lecture notes; introduces RMSprop.
+
 ### Not exposed
 
 - `torchopt.adamax` — the max-norm tracker `v_t = max(β v_{t-1}, |g_t + ξ|)`

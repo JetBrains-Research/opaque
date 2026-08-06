@@ -20,8 +20,8 @@
 //!
 //! # References
 //!
-//! - Kalinin et al. (2026) "DP-λCGD: Leveraging Correlated Gradients for
-//!   Improved DP-SGD" <https://arxiv.org/abs/2601.22334>
+//! - Kalinin et al. (2026) "DP-λCGD: Efficient Noise Correlation for
+//!   Differentially Private Model Training" <https://arxiv.org/abs/2601.22334>
 
 use crate::error::{PldError, Result};
 use crate::matrix_factorization::gram_matrix::column_inner_product_momentum;

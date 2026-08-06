@@ -26,9 +26,10 @@ Pair this sampler with
 DP-FTRL balls-in-bins accountant.
 
 References:
-    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD"
+    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD":
+      https://arxiv.org/abs/2412.16802
     - Feldman & Shenfeld (2026), "Efficient privacy loss accounting for
-      subsampling and random allocation"
+      subsampling and random allocation": https://arxiv.org/abs/2602.17284
 """
 
 from __future__ import annotations

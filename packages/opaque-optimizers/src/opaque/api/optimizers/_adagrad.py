@@ -1,5 +1,9 @@
 """Adagrad with optional DP-aware cumulative noise-variance subtraction.
 
+Adagrad follows Duchi, Hazan, and Singer, `Adaptive Subgradient Methods for
+Online Learning and Stochastic Optimization
+<https://jmlr.org/papers/v12/duchi11a.html>`_ (2011).
+
 Standard Adagrad: per-coordinate cumulative second moment, no decay::
 
     v_acc[i] += g_t[i]²

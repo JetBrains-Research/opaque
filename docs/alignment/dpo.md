@@ -29,6 +29,16 @@ The mechanism is still the caller's choice: swap the `opaque.dpsgd` noise
 and sampling imports for `opaque.dpftrl` to run
 [DP-FTRL](../user-guide/dp-ftrl.md); the loss closure is unchanged.
 
+Implemented preference heads in this guide follow the primary papers for
+[DPO](https://arxiv.org/abs/2305.18290), [IPO](https://arxiv.org/abs/2310.12036),
+[DiscoPOP](https://arxiv.org/abs/2406.08414), [SimPO](https://arxiv.org/abs/2405.14734),
+[ORPO](https://arxiv.org/abs/2403.07691), [WPO](https://arxiv.org/abs/2406.11827),
+[LD-DPO](https://arxiv.org/abs/2409.06411), [APO](https://arxiv.org/abs/2408.06266),
+[SquareChiPO](https://arxiv.org/abs/2505.21395), [NCA](https://arxiv.org/abs/2402.05369),
+[BCO](https://arxiv.org/abs/2404.04656), and
+[SPPO](https://arxiv.org/abs/2405.00675). TR-DPO reference sync uses the
+EMA-updated reference policy variant exposed on the trainer surface.
+
 ## 1. Reference log-probabilities
 
 Run the reference once over the dataset, *before* training, and cache the

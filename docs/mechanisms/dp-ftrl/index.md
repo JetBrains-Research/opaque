@@ -10,7 +10,7 @@ calibrated against `n_steps` once.
 
 - **[Band-MF](band-mf.md)** — banded matrix factorisation (Choquette-Choo
   et al. 2023). Standard DP-FTRL baseline.
-- **[BLT](blt.md)** — buffered linear toeplitz (Vargaftik et al. 2024).
+- **[BLT](blt.md)** — buffered linear toeplitz (Dvijotham et al. 2024).
   Multi-epoch BLT covers iterating over the dataset multiple times.
 - **[BiSR](bisr.md)** — banded inverse square root.
 - **[BSR](bsr.md)** — banded square root.

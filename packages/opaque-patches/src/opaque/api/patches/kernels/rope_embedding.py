@@ -7,6 +7,10 @@
 # See NOTICE in the repository root.
 """RoPE (Rotary Position Embedding) kernels with vmap support for DP-SGD.
 
+Implements the rotary position encoding introduced by Su et al.,
+*RoFormer: Enhanced Transformer with Rotary Position Embedding*
+(https://arxiv.org/abs/2104.09864).
+
 Ported from unsloth/kernels/rope_embedding.py with new-style autograd API.
 
 RoPE applies position-dependent rotation to Q and K tensors:

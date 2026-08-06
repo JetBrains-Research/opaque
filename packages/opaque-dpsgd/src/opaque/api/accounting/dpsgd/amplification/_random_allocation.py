@@ -25,8 +25,9 @@ different (weaker) scheme that has its own accountant,
 
 References:
     - Feldman & Shenfeld (2026), "Efficient privacy loss accounting for
-      subsampling and random allocation"
-    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD"
+      subsampling and random allocation": https://arxiv.org/abs/2602.17284
+    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD":
+      https://arxiv.org/abs/2412.16802
 """
 
 from __future__ import annotations

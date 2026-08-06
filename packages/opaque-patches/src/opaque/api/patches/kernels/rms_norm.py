@@ -7,7 +7,11 @@
 # RMSNorm code. See:
 # https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/rms_norm.py
 # See ../../../../../NOTICE in this package for the full attribution.
-"""RMSNorm Triton kernel with vmap(grad(...)) support (DP-SGD)."""
+"""RMSNorm Triton kernel with vmap(grad(...)) support (DP-SGD).
+
+Implements Root Mean Square Layer Normalization from Zhang and Sennrich,
+*Root Mean Square Layer Normalization* (https://arxiv.org/abs/1910.07467).
+"""
 
 from __future__ import annotations
 

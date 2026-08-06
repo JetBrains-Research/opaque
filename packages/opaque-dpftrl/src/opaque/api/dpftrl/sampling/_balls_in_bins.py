@@ -21,7 +21,8 @@ uncorrelated across steps, which is exactly what the matrix mechanism
 gives up.  Pair this sampler only with ``dpftrl_acc.balls_in_bins``.
 
 References:
-    - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
+    - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD":
+      https://arxiv.org/abs/2412.16802
     - Choquette-Choo et al. (2024), "Privacy Amplification for Matrix Mechanisms"
 """
 

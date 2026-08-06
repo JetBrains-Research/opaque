@@ -13,7 +13,7 @@ family rather than instance-specific (use :class:`GdpMethod` for sharp
 f-DP queries on Gaussian-DP mechanisms).  Constructed via
 :meth:`OneRunEstimate.eps_delta`.
 
-Reference: Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
+Reference: Xiang et al. (2025), https://arxiv.org/abs/2509.08704
 """
 
 from __future__ import annotations

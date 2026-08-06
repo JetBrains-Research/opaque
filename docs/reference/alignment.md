@@ -45,7 +45,7 @@ DPO per-pair heads ([`opaque.alignment.dpo.loss`](#api-documentation)):
 - **`discopop_loss()`** — DiscoPOP loss.
 - **`chosen_nll_loss()`** — chosen-completion NLL regularizer for MPO/RPO blends.
 - **`apo_zero_loss()`** / **`apo_down_loss()`** — APO-zero / APO-down (arXiv:2408.06266).
-- **`exo_loss()`** — EXO pairwise loss.
+- **`exo_loss()`** — EXO pairwise loss ([*Towards Efficient Exact Optimization of Language Model Alignment*](https://arxiv.org/abs/2402.00856)).
 - **`nca_loss()`** — NCA pairwise loss.
 - **`bco_loss()`** — BCO pairwise loss.
 - **`sppo_loss()`** — SPPO hard-label loss.
@@ -63,7 +63,22 @@ for composite objectives:
 - **`f_divergence_logits()`** — form the remapped preference logits under an f-divergence.
 - **`mpo_combine()`** — weighted sum of per-example loss tensors (MPO / TRL `loss_type=list`).
 - **`wpo_weights()`** — per-example WPO weight (arXiv:2406.11827).
-- **`ld_dpo_split()`** — length-desensitized sequence-logp split (LD-DPO, arXiv:2409.10524).
+- **`ld_dpo_split()`** — length-desensitized sequence-logp split (LD-DPO, arXiv:2409.06411).
+
+Primary papers for the implemented alignment objectives:
+
+- DPO — Rafailov et al., [*Direct Preference Optimization: Your Language Model is Secretly a Reward Model*](https://arxiv.org/abs/2305.18290).
+- IPO — Azar et al., [*A General Theoretical Paradigm to Understand Learning from Human Preferences*](https://arxiv.org/abs/2310.12036).
+- DiscoPOP — Lu et al., [*Discovering Preference Optimization Algorithms with and for Large Language Models*](https://arxiv.org/abs/2406.08414).
+- SimPO — Meng et al., [*SimPO: Simple Preference Optimization with a Reference-Free Reward*](https://arxiv.org/abs/2405.14734).
+- ORPO — Hong et al., [*ORPO: Monolithic Preference Optimization without Reference Model*](https://arxiv.org/abs/2403.07691).
+- WPO — Zhou et al., [*WPO: Enhancing RLHF with Weighted Preference Optimization*](https://arxiv.org/abs/2406.11827).
+- LD-DPO — Liu et al., [*Length Desensitization in Direct Preference Optimization*](https://arxiv.org/abs/2409.06411).
+- APO — D'Oosterlinck et al., [*Anchored Preference Optimization and Contrastive Revisions: Addressing Underspecification in Alignment*](https://arxiv.org/abs/2408.06266).
+- SquareChiPO — Zhou et al., [*SquareχPO: Differentially Private and Robust χ²-Preference Optimization in Offline Direct Alignment*](https://arxiv.org/abs/2505.21395).
+- NCA — Chen et al., [*Noise Contrastive Alignment of Language Models with Explicit Rewards*](https://arxiv.org/abs/2402.05369).
+- BCO — Jhunjhunwala et al., [*Binary Classifier Optimization for Large Language Model Alignment*](https://arxiv.org/abs/2404.04656).
+- SPPO — Wu et al., [*Self-Play Preference Optimization for Language Model Alignment*](https://arxiv.org/abs/2405.00675).
 
 ### Log-probabilities
 

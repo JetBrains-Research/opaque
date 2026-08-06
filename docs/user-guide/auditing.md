@@ -10,7 +10,7 @@ there is likely a bug in the implementation.
 Opaque implements one-run auditing
 ([Steinke, Nasr, Jagielski 2023](https://arxiv.org/abs/2305.08846))
 with the tight order-statistics tests from
-[Xiang, Chen, Kerkouche (2025)](https://arxiv.org/abs/2509.08704):
+[Xiang et al. (2025)](https://arxiv.org/abs/2509.08704):
 
 1. **Designate canaries.** Randomly select `m` examples as canaries.
 2. **Flip coins.** For each canary, include or exclude it from training
@@ -223,7 +223,7 @@ normal, especially in high-noise regimes.
 
 ## References
 
-- Xiang, Chen, Kerkouche (2025). [Tight Privacy Auditing in One Run](https://arxiv.org/abs/2509.08704).
+- Xiang et al. (2025). [Tight Privacy Audit in One Run](https://arxiv.org/abs/2509.08704).
 - Steinke, Nasr, Jagielski (2023). [Privacy Auditing with One (1) Training Run](https://arxiv.org/abs/2305.08846). NeurIPS 2023.
 - Carlini et al. (2022). [Membership Inference Attacks From First Principles](https://arxiv.org/abs/2112.03570).
 

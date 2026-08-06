@@ -5,7 +5,7 @@ Mirrors :class:`opaque.accounting.Pld`'s metric surface: ``epsilon_at``,
 inferred μ̂ via :meth:`GdpMethod._mu_at`.  Constructed via
 :meth:`OneRunEstimate.gdp`.
 
-Reference: Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
+Reference: Xiang et al. (2025), https://arxiv.org/abs/2509.08704
 """
 
 from __future__ import annotations
