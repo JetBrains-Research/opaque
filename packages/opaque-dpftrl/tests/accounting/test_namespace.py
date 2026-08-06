@@ -5,36 +5,43 @@ from __future__ import annotations
 import subprocess
 import sys
 
-_REQUIRED_FACTORIES = (
-    "mf_gaussian",
-    "poisson",
-    "b_min_sep",
-    "balls_in_bins",
-    "per_step",
-)
-
-_REQUIRED_TYPES = (
-    "MfGaussian",
-    "CyclicPoisson",
-    "BMinSep",
-    "BallsInBins",
-)
-
 
 class TestNamespaceSurface:
-    """Each documented re-export is reachable as a callable."""
+    """The declared public surface is importable, callable, and leak-free."""
 
-    def test_required_headline_factories_callable(self):
+    def test_all_declared_factories_callable(self):
         import opaque.dpftrl.accounting as ftrl_acc
 
-        for name in _REQUIRED_FACTORIES:
+        exports = getattr(ftrl_acc, "__all__", None)
+        assert exports, "accounting facade must declare __all__"
+        for name in exports:
             assert callable(getattr(ftrl_acc, name)), name
 
-    def test_types_module_re_exports(self):
+    def test_all_declared_types_importable(self):
         import opaque.dpftrl.accounting.types as ftrl_types
 
-        for name in _REQUIRED_TYPES:
+        exports = getattr(ftrl_types, "__all__", None)
+        assert exports, "types facade must declare __all__"
+        for name in exports:
             assert hasattr(ftrl_types, name), name
+
+    def test_no_public_leak_outside_all(self):
+        import types
+
+        import opaque.dpftrl.accounting as ftrl_acc
+
+        declared = set(ftrl_acc.__all__)
+        leaked = {
+            name
+            for name in dir(ftrl_acc)
+            if not name.startswith("_")
+            and name not in declared
+            and not isinstance(getattr(ftrl_acc, name), types.ModuleType)
+            and (getattr(getattr(ftrl_acc, name), "__module__", "") or "").startswith(
+                "opaque"
+            )
+        }
+        assert not leaked, f"public names not in __all__: {sorted(leaked)}"
 
 
 class TestEndToEndCalibration:

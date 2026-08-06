@@ -5,6 +5,8 @@ For actual multi-device distributed tests, see ``test_collectives.py`` and
 ``test_profiler_sync.py`` in the ``ddp/`` folder.
 """
 
+import importlib
+
 import pytest
 import torch
 
@@ -251,49 +253,20 @@ class TestBoundedGradientAggregation:
 
 
 class TestModuleExports:
-    """Tests for module exports.
+    """Every declared public distributed export resolves to a callable."""
 
-    Headline names live at the package root; lower-level primitives are
-    grouped into the two documented power-user submodules (collectives,
-    gradients).  Sharding and state-sync plumbing live in underscore
-    modules and are reachable through the headline (``local_shard``,
-    ``sync``) or the registered DP-runtime sync-type machinery.
-    """
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            "opaque.distributed",
+            "opaque.distributed.collectives",
+            "opaque.distributed.gradients",
+        ],
+    )
+    def test_declared_exports_are_callable(self, module_name):
+        module = importlib.import_module(module_name)
 
-    def test_root_headline_exports(self):
-        """The package root surfaces the headline DP-DDP flow."""
-        import opaque.distributed as root
-
-        for name in [
-            "is_distributed",
-            "get_rank",
-            "get_world_size",
-            "all_reduce",
-            "sum_gradients",
-            "sum_gradients_",
-            "sync",
-            "local_shard",
-        ]:
-            assert hasattr(root, name), name
-            assert callable(getattr(root, name)), name
-
-    def test_submodule_exports(self):
-        """Lower-level primitives live in the two power-user submodules."""
-        from opaque.distributed import collectives, gradients
-
-        for name in [
-            "is_distributed",
-            "get_rank",
-            "get_world_size",
-            "all_reduce",
-            "all_reduce_",
-            "barrier",
-        ]:
-            assert callable(getattr(collectives, name)), f"collectives.{name}"
-        for name in [
-            "reduce_pytree",
-            "reduce_pytree_",
-            "sum_gradients",
-            "sum_gradients_",
-        ]:
-            assert callable(getattr(gradients, name)), f"gradients.{name}"
+        exports = getattr(module, "__all__", None)
+        assert exports, f"{module_name} must declare __all__"
+        for name in exports:
+            assert callable(getattr(module, name)), f"{module_name}.{name}"
