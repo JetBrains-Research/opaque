@@ -374,10 +374,10 @@ done
 # Build the accounting native wheel
 (cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist)
 
-ls dist/   # expect 11 artifacts (10 wheels + opaque-accounting sdist), all at 0.2.0
+ls dist/   # expect 11 wheels, all at 0.2.0
 
 # Inspect a wheel's metadata
-unzip -p dist/opaque_core-*.whl '*/METADATA' | grep '^Version:'
+unzip -p dist/opaque_engine-*.whl '*/METADATA' | grep '^Version:'
 
 # Revert the preflight's in-tree edits
 git checkout -- pyproject.toml \
