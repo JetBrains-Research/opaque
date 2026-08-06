@@ -3267,11 +3267,13 @@ Gradients with norm below <span class="arithmatex">\(C\)</span> are left unchang
 example changes the sum of clipped gradients by at most <span class="arithmatex">\(C\)</span> (under add-or-remove
 neighboring relation) or <span class="arithmatex">\(2C\)</span> (under replace-one).</p>
 <h3 id="step-3-noise-addition">Step 3: Noise addition<a class="headerlink" href="#step-3-noise-addition" title="Permanent link">&para;</a></h3>
-<p>Gaussian noise with standard deviation <span class="arithmatex">\(\sigma\)</span> is added to the sum of clipped
-gradients. The noise magnitude is proportional to the sensitivity (the clip
-norm) and the desired privacy level.</p>
-<p>The ratio <span class="arithmatex">\(\sigma / C\)</span> is the <em>noise multiplier</em>. Larger noise multiplier means
-stronger privacy (smaller <span class="arithmatex">\(\varepsilon\)</span>) but more gradient corruption.</p>
+<p>Gaussian noise with standard deviation <span class="arithmatex">\(\sigma_{\text{abs}}\)</span> is added to the
+sum of clipped gradients. The absolute noise scale is proportional to the
+sensitivity (the clip norm): for clip norm <span class="arithmatex">\(C\)</span> and noise multiplier <span class="arithmatex">\(\sigma\)</span>,
+<span class="arithmatex">\(\sigma_{\text{abs}} = \sigma C\)</span>.</p>
+<p>The dimensionless ratio <span class="arithmatex">\(\sigma = \sigma_{\text{abs}} / C\)</span> is the <em>noise
+multiplier</em>. Larger noise multiplier means stronger privacy (smaller
+<span class="arithmatex">\(\varepsilon\)</span>) but more gradient corruption.</p>
 <h3 id="step-4-parameter-update">Step 4: Parameter update<a class="headerlink" href="#step-4-parameter-update" title="Permanent link">&para;</a></h3>
 <p>The noisy gradient is applied to update model parameters, exactly as in
 standard SGD. Any optimizer (SGD, Adam, AdamW) can be used.</p>
@@ -3288,11 +3290,14 @@ target epsilon for a given number of steps.</p>
 <p>When the same dataset is used for multiple DP mechanisms (e.g., <span class="arithmatex">\(T\)</span> steps of
 DP-SGD), the total privacy loss is bounded by <em>composition theorems</em>.</p>
 <p><strong>Basic composition</strong>: <span class="arithmatex">\(\varepsilon\)</span> values add linearly. <span class="arithmatex">\(T\)</span> steps of
-<span class="arithmatex">\(\varepsilon_0\)</span>-DP gives <span class="arithmatex">\(T \cdot \varepsilon_0\)</span> total privacy loss. For a
-mechanism with noise multiplier <span class="arithmatex">\(\sigma\)</span> and sensitivity <span class="arithmatex">\(C\)</span>, a single step
-gives <span class="arithmatex">\(\varepsilon_0 \approx C / \sigma\)</span>, so <span class="arithmatex">\(T\)</span> steps cost approximately
-<span class="arithmatex">\(T \cdot C / \sigma\)</span>. This bound is correct but extremely loose.</p>
-<p><strong>Advanced composition</strong> (<a href="https://arxiv.org/abs/1311.0776">Kairouz et al. 2015</a>):
+<span class="arithmatex">\(\varepsilon_0\)</span>-DP gives <span class="arithmatex">\(T \cdot \varepsilon_0\)</span> total privacy loss. For the
+Gaussian mechanism, the single-step privacy cost is controlled by the <strong>noise
+multiplier</strong> <span class="arithmatex">\(\sigma = \sigma_{\text{abs}} / C\)</span>: increasing <span class="arithmatex">\(\sigma\)</span> decreases
+<span class="arithmatex">\(\varepsilon_0\)</span>. Holding <span class="arithmatex">\(\sigma\)</span> fixed keeps the per-step guarantee unchanged even
+if you later rescale both the clip norm and the absolute noise standard
+deviation together. The linear <span class="arithmatex">\(T \cdot \varepsilon_0\)</span> bound is correct but
+extremely loose.</p>
+<p><strong>Advanced composition</strong> (<a href="https://theory.stanford.edu/~salil/papers/compose-private.pdf">Dwork, Rothblum, and Vadhan 2010</a>):
 for <span class="arithmatex">\(T\)</span> applications of an <span class="arithmatex">\((\varepsilon_0, \delta_0)\)</span>-DP mechanism, the total
 privacy satisfies <span class="arithmatex">\((\varepsilon, T\delta_0 + \delta)\)</span>-DP where:</p>
 <div class="arithmatex">\[\varepsilon = \sqrt{2T \ln(1/\delta)} \cdot \varepsilon_0 + T \cdot \varepsilon_0 (e^{\varepsilon_0} - 1)\]</div>
@@ -3552,6 +3557,7 @@ semantics, double the bound when calibrating noise.</p>
 <ul>
 <li><a href="https://arxiv.org/abs/1607.00133">Abadi et al. 2016 - Deep Learning with Differential Privacy</a></li>
 <li><a href="https://arxiv.org/abs/1905.02383">Dong et al. 2019 - Gaussian Differential Privacy</a></li>
+<li><a href="https://theory.stanford.edu/~salil/papers/compose-private.pdf">Dwork, Rothblum, and Vadhan 2010 - Boosting and Differential Privacy</a></li>
 <li><a href="https://arxiv.org/abs/1311.0776">Kairouz et al. 2015 - The Composition Theorem for Differential Privacy</a></li>
 <li><a href="https://arxiv.org/abs/1905.10731">Balle et al. 2020 - Hypothesis Testing Interpretations and the Laplace Mechanism</a></li>
 <li><a href="https://arxiv.org/abs/1905.03871">Andrew et al. 2021 - Differentially Private Learning with Adaptive Clipping</a></li>
