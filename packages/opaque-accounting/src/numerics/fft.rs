@@ -15,6 +15,20 @@ fn get_planner() -> &'static Mutex<RealFftPlanner<f64>> {
     REAL_FFT_PLANNER.get_or_init(|| Mutex::new(RealFftPlanner::new()))
 }
 
+fn pow_usize(mut base: f64, mut exponent: usize) -> f64 {
+    let mut result = 1.0;
+
+    while exponent > 0 {
+        if exponent % 2 == 1 {
+            result *= base;
+        }
+        base *= base;
+        exponent /= 2;
+    }
+
+    result
+}
+
 /// Convolve two real-valued sequences using FFT
 ///
 /// # Arguments
@@ -209,7 +223,7 @@ pub fn self_convolve_with_bounds(
     }
 
     if a.len() == 1 {
-        return vec![a[0].powi(count as i32)];
+        return vec![pow_usize(a[0], count)];
     }
 
     let full_result_len = a.len() + (count - 1) * (a.len() - 1);
@@ -334,6 +348,20 @@ mod tests {
         assert_relative_eq!(result[1], 3.0, epsilon = 1e-10);
         assert_relative_eq!(result[2], 3.0, epsilon = 1e-10);
         assert_relative_eq!(result[3], 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_singleton_self_convolution_supports_maximum_exponent() {
+        let result = self_convolve(&[1.0], u32::MAX as usize);
+
+        assert_eq!(result, vec![1.0]);
+    }
+
+    #[test]
+    fn test_singleton_self_convolution_preserves_large_odd_exponent() {
+        let result = self_convolve(&[-1.0], usize::MAX);
+
+        assert_eq!(result, vec![-1.0]);
     }
 
     #[test]
