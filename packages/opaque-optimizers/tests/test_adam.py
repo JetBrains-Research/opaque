@@ -566,6 +566,41 @@ class TestStableAdamW:
         for k in params:
             torch.testing.assert_close(u_c[k], u_n[k])
 
+    def test_clip_uses_single_global_scale_not_per_leaf(self):
+        """RMS clipping uses one model-wide scale across all tensor leaves."""
+        params = {
+            "big": torch.zeros(16),
+            "small": torch.zeros(16),
+        }
+        grads = {
+            "big": torch.full((16,), 10.0),
+            "small": torch.full((16,), 1.0),
+        }
+        threshold = 0.85
+        opt = adamw(lr=1.0, weight_decay=0.0, update_rms_clip=threshold)
+        opt_no = adamw(lr=1.0, weight_decay=0.0, update_rms_clip=None)
+        state = opt.init(params)
+        state_no = opt_no.init(params)
+        updates, _ = opt.update(grads, state, params=params)
+        updates_no, _ = opt_no.update(grads, state_no, params=params)
+
+        global_rms = torch.sqrt(
+            (updates_no["big"].pow(2).sum() + updates_no["small"].pow(2).sum())
+            / (updates_no["big"].numel() + updates_no["small"].numel())
+        )
+        expected_scale = torch.clamp(global_rms / threshold, min=1.0).item()
+        # With a global scale both leaves are divided by the same factor.
+        torch.testing.assert_close(
+            updates["big"], updates_no["big"] / expected_scale, atol=1e-6, rtol=0
+        )
+        torch.testing.assert_close(
+            updates["small"], updates_no["small"] / expected_scale, atol=1e-6, rtol=0
+        )
+
+        # The chosen threshold makes the full-pytree RMS clip active.
+        assert expected_scale > 1.0
+        assert not torch.allclose(updates["small"], updates_no["small"])
+
 
 # ---------------------------------------------------------------------------
 # Convergence
