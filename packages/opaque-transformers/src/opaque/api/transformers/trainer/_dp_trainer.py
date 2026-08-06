@@ -3860,7 +3860,11 @@ class DPTrainer:
             # injected when ``save_strategy="best"``) may have set
             # ``should_save`` there.  Refresh the local handle accordingly.
             ctrl = self._control
-            self._update_best_metric(metrics, global_step)
+            is_new_best_metric = self._update_best_metric(metrics, global_step)
+            if is_new_best_metric and self.args.load_best_model_at_end:
+                # The regular save cadence can be less frequent than
+                # evaluation, so materialize the parameters just evaluated.
+                ctrl.should_save = True
             ctrl.should_evaluate = False
 
         if ctrl.should_save:
@@ -4329,8 +4333,8 @@ class DPTrainer:
         self,
         eval_metrics: dict[str, Any],
         global_step: int,
-    ) -> None:
-        """Update ``state.best_*`` if the eval metric improved.
+    ) -> bool:
+        """Update ``state.best_*`` and report whether the metric improved.
 
         ``BestModelSaveCallback`` independently decides whether to set
         ``control.should_save`` for ``save_strategy='best'`` (it runs at
@@ -4340,7 +4344,7 @@ class DPTrainer:
         """
         a = self.args
         if a.metric_for_best_model is None:
-            return
+            return False
         resolved = resolve_eval_metric(eval_metrics, a.metric_for_best_model)
         if resolved is None:
             key = a.metric_for_best_model
@@ -4356,10 +4360,11 @@ class DPTrainer:
         if not is_metric_improved(
             value, self.state.best_metric, self.args.greater_is_better
         ):
-            return
+            return False
         self.state.best_metric = value
         if self.args.save_strategy in {"steps", "epoch", "best"}:
             self.state.best_global_step = global_step
+        return True
 
     def _load_best_model(self, ctx: _TrainingContext) -> None:
         """Restore best-checkpoint weights into the underlying ``nn.Module``.
@@ -4603,13 +4608,12 @@ class DPTrainer:
             Path(staging_dir).mkdir(parents=True, exist_ok=True)
             self._save_model_artifacts(staging_dir)
 
-            # HF parity: register ``best_model_checkpoint`` by *looking up*
-            # the folder named ``checkpoint-{best_global_step}`` rather than
-            # only recognising the best step when it coincides with this
-            # save's step.  Without this, an eval boundary that improves the
-            # metric at step 100 followed by a save_strategy="steps" boundary
-            # at step 200 would never register checkpoint-100 as best — and
-            # rotation could delete it because no folder is protected.
+            # Register ``best_model_checkpoint`` by *looking up* the folder
+            # named ``checkpoint-{best_global_step}``, rather than only when
+            # the best step is this save's step.  The best-metric flow
+            # materializes intermediate evaluation improvements immediately;
+            # this fallback also preserves an existing best directory when a
+            # later regular save writes its own trainer state.
             # Resolve *before* writing ``trainer_state.json`` so the file
             # lands once with the final ``best_model_checkpoint`` populated.
             # The path always uses the *final* ``checkpoint-N`` name (not the

@@ -205,6 +205,49 @@ class TestLoadBestModelMutates:
 class TestBestFolderLookup:
     """``_save_checkpoint`` registers best by folder, not just exact-step coincidence."""
 
+    def test_best_metric_forces_checkpoint_at_intermediate_eval_step(
+        self, lora_model, tiny_dataset, tmp_path
+    ):
+        """An improved eval metric saves its evaluated parameters immediately.
+
+        A save every four steps and evaluation every two steps is valid because
+        the save cadence is a multiple of the eval cadence.  The first score
+        wins, so the best checkpoint must be the extra checkpoint materialized
+        at step two rather than the later regular save at step four.
+        """
+        model, tokenizer = lora_model
+        scores = iter((1.0, 0.0))
+
+        def compute_metrics(_):
+            return {"score": next(scores)}
+
+        trainer = DPTrainer(
+            model=model,
+            args=_args(
+                tmp_path,
+                max_steps=4,
+                num_train_epochs=1,
+                eval_strategy="steps",
+                eval_steps=2,
+                save_strategy="steps",
+                save_steps=4,
+                metric_for_best_model="score",
+                greater_is_better=True,
+                load_best_model_at_end=True,
+                logging_steps=1,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+            compute_metrics=compute_metrics,
+        )
+        trainer.train()
+
+        expected = tmp_path / "checkpoint-2"
+        assert expected.is_dir()
+        assert trainer.state.best_global_step == 2
+        assert Path(trainer.state.best_model_checkpoint).resolve() == expected.resolve()
+
     def test_best_folder_lookup(self, lora_model, tiny_dataset, tmp_path):
         """Eval at step 2 may improve while save_strategy fires at every step.
 
