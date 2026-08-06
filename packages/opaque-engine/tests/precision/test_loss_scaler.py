@@ -20,7 +20,9 @@ from __future__ import annotations
 import pytest
 import torch
 
+from opaque.api.engine.clipping import auto_clipped_grad
 from opaque.precision import LossScaler, LossScalerState, all_finite, loss_scaler
+from opaque.types import NoisedPytree, SecondMomentClippingOutput, clipped
 
 
 def _grads_pytree(magnitude: float = 1.0) -> dict[str, torch.Tensor]:
@@ -131,6 +133,50 @@ def test_all_finite_ignores_integer_leaves():
         "step": torch.tensor(2**60, dtype=torch.int64),  # legitimately huge int
     }
     assert all_finite(grads) is True
+
+
+def test_all_finite_false_for_clipped_pytree_wrapper():
+    grads = clipped({"w": torch.tensor([1.0, float("nan")])}, max_norm=1.0)
+    assert all_finite(grads) is False
+
+
+def test_all_finite_false_for_noised_pytree_wrapper():
+    grads = NoisedPytree(
+        pytree={"w": torch.tensor([1.0, float("inf")])},
+        max_norm=1.0,
+        noise_stddev=0.5,
+    )
+    assert all_finite(grads) is False
+
+
+def test_all_finite_false_for_second_moment_clipping_output():
+    grads = SecondMomentClippingOutput(
+        grads=clipped({"w": torch.tensor([1.0])}, max_norm=1.0),
+        squared_grads=clipped({"w": torch.tensor([float("nan")])}, max_norm=1.0),
+    )
+    assert all_finite(grads) is False
+
+
+def test_all_finite_false_for_wrapped_clipped_pytree_inside_plain_pytree():
+    grads = {
+        "outer": clipped({"w": torch.tensor([1.0, float("nan")])}, max_norm=1.0),
+        "step": torch.tensor(1, dtype=torch.int64),
+    }
+    assert all_finite(grads) is False
+
+
+def test_all_finite_false_for_auto_clipped_grad_wrapper_output():
+    def loss_fn(param, data):
+        return torch.sqrt(param - data).mean()
+
+    grad_fn, state = auto_clipped_grad(loss_fn, argnums=0, batch_argnums=1, R=1.0)
+    grads, _ = grad_fn(
+        torch.tensor(1.0, requires_grad=True),
+        torch.tensor([0.5, 2.0]),
+        state=state,
+    )
+    grads.pytree.fill_(float("nan"))
+    assert all_finite(grads) is False
 
 
 # ----------------------------------------------------------------------------
