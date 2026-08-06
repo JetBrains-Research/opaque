@@ -39,7 +39,9 @@ fn get_planner() -> &'static Mutex<RealFftPlanner<f64>> {
 ///
 /// # Algorithm
 ///
-/// Uses RealFFT for real-valued inputs (1.6x faster than complex FFT):
+/// Uses RealFFT for real-valued inputs, avoiding the redundant half of a full
+/// complex spectrum. Exact speedups are size- and machine-dependent; the
+/// repository's native `accounting.fft` benchmark compares both paths:
 /// 1. Forward real FFT on both inputs (produces complex frequency spectrum)
 /// 2. Element-wise multiply in frequency domain
 /// 3. Inverse real FFT back to time domain

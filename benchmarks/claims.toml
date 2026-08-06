@@ -1,0 +1,203 @@
+# Machine-readable decisions for numeric performance and resource claims.
+# A claim with status = "supported" must have a committed result from `case`.
+
+[[claim]]
+id = "lora-trainable-share"
+statement = "LoRA can make about 0.1% of a model trainable."
+classification = "derived"
+status = "derived"
+decision = "Retain as a model-configuration illustration, not a measured memory claim. The actual share is determined by the selected adapters."
+current_path = "docs/user-guide/memory-optimizations.md"
+current_match = "parameters (~0.1% of model)"
+
+[[claim]]
+id = "memory-baseline-ratio"
+statement = "The unoptimized per-example-gradient baseline is 1x by definition."
+classification = "derived"
+status = "derived"
+decision = "Retain only as the normalization baseline for the symbolic memory table."
+current_path = "docs/user-guide/memory-optimizations.md"
+current_match = "| No optimization | O(batch_size) | 1x | |"
+
+[[claim]]
+id = "lambda-cgd-noise-scale-example"
+statement = "The documented lambda-CGD example has approximately 0.7x relative noise scale."
+classification = "derived"
+status = "derived"
+decision = "Retain as a mechanism value derived from the displayed configuration, not a runtime or utility benchmark."
+current_path = "docs/user-guide/noise.md"
+current_match = "| λCGD | `lambda_cgd_strategy(lambda_=0.9)` | ~0.7x"
+
+[[claim]]
+id = "bisr-noise-scale-example"
+statement = "The documented BISR example has approximately 0.6x relative noise scale."
+classification = "derived"
+status = "derived"
+decision = "Retain as a mechanism value derived from the displayed configuration, not a runtime or utility benchmark."
+current_path = "docs/user-guide/noise.md"
+current_match = "| BISR | `bisr_strategy(bandwidth=4)` | ~0.6x"
+
+[[claim]]
+id = "memory-profiler-output-example"
+statement = "The memory profiler example prints 7.50 GB allocated and 9.4% used."
+classification = "example"
+status = "example"
+decision = "Retain as explicitly illustrative console output; it is not presented as a library measurement."
+current_path = "packages/opaque-engine/src/opaque/api/engine/profiling/_memory.py"
+current_match = "Memory: alloc=7.50GB, peak=7.50GB, free=72.50GB (9.4% used)"
+
+[[claim]]
+id = "withdrawn-dpsgd-training-table"
+statement = "DP-SGD training uses 52.2 GB peak memory (or 62.4 GB without microbatching) at 3.6 samples/s on one H200."
+classification = "benchmark"
+status = "withdrawn"
+case = "training.dpsgd"
+decision = "Do not restore the table until the end-to-end case records a clean H200 artifact with the exact model, data, batch, patch, and software configuration."
+
+[[claim]]
+id = "withdrawn-microbatch-example"
+statement = "Microbatching reduces peak memory from 7.5 GB to 3.2 GB in the published example."
+classification = "benchmark"
+status = "withdrawn"
+case = "clipping.microbatch"
+decision = "The old values lacked model, allocator, device, and command provenance. Restore only from a matching accelerator result."
+
+[[claim]]
+id = "withdrawn-fused-linear-ce-table"
+statement = "Fused linear cross-entropy saves roughly 2 GB per sample and improves the published Mellum throughput and memory table."
+classification = "benchmark"
+status = "under_investigation"
+case = "patches.fused_linear_cross_entropy"
+decision = "The avoided tensor size is derivable, but allocator peak and throughput are not. Keep the numeric table withdrawn until the CUDA case is recorded."
+
+[[claim]]
+id = "withdrawn-fused-swiglu-speedup"
+statement = "The fused SwiGLU path reaches a 17x speedup."
+classification = "benchmark"
+status = "under_investigation"
+case = "patches.fused_swiglu"
+decision = "The original number had no shape, mode, baseline, sample distribution, or artifact. Benchmark forward/backward and vmap(grad) separately before reconsidering it."
+
+[[claim]]
+id = "corrected-determinism-overhead"
+statement = "Full PyTorch determinism is typically 10-30% slower."
+classification = "benchmark"
+status = "corrected"
+case = "engine.determinism"
+decision = "The final CPU result exceeded the old range while the MPS result fell inside it, and repeated runs varied materially. Replace the universal range with workload-dependent guidance."
+
+[[claim]]
+id = "corrected-real-fft-speedup"
+statement = "RealFFT convolution is 1.6x faster than complex FFT."
+classification = "benchmark"
+status = "corrected"
+case = "accounting.fft"
+decision = "The direction is plausible but the ratio varies by length and CPU. Publish the per-size native comparison rather than one universal number."
+
+[[claim]]
+id = "corrected-moe-crossover"
+statement = "Grouped MoE crosses over at about 16 experts and is about 2x faster at 128 experts on MPS."
+classification = "benchmark"
+status = "contradicted"
+case = "patches.moe_dispatch"
+decision = "Both recorded MPS shape sweeps kept grouped execution slower through 64 experts and found only a modest benefit at 128. Keep 16 only as an implementation heuristic pending broader tuning."
+
+[[claim]]
+id = "withdrawn-compile-speedup"
+statement = "Compiling the DP vmap(grad) transform is about 2x faster and lowers peak MPS memory."
+classification = "benchmark"
+status = "withdrawn"
+case = "training.dpsgd"
+decision = "The old statement omitted model, compiler warmup, backend, shape, and artifact. Compare eager and compiled training configurations before restoring any number."
+
+[[claim]]
+id = "withdrawn-ddp-memory-headroom"
+statement = "Reduce a stable single-device microbatch size by 10-20% for DDP."
+classification = "benchmark"
+status = "withdrawn"
+case = "training.dpsgd"
+decision = "Required headroom depends on topology and communication buckets. The guide now instructs users to measure their configuration."
+
+[[claim]]
+id = "withdrawn-allocator-efficiency-threshold"
+statement = "Allocator efficiency below 80% diagnoses fragmentation."
+classification = "benchmark"
+status = "withdrawn"
+case = "training.dpsgd"
+decision = "No evidence established a universal diagnostic threshold; use allocated/reserved traces with workload context."
+
+[[claim]]
+id = "corrected-adadelta-memory-ordering"
+statement = "Adadelta uses lower optimizer-state memory than Adam-family methods."
+classification = "benchmark"
+status = "corrected"
+case = "optimizers.state"
+decision = "The ordering depends on bias-correction state. Publish exact unique tensor-storage bytes for both Adadelta modes instead of a blanket comparison."
+
+[[claim]]
+id = "corrected-gradient-attack-memory-bound"
+statement = "One-at-a-time gradient attack scoring keeps peak GPU memory at exactly 2x model size."
+classification = "derived"
+status = "corrected"
+decision = "Only batch-independent per-example gradient storage is guaranteed; activations, allocator state, and backend workspaces invalidate a fixed model-size multiple."
+
+[[claim]]
+id = "corrected-linear-ce-logit-size"
+statement = "Fused linear cross-entropy avoids about 1 GB of logits per LLaMA-3 sample."
+classification = "derived"
+status = "corrected"
+decision = "The byte count was underspecified because it omitted sequence length and dtype. The documentation now gives the tensor-size formula and delegates peak memory to the CUDA case."
+
+[[claim]]
+id = "withdrawn-radam-lr-robustness"
+statement = "RAdam keeps utility within plus or minus 0.1% over a 3x learning-rate range."
+classification = "behavioral_test"
+status = "withdrawn"
+decision = "The claim was an undocumented empirical sweep, not an optimizer invariant. The guide now recommends tuning on the target workload."
+
+[[claim]]
+id = "withdrawn-rmsprop-dp-utility"
+statement = "RMSProp with bias correction materially improves utility at one learning rate while matching another."
+classification = "behavioral_test"
+status = "withdrawn"
+decision = "No dataset, seeds, dispersion, accountant configuration, or artifact accompanied the utility comparison. It remains withdrawn pending an experiment protocol."
+
+[[claim]]
+id = "measured-real-fft-m5-max"
+statement = "On the recorded Apple M5 Max sweep, native real FFT convolution outperformed the matched complex FFT baseline at every registered length."
+classification = "benchmark"
+status = "supported"
+case = "accounting.fft"
+decision = "Publish only as a scoped result linked to the native Rust artifact; do not generalize the range to other CPUs or lengths."
+
+[[claim]]
+id = "measured-determinism-device-divergence"
+statement = "For the registered convolution, deterministic overhead differs materially between the recorded CPU and MPS environments."
+classification = "benchmark"
+status = "supported"
+case = "engine.determinism"
+decision = "Publish both device results and raw samples together because either point estimate in isolation could support a misleading general claim."
+
+[[claim]]
+id = "measured-microbatch-tradeoff-mps"
+statement = "On the MPS reference case, smaller microbatches substantially reduced incremental peak memory while also reducing throughput."
+classification = "benchmark"
+status = "supported"
+case = "clipping.microbatch"
+decision = "Publish as a shape- and device-scoped memory/throughput trade-off with equivalence error, not as a universal recommended microbatch."
+
+[[claim]]
+id = "measured-adadelta-state"
+statement = "For the recorded float32 parameter tree, Adadelta tensor state is 2.0 parameter-bytes without bias correction and 3.0 with correction."
+classification = "benchmark"
+status = "supported"
+case = "optimizers.state"
+decision = "Publish as exact unique tensor-storage accounting; Python-object overhead is explicitly excluded."
+
+[[claim]]
+id = "measured-moe-shape-dependence"
+statement = "Both recorded MPS MoE sweeps kept grouped-GEMM slower through 64 experts and neither reproduced a 2x speedup at 128 experts."
+classification = "benchmark"
+status = "supported"
+case = "patches.moe_dispatch"
+decision = "Publish as evidence against a universal crossover claim; retain all raw per-shape rows."

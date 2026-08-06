@@ -22,7 +22,9 @@ Mathematical decomposition:
                 = neg_dot(e, c[t]) + LSE(e @ c.T)
 
 Memory savings: O(B) + O(V) intermediate storage instead of O(B * V).
-For LLaMA-3 (128K vocab), this avoids materializing ~1 GB of logits per sample.
+The avoided logit tensor contains ``batch * shifted_tokens * vocabulary``
+elements; its exact byte size depends on shape and dtype. Measure allocator
+peaks with the repository's ``patches.fused_linear_cross_entropy`` benchmark.
 """
 
 from __future__ import annotations

@@ -30,6 +30,12 @@ pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"], option
 
 [dev-dependencies]
 approx = "0.5"
+rustfft = "6.4"
+serde_json = "1"
+
+[[bench]]
+name = "fft"
+harness = false
 
 [features]
 default = []

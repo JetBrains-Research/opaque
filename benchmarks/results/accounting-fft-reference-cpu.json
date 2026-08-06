@@ -1,0 +1,484 @@
+{
+  "case": {
+    "config": {
+      "sizes": [
+        1024,
+        4096,
+        16384,
+        65536
+      ]
+    },
+    "description": "Native Rust real-FFT versus complex-FFT convolution throughput.",
+    "id": "accounting.fft",
+    "source_digest": "061153159e9a2bf28802502118a455f675efc08fa5067e9f2b2da487315d1ada",
+    "sources": {
+      "Cargo.lock": "57db0b452ee27e2862c02e250b4df950d6bb0a99a28da6f174de3359cb041565",
+      "benchmarks/cases/accounting.py": "d80a5da3bea15fbe8fc8a82505648b259e63a77d928aff28dead14224dc6b3d8",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "packages/opaque-accounting/Cargo.toml": "f4a9befde3d7c37f13bec9dca9c23b1bf90ab201885db28dda6ed31788637afa",
+      "packages/opaque-accounting/benches/fft.rs": "522bf8effbc71fdbc00525f4e3fd15a9a0f1053a3dafcc28ea97b79d1a4a75bc",
+      "packages/opaque-accounting/src/numerics/fft.rs": "0489ba29b7269e2df757b114864d4e141c0677af96cce3179f9cb511f3095b61",
+      "packages/opaque-accounting/src/numerics/gaussian.rs": "c5d33f661afa95a8aec3b3c6aa32f143dbe70d65ddebf3cec3f8a64a884cc5ff",
+      "packages/opaque-accounting/src/numerics/logspace.rs": "f559bf6e9a9bbf632c4728548d3334d1100fbfed9b5646810b3c89d7fdb8014a",
+      "packages/opaque-accounting/src/numerics/mod.rs": "293f82640a747d1e964af76f755cd87f93f2bc65912539d63fb20a13e2bbbe03",
+      "packages/opaque-accounting/src/numerics/special.rs": "4e824b8659b1173b07c889dbd230f74972167eff908b541b785ce83d91bf0f04",
+      "packages/opaque-accounting/src/numerics/truncation.rs": "22c910c502b89f3d313f2f1ab07054bd9dd1ea91545332be8730a1550ede881f",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [
+    {
+      "baseline": "complex_fft_n1024",
+      "candidate": "real_fft_n1024",
+      "metric": "wall_time_ms",
+      "name": "real_fft_speedup_n1024",
+      "unit": "ratio",
+      "value": 1.8452432199741715
+    },
+    {
+      "baseline": "complex_fft_n4096",
+      "candidate": "real_fft_n4096",
+      "metric": "wall_time_ms",
+      "name": "real_fft_speedup_n4096",
+      "unit": "ratio",
+      "value": 1.9729130641660964
+    },
+    {
+      "baseline": "complex_fft_n16384",
+      "candidate": "real_fft_n16384",
+      "metric": "wall_time_ms",
+      "name": "real_fft_speedup_n16384",
+      "unit": "ratio",
+      "value": 1.804294389820706
+    },
+    {
+      "baseline": "complex_fft_n65536",
+      "candidate": "real_fft_n65536",
+      "metric": "wall_time_ms",
+      "name": "real_fft_speedup_n65536",
+      "unit": "ratio",
+      "value": 1.8264104479056609
+    }
+  ],
+  "measurements": [
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 3.410605131648481e-13
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.009458,
+            0.009415999999999999,
+            0.009292,
+            0.009292,
+            0.009958,
+            0.009292,
+            0.00925,
+            0.010583,
+            0.00925,
+            0.009290999999999999
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.010583,
+            "mean": 0.0095082,
+            "median": 0.009292,
+            "min": 0.00925,
+            "stdev": 0.000433240195118905
+          },
+          "unit": "ms",
+          "value": 0.009292
+        }
+      },
+      "name": "real_fft_n1024",
+      "parameters": {
+        "implementation": "real_fft",
+        "length": 1024
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 3.410605131648481e-13
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.017417,
+            0.017124999999999998,
+            0.017958,
+            0.017167,
+            0.017249999999999998,
+            0.017124999999999998,
+            0.017249999999999998,
+            0.017124999999999998,
+            0.017124999999999998,
+            0.017124999999999998
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.017958,
+            "mean": 0.0172667,
+            "median": 0.017146,
+            "min": 0.017124999999999998,
+            "stdev": 0.0002606355693300513
+          },
+          "unit": "ms",
+          "value": 0.017146
+        }
+      },
+      "name": "complex_fft_n1024",
+      "parameters": {
+        "implementation": "complex_fft",
+        "length": 1024
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 2.0463630789890885e-12
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.043125,
+            0.043250000000000004,
+            0.043042,
+            0.043166,
+            0.04275,
+            0.043000000000000003,
+            0.043042,
+            0.043207999999999996,
+            0.042833,
+            0.043167000000000004
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.043250000000000004,
+            "mean": 0.0430583,
+            "median": 0.0430835,
+            "min": 0.04275,
+            "stdev": 0.00016219401961847964
+          },
+          "unit": "ms",
+          "value": 0.0430835
+        }
+      },
+      "name": "real_fft_n4096",
+      "parameters": {
+        "implementation": "real_fft",
+        "length": 4096
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 2.0463630789890885e-12
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.08545799999999999,
+            0.084875,
+            0.085,
+            0.085208,
+            0.08524999999999999,
+            0.085459,
+            0.085,
+            0.08479199999999999,
+            0.08475,
+            0.084541
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.085459,
+            "mean": 0.0850333,
+            "median": 0.085,
+            "min": 0.084541,
+            "stdev": 0.00030680976733691353
+          },
+          "unit": "ms",
+          "value": 0.085
+        }
+      },
+      "name": "complex_fft_n4096",
+      "parameters": {
+        "implementation": "complex_fft",
+        "length": 4096
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 7.275957614183426e-12
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.213375,
+            0.217167,
+            0.21404099999999998,
+            0.213625,
+            0.217542,
+            0.219459,
+            0.21412499999999998,
+            0.21429199999999998,
+            0.2145,
+            0.21725
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.219459,
+            "mean": 0.2155376,
+            "median": 0.21439599999999998,
+            "min": 0.213375,
+            "stdev": 0.0021129367766741687
+          },
+          "unit": "ms",
+          "value": 0.21439599999999998
+        }
+      },
+      "name": "real_fft_n16384",
+      "parameters": {
+        "implementation": "real_fft",
+        "length": 16384
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 7.275957614183426e-12
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.38387499999999997,
+            0.38654200000000005,
+            0.402166,
+            0.395375,
+            0.38412500000000005,
+            0.385625,
+            0.403958,
+            0.38275,
+            0.39116599999999996,
+            0.387125
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.403958,
+            "mean": 0.39027069999999997,
+            "median": 0.38683350000000005,
+            "min": 0.38275,
+            "stdev": 0.007719473788197394
+          },
+          "unit": "ms",
+          "value": 0.38683350000000005
+        }
+      },
+      "name": "complex_fft_n16384",
+      "parameters": {
+        "implementation": "complex_fft",
+        "length": 16384
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 4.3655745685100555e-11
+        },
+        "wall_time_ms": {
+          "samples": [
+            0.9512919999999999,
+            0.950541,
+            0.94975,
+            0.9536250000000001,
+            0.9607910000000001,
+            1.002167,
+            1.0092910000000002,
+            1.022125,
+            1.010042,
+            1.0296669999999999
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 1.0296669999999999,
+            "mean": 0.9839290999999999,
+            "median": 0.981479,
+            "min": 0.94975,
+            "stdev": 0.03335079431154694
+          },
+          "unit": "ms",
+          "value": 0.981479
+        }
+      },
+      "name": "real_fft_n65536",
+      "parameters": {
+        "implementation": "real_fft",
+        "length": 65536
+      }
+    },
+    {
+      "metrics": {
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 4.3655745685100555e-11
+        },
+        "wall_time_ms": {
+          "samples": [
+            1.8140420000000002,
+            1.871208,
+            1.878833,
+            1.845,
+            1.734667,
+            1.759166,
+            1.794792,
+            1.787166,
+            1.790375,
+            1.7680420000000001
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 1.878833,
+            "mean": 1.8043291,
+            "median": 1.7925835,
+            "min": 1.734667,
+            "stdev": 0.047797714383872175
+          },
+          "unit": "ms",
+          "value": 1.7925835
+        }
+      },
+      "name": "complex_fft_n65536",
+      "parameters": {
+        "implementation": "complex_fft",
+        "length": 65536
+      }
+    }
+  ],
+  "notes": [
+    "The real and complex implementations use cached FFT planners."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "accounting.fft",
+      "--preset",
+      "reference",
+      "--device",
+      "cpu",
+      "--warmup",
+      "3",
+      "--repeats",
+      "10"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": null,
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:54:30.520217Z"
+  },
+  "schema_version": 1
+}

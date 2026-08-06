@@ -1,0 +1,391 @@
+{
+  "case": {
+    "config": {
+      "bands": 8,
+      "horizons": [
+        64,
+        128,
+        256,
+        512
+      ],
+      "momentum": 0.9
+    },
+    "description": "Cold BandMF construction and row-norm scaling by horizon.",
+    "id": "dpftrl.strategy_init",
+    "source_digest": "1ef80ac0b004db339af1b5ddd838d332681876c91843cd0fa2489edfedb4b502",
+    "sources": {
+      "benchmarks/cases/dpftrl.py": "c91896c80db9d37b4c59e7568bdb842234c0583d7f391c7b707035b213ce1595",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "benchmarks/measurement.py": "05e1f6228c5f316f12c4535661ab3525c959c6bfddf4049cf5bf1de450b12736",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/__init__.py": "a6fa47e5c9f4781c9af776b867ec87db12869f614b3a371fb2834c2fa79d7b62",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_band_mf.py": "fa9ac8e2fa61edcca9decf240365f51aca6c5a65edc286cc4e6f131a3a95eb77",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py": "6e45eef4b2bd7449683f0e296aa0e7cfa29eead778d1867deb17f0d596d54d99",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_blt.py": "e28417c6df9f29141797300eedfdca18b5e705c15da335d9d771e80ad4473f85",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_blt_math.py": "4dba113f4747317f49b041615bfdf5424e8133f3e96b7c0a1c570cf627c299d2",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bsr.py": "caaf78ce5888016c3932082c0da5b30f97e2b1ccb7c32cdec3b1712969bdacf3",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_checks.py": "06800d371ba89ec2b73e1b172c580078748679a25910d5099c0d66684e0116de",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_distributed.py": "77124cd81f6ca5bd9fe41f4f6f34085b2e33006459f90c08f83908712cf1067a",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_engine.py": "2b660689d688f03ef0d21e01ccb075a032a88e289be79e29c801efa0d67e07db",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_identity.py": "feca9b467e70daefe574d6926f696e1f47529dd0b9497d8cbde93275bfab2043",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_lambda_cgd.py": "24c55ecbcccbada8085590bd241b4e17d91ffb4ad09551627b5dae50e079c9e9",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_mf_gaussian_noise.py": "674016d17ee37f5449d4adb13f14fc19b4cdd9c9be839f10566b8efbc56e7ac3",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_second_moment.py": "0c5a201b3372314cae95a12f3ef407f61fdaa0968c99f36b605c944a6a24df52",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_sensitivity.py": "4698b9b417da8f05868bbffed8773f17c59f5ecda17263674ceb16bbffe9d9c6",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_strategy_codec.py": "5d7c0ee4ab576ea4da54e0c5baf32c6a84ebfb056e482b1299ebcd4a486d6025",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_streaming_matrix.py": "b24ee3aa27e39d9de2166c59ab565f10faecae3d948c60f0234a54a045dbe6b2",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_toeplitz.py": "6f5ca9c339b972b94b70e58e8642fe77ab31ed720c18c2a63022dbb9c94f984a",
+      "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/types.py": "01c66a62b629b66438717a687eb4c970d27aad87a0041214dd805bc24b2887c0",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [],
+  "measurements": [
+    {
+      "metrics": {
+        "construction_time_ms": {
+          "samples": [
+            21.97575,
+            21.608125,
+            21.323709,
+            21.5265,
+            21.508
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 21.97575,
+            "mean": 21.588416799999997,
+            "median": 21.5265,
+            "min": 21.323709,
+            "stdev": 0.24020105755116952
+          },
+          "unit": "ms",
+          "value": 21.5265
+        },
+        "max_row_norm_squared": {
+          "statistic": "exact",
+          "unit": "squared_norm",
+          "value": 1.759845296742435
+        },
+        "row_norm_count": {
+          "statistic": "exact",
+          "unit": "element",
+          "value": 64
+        },
+        "row_norms_time_ms": {
+          "samples": [
+            0.608,
+            0.546208,
+            0.547416,
+            0.541542,
+            0.537834
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 0.608,
+            "mean": 0.5562,
+            "median": 0.546208,
+            "min": 0.537834,
+            "stdev": 0.029207899787557463
+          },
+          "unit": "ms",
+          "value": 0.546208
+        }
+      },
+      "name": "horizon_64",
+      "parameters": {
+        "bands": 8,
+        "horizon": 64,
+        "momentum": 0.9
+      }
+    },
+    {
+      "metrics": {
+        "construction_time_ms": {
+          "samples": [
+            145.138541,
+            163.54125,
+            195.7755,
+            213.845417,
+            207.824709
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 213.845417,
+            "mean": 185.2250834,
+            "median": 195.7755,
+            "min": 145.138541,
+            "stdev": 29.657618648396966
+          },
+          "unit": "ms",
+          "value": 195.7755
+        },
+        "max_row_norm_squared": {
+          "statistic": "exact",
+          "unit": "squared_norm",
+          "value": 1.774049567003444
+        },
+        "row_norm_count": {
+          "statistic": "exact",
+          "unit": "element",
+          "value": 128
+        },
+        "row_norms_time_ms": {
+          "samples": [
+            1.600708,
+            1.871,
+            1.5875,
+            1.748709,
+            1.639125
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 1.871,
+            "mean": 1.6894084,
+            "median": 1.639125,
+            "min": 1.5875,
+            "stdev": 0.11965948940347358
+          },
+          "unit": "ms",
+          "value": 1.639125
+        }
+      },
+      "name": "horizon_128",
+      "parameters": {
+        "bands": 8,
+        "horizon": 128,
+        "momentum": 0.9
+      }
+    },
+    {
+      "metrics": {
+        "construction_time_ms": {
+          "samples": [
+            75.157959,
+            73.156291,
+            70.639166,
+            71.507834,
+            69.772
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 75.157959,
+            "mean": 72.04665,
+            "median": 71.507834,
+            "min": 69.772,
+            "stdev": 2.1422484307949667
+          },
+          "unit": "ms",
+          "value": 71.507834
+        },
+        "max_row_norm_squared": {
+          "statistic": "exact",
+          "unit": "squared_norm",
+          "value": 1.7810244099590429
+        },
+        "row_norm_count": {
+          "statistic": "exact",
+          "unit": "element",
+          "value": 256
+        },
+        "row_norms_time_ms": {
+          "samples": [
+            2.918625,
+            2.893542,
+            2.966667,
+            2.911667,
+            2.93575
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 2.966667,
+            "mean": 2.9252502,
+            "median": 2.918625,
+            "min": 2.893542,
+            "stdev": 0.02765593818151904
+          },
+          "unit": "ms",
+          "value": 2.918625
+        }
+      },
+      "name": "horizon_256",
+      "parameters": {
+        "bands": 8,
+        "horizon": 256,
+        "momentum": 0.9
+      }
+    },
+    {
+      "metrics": {
+        "construction_time_ms": {
+          "samples": [
+            159.175,
+            167.3795,
+            166.034958,
+            166.385583,
+            164.065
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 167.3795,
+            "mean": 164.6080082,
+            "median": 166.034958,
+            "min": 159.175,
+            "stdev": 3.2668624360889713
+          },
+          "unit": "ms",
+          "value": 166.034958
+        },
+        "max_row_norm_squared": {
+          "statistic": "exact",
+          "unit": "squared_norm",
+          "value": 1.784481552010134
+        },
+        "row_norm_count": {
+          "statistic": "exact",
+          "unit": "element",
+          "value": 512
+        },
+        "row_norms_time_ms": {
+          "samples": [
+            6.231625,
+            6.599959,
+            6.084,
+            5.904375,
+            6.157209
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 5,
+            "max": 6.599959,
+            "mean": 6.195433599999999,
+            "median": 6.157209,
+            "min": 5.904375,
+            "stdev": 0.2566828259580295
+          },
+          "unit": "ms",
+          "value": 6.157209
+        }
+      },
+      "name": "horizon_512",
+      "parameters": {
+        "bands": 8,
+        "horizon": 512,
+        "momentum": 0.9
+      }
+    }
+  ],
+  "notes": [
+    "Construction timings clear the BandMF coefficient cache before every sample; row-norm timings reuse the constructed streaming matrix."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "dpftrl.strategy_init",
+      "--preset",
+      "reference",
+      "--device",
+      "cpu",
+      "--warmup",
+      "2",
+      "--repeats",
+      "5"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": null,
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:54:48.758575Z"
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,259 @@
+{
+  "case": {
+    "config": {
+      "batch_size": 16,
+      "dtype": "float32",
+      "in_channels": 64,
+      "out_channels": 128,
+      "seed": 417,
+      "spatial_size": 128
+    },
+    "description": "Default versus reproducible PyTorch convolution forward/backward.",
+    "id": "engine.determinism",
+    "source_digest": "e6ea41e08a69b48e3e7bee5a96252d7cc0fd3c33acf693ba277ca4cf064ef076",
+    "sources": {
+      "benchmarks/cases/determinism.py": "03d1b066d21e40e8d8bf91c567103f7207634d56c29f5a06b0d73566859cfaf4",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "benchmarks/measurement.py": "05e1f6228c5f316f12c4535661ab3525c959c6bfddf4049cf5bf1de450b12736",
+      "packages/opaque-engine/src/opaque/api/engine/random/__init__.py": "a9da720f2fedaef53a3a59d8079d5fc5db870d465a8dd47807e780ed9b69c76f",
+      "packages/opaque-engine/src/opaque/api/engine/random/_engine.py": "1be5e761b742a74e8f6ce3d546817fd7b9ec3d871980e9f40829ed84f993d706",
+      "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py": "f82535443884bfc5d3eed29f3b79ac0985c17f7d6d07bb97715f642543c17a08",
+      "packages/opaque-engine/src/opaque/api/engine/random/types.py": "0736b36e48b992eae80194d6430e2ecbbc37cc6c173935e7398d657db0d88fbf",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [
+    {
+      "baseline": "default",
+      "candidate": "deterministic",
+      "metric": "wall_time_ms",
+      "name": "deterministic_overhead",
+      "unit": "percent",
+      "value": 18.64060450362157
+    }
+  ],
+  "measurements": [
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1095532544
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16777216
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1112309760
+        },
+        "wall_time_ms": {
+          "samples": [
+            11.193875,
+            10.803584,
+            10.766708,
+            10.831041,
+            10.776416,
+            10.714542,
+            10.755792,
+            10.9615,
+            10.778459,
+            10.768584
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 11.193875,
+            "mean": 10.8350501,
+            "median": 10.7774375,
+            "min": 10.714542,
+            "stdev": 0.14231577500868353
+          },
+          "unit": "ms",
+          "value": 10.7774375
+        }
+      },
+      "name": "default",
+      "parameters": {
+        "deterministic_algorithms": false
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1095548928
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16777216
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1112326144
+        },
+        "wall_time_ms": {
+          "samples": [
+            13.164208,
+            12.416625,
+            13.094541,
+            12.827583,
+            12.674917,
+            12.749667,
+            12.720458,
+            12.443666,
+            12.823167,
+            13.495333
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 13.495333,
+            "mean": 12.8410165,
+            "median": 12.786417,
+            "min": 12.416625,
+            "stdev": 0.3309616049588599
+          },
+          "unit": "ms",
+          "value": 12.786417
+        }
+      },
+      "name": "deterministic",
+      "parameters": {
+        "deterministic_algorithms": true
+      }
+    }
+  ],
+  "notes": [
+    "This measures one convolution workload; deterministic overhead is operation, shape, device, and software dependent."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "engine.determinism",
+      "--preset",
+      "reference",
+      "--device",
+      "mps",
+      "--warmup",
+      "3",
+      "--repeats",
+      "10"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": {
+        "memory_bytes": 115448725504,
+        "name": "Apple M5 Max",
+        "runtime": "26.6",
+        "type": "mps"
+      },
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:55:28.635757Z"
+  },
+  "schema_version": 1
+}

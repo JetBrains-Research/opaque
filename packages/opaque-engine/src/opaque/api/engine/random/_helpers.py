@@ -72,9 +72,11 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
         ...     # ... training step ...
 
     Note:
-        Setting determinism flags has a performance cost (typically 10-30% slower).
-        See PyTorch documentation on ``torch.use_deterministic_algorithms()``
-        and ``torch.backends.cudnn`` for details.
+        Deterministic-algorithm overhead depends on the operation, shape, device,
+        and software stack. Use the repository's ``engine.determinism`` benchmark
+        on the target workload rather than assuming a fixed percentage. See
+        PyTorch documentation on ``torch.use_deterministic_algorithms()`` and
+        ``torch.backends.cudnn`` for details.
 
     See Also:
         - ``key()``: Create RngKey from integer seed

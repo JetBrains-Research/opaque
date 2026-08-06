@@ -1,0 +1,180 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmarks/**"
+      - "docs/**"
+      - "examples/**"
+      - "packages/**"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmarks/**"
+      - "docs/**"
+      - "examples/**"
+      - "packages/**"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - "uv.lock"
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    name: Validate benchmark evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install benchmark dependencies
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: Check claims, sources, results, and generated tables
+        run: uv run python -m benchmarks check
+
+      - name: Run benchmark harness contracts
+        run: uv run pytest tests/benchmarks -m "not cuda and not mps and not slow" -q
+
+      - name: Compile native Rust benchmark
+        run: cargo check --manifest-path packages/opaque-accounting/Cargo.toml --bench fft
+
+  scheduled-cpu:
+    name: Record CPU reference cases
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --group dev --all-packages --extra all
+
+      - name: Run CPU cases
+        run: |
+          uv run python -m benchmarks run accounting.fft --preset reference --device cpu --output benchmark-output/accounting-fft.json
+          uv run python -m benchmarks run optimizers.state --preset reference --device cpu --output benchmark-output/optimizers-state.json
+          uv run python -m benchmarks run dpftrl.strategy_init --preset reference --device cpu --output benchmark-output/dpftrl-strategy-init.json
+          uv run python -m benchmarks run engine.determinism --preset reference --device cpu --output benchmark-output/determinism-cpu.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-cpu
+          path: benchmark-output/*.json
+          retention-days: 30
+
+  scheduled-mps:
+    name: Record MPS reference cases
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: evidence
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --group dev --all-packages --extra all
+
+      - name: Assert MPS available
+        run: uv run python -c "import torch; assert torch.backends.mps.is_available()"
+
+      - name: Run MPS cases
+        run: |
+          uv run python -m benchmarks run engine.determinism --preset reference --device mps --output benchmark-output/determinism-mps.json
+          uv run python -m benchmarks run clipping.microbatch --preset reference --device mps --output benchmark-output/clipping-microbatch.json
+          uv run python -m benchmarks run patches.moe_dispatch --preset reference --device mps --output benchmark-output/moe-dispatch.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-mps
+          path: benchmark-output/*.json
+          retention-days: 30
+
+  scheduled-h200:
+    name: Record H200 reference cases
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: evidence
+    runs-on: GPU-runner-001
+    timeout-minutes: 240
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --group dev --group examples --all-packages --extra all
+
+      - name: Assert H200 available
+        run: >-
+          uv run python -c "import torch; name=torch.cuda.get_device_name();
+          assert 'H200' in name, f'Expected H200, got {name}'"
+
+      - name: Run CUDA and training cases
+        run: |
+          uv run python -m benchmarks run clipping.microbatch --preset reference --device cuda --output benchmark-output/clipping-microbatch-cuda.json
+          uv run python -m benchmarks run patches.fused_linear_cross_entropy --preset reference --device cuda --warmup 2 --repeats 5 --output benchmark-output/fused-linear-ce.json
+          uv run python -m benchmarks run patches.fused_swiglu --preset reference --device cuda --warmup 2 --repeats 5 --output benchmark-output/fused-swiglu.json
+          uv run python -m benchmarks run training.dpsgd --preset reference --device cuda --warmup 0 --repeats 1 --output benchmark-output/training-dpsgd.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-h200
+          path: benchmark-output/*.json
+          retention-days: 30
