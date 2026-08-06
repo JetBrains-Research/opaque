@@ -89,10 +89,10 @@ neighboring relation) or $2C$ (under replace-one).
 
 Gaussian noise with standard deviation $\sigma_{\text{abs}}$ is added to the
 sum of clipped gradients. The absolute noise scale is proportional to the
-sensitivity (the clip norm): for clip norm $C$ and noise multiplier $z$,
-$\sigma_{\text{abs}} = zC$.
+sensitivity (the clip norm): for clip norm $C$ and noise multiplier $\sigma$,
+$\sigma_{\text{abs}} = \sigma C$.
 
-The dimensionless ratio $z = \sigma_{\text{abs}} / C$ is the *noise
+The dimensionless ratio $\sigma = \sigma_{\text{abs}} / C$ is the *noise
 multiplier*. Larger noise multiplier means stronger privacy (smaller
 $\varepsilon$) but more gradient corruption.
 
@@ -122,8 +122,8 @@ DP-SGD), the total privacy loss is bounded by *composition theorems*.
 **Basic composition**: $\varepsilon$ values add linearly. $T$ steps of
 $\varepsilon_0$-DP gives $T \cdot \varepsilon_0$ total privacy loss. For the
 Gaussian mechanism, the single-step privacy cost is controlled by the **noise
-multiplier** $z = \sigma_{\text{abs}} / C$: increasing $z$ decreases
-$\varepsilon_0$. Holding $z$ fixed keeps the per-step guarantee unchanged even
+multiplier** $\sigma = \sigma_{\text{abs}} / C$: increasing $\sigma$ decreases
+$\varepsilon_0$. Holding $\sigma$ fixed keeps the per-step guarantee unchanged even
 if you later rescale both the clip norm and the absolute noise standard
 deviation together. The linear $T \cdot \varepsilon_0$ bound is correct but
 extremely loose.
