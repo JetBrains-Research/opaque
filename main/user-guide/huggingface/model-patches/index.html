@@ -2992,6 +2992,12 @@ backward path.  It predates and operates independently of
 <code>DPTrainer</code> — any code that drives DP-SGD over HF models (the
 trainer, a hand-rolled training loop, a custom orchestration layer)
 can use the same APIs.</p>
+<p>The fused kernels preserve separate software provenance from scholarly method
+attribution. In this guide, the relevant primary papers are
+<a href="https://arxiv.org/abs/2106.09685">LoRA</a>, <a href="https://arxiv.org/abs/2104.09864">RoPE / RoFormer</a>,
+<a href="https://arxiv.org/abs/1910.07467">RMSNorm</a>, and
+<a href="https://arxiv.org/abs/2002.05202">GLU Variants Improve Transformer</a> for the
+SwiGLU / GeGLU activations used by patched model families.</p>
 <p>Two concerns are handled:</p>
 <ul>
 <li><strong>Compat patches</strong> — vmap-safety rewrites for attention, causal
@@ -3577,7 +3583,8 @@ fused backward that reads 3 tensors and writes 2–3 in a single pass.</p>
 <h3 id="rotary-position-embeddings-rope">Rotary position embeddings (RoPE)<a class="headerlink" href="#rotary-position-embeddings-rope" title="Permanent link">&para;</a></h3>
 <p>Fused RoPE applies rotary embeddings to Q and K tensors
 simultaneously.  Supports grouped-query attention (GQA) where Q and
-K have different head counts.</p>
+K have different head counts. The underlying position encoding follows
+<a href="https://arxiv.org/abs/2104.09864"><em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em></a>.</p>
 <p>Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi-3, Gemma, Gemma2,
 Granite.</p>
 <h3 id="cross-entropy">Cross-entropy<a class="headerlink" href="#cross-entropy" title="Permanent link">&para;</a></h3>
@@ -3648,7 +3655,8 @@ are detected and <code>peft=True</code> is passed to <code>apply_model_patches</
 <p><code>opaque_lora_w</code> patches <code>peft.tuners.lora.Linear.forward</code> and applies
 to all LoRA layers.  <code>opaque_lora_qkv</code> and <code>opaque_lora_mlp</code> are
 auto-fused when all projections in an attention block or MLP block
-have LoRA adapters with no bias.</p>
+have LoRA adapters with no bias. These kernels implement the low-rank adapter
+structure from <a href="https://arxiv.org/abs/2106.09685"><em>LoRA: Low-Rank Adaptation of Large Language Models</em></a>.</p>
 <p>QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
 Cohere2.  Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm),
 Phi-3 (combined qkv_proj), Cohere (no transpose).</p>

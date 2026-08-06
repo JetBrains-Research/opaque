@@ -2817,9 +2817,10 @@ gradient to a fixed norm, and sums:</p>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="p">)</span>
 </code></pre></div>
 <p>For automatic threshold tuning across steps:
-<code>opaque.dpsgd.clipping.adaptive_clipped_grad</code> (Andrew et al. 2021).
+<code>opaque.dpsgd.clipping.adaptive_clipped_grad</code>
+(<a href="https://arxiv.org/abs/1905.03871">Andrew et al., 2021</a>).
 For AUTO-S smooth scaling: <code>opaque.dpsgd.clipping.auto_clipped_grad</code>
-(Bu et al. 2023).</p>
+(<a href="https://arxiv.org/abs/2206.07136">Bu et al., 2023</a>).</p>
 <h2 id="3-noise">3. Noise<a class="headerlink" href="#3-noise" title="Permanent link">&para;</a></h2>
 <p><code>opaque.dpsgd.noise.gaussian_noise</code> adds calibrated Gaussian noise to
 the clipped gradient sum:</p>

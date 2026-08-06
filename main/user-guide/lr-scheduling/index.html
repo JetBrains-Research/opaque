@@ -2982,8 +2982,8 @@ schedule, so warm-up-then-plateau is a one-liner:</p>
 </code></pre></div>
 <h2 id="restarts">Restarts<a class="headerlink" href="#restarts" title="Permanent link">&para;</a></h2>
 <p><a href="../../reference/schedules/#with_restarts"><code>with_restarts</code></a> replays a
-schedule <code>num_cycles</code> times over a window.  Combined with cosine you
-get SGDR (Loshchilov &amp; Hutter, 2017):</p>
+schedule <code>num_cycles</code> times over a window. Combined with cosine you get
+<a href="https://arxiv.org/abs/1608.03983">SGDR</a> (Loshchilov &amp; Hutter, 2017):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_schedule</span><span class="p">,</span> <span class="n">with_restarts</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">base_lr</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">4</span>
@@ -2997,9 +2997,10 @@ over its own <code>cycle_length</code>.  Composes with <code>with_warmup</code> 
 way as any other decay.</p>
 <h2 id="warmup-stable-decay-wsd">Warmup-Stable-Decay (WSD)<a class="headerlink" href="#warmup-stable-decay-wsd" title="Permanent link">&para;</a></h2>
 <p><a href="../../reference/schedules/#warmup_stable_decay"><code>warmup_stable_decay</code></a>
-implements the three-phase schedule from Hägele et al. 2024
-("Scaling Laws and Compute-Optimal Training Beyond Fixed Training
-Durations") and the MiniCPM paper:</p>
+implements the three-phase schedule from Hägele et al.'s 2024
+<a href="https://arxiv.org/abs/2405.18392">Scaling Laws and Compute-Optimal Training Beyond Fixed Training
+Durations</a>. MiniCPM also adopts this
+schedule:</p>
 <ol>
 <li><strong>Warmup</strong> — ramp from <code>0</code> to <code>init_value</code> over <code>num_warmup_steps</code>.</li>
 <li><strong>Stable</strong> — constant at <code>init_value</code> for <code>num_stable_steps</code>.</li>

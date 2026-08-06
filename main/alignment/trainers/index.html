@@ -2956,6 +2956,14 @@ but route the gradient through opaque's per-example DP
 one clip-noise-step. The alignment collators, losses, and reference helpers are
 the same primitives the by-hand guides use; the trainer is the orchestration
 layer.</p>
+<p>The supported <code>loss_type</code> values map onto the corresponding alignment papers:
+<a href="https://arxiv.org/abs/2305.18290">DPO</a>, <a href="https://arxiv.org/abs/2310.12036">IPO</a>,
+<a href="https://arxiv.org/abs/2406.08414">DiscoPOP</a>, <a href="https://arxiv.org/abs/2405.14734">SimPO</a>,
+<a href="https://arxiv.org/abs/2403.07691">ORPO</a>, <a href="https://arxiv.org/abs/2406.11827">WPO</a>,
+<a href="https://arxiv.org/abs/2409.06411">LD-DPO</a>, <a href="https://arxiv.org/abs/2408.06266">APO</a>,
+<a href="https://arxiv.org/abs/2505.21395">SquareChiPO</a>, <a href="https://arxiv.org/abs/2402.05369">NCA</a>,
+<a href="https://arxiv.org/abs/2404.04656">BCO</a>, <a href="https://arxiv.org/abs/2405.00675">SPPO</a>,
+and <a href="https://arxiv.org/abs/2508.05629">Dynamic Fine-Tuning</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers.trl</span><span class="w"> </span><span class="kn">import</span> <span class="n">SFTConfig</span><span class="p">,</span> <span class="n">SFTTrainer</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers.trl</span><span class="w"> </span><span class="kn">import</span> <span class="n">DPOConfig</span><span class="p">,</span> <span class="n">DPOTrainer</span>
 </code></pre></div>
@@ -3293,7 +3301,7 @@ overwriting the seeded columns, and eval scores against the same reference.</p>
   The weight is detached and per-example, so per-example DP is preserved.</li>
 <li><strong>LD-DPO</strong> — <code>ld_alpha</code> (a float in <code>[0, 1]</code>, <code>None</code> ⇒ standard DPO)
   length-desensitizes the sequence log-prob by damping the verbose tail of each
-  completion beyond the shared-prefix length (arXiv:2409.10524).</li>
+  completion beyond the shared-prefix length (arXiv:2409.06411).</li>
 <li><strong>f-divergence</strong> — <code>f_divergence_type</code> selects the regularizer:
   <code>"reverse_kl"</code> (default, standard DPO), <code>"forward_kl"</code>, <code>"js_divergence"</code>, or
   <code>"alpha_divergence"</code>. For the α-divergence, <code>f_alpha_divergence_coef</code>

@@ -43560,7 +43560,7 @@ in structure and method names (iteration 1), built on Opaque's per-example DP
 <a id="__codelineno-0-99" name="__codelineno-0-99"></a>    <span class="c1">#: Disable dropout in policy (and reference) before training.</span>
 <a id="__codelineno-0-100" name="__codelineno-0-100"></a>    <span class="n">disable_dropout</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 <a id="__codelineno-0-101" name="__codelineno-0-101"></a>
-<a id="__codelineno-0-102" name="__codelineno-0-102"></a>    <span class="c1"># ---- TR-DPO (reference sync, arXiv:2502.18014) -----------------------</span>
+<a id="__codelineno-0-102" name="__codelineno-0-102"></a>    <span class="c1"># ---- TR-DPO (reference sync, arXiv:2404.09656) -----------------------</span>
 <a id="__codelineno-0-103" name="__codelineno-0-103"></a>    <span class="c1">#: Periodically move the reference toward the policy by an EMA step</span>
 <a id="__codelineno-0-104" name="__codelineno-0-104"></a>    <span class="c1">#: (recomputed per training step, outside vmap). Requires a reference-using</span>
 <a id="__codelineno-0-105" name="__codelineno-0-105"></a>    <span class="c1">#: ``loss_type``; full fine-tuning only (not PEFT, mirroring TRL).</span>

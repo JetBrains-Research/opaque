@@ -2738,7 +2738,7 @@ single parameter λ ∈ [0, 1) to control noise correlation across training step
 Its key advantage is <strong>zero extra memory</strong> — noise correlation is achieved via
 PRNG seed replay instead of storing previous noise vectors.</p>
 <ul>
-<li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2601.22334">DP-λCGD: Leveraging Correlated Gradients for Improved DP-SGD</a></li>
+<li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2601.22334">DP-λCGD: Efficient Noise Correlation for Differentially Private Model Training</a></li>
 <li><strong>Strategy matrix</strong>: Lower-triangular Toeplitz with entries C[i,j] = λ^{i-j}</li>
 <li><strong>Inverse</strong>: Bidiagonal — 1 on diagonal, -λ on subdiagonal (bandwidth 2)</li>
 <li><strong>Memory</strong>: Zero extra (PRNG replay regenerates previous noise from its seed)</li>

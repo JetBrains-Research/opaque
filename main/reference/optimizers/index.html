@@ -2485,6 +2485,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#foundational-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Foundational references
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#not-exposed" class="md-nav__link">
     <span class="md-ellipsis">
       Not exposed
@@ -2716,6 +2725,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#foundational-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Foundational references
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#not-exposed" class="md-nav__link">
     <span class="md-ellipsis">
       Not exposed
@@ -2925,6 +2943,19 @@ an alternative answer to the same v-update bias.</p>
 <p>Constructor knobs vary per optimizer (e.g. <code>decoupled_weight_decay</code>,
 <code>update_rms_clip</code> on <code>adamw</code> and <code>ademamix</code>; this RMS clip is model-wide/global
 over the full update pytree, not per-leaf); see the docstrings.</p>
+<h3 id="foundational-references">Foundational references<a class="headerlink" href="#foundational-references" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="https://arxiv.org/abs/1412.6980">Adam: A Method for Stochastic Optimization</a>
+  — Kingma and Ba (2015); the basis for <code>adam</code>.</li>
+<li><a href="https://arxiv.org/abs/1711.05101">Decoupled Weight Decay Regularization</a>
+  — Loshchilov and Hutter (2019); introduces AdamW.</li>
+<li><a href="https://arxiv.org/abs/2304.13013">Stable and low-precision training for large-scale vision-language models</a>
+  — Wortsman et al. (2023); introduces StableAdamW's update-RMS clipping.</li>
+<li><a href="https://jmlr.org/papers/v12/duchi11a.html">Adaptive Subgradient Methods for Online Learning and Stochastic Optimization</a>
+  — Duchi, Hazan, and Singer (2011); introduces Adagrad.</li>
+<li><a href="https://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf">Lecture 6.5-rmsprop: Divide the gradient by a running average of its recent magnitude</a>
+  — Tieleman and Hinton (2012) lecture notes; introduces RMSprop.</li>
+</ul>
 <h3 id="not-exposed">Not exposed<a class="headerlink" href="#not-exposed" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>torchopt.adamax</code> — the max-norm tracker <code>v_t = max(β v_{t-1}, |g_t + ξ|)</code>

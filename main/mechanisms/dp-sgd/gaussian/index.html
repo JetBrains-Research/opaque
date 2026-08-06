@@ -3055,7 +3055,8 @@ sample. A given example may appear on multiple workers.</p>
 <h2 id="bounded-noise-variant">Bounded noise variant<a class="headerlink" href="#bounded-noise-variant" title="Permanent link">&para;</a></h2>
 <p>Pass <code>bound=B</code> (or <code>bound=(low, high)</code>) to <code>gaussian_noise()</code> to sample
 from a Gaussian renormalized over <span class="arithmatex">\([-B, B]\)</span> (or <span class="arithmatex">\([\text{low}, \text{high}]\)</span>)
-per coordinate — the <em>bounded Gaussian mechanism</em> of Chen and Hale (2024).
+per coordinate — the <em>bounded Gaussian mechanism</em> of
+<a href="https://arxiv.org/abs/2211.17230">Chen and Hale (2024)</a>.
 Bounds are absolute (same scale as the gradient / clip norm), not multiples
 of <span class="arithmatex">\(\sigma\)</span>. Treat <code>bound=</code> as experimental: <code>dpsgd_acc.gaussian()</code> does not
 cover this variant.</p>
@@ -3083,10 +3084,10 @@ cover this variant.</p>
 <ul>
 <li><strong>Abadi et al. (2016)</strong> — <a href="https://arxiv.org/abs/1607.00133">Deep Learning with Differential Privacy</a>.
   Introduced DP-SGD with the Gaussian mechanism.</li>
-<li><strong>Balle et al. (2018)</strong> — <a href="https://arxiv.org/abs/1802.04085">The Privacy Blanket of the Shuffle Model</a>.
-  Tight characterization of the Gaussian mechanism's privacy profile.</li>
-<li><strong>Balle, Gaboardi, Zanella-Béguelin (2018)</strong> — <a href="https://arxiv.org/abs/1808.00087">Privacy Profiles and Amplification by Subsampling</a>.
+<li><strong>Balle, Barthe, Gaboardi (2018)</strong> — <a href="https://arxiv.org/abs/1807.01647">Privacy Amplification by Subsampling: Tight Analyses via Couplings and Divergences</a>.
   Poisson subsampling amplification analysis.</li>
+<li><strong>Chen and Hale (2024)</strong> — <a href="https://arxiv.org/abs/2211.17230">The Bounded Gaussian Mechanism for Differential Privacy</a>.
+  Introduces the bounded Gaussian mechanism.</li>
 </ul>
 
 
