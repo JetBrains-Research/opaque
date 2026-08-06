@@ -160,8 +160,9 @@ dist_utils.sum_gradients_(grads)
 ## Adaptive clipping
 
 `adaptive_clipped_grad` is local-only -- it does not communicate or
-auto-detect DDP. To keep the clip norm consistent across ranks, explicitly
-synchronize the state after each step:
+auto-detect DDP. Each rank clips its own local batch and records local
+clipping statistics in `AdaptiveClipState`. To keep the adaptive threshold
+consistent across ranks, explicitly synchronize that state after each step:
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
@@ -181,7 +182,7 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
 # In the training loop:
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-clip_state = sync(clip_state)   # required in DDP
+clip_state = sync(clip_state)   # required: aggregate local counts and update next threshold
 grads = dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
@@ -195,10 +196,12 @@ noise_state = sync(noise_state)
 ```
 
 `sync()` auto-dispatches based on the type of the state object. For
-`AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
-(sum), recomputes the global clipping rate, and updates the internal next
-threshold. The current DP bound is carried by the clipped output's `.max_norm`
-metadata.
+`AdaptiveClipState`, it sums `num_clipped` and batch size across ranks,
+recomputes the global clipping rate from those aggregated totals, and updates
+the internal next threshold identically on every device. This is the required
+step that keeps distributed adaptive clipping correct even when ranks see
+uneven local batches. The current DP bound is carried by the clipped output's
+`.max_norm` metadata.
 
 For fixed clipping (`clipped_grad`), the state is a deterministic marker and
 does not need synchronization. `sync(clip_state)` is a passthrough.

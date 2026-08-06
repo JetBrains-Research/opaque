@@ -246,22 +246,32 @@ eps = training.epsilon_at(1e-5)
 
 ### Distributed adaptive clipping
 
-In distributed training, the clip norm must be consistent across devices.
-`adaptive_clipped_grad` does not auto-detect DDP; after each step,
-synchronize the state:
+In distributed training, `adaptive_clipped_grad` stays local to each rank:
+it clips the local batch and records local clipped counts in the returned
+state. To keep the adaptive threshold consistent across devices, synchronize
+that state after every step, before the next adaptive-clipping call:
 
 ```python
 import opaque.distributed as dist_utils
 from opaque.distributed import sync
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
-clip_state = sync(clip_state)  # aggregate counts across ranks
+clip_state = sync(clip_state)  # required: aggregate counts and update next threshold
 grads = dist_utils.sum_gradients(grads)
 ```
 
-`sync()` dispatches to `sync_adaptive_clip_state` internally, which aggregates
-counts across ranks, recomputes the global clipping rate,
-and updates the internal next threshold to be identical on every device.
+`sync()` dispatches to `sync_adaptive_clip_state` internally. For
+`AdaptiveClipState` it:
+
+1. sums each rank's local `num_clipped` and local batch size,
+2. recomputes the global clipping rate from those aggregated totals, and
+3. updates the internal next threshold so every rank uses the same adaptive
+   clip norm on the following step.
+
+This is what makes distributed adaptive clipping correct even when local
+batches are uneven, such as under Poisson sampling. The clipped output's
+current DP bound still lives on `grads.max_norm`; the synchronized state only
+controls the next step's threshold.
 
 ## Loss function requirements
 
