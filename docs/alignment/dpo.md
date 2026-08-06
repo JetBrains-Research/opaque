@@ -151,7 +151,7 @@ and return a per-example scalar. `sigmoid_loss` is the standard DPO objective
 and the right default. The others trade off robustness and reference
 handling — `hinge_loss`, `robust_loss` (label-smoothed cDPO), `ipo_loss`,
 `discopop_loss`, `chosen_nll_loss` (chosen-completion NLL regularizer for
-MPO/RPO/CPO blends), `squarechipo_loss`, `apo_zero_loss`/`apo_down_loss`,
+MPO/RPO/CPO blends), `apo_zero_loss`/`apo_down_loss`,
 `exo_loss`, `nca_loss`, `bco_loss`, `sppo_loss`. As with SFT, map a config
 string to a head at the CLI boundary (`{"sigmoid": sigmoid_loss, ...}`) —
 the library exposes direct functions, not a registry. For composite

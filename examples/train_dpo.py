@@ -166,7 +166,6 @@ from opaque.alignment.dpo.loss import (
     sigmoid_loss,
     simpo_loss,
     sppo_loss,
-    squarechipo_loss,
 )
 from opaque.alignment.dpo.metric import reward_metrics
 from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
@@ -193,7 +192,6 @@ _DPO_LOSSES = {
     "ipo": ipo_loss,
     "discopop": discopop_loss,
     "chosen_nll": chosen_nll_loss,
-    "squarechipo": squarechipo_loss,
     "apo_zero": apo_zero_loss,
     "apo_down": apo_down_loss,
     "exo_pair": exo_loss,

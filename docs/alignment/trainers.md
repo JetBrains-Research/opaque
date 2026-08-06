@@ -209,7 +209,6 @@ fails with a `KeyError` at the dispatch table. The supported names:
 | `sppo_hard` | SPPO hard-label. | yes |
 | `apo_zero` / `apo_down` | APO-zero / APO-down. | yes |
 | `discopop` | DiscoPOP (temperature `discopop_tau`). | yes |
-| `squarechipo` | SquareChiPO. | yes |
 | `simpo` | SimPO: length-normalized sigmoid with a target margin. | **no** |
 | `cpo` | CPO: reference-free sigmoid + `cpo_alpha`·chosen-NLL. | **no** |
 | `orpo` | ORPO: odds-ratio + `orpo_lambda`·chosen-NLL. | **no** |

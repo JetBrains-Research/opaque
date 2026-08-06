@@ -29,7 +29,6 @@ from opaque.api.alignment.dpo.loss._robust import robust_loss
 from opaque.api.alignment.dpo.loss._sigmoid import sigmoid_loss
 from opaque.api.alignment.dpo.loss._simpo import simpo_loss
 from opaque.api.alignment.dpo.loss._sppo import sppo_loss
-from opaque.api.alignment.dpo.loss._squarechipo import squarechipo_loss
 from opaque.api.alignment.dpo.loss._wpo import wpo_weights
 
 __all__ = [
@@ -41,7 +40,6 @@ __all__ = [
     "simpo_loss",
     "discopop_loss",
     "chosen_nll_loss",
-    "squarechipo_loss",
     "apo_zero_loss",
     "apo_down_loss",
     "exo_loss",
