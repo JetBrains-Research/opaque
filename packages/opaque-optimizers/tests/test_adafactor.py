@@ -97,6 +97,88 @@ class TestVanilla:
             assert torch.isfinite(updates[k]).all()
 
 
+class TestUpdateRmsClip:
+    def test_clip_uses_single_global_scale_not_per_leaf(self):
+        """A large leaf can trigger clipping for an otherwise unscaled leaf."""
+        params = {
+            "large": torch.zeros(4, 4),
+            "small": torch.zeros(4),
+        }
+        grads = {
+            "large": torch.ones(4, 4),
+            "small": torch.tensor([10.0, 0.0, 0.0, 0.0]),
+        }
+        threshold = 0.9
+        common = {"lr": 1.0, "eps_root": 1.0, "weight_decay": 0.0}
+        opt = adafactor(**common, update_rms_clip=threshold)
+        opt_no_clip = adafactor(**common, update_rms_clip=1e9)
+
+        updates, _ = opt.update(grads, opt.init(params), params=params)
+        unclipped, _ = opt_no_clip.update(
+            grads, opt_no_clip.init(params), params=params
+        )
+
+        global_rms = torch.sqrt(
+            sum(update.pow(2).sum() for update in unclipped.values())
+            / sum(update.numel() for update in unclipped.values())
+        )
+        expected_scale = torch.clamp(global_rms / threshold, min=1.0).item()
+        small_rms = unclipped["small"].pow(2).mean().sqrt()
+
+        assert small_rms < threshold < global_rms
+        assert expected_scale > 1.0
+        for name in params:
+            torch.testing.assert_close(
+                updates[name],
+                unclipped[name] / expected_scale,
+                atol=1e-6,
+                rtol=0,
+            )
+
+    def test_clip_precedes_first_moment_ema(self):
+        """The global clip retains Adafactor's pre-EMA update-clipping order."""
+        params = {
+            "large": torch.zeros(4, 4),
+            "small": torch.zeros(4),
+        }
+        grads = {
+            "large": torch.ones(4, 4),
+            "small": torch.tensor([10.0, 0.0, 0.0, 0.0]),
+        }
+        threshold = 0.9
+        common = {"lr": 1.0, "eps_root": 1.0, "weight_decay": 0.0}
+        no_momentum = adafactor(**common, update_rms_clip=1e9)
+        clipped = adafactor(**common, beta1=0.5, update_rms_clip=threshold)
+        momentum_unclipped = adafactor(**common, beta1=0.5, update_rms_clip=1e9)
+
+        normalized, _ = no_momentum.update(
+            grads, no_momentum.init(params), params=params
+        )
+        updates, _ = clipped.update(grads, clipped.init(params), params=params)
+        unclipped, _ = momentum_unclipped.update(
+            grads, momentum_unclipped.init(params), params=params
+        )
+
+        global_rms = torch.sqrt(
+            sum(update.pow(2).sum() for update in normalized.values())
+            / sum(update.numel() for update in normalized.values())
+        )
+        expected_scale = torch.clamp(global_rms / threshold, min=1.0).item()
+        momentum_rms = torch.sqrt(
+            sum(update.pow(2).sum() for update in unclipped.values())
+            / sum(update.numel() for update in unclipped.values())
+        )
+
+        assert momentum_rms < threshold < global_rms
+        for name in params:
+            torch.testing.assert_close(
+                updates[name],
+                unclipped[name] / expected_scale,
+                atol=1e-6,
+                rtol=0,
+            )
+
+
 class TestExplicitKwargsRejected:
     """``optimizer.update()`` does not take per-step metadata kwargs;
     metadata travels via ``NoisedPytree``.  Stray kwargs surface as a

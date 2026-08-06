@@ -332,7 +332,8 @@ def adadelta(
         decoupled_weight_decay: ``True`` selects decoupled WD (post
             moment scaling); ``False`` folds ``wd · params`` into the
             gradient before moment scaling (L2 regularisation).
-        update_rms_clip: Optional StableAdamW-style RMS clip.
+        update_rms_clip: Optional StableAdamW-style model-wide RMS clip on
+            the moment-scaled update.
         noise_bias_correction: If ``True``, maintain and subtract two
             parallel ρ-EMAs of the realized noise variance:
 
