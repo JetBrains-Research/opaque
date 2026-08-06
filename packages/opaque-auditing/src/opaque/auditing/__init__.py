@@ -25,7 +25,7 @@ Result data classes (``CoinFlip``, ``OneRunEstimate``) live in
 :mod:`opaque.auditing.types`.
 
 References:
-    - Xiang, Chen, Kerkouche (2025), https://arxiv.org/abs/2509.08704
+    - Xiang et al. (2025), https://arxiv.org/abs/2509.08704
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
     - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
 """

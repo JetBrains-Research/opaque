@@ -3,7 +3,7 @@
 """Unit + vmap-safety tests for the LD-DPO logp-split helper (plan §7.1, §3.4).
 
 Covers :func:`ld_dpo_split` — the LD-DPO length-desensitised logp split
-(arXiv:2409.10524). Full-prefix coverage reducing to the plain masked-sum, the
+(arXiv:2409.06411). Full-prefix coverage reducing to the plain masked-sum, the
 ``alpha=0`` prefix-only case, and a ``torch.func.vmap(torch.func.grad)``
 finite-gradient contract test (§3.4) with a tensor ``shared_prefix_len``.
 
@@ -19,7 +19,7 @@ from torch.func import grad, vmap
 from opaque.api.alignment.dpo.loss._ld_dpo import ld_dpo_split
 
 # ---------------------------------------------------------------------------
-# ld_dpo_split — length-desensitised logp split (arXiv:2409.10524)
+# ld_dpo_split — length-desensitised logp split (arXiv:2409.06411)
 # ---------------------------------------------------------------------------
 
 

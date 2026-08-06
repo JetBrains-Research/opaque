@@ -63,7 +63,7 @@ for composite objectives:
 - **`f_divergence_logits()`** — form the remapped preference logits under an f-divergence.
 - **`mpo_combine()`** — weighted sum of per-example loss tensors (MPO / TRL `loss_type=list`).
 - **`wpo_weights()`** — per-example WPO weight (arXiv:2406.11827).
-- **`ld_dpo_split()`** — length-desensitized sequence-logp split (LD-DPO, arXiv:2409.10524).
+- **`ld_dpo_split()`** — length-desensitized sequence-logp split (LD-DPO, arXiv:2409.06411).
 
 ### Log-probabilities
 

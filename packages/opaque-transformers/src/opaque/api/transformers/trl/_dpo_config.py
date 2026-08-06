@@ -99,7 +99,7 @@ class DPOConfig(TrainingArguments):
     #: Disable dropout in policy (and reference) before training.
     disable_dropout: bool = True
 
-    # ---- TR-DPO (reference sync, arXiv:2502.18014) -----------------------
+    # ---- TR-DPO (reference sync, arXiv:2404.09656) -----------------------
     #: Periodically move the reference toward the policy by an EMA step
     #: (recomputed per training step, outside vmap). Requires a reference-using
     #: ``loss_type``; full fine-tuning only (not PEFT, mirroring TRL).

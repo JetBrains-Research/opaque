@@ -12,7 +12,7 @@ Negative-axis indexing is used throughout so it works both when called
 per-example (``logits`` ``(T, V)``, ``input_ids`` ``(T,)``) and when called on a
 batched input (``logits`` ``(B, T, V)``, ``input_ids`` ``(B, T)``).
 
-The ``ld_alpha`` (LD-DPO, arXiv:2409.10524) length-desensitised logp split is
+The ``ld_alpha`` (LD-DPO, arXiv:2409.06411) length-desensitised logp split is
 not implemented here; pass ``ld_alpha=None``.
 """
 
@@ -49,7 +49,7 @@ def sequence_logp(
         completion_mask: Tensor of shape ``(..., T)``; non-zero where a token
             belongs to the completion span and should contribute to the logp.
             It is cast to the logits dtype before multiplying.
-        ld_alpha: LD-DPO (arXiv:2409.10524) length-desensitisation coefficient.
+        ld_alpha: LD-DPO (arXiv:2409.06411) length-desensitisation coefficient.
             When set, completion tokens beyond ``shared_prefix_len`` are weighted
             by ``ld_alpha`` (typically ``∈ [0, 1]``) instead of ``1.0``, damping
             the verbose tail's contribution; ``ld_alpha=1.0`` recovers the plain

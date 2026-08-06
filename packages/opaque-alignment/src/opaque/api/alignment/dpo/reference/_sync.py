@@ -7,7 +7,7 @@ policy via an exponential moving average (EMA):
 
 This "soft" reference update is described in the TR-DPO paper and is the
 primary mechanism for preventing the policy from straying too far from the
-reference distribution during DP-DPO training (arXiv:2502.18014 §3).
+reference distribution during DP-DPO training (arXiv:2404.09656 §3).
 
 This module exposes a single pure function, :func:`ema_update_reference`, that
 applies the update leafwise over an arbitrary parameter pytree without
@@ -33,7 +33,7 @@ def ema_update_reference(
 ) -> PyTree:
     """Functional EMA update of the reference parameters toward the policy.
 
-    Implements the TR-DPO core update (arXiv:2502.18014):
+    Implements the TR-DPO core update (arXiv:2404.09656):
 
         ref ← (1 − alpha) · ref + alpha · policy
 

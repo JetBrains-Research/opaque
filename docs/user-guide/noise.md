@@ -606,8 +606,8 @@ noise state type. See [Distributed Training](distributed.md) for details.
 ## References
 
 - [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
-- [McMahan et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
-- [Choquette-Choo et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
+- [Dvijotham et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
+- [McMahan et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
 - [Kalinin et al., 2026](https://arxiv.org/abs/2601.22334) -- DP-λCGD
 - [Kalinin et al., 2026](https://arxiv.org/abs/2505.12128) -- BISR
 - [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem

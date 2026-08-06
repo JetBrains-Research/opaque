@@ -4,8 +4,8 @@
 
 Implements the DFT loss from:
 
-    Yang et al., "Dynamic Fine-Tuning: Token-Level Importance-Aware SFT",
-    arXiv:2508.05629 (2025).
+    "On the Generalization of SFT: A Reinforcement Learning Perspective with
+    Reward Rectification", arXiv:2508.05629 (2025).
 
 The per-token loss is the standard NLL weighted by the **stop-gradient**
 (detached) softmax probability of the target token:

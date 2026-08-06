@@ -200,7 +200,7 @@ eps = training.epsilon_at(delta=1e-5)
 
 - **Abadi et al. (2016)** — [Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133).
   Introduced DP-SGD with the Gaussian mechanism.
-- **Balle et al. (2018)** — [The Privacy Blanket of the Shuffle Model](https://arxiv.org/abs/1802.04085).
-  Tight characterization of the Gaussian mechanism's privacy profile.
-- **Balle, Gaboardi, Zanella-Béguelin (2018)** — [Privacy Profiles and Amplification by Subsampling](https://arxiv.org/abs/1808.00087).
+- **Balle, Bell, Gascon, Nissim (2019)** — [The Privacy Blanket of the Shuffle Model](https://arxiv.org/abs/1903.02837).
+  Privacy amplification in the shuffle model.
+- **Balle, Barthe, Gaboardi (2018)** — [Privacy Amplification by Subsampling: Tight Analyses via Couplings and Divergences](https://arxiv.org/abs/1807.01647).
   Poisson subsampling amplification analysis.

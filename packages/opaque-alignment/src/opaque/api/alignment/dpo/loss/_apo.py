@@ -3,7 +3,8 @@
 """Anchored Preference Optimisation (APO) loss variants.
 
 Implements the two APO variants from:
-    Zeng et al., "Token-level Direct Preference Optimization" (arXiv:2408.06266).
+    "Anchored Preference Optimization and Contrastive Revisions: Addressing
+    Underspecification in Alignment" (arXiv:2408.06266).
 
 Both variants operate on per-example ``(chosen_logratio, rejected_logratio)``
 scalars. They are pure losses:
