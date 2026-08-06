@@ -82,7 +82,6 @@ from transformers.utils import find_labels
 
 if TYPE_CHECKING:
     from opaque.random.types import RngKey
-
 from . import _checkpoint as ckpt
 from . import _distributed, _dpftrl, _eval, _hub
 from ._callback import (
@@ -880,20 +879,13 @@ class DPTrainer:
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
         # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
-        # ``ClippedPytree.max_norm`` cross-rank equality assert) would then
-        # meet at mismatched logical steps and raise ``max_norm mismatch
-        # across ranks``.  So after every attempt, all-reduce a MAX of each
-        # rank's "needs to step down" flag — if ANY rank OOMs, EVERY rank
-        # steps down together and restarts in lockstep.  The returned run is
+        # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
+        # mismatched logical steps and raise ``max_norm mismatch across ranks``.
+        # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
+        # MAX of each rank's "needs to step down" flag — if ANY rank OOMs, EVERY
+        # rank steps down together and restarts in lockstep. The returned run is
         # the first attempt at which no rank OOMs, so all ranks ran it at an
         # identical microbatch and stayed synchronised end-to-end.
-        def _cluster_needs_step_down(local_oom: bool) -> bool:
-            if not self._ddp.is_distributed:
-                return local_oom
-            flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
-            torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
-            return bool(flag.item() > 0.0)
-
         while True:
             # Stamp before the attempt so a successful run's logs carry it.
             self.state.converged_microbatch_size = current_microbatch_size
@@ -915,7 +907,7 @@ class DPTrainer:
             # Cluster-wide retry decision: a rank that succeeded must still
             # step down (and discard ``result``) if any sibling OOM'd, so the
             # whole cluster re-runs the next attempt in lockstep.
-            if _cluster_needs_step_down(local_oom):
+            if self._cluster_needs_step_down(local_oom):
                 if current_microbatch_size <= 1:
                     # Propagate the original OOM so callers see the actionable
                     # signal. Fall back to a synthetic message only when this
@@ -1069,6 +1061,19 @@ class DPTrainer:
         errors that happen to mention "out of memory" in the message.
         """
         return isinstance(err, torch.OutOfMemoryError)
+
+    def _cluster_needs_step_down(self, local_oom: bool) -> bool:
+        """Whether any rank OOM'd this attempt (cluster-wide MAX all-reduce).
+
+        The OOM-retry decision must be collective: if one rank steps the batch
+        down and a sibling doesn't, they desync on the next collective. Returns
+        ``local_oom`` unchanged when not distributed.
+        """
+        if not self._ddp.is_distributed:
+            return local_oom
+        flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
+        torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+        return bool(flag.item() > 0.0)
 
     def _reset_state_for_batch_size_retry(self, snapshot: DPTrainerState) -> None:
         self.state = DPTrainerState.from_json(snapshot.to_json())
@@ -2517,90 +2522,124 @@ class DPTrainer:
         # training aux channel carries (e.g. DPO ``rewards/*``); collect + mean it
         # into the eval metrics, mirroring the train-step aux logging.
         eval_aux_chunks: dict[str, list[Tensor]] = {}
+        # Under DDP a retryable OOM anywhere in the per-batch eval body must
+        # become a *collective* event before the end-of-loop
+        # ``reduce_scalar`` / gather: if the OOM'ing rank skipped those ops
+        # while siblings issued them, the process group would deadlock.
+        # Mirror the training-step guard — catch a retryable OOM, break out
+        # of the batch loop, then all-reduce a MAX flag so EVERY rank raises
+        # before collectives.
+        local_oom = False
 
         for batch in dataloader:
             bs = _eval.find_batch_size(batch) or 0
             if bs == 0:
                 continue
             self._pending_eval_aux = None
-            with self._perf_tracker.eval(batch_size=bs):
-                loss, logits, labels = self.prediction_step(
-                    self._model,
-                    batch,
-                    prediction_loss_only=ploss_only,
-                    ignore_keys=ignore_keys,
-                )
-            step_aux = self._pending_eval_aux
-            self._pending_eval_aux = None
-            if step_aux:
-                for name, value in step_aux.items():
-                    eval_aux_chunks.setdefault(name, []).append(value.detach())
-
-            # Per-batch progress hook (HF parity); progress bars / NES
-            # callbacks rely on this firing once per eval batch.
-            self._control = self._callback_handler.on_prediction_step(
-                self.args,
-                self.state,
-                self._control,
-            )
-
-            # ``loss`` is scalar (default forward) or 1-D per-example
-            # (when ``'loss' in include_for_metrics`` triggers the
-            # vmap'd eval closure).  The model's per-example CE is already
-            # the mean over real (non-``-100``) tokens, so:
-            #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
-            #     the total CE; dividing the running sum by the running
-            #     ``loss_samples`` count gives per-real-token mean CE.
-            #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
-            #     example i's total CE; summing then dividing by the total
-            #     real-token count gives the same per-token mean.
-            # When labels aren't exposed (rare), fall back to per-example
-            # weighting.
-            if loss is not None:
-                if labels is not None:
-                    # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
-                    # position 0 via the internal shift); the per-token-mean
-                    # weighting denominator must match that count.
-                    shifted = labels[..., 1:]
-                    token_mask = shifted != -100
-                    if loss.ndim > 0:
-                        # per-example: weight each by its real-token count
-                        per_example_real = token_mask.sum(
-                            dim=tuple(range(1, shifted.ndim))
-                        ).to(loss.dtype)
-                        total_loss += float((loss * per_example_real).sum().item())
-                        loss_samples += int(per_example_real.sum().item())
-                    else:
-                        # scalar: weight by real-token count in the whole batch
-                        real_tokens = int(token_mask.sum().item())
-                        total_loss += float(loss.item()) * real_tokens
-                        loss_samples += real_tokens
-                else:
-                    # labels not exposed: fall back to per-example weighting
-                    total_loss += (
-                        float(loss.sum().item())
-                        if loss.ndim > 0
-                        else float(loss.item()) * bs
+            try:
+                with self._perf_tracker.eval(batch_size=bs):
+                    loss, logits, labels = self.prediction_step(
+                        self._model,
+                        batch,
+                        prediction_loss_only=ploss_only,
+                        ignore_keys=ignore_keys,
                     )
-                    loss_samples += bs
-            total_samples += bs
+            except RuntimeError as err:
+                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                    raise
+                local_oom = True
+                self._pending_eval_aux = None
+                break
+            try:
+                step_aux = self._pending_eval_aux
+                self._pending_eval_aux = None
+                if step_aux:
+                    for name, value in step_aux.items():
+                        eval_aux_chunks.setdefault(name, []).append(value.detach())
 
-            if logits is not None and self._preprocess_logits is not None:
-                logits_for_hook: Tensor | tuple[Tensor, ...]
-                logits_for_hook = (
-                    logits[0]
-                    if isinstance(logits, tuple) and len(logits) == 1
-                    else logits
+                # Per-batch progress hook (HF parity); progress bars / NES
+                # callbacks rely on this firing once per eval batch.
+                self._control = self._callback_handler.on_prediction_step(
+                    self.args,
+                    self.state,
+                    self._control,
                 )
-                logits = self._preprocess_logits(logits_for_hook, labels)
 
-            main_input = batch.get(main_input_name) if include_inputs else None
-            accumulator.add(
-                loss=loss,
-                logits=logits,
-                labels=labels,
-                inputs=main_input,
-                batch_size=bs,
+                # ``loss`` is scalar (default forward) or 1-D per-example
+                # (when ``'loss' in include_for_metrics`` triggers the
+                # vmap'd eval closure).  The model's per-example CE is already
+                # the mean over real (non-``-100``) tokens, so:
+                #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
+                #     the total CE; dividing the running sum by the running
+                #     ``loss_samples`` count gives per-real-token mean CE.
+                #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
+                #     example i's total CE; summing then dividing by the total
+                #     real-token count gives the same per-token mean.
+                # When labels aren't exposed (rare), fall back to per-example
+                # weighting.
+                if loss is not None:
+                    if labels is not None:
+                        # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
+                        # position 0 via the internal shift); the per-token-mean
+                        # weighting denominator must match that count.
+                        shifted = labels[..., 1:]
+                        token_mask = shifted != -100
+                        if loss.ndim > 0:
+                            # per-example: weight each by its real-token count
+                            per_example_real = token_mask.sum(
+                                dim=tuple(range(1, shifted.ndim))
+                            ).to(loss.dtype)
+                            total_loss += float((loss * per_example_real).sum().item())
+                            loss_samples += int(per_example_real.sum().item())
+                        else:
+                            # scalar: weight by real-token count in the whole batch
+                            real_tokens = int(token_mask.sum().item())
+                            total_loss += float(loss.item()) * real_tokens
+                            loss_samples += real_tokens
+                    else:
+                        # labels not exposed: fall back to per-example weighting
+                        total_loss += (
+                            float(loss.sum().item())
+                            if loss.ndim > 0
+                            else float(loss.item()) * bs
+                        )
+                        loss_samples += bs
+                total_samples += bs
+
+                if logits is not None and self._preprocess_logits is not None:
+                    logits_for_hook: Tensor | tuple[Tensor, ...]
+                    logits_for_hook = (
+                        logits[0]
+                        if isinstance(logits, tuple) and len(logits) == 1
+                        else logits
+                    )
+                    logits = self._preprocess_logits(logits_for_hook, labels)
+
+                main_input = batch.get(main_input_name) if include_inputs else None
+                accumulator.add(
+                    loss=loss,
+                    logits=logits,
+                    labels=labels,
+                    inputs=main_input,
+                    batch_size=bs,
+                )
+            except RuntimeError as err:
+                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                    raise
+                local_oom = True
+                self._pending_eval_aux = None
+                break
+
+        # Cluster-wide OOM check before end-of-loop collectives. Ranks that
+        # finished their shard wait here for siblings still iterating; a
+        # mid-loop OOM on any rank then raises on every rank so nobody enters
+        # ``reduce_scalar`` / gather. Matches the training-step guard.
+        if self._ddp.is_distributed and self._cluster_needs_step_down(local_oom):
+            raise torch.OutOfMemoryError(
+                "collective eval batch retry (a rank OOM'd during eval batch "
+                "processing; "
+                "whole cluster steps down to a smaller "
+                "per_device_eval_batch_size)."
             )
 
         # ----- Finalize metrics -----
@@ -2908,15 +2947,14 @@ class DPTrainer:
     ) -> EvaluationResult:
         """Drive a single :meth:`evaluation_loop` and return its result.
 
-        Pure forward + accumulator; no callback / log / state-mutation
-        side effects.  Shared by :meth:`evaluate` and :meth:`predict`.
+        Pure forward + accumulator; no callback / log side effects.  Shared by
+        :meth:`evaluate` and :meth:`predict`.  When ``auto_find_microbatch_size``
+        is set, an eval CUDA-OOM lowers ``args.per_device_eval_batch_size`` (and
+        clears the cached eval dataloader) before retrying.
         """
         # HF parity: start/stop memory tracker around the eval loop so
         # ``skip_memory_metrics=False`` captures eval-phase memory usage.
         self._memory_tracker.start()
-        loader = self.get_eval_dataloader(dataset)
-        self._callback_handler.eval_dataloader = loader
-        start_time = time.time()
         # ``eval_dtype`` casts ``self._model`` in place.  During an active
         # training run the eval forward goes through the functional
         # ``ctx.fmodel`` + detached param dicts, which the cast does NOT
@@ -2935,14 +2973,65 @@ class DPTrainer:
                 "(the nn.Module path)."
             )
             self._warned_full_eval_functional = True
-        with eval_dtype(self._model, self.args, self._train_dtype):
-            result = self.evaluation_loop(
-                loader,
-                description=description,
-                prediction_loss_only=prediction_loss_only,
-                ignore_keys=ignore_keys,
-                metric_key_prefix=metric_key_prefix,
+
+        # ``auto_find_microbatch_size`` also guards eval: on CUDA-OOM, halve
+        # ``per_device_eval_batch_size`` and retry. Eval has no gradient
+        # accumulation, so the eval batch is a pure throughput knob — shrinking
+        # it leaves the metrics unchanged. ``evaluation_loop`` turns a per-rank
+        # OOM into a cluster-wide raise before its end-of-loop collectives (so
+        # DDP doesn't deadlock); the step-down here then rebuilds loaders and
+        # retries in lockstep.
+        while True:
+            # Time only the attempt that succeeds — a failed OOM attempt below
+            # restarts the clock so eval throughput isn't under-reported.
+            start_time = time.time()
+            loader = self.get_eval_dataloader(dataset)
+            self._callback_handler.eval_dataloader = loader
+            local_oom = False
+            local_oom_error: BaseException | None = None
+            result = None
+            try:
+                with eval_dtype(self._model, self.args, self._train_dtype):
+                    result = self.evaluation_loop(
+                        loader,
+                        description=description,
+                        prediction_loss_only=prediction_loss_only,
+                        ignore_keys=ignore_keys,
+                        metric_key_prefix=metric_key_prefix,
+                    )
+            except RuntimeError as err:
+                if not (
+                    self.args.auto_find_microbatch_size and self._is_retryable_oom(err)
+                ):
+                    raise
+                local_oom = True
+                local_oom_error = err
+
+            if not self._cluster_needs_step_down(local_oom):
+                assert result is not None  # no rank OOM'd at this batch size
+                break
+
+            self._empty_device_cache_for_retry()
+            current = max(1, int(self.args.per_device_eval_batch_size))
+            if current <= 1:
+                if local_oom_error is not None:
+                    raise local_oom_error
+                raise RuntimeError(
+                    "auto_find_microbatch_size: eval OOMs at "
+                    "per_device_eval_batch_size=1. Reduce the eval sequence "
+                    "length or the model size."
+                )
+            reduced = max(1, current // 2)
+            log.warning(
+                "auto_find_microbatch_size: eval OOM at "
+                "per_device_eval_batch_size=%d, retrying at %d.",
+                current,
+                reduced,
             )
+            self.args.per_device_eval_batch_size = reduced
+            # Drop the cached loader so the next attempt rebuilds it smaller.
+            self._eval_dataloader = None
+
         total_batch_size = max(1, int(self.args.per_device_eval_batch_size))
         result.metrics.update(
             speed_metrics(
