@@ -36,8 +36,18 @@ per-example chosen/rejected logps.
 `opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset` takes a
 `ref(batch) -> {col: (B,) tensor}` callable (wrap your model into one),
 runs a single `torch.no_grad()` pass, gathers across ranks, and caches to
-a content-addressed `.npz` keyed on the dataset fingerprint plus your
-`cache_key`. A cache hit skips the forward entirely.
+a content-addressed `.safetensors` file whose name is the SHA-256 digest of
+`(dataset._fingerprint or repr(dataset), repr(cache_key), output_columns)`.
+By default that file lives under `<tempdir>/opaque_ref_cache/`; pass
+`cache_dir=` to pin a different location. A cache hit skips the forward
+entirely.
+
+On disk, the cache stores the requested tensors under their native torch dtypes
+via `opaque.serialization.state_dict(...)` and `safetensors`; for example, a
+bf16 reference forward stays bf16 in the archive. The only dtype demotion
+happens later, when the cached tensors are attached back to a Hugging Face
+dataset column: those values are converted to Python `float` because PyArrow
+has no bf16 column type.
 
 ```python
 from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
@@ -51,6 +61,17 @@ dataset = compute_ref_logprobs_for_dataset(
     cache_key=("dpo", model_name),
     cache_dir=cache_dir,
 )
+```
+
+For the example above, the stored metadata contract is:
+
+```python
+cache_identity = (
+    dataset._fingerprint,                 # or repr(dataset) if no fingerprint
+    repr(("dpo", model_name)),
+    ("ref_chosen_logps", "ref_rejected_logps"),
+)
+cache_file = "<cache_dir>/<sha256(cache_identity)>.safetensors"
 ```
 
 When the policy is a PEFT/LoRA adapter, the *base* model is the reference:

@@ -7,9 +7,10 @@ per-example ``vmap(grad(...))`` region (it runs a separate forward and/or mutate
 
 - ``compute_ref_logprobs_for_dataset(dataset, ref, ...)`` — the common path: run
   the reference once over the dataset (outer loop), caching per-example
-  chosen/rejected sequence logps to a content-addressed ``.npz``. Feed the cached
-  ``ref_chosen_logp`` / ``ref_rejected_logp`` into the per-pair head as the
-  log-ratio baseline ``policy_logp - ref_logp``.
+  chosen/rejected sequence logps to a content-addressed ``.safetensors`` cache
+  keyed by dataset identity, ``cache_key``, and ``output_columns``. Feed the
+  cached ``ref_chosen_logp`` / ``ref_rejected_logp`` into the per-pair head as
+  the log-ratio baseline ``policy_logp - ref_logp``.
 - ``null_ref_context(model)`` / ``with_disabled_adapter(model)`` — when the policy
   is a PEFT/LoRA adapter, use the *base* model as the reference: enter the context
   (which disables the adapter), run the reference forward, no second model needed.
