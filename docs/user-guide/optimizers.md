@@ -86,7 +86,8 @@ from opaque.optimizers import adamw
 
 optimizer = adamw(lr=1.5e-4, weight_decay=0.01)
 # Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
-# StableAdamW (RMS-clipped update): adamw(..., update_rms_clip=1.0).
+# StableAdamW (model-wide/global RMS-clipped update, not per-leaf):
+# adamw(..., update_rms_clip=1.0).
 ```
 
 **SGD** (`sgd`) is the canonical DP baseline. No second
