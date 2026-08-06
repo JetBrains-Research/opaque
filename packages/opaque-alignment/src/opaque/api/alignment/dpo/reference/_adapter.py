@@ -117,9 +117,9 @@ def null_ref_context(
     ========================  ================================================
     Configuration             Behaviour
     ========================  ================================================
-    Separate model            *ref_model* is not ``None`` and not a PEFT
-                 model → **no-op** (caller uses *ref_model*
-                              directly; no adapter to toggle).
+    Separate model            *ref_model* is not ``None`` → **no-op**
+                              (caller uses *ref_model* directly; no policy
+                              adapter to toggle).
     LoRA with ``"ref"``       ``is_peft_model(model)`` and ``"ref" in
     adapter clone             model.peft_config`` → call
                  ``model.set_adapter("ref")`` on enter; restore
@@ -137,9 +137,9 @@ def null_ref_context(
     Args:
         model: The policy model.  May be a PEFT :class:`~peft.PeftModel` or an
             ordinary :class:`torch.nn.Module`.
-        ref_model: Optional separate reference model.  When not ``None`` and
-            not itself a PEFT model, the caller is responsible for forwarding
-            through *ref_model* directly; this context manager is a no-op.
+        ref_model: Optional separate reference model. When not ``None``, the
+            caller is responsible for forwarding through *ref_model* directly;
+            this context manager is a no-op. It must not be ``model`` itself.
 
     .. warning:: **Outside vmap only**.
 
@@ -149,8 +149,14 @@ def null_ref_context(
     Note:
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).
     """
-    # ── Row 1: separate non-PEFT ref_model ──────────────────────────────────
-    if ref_model is not None and not _is_peft_model(ref_model):
+    if ref_model is model:
+        raise ValueError(
+            "ref_model must be a separate model; omit ref_model to use the "
+            "policy's PEFT reference adapter or adapter-disabled base model."
+        )
+
+    # ── Row 1: separate ref_model ───────────────────────────────────────────
+    if ref_model is not None:
         # Caller owns ref_model; nothing to toggle on the policy model.
         yield
         return
