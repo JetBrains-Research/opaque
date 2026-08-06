@@ -1600,6 +1600,33 @@ class DPTrainer:
                     self.args, self.state, self._control
                 )
 
+                # Stop-at-ε (fixed-NM path): enforce the budget on EVERY step,
+                # not just at log boundaries, so no optimizer update runs past
+                # ``privacy_target_epsilon`` (#392).  Checked before composing
+                # this step, so the accountant reflects exactly the updates
+                # performed.  Calibrated-NM runs skip this (the multiplier was
+                # sized to hit target at ``max_steps``); the ``and`` short-
+                # circuits so they never pay the per-step ``epsilon_at``.
+                a = self.args
+                if (
+                    a.privacy_noise_multiplier is not None
+                    and a.privacy_noise_multiplier > 0
+                    and a.privacy_target_epsilon is not None
+                ):
+                    eps = ctx.accounting.epsilon_at(ctx.target_delta)
+                    if eps >= a.privacy_target_epsilon:
+                        self.state.privacy_target_epsilon_reached = True
+                        self._control.should_training_stop = True
+                        # Log here too: with coarse/disabled logging the
+                        # log-boundary stop message would never fire (#392).
+                        log.info(
+                            "stop-at-ε: ε=%g >= target=%g after %d steps",
+                            eps,
+                            a.privacy_target_epsilon,
+                            global_step,
+                        )
+                        break
+
                 # Privacy accounting (data-independent, before execution).
                 ctx.accounting |= ctx.step_process
 

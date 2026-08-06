@@ -202,6 +202,42 @@ class TestStopAtEpsilon:
         )
         assert trainer.state.privacy_target_epsilon_reached is True
 
+    def test_stop_at_epsilon_independent_of_logging_cadence(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """#392: the stop step is independent of ``logging_steps``.
+
+        Pre-fix the ε-budget check only fired at log boundaries, so a coarse
+        logging cadence let extra accounted updates run past target (a coarse
+        cadence would never hit a boundary and run to max_steps).  Accounting
+        is data/weight-independent, so reusing the model across runs is fine.
+        """
+
+        def _run(logging_steps: int) -> int:
+            model, tokenizer = gpt2_with_lora
+            trainer = DPTrainer(
+                model=model,
+                args=_default_args(
+                    max_steps=20,
+                    num_train_epochs=1,
+                    eval_strategy="no",
+                    save_strategy="no",
+                    logging_steps=logging_steps,
+                    privacy_noise_multiplier=1.0,
+                    privacy_target_epsilon=0.001,
+                ),
+                processing_class=tokenizer,
+                train_dataset=tiny_lm_dataset,
+                eval_dataset=tiny_lm_dataset,
+            )
+            out = trainer.train()
+            assert trainer.state.privacy_target_epsilon_reached is True
+            return out.global_step
+
+        fine = _run(1)
+        coarse = _run(999)  # no log boundary before max_steps=20
+        assert fine == coarse < 20, (fine, coarse)
+
     def test_runs_to_max_steps_when_target_not_reached(
         self, gpt2_with_lora, tiny_lm_dataset
     ):
