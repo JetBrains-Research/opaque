@@ -76,9 +76,10 @@ enforced in CI under `tests/contracts/`):
    façades re-export only the names listed in `__all__`; internal
    `opaque.api.*` `__init__.py` files declare `__all__` for the
    names they intend to be importable from that level (private
-   `_*.py` helpers are imported by sibling files only). New
-   sub-packages add a `tests/contracts/test_all_exports_match.py`
-   case asserting that `dir(module)` minus dunders equals `__all__`.
+   `_*.py` helpers are imported by sibling files only). Contract
+   coverage for `__all__` parity exists where implemented; keep new
+   surfaces aligned with that pattern and extend contract coverage
+   when adding new export surfaces.
 7. **Concern directories use singular names** (`clipping`, `noise`,
    `sampling`, `scheduling`, `loss`, `collator`, `reference`,
    `metric`, `kernel`, `data`). The only plural exceptions are
@@ -199,21 +200,12 @@ Everything else lives in the relevant package's
 
 ## Patching model (on-import)
 
-Importing `opaque.patches` or `opaque.transformers` automatically applies
-their respective patches. There is no top-level `opaque.patch_all()` —
-each sub-package owns its own patching. Disable selectively with
-sub-package-specific env vars set **before** the import:
-
-```bash
-OPAQUE_SKIP_PYTORCH_PATCHES=all            # skip all opaque.patches torch-level patches
-OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.transformers compat patches
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches
-```
-
-Fine-grained variables also apply for the performance stack:
-`OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES`,
-`OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES`,
-`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES`.
+`opaque.patches` exposes explicit entry points. `opaque.transformers`
+does not patch Hugging Face globals at import time; `DPTrainer`
+applies runtime and model patches during construction, and non-trainer
+flows should call `opaque.patches.apply_runtime_patches()` once plus
+`opaque.patches.apply_model_patches(model)` for each model instance.
+There is no top-level `opaque.patch_all()`.
 
 Patch submodules:
 

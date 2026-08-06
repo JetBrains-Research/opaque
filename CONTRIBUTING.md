@@ -357,7 +357,7 @@ uv sync --group dev --all-packages --extra all
 
 # Dry-run the preflight script at a specific version
 bash .github/scripts/set_build_versions.sh 0.2.0
-grep -E '^version|opaque-core' pyproject.toml \
+grep -E '^version|opaque-(base|engine|optimizers|dpsgd|dpftrl|auditing|patches|transformers|alignment|accounting)' pyproject.toml \
                                packages/opaque-accounting/pyproject.toml \
                                Cargo.toml
 
@@ -366,15 +366,15 @@ rm -rf dist
 uv build --wheel --out-dir dist
 
 # Build every sub-package wheel
-for pkg in opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing \
-                opaque-patches opaque-transformers; do
+for pkg in opaque-base opaque-engine opaque-optimizers opaque-dpsgd opaque-dpftrl \
+                opaque-auditing opaque-patches opaque-transformers opaque-alignment; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done
 
 # Build the accounting native wheel
 (cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist)
 
-ls dist/   # expect 8 wheels, all at 0.2.0
+ls dist/   # expect 11 artifacts (10 wheels + opaque-accounting sdist), all at 0.2.0
 
 # Inspect a wheel's metadata
 unzip -p dist/opaque_core-*.whl '*/METADATA' | grep '^Version:'

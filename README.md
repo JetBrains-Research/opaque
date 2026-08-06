@@ -74,7 +74,7 @@ pip install "opaque[all]"           # all optional components
 
 ### Patching
 
-Hugging Face and checkpoint patches are now applied explicitly through
+Hugging Face and checkpoint patches are applied explicitly through
 `opaque.patches`:
 
 ```python
@@ -89,8 +89,9 @@ apply_model_patches(model)
 `apply_runtime_patches()` enables the runtime-side checkpoint, collator, and
 loss-mapping fixes. `apply_model_patches(model)` wires compat wrappers and
 Triton kernels into the specific model instance, including PEFT/LoRA modules.
-See [`docs/user-guide/huggingface/`](docs/user-guide/huggingface/index.md) for the
-model matrix and tuning knobs.
+
+See [`docs/user-guide/huggingface/model-patches.md`](docs/user-guide/huggingface/model-patches.md)
+for patching details, model compatibility, and tuning knobs.
 
 ## Example
 
