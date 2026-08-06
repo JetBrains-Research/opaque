@@ -32,9 +32,7 @@ import json
 import math
 import uuid
 from collections.abc import Mapping
-from enum import Enum
 from operator import attrgetter
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -121,12 +119,6 @@ def _json_value(value: Any, *, path: str = "value") -> Any:
         if not math.isfinite(value):
             raise ValueError(f"{path} must not contain non-finite floats")
         return value
-    if isinstance(value, Enum):
-        return _json_value(value.value, path=path)
-    if isinstance(value, Path):
-        return str(value)
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return _json_value(dataclasses.asdict(value), path=path)
     if isinstance(value, Mapping):
         normalized = {}
         for key, item in value.items():
@@ -154,17 +146,6 @@ def _json_value(value: Any, *, path: str = "value") -> Any:
             ),
         )
     raise TypeError(f"{path} contains unsupported value of type {type(value)!r}")
-
-
-def _json_digest(value: Any) -> str:
-    encoded = json.dumps(
-        _json_value(value),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _tensor_state_digest(model: Any, *, exclude_adapter: bool = False) -> str:
@@ -203,41 +184,16 @@ def _is_adapter_state_name(name: str) -> bool:
     return any(marker in name for marker in adapter_markers)
 
 
-def _model_cache_identity(
-    model: Any, *, adapter_mode: str, trust_revision: bool = False
-) -> dict[str, Any]:
-    config = getattr(model, "config", None)
-    source = getattr(config, "_name_or_path", None) or None
-    revision = getattr(config, "_commit_hash", None) or None
-    config_json = (
-        config.to_json_string(use_diff=False)
-        if config is not None and hasattr(config, "to_json_string")
-        else None
-    )
+def _model_cache_identity(model: Any, *, adapter_mode: str) -> dict[str, Any]:
+    """Return TRL-style identity for the reference behavior used at inference."""
     is_peft = _is_peft_model(model)
     identity: dict[str, Any] = {
-        "class": f"{type(model).__module__}.{type(model).__qualname__}",
-        "source": source,
-        "revision": revision,
-        "config_sha256": (
-            hashlib.sha256(config_json.encode("utf-8")).hexdigest()
-            if config_json is not None
-            else None
-        ),
         "adapter_mode": adapter_mode,
-    }
-
-    source_is_local = bool(source and Path(source).expanduser().exists())
-    immutable_hub_reference = bool(
-        trust_revision and source and revision and not source_is_local
-    )
-    adapter_participates = is_peft and adapter_mode != "disabled"
-    if not immutable_hub_reference or adapter_participates:
-        identity["state_sha256"] = _tensor_state_digest(
+        "state_sha256": _tensor_state_digest(
             model, exclude_adapter=is_peft and adapter_mode == "disabled"
-        )
-    if adapter_participates:
-        peft_config = getattr(model, "peft_config", {})
+        ),
+    }
+    if is_peft and adapter_mode != "disabled":
         get_model_status = getattr(model, "get_model_status", None)
         if not callable(get_model_status):
             raise ValueError(
@@ -245,87 +201,11 @@ def _model_cache_identity(
                 "model does not expose get_model_status()"
             )
         adapter_status = get_model_status()
-        identity["adapter_config_sha256"] = _json_digest(
-            {
-                name: (
-                    cfg.to_dict()
-                    if hasattr(cfg, "to_dict")
-                    else dataclasses.asdict(cfg)
-                    if dataclasses.is_dataclass(cfg)
-                    else str(cfg)
-                )
-                for name, cfg in sorted(peft_config.items())
-            }
-        )
         identity["adapter_runtime"] = {
             "enabled": adapter_status.enabled,
             "active_adapters": _json_value(adapter_status.active_adapters),
             "merged_adapters": _json_value(adapter_status.merged_adapters),
         }
-    return identity
-
-
-def _token_value(token: Any) -> Any:
-    if token is None or isinstance(token, (str, bool, int, float)):
-        return token
-    if isinstance(token, (list, tuple)):
-        return [_token_value(item) for item in token]
-    if isinstance(token, dict):
-        return {str(key): _token_value(value) for key, value in token.items()}
-    content = getattr(token, "content", None)
-    if content is not None:
-        return {
-            "content": content,
-            "single_word": bool(getattr(token, "single_word", False)),
-            "lstrip": bool(getattr(token, "lstrip", False)),
-            "rstrip": bool(getattr(token, "rstrip", False)),
-            "normalized": bool(getattr(token, "normalized", False)),
-            "special": bool(getattr(token, "special", False)),
-        }
-    return str(token)
-
-
-def _tokenizer_cache_identity(tokenizer: Any) -> dict[str, Any]:
-    get_vocab = getattr(tokenizer, "get_vocab", None)
-    vocab = get_vocab() if callable(get_vocab) else None
-    added_tokens = getattr(tokenizer, "added_tokens_decoder", {}) or {}
-    init_kwargs = getattr(tokenizer, "init_kwargs", {}) or {}
-    return {
-        "class": f"{type(tokenizer).__module__}.{type(tokenizer).__qualname__}",
-        "source": getattr(tokenizer, "name_or_path", None),
-        "revision": getattr(tokenizer, "_commit_hash", None)
-        or init_kwargs.get("_commit_hash"),
-        "vocab_sha256": _json_digest(vocab) if vocab is not None else None,
-        "added_tokens": {
-            str(index): _token_value(token)
-            for index, token in sorted(added_tokens.items())
-        },
-        "special_tokens": _token_value(
-            getattr(tokenizer, "special_tokens_map_extended", None)
-        ),
-        "chat_template": _token_value(getattr(tokenizer, "chat_template", None)),
-        "model_max_length": getattr(tokenizer, "model_max_length", None),
-        "padding_side": getattr(tokenizer, "padding_side", None),
-        "truncation_side": getattr(tokenizer, "truncation_side", None),
-        "pad_token_id": getattr(tokenizer, "pad_token_id", None),
-        "bos_token_id": getattr(tokenizer, "bos_token_id", None),
-        "eos_token_id": getattr(tokenizer, "eos_token_id", None),
-        "unk_token_id": getattr(tokenizer, "unk_token_id", None),
-    }
-
-
-def _collator_cache_identity(collator: Any, *, is_default: bool) -> dict[str, Any]:
-    if is_default:
-        return {"kind": "opaque-preference-collator"}
-    supplied_identity = getattr(collator, "cache_identity", None)
-    identity = {
-        "kind": "custom",
-        "class": f"{type(collator).__module__}.{type(collator).__qualname__}",
-    }
-    if supplied_identity is None:
-        identity["nonce"] = uuid.uuid4().hex
-    else:
-        identity["identity"] = _json_value(supplied_identity)
     return identity
 
 
@@ -387,9 +267,8 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
 class DPOTrainer(DPTrainer):
     """DP Direct Preference Optimization trainer.
 
-    Custom reference-precompute collators may expose a canonical
-    ``cache_identity`` attribute to enable cache reuse. Without one, each trainer
-    gets a unique collator identity so custom behavior cannot reuse stale values.
+    Reference-logprob caching follows TRL: the prepared dataset fingerprint and
+    the effective reference-model state determine cache reuse.
     """
 
     def __init__(
@@ -532,26 +411,12 @@ class DPOTrainer(DPTrainer):
             )
 
         # ---- collator (reused for precompute and training) ---------------
-        uses_default_collator = data_collator is None
-        if uses_default_collator:
+        if data_collator is None:
             data_collator = preference_collator(
                 pad_token_id=self._pad_token_id,
                 max_length=args.max_length,
                 pad_to_multiple_of=args.pad_to_multiple_of,
             )
-        cache_identity = {
-            "kind": "dpo-reference-logprobs",
-            "tokenizer": _tokenizer_cache_identity(processing_class),
-            "collator": _collator_cache_identity(
-                data_collator, is_default=uses_default_collator
-            ),
-            "preprocessing": {
-                "max_length": args.max_length,
-                "pad_to_multiple_of": args.pad_to_multiple_of,
-                "pad_token_id": self._pad_token_id,
-                "ld_alpha": self._ld_alpha,
-            },
-        }
 
         # ---- tokenize datasets (before super) -----------------------------
         train_dataset = self._prepare_dataset(train_dataset, processing_class, args)
@@ -577,7 +442,6 @@ class DPOTrainer(DPTrainer):
                 model_id=model_id,
                 collator=data_collator,
                 batch_size=batch_size,
-                cache_identity=cache_identity,
                 disable_dropout=args.disable_dropout,
             )
             if eval_dataset is not None and not isinstance(eval_dataset, dict):
@@ -588,7 +452,6 @@ class DPOTrainer(DPTrainer):
                     model_id=model_id,
                     collator=data_collator,
                     batch_size=batch_size,
-                    cache_identity=cache_identity,
                     disable_dropout=args.disable_dropout,
                 )
 
@@ -738,7 +601,6 @@ class DPOTrainer(DPTrainer):
         model_id: str,
         collator: Callable,
         batch_size: int,
-        cache_identity: dict[str, Any],
         disable_dropout: bool,
     ) -> Any:
         """Attach ``ref_{chosen,rejected}_logps`` columns via a one-shot pass.
@@ -780,10 +642,8 @@ class DPOTrainer(DPTrainer):
             adapter_mode = "auto-policy-copy"
 
         resolved_cache_identity = {
-            **cache_identity,
-            "reference": _model_cache_identity(
-                ref, adapter_mode=adapter_mode, trust_revision=owns_ref
-            ),
+            "kind": "dpo-reference-logprobs",
+            "reference": _model_cache_identity(ref, adapter_mode=adapter_mode),
         }
 
         orig_device = next(ref.parameters()).device

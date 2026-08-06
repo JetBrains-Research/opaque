@@ -1484,10 +1484,8 @@ def _run_smoke(args):
                 batch_size=batch_size,
                 cache_identity={
                     "kind": "dpo-smoke",
-                    "reference": {"kind": "in-memory", "seed": args.seed},
-                    "preprocessing": {
-                        "max_length": max_length,
-                        "pad_token_id": pad_token_id,
+                    "reference": {
+                        "state_sha256": _base_model_state_digest(model),
                     },
                 },
                 cache_dir=cache_dir,
@@ -1889,23 +1887,8 @@ def main():
         ref_cache_identity = {
             "kind": "dpo-reference-logprobs",
             "reference": {
-                "source": args.model_name,
-                "revision": getattr(model.config, "_commit_hash", None),
                 "adapter_mode": "disabled",
                 "state_sha256": _base_model_state_digest(model),
-            },
-            "tokenizer": {
-                "source": getattr(tokenizer, "name_or_path", None),
-                "revision": getattr(tokenizer, "_commit_hash", None)
-                or getattr(tokenizer, "init_kwargs", {}).get("_commit_hash"),
-                "chat_template": getattr(tokenizer, "chat_template", None),
-                "pad_token_id": tokenizer.pad_token_id,
-                "bos_token_id": tokenizer.bos_token_id,
-                "eos_token_id": tokenizer.eos_token_id,
-            },
-            "preprocessing": {
-                "max_length": args.max_length,
-                "pad_token_id": tokenizer.pad_token_id,
             },
         }
         with null_ref_context(model):

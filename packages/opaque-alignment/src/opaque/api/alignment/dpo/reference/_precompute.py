@@ -18,10 +18,10 @@ module independent of any particular model class and trivially unit-testable
 with a synthetic ``ref``.
 
 **Cache fingerprint.** The cache filename is the SHA-256 of a versioned,
-canonical encoding of the dataset fingerprint, caller-supplied
-``cache_identity``, and requested output columns. The identity must contain all
-material inputs to the reference forward (model, tokenizer, and preprocessing);
-unsupported or non-deterministic values are rejected instead of falling back to
+canonical encoding of the prepared dataset fingerprint, caller-supplied
+``cache_identity``, and requested output columns. In the DPO trainer the
+identity is the effective reference-model state, matching TRL's cache model.
+Unsupported or non-deterministic values are rejected instead of falling back to
 ``repr``.
 
 **On-disk format.** ``safetensors`` is the project standard (also used by
@@ -234,10 +234,11 @@ def compute_ref_logprobs_for_dataset(
         output_columns: The keys ``ref`` returns, e.g.
             ``("ref_chosen_logps", "ref_rejected_logps")``. Also folded into the
             cache fingerprint.
-        cache_identity: Deterministic JSON-like structure describing every
-            material input to ``ref`` and ``collator``, including model,
-            tokenizer/template, and preprocessing identity. Mapping order does
-            not affect the fingerprint. Unsupported values raise ``TypeError``.
+        cache_identity: Deterministic JSON-like identity for ``ref``. The DPO
+            trainer supplies its effective reference-model state; dataset
+            preparation changes are represented by ``dataset._fingerprint``.
+            Mapping order does not affect the fingerprint. Unsupported values
+            raise ``TypeError``.
         batch_size: ``DataLoader`` batch size for the forward pass. Default 8.
         cache_dir: Directory for the ``.safetensors`` cache. Defaults to
             ``<tempdir>/opaque_ref_cache`` (created on first miss).
