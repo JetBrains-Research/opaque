@@ -87,3 +87,29 @@ class TestTprAtGivenFpr:
             tpr_at_given_fpr(-0.1, tp_counts, fp_counts)
         with pytest.raises(ValueError, match="fpr must be in"):
             tpr_at_given_fpr(1.5, tp_counts, fp_counts)
+
+
+def test_raw_auc_is_unbiased_under_null():
+    """#378: raw-ROC AUC recovers ~0.5 under the null; the hull basis is biased high."""
+    from opaque.api.auditing.one_run._estimate import _auc_from_counts
+
+    rng = np.random.default_rng(0)
+    n, trials = 64, 300
+    raw, hull = [], []
+    for _ in range(trials):
+        a = rng.standard_normal(n)
+        b = rng.standard_normal(n)
+        _, tn, fn = get_tn_fn_counts(a, b)
+        raw.append(_auc_from_counts(tn, fn))
+        _, htn, hfn = get_tn_fn_counts(a, b, hull=True)
+        hull.append(_auc_from_counts(htn, hfn))
+    raw_mean, hull_mean = float(np.mean(raw)), float(np.mean(hull))
+    assert abs(raw_mean - 0.5) < 0.02, raw_mean
+    assert hull_mean > raw_mean + 0.01, (raw_mean, hull_mean)
+
+
+def test_infinite_scores_counted_in_denominators():
+    """#378: +inf scores are included in the n_in / n_out ROC denominators."""
+    _, tn, fn = get_tn_fn_counts([1.0, 2.0, np.inf], [0.5, 1.5, 2.5])
+    assert fn[-1] == 3  # n_in (includes the +inf in-score), not the finite-only 2
+    assert tn[-1] == 3  # n_out
