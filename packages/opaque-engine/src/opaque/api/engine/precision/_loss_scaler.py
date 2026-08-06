@@ -49,7 +49,11 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import torch
 
 from opaque.api.engine.pytree import tree_flatten
-from opaque.api.engine.types import ClippedPytree, NoisedPytree, SecondMomentClippingOutput
+from opaque.api.engine.types import (
+    ClippedPytree,
+    NoisedPytree,
+    SecondMomentClippingOutput,
+)
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
