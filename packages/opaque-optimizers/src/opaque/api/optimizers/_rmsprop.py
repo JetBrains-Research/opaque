@@ -208,8 +208,8 @@ def rmsprop(
         decoupled_weight_decay: ``True`` selects decoupled WD (applied
             after moment scaling); ``False`` folds ``wd·params`` into
             the gradient before moment scaling (L2 regularisation).
-        update_rms_clip: Optional StableAdamW-style RMS clip on the
-            moment-scaled update.
+        update_rms_clip: Optional StableAdamW-style model-wide RMS clip on
+            the moment-scaled update.
         noise_bias_correction: If ``True``, subtract an ``alpha``-EMA of
             the realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed.  Defaults to ``False``;

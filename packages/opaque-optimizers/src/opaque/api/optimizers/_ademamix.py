@@ -232,8 +232,8 @@ def ademamix(
         eps: Denominator stability constant.
         weight_decay: Decoupled WD coefficient by default.
         decoupled_weight_decay: ``False`` switches to L2-style.
-        update_rms_clip: Optional StableAdamW-style RMS clip on the
-            moment-scaled update.
+        update_rms_clip: Optional StableAdamW-style model-wide RMS clip on
+            the moment-scaled update.
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
             ``NoisedPytree`` updates are passed.  Defaults to ``False``;

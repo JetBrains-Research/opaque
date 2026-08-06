@@ -54,8 +54,9 @@ an alternative answer to the same v-update bias.
 | **`schedule_free`** | post-processing (transparent forward) | Wrapper around any base optimizer; replaces external LR schedules |
 
 Constructor knobs vary per optimizer (e.g. `decoupled_weight_decay`,
-`update_rms_clip` on `adamw` and `ademamix`; this RMS clip is model-wide/global
-over the full update pytree, not per-leaf); see the docstrings.
+`update_rms_clip` on `adamw`, `ademamix`, and `adafactor`). Every
+`update_rms_clip` is model-wide/global over the full update pytree, not
+per-leaf; see the docstrings.
 
 ### Foundational references
 

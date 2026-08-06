@@ -63,7 +63,7 @@ except ImportError as exc:
 import optree
 
 from opaque.api.optimizers._bias_correction import resolve_noise_variance
-from opaque.api.optimizers._chain import make_optimizer_chain
+from opaque.api.optimizers._chain import _clip_by_global_rms, make_optimizer_chain
 
 if TYPE_CHECKING:
     from opaque.types import PerGroup, TensorPytree
@@ -260,10 +260,9 @@ def _scale_by_adafactor(
                 update = g / v_eff.sqrt().clamp(min=eps_root * v_eff_scale)
                 new_v_flat.append((new_v,))
 
-            # RMS clip (Adafactor's "update clipping").
-            rms = update.pow(2).mean().sqrt()
-            scale = torch.clamp(rms / update_rms_clip, min=1.0)
-            new_grads.append(update / scale)
+            new_grads.append(update)
+
+        new_grads = list(_clip_by_global_rms(tuple(new_grads), update_rms_clip))
 
         # Optional first moment β₁.
         if use_first_moment:
@@ -325,8 +324,9 @@ def adafactor(
             after DP per-record clipping), which would otherwise reduce the
             optimizer to RMS-normalised SGD.
         weight_decay: Decoupled weight-decay coefficient by default.
-        update_rms_clip: RMS clip threshold on the moment-scaled update;
-            paper default 1.0 (Adafactor bakes this in).
+        update_rms_clip: Model-wide RMS clip threshold on the moment-scaled
+            update; the RMS covers all tensor leaves in the update pytree.
+            Paper default 1.0.
         decoupled_weight_decay: Same semantics as
             :func:`opaque.optimizers._adamw`.
         noise_bias_correction: If ``True``, subtract a β₂_t-EMA of the
@@ -362,9 +362,6 @@ def adafactor(
         update_rms_clip=update_rms_clip,
         noise_bias_correction=noise_bias_correction,
     )
-    # NB: do not stack the chain-level ``update_rms_clip`` on top of
-    # Adafactor's built-in RMS clip — it's already applied inside the
-    # moment scaler.
     return make_optimizer_chain(
         moment,
         lr=lr,

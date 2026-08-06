@@ -313,9 +313,10 @@ def radam(
             ``weight_decay * params`` into the gradient before moment
             scaling — matching the original RAdam paper.
         update_rms_clip: When not ``None``, divides the moment-scaled
-            update by ``max(1, rms / threshold)``.  Applies on every
-            step (clipping happens in the chain stage that follows the
-            moment scaler), including the SGD-of-momentum early branch.
+            update by ``max(1, rms / threshold)``, with ``rms`` computed
+            model-wide across all tensor leaves. Applies on every step
+            (clipping happens in the chain stage that follows the moment
+            scaler), including the SGD-of-momentum early branch.
         noise_bias_correction: If ``True``, advance a β₂-EMA of the
             realized noise variance every step when ``NoisedPytree``
             updates are passed; subtract it from the second moment

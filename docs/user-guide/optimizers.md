@@ -74,6 +74,8 @@ below). Pass `NoisedPytree` updates from a DP noise mechanism:
 from opaque.optimizers import adafactor
 
 optimizer = adafactor(lr=5e-4, weight_decay=0.01)
+# `update_rms_clip=1.0` (the default) clips one model-wide/global RMS,
+# rather than clipping each parameter leaf independently.
 ```
 
 **AdamW** (`adamw`) is a good alternative when you want first-moment
