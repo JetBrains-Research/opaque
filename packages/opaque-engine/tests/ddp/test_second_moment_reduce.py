@@ -40,20 +40,24 @@ def _assert_tree_close(actual: dict, expected: dict) -> None:
     tree_map(torch.testing.assert_close, actual, expected)
 
 
+def _require_gloo() -> None:
+    if not dist.is_available():
+        pytest.skip("torch.distributed is not available")
+    if not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+
+
 class TestSecondMomentReduceGloo:
     def test_second_moment_clipping_sum(self) -> None:
-        if not dist.is_available():
-            pytest.skip("torch.distributed unavailable")
+        _require_gloo()
         _spawn(2, _worker_second_moment_clip_gloo)
 
     def test_second_moment_noise_sum(self) -> None:
-        if not dist.is_available():
-            pytest.skip("torch.distributed unavailable")
+        _require_gloo()
         _spawn(2, _worker_second_moment_noise_gloo)
 
     def test_paired_clipping_matches_single_process_full_batch(self) -> None:
-        if not dist.is_available():
-            pytest.skip("torch.distributed unavailable")
+        _require_gloo()
 
         reference = _paired_clipping_reference()
         with tempfile.TemporaryDirectory() as tmp:

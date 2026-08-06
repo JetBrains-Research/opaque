@@ -291,6 +291,7 @@ def _worker_second_moment_clipping_parity_gloo(
             normalize_by=len(x),
             second_moment=True,
         )
+        assert len(x) % world_size == 0
         shard_size = len(x) // world_size
         shard = slice(rank * shard_size, (rank + 1) * shard_size)
         local, _ = grad_fn(params, x[shard], y[shard], state=clip_state)
