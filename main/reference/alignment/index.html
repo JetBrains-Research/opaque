@@ -3891,7 +3891,8 @@ toggles.</p>
 <ul>
 <li><strong><code>compute_ref_logprobs_for_dataset()</code></strong> (<a href="#api-documentation"><code>opaque.alignment.dpo.reference</code></a>)
   — run the reference once over a dataset, attach per-example logp columns,
-  and cache to a content-addressed <code>.npz</code> (a cache hit skips the forward).</li>
+  and cache to a content-addressed <code>.safetensors</code> file keyed by dataset
+  identity, <code>cache_key</code>, and <code>output_columns</code> (a cache hit skips the forward).</li>
 <li><strong><code>null_ref_context()</code></strong> (<a href="#api-documentation"><code>opaque.alignment.dpo.reference</code></a>)
   — context manager that turns a model into its own reference, dispatching
   over the separate-model / <code>"ref"</code>-adapter / disabled-adapter / no-op
@@ -11924,9 +11925,10 @@ per-example <code>vmap(grad(...))</code> region (it runs a separate forward and/
 <ul>
 <li><code>compute_ref_logprobs_for_dataset(dataset, ref, ...)</code> — the common path: run
   the reference once over the dataset (outer loop), caching per-example
-  chosen/rejected sequence logps to a content-addressed <code>.npz</code>. Feed the cached
-  <code>ref_chosen_logp</code> / <code>ref_rejected_logp</code> into the per-pair head as the
-  log-ratio baseline <code>policy_logp - ref_logp</code>.</li>
+  chosen/rejected sequence logps to a content-addressed <code>.safetensors</code> cache
+  keyed by dataset identity, <code>cache_key</code>, and <code>output_columns</code>. Feed the
+  cached <code>ref_chosen_logps</code> / <code>ref_rejected_logps</code> into the per-pair head
+  as the log-ratio baseline <code>policy_logp - ref_logp</code>.</li>
 <li><code>null_ref_context(model)</code> / <code>with_disabled_adapter(model)</code> — when the policy
   is a PEFT/LoRA adapter, use the <em>base</em> model as the reference: enter the context
   (which disables the adapter), run the reference forward, no second model needed.</li>
