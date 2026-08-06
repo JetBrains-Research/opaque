@@ -8,12 +8,13 @@ permissions:
   contents: read
   pull-requests: read
   copilot-requests: write
+  actions: read
 engine: copilot
 tools:
   bash: [python3, git]
   github:
     mode: gh-proxy
-    toolsets: [pull_requests, repos, search]
+    toolsets: [actions]
 jobs:
   collect-reference-context:
     runs-on: ubuntu-latest
