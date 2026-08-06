@@ -5,14 +5,17 @@ behaviors selected at factory time and by the update value type:
 
 1. **L2 vs decoupled weight decay** — constructor flag
    ``decoupled_weight_decay``.  ``True`` is AdamW (Loshchilov &
-   Hutter); ``False`` is the original Adam with L2 regularisation
-   folded into the gradient.
+   Hutter, `Decoupled Weight Decay Regularization
+   <https://arxiv.org/abs/1711.05101>`_); ``False`` is the original Adam
+   (Kingma & Ba, `Adam: A Method for Stochastic Optimization
+   <https://arxiv.org/abs/1412.6980>`_) with L2 regularisation folded
+   into the gradient.
 
 2. **StableAdamW RMS clip** — constructor knob ``update_rms_clip``.
    ``None`` disables the clip; a positive float divides the moment-scaled
    update by ``max(1, rms / threshold)``.  See Wortsman et al.,
-   "Stable and low-precision training for large-scale vision-language
-   models" (2023).
+   `Stable and low-precision training for large-scale vision-language
+   models <https://arxiv.org/abs/2304.13013>`_ (2023).
 
 3. **DP noise-variance bias correction** — pass ``NoisedPytree`` updates
     from a DP noise mechanism with ``noise_bias_correction=True``.  The

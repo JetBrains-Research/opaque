@@ -18,9 +18,10 @@ __all__ = ["WarmupStableDecay", "warmup_stable_decay"]
 class WarmupStableDecay:
     """Three-phase schedule: warmup → constant → decay.
 
-    Hägele et al. 2024 / MiniCPM (Hu et al. 2024) shape.  Phases over
-    the ``num_warmup_steps + num_stable_steps + num_decay_steps`` total
-    steps:
+    The schedule follows Hägele et al., `Scaling Laws and Compute-Optimal
+    Training Beyond Fixed Training Durations
+    <https://arxiv.org/abs/2405.18392>`_ (2024). Phases over the
+    ``num_warmup_steps + num_stable_steps + num_decay_steps`` total steps:
 
     1. ``[0, num_warmup_steps)`` — ramp from ``0`` to ``init_value``
        under ``warmup_ramp``.
@@ -66,8 +67,7 @@ def warmup_stable_decay(
 ) -> WarmupStableDecay:
     """Three-phase schedule: warmup → constant → decay.
 
-    Hägele et al. 2024 / MiniCPM-shaped schedule.  See
-    :class:`WarmupStableDecay` for phase details.
+    See :class:`WarmupStableDecay` for the source and phase details.
     """
     if num_warmup_steps <= 0:
         raise ValueError(
