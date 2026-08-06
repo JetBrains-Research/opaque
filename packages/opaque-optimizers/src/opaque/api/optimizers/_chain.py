@@ -61,17 +61,20 @@ def _rms_clip_transform(threshold: float) -> GradientTransformation:
 def _clip_by_global_rms(updates: Any, threshold: float) -> Any:
     """Apply one parameter-count-weighted RMS scale to all tensor leaves."""
     # Global RMS across all leaves (param-count-weighted mean of squares).
-    sq_sum = torch.zeros((), dtype=torch.float64)
+    sq_sum: torch.Tensor | None = None
     count = 0
     for leaf in _iter_leaves(updates):
-        sq_sum = sq_sum + leaf.detach().to(torch.float64).pow(2).sum()
+        accumulator_dtype = (
+            torch.float32 if leaf.device.type == "mps" else torch.float64
+        )
+        leaf_sq_sum = leaf.detach().to(accumulator_dtype).pow(2).sum()
+        sq_sum = leaf_sq_sum if sq_sum is None else sq_sum + leaf_sq_sum
         count += leaf.numel()
-    if count == 0:
+    if sq_sum is None:
         return updates
     rms = (sq_sum / count).sqrt()
-    scale = torch.clamp(rms / threshold, min=1.0).to(torch.float32)
-    scale_f = float(scale.item())
-    return tree_map(lambda u: u / scale_f, updates)
+    scale = torch.clamp(rms / threshold, min=1.0)
+    return tree_map(lambda u: u / scale.to(dtype=u.dtype), updates)
 
 
 def _iter_leaves(tree: Any):
