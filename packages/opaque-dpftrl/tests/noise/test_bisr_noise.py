@@ -98,7 +98,9 @@ class TestBisrStrategy:
         manual_streaming = inverse_as_streaming_matrix(
             torch.tensor(full_horizon_strategy_coefs, dtype=torch.float64)
         )
-        torch.testing.assert_close(expected_dense, manual_streaming.materialize(n_steps))
+        torch.testing.assert_close(
+            expected_dense, manual_streaming.materialize(n_steps)
+        )
 
     def test_matches_old_sensitivity(self):
         assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
