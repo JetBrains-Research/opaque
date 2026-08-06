@@ -249,6 +249,72 @@ def _worker_second_moment_noise_gloo(rank: int, world_size: int, port: int) -> N
         _cleanup_ddp()
 
 
+def _paired_clipping_fixture(
+    device: torch.device | str,
+) -> tuple[dict, torch.Tensor, torch.Tensor]:
+    params = {
+        "linear": {
+            "weight": torch.tensor([0.25, -0.5, 0.75], device=device),
+        },
+        "bias": torch.tensor(0.1, device=device),
+    }
+    x = torch.arange(24, dtype=torch.float32, device=device).reshape(8, 3) / 10.0
+    y = torch.linspace(-0.4, 0.6, 8, device=device)
+    return params, x, y
+
+
+def _paired_clipping_loss(
+    params: dict, x: torch.Tensor, y: torch.Tensor
+) -> torch.Tensor:
+    prediction = x @ params["linear"]["weight"] + params["bias"]
+    return (prediction - y).square()
+
+
+def _worker_second_moment_clipping_parity_gloo(
+    rank: int,
+    world_size: int,
+    port: int,
+    out_path: str,
+) -> None:
+    from opaque.api.engine.clipping import clipped_grad
+    from opaque.distributed import sum_gradients
+    from opaque.pytree import tree_map
+    from opaque.types import SecondMomentClippingOutput
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        params, x, y = _paired_clipping_fixture("cpu")
+        grad_fn, clip_state = clipped_grad(
+            _paired_clipping_loss,
+            clipping_norm=0.7,
+            batch_argnums=(1, 2),
+            normalize_by=len(x),
+            second_moment=True,
+        )
+        shard_size = len(x) // world_size
+        shard = slice(rank * shard_size, (rank + 1) * shard_size)
+        local, _ = grad_fn(params, x[shard], y[shard], state=clip_state)
+        reduced = sum_gradients(local)
+
+        assert isinstance(reduced, SecondMomentClippingOutput)
+        if rank == 0:
+            torch.save(
+                {
+                    "grads": tree_map(
+                        lambda tensor: tensor.cpu(), reduced.grads.pytree
+                    ),
+                    "squared_grads": tree_map(
+                        lambda tensor: tensor.cpu(), reduced.squared_grads.pytree
+                    ),
+                    "max_norm": reduced.grads.max_norm,
+                    "squared_max_norm": reduced.squared_grads.max_norm,
+                },
+                out_path,
+            )
+    finally:
+        _cleanup_ddp()
+
+
 def _spawn_gloo(world_size: int, fn, *args) -> None:
     port = _find_free_port()
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
