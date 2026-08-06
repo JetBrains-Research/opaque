@@ -100,3 +100,88 @@ high α filters noise, even though it doesn't translate into an eval/loss gain.
 *Bottom line: the mechanism is confirmed and tight; the utility payoff is still
 open and now has a precise, falsifiable next experiment (per-layer allocation +
 downstream metrics + seeds).*
+
+---
+
+# Part II — Allocation campaign (2026-08-06), Qwen2.5-Coder-7B / KStack
+
+Setup: `qwen-coder-kstack-lora` preset (Qwen2.5-Coder-7B, JetBrains/KStack Kotlin,
+50k samples, 1 epoch, r=16, 7 target modules, SGD lr 5e-2, batch 192), DP-SGD at
+ε∈{1,3}, δ=6.8e-6. Downstream = HumanEval+/MBPP+ pass@1 (evalplus).
+
+## ⚠ Methodological finding: Python pass@1 is NOT a utility metric here
+
+We train on **Kotlin** but HumanEval+/MBPP+ measure **Python**. The method that
+fits the task best scores *worst* on pass@1:
+
+| ε=3 | KStack eval/loss (in-domain) | MBPP+ pass@1 (Python) |
+|---|---|---|
+| base LoRA-XS uniform | 0.36180 | 0.675 |
+| LoRA-XSe (rotation) uniform | **0.34663** | 0.635 |
+
+So Python pass@1 largely measures **retention of pretrained ability** (inverse
+forgetting), not task utility — it rewards *not learning*. In-domain held-out loss
+is the valid utility metric; pass@1 is reported as a secondary
+(retention) axis. HumanEval+ is additionally unreliable here: only ~44–58% of its
+completions parse (`syntax_valid_rate`), vs ~99% for MBPP+, plausibly because a
+Kotlin-tuned model drifts when completing a Python signature.
+
+## Result 1 (settled): data-free W0 allocation HURTS
+
+Allocating per-layer rank by the stable rank of the **frozen** W0, at matched
+budget Σr_ℓ²:
+
+| arm | ε | uniform loss | W0-alloc loss | uniform MBPP+ | W0-alloc MBPP+ |
+|---|---|---|---|---|---|
+| base LoRA-XS | 1 | **0.36175** | 0.36346 | **0.675** | 0.590 |
+| base LoRA-XS | 3 | **0.36180** | 0.36362 | **0.675** | 0.603 |
+| LoRA-XSe | 3 | **0.34663** | 0.34742 | 0.635 | 0.643 |
+
+Worse on loss in all three pairs (4 including the ε=1 XSe pair). Mechanism:
+clean-weight rank has no reason to track where task gradient signal lives, and
+funding some layers starves others toward r_min.
+
+## Result 2 (diagnosis): at r=16 the rank budget is NOT binding
+
+The probe (`util3-probe-eps3`, 60 steps, noised cores, 196 layers) gives per-layer
+**stable rank 1.01 / 1.52 / 3.42** (min/median/max) out of r=16. Every layer uses
+1–3 of its 16 directions, so allocation only shuffles slack — which explains both
+the null (adaptive-depth α) and negative (W0) results. Motivates the binding-budget
+experiment (r=2: 37 layers→rank 1, 137→2, 22→3; uniform r=2 costs 0.36792 vs
+0.34663 at r=16, so rank is scarce there).
+
+## Result 3 (single seed, replicating): the Rényi ORDER matters, as predicted
+
+Probe-based allocation from the **noised** core spectra, LoRA-XSe, ε=3, matched
+budget — only the scoring order differs:
+
+| scoring | eval/loss | MBPP+ | rank spread |
+|---|---|---|---|
+| **α=∞ (stable rank, noise-robust)** | **0.34691** | **0.683** | 9–23 |
+| α=1 (Shannon, noise-naive) | 0.34766 | 0.630 | 3–23 |
+| W0 (clean weights) | 0.34742 | 0.643 | — |
+| uniform (no allocation) | 0.34663 | 0.635 | 16 |
+
+- **α=∞ beats α=1 on both axes** (loss −0.00075, MBPP+ +5.3 pts) — the
+  pre-registered H3 ordering, with everything else held constant.
+- **Noised-spectrum scoring beats clean-weight scoring** on both axes.
+- Shannon's allocation is visibly more extreme (floor rank 3 vs 9) — the
+  noise-inflation signature the theory predicts.
+- vs uniform: tied on loss (+0.0003), +4.8 MBPP+ → **not yet a win**.
+
+SINGLE SEED — seeds 43/44 submitted for {uniform, α=∞, α=1}. Treat as provisional.
+
+## Result 4: rotation (LoRA-XSe) is the real method-level win
+
+ε=3, matched rank/params/steps: LoRA 0.39924 → base LoRA-XS 0.36180 → **LoRA-XSe
+0.34663**. The XSe-over-base-LoRA-XS margin (−0.015) is large and reproduced by the
+earlier 3-seed campaign (0.3469 vs 0.3617).
+
+**Caveat on "beats LoRA":** at 1 epoch LoRA is undertrained (0.399, reproduced
+twice); the earlier tuned 2-epoch LoRA reached ~0.3455 while XSe is already
+converged after 1 epoch (~0.3466). So the honest claim is a **convergence-speed**
+advantage at matched steps, not a better final optimum.
+
+## Pending
+Seed replication (6), binding-budget r=2/r=4 probe-alloc (3), wikipedia
+domain-shift arms (5).
