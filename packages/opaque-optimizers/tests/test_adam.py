@@ -582,9 +582,7 @@ class TestStableAdamW:
         updates, _ = opt.update(grads, state, params=params)
 
         global_rms = torch.sqrt(
-            (
-                grads["big"].pow(2).sum() + grads["small"].pow(2).sum()
-            )
+            (grads["big"].pow(2).sum() + grads["small"].pow(2).sum())
             / (grads["big"].numel() + grads["small"].numel())
         )
         expected_scale = torch.clamp(global_rms / threshold, min=1.0).item()
