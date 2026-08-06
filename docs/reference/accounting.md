@@ -70,6 +70,27 @@ the Rust PLD extension is not loaded until you access these submodules.
 
 ## Classes
 
+### Custom budget checkpointing
+
+`Accountant` checkpoints include an optional budget. The built-in budget
+factories are registered automatically. If an application supplies its own
+`Budget` protocol implementation, register a self-contained codec before
+checkpointing:
+
+```python
+import opaque.accounting as acc
+
+acc.register_budget_serializer(
+    MyBudget,
+    lambda budget: {"target": budget.target},
+    lambda state: MyBudget(state["target"]),
+)
+```
+
+The serializer must return JSON-compatible state and the deserializer must
+rebuild the budget from that state. Checkpointing an unregistered budget raises
+`TypeError`; restoring an unknown budget checkpoint type raises `ValueError`.
+
 ### `DpProcess`
 
 Abstract base class for all privacy processes. Subclasses implement `pld()` to
