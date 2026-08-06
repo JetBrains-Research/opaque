@@ -2661,14 +2661,25 @@ class DPTrainer:
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
 
-        # Per-example eval telemetry (e.g. DPO ``rewards/*``): gather each
-        # accumulated per-example tensor across ranks and mean. Bare keys here;
-        # ``with_metric_prefix`` below namespaces them as ``{prefix}_<key>``.
-        if eval_aux_chunks:
-            from opaque.distributed import gather_for_metrics
+        # Per-example eval telemetry (e.g. DPO ``rewards/*``): every rank
+        # enters one optional-pytree gather, including ranks with empty shards.
+        # Bare keys here; ``with_metric_prefix`` below namespaces them as
+        # ``{prefix}_<key>``.
+        if self._ddp.is_distributed:
+            from opaque.api.engine.distributed._state import gather_pytree
 
-            for name, chunks in eval_aux_chunks.items():
-                gathered = gather_for_metrics(torch.cat(chunks))
+            local_eval_aux = (
+                {name: torch.cat(chunks) for name, chunks in eval_aux_chunks.items()}
+                if eval_aux_chunks
+                else None
+            )
+            gathered_eval_aux = gather_pytree(local_eval_aux)
+        else:
+            gathered_eval_aux = {
+                name: torch.cat(chunks) for name, chunks in eval_aux_chunks.items()
+            }
+        if gathered_eval_aux:
+            for name, gathered in gathered_eval_aux.items():
                 if gathered.numel() > 0:
                     metrics[name] = float(gathered.float().mean().item())
 
@@ -3563,21 +3574,6 @@ class DPTrainer:
         if self._ddp.world_size > 1:
             from opaque.distributed import local_shard
 
-            # The distributed eval gather in ``evaluation_loop`` issues one
-            # collective per collected payload (predictions / labels / inputs
-            # / losses) on every rank.  A rank with an *empty* shard produces
-            # ``None`` for those payloads and would skip the matching
-            # collective, desyncing the process group into a hang.  Fail loud
-            # instead: every rank needs at least one eval example.  (Uneven
-            # but non-empty shards are fine — the gather exchanges sizes.)
-            if len(dataset) < self._ddp.world_size:
-                raise ValueError(
-                    f"Distributed evaluation needs at least world_size="
-                    f"{self._ddp.world_size} eval examples (one per rank); got "
-                    f"{len(dataset)}.  A rank with an empty shard would skip the "
-                    "gather collective and deadlock.  Use a larger eval_dataset "
-                    "or evaluate on a single process."
-                )
             # ``eval_do_concat_batches=False`` returns per-batch *lists*; the
             # gather then runs one collective per list element, and ranks with
             # different batch counts issue a different number of collectives →

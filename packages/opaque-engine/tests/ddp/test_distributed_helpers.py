@@ -2,14 +2,15 @@
 
 These wrap ``torch.distributed`` but must degrade gracefully when no
 process group is initialized: rank 0, world size 1, no-op barrier, and
-``gather_for_metrics`` returning its input unchanged. The multi-rank
-collective behavior is exercised by the CUDA tests in
-``test_collectives.py``.
+``gather_for_metrics`` returning its input unchanged. Multi-rank collective behavior is exercised here with Gloo and by the CUDA
+tests in ``test_collectives.py``.
 """
 
 from __future__ import annotations
 
 import torch
+import torch.distributed as dist
+from engine_ddp_helpers import _spawn_gloo, _worker_gather_optional_ragged
 
 from opaque.distributed import (
     gather_for_metrics,
@@ -53,3 +54,11 @@ def test_gather_for_metrics_scalar_non_distributed() -> None:
     out = gather_for_metrics(s)
     assert out is s
     assert out.dim() == 0
+
+
+def test_gather_optional_and_ragged_payloads() -> None:
+    if not dist.is_available() or not dist.is_gloo_available():
+        import pytest
+
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_gather_optional_ragged)

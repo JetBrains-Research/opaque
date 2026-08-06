@@ -225,8 +225,15 @@ def scenario_per_rank_partition(rank: int, world_size: int, **_) -> None:
         )
 
 
-def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> None:
-    """Verify eval losses + predictions are cluster-wide after gather."""
+def _run_eval_gather_case(
+    rank: int,
+    output_dir: str,
+    *,
+    eval_size: int,
+    use_cpu: bool,
+) -> None:
+    """Compare distributed evaluation with a full-dataset model reference."""
+    torch.manual_seed(1234)
     cfg = TinyConfig(vocab_size=32, hidden_size=8)
     model = TinyForCausalLM(cfg)
     args = TrainingArguments(
@@ -238,15 +245,18 @@ def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> No
         report_to=[],
         seed=11,
         privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
-    eval_ds = TinyDataset(n=20, seq_len=4, vocab=cfg.vocab_size, seed=99)
+    eval_ds = TinyDataset(n=eval_size, seq_len=4, vocab=cfg.vocab_size, seed=99)
     captured = {}
 
     def compute_metrics(ep):
-        captured["pred_shape"] = ep.predictions.shape
-        captured["label_shape"] = ep.label_ids.shape
-        return {"acc": 0.5}
+        predictions = torch.from_numpy(ep.predictions)
+        labels = torch.from_numpy(ep.label_ids)
+        captured["predictions"] = predictions
+        captured["labels"] = labels
+        return {"accuracy": float((predictions.argmax(-1) == labels).float().mean())}
 
     trainer = DPTrainer(
         model=model,
@@ -256,16 +266,52 @@ def scenario_eval_gather(rank: int, world_size: int, output_dir: str, **_) -> No
         data_collator=_collate,
         compute_metrics=compute_metrics,
     )
+
+    device = next(model.parameters()).device
+    full_batch = {
+        key: value.to(device)
+        for key, value in _collate([eval_ds[i] for i in range(len(eval_ds))]).items()
+    }
+    with torch.no_grad():
+        reference = model(**full_batch)
+    reference_predictions = reference.logits.detach().cpu()
+    reference_labels = full_batch["labels"].cpu()
+    reference_accuracy = float(
+        (reference_predictions.argmax(-1) == reference_labels).float().mean()
+    )
+    reference_loss = reference.loss.item()
+
     metrics = trainer.evaluate()
-    # eval ds has 20 examples; with world_size=N each rank sees 20/N.
-    # After gather, predictions should have leading dim ≈ 20 (modulo any
-    # slack from ``resolve_eval_num_samples`` truncation).
-    if rank == 0:
-        assert "eval_acc" in metrics or "acc" in metrics, metrics
-        # Predictions captured during compute_metrics; verify cluster-wide.
-        assert captured["pred_shape"][0] == 20, (
-            f"expected gathered preds[0]==20, got {captured['pred_shape']}"
-        )
+    assert captured["predictions"].shape[0] == eval_size
+    assert torch.equal(captured["labels"], reference_labels)
+    assert torch.allclose(
+        captured["predictions"],
+        reference_predictions,
+        atol=2e-7,
+        rtol=1e-5,
+    )
+    assert abs(metrics["eval_accuracy"] - reference_accuracy) < 1e-7
+    assert abs(metrics["eval_loss"] - reference_loss) < 1e-6
+
+
+def scenario_eval_gather(
+    rank: int,
+    output_dir: str,
+    backend: str | None = None,
+    **_,
+) -> None:
+    """Verify evaluation gathers uneven rank-local shards in dataset order."""
+    _run_eval_gather_case(rank, output_dir, eval_size=5, use_cpu=backend == "gloo")
+
+
+def scenario_eval_gather_empty_rank(
+    rank: int,
+    output_dir: str,
+    backend: str | None = None,
+    **_,
+) -> None:
+    """Verify evaluation gathers when one rank receives no examples."""
+    _run_eval_gather_case(rank, output_dir, eval_size=1, use_cpu=backend == "gloo")
 
 
 def scenario_batch_eval_metrics(
@@ -428,6 +474,7 @@ SCENARIOS = {
     "runtime_foundation": scenario_runtime_foundation,
     "per_rank_partition": scenario_per_rank_partition,
     "eval_gather": scenario_eval_gather,
+    "eval_gather_empty_rank": scenario_eval_gather_empty_rank,
     "batch_eval_metrics": scenario_batch_eval_metrics,
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
@@ -452,6 +499,7 @@ def main() -> int:
             rank=args.rank,
             world_size=args.world_size,
             output_dir=output_dir,
+            backend=args.backend,
         )
     finally:
         dist.destroy_process_group()
