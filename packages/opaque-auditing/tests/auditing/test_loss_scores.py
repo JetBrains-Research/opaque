@@ -35,6 +35,31 @@ def linear_setup():
 class TestLossScores:
     """Tests for auditing.loss_scores."""
 
+    @pytest.mark.parametrize(
+        ("batch_argnums", "message"),
+        [
+            ((2, 1), r"must be sorted, got \(2, 1\)"),
+            ((1, 1), r"must be unique, got \(1, 1\)"),
+            ((-1,), r"must be non-negative, got \(-1,\)"),
+            ((2,), r"out of range.*got \(2,\)"),
+        ],
+    )
+    def test_invalid_batch_argnums_raise(self, batch_argnums, message):
+        """Invalid batch positions are rejected before scoring."""
+        params = torch.tensor(1.0)
+        loader = DataLoader(TensorDataset(torch.tensor([1.0])), batch_size=1)
+
+        def loss_fn(params, x):
+            return (params - x).square()
+
+        with pytest.raises(ValueError, match=message):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=batch_argnums,
+                dataloader=loader,
+            )
+
     def test_basic_scoring(self, linear_setup):
         """Test that loss_scores returns correct shape."""
         params, dataset, loss_fn = linear_setup
