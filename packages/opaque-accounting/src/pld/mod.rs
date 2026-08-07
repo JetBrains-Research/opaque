@@ -43,9 +43,9 @@ use crate::error::Result;
 /// ## From a Gaussian mechanism
 ///
 /// ```rust,ignore
-/// use opaque_accounting::mechanisms::gaussian_pld;
+/// use opaque_accounting::{mechanisms::gaussian_pld, DiscretizationConfig};
 ///
-/// let pld = gaussian(1.1).pld()?;
+/// let pld = gaussian_pld(1.1, &DiscretizationConfig::default())?;
 ///
 /// let delta = pld.delta_at(1.0);
 /// let epsilon = pld.epsilon_at(1e-5);

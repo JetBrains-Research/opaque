@@ -173,10 +173,9 @@ pub fn self_convolve(a: &[f64], count: usize) -> Result<Vec<f64>> {
 /// to next power of 2). This constant caps how large that buffer can be:
 /// 32M f64 elements ≈ 256 MB, sufficient for k ≈ 240 with typical 140k grids.
 ///
-/// Beyond this limit, we fall back to the smaller (circular) FFT buffer,
-/// which is the approach used by Google's `dp_accounting`. The circular
-/// approach may introduce wrapping artifacts, bounded by the Chernoff
-/// tail budget.
+/// Beyond this limit, only compositions with a tail-truncation budget may use
+/// a smaller circular FFT buffer. Exact compositions return an error instead
+/// of allowing wrapping artifacts.
 const MAX_LINEAR_FFT_SIZE: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]

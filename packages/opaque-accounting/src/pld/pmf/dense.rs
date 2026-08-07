@@ -284,6 +284,27 @@ impl Pmf {
         if count == 1 {
             return Ok(self);
         }
+
+        if self.probs.is_empty() {
+            let composed_infinity_mass = if self.infinity_mass == 0.0 {
+                0.0
+            } else {
+                -(count as f64 * (-self.infinity_mass).ln_1p()).exp_m1()
+            };
+            let composed_neg_infinity_mass = if self.negative_infinity_mass == 0.0 {
+                0.0
+            } else {
+                -(count as f64 * (-self.negative_infinity_mass).ln_1p()).exp_m1()
+            };
+
+            return Ok(Pmf {
+                probs: vec![],
+                infinity_mass: composed_infinity_mass,
+                negative_infinity_mass: composed_neg_infinity_mass,
+                ..self
+            });
+        }
+
         // Budget-aware Chernoff truncation:
         // - Right budget is used directly (budget is tiny, accumulation negligible)
         // - Left budget is reduced by already-consumed negative_infinity_mass,
@@ -507,6 +528,20 @@ mod tests {
 
         // infinity_mass = 1 - (1 - 0.1)^2 + 0.01 = 0.20
         assert_relative_eq!(composed.infinity_mass, 0.20, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_empty_pmf_self_compose_preserves_empty_finite_support() {
+        let pmf = Pmf::new(0.1, 0, vec![], 0.25, usize::MAX);
+
+        let composed = pmf.self_compose(3).unwrap();
+
+        assert!(composed.probs.is_empty());
+        assert_relative_eq!(
+            composed.infinity_mass,
+            1.0 - 0.75_f64.powi(3),
+            epsilon = 1e-12
+        );
     }
 
     #[test]
