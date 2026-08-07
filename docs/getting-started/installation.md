@@ -3,7 +3,7 @@
 ## Requirements
 
 - Python 3.11 or 3.12
-- PyTorch 2.10 or later
+- PyTorch 2.9 or later
 
 ## From GCP Artifact Registry
 
