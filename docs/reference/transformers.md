@@ -241,7 +241,7 @@ NPU, XLA) are rejected with a redirect message.
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `num_train_epochs` | `float` | `3.0` | Epoch count.  `state.epoch` is fractional. |
+| `num_train_epochs` | `float` | `3.0` | Epoch count. Fractional values run `ceil(num_train_epochs * steps_per_epoch)` steps; `state.epoch` is fractional. |
 | `max_steps` | `int` | `-1` | When `>= 0`, overrides `num_train_epochs`. |
 
 ### Logging
