@@ -26,7 +26,7 @@ members = [
     "opaque-patches",
     "opaque-transformers",
 ]
-constraints = [{ name = "torch", specifier = ">=2.9,<2.10" }]
+constraints = [{ name = "torch", specifier = ">=2.9,<2.13" }]
 
 [[package]]
 name = "absl-py"
@@ -2316,7 +2316,7 @@ examples = [
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "peft", specifier = ">=0.18.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
-    { name = "torchvision", specifier = ">=0.24.0,<0.25" },
+    { name = "torchvision", specifier = ">=0.24.0" },
     { name = "transformers", specifier = ">=4.57.0,<6" },
     { name = "wandb", specifier = ">=0.16.0" },
 ]

@@ -90,9 +90,9 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep development and CI on the oldest supported PyTorch release line so new
-# code cannot silently depend on APIs newer than the published lower bound.
-constraint-dependencies = ["torch>=2.9,<2.10"]
+# Keep workspace resolution inside the supported PyTorch range. The shared lock
+# is intentionally resolved at 2.9 so existing CI jobs exercise the minimum.
+constraint-dependencies = ["torch>=2.9,<2.13"]
 
 [tool.uv.sources]
 opaque-base = { workspace = true }
@@ -142,7 +142,7 @@ examples = [
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
-  "torchvision>=0.24.0,<0.25", # PyTorch 2.9-compatible vision example datasets
+  "torchvision>=0.24.0",       # Vision example datasets
   "jetbrains-cadence",        # Internal experiment registry
   "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
 ]
