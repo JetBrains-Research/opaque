@@ -19,16 +19,12 @@ identical steps are collapsed using structural equality (``==``), so
 
 from __future__ import annotations
 
-import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.accounting.core._budgets import (
-    AdvantageBudget,
-    BetaBudget,
     Budget,
-    DeltaBudget,
-    EpsilonBudget,
-    RiskBudget,
+    budget_from_state_dict,
+    budget_state_dict,
 )
 from opaque.api.accounting.core._process_codec import _load_dp_process
 from opaque.api.accounting.core.mechanisms.types import Identity
@@ -230,36 +226,15 @@ def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
 
     out: dict[str, Any] = {"process": dict(opaque_state_dict(acct.process))}
     if acct._budget is not None:
-        b = acct._budget
-        out["budget"] = {"type": type(b).__name__} | {
-            f.name: getattr(b, f.name) for f in dataclasses.fields(b)
-        }
+        out["budget"] = budget_state_dict(acct._budget)
     return out
 
 
 def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
     budget = None
     if "budget" in state:
-        budget = _deserialize_budget(dict(state["budget"]))
+        budget = budget_from_state_dict(dict(state["budget"]))
     return Accountant(budget=budget, prefix=_load_dp_process(dict(state["process"])))
-
-
-_BUDGET_REGISTRY: dict[str, type] = {
-    "EpsilonBudget": EpsilonBudget,
-    "DeltaBudget": DeltaBudget,
-    "AdvantageBudget": AdvantageBudget,
-    "BetaBudget": BetaBudget,
-    "RiskBudget": RiskBudget,
-}
-
-
-def _deserialize_budget(data: dict[str, Any]) -> Budget:
-    data = dict(data)
-    type_name = data.pop("type")
-    budget_cls = _BUDGET_REGISTRY.get(type_name)
-    if budget_cls is None:
-        raise ValueError(f"Unknown budget type: {type_name}")
-    return budget_cls(**data)
 
 
 def _register_accountant_serialization() -> None:
