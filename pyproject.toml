@@ -90,16 +90,9 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Allow torch 2.10 (old checkpoint arch) through 2.12 (new arch); the checkpoint
-# patches detect the running torch and adapt, including skipping themselves once
-# a torch with the native fix is installed (opaque.api.patches.torch.checkpoint).
-#
-# CUDA caveat: torch >=2.11 publishes only cu13 wheels (driver 570+), and the max
-# allowed here (2.12) is cu13-only. On a CUDA-12 host the default resolution
-# (2.12) therefore has no working GPU build -- pin torch<2.11 in that environment
-# for GPU, or use a CPU wheel. Raise this bound when adopting the native-fix
-# release.
-constraint-dependencies = ["torch<2.13"]
+# Keep development and CI on the oldest supported PyTorch release line so new
+# code cannot silently depend on APIs newer than the published lower bound.
+constraint-dependencies = ["torch>=2.9,<2.10"]
 
 [tool.uv.sources]
 opaque-base = { workspace = true }
@@ -149,7 +142,7 @@ examples = [
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
-  "torchvision>=0.25.0",      # Vision example datasets
+  "torchvision>=0.24.0,<0.25", # PyTorch 2.9-compatible vision example datasets
   "jetbrains-cadence",        # Internal experiment registry
   "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
 ]

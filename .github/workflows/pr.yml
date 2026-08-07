@@ -285,7 +285,7 @@ jobs:
 
       - name: Import all public namespaces
         run: |
-          uv run python -c "import opaque.api.engine.clipping, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.serialization, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.accounting; print('OK')"
+          uv run python -c "import opaque.api.engine.clipping, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.serialization, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.alignment, opaque.accounting; print('OK')"
 
   docs:
     name: Build documentation
