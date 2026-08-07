@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import torch
 
+from opaque.api.alignment._compute_dtype import _compute_dtype
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 
 from ._gather import selective_log_softmax
@@ -72,14 +73,15 @@ def sequence_logp(
     # Causal-LM shift: predict token t+1 from the logits at position t.
     shifted_logits = logits[..., :-1, :]
     target_ids = input_ids[..., 1:]
-    target_mask = completion_mask[..., 1:].to(shifted_logits.dtype)
+    target_mask = completion_mask[..., 1:]
+    target_weight = target_mask.to(shifted_logits.dtype)
     per_token_logp = selective_log_softmax(shifted_logits, target_ids)
 
-    weight = target_mask
+    weight = target_weight
     if ld_alpha is not None:
         if shared_prefix_len is None:
             raise ValueError("ld_alpha (LD-DPO) requires shared_prefix_len")
-        completion_pos = (target_mask != 0).cumsum(dim=-1)
+        completion_pos = target_mask.to(torch.bool).cumsum(dim=-1)
         prefix_len = shared_prefix_len
         if isinstance(prefix_len, torch.Tensor):
             while prefix_len.ndim < completion_pos.ndim:
@@ -92,11 +94,13 @@ def sequence_logp(
                 (), ld_alpha, dtype=per_token_logp.dtype, device=per_token_logp.device
             ),
         )
-        weight = target_mask * ld_weight
+        weight = target_weight * ld_weight
 
-    logp = (per_token_logp * weight).sum(dim=-1)
+    acc_dtype = _compute_dtype(per_token_logp)
+    logp = (per_token_logp * weight).to(acc_dtype).sum(dim=-1)
     if length_normalized:
-        logp = logp / target_mask.sum(-1).clamp(min=1)
+        token_count = target_mask.to(torch.bool).sum(-1).clamp(min=1)
+        logp = logp / token_count.to(acc_dtype)
     return logp
 
 

@@ -13,6 +13,7 @@ later unit (γ.W).
 
 from __future__ import annotations
 
+import pytest
 import torch
 from torch.func import vmap
 
@@ -52,6 +53,17 @@ def test_wpo_weights_all_zero_mask_no_div0() -> None:
     assert torch.isfinite(out).all()
     # Row 0: numerator is 0 (all masked), denom clamped to 1 → exp(0) = 1.
     assert torch.allclose(out[0], torch.tensor(1.0), atol=1e-6)
+
+
+def test_wpo_weights_divisor_is_exact_token_count_under_bf16() -> None:
+    """The detached WPO average must not round 257 completion tokens to 256."""
+
+    def _uniform_weight(n_valid: int) -> float:
+        logps = torch.full((n_valid,), -1.0, dtype=torch.bfloat16)
+        mask = torch.ones(n_valid, dtype=torch.bool)
+        return wpo_weights(logps, mask).item()
+
+    assert _uniform_weight(256) == pytest.approx(_uniform_weight(257), rel=1e-4)
 
 
 def test_wpo_weights_vmap_safe() -> None:
