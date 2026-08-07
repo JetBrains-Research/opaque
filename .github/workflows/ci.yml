@@ -100,7 +100,7 @@ jobs:
 
       - name: Assert CUDA available
         if: matrix.device.name == 'gpu'
-        run: python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+        run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
         run: |

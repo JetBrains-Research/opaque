@@ -248,6 +248,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install metadata validation dependencies
+        run: python3 -m pip install packaging==25.0
+
       - name: Download release wheels
         uses: actions/download-artifact@v6
         with:
