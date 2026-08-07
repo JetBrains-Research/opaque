@@ -269,16 +269,20 @@ impl Pmf {
     ///
     /// If both effective budgets are `0.0`, no Chernoff truncation is applied.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if exact composition would exceed the bounded FFT size.
+    ///
     /// # Panics
     ///
     /// Panics if `count` is 0
-    pub fn self_compose(self, count: usize) -> Pmf {
+    pub fn self_compose(self, count: usize) -> Result<Pmf> {
         if count == 0 {
             panic!("count must be >= 1");
         }
 
         if count == 1 {
-            return self;
+            return Ok(self);
         }
         // Budget-aware Chernoff truncation:
         // - Right budget is used directly (budget is tiny, accumulation negligible)
@@ -297,11 +301,18 @@ impl Pmf {
                 effective_left_budget,
             )
         } else {
-            (0, self.probs.len() * count - count)
+            (
+                0,
+                fft::self_convolution_full_result_len(self.probs.len(), count)? - 1,
+            )
         };
 
-        let result_probs =
-            fft::self_convolve_with_bounds(&self.probs, count, Some((lower_bound, upper_bound)));
+        let result_probs = fft::self_convolve_with_bounds(
+            &self.probs,
+            count,
+            Some((lower_bound, upper_bound)),
+            use_chernoff,
+        )?;
 
         // The lower_loss_index scales by count AND shifts by the truncation offset
         let result_lower_loss_index = self.lower_loss_index * count as i64 + lower_bound as i64;
@@ -333,7 +344,7 @@ impl Pmf {
         };
         let result_negative_infinity_mass = composed_neg_infinity_mass + effective_left_budget;
 
-        Pmf {
+        Ok(Pmf {
             discretization: self.discretization,
             lower_loss_index: result_lower_loss_index,
             probs: result_probs,
@@ -343,7 +354,7 @@ impl Pmf {
             right_tail_budget: self.right_tail_budget,
             left_tail_budget: self.left_tail_budget,
         }
-        .maybe_coarsen()
+        .maybe_coarsen())
     }
 
     /// Override the max grid size on this PMF.
@@ -355,7 +366,11 @@ impl Pmf {
     }
 
     /// Self-compose with an explicit `max_grid_size` override.
-    pub fn self_compose_with_max_grid_size(mut self, count: usize, max_grid_size: usize) -> Pmf {
+    pub fn self_compose_with_max_grid_size(
+        mut self,
+        count: usize,
+        max_grid_size: usize,
+    ) -> Result<Pmf> {
         self.max_grid_size = max_grid_size;
         self.self_compose(count)
     }
@@ -475,7 +490,7 @@ mod tests {
     fn test_dense_self_compose() {
         let pmf = Pmf::new(0.1, 0, vec![0.3, 0.5, 0.2], 0.0, usize::MAX);
 
-        let composed = pmf.self_compose(3);
+        let composed = pmf.self_compose(3).unwrap();
 
         assert_eq!(composed.size(), 7);
         assert_eq!(composed.lower_loss_index, 0);
@@ -488,7 +503,7 @@ mod tests {
     fn test_dense_self_compose_conservatively_adds_right_tail_budget() {
         let pmf = Pmf::new(0.1, 0, vec![0.8, 0.1], 0.1, usize::MAX).with_tail_budgets(0.01, 0.0);
 
-        let composed = pmf.self_compose(2);
+        let composed = pmf.self_compose(2).unwrap();
 
         // infinity_mass = 1 - (1 - 0.1)^2 + 0.01 = 0.20
         assert_relative_eq!(composed.infinity_mass, 0.20, epsilon = 1e-10);
@@ -549,7 +564,7 @@ mod tests {
     fn test_self_compose_vs_repeated_composition() {
         let pmf = Pmf::new(0.1, 0, vec![0.4, 0.6], 0.0, usize::MAX);
 
-        let composed_fast = pmf.clone().self_compose(3);
+        let composed_fast = pmf.clone().self_compose(3).unwrap();
         let composed_slow = pmf
             .clone()
             .compose(pmf.clone(), 0.0)

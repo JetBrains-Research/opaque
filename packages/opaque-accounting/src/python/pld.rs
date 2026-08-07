@@ -141,13 +141,14 @@ impl PyPld {
     /// Raises:
     ///     ValueError: If count is not positive.
     ///     OverflowError: If count exceeds 2**32 - 1.
+    ///     RuntimeError: If exact composition exceeds the bounded FFT size.
     ///
     /// Returns:
     ///     Pld: Self-composed PLD.
     #[pyo3(text_signature = "(self, count)")]
     fn self_compose(&self, count: i64) -> PyResult<PyPld> {
         Ok(PyPld {
-            inner: self.inner.self_compose(Self::composition_count(count)?),
+            inner: self.inner.self_compose(Self::composition_count(count)?)?,
         })
     }
 
