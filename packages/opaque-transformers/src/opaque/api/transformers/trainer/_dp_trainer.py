@@ -4277,8 +4277,10 @@ class DPTrainer:
             total = a.max_steps
             num_epochs = math.ceil(total / max(1, steps_per_epoch))
         else:
-            num_epochs = int(a.num_train_epochs)
-            total = num_epochs * steps_per_epoch
+            total = math.ceil(a.num_train_epochs * steps_per_epoch)
+            # The epoch loop must be integral, but its final iteration may be
+            # cut short once the fractional-epoch step horizon is reached.
+            num_epochs = math.ceil(a.num_train_epochs)
         return steps_per_epoch, total, num_epochs
 
     def _predict_total_steps(self) -> int:
