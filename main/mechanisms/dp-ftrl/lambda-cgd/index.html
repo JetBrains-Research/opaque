@@ -2802,6 +2802,10 @@ mechanism parameters in two places.</p>
 <td><code>normalized</code></td>
 <td>Column-normalize C (default True, gives sensitivity=1 for k=1)</td>
 </tr>
+<tr>
+<td><code>lr_schedule</code></td>
+<td>Optional per-step schedule for a step-weighted BnB Gram</td>
+</tr>
 </tbody>
 </table>
 <h3 id="accounting-parameters">Accounting parameters<a class="headerlink" href="#accounting-parameters" title="Permanent link">&para;</a></h3>
@@ -2829,12 +2833,14 @@ mechanism parameters in two places.</p>
 </table>
 <h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
 <p>The sensitivity depends only on the strategy matrix C, not on the optimizer
-workload (momentum, LR schedule). This is a fundamental property of the MF
-privacy framework. The sensitivity formula (Theorem 1, eq 15 of the paper)
-has a closed-form expression in terms of λ, min_sep, and max_participations.</p>
+workload. A supplied <code>lr_schedule</code> does not change sensitivity or noise; it
+selects the corresponding step-weighted Gram for Balls-in-Bins accounting. The
+sensitivity formula (Theorem 1, eq 15 of the paper) has a closed-form
+expression in terms of λ, min_sep, and max_participations.</p>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Bandwidth is <strong>fixed</strong> (bidiagonal inverse); correlation is controlled by a single <span class="arithmatex">\(\lambda\)</span>. Does <strong>not</strong> accept <code>momentum</code> (use <code>bisr_strategy</code> with bandwidth &gt; 2 for momentum-aware coefficients).</li>
+<li><code>lr_schedule</code> weights the BnB Gram on the training-step axis only; it does not add a momentum parameter or change the noise strategy. Use the identical schedule in the optimizer; the strategy cannot validate external updates.</li>
 <li>Uses <strong>Balls-in-Bins</strong> amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.</li>
 <li><strong>Private second moments (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. Pass <code>second_moment_strategy</code> explicitly.</li>
 <li>Broader MF context: <a href="../../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>

@@ -2892,7 +2892,7 @@ effective noise multiplier:</p>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li>BLT targets long runs via a <strong>buffered</strong> Toeplitz parameterization; privacy is for the optimized strategy you instantiate.</li>
-<li>Optional <strong><code>lr_schedule</code></strong> is encoded like BandMF into a Toeplitz workload for the optimizer; see <a href="../band-mf/#assumptions-and-limitations">BandMF — Assumptions</a> for the constant- versus variable-<span class="arithmatex">\(\eta\)</span> caveat.</li>
+<li>Optional <strong><code>lr_schedule</code></strong> weights the optimizer objective on the training-step axis, matching <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span> while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.</li>
 <li><strong>Subsampling</strong>: BLT does not use <code>dpftrl_acc.poisson</code> the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).</li>
 <li>Overview: <a href="../../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
