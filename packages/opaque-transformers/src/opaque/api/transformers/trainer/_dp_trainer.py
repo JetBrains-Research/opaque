@@ -1946,10 +1946,9 @@ class DPTrainer:
 
             # Pre-optimizer hook fires *after* clipping+noise but *before* the
             # optimizer update.  ``grads`` exposes the clipped-and-noised
-            # gradients keyed by parameter name so callbacks (e.g. NES's
-            # ``OptimizationCallback``) can compute group norms without
-            # touching ``param.grad`` (which doesn't exist in the functional
-            # path).
+            # gradients keyed by parameter name so callbacks can compute group
+            # norms without touching ``param.grad`` (which doesn't exist in the
+            # functional path).
             # ``call_event`` rather than the per-hook method so we can forward
             # DP-specific kwargs (``grads``, ``trainable_params``) — HF's
             # ``CallbackHandler.on_pre_optimizer_step`` has a fixed signature.
@@ -2557,8 +2556,8 @@ class DPTrainer:
                     for name, value in step_aux.items():
                         eval_aux_chunks.setdefault(name, []).append(value.detach())
 
-                # Per-batch progress hook (HF parity); progress bars / NES
-                # callbacks rely on this firing once per eval batch.
+                # Per-batch progress hook (HF parity); progress callbacks rely
+                # on this firing once per eval batch.
                 self._control = self._callback_handler.on_prediction_step(
                     self.args,
                     self.state,

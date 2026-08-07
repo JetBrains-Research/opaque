@@ -82,15 +82,15 @@ def _to_trl_canonical_dpo(row: dict) -> dict:
     - CyberNative/Code_Vulnerability_Security_DPO: (system, question, chosen,
       rejected). Non-empty ``system`` prefixed onto ``question`` as a free-text
       preamble.
-    - zed-industries/zeta (Next Edit Prediction): (events, input, output,
-      rejected, assertions). ``events`` carries the user-edit history,
-      ``input`` is the cursor-positioned code, ``output`` is the chosen next
-      edit, ``rejected`` is a wrong edit.
+    - zed-industries/zeta: (events, input, output, rejected, assertions).
+      ``events`` carries the user-edit history, ``input`` is the
+      cursor-positioned code, ``output`` is the chosen completion, and
+      ``rejected`` is an incorrect completion.
 
     chosen/rejected are passed through as plain strings (no chat template).
     """
     if "output" in row and "input" in row and "rejected" in row:
-        # zed-industries/zeta NES shape
+        # zed-industries/zeta schema
         events = (row.get("events") or "").strip()
         input_code = row["input"]
         prompt = f"{events}\n\n{input_code}" if events else input_code
@@ -394,7 +394,7 @@ def main() -> int:
     all_rows = [row for _, row in zip(range(take_total), raw)]
     # Canonicalize column shape so non-TRL-canonical code-DPO datasets work
     # without a fork. CyberNative ships (system, question, chosen, rejected);
-    # zed-industries/zeta (NES) ships (events, input, output, rejected); both
+    # zed-industries/zeta ships (events, input, output, rejected); both
     # are remapped to (prompt, chosen, rejected) so the collator + tokenize_row
     # see a TRL-canonical row. ultrafeedback already has ``prompt``.
     if (
