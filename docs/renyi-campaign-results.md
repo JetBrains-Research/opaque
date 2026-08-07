@@ -213,3 +213,50 @@ advantage at matched steps, not a better final optimum.
 ## Pending
 Seed replication (6), binding-budget r=2/r=4 probe-alloc (3), wikipedia
 domain-shift arms (5).
+
+## Campaign closeout (2026-08-07)
+
+20/20 launched runs finished. Two planned pieces did NOT execute:
+- **Wikipedia domain-shift arms (taskA, 5 runs):** submitted successfully but never
+  registered in W&B and left no pods → failed in-pod before `wandb.init`, most
+  likely in the `--dataset wikimedia/wikipedia` override path (21k long docs).
+  Undiagnosed: the ZenML server went unreachable before logs could be read.
+  Retry with a smaller `--num-train-samples` and verify the stored `cmd_args`.
+- **Unconfounded allocation re-run (`fix-alloc-*`, 6 runs):** blocked — CI never
+  built an image past `31a50f4` (2026-07-18), so the `rank_pattern_fix_scaling`
+  fix (parent `f297d89`, submodule `8bb1d4e`) was never baked. The trainer runs
+  from the image's `/opt/opaque`, NOT the uploaded code, so a rebuild is required.
+  Allocations are staged in `docs/alloc/` — no re-probe needed.
+
+### Final scoreboard (ε=3, KStack in-domain eval/loss, lower better)
+
+| method | loss | n |
+|---|---|---|
+| **LoRA-XSe (rotation), uniform** | **0.34665 ± 0.00013** | 3 |
+| LoRA-XSe + probe-alloc α=∞ | 0.34704 ± 0.00036 | 3 |
+| LoRA-XSe + probe-alloc α=1 | 0.34742 ± 0.00051 | 3 |
+| LoRA-XSe + W0-alloc | 0.34742 | 1 |
+| base LoRA-XS, uniform | 0.36180 | 1 |
+| base LoRA-XS + W0-alloc | 0.36362 | 1 |
+| LoRA (1 epoch, undertrained) | 0.39924 | 2 |
+
+### Conclusions
+1. **Allocation is a negative result.** Uniform beats every allocation variant on
+   in-domain loss (3/3 seeds vs both probe variants; all pairs vs W0), and binding
+   budgets (r=2, r=4) do not rescue it. Caveat: all allocation arms are confounded
+   by per-layer scaling drift (now fixed but not re-tested).
+2. **The α-ordering holds directionally but weakly:** α=∞ > α=1 on loss in 3/3
+   seeds, effect ~0.0004 — and plausibly explained by the scaling confound
+   (α=1's wider spread ⇒ more distortion) rather than by signal tracking.
+3. **Rotation is the method-level win:** LoRA-XSe 0.3466 vs base LoRA-XS 0.3618
+   (−0.015), consistent with the earlier 3-seed campaign. vs LoRA it is a
+   convergence-speed advantage (LoRA reaches ~0.3455 at 2 epochs).
+4. **Open positive signal (n=3, not significant):** α=∞ allocation had the highest
+   mean MBPP+ (0.661 vs 0.609 uniform), was ≥ uniform in 3/3 seeds, and had ~2×
+   lower variance (0.032 vs 0.075; on s44 uniform fell to 0.524 while α=∞ held
+   0.624). If real, this is a *retention/robustness* effect (less forgetting at
+   equal in-domain fit), not an in-domain utility gain — worth a dedicated test.
+5. **Two methodological findings stand on their own:** (a) out-of-domain pass@1
+   measures retention, not utility, for in-domain DP fine-tuning; (b)
+   `scaling = alpha/r` silently perturbs per-layer effective LR by up to 4× in any
+   variable-rank method (AdaLoRA-style included) unless alpha is scaled with r.
