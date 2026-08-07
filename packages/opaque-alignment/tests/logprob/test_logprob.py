@@ -144,6 +144,20 @@ def test_sequence_logp_hand_two_tokens_sum() -> None:
     assert torch.allclose(out, expected, atol=1e-6)
 
 
+def test_sequence_logp_length_normalized_divisor_is_exact_under_bf16() -> None:
+    """Length normalization must not round 257 completion tokens down to 256."""
+
+    def _uniform_mean(n_valid: int) -> float:
+        logits = torch.zeros(n_valid + 1, 8, dtype=torch.bfloat16)
+        input_ids = torch.zeros(n_valid + 1, dtype=torch.long)
+        completion_mask = torch.ones(n_valid + 1, dtype=torch.bool)
+        return sequence_logp(
+            logits, input_ids, completion_mask, length_normalized=True
+        ).item()
+
+    assert _uniform_mean(256) == pytest.approx(_uniform_mean(257), rel=1e-4)
+
+
 def test_sequence_logp_matches_reference_batched() -> None:
     """Batched (B, T, V) matches the independent reference implementation."""
     torch.manual_seed(2)
