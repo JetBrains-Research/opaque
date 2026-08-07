@@ -38,6 +38,41 @@ def test_incompatible_pld_operands_raise_value_error():
         fine.compose(incompatible)
 
 
+@pytest.mark.parametrize("count", [0, -1])
+@pytest.mark.parametrize(
+    "compose",
+    [
+        lambda pld, count: pld.self_compose(count),
+        lambda pld, count: pld * count,
+        lambda pld, count: count * pld,
+    ],
+)
+def test_invalid_pld_self_composition_count_raises_value_error(compose, count: int):
+    import opaque.accounting as acc
+
+    pld = acc.eps_delta(1.0, 1e-5).pld()
+
+    with pytest.raises(ValueError, match="count must be greater than zero"):
+        compose(pld, count)
+
+
+@pytest.mark.parametrize(
+    "compose",
+    [
+        lambda pld, count: pld.self_compose(count),
+        lambda pld, count: pld * count,
+        lambda pld, count: count * pld,
+    ],
+)
+def test_overflowing_pld_self_composition_count_raises_overflow_error(compose):
+    import opaque.accounting as acc
+
+    pld = acc.eps_delta(1.0, 1e-5).pld()
+
+    with pytest.raises(OverflowError, match="count must not exceed"):
+        compose(pld, 2**32)
+
+
 def test_discretization_config_stub_matches_native_surface():
     stub_path = (
         Path(__file__).parents[1]
