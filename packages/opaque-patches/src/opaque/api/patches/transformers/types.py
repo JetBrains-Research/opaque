@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from types import ModuleType
-from typing import Protocol, TypeAlias
+from typing import ParamSpec, Protocol, TypeAlias, TypeVar
 
 __all__ = [
     "FamilyPatchFn",
@@ -14,13 +14,17 @@ __all__ = [
     "ModulePatcher",
 ]
 
-ForwardFn: TypeAlias = Callable[..., object]
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+ForwardFn: TypeAlias = Callable[P, R]
 """A model or component ``forward`` implementation."""
 
-ForwardFactory: TypeAlias = Callable[[ForwardFn], ForwardFn]
+ForwardFactory: TypeAlias = Callable[[ForwardFn[P, R]], ForwardFn[P, R]]
 """A callback that replaces a component's bound ``forward`` method."""
 
-ModulePatcher: TypeAlias = Callable[[ModuleType], object]
+ModulePatcher: TypeAlias = Callable[[ModuleType], bool]
 """A callback that applies patches to an imported Transformers module."""
 
 
