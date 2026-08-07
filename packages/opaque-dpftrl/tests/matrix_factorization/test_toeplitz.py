@@ -217,6 +217,31 @@ class TestMaxAndMeanError:
         error = mean_error(strategy_coef=coef, n=5)
         assert error == pytest.approx(3.0)  # mean of [1,2,3,4,5]
 
+    def test_custom_error_without_optional_keywords(self):
+        def custom_error(*, strategy_coef, n):
+            return strategy_coef.square().sum() / n
+
+        result = loss(
+            torch.tensor([1.0], dtype=torch.float64),
+            n=2,
+            error_fn=custom_error,
+        )
+
+        assert result == pytest.approx(0.5)
+
+    def test_custom_loss_without_optional_keywords(self):
+        def custom_loss(strategy_coef, *, n):
+            return (strategy_coef - 1).square().sum() + 1 / n
+
+        coefs = optimize(
+            n=2,
+            bands=1,
+            loss_fn=custom_loss,
+            max_optimizer_steps=1,
+        )
+
+        torch.testing.assert_close(coefs, torch.ones(1, dtype=torch.float64))
+
 
 class TestMomentumWorkloadCoef:
     """Tests for _momentum_workload_coef and workload-aware optimization."""

@@ -538,12 +538,15 @@ def loss(
         Total squared error times sensitivity.
     """
     strategy_coef, n = _reconcile(strategy_coef, n)
-    error = error_fn(
-        strategy_coef=strategy_coef,
-        n=n,
-        workload_coef=workload_coef,
-        query_weights=query_weights,
-    )
+    error_kwargs: dict[str, torch.Tensor | int] = {
+        "strategy_coef": strategy_coef,
+        "n": n,
+    }
+    if workload_coef is not None:
+        error_kwargs["workload_coef"] = workload_coef
+    if query_weights is not None:
+        error_kwargs["query_weights"] = query_weights
+    error = error_fn(**error_kwargs)
     sens_sq = sensitivity_squared(strategy_coef, n)
     return error * sens_sq
 
@@ -581,12 +584,12 @@ def optimize(
     Returns:
         Optimized coefficients with L2 norm 1.
     """
-    partial_loss = functools.partial(
-        loss_fn,
-        n=n,
-        workload_coef=workload_coef,
-        query_weights=query_weights,
-    )
+    loss_kwargs: dict[str, torch.Tensor | int] = {"n": n}
+    if workload_coef is not None:
+        loss_kwargs["workload_coef"] = workload_coef
+    if query_weights is not None:
+        loss_kwargs["query_weights"] = query_weights
+    partial_loss = functools.partial(loss_fn, **loss_kwargs)
 
     if strategy_coef is None:
         strategy_coef = optimal_max_error_strategy_coefs(bands)
