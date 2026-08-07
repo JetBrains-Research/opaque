@@ -1,6 +1,11 @@
 """HF Transformers compat patches — vmap-safe attention, KV cache, custom-family registry."""
 
 from opaque.api.patches.transformers import (
+    FamilyPatchFn,
+    ForwardFactory,
+    ForwardFn,
+    ModelPatchFn,
+    ModulePatcher,
     apply_transformers_model_patches,
     family_name,
     make_apply_family_patches,
@@ -13,6 +18,11 @@ from opaque.api.patches.transformers import (
 )
 
 __all__ = [
+    "FamilyPatchFn",
+    "ForwardFactory",
+    "ForwardFn",
+    "ModelPatchFn",
+    "ModulePatcher",
     "apply_transformers_model_patches",
     "family_name",
     "make_apply_family_patches",
