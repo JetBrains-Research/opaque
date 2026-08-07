@@ -43,9 +43,9 @@ use crate::error::Result;
 /// ## From a Gaussian mechanism
 ///
 /// ```rust,ignore
-/// use opaque_accounting::mechanisms::gaussian_pld;
+/// use opaque_accounting::{mechanisms::gaussian_pld, DiscretizationConfig};
 ///
-/// let pld = gaussian(1.1).pld()?;
+/// let pld = gaussian_pld(1.1, &DiscretizationConfig::default())?;
 ///
 /// let delta = pld.delta_at(1.0);
 /// let epsilon = pld.epsilon_at(1e-5);
@@ -439,9 +439,15 @@ impl PrivacyLossDistribution {
     ///
     /// A new `PrivacyLossDistribution` representing the `count`-fold composition
     ///
+    /// # Errors
+    ///
+    /// Returns an error if exact composition would exceed the bounded FFT size.
+    /// Set a positive tail-mass truncation budget to permit a bounded circular
+    /// fallback, or use a coarser grid.
+    ///
     /// # Panics
     ///
-    /// Panics if `count` is 0
+    /// Panics if `count` is 0.
     ///
     /// # Examples
     ///
@@ -451,21 +457,22 @@ impl PrivacyLossDistribution {
     /// let pld = gaussian(1.1).pld()?;
     ///
     /// // Compose with itself 100 times (e.g., 100 training steps)
-    /// let composed = pld.self_compose(100);
+    /// let composed = pld.self_compose(100)?;
     /// let epsilon = composed.epsilon_at(1e-5);
     /// ```
-    pub fn self_compose(&self, count: usize) -> Self {
-        let pmf_remove = self.pmf_remove.clone().self_compose(count);
+    pub fn self_compose(&self, count: usize) -> Result<Self> {
+        let pmf_remove = self.pmf_remove.clone().self_compose(count)?;
 
         let pmf_add = self
             .pmf_add
             .as_ref()
-            .map(|pmf| pmf.clone().self_compose(count));
+            .map(|pmf| pmf.clone().self_compose(count))
+            .transpose()?;
 
-        Self {
+        Ok(Self {
             pmf_remove,
             pmf_add,
-        }
+        })
     }
 
     /// Compose two PLDs with an explicit `max_grid_size` override.
@@ -494,21 +501,29 @@ impl PrivacyLossDistribution {
     ///
     /// Same as `self_compose()` but overrides the max grid size used for
     /// post-composition coarsening.
-    pub fn self_compose_with_max_grid_size(&self, count: usize, max_grid_size: usize) -> Self {
+    pub fn self_compose_with_max_grid_size(
+        &self,
+        count: usize,
+        max_grid_size: usize,
+    ) -> Result<Self> {
         let pmf_remove = self
             .pmf_remove
             .clone()
-            .self_compose_with_max_grid_size(count, max_grid_size);
+            .self_compose_with_max_grid_size(count, max_grid_size)?;
 
-        let pmf_add = self.pmf_add.as_ref().map(|pmf| {
-            pmf.clone()
-                .self_compose_with_max_grid_size(count, max_grid_size)
-        });
+        let pmf_add = self
+            .pmf_add
+            .as_ref()
+            .map(|pmf| {
+                pmf.clone()
+                    .self_compose_with_max_grid_size(count, max_grid_size)
+            })
+            .transpose()?;
 
-        Self {
+        Ok(Self {
             pmf_remove,
             pmf_add,
-        }
+        })
     }
 }
 
@@ -693,7 +708,7 @@ mod tests {
         let pmf = create_test_pmf(0, 0.3, 0.7);
         let pld = PrivacyLossDistribution::new_symmetric(pmf);
 
-        let composed = pld.self_compose(5);
+        let composed = pld.self_compose(5).unwrap();
 
         // Self-compose preserves symmetry
         assert!(composed.is_symmetric());
@@ -705,7 +720,7 @@ mod tests {
         let pmf_add = create_test_pmf(0, 0.3, 0.7);
         let pld = PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add);
 
-        let composed = pld.self_compose(3);
+        let composed = pld.self_compose(3).unwrap();
 
         // Self-compose preserves asymmetry
         assert!(!composed.is_symmetric());
@@ -716,7 +731,7 @@ mod tests {
         let pmf = create_test_pmf(0, 0.5, 0.5);
         let pld = PrivacyLossDistribution::new_symmetric(pmf);
 
-        let composed = pld.self_compose(1);
+        let composed = pld.self_compose(1).unwrap();
 
         // Self-compose with count=1 should be equivalent
         let epsilon = 1.0;
@@ -964,7 +979,7 @@ mod tests {
         let epsilon = 0.5;
         let delta_1 = pld.delta_at(epsilon);
         let delta_2 = pld.compose(&pld).unwrap().delta_at(epsilon);
-        let delta_5 = pld.self_compose(5).delta_at(epsilon);
+        let delta_5 = pld.self_compose(5).unwrap().delta_at(epsilon);
 
         assert!(
             delta_2 >= delta_1,
@@ -988,7 +1003,7 @@ mod tests {
 
         let alpha = 0.1;
         let beta_1 = pld.beta_at(alpha);
-        let beta_5 = pld.self_compose(5).beta_at(alpha);
+        let beta_5 = pld.self_compose(5).unwrap().beta_at(alpha);
 
         assert!(beta_5 <= beta_1, "beta_5={} > beta_1={}", beta_5, beta_1);
     }

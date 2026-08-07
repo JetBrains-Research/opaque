@@ -7,6 +7,8 @@ use realfft::RealFftPlanner;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
+use crate::error::{PldError, Result};
+
 /// Global cached RealFFT planner (initialized on first use)
 static REAL_FFT_PLANNER: OnceLock<Mutex<RealFftPlanner<f64>>> = OnceLock::new();
 
@@ -156,8 +158,8 @@ pub fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
 /// # Performance
 ///
 /// For count=100: 2 FFTs total vs. 199 FFTs for repeated convolution!
-pub fn self_convolve(a: &[f64], count: usize) -> Vec<f64> {
-    self_convolve_with_bounds(a, count, None)
+pub fn self_convolve(a: &[f64], count: usize) -> Result<Vec<f64>> {
+    self_convolve_with_bounds(a, count, None, false)
 }
 
 /// Maximum FFT buffer size for linear (non-wrapping) convolution.
@@ -171,11 +173,64 @@ pub fn self_convolve(a: &[f64], count: usize) -> Vec<f64> {
 /// to next power of 2). This constant caps how large that buffer can be:
 /// 32M f64 elements ≈ 256 MB, sufficient for k ≈ 240 with typical 140k grids.
 ///
-/// Beyond this limit, we fall back to the smaller (circular) FFT buffer,
-/// which is the approach used by Google's `dp_accounting`. The circular
-/// approach may introduce wrapping artifacts, bounded by the Chernoff
-/// tail budget.
+/// Beyond this limit, only compositions with a tail-truncation budget may use
+/// a smaller circular FFT buffer. Exact compositions return an error instead
+/// of allowing wrapping artifacts.
 const MAX_LINEAR_FFT_SIZE: usize = 32 * 1024 * 1024;
+
+#[derive(Debug, PartialEq, Eq)]
+enum SelfConvolutionStrategy {
+    Linear { fft_len: usize },
+    Circular { fft_len: usize },
+}
+
+pub(crate) fn self_convolution_full_result_len(input_len: usize, count: usize) -> Result<usize> {
+    input_len
+        .checked_add((count - 1).checked_mul(input_len - 1).ok_or_else(|| {
+            PldError::NumericalError("self-composition result length overflow".into())
+        })?)
+        .ok_or_else(|| PldError::NumericalError("self-composition result length overflow".into()))
+}
+
+fn select_self_convolution_strategy(
+    input_len: usize,
+    count: usize,
+    truncated_len: usize,
+    allow_circular_fallback: bool,
+) -> Result<SelfConvolutionStrategy> {
+    let full_result_len = self_convolution_full_result_len(input_len, count)?;
+    let alias_free_fft_len = full_result_len
+        .checked_next_power_of_two()
+        .ok_or_else(|| PldError::NumericalError("self-composition FFT length overflow".into()))?;
+
+    if alias_free_fft_len <= MAX_LINEAR_FFT_SIZE {
+        return Ok(SelfConvolutionStrategy::Linear {
+            fft_len: alias_free_fft_len,
+        });
+    }
+
+    if !allow_circular_fallback {
+        return Err(PldError::SelfCompositionTooLarge {
+            requested: alias_free_fft_len,
+            maximum: MAX_LINEAR_FFT_SIZE,
+        });
+    }
+
+    let circular_fft_len = truncated_len
+        .max(input_len)
+        .checked_next_power_of_two()
+        .ok_or_else(|| PldError::NumericalError("self-composition FFT length overflow".into()))?;
+    if circular_fft_len > MAX_LINEAR_FFT_SIZE {
+        return Err(PldError::SelfCompositionTooLarge {
+            requested: circular_fft_len,
+            maximum: MAX_LINEAR_FFT_SIZE,
+        });
+    }
+
+    Ok(SelfConvolutionStrategy::Circular {
+        fft_len: circular_fft_len,
+    })
+}
 
 /// Self-convolve with optional truncation bounds.
 ///
@@ -191,15 +246,18 @@ const MAX_LINEAR_FFT_SIZE: usize = 32 * 1024 * 1024;
 ///
 /// This function uses a full-size buffer (≥ `full_result_len`, rounded to
 /// next power of 2) to guarantee correct linear convolution. When that
-/// buffer would exceed [`MAX_LINEAR_FFT_SIZE`], it falls back to the
-/// smaller circular buffer (`max(truncated_len, a.len())`), which may
-/// introduce wrapping artifacts bounded by the Chernoff tail budget.
+/// buffer would exceed [`MAX_LINEAR_FFT_SIZE`], a composition with a
+/// positive tail-truncation budget falls back to the smaller circular buffer
+/// (`max(truncated_len, a.len())`). Exact composition rejects the request
+/// instead: circular aliasing is invalid without a tail-error budget.
 ///
 /// # Arguments
 ///
 /// * `a` - Sequence to convolve with itself
 /// * `count` - Number of times to convolve (must be >= 1)
 /// * `bounds` - Optional (lower, upper) indices to compute. If None, computes full result.
+/// * `allow_circular_fallback` - Whether a positive tail-truncation budget
+///   permits circular aliasing when a linear FFT exceeds the size limit.
 ///
 /// # Returns
 ///
@@ -209,36 +267,36 @@ pub fn self_convolve_with_bounds(
     a: &[f64],
     count: usize,
     bounds: Option<(usize, usize)>,
-) -> Vec<f64> {
+    allow_circular_fallback: bool,
+) -> Result<Vec<f64>> {
     if count == 0 {
-        return vec![1.0]; // Identity for convolution
+        return Ok(vec![1.0]); // Identity for convolution
     }
 
     if count == 1 {
-        return a.to_vec();
+        return Ok(a.to_vec());
     }
 
     if a.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
 
     if a.len() == 1 {
-        return vec![pow_usize(a[0], count)];
+        return Ok(vec![pow_usize(a[0], count)]);
     }
 
-    let full_result_len = a.len() + (count - 1) * (a.len() - 1);
-    let alias_free_fft_len = full_result_len.next_power_of_two();
+    let full_result_len = self_convolution_full_result_len(a.len(), count)?;
     let (lower_bound, upper_bound) = bounds.unwrap_or((0, full_result_len - 1));
     let truncated_len = upper_bound - lower_bound + 1;
 
-    // Select FFT size: use alias-free if it fits, otherwise fall back to
-    // the circular approach (same as Google dp_accounting's self_convolve).
-    let fft_len = if alias_free_fft_len <= MAX_LINEAR_FFT_SIZE {
-        alias_free_fft_len
-    } else {
-        // Circular fallback: FFT size = max(truncated_len, input_len)
-        // This may alias, but is bounded by the Chernoff tail budget.
-        truncated_len.max(a.len()).next_power_of_two()
+    let fft_len = match select_self_convolution_strategy(
+        a.len(),
+        count,
+        truncated_len,
+        allow_circular_fallback,
+    )? {
+        SelfConvolutionStrategy::Linear { fft_len }
+        | SelfConvolutionStrategy::Circular { fft_len } => fft_len,
     };
 
     let planner = get_planner();
@@ -265,12 +323,12 @@ pub fn self_convolve_with_bounds(
 
     // Extract window using circular indexing (needed for both strategies:
     // for alias-free the modulo is a no-op since fft_len >= full_result_len)
-    (0..truncated_len)
+    Ok((0..truncated_len)
         .map(|i| {
             let idx = (lower_bound + i) % fft_len;
             result[idx] / fft_len as f64
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -323,7 +381,7 @@ mod tests {
         let a = vec![1.0, 2.0];
 
         // Self-convolve twice
-        let result = self_convolve(&a, 2);
+        let result = self_convolve(&a, 2).unwrap();
 
         // Should equal convolve(a, a)
         let expected = convolve(&a, &a);
@@ -339,7 +397,7 @@ mod tests {
         let a = vec![1.0, 1.0];
 
         // Convolve [1, 1] with itself 3 times
-        let result = self_convolve(&a, 3);
+        let result = self_convolve(&a, 3).unwrap();
 
         // Manual: conv([1,1], [1,1]) = [1,2,1]
         //         conv([1,2,1], [1,1]) = [1,3,3,1]
@@ -352,14 +410,14 @@ mod tests {
 
     #[test]
     fn test_singleton_self_convolution_supports_maximum_exponent() {
-        let result = self_convolve(&[1.0], u32::MAX as usize);
+        let result = self_convolve(&[1.0], u32::MAX as usize).unwrap();
 
         assert_eq!(result, vec![1.0]);
     }
 
     #[test]
     fn test_singleton_self_convolution_preserves_large_odd_exponent() {
-        let result = self_convolve(&[-1.0], usize::MAX);
+        let result = self_convolve(&[-1.0], usize::MAX).unwrap();
 
         assert_eq!(result, vec![-1.0]);
     }
@@ -368,7 +426,30 @@ mod tests {
     fn test_empty_sequences() {
         assert!(convolve(&[], &[1.0]).is_empty());
         assert!(convolve(&[1.0], &[]).is_empty());
-        assert!(self_convolve(&[], 5).is_empty());
+        assert!(self_convolve(&[], 5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_oversized_exact_convolution_is_rejected_without_allocating() {
+        let count = MAX_LINEAR_FFT_SIZE + 1;
+
+        assert!(matches!(
+            select_self_convolution_strategy(2, count, count + 1, false),
+            Err(PldError::SelfCompositionTooLarge {
+                requested,
+                maximum: MAX_LINEAR_FFT_SIZE,
+            }) if requested > MAX_LINEAR_FFT_SIZE
+        ));
+    }
+
+    #[test]
+    fn test_oversized_truncated_convolution_uses_bounded_circular_fft() {
+        let count = MAX_LINEAR_FFT_SIZE + 1;
+
+        assert_eq!(
+            select_self_convolution_strategy(2, count, 16, true).unwrap(),
+            SelfConvolutionStrategy::Circular { fft_len: 16 }
+        );
     }
 
     #[test]
