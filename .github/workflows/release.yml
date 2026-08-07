@@ -244,12 +244,11 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.release.tag_name }}
 
+      - uses: astral-sh/setup-uv@v8.1.0
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
-      - name: Install metadata validation dependencies
-        run: python3 -m pip install packaging==25.0
 
       - name: Download release wheels
         uses: actions/download-artifact@v6
@@ -259,7 +258,9 @@ jobs:
           merge-multiple: true
 
       - name: Validate internal opaque pins
-        run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+        run: >-
+          uv run --isolated --no-project --with packaging==25.0
+          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
   validate-accounting-artifacts:
     name: Validate accounting artifact policy
