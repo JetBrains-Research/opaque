@@ -785,6 +785,7 @@ class LossFn:
         min_sep: int = 1,
         max_participations: int | None = None,
         workload_coef: torch.Tensor | None = None,
+        query_weights: torch.Tensor | None = None,
         **kwargs,
     ) -> LossFn:
         """Construct LossFn for min-sep participation."""
@@ -793,12 +794,14 @@ class LossFn:
             return toeplitz.mean_error(
                 noising_coef=toeplitz_coefs(inv_blt, n),
                 workload_coef=workload_coef,
+                query_weights=query_weights,
             )
 
         def max_error_fn(inv_blt):
             return toeplitz.max_error(
                 noising_coef=toeplitz_coefs(inv_blt, n),
                 workload_coef=workload_coef,
+                query_weights=query_weights,
             )
 
         if error == "mean":
@@ -1169,6 +1172,7 @@ def optimize(
     max_buffers: int = 10,
     rtol: float = 1.01,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
     **kwargs,
 ) -> BufferedToeplitz:
     """Compute an optimised BLT with dynamically-chosen num_buffers.
@@ -1193,6 +1197,7 @@ def optimize(
         workload_coef: Toeplitz coefficients of the workload matrix.
             Defaults to ``None`` (prefix-sum workload).  For momentum-SGD
             with coefficient β, pass ``[1, β, β², ...]``.
+        query_weights: Per-query workload row weights.
         **kwargs: Additional keyword arguments forwarded to
             ``optimize_loss`` / ``_lbfgs_optimize``.
 
@@ -1206,8 +1211,8 @@ def optimize(
         n=n, min_sep=min_sep, max_participations=max_participations
     )
 
-    # Closed-form path only works for prefix-sum workload (workload_coef=None)
-    if k == 1 and error == "max" and workload_coef is None:
+    # Closed-form path only works for an unweighted prefix-sum workload.
+    if k == 1 and error == "max" and workload_coef is None and query_weights is None:
         loss_fn = LossFn.build_closed_form_single_participation(n=n)
     else:
         loss_fn = LossFn.build_min_sep(
@@ -1216,6 +1221,7 @@ def optimize(
             min_sep=min_sep,
             max_participations=max_participations,
             workload_coef=workload_coef,
+            query_weights=query_weights,
         )
 
     return _optimize_increasing_nbuf(
