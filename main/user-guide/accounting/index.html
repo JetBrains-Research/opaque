@@ -3320,6 +3320,10 @@ warmup phase with different noise followed by a main phase).</p>
 </code></pre></div>
 <p>Composition is automatically optimized: identical processes are merged into
 repeated nodes (2 FFTs instead of N), and identity processes are elided.</p>
+<p>Large homogeneous compositions require a positive <code>tail_mass_truncation</code>
+budget. Setting it to zero requests exact composition; if the requested
+composition is too large, accounting raises an error. Use a positive tail
+budget or a coarser discretization in that case.</p>
 <h2 id="mechanisms">Mechanisms<a class="headerlink" href="#mechanisms" title="Permanent link">&para;</a></h2>
 <h3 id="dpsgd_accgaussiannoise_multiplier"><code>dpsgd_acc.gaussian(noise_multiplier)</code><a class="headerlink" href="#dpsgd_accgaussiannoise_multiplier" title="Permanent link">&para;</a></h3>
 <p>Gaussian mechanism without subsampling. Rarely used directly since DP-SGD
