@@ -165,6 +165,39 @@ class TestPerQueryError:
         assert error.shape == (3,)
         assert torch.all(error > 0)
 
+    def test_query_weights_apply_on_training_step_axis(self):
+        """Schedules scale rows of diag(eta) @ momentum, not Toeplitz lags."""
+        n = 4
+        momentum = 0.5
+        strategy_coef = torch.tensor([1.0, 0.25], dtype=torch.float64)
+        learning_rates = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
+
+        momentum_matrix = materialize_lower_triangular(
+            _momentum_workload_coef(momentum, n), n
+        )
+        strategy = materialize_lower_triangular(strategy_coef, n)
+        expected = (learning_rates[:, None] * momentum_matrix) @ torch.linalg.inv(
+            strategy
+        )
+        expected_error = expected.square().sum(dim=1)
+
+        error = per_query_error(
+            strategy_coef=strategy_coef,
+            n=n,
+            workload_coef=_momentum_workload_coef(momentum, n),
+            query_weights=learning_rates,
+        )
+
+        torch.testing.assert_close(error, expected_error)
+
+    def test_max_error_uses_weighted_step_maximum(self):
+        error = max_error(
+            strategy_coef=torch.tensor([1.0], dtype=torch.float64),
+            n=3,
+            query_weights=torch.tensor([3.0, 1.0, 1.0], dtype=torch.float64),
+        )
+        assert error == pytest.approx(9.0)
+
     def test_both_specified_raises(self):
         with pytest.raises(ValueError, match="exactly one"):
             per_query_error(

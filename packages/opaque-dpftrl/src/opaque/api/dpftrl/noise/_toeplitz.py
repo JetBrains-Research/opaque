@@ -410,6 +410,7 @@ def per_query_error(
     noising_coef: torch.Tensor | None = None,
     n: int | None = None,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
     skip_checks: bool = False,
 ) -> torch.Tensor:
     """Expected per-query squared error for a (banded) Toeplitz mechanism.
@@ -421,6 +422,8 @@ def per_query_error(
         noising_coef: Toeplitz coefficients of the noising matrix.
         n: Matrix size.
         workload_coef: Workload matrix coefficients (defaults to all ones).
+        query_weights: Per-query workload row weights. Each returned squared
+            error is multiplied by the corresponding weight squared.
         skip_checks: Skip input validation.
 
     Returns:
@@ -444,7 +447,18 @@ def per_query_error(
         else:
             B_coef = multiply(workload_coef, noising_coef, n=n, skip_checks=skip_checks)
 
-    return torch.cumsum(B_coef**2, dim=0)
+    error = torch.cumsum(B_coef**2, dim=0)
+    if query_weights is None:
+        return error
+
+    query_weights = torch.as_tensor(
+        query_weights, dtype=error.dtype, device=error.device
+    )
+    if query_weights.ndim != 1 or query_weights.shape[0] != n:
+        raise ValueError(
+            f"query_weights must have shape ({n},), got {tuple(query_weights.shape)}"
+        )
+    return error * query_weights.square()
 
 
 def max_error(
@@ -453,6 +467,7 @@ def max_error(
     noising_coef: torch.Tensor | None = None,
     n: int | None = None,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
     skip_checks: bool = False,
 ) -> torch.Tensor:
     """Max-over-iterations squared error for a Toeplitz mechanism."""
@@ -461,8 +476,9 @@ def max_error(
         noising_coef=noising_coef,
         n=n,
         workload_coef=workload_coef,
+        query_weights=query_weights,
         skip_checks=skip_checks,
-    )[-1]
+    ).max()
 
 
 def mean_error(
@@ -471,6 +487,7 @@ def mean_error(
     noising_coef: torch.Tensor | None = None,
     n: int | None = None,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
     skip_checks: bool = False,
 ) -> torch.Tensor:
     """Mean-over-iterations squared error for a Toeplitz mechanism."""
@@ -479,6 +496,7 @@ def mean_error(
         noising_coef=noising_coef,
         n=n,
         workload_coef=workload_coef,
+        query_weights=query_weights,
         skip_checks=skip_checks,
     ).mean()
 
@@ -492,6 +510,7 @@ class ErrorOrLossFn(Protocol):
         strategy_coef: torch.Tensor,
         n: int | None = None,
         workload_coef: torch.Tensor | None = None,
+        query_weights: torch.Tensor | None = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -501,6 +520,7 @@ def loss(
     n: int | None = None,
     error_fn: ErrorOrLossFn = mean_error,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Error of C on a workload under single participation.
 
@@ -512,12 +532,18 @@ def loss(
         error_fn: Error function (mean_error or max_error).
         workload_coef: Toeplitz coefficients of the workload matrix.
             Defaults to ``None`` (prefix-sum workload, i.e. all ones).
+        query_weights: Per-query workload row weights.
 
     Returns:
         Total squared error times sensitivity.
     """
     strategy_coef, n = _reconcile(strategy_coef, n)
-    error = error_fn(strategy_coef=strategy_coef, n=n, workload_coef=workload_coef)
+    error = error_fn(
+        strategy_coef=strategy_coef,
+        n=n,
+        workload_coef=workload_coef,
+        query_weights=query_weights,
+    )
     sens_sq = sensitivity_squared(strategy_coef, n)
     return error * sens_sq
 
@@ -533,6 +559,7 @@ def optimize(
     max_optimizer_steps: int = 250,
     loss_fn=mean_loss,
     workload_coef: torch.Tensor | None = None,
+    query_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Optimize banded Toeplitz strategy for a given workload.
 
@@ -548,14 +575,18 @@ def optimize(
         workload_coef: Toeplitz coefficients of the workload matrix.
             Defaults to ``None`` (prefix-sum workload).  For momentum-SGD
             with coefficient β, pass ``[1, β, β², ...]``.
+        query_weights: Per-query workload row weights, such as a
+            learning-rate schedule materialized at each training step.
 
     Returns:
         Optimized coefficients with L2 norm 1.
     """
-    if workload_coef is not None:
-        partial_loss = functools.partial(loss_fn, n=n, workload_coef=workload_coef)
-    else:
-        partial_loss = functools.partial(loss_fn, n=n)
+    partial_loss = functools.partial(
+        loss_fn,
+        n=n,
+        workload_coef=workload_coef,
+        query_weights=query_weights,
+    )
 
     if strategy_coef is None:
         strategy_coef = optimal_max_error_strategy_coefs(bands)

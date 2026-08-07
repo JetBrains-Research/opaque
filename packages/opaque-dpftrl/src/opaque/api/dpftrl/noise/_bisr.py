@@ -24,6 +24,7 @@ from ._toeplitz import inverse_as_streaming_matrix
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from opaque.api.engine.scheduling.types import Schedule
     from opaque.random.types import RngKey
 
     from ._engine import MFNoiseState
@@ -36,6 +37,15 @@ def _native():
     return _n
 
 
+def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
+    """Materialize a schedule at ``[0, n)`` for a cached Gram query."""
+    return (
+        None
+        if lr_schedule is None
+        else tuple(float(lr_schedule(step)) for step in range(n))
+    )
+
+
 @lru_cache(maxsize=256)
 def _bisr_gram_matrix_cached(
     inv: tuple[float, ...],
@@ -43,8 +53,21 @@ def _bisr_gram_matrix_cached(
     n_steps: int,
     min_sep: int,
     max_participations: int | None,
+    lr_key: tuple[float, ...] | None,
 ) -> tuple[float, ...]:
     """Gram sequence for BISR; cached across repeated σ / PLD probes."""
+    if lr_key is not None:
+        return tuple(
+            _native().bisr_gram_matrix_lr(
+                list(inv),
+                0.0,
+                n_steps,
+                min_sep,
+                max_participations,
+                normalized,
+                list(lr_key),
+            )
+        )
     return tuple(
         _native().bisr_gram_matrix(
             list(inv), n_steps, min_sep, max_participations, normalized
@@ -136,6 +159,7 @@ class BisrStrategy:
     bandwidth: int
     normalized: bool = True
     momentum: float = 0.0
+    lr_schedule: Schedule | None = field(default=None, compare=False)
     inv_coefficients: tuple[float, ...] | None = field(default=None)
 
     def __post_init__(self) -> None:
@@ -170,6 +194,7 @@ class BisrStrategy:
             n_steps,
             min_sep,
             max_participations,
+            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
@@ -219,6 +244,7 @@ def bisr_strategy(
     bandwidth: int,
     normalized: bool = True,
     momentum: float = 0.0,
+    lr_schedule: Schedule | None = None,
     inv_coefficients: Sequence[float] | None = None,
 ) -> BisrStrategy:
     """Create a BISR (Banded Inverse Square Root) strategy recipe.
@@ -227,6 +253,8 @@ def bisr_strategy(
         bandwidth: BISR bandwidth p (>= 2).
         normalized: Use column-normalized matrix (default True).
         momentum: Optimizer momentum in [0, 1) (default 0).
+        lr_schedule: Optional per-step learning-rate schedule used for
+            schedule-weighted Gram accounting.
         inv_coefficients: Explicit :math:`C^{-1}` coefficients (default BISR optimal).
 
     Returns:
@@ -236,6 +264,7 @@ def bisr_strategy(
         bandwidth=bandwidth,
         normalized=normalized,
         momentum=momentum,
+        lr_schedule=lr_schedule,
         inv_coefficients=(
             tuple(inv_coefficients) if inv_coefficients is not None else None
         ),

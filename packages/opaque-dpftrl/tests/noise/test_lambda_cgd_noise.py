@@ -5,8 +5,10 @@ import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
+from opaque.api.dpftrl.noise._toeplitz import materialize_lower_triangular
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
+from opaque.serialization import state_dict
 from opaque.types import NoisedPytree, clipped
 
 
@@ -183,6 +185,54 @@ class TestLambdaCgdStrategy:
         gram = s.gram_matrix(**_PARTICIPATION)
         assert gram is not None
         assert len(gram) == 25 * 25
+
+    def test_schedule_weighted_gram_matches_dense_step_weighted_operator(self):
+        n_steps, min_sep, max_participations = 6, 2, 3
+        learning_rates = torch.tensor(
+            [1.0, 0.5, 2.0, 1.5, 0.25, 3.0], dtype=torch.float64
+        )
+        strategy = lambda_cgd_strategy(
+            lambda_=0.4,
+            normalized=False,
+            lr_schedule=lambda step: float(learning_rates[step]),
+        )
+
+        encoder = materialize_lower_triangular(
+            strategy.coefficients(n_steps=n_steps), n_steps
+        )
+        grouped_columns = torch.stack(
+            [encoder[:, bin_index::min_sep].sum(dim=1) for bin_index in range(min_sep)],
+            dim=1,
+        )
+        expected = grouped_columns.T @ torch.diag(learning_rates) ** 2 @ grouped_columns
+
+        gram = torch.tensor(
+            strategy.gram_matrix(
+                n_steps=n_steps,
+                min_sep=min_sep,
+                max_participations=max_participations,
+            ),
+            dtype=torch.float64,
+        ).reshape(min_sep, min_sep)
+        torch.testing.assert_close(gram, expected)
+
+    def test_uniform_schedule_matches_unweighted_gram(self):
+        kwargs = {"n_steps": 12, "min_sep": 3, "max_participations": 4}
+        unweighted = lambda_cgd_strategy(lambda_=0.4, normalized=False)
+        weighted = lambda_cgd_strategy(
+            lambda_=0.4,
+            normalized=False,
+            lr_schedule=lambda _step: 1.0,
+        )
+
+        assert weighted.gram_matrix(**kwargs) == pytest.approx(
+            unweighted.gram_matrix(**kwargs)
+        )
+
+    def test_callable_schedule_is_not_serializable(self):
+        strategy = lambda_cgd_strategy(lambda_=0.4, lr_schedule=lambda _step: 1.0)
+        with pytest.raises(TypeError, match="callable strategy field"):
+            state_dict(strategy)
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation -> sensitivity = 1.0."""

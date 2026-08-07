@@ -49,6 +49,7 @@ eps = training.epsilon_at(1e-5)
 | `min_sep` | Steps per epoch |
 | `max_participations` | Number of epochs |
 | `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
+| `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
 
 ### Accounting parameters
 
@@ -69,8 +70,8 @@ formula (Lemma 1 of the paper):
 For β=0 (FTRL): c̃ = [1, -0.5, -0.125, -0.0625, ...]
 
 Momentum enters the coefficient computation, changing the strategy matrix C
-itself. The privacy analysis then uses raw C columns (momentum does not
-enter sensitivity or Gram matrix computation).
+itself. The privacy analysis then uses the resulting C columns; momentum is
+not applied a second time as a separate workload operator.
 
 ## Noise generation
 
@@ -99,7 +100,7 @@ and computes the linear combination defined by the BISR coefficients.
 
 - **BnB sampling**: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).
 - **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
-- **No `lr_schedule`**: BISR coefficients are analytically determined from the prefix-sum workload; schedule-aware BISR would require a different construction (see arXiv:2511.17994). Use BandMF/BLT with `lr_schedule` for schedule-shaped workloads.
+- **`lr_schedule` affects accounting only**: BISR coefficients remain analytically determined by its existing workload model. Supplying a schedule uses the matching step-weighted Gram for Balls-in-Bins accounting; it does not change the BISR strategy or introduce additional optimizer parameters. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
 - **Not BSR**: BISR bands the **inverse** square root construction (generalised λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD+momentum+weight decay.
 - For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../../user-guide/dp-ftrl.md).
 

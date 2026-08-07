@@ -77,7 +77,7 @@ def _blt_optimize_cached(
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
-    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr)
+    workload_coef = _momentum_workload_coef(momentum, n_steps)
     return _blt_optimize(
         n=n_steps,
         min_sep=min_sep,
@@ -85,6 +85,7 @@ def _blt_optimize_cached(
         error="max",
         max_buffers=max_buffers,
         workload_coef=workload_coef,
+        query_weights=lr,
     )
 
 
