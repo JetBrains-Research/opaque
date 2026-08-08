@@ -168,14 +168,16 @@ def test_optim_adamw_torch_collapses_to_adamw(tmp_path):
     assert opaque.optim == "adamw"
 
 
-def test_optim_adamw_torch_fused_collapses_to_adamw(tmp_path):
+def test_optim_adamw_torch_fused_collapses_to_adamw_with_warning(tmp_path):
     # opaque's functional AdamW has no ``fused`` kernel arg, so the fused HF
-    # optimizer must translate to plain adamw without forwarding fused (#389).
-    opaque = TrainingArguments.from_hf(
-        _hf_args(tmp_path, optim="adamw_torch_fused"),
-        privacy_noise_multiplier=0.8,
-        clipping_norm=1.0,
-    )
+    # optimizer must translate to plain adamw without forwarding fused — and
+    # surface the dropped kernel request rather than silently rewrite (#389).
+    with pytest.warns(RuntimeWarning, match="fused AdamW kernel"):
+        opaque = TrainingArguments.from_hf(
+            _hf_args(tmp_path, optim="adamw_torch_fused"),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
     assert opaque.optim == "adamw"
     assert not opaque.optim_args  # nothing forwarded (no fused flag)
 

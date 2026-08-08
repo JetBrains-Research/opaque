@@ -25,6 +25,7 @@ the machinery it delegates to.
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from ._convert import (
@@ -242,10 +243,22 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
             f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
             f"fused CUDA kernel)."
         )
-    # ``adamw_torch_fused`` maps to plain ``adamw``: opaque's functional torchopt
-    # AdamW exposes no ``fused`` kernel arg, so forwarding ``fused=True`` would
-    # raise ``TypeError`` at optimizer-build time — drop the fused flag (#389).
-    if optim_str in {"adamw_torch", "adamw_hf", "adamw_torch_fused"}:
+    if optim_str in {"adamw_torch", "adamw_hf"}:
+        return {"optim": "adamw"}
+    # ``adamw_torch_fused`` translates to plain ``adamw``: fused is a kernel /
+    # execution choice, not different optimizer math, and opaque's functional
+    # torchopt AdamW has no fused kernel (forwarding ``fused=True`` raised
+    # ``TypeError`` at optimizer-build time).  Warn rather than silently
+    # rewrite or fail — the update math is preserved, the kernel request is
+    # not (#389).
+    if optim_str == "adamw_torch_fused":
+        warnings.warn(
+            "opaque: hf_training_arguments.optim='adamw_torch_fused' — the "
+            "functional DP path has no fused AdamW kernel; using 'adamw' "
+            "(identical update math, unfused execution).",
+            RuntimeWarning,
+            stacklevel=4,
+        )
         return {"optim": "adamw"}
     # Pass through other optimizer names verbatim (as string, not enum).
     return {"optim": optim_str}
