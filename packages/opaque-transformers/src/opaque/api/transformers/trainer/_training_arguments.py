@@ -87,6 +87,7 @@ from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
+from transformers.utils.logging import get_log_levels_dict
 
 from ._optim import (
     resolve_optimizer_name as _resolve_optimizer_name,
@@ -99,6 +100,11 @@ from ._optim import (
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
 _INTERVAL_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch")
 _SAVE_STRATEGIES: tuple[str, ...] = ("no", "steps", "epoch", "best")
+# Valid ``log_level`` / ``log_level_replica`` names (HF parity): the transformers
+# level names plus ``"passive"`` = leave the current verbosity unchanged.  Derived
+# from the same source as ``_distributed._TRAINER_LOG_LEVELS`` so the validation
+# domain and the apply-time map can never drift.
+_LOG_LEVELS: frozenset[str] = frozenset(get_log_levels_dict()) | {"passive"}
 
 
 log = logging.getLogger(__name__)
@@ -472,7 +478,6 @@ class TrainingArguments:
     # ---- Noise mechanism / fixed multiplier -------------------------------
     privacy_noise_mechanism: str = "gaussian"
     privacy_noise_multiplier: float | None = None
-    privacy_noise_radius: float = 3.0
     #: Extra kwargs forwarded into :func:`opaque.dpsgd.noise.gaussian_noise`
     #: (e.g. ``bound`` for the bounded Gaussian mechanism).  JSON/HF-style
     #: parity with ``sampling_kwargs`` / ``clipping_kwargs``.
@@ -582,6 +587,14 @@ class TrainingArguments:
                 f"save_strategy={self.save_strategy!r}; "
                 f"expected one of {_SAVE_STRATEGIES}"
             )
+        for _ll_name, _ll_val in (
+            ("log_level", self.log_level),
+            ("log_level_replica", self.log_level_replica),
+        ):
+            if _ll_val not in _LOG_LEVELS:
+                raise ValueError(
+                    f"{_ll_name}={_ll_val!r}; expected one of {sorted(_LOG_LEVELS)}"
+                )
         # Normalize string / SchedulerType forms to the enum; a
         # user-supplied ``Schedule`` recipe is left as-is and consumed
         # directly by ``build_lr_schedule``.
@@ -1227,7 +1240,6 @@ class TrainingArguments:
         privacy_target_delta: float | None = None,
         clipping_norm: float | dict[str, float] | None = None,
         privacy_noise_mechanism: str = "gaussian",
-        privacy_noise_radius: float = 3.0,
         clipping_mode: str = "fixed",
         clipping_kwargs: dict[str, Any] | None = None,
         sampling_mode: str = "auto",
@@ -1299,7 +1311,6 @@ class TrainingArguments:
             "privacy_noise_multiplier": privacy_noise_multiplier,
             "privacy_target_epsilon": privacy_target_epsilon,
             "privacy_noise_mechanism": privacy_noise_mechanism,
-            "privacy_noise_radius": privacy_noise_radius,
             "clipping_mode": clipping_mode,
             "sampling_mode": sampling_mode,
         }

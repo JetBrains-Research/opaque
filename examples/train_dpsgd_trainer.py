@@ -629,7 +629,6 @@ def parse_args() -> argparse.Namespace:
             "per-mechanism defaults."
         ),
     )
-    dp_group.add_argument("--noise-radius", type=float, default=3.0)
     dp_group.add_argument(
         "--per-group-clipping",
         type=str,
@@ -1113,7 +1112,6 @@ def main() -> int:
         sampling_kwargs=_sampling_kwargs_for_trainer(args),
         privacy_noise_mechanism=args.noise_mechanism,
         privacy_noise_mechanism_kwargs=args.noise_mechanism_kwargs or {},
-        privacy_noise_radius=args.noise_radius,
         push_to_hub=args.push_to_hub,
         hub_model_id=args.hub_model_id,
         hub_private_repo=args.hub_private_repo,
