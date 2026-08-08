@@ -301,6 +301,74 @@ class TestBestFolderLookup:
         assert ts["best_global_step"] == trainer.state.best_global_step
 
 
+class TestBestOnEvalOnlyStep:
+    """#386: best on an eval-only step must still get a checkpoint.
+
+    ``save_steps=4`` is coarser than ``eval_steps=2``, so evals fire at 2 and
+    4 but saves fire only at 4.  Scripting ``eval_loss`` so step 2 is the
+    genuine best lands ``best_global_step`` on eval-only step 2.  Pre-fix:
+    no ``checkpoint-2`` -> ``best_model_checkpoint`` is None ->
+    ``_load_best_model`` raises ``RuntimeError``.  Post-fix: the force-save
+    callback writes ``checkpoint-2`` and best is loadable.
+    """
+
+    def test_best_eval_only_step_forces_checkpoint(
+        self, lora_model, tiny_dataset, tmp_path, monkeypatch
+    ):
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(
+                tmp_path,
+                max_steps=4,
+                num_train_epochs=1,
+                eval_strategy="steps",
+                eval_steps=2,
+                save_strategy="steps",
+                save_steps=4,  # coarser than eval: best can fall off a save step
+                metric_for_best_model="eval_loss",
+                greater_is_better=False,
+                load_best_model_at_end=True,
+                save_total_limit=10,
+                logging_steps=1,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+
+        # Script eval_loss at the pure eval seam so the callback's improvement
+        # check and _update_best_metric read identical values.  Step 2 is the
+        # genuine best (0.10); step 4 is worse (0.90).
+        scripted = [0.10, 0.90]
+        counter = {"i": 0}
+        real_loop = trainer._run_evaluation_loop
+
+        def scripted_loop(*args, **kwargs):
+            result = real_loop(*args, **kwargs)
+            prefix = kwargs.get("metric_key_prefix", "eval")
+            idx = min(counter["i"], len(scripted) - 1)
+            result.metrics[f"{prefix}_loss"] = scripted[idx]
+            counter["i"] += 1
+            return result
+
+        monkeypatch.setattr(trainer, "_run_evaluation_loop", scripted_loop)
+
+        trainer.train()  # pre-fix: raises RuntimeError inside _load_best_model
+
+        # Best tracks the genuine best eval, on the eval-only step.
+        assert trainer.state.best_global_step == 2
+        assert trainer.state.best_metric == pytest.approx(0.10)
+
+        # AC1: best points to an existing checkpoint even though step 2 is not
+        # a save boundary (save_steps=4).
+        best = trainer.state.best_model_checkpoint
+        assert best is not None
+        assert Path(best).resolve() == (tmp_path / "checkpoint-2").resolve()
+        assert Path(best).is_dir()
+        assert (Path(best) / "adapter_model.safetensors").exists()
+
+
 # ---------------------------------------------------------------------------
 # save_only_model: trainer_state.json is always written (HF parity).
 # ---------------------------------------------------------------------------

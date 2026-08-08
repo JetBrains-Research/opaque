@@ -322,7 +322,8 @@ class BestModelSaveCallback(TrainerCallback):
 
     HF's :class:`DefaultFlowCallback` recognises ``save_strategy="steps"``
     and ``"epoch"`` but not ``"best"``.  This callback fills that gap.
-    Auto-injected by :class:`DPTrainer` when ``save_strategy == "best"``.
+    Auto-injected by :class:`DPTrainer` when ``save_strategy == "best"`` or
+    ``load_best_model_at_end=True`` (so best always lands on a saved step).
 
     Timing
     ------
@@ -338,7 +339,12 @@ class BestModelSaveCallback(TrainerCallback):
     """
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        if args.save_strategy != "best":
+        # Force a save whenever an eval improves best, for both
+        # ``save_strategy="best"`` and ``load_best_model_at_end`` with a
+        # steps/epoch save cadence coarser than eval — otherwise
+        # ``best_global_step`` can land on an eval-only step that has no
+        # checkpoint folder (issue #386).
+        if args.save_strategy != "best" and not args.load_best_model_at_end:
             return
         resolved = resolve_eval_metric(metrics, args.metric_for_best_model)
         if resolved is None:
