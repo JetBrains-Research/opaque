@@ -1771,3 +1771,98 @@ def test_sft_dft_eval_uses_training_objective(tmp_path):
     # (~log V ≈ 4.15 here) — pre-fix eval reported CE.
     assert eval_loss == pytest.approx(dft_ref, rel=1e-2)
     assert abs(eval_loss - ce_ref) > 1.0
+
+
+def _varied_len_dataset() -> Dataset:
+    """Eval rows with contrasting real-token counts (2 vs 15 after shift)."""
+    return Dataset.from_list(
+        [{"input_ids": [1, 2, 3]}, {"input_ids": list(range(3, 19))}] * 2
+    )
+
+
+def _dft_trainer(tmp_path, *, compute_metrics=None, seed_models=0):
+    torch.manual_seed(seed_models)  # identical weights across trainers
+    return SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=16,
+            loss_type="dft",
+            per_device_eval_batch_size=4,
+        ),
+        train_dataset=_sft_dataset(),
+        eval_dataset=_varied_len_dataset(),
+        processing_class=_stub_tokenizer(),
+        compute_metrics=compute_metrics,
+    )
+
+
+def test_sft_dft_eval_loss_is_plain_per_example_mean(tmp_path):
+    """#384 review: eval_loss is the plain per-example mean of the DFT scalars,
+    not a mean reweighted by realized non-padding token counts."""
+    from opaque.alignment.sft.loss import dft_loss
+
+    seen = {}
+
+    def cm(ep):
+        seen["label_ids"] = ep.label_ids
+        return {}
+
+    trainer = _dft_trainer(tmp_path, compute_metrics=cm)
+    eval_loss = trainer.evaluate()["eval_loss"]
+
+    # labels still reach compute_metrics (the fix must not drop them).
+    assert seen["label_ids"] is not None
+
+    rows = [dict(r) for r in _varied_len_dataset()]
+    batch = trainer._data_collator(rows)
+    batch = {k: v.to(trainer._device) for k, v in batch.items()}
+    trainer._model.eval()
+    with torch.no_grad():
+        logits = trainer._model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        ).logits
+    per_ex = dft_loss(logits.float(), batch["labels"])
+    tok = (batch["labels"][..., 1:] != -100).sum(-1).float()
+    plain = per_ex.mean().item()
+    weighted = ((per_ex * tok).sum() / tok.sum()).item()
+
+    # Self-check: the varied lengths make the two aggregations discriminable.
+    assert abs(plain - weighted) > 2e-4
+    # eval_loss must be the plain mean (bf16 tolerance << the plain/weighted gap).
+    assert abs(eval_loss - plain) < 0.35 * abs(plain - weighted)
+
+
+def test_sft_dft_eval_loss_consistent_across_metric_modes(tmp_path):
+    """#384 review: the same checkpoint reports the same eval_loss whether or
+    not compute_metrics is configured (pre-rework: plain vs token-weighted)."""
+    loss_only = _dft_trainer(tmp_path / "a").evaluate()["eval_loss"]
+    with_metrics = _dft_trainer(
+        tmp_path / "b", compute_metrics=lambda ep: {}
+    ).evaluate()["eval_loss"]
+    assert loss_only == pytest.approx(with_metrics, rel=1e-6)
+
+
+def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
+    """#384 review: ignore_keys=['logits'] filters predictions (base parity)."""
+    trainer = _dft_trainer(tmp_path)
+    rows = [dict(r) for r in _varied_len_dataset()]
+    batch = trainer._data_collator(rows)
+
+    loss, preds, labels = trainer.prediction_step(
+        trainer._model, dict(batch), prediction_loss_only=False, ignore_keys=None
+    )
+    assert loss.ndim == 1
+    assert preds is not None
+    assert labels is not None
+
+    loss, preds, labels = trainer.prediction_step(
+        trainer._model,
+        dict(batch),
+        prediction_loss_only=False,
+        ignore_keys=["logits"],
+    )
+    assert loss.ndim == 1
+    assert preds is None
+    assert labels is not None

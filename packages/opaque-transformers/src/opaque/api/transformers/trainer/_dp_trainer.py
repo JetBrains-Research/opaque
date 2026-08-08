@@ -272,6 +272,15 @@ class DPTrainer:
     - ``log()`` — append to state + fire callbacks
     """
 
+    #: eval_loss aggregation: ``True`` → weight per-example / batch losses by
+    #: their real (non ``-100``) token counts, reconstructing the corpus
+    #: per-token mean (HF CE parity; valid when the per-example loss is a
+    #: token-mean CE).  Subclasses whose eval loss is a per-example objective
+    #: in its own right (e.g. SFT ``dft``) set this ``False`` → plain
+    #: per-example mean, matching the training objective's fixed,
+    #: per-example-equal weighting (no data-dependent token-count divisor).
+    _eval_token_weighted_loss: bool = True
+
     def __init__(
         self,
         model: PreTrainedModel | None = None,
@@ -2575,10 +2584,11 @@ class DPTrainer:
                 #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
                 #     example i's total CE; summing then dividing by the total
                 #     real-token count gives the same per-token mean.
-                # When labels aren't exposed (rare), fall back to per-example
-                # weighting.
+                # When labels aren't exposed (rare), or the trainer opted out
+                # of token weighting (``_eval_token_weighted_loss=False``),
+                # fall back to the plain per-example mean.
                 if loss is not None:
-                    if labels is not None:
+                    if labels is not None and self._eval_token_weighted_loss:
                         # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
                         # position 0 via the internal shift); the per-token-mean
                         # weighting denominator must match that count.
@@ -2597,7 +2607,8 @@ class DPTrainer:
                             total_loss += float(loss.item()) * real_tokens
                             loss_samples += real_tokens
                     else:
-                        # labels not exposed: fall back to per-example weighting
+                        # labels not exposed, or token weighting opted out:
+                        # plain per-example mean
                         total_loss += (
                             float(loss.sum().item())
                             if loss.ndim > 0
