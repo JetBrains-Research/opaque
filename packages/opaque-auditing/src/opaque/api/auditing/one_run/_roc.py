@@ -96,7 +96,13 @@ def tpr_at_given_fpr(
 
     fp_left = fp_counts[threshold - 1]
     fp_right = fp_counts[threshold]
-    q = (target_fp_count - fp_left) / (fp_right - fp_left)
+    # The raw ROC can carry a zero-width (vertical) segment at the clamped
+    # terminal index (repeated final FP counts, e.g. in ``[0, 2]`` / out
+    # ``[1]`` at ``fpr=1``): interpolating across it is 0/0.  The TPR at that
+    # FPR is the segment's top, so take ``q -> 1`` instead of NaN.
+    denom = fp_right - fp_left
+    safe_denom = np.where(denom > 0, denom, 1)
+    q = np.where(denom > 0, (target_fp_count - fp_left) / safe_denom, 1.0)
 
     tp_left = tp_counts[threshold - 1]
     tp_right = tp_counts[threshold]

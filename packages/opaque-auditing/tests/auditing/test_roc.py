@@ -113,3 +113,15 @@ def test_infinite_scores_counted_in_denominators():
     _, tn, fn = get_tn_fn_counts([1.0, 2.0, np.inf], [0.5, 1.5, 2.5])
     assert fn[-1] == 3  # n_in (includes the +inf in-score), not the finite-only 2
     assert tn[-1] == 3  # n_out
+
+
+def test_tpr_at_alpha_one_is_one_not_nan():
+    """#378 review: repeated terminal FP counts on the raw ROC made ``alpha=1``
+    interpolate a zero-width segment to NaN; the endpoint must be TPR=1 (β=0)."""
+    _thresholds, tn, fn = get_tn_fn_counts([0.0, 2.0], [1.0])
+    tp = (fn[-1] - fn)[::-1]
+    fp = (tn[-1] - tn)[::-1]
+    assert tpr_at_given_fpr(1.0, tp, fp) == 1.0
+    arr = tpr_at_given_fpr(np.array([0.0, 0.5, 1.0]), tp, fp)
+    assert not np.isnan(arr).any()
+    assert arr[-1] == 1.0
