@@ -119,8 +119,8 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.patches import apply_model_patches, apply_runtime_patches
 from opaque.device import sdpa_autocast_under_vmap_broken
+from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
 
@@ -129,30 +129,33 @@ import torchopt
 import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpftrl.accounting as dpftrl_acc
-from opaque.accounting import Accountant, calibration as cal
+from opaque.accounting import Accountant
+from opaque.accounting import calibration as cal
 from opaque.distributed import local_shard, sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
-from opaque.types import (
-    PerGroup,
-    SecondMomentClippingOutput,
-    SecondMomentNoiseOutput,
-)
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
-    bsr_strategy,
     blt_strategy,
+    bsr_strategy,
     identity_strategy,
     lambda_cgd_strategy,
     mf_gaussian_noise,
 )
+from opaque.dpftrl.sampling import (
+    BallsInBinsSampler,
+    BMinSepSampler,
+    CyclicPoissonSampler,
+    SequentialBatchSampler,
+)
+from opaque.functional import empty_collate, make_functional
 from opaque.profiling import (
     perf_tracker,
     print_memory,
     reset_peak_memory,
 )
-from opaque.random import key, fold_in
+from opaque.random import fold_in, key
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -160,14 +163,11 @@ from opaque.scheduling import (
     with_warmup,
 )
 from opaque.scheduling.types import Schedule
-from opaque.functional import empty_collate
-from opaque.dpftrl.sampling import (
-    BallsInBinsSampler,
-    BMinSepSampler,
-    CyclicPoissonSampler,
-    SequentialBatchSampler,
+from opaque.types import (
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
 )
-from opaque.functional import make_functional
 
 try:
     import wandb
@@ -197,7 +197,7 @@ def _compile_grad_fn(grad_fn, *, backend, mode):
             return fallback[0](*args, **kwargs)
         try:
             return full(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001 — any compile failure → fallback
+        except Exception as e:
             print(
                 f"WARNING: torch.compile(fullgraph=True) failed "
                 f"({type(e).__name__}: {e}); falling back to fullgraph=False."
@@ -1186,9 +1186,12 @@ def main():
     # its own deterministic partition.
     base_sampler_key = fold_in(key(args.seed), rank) if is_ddp else key(args.seed)
 
-    # Create sampler (or per-epoch sampler factory).
-    # Static samplers (BnB, sequential) are created once and reused.
-    # Dynamic samplers (Poisson) get a fresh key each epoch.
+    # Create sampler (or per-epoch sampler factory).  All samplers are
+    # single-pass (their ``_consumed`` cursor persists across ``__iter__``
+    # calls), so every branch constructs a fresh object per epoch.
+    # Deterministic samplers (BnB, sequential) rebuild with the SAME key /
+    # arguments so the partition / batch order is identical every epoch;
+    # Poisson samplers fold in the epoch index for fresh draws.
     if args.mechanism == "band_mf":
         p0 = sample_rate  # E[batch]/|D| per iteration (same as ``dpftrl_acc.poisson`` regime)
         sampling_prob = 0.0
@@ -1232,36 +1235,42 @@ def main():
                 )
 
     elif args.mechanism == "blt":
-        _blt_sampler = SequentialBatchSampler(
-            train_dataset,
-            batch_size=per_rank_batch_size,
-        )
+        # Fresh sampler each epoch: SequentialBatchSampler is single-pass,
+        # so reusing one object would yield zero batches from epoch 2 on.
+        # Construction is fully deterministic (no RNG), so every epoch
+        # repeats the identical fixed batch order — exactly the
+        # min_sep / max_participations contract the BLT accounting assumes.
 
         def make_epoch_sampler(epoch):
-            return _blt_sampler
+            return SequentialBatchSampler(
+                train_dataset,
+                batch_size=per_rank_batch_size,
+            )
 
     elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
-        # BnB sampler created once — the same fixed partition is reused every
-        # epoch (required by BnB privacy accounting, Lemma 3.2 of
-        # Choquette-Choo et al. 2024).  Under DDP each rank partitions
-        # its disjoint shard into the same number of bins; combined across
-        # ranks every global example still appears in exactly one bin so
-        # BnB privacy holds unchanged.  We deliberately use the un-folded
-        # ``key(args.seed)`` (rather than ``base_sampler_key``, which is
-        # rank-folded for randomized samplers): together with the equal
-        # shard sizes guaranteed above this gives every rank the same
-        # empty/non-empty bin pattern within its local index space, so
-        # all ranks yield an identical number of batches and the
-        # cross-rank collectives in the training loop stay in lockstep.
-        _bnb_sampler = BallsInBinsSampler(
-            train_dataset,
-            num_bins=expected_steps_per_epoch,
-            n_steps=expected_steps_per_epoch,
-            key=key(args.seed),
-        )
+        # A fresh BnB sampler is constructed each epoch (samplers are
+        # single-pass) but ALWAYS with the same key — the bin assignment is
+        # deterministic from ``(key, num_bins, num_samples)``, so the same
+        # fixed partition is reused every epoch as required by BnB privacy
+        # accounting (Lemma 3.2 of Choquette-Choo et al. 2024).  Under DDP
+        # each rank partitions its disjoint shard into the same number of
+        # bins; combined across ranks every global example still appears in
+        # exactly one bin so BnB privacy holds unchanged.  We deliberately
+        # use the un-folded ``key(args.seed)`` (rather than
+        # ``base_sampler_key``, which is rank-folded for randomized
+        # samplers): together with the equal shard sizes guaranteed above
+        # this gives every rank the same empty/non-empty bin pattern within
+        # its local index space, so all ranks yield an identical number of
+        # batches and the cross-rank collectives in the training loop stay
+        # in lockstep.
 
         def make_epoch_sampler(epoch):
-            return _bnb_sampler
+            return BallsInBinsSampler(
+                train_dataset,
+                num_bins=expected_steps_per_epoch,
+                n_steps=expected_steps_per_epoch,
+                key=key(args.seed),
+            )
 
     else:  # identity, none
 
@@ -1273,6 +1282,12 @@ def main():
                 truncated_batch_size=args.truncated_batch_size,
                 key=fold_in(base_sampler_key, epoch),
             )
+
+    # Fail fast: constructor validation (bin counts / divisibility / empty
+    # dataset) should fire at config time, not after ~800 lines of model
+    # loading — the discarded epoch-0 instance is cheap and side-effect-free
+    # (samplers are pure functions of their key + arguments).
+    make_epoch_sampler(0)
 
     if is_main_process:
         print("\nSampling:")
@@ -1622,31 +1637,12 @@ def main():
                 n_steps=total_steps,
                 p0=p0,
             )
-    elif args.mechanism == "blt" and strategy is not None:
-
-        def acct_mechanism(nm):
-            return dpftrl_acc.balls_in_bins(
-                dpftrl_acc.mf_gaussian(nm, strategy),
-                num_bins=expected_steps_per_epoch,
-                n_steps=total_steps,
-            )
-    elif args.mechanism == "lambda_cgd" and strategy is not None:
-
-        def acct_mechanism(nm):
-            return dpftrl_acc.balls_in_bins(
-                dpftrl_acc.mf_gaussian(nm, strategy),
-                num_bins=expected_steps_per_epoch,
-                n_steps=total_steps,
-            )
-    elif args.mechanism == "bisr" and strategy is not None:
-
-        def acct_mechanism(nm):
-            return dpftrl_acc.balls_in_bins(
-                dpftrl_acc.mf_gaussian(nm, strategy),
-                num_bins=expected_steps_per_epoch,
-                n_steps=total_steps,
-            )
-    elif args.mechanism == "bsr" and strategy is not None:
+    elif (
+        (args.mechanism == "blt" and strategy is not None)
+        or (args.mechanism == "lambda_cgd" and strategy is not None)
+        or (args.mechanism == "bisr" and strategy is not None)
+        or (args.mechanism == "bsr" and strategy is not None)
+    ):
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
