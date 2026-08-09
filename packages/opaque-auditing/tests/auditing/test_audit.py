@@ -400,3 +400,31 @@ class TestCoinFlipFunction:
         dataset = list(range(10))
         with pytest.raises(ValueError, match="exceeds dataset size"):
             auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+
+
+class TestScoreOrderVerification:
+    """#371: the order token + identifiers make score pairing verifiable."""
+
+    def _cf(self):
+        return auditing.coin_flip(list(range(200)), num_canaries=100, key=key(42))
+
+    def test_correct_order_token_unchanged(self):
+        cf = self._cf()
+        rng = np.random.default_rng(0)
+        scores = rng.normal(size=100)
+        scores[cf._in_mask] += 2.0  # genuine signal
+        baseline = one_run(scores, coin_flip=cf)
+        tokened = one_run(scores, coin_flip=cf, order=cf.canary_indices)
+        assert tokened.attack_auc() == baseline.attack_auc()
+        assert tokened.epsilon_at(delta=1e-5) == baseline.epsilon_at(delta=1e-5)
+
+    def test_shuffled_order_raises(self):
+        cf = self._cf()
+        shuffled = np.random.default_rng(1).permutation(cf.canary_indices)
+        with pytest.raises(ValueError, match="order"):
+            one_run(np.arange(100.0), coin_flip=cf, order=shuffled)
+
+    def test_estimate_carries_identifiers(self):
+        cf = self._cf()
+        est = one_run(np.arange(100.0), coin_flip=cf)
+        np.testing.assert_array_equal(est.canary_indices, cf.canary_indices)

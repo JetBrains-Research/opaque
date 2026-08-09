@@ -55,3 +55,64 @@ def _extract_batch_tensors(
     if isinstance(batch, (list, tuple)):
         return tuple(batch[i] for i in range(len(batch_argnums)))
     return (batch,)
+
+
+def _check_unshuffled(dataloader: Any) -> None:
+    """Raise when a torch ``DataLoader`` would shuffle the scoring order.
+
+    Membership scores are paired positionally with the coin-flip labels, so
+    a shuffled loader silently attaches scores to the wrong labels and the
+    audit reports no leakage that was never measured.  Detects the torch
+    shuffling samplers on both the ``sampler`` and ``batch_sampler.sampler``
+    seats; arbitrary iterables and custom samplers rely on the explicit
+    ``order`` token on :func:`~opaque.auditing.one_run` (see
+    :func:`scoring_order`).
+    """
+    import torch.utils.data as tud
+
+    shuffling = (tud.RandomSampler, tud.SubsetRandomSampler)
+    sampler = getattr(dataloader, "sampler", None)
+    inner = getattr(getattr(dataloader, "batch_sampler", None), "sampler", None)
+    if isinstance(sampler, shuffling) or isinstance(inner, shuffling):
+        raise ValueError(
+            "dataloader is shuffled (RandomSampler/SubsetRandomSampler); "
+            "membership scores must preserve canary order — construct the "
+            "DataLoader with shuffle=False over the canary Subset"
+        )
+
+
+def scoring_order(dataloader: Any) -> Any:
+    """Return the dataset indices ``dataloader`` will score, in order.
+
+    Produces the ``order`` token for :func:`~opaque.auditing.one_run` from
+    the loader itself, so the score-to-label pairing is verified against
+    what was actually iterated rather than against user bookkeeping.
+    Supports the canonical auditing setup: a strictly sequential
+    ``DataLoader`` over ``torch.utils.data.Subset`` (e.g.
+    ``Subset(dataset, coin_flip.canary_indices)``).
+
+    Raises:
+        ValueError: If the loader shuffles, uses a non-sequential sampler
+            (iteration order underivable), or does not wrap a ``Subset``
+            (no index provenance).
+    """
+    import numpy as np
+    import torch.utils.data as tud
+
+    _check_unshuffled(dataloader)
+    sampler = getattr(dataloader, "sampler", None)
+    if sampler is not None and not isinstance(sampler, tud.SequentialSampler):
+        raise ValueError(
+            "scoring_order requires a strictly sequential DataLoader (got "
+            f"sampler {type(sampler).__name__}); the iteration order of a "
+            "custom sampler cannot be derived."
+        )
+    indices = getattr(getattr(dataloader, "dataset", None), "indices", None)
+    if indices is None:
+        raise ValueError(
+            "scoring_order requires a DataLoader over "
+            "torch.utils.data.Subset (e.g. Subset(dataset, "
+            "coin_flip.canary_indices)) so the scored dataset indices are "
+            "recoverable."
+        )
+    return np.asarray(indices)

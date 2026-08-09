@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from opaque.api.auditing.attacks._helpers import (
+    _check_unshuffled,
     _extract_batch_tensors,
     _merge_args,
     _validate_batch_argnums,
@@ -65,6 +66,11 @@ def loss_scores(
         losses (higher = more likely member), optionally adjusted by
         reference scores.
 
+    Raises:
+        ValueError: If ``dataloader`` shuffles (RandomSampler-family
+            sampler) — scores are paired positionally with the coin-flip
+            labels and must preserve canary order.
+
     Example (HuggingFace pattern)::
 
         from torch.utils.data import DataLoader, Subset
@@ -104,6 +110,7 @@ def loss_scores(
     in_dims = tuple(0 if i in batch_argnums else None for i in range(n_args))
     per_example_fn = torch.func.vmap(loss_fn, in_dims=in_dims)
 
+    _check_unshuffled(dataloader)
     all_scores: list[np.ndarray] = []
     with torch.no_grad():
         for batch in dataloader:

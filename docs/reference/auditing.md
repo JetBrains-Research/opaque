@@ -56,6 +56,10 @@ to handle dict-style batches (e.g., HuggingFace).
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
+**Raises** `ValueError` if `dataloader` shuffles (RandomSampler-family
+sampler) — scores are paired positionally with the coin-flip labels and
+must preserve canary order.
+
 ```python
 from torch.utils.data import DataLoader, Subset
 
@@ -103,6 +107,9 @@ This is a white-box attack that differentiates with respect to the first
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
+**Raises** `ValueError` if `dataloader` shuffles (RandomSampler-family
+sampler) — scores must preserve canary order.
+
 ```python
 ref = auditing.gradient_scores(
     loss_fn, initial_params,
@@ -125,10 +132,41 @@ from opaque.auditing.attacks import gradient_scores
 
 ---
 
+### scoring_order
+
+```python
+auditing.scoring_order(dataloader) -> np.ndarray
+```
+
+Return the dataset indices `dataloader` will score, in order — the
+`order` token for [`one_run`](#one_run), derived from the loader itself
+so the score-to-label pairing is verified against what was actually
+iterated rather than user bookkeeping. Supports the canonical setup: a
+strictly sequential `DataLoader` over `torch.utils.data.Subset` (e.g.
+`Subset(dataset, cf.canary_indices)`).
+
+**Raises** `ValueError` if the loader shuffles, uses a non-sequential
+sampler, or does not wrap a `Subset`.
+
+```python
+canary_loader = DataLoader(
+    Subset(dataset, cf.canary_indices.tolist()),
+    batch_size=32, shuffle=False, collate_fn=canary_collate,
+)
+scores = auditing.loss_scores(
+    loss_fn, params, batch_argnums=(1,), dataloader=canary_loader,
+)
+estimate = auditing.one_run(
+    scores, coin_flip=cf, order=auditing.scoring_order(canary_loader),
+)
+```
+
+---
+
 ### one_run
 
 ```python
-auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
+auditing.one_run(scores, *, coin_flip, order=None) -> OneRunEstimate
 ```
 
 Build a one-run privacy estimate from canary scores. Splits scores by
@@ -139,6 +177,8 @@ and returns a frozen estimate.
 |---|---|---|---|
 | `scores` | `np.ndarray` | required | Per-canary membership scores, shape `(num_canaries,)` |
 | `coin_flip` | `CoinFlip` | required | The coin-flip partition |
+| `order` | `np.ndarray \| None` | `None` | Order token: the dataset indices the scores were computed over, in scoring order (produce with [`scoring_order`](#scoring_order)). Mismatch with `canary_indices` raises `ValueError` |
+| `order` | `np.ndarray \| None` | `None` | Order token: the dataset indices the scores were computed over, in scoring order (produce with `auditing.scoring_order(dataloader)`). A mismatch with `coin_flip.canary_indices` raises instead of silently pairing scores with the wrong labels. |
 
 ```python
 estimate = auditing.one_run(scores, coin_flip=cf)
@@ -175,10 +215,12 @@ All indices except held-out canaries. Returns `list[int]` for HuggingFace
 ### split_scores
 
 ```python
-cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
+cf.split_scores(scores, *, order=None) -> tuple[np.ndarray, np.ndarray]
 ```
 
-Split per-canary scores into `(in_scores, out_scores)`.
+Split per-canary scores into `(in_scores, out_scores)`. The optional
+`order` token (scoring-order dataset indices) is verified against
+`canary_indices`; a mismatch raises `ValueError`.
 
 ---
 
@@ -201,6 +243,7 @@ Holds the Pareto-optimal threshold structure and exposes:
 |---|---|---|
 | `n_in` | `int` | Number of held-in canaries |
 | `n_out` | `int` | Number of held-out canaries |
+| `canary_indices` | `np.ndarray \| None` | Stable example identifiers: dataset indices of the audited canaries (always populated by `one_run`) |
 
 ### epsilon_at
 

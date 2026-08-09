@@ -312,3 +312,27 @@ class TestEndToEnd:
         estimate = one_run(scores, coin_flip=cf)
         # Perfect model should give a valid estimate
         assert estimate.eps_delta().epsilon_at(significance=0.05, delta=1e-5) >= 0.0
+
+
+def test_shuffled_dataloader_raises(linear_setup):
+    """#371: a shuffled loader would pair scores with the wrong labels."""
+    params, dataset, loss_fn = linear_setup
+    loader = DataLoader(dataset, batch_size=4, shuffle=True)
+    with pytest.raises(ValueError, match="shuffle"):
+        auditing.gradient_scores(
+            loss_fn, params, batch_argnums=(1, 2), dataloader=loader
+        )
+
+
+def test_subset_random_sampler_raises(linear_setup):
+    """#371 review: SubsetRandomSampler is a shuffling sampler too."""
+    from torch.utils.data import SubsetRandomSampler
+
+    params, dataset, loss_fn = linear_setup
+    loader = DataLoader(
+        dataset, batch_size=8, sampler=SubsetRandomSampler(list(range(40)))
+    )
+    with pytest.raises(ValueError, match="shuffle"):
+        auditing.gradient_scores(
+            loss_fn, params, batch_argnums=(1, 2), dataloader=loader
+        )

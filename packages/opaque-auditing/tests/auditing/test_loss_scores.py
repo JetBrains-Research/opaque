@@ -353,3 +353,60 @@ class TestEndToEnd:
         estimate = one_run(scores, coin_flip=cf)
         assert isinstance(estimate, OneRunEstimate)
         assert estimate.n_in + estimate.n_out == 20
+
+
+def test_shuffled_dataloader_raises(linear_setup):
+    """#371: a shuffled loader would pair scores with the wrong labels."""
+    params, dataset, loss_fn = linear_setup
+    loader = DataLoader(dataset, batch_size=4, shuffle=True)
+    with pytest.raises(ValueError, match="shuffle"):
+        auditing.loss_scores(loss_fn, params, batch_argnums=(1, 2), dataloader=loader)
+
+
+class TestScoringOrder:
+    """#371: the order token is producible from the scoring loader itself."""
+
+    def test_sequential_subset_order_flows_into_one_run(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+        loader = DataLoader(
+            Subset(dataset, cf.canary_indices.tolist()),
+            batch_size=8,
+            shuffle=False,
+        )
+        order = auditing.scoring_order(loader)
+        np.testing.assert_array_equal(order, cf.canary_indices)
+        scores = auditing.loss_scores(
+            loss_fn, params, batch_argnums=(1, 2), dataloader=loader
+        )
+        est = one_run(scores, coin_flip=cf, order=order)
+        np.testing.assert_array_equal(est.canary_indices, cf.canary_indices)
+
+    def test_shuffled_loader_rejected(self, linear_setup):
+        _params, dataset, _loss_fn = linear_setup
+        loader = DataLoader(
+            Subset(dataset, list(range(40))), batch_size=8, shuffle=True
+        )
+        with pytest.raises(ValueError, match="shuffle"):
+            auditing.scoring_order(loader)
+
+    def test_non_subset_loader_rejected(self, linear_setup):
+        _params, dataset, _loss_fn = linear_setup
+        loader = DataLoader(dataset, batch_size=8, shuffle=False)
+        with pytest.raises(ValueError, match="Subset"):
+            auditing.scoring_order(loader)
+
+
+def test_batch_sampler_wrapped_shuffle_raises(linear_setup):
+    """#371 review: RandomSampler hidden inside batch_sampler is detected."""
+    from torch.utils.data import BatchSampler, RandomSampler
+
+    params, dataset, loss_fn = linear_setup
+    loader = DataLoader(
+        dataset,
+        batch_sampler=BatchSampler(
+            RandomSampler(dataset), batch_size=8, drop_last=False
+        ),
+    )
+    with pytest.raises(ValueError, match="shuffle"):
+        auditing.loss_scores(loss_fn, params, batch_argnums=(1, 2), dataloader=loader)

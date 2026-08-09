@@ -37,7 +37,12 @@ __all__ = ["OneRunEstimate", "one_run"]
 _MIN_GRID_SIZE = 16
 
 
-def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
+def one_run(
+    scores: np.ndarray,
+    *,
+    coin_flip: CoinFlip,
+    order: np.ndarray | None = None,
+) -> OneRunEstimate:
     """Build a one-run privacy estimate from canary scores.
 
     Splits scores by the coin-flip partition, precomputes the
@@ -47,6 +52,11 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         scores: Per-canary membership scores, shape ``(num_canaries,)``.
             Higher score = more likely a training member.
         coin_flip: The :class:`~opaque.auditing.CoinFlip` partition.
+        order: Optional explicit order token — the dataset indices the
+            scores were computed over, in scoring order.  Verified against
+            ``coin_flip.canary_indices``; a mismatch (e.g. a shuffled
+            loader) raises instead of silently producing a meaningless
+            estimate.
 
     Returns:
         A :class:`OneRunEstimate` with precomputed threshold structure.
@@ -67,7 +77,7 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         estimate = auditing.one_run(scores, coin_flip=cf)
         print(estimate.eps_delta().epsilon_at(delta=1e-5))
     """
-    in_scores, out_scores = coin_flip.split_scores(scores)
+    in_scores, out_scores = coin_flip.split_scores(scores, order=order)
 
     if in_scores.size == 0 or out_scores.size == 0:
         raise ValueError("Both in_scores and out_scores must be non-empty")
@@ -90,6 +100,7 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         fp_counts=fp_counts,
         in_scores=in_scores,
         out_scores=out_scores,
+        canary_indices=coin_flip.canary_indices,
     )
 
 
@@ -115,6 +126,10 @@ class OneRunEstimate:
     fp_counts: np.ndarray
     in_scores: np.ndarray
     out_scores: np.ndarray
+    #: Stable example identifiers: the dataset indices of the audited
+    #: canaries, in the order the scores were split.  Always populated by
+    #: :func:`one_run`; ``None`` only for directly-constructed estimates.
+    canary_indices: np.ndarray | None = None
 
     def __repr__(self) -> str:
         return (

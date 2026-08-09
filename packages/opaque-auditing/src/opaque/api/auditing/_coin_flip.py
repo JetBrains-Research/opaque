@@ -94,12 +94,22 @@ class CoinFlip:
         """
         return Subset(dataset, self.train_indices(len(dataset)))
 
-    def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def split_scores(
+        self,
+        scores: np.ndarray,
+        *,
+        order: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.
 
         Args:
             scores: Membership scores, shape ``(num_canaries,)``, in the
                 same order as ``canary_indices``.
+            order: Optional explicit order token — the dataset indices the
+                scores were computed over, in scoring order.  Verified
+                against ``canary_indices``; a mismatch (e.g. a shuffled
+                loader) raises instead of silently pairing scores with the
+                wrong coin-flip labels.
 
         Returns:
             ``(in_scores, out_scores)`` tuple.
@@ -109,6 +119,14 @@ class CoinFlip:
             raise ValueError(
                 f"Expected {self.num_canaries} scores, got shape {scores.shape}"
             )
+        if order is not None:
+            order = np.asarray(order)
+            if not np.array_equal(order, self.canary_indices):
+                raise ValueError(
+                    "score order does not match the coin-flip canary order; "
+                    "scores must be computed over an unshuffled loader in "
+                    "canary_indices order"
+                )
         return scores[self._in_mask], scores[~self._in_mask]
 
 

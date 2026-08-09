@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from opaque.api.auditing.attacks._helpers import (
+    _check_unshuffled,
     _extract_batch_tensors,
     _merge_args,
     _validate_batch_argnums,
@@ -75,6 +76,9 @@ def gradient_scores(
 
     Raises:
         ValueError: If ``0 in batch_argnums`` (params must be at position 0).
+        ValueError: If ``dataloader`` shuffles (RandomSampler-family
+            sampler) — scores are paired positionally with the coin-flip
+            labels and must preserve canary order.
 
     Example::
 
@@ -103,6 +107,7 @@ def gradient_scores(
 
     grad_fn = torch.func.grad(loss_fn)
 
+    _check_unshuffled(dataloader)
     all_scores: list[float] = []
     with torch.no_grad():
         for batch in dataloader:
