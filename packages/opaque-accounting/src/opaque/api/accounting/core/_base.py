@@ -62,16 +62,15 @@ _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 def _register_dp_process_with_serialization(cls) -> None:
     """Hook each concrete process into :mod:`opaque.serialization`."""
     from opaque.api.accounting.core._process_codec import (
-        _load_dp_process,
-        _serialize_dp_process,
+        _generic_from_state_dict,
+        _generic_state_dict,
     )
     from opaque.serialization import register_serializer
 
-    register_serializer(
-        cls,
-        lambda obj: _serialize_dp_process(obj),
-        lambda _template, sd: _load_dp_process(dict(sd)),
-    )
+    # Named (not lambda) pair: the codec's iterative loader identity-checks
+    # the registered load fn against ``_generic_from_state_dict`` to decide
+    # whether a class has a CUSTOM serializer that must fire on load.
+    register_serializer(cls, _generic_state_dict, _generic_from_state_dict)
 
 
 class DpProcess(ABC):

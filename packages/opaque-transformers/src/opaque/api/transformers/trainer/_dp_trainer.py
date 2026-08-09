@@ -30,6 +30,7 @@ import logging
 import math
 import os
 import shutil
+import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -253,6 +254,34 @@ class _TrainingContext:
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
+
+
+@contextlib.contextmanager
+def _deep_json_recursion(limit: int = 30_000):
+    """Temporarily raise the recursion limit around stdlib json of deep
+    accountant wire dicts.
+
+    The DpProcess codec walks composition spines iteratively, but stdlib
+    ``json``'s C encoder/scanner still recurse once per nesting level and
+    hit the default limit near ~1000 — an accountant with a thousand-plus
+    heterogeneous accounted steps could otherwise not be checkpointed or
+    resumed.  Bounded and restored on exit; 30k covers >25k-step spines.
+
+    Do NOT raise the cap: the recursion limit is what keeps the json C
+    scanner inside the native stack (empirically a hard segfault near
+    depth 100k under limit 150k), and on Python 3.13+ the C recursion is
+    additionally capped by ``Py_C_RECURSION_LIMIT`` regardless of this
+    limit.  ``sys.setrecursionlimit`` is process-global; the save/load
+    paths are single-threaded per process (DDP is per-process), so the
+    temporary bump cannot race another thread's limit.
+    """
+    old = sys.getrecursionlimit()
+    if limit > old:
+        sys.setrecursionlimit(limit)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(old)
 
 
 class DPTrainer:
@@ -4769,8 +4798,11 @@ class DPTrainer:
 
     def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
         path = Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME
-        with path.open("w") as f:
-            json.dump(opaque_state_dict(accountant), f, indent=2)
+        # Compact JSON (no indent): pretty-printing writes O(n^2)
+        # indentation over a deep composition spine — ~800 MB at 10k
+        # heterogeneous steps vs ~3 MB compact.
+        with path.open("w") as f, _deep_json_recursion():
+            json.dump(opaque_state_dict(accountant), f)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
         """Snapshot this rank's Python/NumPy/torch RNG state to disk.
@@ -4956,7 +4988,10 @@ class DPTrainer:
         runtime_payload = ckpt.load_dp_runtime_state(
             str(Path(ckpt_dir) / ckpt.DP_STATE_NAME)
         )
-        with (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f:
+        with (
+            (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f,
+            _deep_json_recursion(),
+        ):
             accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
 

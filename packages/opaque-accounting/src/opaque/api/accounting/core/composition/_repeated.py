@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from opaque.api.accounting.core._base import DpProcess, Pld
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Repeated(DpProcess):
     """Homogeneous k-fold self-composition."""
 
@@ -21,6 +21,21 @@ class Repeated(DpProcess):
         from ._iter_hash import iter_hash
 
         return iter_hash(self)
+
+    def __eq__(self, other: object) -> bool:
+        # Iterative tree walk (dataclass semantics preserved) — depth
+        # bounded by heap, not stack.  See ``_iter_eq``.
+        if not isinstance(other, DpProcess):
+            return NotImplemented
+        from ._iter_eq import iter_eq
+
+        return iter_eq(self, other)
+
+    def __repr__(self) -> str:
+        # Iterative tree walk, string-identical to the dataclass repr.
+        from ._iter_repr import iter_repr
+
+        return iter_repr(self)
 
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
