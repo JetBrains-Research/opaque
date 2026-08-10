@@ -3119,6 +3119,10 @@ the base key and the current step counter, then increments the counter.</p>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="auditing">Auditing<a class="headerlink" href="#auditing" title="Permanent link">&para;</a></h3>
+<p><code>coin_flip()</code> derives separate audit subkeys for canary selection and inclusion
+coins. Training mechanisms should use their own RNG domains so their
+randomness remains independent from auditing, even with a shared reproducible
+root seed.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.auditing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">auditing</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
