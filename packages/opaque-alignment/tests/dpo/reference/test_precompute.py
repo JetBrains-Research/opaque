@@ -17,6 +17,7 @@ import datasets
 import pytest
 import torch
 
+from opaque.api.alignment.dpo.reference import _precompute
 from opaque.api.alignment.dpo.reference._precompute import (
     compute_ref_logprobs_for_dataset,
 )
@@ -339,6 +340,18 @@ def test_cache_hit_restores_private_permissions(tmp_path) -> None:
     assert ref.calls == 0
     assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o700
     assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+
+def test_cache_permission_error_explains_remediation(tmp_path, monkeypatch) -> None:
+    """Permission failures identify the safe cache configuration options."""
+
+    def raise_permission_error(_path, _mode):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(_precompute.Path, "chmod", raise_permission_error)
+
+    with pytest.raises(PermissionError, match="pass a private writable cache_dir"):
+        _precompute._secure_cache_path(str(tmp_path / "cache" / "logps.safetensors"))
 
 
 def test_disabled_cache_does_not_create_artifacts(tmp_path) -> None:

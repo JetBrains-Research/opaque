@@ -183,11 +183,17 @@ def _load_cache(
 def _secure_cache_path(path: str) -> None:
     """Create the cache root and restrict any existing archive to its owner."""
     cache_dir = Path(path).parent
-    cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    cache_dir.chmod(0o700)
-    cache_file = Path(path)
-    if cache_file.exists():
-        cache_file.chmod(0o600)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        cache_dir.chmod(0o700)
+        cache_file = Path(path)
+        if cache_file.exists():
+            cache_file.chmod(0o600)
+    except PermissionError as error:
+        raise PermissionError(
+            f"cannot secure reference-logprob cache directory {cache_dir}; "
+            "pass a private writable cache_dir or set use_cache=False"
+        ) from error
 
 
 def _save_cache(
