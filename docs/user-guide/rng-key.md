@@ -173,6 +173,11 @@ grad_fn, clip_state = adaptive_clipped_grad(
 
 ### Auditing
 
+`coin_flip()` derives separate audit subkeys for canary selection and inclusion
+coins. Training mechanisms should use their own RNG domains so their
+randomness remains independent from auditing, even with a shared reproducible
+root seed.
+
 ```python
 import opaque.auditing as auditing
 from opaque.random import key
