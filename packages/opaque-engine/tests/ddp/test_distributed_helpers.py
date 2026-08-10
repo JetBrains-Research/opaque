@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import torch
 import torch.distributed as dist
-from engine_ddp_helpers import _spawn_gloo, _worker_gather_optional_ragged
+from engine_ddp_helpers import (
+    _spawn_gloo,
+    _worker_gather_optional_ragged,
+    _worker_scalar_exactness_gloo,
+)
 
 from opaque.distributed import (
     gather_for_metrics,
@@ -62,3 +66,11 @@ def test_gather_optional_and_ragged_payloads() -> None:
 
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_gather_optional_ragged)
+
+
+def test_scalar_reductions_preserve_integer_and_float64_exactness() -> None:
+    if not dist.is_available() or not dist.is_gloo_available():
+        import pytest
+
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_scalar_exactness_gloo)

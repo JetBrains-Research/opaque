@@ -1694,7 +1694,7 @@ class DPTrainer:
 
                             n_tokens = int(
                                 reduce_scalar(
-                                    float(n_tokens),
+                                    n_tokens,
                                     op="sum",
                                     device=self._device,
                                 )
@@ -2662,10 +2662,10 @@ class DPTrainer:
 
             total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
             loss_samples = int(
-                reduce_scalar(float(loss_samples), op="sum", device=self._device)
+                reduce_scalar(loss_samples, op="sum", device=self._device)
             )
             total_samples = int(
-                reduce_scalar(float(total_samples), op="sum", device=self._device)
+                reduce_scalar(total_samples, op="sum", device=self._device)
             )
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
