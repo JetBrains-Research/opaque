@@ -72,7 +72,18 @@ except ModuleNotFoundError as import_error:
         logit_scaling=0,
         label_smoothing=0.0,
     ):
-        """Compute unreduced cross-entropy with the PyTorch fallback."""
+        """Compute unreduced cross-entropy with the PyTorch fallback.
+
+        Args:
+            logits: Logits with vocabulary as the final dimension.
+            labels: Target indices with ``-100`` marking ignored positions.
+            logit_softcapping: Optional symmetric logit softcap.
+            logit_scaling: Optional multiplicative logit scale.
+            label_smoothing: Cross-entropy label-smoothing weight.
+
+        Returns:
+            Per-token losses with the same shape as ``labels``.
+        """
         logits = _apply_logit_transforms(logits, logit_softcapping, logit_scaling)
         flat_logits = logits.reshape(-1, logits.shape[-1])
         flat_labels = labels.reshape(-1)
@@ -85,7 +96,15 @@ except ModuleNotFoundError as import_error:
         return loss_flat.reshape(labels.shape)
 
     def opaque_selective_log_softmax(logits, indices):
-        """Select log-softmax values, returning zero for ignored indices."""
+        """Select log-softmax values, returning zero for ignored indices.
+
+        Args:
+            logits: Logits with vocabulary as the final dimension.
+            indices: Vocabulary indices to select; ``-100`` is ignored.
+
+        Returns:
+            Selected log-probabilities with the same shape as ``indices``.
+        """
         log_probs = torch.log_softmax(logits, dim=-1)
         # Match the Triton kernel's ignore convention: -100 returns 0.
         ignore = indices == -100
@@ -107,7 +126,20 @@ except ModuleNotFoundError as import_error:
         label_smoothing=0.0,
         use_token_scaling=False,
     ):
-        """Compute per-token linear cross-entropy with the chunked fallback."""
+        """Compute per-token linear cross-entropy with the chunked fallback.
+
+        Args:
+            hidden_states: Token hidden states.
+            weight: Output-projection weight matrix.
+            labels: Target token indices.
+            ignore_index: Target value excluded from the loss.
+            logit_softcapping: Optional symmetric logit softcap.
+            label_smoothing: Cross-entropy label-smoothing weight.
+            use_token_scaling: Whether to apply detached token-confidence scaling.
+
+        Returns:
+            The mean loss over non-ignored target tokens.
+        """
         return linear_cross_entropy_chunked(
             hidden_states,
             weight,
@@ -119,35 +151,119 @@ except ModuleNotFoundError as import_error:
         )
 
     def opaque_swiglu(gate, up):
-        """Apply the SiLU-gated linear-unit activation."""
+        """Apply the SiLU-gated linear-unit activation.
+
+        Args:
+            gate: Gate-projection activations.
+            up: Up-projection activations matching ``gate``.
+
+        Returns:
+            The elementwise SwiGLU activation.
+        """
         return F.silu(gate) * up
 
     def opaque_geglu_exact(gate, up):
-        """Apply exact GeGLU using PyTorch GELU."""
+        """Apply exact GeGLU using PyTorch GELU.
+
+        Args:
+            gate: Gate-projection activations.
+            up: Up-projection activations matching ``gate``.
+
+        Returns:
+            The elementwise exact-GeGLU activation.
+        """
         return F.gelu(gate, approximate="none") * up
 
     def opaque_geglu_approx(gate, up):
-        """Apply tanh-approximated GeGLU using PyTorch GELU."""
+        """Apply tanh-approximated GeGLU using PyTorch GELU.
+
+        Args:
+            gate: Gate-projection activations.
+            up: Up-projection activations matching ``gate``.
+
+        Returns:
+            The elementwise approximate-GeGLU activation.
+        """
         return F.gelu(gate, approximate="tanh") * up
 
     def opaque_rope(Q, cos, sin):
-        """Apply rotary position embeddings to a single tensor."""
+        """Apply rotary position embeddings to a single tensor.
+
+        Args:
+            Q: Query or key tensor to rotate.
+            cos: Cosine position-embedding coefficients.
+            sin: Sine position-embedding coefficients.
+
+        Returns:
+            The rotated tensor.
+        """
         return Q * cos + _rotate_half(Q) * sin
 
     def opaque_rope_qk(Q, K, cos, sin, rope_indices=None):
-        """Apply rotary position embeddings to query and key tensors."""
+        """Apply rotary position embeddings to query and key tensors.
+
+        Args:
+            Q: Query tensor to rotate.
+            K: Key tensor to rotate.
+            cos: Cosine position-embedding coefficients.
+            sin: Sine position-embedding coefficients.
+            rope_indices: Unused compatibility argument.
+
+        Returns:
+            A tuple containing the rotated query and key tensors.
+        """
         return (Q * cos + _rotate_half(Q) * sin, K * cos + _rotate_half(K) * sin)
 
     def opaque_slow_rope(Q, cos, sin, position_ids=None):
-        """Apply the compatibility rotary-position-embedding fallback."""
+        """Apply the compatibility rotary-position-embedding fallback.
+
+        Args:
+            Q: Query or key tensor to rotate.
+            cos: Cosine position-embedding coefficients.
+            sin: Sine position-embedding coefficients.
+            position_ids: Unused compatibility argument.
+
+        Returns:
+            The rotated tensor.
+        """
         return opaque_rope(Q, cos, sin)
 
     def opaque_lora_w(X, W, A, B, scaling):
-        """Apply a LoRA delta to one linear projection."""
+        """Apply a LoRA delta to one linear projection.
+
+        Args:
+            X: Input activations.
+            W: Base projection weight.
+            A: LoRA down-projection weight.
+            B: LoRA up-projection weight.
+            scaling: LoRA scaling factor.
+
+        Returns:
+            The projected activations with the LoRA delta applied.
+        """
         return X @ W.transpose(-1, -2) + (X @ A @ B) * scaling
 
     def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
-        """Apply LoRA deltas to query, key, and value projections."""
+        """Apply LoRA deltas to query, key, and value projections.
+
+        Args:
+            X: Input activations.
+            Wq: Base query-projection weight.
+            Aq: Query LoRA down-projection weight.
+            Bq: Query LoRA up-projection weight.
+            Sq: Query LoRA scaling factor.
+            Wk: Base key-projection weight.
+            Ak: Key LoRA down-projection weight.
+            Bk: Key LoRA up-projection weight.
+            Sk: Key LoRA scaling factor.
+            Wv: Base value-projection weight.
+            Av: Value LoRA down-projection weight.
+            Bv: Value LoRA up-projection weight.
+            Sv: Value LoRA scaling factor.
+
+        Returns:
+            A tuple containing projected query, key, and value tensors.
+        """
         Q = X @ Wq.transpose(-1, -2) + (X @ Aq @ Bq) * Sq
         K = X @ Wk.transpose(-1, -2) + (X @ Ak @ Bk) * Sk
         V = X @ Wv.transpose(-1, -2) + (X @ Av @ Bv) * Sv
@@ -169,7 +285,27 @@ except ModuleNotFoundError as import_error:
         Sd,
         activation="swiglu",
     ):
-        """Apply LoRA deltas to a gated MLP with the selected activation."""
+        """Apply LoRA deltas to a gated MLP with the selected activation.
+
+        Args:
+            X: Input activations.
+            Wg: Base gate-projection weight.
+            Ag: Gate LoRA down-projection weight.
+            Bg: Gate LoRA up-projection weight.
+            Sg: Gate LoRA scaling factor.
+            Wu: Base up-projection weight.
+            Au: Up LoRA down-projection weight.
+            Bu: Up LoRA up-projection weight.
+            Su: Up LoRA scaling factor.
+            Wd: Base down-projection weight.
+            Ad: Down LoRA down-projection weight.
+            Bd: Down LoRA up-projection weight.
+            Sd: Down LoRA scaling factor.
+            activation: GLU activation name or numeric kernel selector.
+
+        Returns:
+            The MLP output with all LoRA deltas applied.
+        """
         gate = X @ Wg.transpose(-1, -2) + (X @ Ag @ Bg) * Sg
         up = X @ Wu.transpose(-1, -2) + (X @ Au @ Bu) * Su
 
@@ -198,7 +334,20 @@ except ModuleNotFoundError as import_error:
         in_place_backward=False,
         row_mode=None,
     ):
-        """Apply RMS normalization with the PyTorch fallback."""
+        """Apply RMS normalization with the PyTorch fallback.
+
+        Args:
+            x: Input tensor to normalize.
+            weight: RMSNorm scale parameter.
+            eps: Numerical-stability constant.
+            offset: Optional additive offset to ``weight``.
+            casting_mode: Precision behavior matching the model family.
+            in_place_backward: Unused compatibility argument.
+            row_mode: Unused compatibility argument.
+
+        Returns:
+            The RMS-normalized tensor.
+        """
         del in_place_backward, row_mode
         orig = x.shape
         x2 = x.reshape(-1, x.shape[-1])
@@ -229,7 +378,20 @@ except ModuleNotFoundError as import_error:
         *,
         in_place_backward=False,
     ):
-        """Add a residual and apply RMS normalization with the fallback."""
+        """Add a residual and apply RMS normalization with the fallback.
+
+        Args:
+            x: Current layer activations.
+            residual: Residual tensor to add to ``x``.
+            weight: RMSNorm scale parameter.
+            eps: Numerical-stability constant.
+            offset: Optional additive offset to ``weight``.
+            casting_mode: Precision behavior matching the model family.
+            in_place_backward: Unused compatibility argument.
+
+        Returns:
+            A tuple containing normalized activations and the residual sum.
+        """
         del in_place_backward
         S = x + residual
         y = opaque_rms_norm(

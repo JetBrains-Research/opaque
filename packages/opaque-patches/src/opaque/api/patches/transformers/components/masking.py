@@ -2,7 +2,14 @@
 
 
 def apply_module_masking_patch(mod) -> bool:
-    """Rebinds masking_utils functions in a model module's local namespace."""
+    """Rebind causal-mask helpers in a model module's local namespace.
+
+    Args:
+        mod: Imported Hugging Face model module to inspect and patch.
+
+    Returns:
+        ``True`` when at least one causal-mask helper was replaced.
+    """
     from opaque.api.patches.transformers.runtime.masking import (
         vmap_create_causal_mask,
         vmap_create_sliding_window_causal_mask,
