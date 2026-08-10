@@ -2815,16 +2815,25 @@ and sampling imports for <code>opaque.dpftrl</code> to run
 <a href="https://arxiv.org/abs/2405.00675">SPPO</a>. TR-DPO reference sync uses the
 EMA-updated reference policy variant exposed on the trainer surface.</p>
 <h2 id="1-reference-log-probabilities">1. Reference log-probabilities<a class="headerlink" href="#1-reference-log-probabilities" title="Permanent link">&para;</a></h2>
-<p>Run the reference once over the dataset, <em>before</em> training, and cache the
-per-example chosen/rejected logps.
+<p>Run the frozen reference once over the dataset, <em>before</em> training, and cache
+the per-example chosen/rejected logps when reuse is useful.
 <code>opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset</code> takes a
 <code>ref(batch) -&gt; {col: (B,) tensor}</code> callable (wrap your model into one),
 runs a single <code>torch.no_grad()</code> pass, gathers across ranks, and caches to
 a content-addressed <code>.safetensors</code> file whose name is the SHA-256 digest of
-<code>(dataset._fingerprint or repr(dataset), repr(cache_key), output_columns)</code>.
+<code>(dataset._fingerprint, cache_identity, output_columns)</code>.
 By default that file lives under <code>&lt;tempdir&gt;/opaque_ref_cache/</code>; pass
 <code>cache_dir=</code> to pin a different location. A cache hit skips the forward
-entirely.</p>
+entirely. Cache directories are owner-only and archive files are owner-readable
+and writable only because they contain private per-example values. Remove a
+selected cache directory when its contents are no longer needed.
+This protects the artifacts from other local accounts; it does not isolate
+processes running as the same account, so choose and clean cache locations
+according to that threat model.</p>
+<p>Pass <code>use_cache=False</code> for one-shot results that cannot be reused. TR-DPO does
+this automatically for its initial seed columns: it recomputes reference logps
+from the evolving EMA reference before every training and evaluation step, so
+those seed values are never persisted.</p>
 <p>On disk, the cache stores the requested tensors under their native torch dtypes
 via <code>opaque.serialization.state_dict(...)</code> and <code>safetensors</code>; for example, a
 bf16 reference forward stays bf16 in the archive. The only dtype demotion
