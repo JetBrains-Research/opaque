@@ -173,6 +173,10 @@ grad_fn, clip_state = adaptive_clipped_grad(
 
 ### Auditing
 
+Use a distinct domain for audit setup and every training mechanism. This keeps
+canary selection and inclusion coins independent from the randomness that the
+audited mechanism consumes, even when they share a reproducible root seed.
+
 ```python
 import opaque.auditing as auditing
 from opaque.random import key
