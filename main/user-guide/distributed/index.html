@@ -3080,8 +3080,8 @@ process group and raise <code>RuntimeError</code>.</p>
 <td>In-place AllReduce on a PyTree (op: <code>"sum"</code>, <code>"mean"</code>, <code>"max"</code>, <code>"min"</code>, <code>"product"</code>)</td>
 </tr>
 <tr>
-<td><code>reduce_scalar(value, op)</code></td>
-<td>Reduce a Python float across ranks</td>
+<td><code>reduce_scalar(value, op, device, *, compute_dtype)</code></td>
+<td>Reduce a Python float or integer across ranks; floats default to fp32 and can request fp64, while integers use an exact int64 path</td>
 </tr>
 <tr>
 <td><code>all_reduce(tensor, op)</code></td>
