@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""vmap-compatible PEFT LoRA MLP replacements for supported model families."""
+
 from __future__ import annotations
 
 from ._utils import _active_lora_dtype, _extract_lora_params

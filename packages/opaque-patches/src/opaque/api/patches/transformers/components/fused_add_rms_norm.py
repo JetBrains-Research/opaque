@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Fused residual-add and RMSNorm replacements for supported transformers."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

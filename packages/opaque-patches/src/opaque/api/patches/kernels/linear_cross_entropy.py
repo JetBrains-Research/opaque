@@ -523,6 +523,8 @@ else:
 
 @dataclass(slots=True)
 class LSEReturn:
+    """Intermediate log-sum-exp values returned by the linear CE kernel."""
+
     lse: torch.Tensor
     neg_correct_logit: torch.Tensor
     sum_logits: torch.Tensor | None
@@ -652,9 +654,19 @@ def _backward_impl(
     """Launch backward kernel.
 
     Args:
+        do: Upstream gradient for the per-token loss.
+        e: Token hidden states.
+        c: Output-projection weight matrix.
+        lse: Per-token log-sum-exp values from the forward pass.
+        targets: Target token indices.
+        valids: Optional mask selecting valid token positions.
+        softcap: Optional logit softcap value.
+        compute_de: Whether to compute hidden-state gradients.
+        compute_dc: Whether to compute output-projection gradients.
         num_dc_samples: When > 1, produces per-sample dC of shape (num_dc_samples, V, D).
             Tokens are split by sample_id = token_position // tokens_per_sample.
         tokens_per_sample: Number of tokens per sample (required when num_dc_samples > 1).
+        label_smoothing: Cross-entropy label-smoothing weight.
 
     Returns (de, dc) cast to input dtype.
     """

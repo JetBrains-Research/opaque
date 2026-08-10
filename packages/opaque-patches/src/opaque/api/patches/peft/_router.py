@@ -170,6 +170,10 @@ def apply_peft_model_patches(
 
     Args:
         model: A PEFT-wrapped model with LoRA adapters.
+        performance: Whether to enable fused LoRA performance patches.
+        compat: Reserved compatibility switch accepted by the common patch API.
+        **kwargs: Additional patch options. ``lora`` overrides
+            ``performance`` when supplied.
     """
     lora = kwargs.get("lora", performance)
     if not lora or not _lora_patching_allowed():

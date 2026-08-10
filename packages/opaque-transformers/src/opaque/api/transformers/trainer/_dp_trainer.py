@@ -793,6 +793,8 @@ class DPTrainer:
                 ``args.resume_from_checkpoint``. ``True`` auto-detects the latest
                 ``checkpoint-*`` under ``args.output_dir``. A string or
                 ``PathLike`` is treated as the concrete checkpoint directory.
+            ignore_keys_for_eval: Model-output keys to omit while evaluating
+                during training.
 
         Resume semantics under DP differ from HF's batch-replay model:
 

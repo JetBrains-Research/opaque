@@ -75,6 +75,8 @@ def set_discretization(
         tail_mass_truncation: Chernoff tail budget during composition (Rust default 1e-15).
         num_mc_samples: Number of Monte Carlo samples for MC-based accounting. Default: 100,000.
         seed: RNG seed for Monte Carlo reproducibility. Default: 42.
+        max_conv_grid: Maximum convolution grid size before the native
+            accountant uses its bounded-memory composition path.
 
     Example::
 
@@ -122,6 +124,7 @@ def get_discretization(
         tail_mass_truncation: Composition tail budget (query-time override).
         num_mc_samples: Number of Monte Carlo samples (query-time override).
         seed: RNG seed for Monte Carlo (query-time override).
+        max_conv_grid: Maximum convolution grid size (query-time override).
 
     Returns:
         Resolved DiscretizationConfig (always concrete, never None).

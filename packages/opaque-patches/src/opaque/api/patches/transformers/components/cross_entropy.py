@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""vmap-compatible causal-language-model cross-entropy replacements."""
+
 from __future__ import annotations
 
 import torch

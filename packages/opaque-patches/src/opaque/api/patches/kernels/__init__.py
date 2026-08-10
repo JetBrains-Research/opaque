@@ -72,6 +72,7 @@ except ModuleNotFoundError as import_error:
         logit_scaling=0,
         label_smoothing=0.0,
     ):
+        """Compute unreduced cross-entropy with the PyTorch fallback."""
         logits = _apply_logit_transforms(logits, logit_softcapping, logit_scaling)
         flat_logits = logits.reshape(-1, logits.shape[-1])
         flat_labels = labels.reshape(-1)
@@ -84,6 +85,7 @@ except ModuleNotFoundError as import_error:
         return loss_flat.reshape(labels.shape)
 
     def opaque_selective_log_softmax(logits, indices):
+        """Select log-softmax values, returning zero for ignored indices."""
         log_probs = torch.log_softmax(logits, dim=-1)
         # Match the Triton kernel's ignore convention: -100 returns 0.
         ignore = indices == -100
@@ -105,6 +107,7 @@ except ModuleNotFoundError as import_error:
         label_smoothing=0.0,
         use_token_scaling=False,
     ):
+        """Compute per-token linear cross-entropy with the chunked fallback."""
         return linear_cross_entropy_chunked(
             hidden_states,
             weight,
@@ -116,27 +119,35 @@ except ModuleNotFoundError as import_error:
         )
 
     def opaque_swiglu(gate, up):
+        """Apply the SiLU-gated linear-unit activation."""
         return F.silu(gate) * up
 
     def opaque_geglu_exact(gate, up):
+        """Apply exact GeGLU using PyTorch GELU."""
         return F.gelu(gate, approximate="none") * up
 
     def opaque_geglu_approx(gate, up):
+        """Apply tanh-approximated GeGLU using PyTorch GELU."""
         return F.gelu(gate, approximate="tanh") * up
 
     def opaque_rope(Q, cos, sin):
+        """Apply rotary position embeddings to a single tensor."""
         return Q * cos + _rotate_half(Q) * sin
 
     def opaque_rope_qk(Q, K, cos, sin, rope_indices=None):
+        """Apply rotary position embeddings to query and key tensors."""
         return (Q * cos + _rotate_half(Q) * sin, K * cos + _rotate_half(K) * sin)
 
     def opaque_slow_rope(Q, cos, sin, position_ids=None):
+        """Apply the compatibility rotary-position-embedding fallback."""
         return opaque_rope(Q, cos, sin)
 
     def opaque_lora_w(X, W, A, B, scaling):
+        """Apply a LoRA delta to one linear projection."""
         return X @ W.transpose(-1, -2) + (X @ A @ B) * scaling
 
     def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+        """Apply LoRA deltas to query, key, and value projections."""
         Q = X @ Wq.transpose(-1, -2) + (X @ Aq @ Bq) * Sq
         K = X @ Wk.transpose(-1, -2) + (X @ Ak @ Bk) * Sk
         V = X @ Wv.transpose(-1, -2) + (X @ Av @ Bv) * Sv
@@ -158,6 +169,7 @@ except ModuleNotFoundError as import_error:
         Sd,
         activation="swiglu",
     ):
+        """Apply LoRA deltas to a gated MLP with the selected activation."""
         gate = X @ Wg.transpose(-1, -2) + (X @ Ag @ Bg) * Sg
         up = X @ Wu.transpose(-1, -2) + (X @ Au @ Bu) * Su
 
@@ -186,6 +198,7 @@ except ModuleNotFoundError as import_error:
         in_place_backward=False,
         row_mode=None,
     ):
+        """Apply RMS normalization with the PyTorch fallback."""
         del in_place_backward, row_mode
         orig = x.shape
         x2 = x.reshape(-1, x.shape[-1])
@@ -216,6 +229,7 @@ except ModuleNotFoundError as import_error:
         *,
         in_place_backward=False,
     ):
+        """Add a residual and apply RMS normalization with the fallback."""
         del in_place_backward
         S = x + residual
         y = opaque_rms_norm(

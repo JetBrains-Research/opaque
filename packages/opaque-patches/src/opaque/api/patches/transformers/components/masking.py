@@ -1,3 +1,6 @@
+"""Model-local causal-mask replacement wiring."""
+
+
 def apply_module_masking_patch(mod) -> bool:
     """Rebinds masking_utils functions in a model module's local namespace."""
     from opaque.api.patches.transformers.runtime.masking import (
