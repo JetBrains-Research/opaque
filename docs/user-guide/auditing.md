@@ -116,9 +116,9 @@ The four-step API separates concerns: **partition** (before training),
 
 ### Step 1: Partition before training
 
-Call `auditing.coin_flip` after preparing the dataset. Derive the audit key
-from a domain separate from the training mechanism key so canary selection and
-coins remain independent of mechanism randomness:
+Call `auditing.coin_flip` after preparing the dataset. It derives distinct
+audit subkeys for canary selection and coins internally; training mechanisms
+should use their own RNG domains:
 
 ```python
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
