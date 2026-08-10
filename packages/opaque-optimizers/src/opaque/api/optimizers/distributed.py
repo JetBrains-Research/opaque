@@ -71,7 +71,7 @@ def _assert_int_equal(value: int, *, name: str) -> None:
 
 
 def _assert_str_equal(value: str, *, name: str) -> None:
-    """Cross-rank string equality via 64-bit blake2b fingerprint.
+    """Cross-rank string equality via 48-bit blake2b fingerprint.
 
     Python's built-in :func:`hash` is salted per process, so we hash the
     UTF-8 bytes with a stable hasher and compare the resulting integer exactly.

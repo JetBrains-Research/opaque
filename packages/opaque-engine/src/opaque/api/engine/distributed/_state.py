@@ -135,6 +135,8 @@ def reduce_scalar(
     if isinstance(value, int) and compute_dtype is not None:
         raise TypeError("compute_dtype is only supported for floating-point values.")
     if not is_distributed():
+        if isinstance(value, int) and op == "mean":
+            return float(value)
         return value
 
     if device is None:

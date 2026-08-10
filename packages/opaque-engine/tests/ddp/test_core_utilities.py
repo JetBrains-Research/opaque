@@ -102,6 +102,12 @@ class TestNonDistributed:
         assert isinstance(result, int)
         assert result == value
 
+    def test_reduce_scalar_integer_mean_returns_float_without_distribution(self):
+        result = reduce_scalar(2**24 + 1, op="mean")
+
+        assert isinstance(result, float)
+        assert result == float(2**24 + 1)
+
     @pytest.mark.parametrize("bad_dtype", [torch.int64, torch.bool, torch.complex64])
     def test_reduce_scalar_rejects_nonfloating_compute_dtype(self, bad_dtype):
         with pytest.raises(TypeError, match="real floating-point"):
