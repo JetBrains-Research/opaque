@@ -94,6 +94,29 @@ class TestNonDistributed:
         # Should not raise
         barrier()
 
+    def test_reduce_scalar_preserves_integer_type_without_distribution(self):
+        value = 2**24 + 1
+
+        result = reduce_scalar(value, op="sum")
+
+        assert isinstance(result, int)
+        assert result == value
+
+    def test_reduce_scalar_integer_mean_returns_float_without_distribution(self):
+        result = reduce_scalar(2**24 + 1, op="mean")
+
+        assert isinstance(result, float)
+        assert result == float(2**24 + 1)
+
+    @pytest.mark.parametrize("bad_dtype", [torch.int64, torch.bool, torch.complex64])
+    def test_reduce_scalar_rejects_nonfloating_compute_dtype(self, bad_dtype):
+        with pytest.raises(TypeError, match="real floating-point"):
+            reduce_scalar(1.0, compute_dtype=bad_dtype)
+
+    def test_reduce_scalar_rejects_compute_dtype_for_integer_values(self):
+        with pytest.raises(TypeError, match="only supported for floating-point"):
+            reduce_scalar(1, compute_dtype=torch.float64)
+
 
 class TestAllReduceValidation:
     """Tests for all_reduce/all_reduce_ parameter validation."""

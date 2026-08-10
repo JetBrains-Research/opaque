@@ -43,22 +43,20 @@ def sync_perf_state(state: PerfState) -> PerfState:
     )
 
     assert_scalar_equal(
-        float(state.num_steps),
+        state.num_steps,
         name="PerfState.num_steps",
         device=device,
     )
 
     total_time = reduce_scalar(float(state.total_time), op="max", device=device)
-    total_samples = int(
-        reduce_scalar(float(state.total_samples), op="sum", device=device)
-    )
+    total_samples = int(reduce_scalar(state.total_samples, op="sum", device=device))
     max_peak = reduce_scalar(float(state.max_peak_memory_gb), op="max", device=device)
 
     total_time_stable = reduce_scalar(
         float(state.total_time_stable), op="max", device=device
     )
     total_samples_stable = int(
-        reduce_scalar(float(state.total_samples_stable), op="sum", device=device)
+        reduce_scalar(state.total_samples_stable, op="sum", device=device)
     )
 
     last_step = state.last_step
@@ -66,9 +64,7 @@ def sync_perf_state(state: PerfState) -> PerfState:
         last_time = reduce_scalar(
             float(last_step.step_time_sec), op="max", device=device
         )
-        last_samples = int(
-            reduce_scalar(float(last_step.batch_size), op="sum", device=device)
-        )
+        last_samples = int(reduce_scalar(last_step.batch_size, op="sum", device=device))
         last_peak = reduce_scalar(
             float(last_step.memory_peak_gb), op="max", device=device
         )
@@ -97,7 +93,7 @@ def _sync_last(last: StepPerf | None, device: torch.device) -> StepPerf | None:
     if last is None:
         return None
     last_time = reduce_scalar(float(last.step_time_sec), op="max", device=device)
-    last_samples = int(reduce_scalar(float(last.batch_size), op="sum", device=device))
+    last_samples = int(reduce_scalar(last.batch_size, op="sum", device=device))
     last_peak = reduce_scalar(float(last.memory_peak_gb), op="max", device=device)
     return StepPerf(
         step_time_sec=last_time,
@@ -124,7 +120,7 @@ def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
 
     for name, stage in tracker._stages.items():
         assert_scalar_equal(
-            float(stage.num_steps),
+            stage.num_steps,
             name=f"PerfStage({name!r}).num_steps",
             device=device,
         )
@@ -134,7 +130,7 @@ def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
         s._warmup_steps = stage._warmup_steps
         s.total_time = reduce_scalar(float(stage.total_time), op="max", device=device)
         s.total_samples = int(
-            reduce_scalar(float(stage.total_samples), op="sum", device=device)
+            reduce_scalar(stage.total_samples, op="sum", device=device)
         )
         s.max_peak_memory_gb = reduce_scalar(
             float(stage.max_peak_memory_gb), op="max", device=device

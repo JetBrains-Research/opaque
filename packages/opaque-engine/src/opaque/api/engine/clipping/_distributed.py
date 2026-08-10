@@ -204,7 +204,7 @@ def _sync_clipping_rate(
 
 def _sync_batch_size(batch_size: int) -> int:
     """Sum batch_size across ranks."""
-    return int(reduce_scalar(float(batch_size), op="sum"))
+    return int(reduce_scalar(batch_size, op="sum"))
 
 
 def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
