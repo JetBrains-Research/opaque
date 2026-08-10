@@ -208,6 +208,8 @@ class _GeGLUExactBackward(torch.autograd.Function):
 
 
 class Opaque_GeGLU_Exact(torch.autograd.Function):
+    """Exact GeGLU autograd kernel with a custom vmap rule."""
+
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
@@ -469,6 +471,8 @@ class _GeGLUApproxBackward(torch.autograd.Function):
 
 
 class Opaque_GeGLU_Approx(torch.autograd.Function):
+    """Tanh-approximated GeGLU autograd kernel with a custom vmap rule."""
+
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
@@ -547,12 +551,30 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
 
 # Convenience wrappers
 def opaque_geglu_exact(gate, up):
+    """Apply exact GeGLU to matching CUDA tensors.
+
+    Args:
+        gate: Gate-projection tensor.
+        up: Up-projection tensor with the same shape as ``gate``.
+
+    Returns:
+        The elementwise exact-GeGLU activation.
+    """
     ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_exact")
     gate, up = follow_autocast(gate, up)
     return Opaque_GeGLU_Exact.apply(gate, up)
 
 
 def opaque_geglu_approx(gate, up):
+    """Apply tanh-approximated GeGLU to matching CUDA tensors.
+
+    Args:
+        gate: Gate-projection tensor.
+        up: Up-projection tensor with the same shape as ``gate``.
+
+    Returns:
+        The elementwise approximate-GeGLU activation.
+    """
     ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_approx")
     gate, up = follow_autocast(gate, up)
     return Opaque_GeGLU_Approx.apply(gate, up)

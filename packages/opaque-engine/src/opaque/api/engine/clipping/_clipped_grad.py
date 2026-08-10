@@ -177,6 +177,8 @@ def clipped_grad(
             clip-norm and the across-batch sum). ``None`` (default) auto-promotes
             bf16/fp16 to float32 for numerical stability. Independent of
             ``dtype`` (which controls the *output* dtype).
+        second_moment: Whether to accumulate the clipped-gradient second
+            moment required by DP-FTRL noise mechanisms.
     Returns:
         Tuple of (:class:`ClippedGradFn`, clip_state) where:
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.

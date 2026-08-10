@@ -210,6 +210,8 @@ class _SwiGLUBackward(torch.autograd.Function):
 
 
 class Opaque_SwiGLU(torch.autograd.Function):
+    """SwiGLU autograd kernel with a custom vmap rule."""
+
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
