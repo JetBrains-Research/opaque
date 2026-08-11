@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Subset, TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import gradient_scores, one_run
+from opaque.auditing.types import CanaryScores
 from opaque.random import key
 
 
@@ -293,10 +294,6 @@ class TestEndToEnd:
         params = true_w.clone()
 
         cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
-        loader = DataLoader(
-            Subset(dataset, cf.canary_indices.tolist()),
-            batch_size=32,
-        )
 
         def loss_fn(params, x, y):
             return F.mse_loss(x @ params, y, reduction="sum")
@@ -305,9 +302,24 @@ class TestEndToEnd:
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=32,
         )
-        assert scores.shape == (len(cf.canary_indices),)
+        assert isinstance(scores, CanaryScores)
+        np.testing.assert_array_equal(scores.canary_indices, cf.canary_indices)
+
+        # Verified mode scores the same values a sequential legacy loader
+        # produces — only the identifier binding is new.
+        legacy = gradient_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            dataloader=DataLoader(
+                Subset(dataset, cf.canary_indices.tolist()), batch_size=32
+            ),
+        )
+        np.testing.assert_allclose(scores.scores, legacy, atol=1e-6)
 
         estimate = one_run(scores, coin_flip=cf)
         # Perfect model should give a valid estimate

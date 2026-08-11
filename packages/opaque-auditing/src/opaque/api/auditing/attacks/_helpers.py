@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from opaque.api.auditing._coin_flip import CanaryScores
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from opaque.api.auditing._coin_flip import CoinFlip
 
 
 def _validate_batch_argnums(batch_argnums: tuple[int, ...], n_non_batch: int) -> None:
@@ -64,9 +73,9 @@ def _check_unshuffled(dataloader: Any) -> None:
     a shuffled loader silently attaches scores to the wrong labels and the
     audit reports no leakage that was never measured.  Detects the torch
     shuffling samplers on both the ``sampler`` and ``batch_sampler.sampler``
-    seats; arbitrary iterables and custom samplers rely on the explicit
-    ``order`` token on :func:`~opaque.auditing.one_run` (see
-    :func:`scoring_order`).
+    seats.  Applies to legacy (bare ``dataloader=``) scoring only; verified
+    scoring joins scores to labels by canary identifier and never depends
+    on iteration order.
     """
     import torch.utils.data as tud
 
@@ -76,43 +85,170 @@ def _check_unshuffled(dataloader: Any) -> None:
     if isinstance(sampler, shuffling) or isinstance(inner, shuffling):
         raise ValueError(
             "dataloader is shuffled (RandomSampler/SubsetRandomSampler); "
-            "membership scores must preserve canary order — construct the "
-            "DataLoader with shuffle=False over the canary Subset"
+            "bare scores are paired positionally, so the scoring order "
+            "must be reproducible. Construct the DataLoader with "
+            "shuffle=False, or switch to verified scoring (coin_flip= + "
+            "dataset=), which pairs scores by canary identifier and does "
+            "not depend on order"
         )
 
 
-def scoring_order(dataloader: Any) -> Any:
-    """Return the dataset indices ``dataloader`` will score, in order.
+class _IndexedCanaries:
+    """Map-style dataset yielding ``(position, example)`` canary pairs."""
 
-    Produces the ``order`` token for :func:`~opaque.auditing.one_run` from
-    the loader itself, so the score-to-label pairing is verified against
-    what was actually iterated rather than against user bookkeeping.
-    Supports the canonical auditing setup: a strictly sequential
-    ``DataLoader`` over ``torch.utils.data.Subset`` (e.g.
-    ``Subset(dataset, coin_flip.canary_indices)``).
+    def __init__(self, dataset: Any, canary_indices: np.ndarray) -> None:
+        self._dataset = dataset
+        self._canary_indices = canary_indices
 
-    Raises:
-        ValueError: If the loader shuffles, uses a non-sequential sampler
-            (iteration order underivable), or does not wrap a ``Subset``
-            (no index provenance).
+    def __len__(self) -> int:
+        return len(self._canary_indices)
+
+    def __getitem__(self, position: int) -> tuple[int, Any]:
+        return position, self._dataset[int(self._canary_indices[position])]
+
+
+def _canary_loader(
+    dataset: Any,
+    coin_flip: CoinFlip,
+    batch_size: int,
+    collate_fn: Callable | None,
+) -> Any:
+    """Build the internal DataLoader for verified canary scoring.
+
+    Each batch arrives as ``(positions, collated_examples)``: the canary
+    positions ride alongside the examples through collation, so every
+    score is paired with the identifier of the example that produced it —
+    the pairing never relies on the loader's iteration order.
     """
-    import numpy as np
     import torch.utils.data as tud
 
+    example_collate = tud.default_collate if collate_fn is None else collate_fn
+
+    def indexed_collate(batch: list[tuple[int, Any]]) -> tuple[list[int], Any]:
+        positions = [position for position, _ in batch]
+        examples = [example for _, example in batch]
+        return positions, example_collate(examples)
+
+    return tud.DataLoader(
+        _IndexedCanaries(dataset, coin_flip.canary_indices),
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=indexed_collate,
+    )
+
+
+def _resolve_scoring_mode(
+    *,
+    dataloader: Any,
+    dataset: Any,
+    coin_flip: CoinFlip | None,
+    batch_size: int | None,
+    collate_fn: Callable | None,
+    reference_scores: np.ndarray | CanaryScores | None,
+) -> tuple[Any, bool]:
+    """Validate scoring arguments and return ``(loader, verified)``.
+
+    Verified mode (``coin_flip=`` + ``dataset=``) builds an internal
+    identifier-carrying loader; legacy mode passes ``dataloader`` through
+    unchanged and keeps the bare-array contract.
+    """
+    if coin_flip is not None or dataset is not None:
+        if coin_flip is None or dataset is None:
+            raise ValueError("verified scoring requires both coin_flip= and dataset=")
+        if dataloader is not None:
+            raise ValueError(
+                "pass either dataloader= or (coin_flip=, dataset=), not "
+                "both; verified scoring builds its own loader over the "
+                "canaries"
+            )
+        if reference_scores is not None and not isinstance(
+            reference_scores, CanaryScores
+        ):
+            raise TypeError(
+                "verified scoring requires reference_scores with canary "
+                "identifiers; compute the reference with coin_flip= and "
+                "dataset= as well"
+            )
+        loader = _canary_loader(
+            dataset,
+            coin_flip,
+            32 if batch_size is None else batch_size,
+            collate_fn,
+        )
+        return loader, True
+
+    if dataloader is None:
+        raise ValueError("either dataloader= or (coin_flip=, dataset=) is required")
+    if batch_size is not None or collate_fn is not None:
+        raise ValueError(
+            "batch_size= and collate_fn= apply to verified scoring "
+            "(coin_flip= + dataset=); configure them on your own "
+            "dataloader otherwise"
+        )
+    if isinstance(reference_scores, CanaryScores):
+        raise TypeError(
+            "reference_scores carries canary identifiers but scoring uses "
+            "a bare dataloader; score with coin_flip= and dataset= so both "
+            "passes are verified (or subtract reference_scores.scores "
+            "yourself)"
+        )
     _check_unshuffled(dataloader)
-    sampler = getattr(dataloader, "sampler", None)
-    if sampler is not None and not isinstance(sampler, tud.SequentialSampler):
+    return dataloader, False
+
+
+def _iter_scoring_batches(
+    loader: Any, verified: bool
+) -> Iterator[tuple[list[int] | None, Any]]:
+    """Yield ``(positions, batch)``; positions is None for legacy loaders."""
+    if verified:
+        for positions, batch in loader:
+            yield [int(position) for position in positions], batch
+    else:
+        for batch in loader:
+            yield None, batch
+
+
+def _aligned_reference(ids: np.ndarray, reference_scores: CanaryScores) -> np.ndarray:
+    """Return reference score values aligned to ``ids`` by identifier."""
+    ref_ids = reference_scores.canary_indices
+    if ref_ids.size == 0:
+        if ids.size:
+            raise ValueError(
+                "reference_scores are empty but scores are not; compute "
+                "the reference over the same coin_flip and dataset"
+            )
+        return np.empty(0, dtype=float)
+    sorter = np.argsort(ref_ids, kind="stable")
+    pos = np.searchsorted(ref_ids[sorter], ids)
+    pos = np.minimum(pos, ref_ids.size - 1)
+    if not np.all(ref_ids[sorter][pos] == ids):
         raise ValueError(
-            "scoring_order requires a strictly sequential DataLoader (got "
-            f"sampler {type(sampler).__name__}); the iteration order of a "
-            "custom sampler cannot be derived."
+            "reference_scores do not cover the scored canaries; compute "
+            "the reference over the same coin_flip and dataset"
         )
-    indices = getattr(getattr(dataloader, "dataset", None), "indices", None)
-    if indices is None:
-        raise ValueError(
-            "scoring_order requires a DataLoader over "
-            "torch.utils.data.Subset (e.g. Subset(dataset, "
-            "coin_flip.canary_indices)) so the scored dataset indices are "
-            "recoverable."
-        )
-    return np.asarray(indices)
+    return reference_scores.scores[sorter[pos]]
+
+
+def _bind_scores(
+    scores: np.ndarray,
+    positions: list[int] | None,
+    *,
+    coin_flip: CoinFlip | None,
+    reference_scores: np.ndarray | CanaryScores | None,
+) -> np.ndarray | CanaryScores:
+    """Apply reference calibration and, when verified, attach identifiers."""
+    if coin_flip is None:
+        if reference_scores is not None:
+            reference_scores = np.asarray(reference_scores)
+            if reference_scores.shape != scores.shape:
+                raise ValueError(
+                    f"reference_scores shape {reference_scores.shape} does "
+                    f"not match scores shape {scores.shape}"
+                )
+            scores = scores - reference_scores
+        return scores
+
+    ids = coin_flip.canary_indices[np.asarray(positions, dtype=int)]
+    if reference_scores is not None:
+        scores = scores - _aligned_reference(ids, reference_scores)
+    return CanaryScores(scores, canary_indices=ids)

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Subset, TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import loss_scores, one_run
-from opaque.auditing.types import OneRunEstimate
+from opaque.auditing.types import CanaryScores, OneRunEstimate
 from opaque.random import key
 
 
@@ -291,16 +291,15 @@ class TestEndToEnd:
         params, dataset, loss_fn = linear_setup
 
         cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
-        loader = DataLoader(
-            Subset(dataset, cf.canary_indices.tolist()),
-            batch_size=32,
-        )
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=32,
         )
+        assert isinstance(scores, CanaryScores)
 
         estimate = one_run(scores, coin_flip=cf)
 
@@ -311,7 +310,7 @@ class TestEndToEnd:
         assert estimate.attack_beta_at(alpha=0.1) >= 0.0
 
     def test_with_collate_fn(self):
-        """Test workflow with custom collate_fn on DataLoader."""
+        """Test workflow with custom collate_fn on the internal loader."""
         torch.manual_seed(42)
         n_samples = 50
         dim = 8
@@ -338,16 +337,14 @@ class TestEndToEnd:
             return (torch.stack([b["input_ids"] for b in batch]),)
 
         cf = auditing.coin_flip(dataset, num_canaries=20, key=key(42))
-        loader = DataLoader(
-            Subset(dataset, cf.canary_indices.tolist()),
-            batch_size=16,
-            collate_fn=collate_fn,
-        )
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=16,
+            collate_fn=collate_fn,
         )
 
         estimate = one_run(scores, coin_flip=cf)
@@ -363,38 +360,157 @@ def test_shuffled_dataloader_raises(linear_setup):
         auditing.loss_scores(loss_fn, params, batch_argnums=(1, 2), dataloader=loader)
 
 
-class TestScoringOrder:
-    """#371: the order token is producible from the scoring loader itself."""
+class TestVerifiedScoring:
+    """#371: verified scoring binds every score to its canary identifier."""
 
-    def test_sequential_subset_order_flows_into_one_run(self, linear_setup):
+    def test_identifiers_match_partition(self, linear_setup):
         params, dataset, loss_fn = linear_setup
         cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
-        loader = DataLoader(
-            Subset(dataset, cf.canary_indices.tolist()),
-            batch_size=8,
-            shuffle=False,
-        )
-        order = auditing.scoring_order(loader)
-        np.testing.assert_array_equal(order, cf.canary_indices)
         scores = auditing.loss_scores(
-            loss_fn, params, batch_argnums=(1, 2), dataloader=loader
+            loss_fn, params, batch_argnums=(1, 2), coin_flip=cf, dataset=dataset
         )
-        est = one_run(scores, coin_flip=cf, order=order)
+        assert isinstance(scores, CanaryScores)
+        np.testing.assert_array_equal(scores.canary_indices, cf.canary_indices)
+        est = one_run(scores, coin_flip=cf)
         np.testing.assert_array_equal(est.canary_indices, cf.canary_indices)
 
-    def test_shuffled_loader_rejected(self, linear_setup):
-        _params, dataset, _loss_fn = linear_setup
-        loader = DataLoader(
-            Subset(dataset, list(range(40))), batch_size=8, shuffle=True
+    def test_matches_legacy_sequential_loader_values(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+        verified = auditing.loss_scores(
+            loss_fn, params, batch_argnums=(1, 2), coin_flip=cf, dataset=dataset
         )
-        with pytest.raises(ValueError, match="shuffle"):
-            auditing.scoring_order(loader)
+        legacy = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            dataloader=DataLoader(
+                Subset(dataset, cf.canary_indices.tolist()), batch_size=32
+            ),
+        )
+        np.testing.assert_allclose(verified.scores, legacy, atol=1e-6)
 
-    def test_non_subset_loader_rejected(self, linear_setup):
-        _params, dataset, _loss_fn = linear_setup
-        loader = DataLoader(dataset, batch_size=8, shuffle=False)
-        with pytest.raises(ValueError, match="Subset"):
-            auditing.scoring_order(loader)
+    def test_batch_size_does_not_affect_verified_scores(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+        small = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=7,
+        )
+        large = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=64,
+        )
+        np.testing.assert_allclose(small.scores, large.scores, atol=1e-5)
+
+    def test_verified_reference_aligns_by_identifier(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+        ref = auditing.loss_scores(
+            loss_fn,
+            torch.randn_like(params),
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+        )
+        perm = np.random.default_rng(0).permutation(40)
+        ref_shuffled = CanaryScores(
+            ref.scores[perm], canary_indices=ref.canary_indices[perm]
+        )
+        calibrated = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+            reference_scores=ref,
+        )
+        calibrated_shuffled_ref = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+            reference_scores=ref_shuffled,
+        )
+        np.testing.assert_allclose(
+            calibrated.scores, calibrated_shuffled_ref.scores, atol=1e-6
+        )
+
+
+class TestScoringModeValidation:
+    """Argument validation for the two scoring modes."""
+
+    def _setup(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(0))
+        loader = DataLoader(dataset, batch_size=8)
+        return params, dataset, loss_fn, cf, loader
+
+    def test_dataloader_and_dataset_are_exclusive(self, linear_setup):
+        params, dataset, loss_fn, cf, loader = self._setup(linear_setup)
+        with pytest.raises(ValueError, match="not both"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                dataloader=loader,
+                coin_flip=cf,
+                dataset=dataset,
+            )
+
+    def test_coin_flip_requires_dataset(self, linear_setup):
+        params, _dataset, loss_fn, cf, _loader = self._setup(linear_setup)
+        with pytest.raises(ValueError, match="both coin_flip= and dataset="):
+            loss_scores(loss_fn, params, batch_argnums=(1, 2), coin_flip=cf)
+
+    def test_neither_source_raises(self, linear_setup):
+        params, _dataset, loss_fn, _cf, _loader = self._setup(linear_setup)
+        with pytest.raises(ValueError, match="required"):
+            loss_scores(loss_fn, params, batch_argnums=(1, 2))
+
+    def test_batch_size_with_dataloader_raises(self, linear_setup):
+        params, _dataset, loss_fn, _cf, loader = self._setup(linear_setup)
+        with pytest.raises(ValueError, match="verified scoring"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                dataloader=loader,
+                batch_size=16,
+            )
+
+    def test_bare_reference_with_verified_scoring_raises(self, linear_setup):
+        params, dataset, loss_fn, cf, _loader = self._setup(linear_setup)
+        with pytest.raises(TypeError, match="identifiers"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=dataset,
+                reference_scores=np.zeros(10),
+            )
+
+    def test_verified_reference_with_bare_dataloader_raises(self, linear_setup):
+        params, _dataset, loss_fn, _cf, loader = self._setup(linear_setup)
+        ref = CanaryScores(np.zeros(3), canary_indices=np.arange(3))
+        with pytest.raises(TypeError, match="bare dataloader"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                dataloader=loader,
+                reference_scores=ref,
+            )
 
 
 def test_batch_sampler_wrapped_shuffle_raises(linear_setup):

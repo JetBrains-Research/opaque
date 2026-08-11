@@ -1357,14 +1357,18 @@ def main():
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
-    # Build canary DataLoader for auditing
-    canary_loader = None
-    if args.audit and audit_cf is not None:
-        canary_loader = DataLoader(
-            audit_cf.canary_subset(audit_dataset),
+    # Verified canary scoring: loss_scores builds the canary loader
+    # internally and binds each score to its canary identifier.
+    def score_canaries(params, reference_scores=None):
+        return auditing.loss_scores(
+            per_example_loss_fn,
+            params,
+            batch_argnums=(1,),
+            coin_flip=audit_cf,
+            dataset=audit_dataset,
             batch_size=args.audit_batch_size,
-            shuffle=False,
             collate_fn=collate,
+            reference_scores=reference_scores,
         )
 
     # Auditing helper: compute scores and run one-run estimator
@@ -1372,13 +1376,7 @@ def main():
         """Score canaries and report audit metrics. Returns OneRunEstimate or None."""
         if not args.audit or audit_cf is None:
             return None
-        scores = auditing.loss_scores(
-            per_example_loss_fn,
-            trainable,
-            batch_argnums=(1,),
-            dataloader=canary_loader,
-            reference_scores=audit_ref_scores,
-        )
+        scores = score_canaries(trainable, reference_scores=audit_ref_scores)
         return auditing.one_run(scores, coin_flip=audit_cf)
 
     def _audit_method(estimate):
@@ -1996,14 +1994,9 @@ def main():
     # Paper Algorithm 3: score = loss(w0, x) − loss(wℓ, x), so we need w0 losses.
     if args.audit and audit_cf is not None:
         print("\nComputing reference scores on untrained model...")
-        audit_ref_scores = auditing.loss_scores(
-            per_example_loss_fn,
-            trainable_params,
-            batch_argnums=(1,),
-            dataloader=canary_loader,
-        )
+        audit_ref_scores = score_canaries(trainable_params)
         print(
-            f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
+            f"  Reference scores: mean={audit_ref_scores.scores.mean():.4f}, std={audit_ref_scores.scores.std():.4f}"
         )
 
     # Step-0 eval — baseline before any training step.  Logs the calibrated

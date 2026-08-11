@@ -3,7 +3,7 @@
 import numpy as np
 
 from opaque.auditing import one_run
-from opaque.auditing.types import CoinFlip
+from opaque.auditing.types import CanaryScores, CoinFlip
 from opaque.random import key
 
 
@@ -25,7 +25,7 @@ def _make_estimate(in_scores, out_scores):
     scores = np.empty(n_in + n_out)
     scores[mask] = in_scores
     scores[~mask] = out_scores
-    return one_run(scores, coin_flip=cf)
+    return one_run(CanaryScores(scores, canary_indices=canary_indices), coin_flip=cf)
 
 
 def test_basic_audit_workflow():

@@ -25,7 +25,7 @@ from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
 
 if TYPE_CHECKING:
-    from opaque.api.auditing._coin_flip import CoinFlip
+    from opaque.api.auditing._coin_flip import CanaryScores, CoinFlip
     from opaque.random.types import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
@@ -37,33 +37,32 @@ __all__ = ["OneRunEstimate", "one_run"]
 _MIN_GRID_SIZE = 16
 
 
-def one_run(
-    scores: np.ndarray,
-    *,
-    coin_flip: CoinFlip,
-    order: np.ndarray | None = None,
-) -> OneRunEstimate:
+def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
     """Build a one-run privacy estimate from canary scores.
 
-    Splits scores by the coin-flip partition, precomputes the raw
-    empirical ROC, and returns a frozen estimate.
+    Joins scores to the coin-flip partition by canary identifier,
+    precomputes the raw empirical ROC, and returns a frozen estimate.
+    The join makes scoring order irrelevant: identifiers that do not
+    cover the partition's canaries one-to-one raise instead of silently
+    producing a meaningless estimate.
 
     Args:
-        scores: Per-canary membership scores, shape ``(num_canaries,)``.
-            Higher score = more likely a training member.
+        scores: Per-canary membership scores carrying canary
+            identifiers, as returned by the scoring functions in
+            verified mode (``coin_flip=`` + ``dataset=``).  Higher score
+            = more likely a training member.  For scores computed
+            outside the built-in scorers, attest identifiers explicitly
+            with ``CanaryScores(values, canary_indices=...)``.
         coin_flip: The :class:`~opaque.auditing.CoinFlip` partition.
-        order: Optional explicit order token — the dataset indices the
-            scores were computed over, in scoring order.  Verified against
-            ``coin_flip.canary_indices``; a mismatch (e.g. a shuffled
-            loader) raises instead of silently producing a meaningless
-            estimate.
 
     Returns:
         A :class:`OneRunEstimate` with precomputed threshold structure.
 
     Raises:
-        ValueError: If either partition is empty or any score is NaN or
-            infinite.
+        TypeError: If ``scores`` is a bare array without identifiers.
+        ValueError: If the identifiers do not join one-to-one onto the
+            partition's canaries, either partition is empty, or any
+            score is NaN or infinite.
 
     Example::
 
@@ -73,11 +72,11 @@ def one_run(
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         scores = auditing.loss_scores(loss_fn, params,
                                        batch_argnums=(1,),
-                                       dataloader=canary_loader)
+                                       coin_flip=cf, dataset=dataset)
         estimate = auditing.one_run(scores, coin_flip=cf)
         print(estimate.eps_delta().epsilon_at(delta=1e-5))
     """
-    in_scores, out_scores = coin_flip.split_scores(scores, order=order)
+    in_scores, out_scores = coin_flip.split_scores(scores)
 
     if in_scores.size == 0 or out_scores.size == 0:
         raise ValueError("Both in_scores and out_scores must be non-empty")

@@ -33,49 +33,58 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 ```python
 auditing.loss_scores(
     loss_fn, *args, *,
-    batch_argnums, dataloader,
-    reference_scores=None,
-) -> np.ndarray
+    batch_argnums,
+    dataloader=None, reference_scores=None,
+    coin_flip=None, dataset=None,
+    batch_size=None, collate_fn=None,
+) -> CanaryScores | np.ndarray
 ```
 
 Compute per-example membership scores as negative loss. Higher score =
 lower loss = more likely a training member.
 
-The `dataloader` must yield batches compatible with `loss_fn`. Each batch
-should be a tensor (single `batch_argnums`) or a tuple of tensors
-(multiple `batch_argnums`). Use a custom `collate_fn` on the DataLoader
-to handle dict-style batches (e.g., HuggingFace).
+**Verified mode** (`coin_flip=` + `dataset=`): builds an internal loader
+over the partition's canaries and pairs every score with the dataset index
+of the example that produced it. Returns [`CanaryScores`](#canaryscores) —
+the form [`one_run`](#one_run) requires. The pairing is joined by
+identifier, so it cannot be misaligned by loader order.
+
+**Legacy mode** (`dataloader=`): scores an arbitrary iterable of batches
+and returns a bare array with no identifiers. Each batch should be a
+tensor (single `batch_argnums`) or a tuple of tensors (multiple
+`batch_argnums`).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
 | `*args` | any | — | Non-batched arguments (e.g., model parameters) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
-| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
-| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model) |
+| `dataloader` | iterable | `None` | Legacy mode: yields tensors or tuples of tensors |
+| `reference_scores` | `CanaryScores \| np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model); `CanaryScores` in verified mode, aligned by identifier |
+| `coin_flip` | `CoinFlip` | `None` | Verified mode: the audit partition to score against |
+| `dataset` | any | `None` | Verified mode: the full dataset the partition was created from |
+| `batch_size` | `int` | `32` | Verified mode: batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Verified mode: collates raw canary examples into a batch for `loss_fn`; must not reorder examples within a batch |
 
-**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) in verified mode, else
+`np.ndarray` of shape `(n,)`. Higher = more likely member.
 
-**Raises** `ValueError` if `dataloader` shuffles (RandomSampler-family
-sampler) — scores are paired positionally with the coin-flip labels and
-must preserve canary order.
+**Raises** `ValueError` if the mode arguments are inconsistent or a legacy
+`dataloader` shuffles (RandomSampler-family sampler); `TypeError` if
+`reference_scores` verification does not match the scoring mode.
 
 ```python
-from torch.utils.data import DataLoader, Subset
-
 def canary_collate(examples):
     batch = data_collator(examples)
     return (batch["input_ids"].to(device),)
 
-canary_loader = DataLoader(
-    Subset(dataset, cf.canary_indices.tolist()),
-    batch_size=32, collate_fn=canary_collate,
-)
 scores = auditing.loss_scores(
     loss_fn, params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
+    batch_size=32, collate_fn=canary_collate,
 )
+estimate = auditing.one_run(scores, coin_flip=cf)
 ```
 
 ---
@@ -85,9 +94,11 @@ scores = auditing.loss_scores(
 ```python
 auditing.gradient_scores(
     loss_fn, *args, *,
-    batch_argnums, dataloader,
-    reference_scores=None,
-) -> np.ndarray
+    batch_argnums,
+    dataloader=None, reference_scores=None,
+    coin_flip=None, dataset=None,
+    batch_size=None, collate_fn=None,
+) -> CanaryScores | np.ndarray
 ```
 
 Compute per-example membership scores as negative squared gradient norm.
@@ -97,29 +108,40 @@ This is a white-box attack that differentiates with respect to the first
 `loss_fn` argument (model parameters). Therefore `0` must not appear in
 `batch_argnums`.
 
+Supports the same two scoring modes as [`loss_scores`](#loss_scores):
+verified (`coin_flip=` + `dataset=`, returns
+[`CanaryScores`](#canaryscores)) and legacy (`dataloader=`, returns a bare
+array).
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example scalar loss function |
 | `*args` | any | — | Non-batched arguments; first arg is differentiated |
 | `batch_argnums` | `tuple[int, ...]` | required | Batched argument indices; must exclude 0 |
-| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
-| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract |
+| `dataloader` | iterable | `None` | Legacy mode: yields tensors or tuples of tensors |
+| `reference_scores` | `CanaryScores \| np.ndarray` | `None` | Baseline scores to subtract; `CanaryScores` in verified mode |
+| `coin_flip` | `CoinFlip` | `None` | Verified mode: the audit partition to score against |
+| `dataset` | any | `None` | Verified mode: the full dataset the partition was created from |
+| `batch_size` | `int` | `32` | Verified mode: batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Verified mode: must not reorder examples within a batch |
 
-**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) in verified mode, else
+`np.ndarray` of shape `(n,)`. Higher = more likely member.
 
-**Raises** `ValueError` if `dataloader` shuffles (RandomSampler-family
-sampler) — scores must preserve canary order.
+**Raises** `ValueError` if the mode arguments are inconsistent or a legacy
+`dataloader` shuffles (RandomSampler-family sampler); `TypeError` if
+`reference_scores` verification does not match the scoring mode.
 
 ```python
 ref = auditing.gradient_scores(
     loss_fn, initial_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
 )
 scores = auditing.gradient_scores(
     loss_fn, trained_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
     reference_scores=ref,
 )
 ```
@@ -132,53 +154,25 @@ from opaque.auditing.attacks import gradient_scores
 
 ---
 
-### scoring_order
-
-```python
-auditing.scoring_order(dataloader) -> np.ndarray
-```
-
-Return the dataset indices `dataloader` will score, in order — the
-`order` token for [`one_run`](#one_run), derived from the loader itself
-so the score-to-label pairing is verified against what was actually
-iterated rather than user bookkeeping. Supports the canonical setup: a
-strictly sequential `DataLoader` over `torch.utils.data.Subset` (e.g.
-`Subset(dataset, cf.canary_indices)`).
-
-**Raises** `ValueError` if the loader shuffles, uses a non-sequential
-sampler, or does not wrap a `Subset`.
-
-```python
-canary_loader = DataLoader(
-    Subset(dataset, cf.canary_indices.tolist()),
-    batch_size=32, shuffle=False, collate_fn=canary_collate,
-)
-scores = auditing.loss_scores(
-    loss_fn, params, batch_argnums=(1,), dataloader=canary_loader,
-)
-estimate = auditing.one_run(
-    scores, coin_flip=cf, order=auditing.scoring_order(canary_loader),
-)
-```
-
----
-
 ### one_run
 
 ```python
-auditing.one_run(scores, *, coin_flip, order=None) -> OneRunEstimate
+auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
 ```
 
-Build a one-run privacy estimate from canary scores. Splits scores by
-the coin-flip partition, precomputes the empirical ROC,
-and returns a frozen estimate.
+Build a one-run privacy estimate from canary scores. Joins scores to the
+coin-flip partition by canary identifier, precomputes the empirical ROC,
+and returns a frozen estimate. The join makes scoring order irrelevant;
+identifiers that do not cover the partition's canaries one-to-one raise
+instead of silently producing a meaningless estimate.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `scores` | `np.ndarray` | required | Per-canary membership scores, shape `(num_canaries,)` |
+| `scores` | [`CanaryScores`](#canaryscores) | required | Per-canary membership scores with identifiers, from verified scoring or explicit attestation |
 | `coin_flip` | `CoinFlip` | required | The coin-flip partition |
-| `order` | `np.ndarray \| None` | `None` | Order token: the dataset indices the scores were computed over, in scoring order (produce with [`scoring_order`](#scoring_order)). Mismatch with `canary_indices` raises `ValueError` |
-| `order` | `np.ndarray \| None` | `None` | Order token: the dataset indices the scores were computed over, in scoring order (produce with `auditing.scoring_order(dataloader)`). A mismatch with `coin_flip.canary_indices` raises instead of silently pairing scores with the wrong labels. |
+
+**Raises** `TypeError` for bare arrays without identifiers; `ValueError`
+if identifiers are unexpected, duplicated, or missing.
 
 ```python
 estimate = auditing.one_run(scores, coin_flip=cf)
@@ -215,12 +209,35 @@ All indices except held-out canaries. Returns `list[int]` for HuggingFace
 ### split_scores
 
 ```python
-cf.split_scores(scores, *, order=None) -> tuple[np.ndarray, np.ndarray]
+cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
 ```
 
-Split per-canary scores into `(in_scores, out_scores)`. The optional
-`order` token (scoring-order dataset indices) is verified against
-`canary_indices`; a mismatch raises `ValueError`.
+Split per-canary scores into `(in_scores, out_scores)`, joining
+[`CanaryScores`](#canaryscores) to the partition by identifier. Bare
+arrays raise `TypeError`; identifiers that do not join one-to-one onto
+`canary_indices` raise `ValueError`.
+
+---
+
+## CanaryScores
+
+```python
+class CanaryScores(scores, canary_indices)  # frozen dataclass
+```
+
+Membership scores paired with stable canary identifiers: `scores[k]` was
+computed for dataset example `canary_indices[k]`. Produced by the scoring
+functions in verified mode; construct directly to attest identifiers for
+scores computed elsewhere (any order — [`one_run`](#one_run) joins by
+identifier). Arrays are defensively copied, validated (1-D, equal length,
+unique integer identifiers), and marked read-only.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `scores` | `np.ndarray` | Membership scores, shape `(n,)`, float, read-only |
+| `canary_indices` | `np.ndarray` | Dataset index of the canary behind each score |
+
+Supports `len()` and `np.asarray()` (yields the score values).
 
 ---
 
@@ -243,7 +260,7 @@ Holds the empirical ROC counts and exposes:
 |---|---|---|
 | `n_in` | `int` | Number of held-in canaries |
 | `n_out` | `int` | Number of held-out canaries |
-| `canary_indices` | `np.ndarray \| None` | Stable example identifiers: dataset indices of the audited canaries (always populated by `one_run`) |
+| `canary_indices` | `np.ndarray \| None` | Stable example identifiers: dataset indices of the audited canaries, in partition order (always populated by `one_run`) |
 
 ### epsilon_at
 
@@ -411,11 +428,12 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | | |
 |---|---|
 | `auditing.coin_flip(dataset, ...)` | Coin-flip partition → `CoinFlip` |
-| `auditing.loss_scores(loss_fn, ...)` | Membership scores → `np.ndarray` |
-| `auditing.gradient_scores(loss_fn, ...)` | White-box membership scores → `np.ndarray` |
+| `auditing.loss_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified membership scores → `CanaryScores` |
+| `auditing.gradient_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified white-box scores → `CanaryScores` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
+| `CanaryScores(values, canary_indices=...)` | Attest identifiers for externally computed scores |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
-| `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
+| `cf.canary_subset(dataset)` | `Subset` of canary examples (legacy loaders) |
 | `estimate.epsilon_at(delta=)` | ε bound (μ-GDP default) |
 | `estimate.delta_at(epsilon=)` | δ at given ε |
 | `estimate.beta_at(alpha=)` | Theoretical β at α (μ-GDP) |
