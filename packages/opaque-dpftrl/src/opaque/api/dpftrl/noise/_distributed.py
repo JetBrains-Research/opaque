@@ -68,9 +68,11 @@ def mf_per_group_sync_fingerprint_for_latch(
 
 
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
+    "_inner_state": "local",
     "_step_counter": "assert_equal",
-    "_first_max_norm_sync_fingerprint": "assert_equal",
-    "_first_max_norm": "assert_equal",
+    "_rng_key": "local",
+    "_first_max_norm_sync_fingerprint": "assert_optional_equal",
+    "_first_max_norm": "local",
 }
 
 

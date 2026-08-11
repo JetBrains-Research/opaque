@@ -16,6 +16,7 @@ from __future__ import annotations
 
 
 def apply() -> None:
+    """Lift the first-order transform guard around saved-tensor hooks."""
     import torch._functorch.eager_transforms as eager
 
     for name in ("grad_and_value_impl", "_vjp_with_argnums"):

@@ -42,14 +42,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import torch.nn as nn
 
-_FAMILY_REGISTRY: dict[str, Callable] = {}
+    from opaque.api.patches.transformers.types import ModelPatchFn
+
+_FAMILY_REGISTRY: dict[str, ModelPatchFn] = {}
 
 
-def register_family(name: str, apply_fn: Callable) -> None:
+def register_family(name: str, apply_fn: ModelPatchFn) -> None:
     """Register a HuggingFace model family.
 
     The dispatcher will route models with
@@ -69,7 +69,7 @@ def register_family(name: str, apply_fn: Callable) -> None:
     _FAMILY_REGISTRY[name] = apply_fn
 
 
-def get_family_apply_fn(name: str) -> Callable | None:
+def get_family_apply_fn(name: str) -> ModelPatchFn | None:
     """Return the registered apply function for a family, or ``None``."""
     return _FAMILY_REGISTRY.get(name)
 

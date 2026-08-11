@@ -41,16 +41,26 @@ EMA-updated reference policy variant exposed on the trainer surface.
 
 ## 1. Reference log-probabilities
 
-Run the reference once over the dataset, *before* training, and cache the
-per-example chosen/rejected logps.
+Run the frozen reference once over the dataset, *before* training, and cache
+the per-example chosen/rejected logps when reuse is useful.
 `opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset` takes a
 `ref(batch) -> {col: (B,) tensor}` callable (wrap your model into one),
 runs a single `torch.no_grad()` pass, gathers across ranks, and caches to
 a content-addressed `.safetensors` file whose name is the SHA-256 digest of
-`(dataset._fingerprint or repr(dataset), repr(cache_key), output_columns)`.
+`(dataset._fingerprint, cache_identity, output_columns)`.
 By default that file lives under `<tempdir>/opaque_ref_cache/`; pass
 `cache_dir=` to pin a different location. A cache hit skips the forward
-entirely.
+entirely. Cache directories are owner-only and archive files are owner-readable
+and writable only because they contain private per-example values. Remove a
+selected cache directory when its contents are no longer needed.
+This protects the artifacts from other local accounts; it does not isolate
+processes running as the same account, so choose and clean cache locations
+according to that threat model.
+
+Pass `use_cache=False` for one-shot results that cannot be reused. TR-DPO does
+this automatically for its initial seed columns: it recomputes reference logps
+from the evolving EMA reference before every training and evaluation step, so
+those seed values are never persisted.
 
 On disk, the cache stores the requested tensors under their native torch dtypes
 via `opaque.serialization.state_dict(...)` and `safetensors`; for example, a

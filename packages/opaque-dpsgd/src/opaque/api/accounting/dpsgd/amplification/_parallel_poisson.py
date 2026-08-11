@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
-from opaque.api.accounting.dpsgd.amplification._poisson import Poisson
+from opaque.api.accounting.dpsgd.amplification._poisson import Poisson, poisson
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
 
@@ -19,6 +19,20 @@ class ParallelPoisson(DpProcess):
 
     inner: Poisson
     num_workers: int
+
+    def __post_init__(self):
+        if (
+            isinstance(self.num_workers, bool)
+            or not isinstance(self.num_workers, int)
+            or self.num_workers < 1
+        ):
+            raise ValueError(
+                f"num_workers must be a positive integer, got {self.num_workers}"
+            )
+        if self.inner.truncated_batch_size is not None:
+            raise ValueError(
+                "ParallelPoisson does not support truncated Poisson inner mechanisms."
+            )
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -85,7 +99,7 @@ def parallel_poisson(
         inner: A :class:`Gaussian`, :class:`AdaClip`, or :class:`NonPrivate` mechanism.
         sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
-            independently.
+            independently. Truncated Poisson accounting is not supported.
 
     Returns:
         A :class:`ParallelPoisson` process.
@@ -97,13 +111,5 @@ def parallel_poisson(
         )
         eps = (step * 500).epsilon_at(1e-5)
     """
-    match inner:
-        case Gaussian() | AdaClip() | NonPrivate():
-            pass
-        case _:
-            raise TypeError(
-                "parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
-                f"inner mechanism, got {type(inner).__name__}."
-            )
-    poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)
+    poisson_inner = poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

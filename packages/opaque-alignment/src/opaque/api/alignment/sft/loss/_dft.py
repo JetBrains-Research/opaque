@@ -26,7 +26,7 @@ total number of non-ignored tokens across the entire batch).  This is a
 cross-example aggregate and is **not DP-safe** as a pre-clip divisor: its
 value changes when any example in the batch changes, coupling per-example
 gradients.  This implementation instead divides by this example's own
-non-ignored token count — ``mask.sum(-1).clamp(min=1)`` — computed
+non-ignored shifted-label token count — computed
 **before** gradient clipping.  This matches the per-example
 pre-clip divisor rule.
 
@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import torch
 
+from opaque.api.alignment._compute_dtype import _compute_dtype
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
@@ -71,7 +72,7 @@ def dft_loss(
     Returns:
         Float tensor of shape ``(...)`` (0-dim for a single example, ``(B,)``
         for a batch).  Each entry is
-        ``(per_token_loss * mask).sum(-1) / mask.sum(-1).clamp(min=1)``.
+        the mean per-token loss over non-ignored shifted labels.
     """
     # Shift: logits[..., :-1, :] predicts labels[..., 1:]
     shifted_logits = logits[..., :-1, :]  # (..., T-1, V)
@@ -99,8 +100,10 @@ def dft_loss(
     # Per-token DFT loss: -p * logp  (p is detached; logp is differentiable)
     per_token = -p * logp  # (..., T-1)
 
-    # Per-example mean over non-ignored tokens; per-example divisor (DP-safe)
-    loss = (per_token * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
+    # Accumulate in >= fp32 with an exact token count so eager matches fused.
+    acc_dtype = _compute_dtype(per_token)
+    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)
+    loss = (per_token * mask).to(acc_dtype).sum(-1) / n_valid.to(acc_dtype)  # (...)
     return loss
 
 

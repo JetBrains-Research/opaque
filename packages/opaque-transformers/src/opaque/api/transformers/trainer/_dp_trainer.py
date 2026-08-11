@@ -426,6 +426,10 @@ class DPTrainer:
         # case (rank=0, world=1, is_distributed=False).
         self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
         _distributed.validate_ddp_backend(self.args, self._ddp)
+        # Apply per-rank logging verbosity now that rank/world is known
+        # (HF parity: main process uses ``log_level``, replicas use
+        # ``log_level_replica``).
+        _distributed.apply_logging(self.args, self._ddp)
         # HF parity (``Trainer._wrap_model``): place the model on the
         # resolved device.  ``model.to`` is a no-op when the model is
         # already there, so this is safe for callers who pre-placed.
@@ -507,9 +511,14 @@ class DPTrainer:
         )
         # ``DefaultFlowCallback`` doesn't recognise ``save_strategy="best"``;
         # auto-inject the matching callback so user callbacks aren't required
-        # to know about this gap.  Gated on the trainer-side snapshot so the
+        # to know about this gap.  Also inject it for ``load_best_model_at_end``
+        # (with a real save cadence): otherwise the best metric can land on an
+        # eval-only step with no checkpoint folder, leaving best unloadable
+        # (issue #386).  Gated on the trainer-side snapshot so the
         # demoted-to-``"no"`` case (output_dir is None) doesn't install it.
-        if self.args.save_strategy == "best":
+        if self.args.save_strategy == "best" or (
+            self.args.load_best_model_at_end and self.args.save_strategy != "no"
+        ):
             self._callback_handler.add_callback(BestModelSaveCallback())
         if args.debug and "underflow_overflow" in str(args.debug):
             from transformers.debug_utils import DebugUnderflowOverflow
@@ -793,6 +802,8 @@ class DPTrainer:
                 ``args.resume_from_checkpoint``. ``True`` auto-detects the latest
                 ``checkpoint-*`` under ``args.output_dir``. A string or
                 ``PathLike`` is treated as the concrete checkpoint directory.
+            ignore_keys_for_eval: Model-output keys to omit while evaluating
+                during training.
 
         Resume semantics under DP differ from HF's batch-replay model:
 
@@ -1692,7 +1703,7 @@ class DPTrainer:
 
                             n_tokens = int(
                                 reduce_scalar(
-                                    float(n_tokens),
+                                    n_tokens,
                                     op="sum",
                                     device=self._device,
                                 )
@@ -1955,10 +1966,9 @@ class DPTrainer:
 
             # Pre-optimizer hook fires *after* clipping+noise but *before* the
             # optimizer update.  ``grads`` exposes the clipped-and-noised
-            # gradients keyed by parameter name so callbacks (e.g. NES's
-            # ``OptimizationCallback``) can compute group norms without
-            # touching ``param.grad`` (which doesn't exist in the functional
-            # path).
+            # gradients keyed by parameter name so callbacks can compute group
+            # norms without touching ``param.grad`` (which doesn't exist in the
+            # functional path).
             # ``call_event`` rather than the per-hook method so we can forward
             # DP-specific kwargs (``grads``, ``trainable_params``) — HF's
             # ``CallbackHandler.on_pre_optimizer_step`` has a fixed signature.
@@ -2566,8 +2576,8 @@ class DPTrainer:
                     for name, value in step_aux.items():
                         eval_aux_chunks.setdefault(name, []).append(value.detach())
 
-                # Per-batch progress hook (HF parity); progress bars / NES
-                # callbacks rely on this firing once per eval batch.
+                # Per-batch progress hook (HF parity); progress callbacks rely
+                # on this firing once per eval batch.
                 self._control = self._callback_handler.on_prediction_step(
                     self.args,
                     self.state,
@@ -2663,10 +2673,10 @@ class DPTrainer:
 
             total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
             loss_samples = int(
-                reduce_scalar(float(loss_samples), op="sum", device=self._device)
+                reduce_scalar(loss_samples, op="sum", device=self._device)
             )
             total_samples = int(
-                reduce_scalar(float(total_samples), op="sum", device=self._device)
+                reduce_scalar(total_samples, op="sum", device=self._device)
             )
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
@@ -3871,7 +3881,11 @@ class DPTrainer:
             # injected when ``save_strategy="best"``) may have set
             # ``should_save`` there.  Refresh the local handle accordingly.
             ctrl = self._control
-            self._update_best_metric(metrics, global_step)
+            is_new_best_metric = self._update_best_metric(metrics, global_step)
+            if is_new_best_metric and self.args.load_best_model_at_end:
+                # The regular save cadence can be less frequent than
+                # evaluation, so materialize the parameters just evaluated.
+                ctrl.should_save = True
             ctrl.should_evaluate = False
 
         if ctrl.should_save:
@@ -4284,8 +4298,10 @@ class DPTrainer:
             total = a.max_steps
             num_epochs = math.ceil(total / max(1, steps_per_epoch))
         else:
-            num_epochs = int(a.num_train_epochs)
-            total = num_epochs * steps_per_epoch
+            total = math.ceil(a.num_train_epochs * steps_per_epoch)
+            # The epoch loop must be integral, but its final iteration may be
+            # cut short once the fractional-epoch step horizon is reached.
+            num_epochs = math.ceil(a.num_train_epochs)
         return steps_per_epoch, total, num_epochs
 
     def _predict_total_steps(self) -> int:
@@ -4340,8 +4356,8 @@ class DPTrainer:
         self,
         eval_metrics: dict[str, Any],
         global_step: int,
-    ) -> None:
-        """Update ``state.best_*`` if the eval metric improved.
+    ) -> bool:
+        """Update ``state.best_*`` and report whether the metric improved.
 
         ``BestModelSaveCallback`` independently decides whether to set
         ``control.should_save`` for ``save_strategy='best'`` (it runs at
@@ -4351,7 +4367,7 @@ class DPTrainer:
         """
         a = self.args
         if a.metric_for_best_model is None:
-            return
+            return False
         resolved = resolve_eval_metric(eval_metrics, a.metric_for_best_model)
         if resolved is None:
             key = a.metric_for_best_model
@@ -4367,10 +4383,11 @@ class DPTrainer:
         if not is_metric_improved(
             value, self.state.best_metric, self.args.greater_is_better
         ):
-            return
+            return False
         self.state.best_metric = value
         if self.args.save_strategy in {"steps", "epoch", "best"}:
             self.state.best_global_step = global_step
+        return True
 
     def _load_best_model(self, ctx: _TrainingContext) -> None:
         """Restore best-checkpoint weights into the underlying ``nn.Module``.
@@ -4614,13 +4631,12 @@ class DPTrainer:
             Path(staging_dir).mkdir(parents=True, exist_ok=True)
             self._save_model_artifacts(staging_dir)
 
-            # HF parity: register ``best_model_checkpoint`` by *looking up*
-            # the folder named ``checkpoint-{best_global_step}`` rather than
-            # only recognising the best step when it coincides with this
-            # save's step.  Without this, an eval boundary that improves the
-            # metric at step 100 followed by a save_strategy="steps" boundary
-            # at step 200 would never register checkpoint-100 as best — and
-            # rotation could delete it because no folder is protected.
+            # Register ``best_model_checkpoint`` by *looking up* the folder
+            # named ``checkpoint-{best_global_step}``, rather than only when
+            # the best step is this save's step.  The best-metric flow
+            # materializes intermediate evaluation improvements immediately;
+            # this fallback also preserves an existing best directory when a
+            # later regular save writes its own trainer state.
             # Resolve *before* writing ``trainer_state.json`` so the file
             # lands once with the final ``best_model_checkpoint`` populated.
             # The path always uses the *final* ``checkpoint-N`` name (not the

@@ -1,11 +1,17 @@
 # Installation
 
+> **Work in progress:** Opaque is research software under active development.
+> Its differential-privacy mechanisms, accounting, and privacy guarantees are
+> still being validated and may change. Do not rely on it for production or
+> compliance-sensitive privacy guarantees without independent validation for
+> your use case.
+
 ## Requirements
 
 - Python 3.11 or 3.12
-- PyTorch 2.10 or later
+- PyTorch 2.9 or later
 
-## From GCP Artifact Registry
+## From the JetBrains Artifact Registry
 
 Install `opaque` as the single public package entrypoint:
 
@@ -31,6 +37,9 @@ pip install "opaque[all]"           # everything above
 ```
 
 ## From Source
+
+Clone the repository when developing Opaque, inspecting its implementation, or
+running its test suite. For ordinary use, prefer the published package above.
 
 ```bash
 # Clone the repository

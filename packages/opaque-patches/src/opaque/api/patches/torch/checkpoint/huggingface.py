@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def apply() -> None:
+    """Install Hugging Face checkpointing compatibility patches when available."""
     try:
         import transformers
     except ImportError:
