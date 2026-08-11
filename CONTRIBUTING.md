@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to Opaque!
 
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating. It
+explains the standards that keep the community welcoming and how to confidentially
+report concerns.
+
 ## Quick Start
 
 ### Setup

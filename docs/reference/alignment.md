@@ -141,7 +141,11 @@ toggles.
 - **`compute_ref_logprobs_for_dataset()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
   — run the reference once over a dataset, attach per-example logp columns,
   and cache to a content-addressed `.safetensors` file keyed by dataset
-  identity, `cache_key`, and `output_columns` (a cache hit skips the forward).
+  identity, `cache_identity`, and `output_columns` (a cache hit skips the
+  forward). Cache directories and archives are owner-only; callers remove
+  selected cache directories when their private per-example values are no
+  longer needed. Set `use_cache=False` for non-reusable one-shot values;
+  TR-DPO uses this mode for its seed columns.
 - **`null_ref_context()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
   — context manager that turns a model into its own reference, dispatching
   over the separate-model / `"ref"`-adapter / disabled-adapter / no-op

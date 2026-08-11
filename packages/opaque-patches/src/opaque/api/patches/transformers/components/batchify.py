@@ -1,5 +1,8 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Batch-dimension compatibility patches for Hugging Face model forwards."""
+
+
 def _batchify_forward(original_forward):
     """Wrap a model ``forward`` to handle batchless inputs under vmap.
 

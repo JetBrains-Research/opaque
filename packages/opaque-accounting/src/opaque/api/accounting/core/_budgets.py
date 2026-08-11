@@ -30,8 +30,10 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, fields
+from threading import RLock
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import DpProcess
@@ -244,6 +246,122 @@ class RiskBudget:
 
 
 # =============================================================================
+# Budget serialization
+# =============================================================================
+
+BudgetStateDictFn = Callable[[Any], Mapping[str, Any]]
+BudgetFromStateDictFn = Callable[[Mapping[str, Any]], Budget]
+
+_BUDGET_SERIALIZERS: dict[type[Any], tuple[str, BudgetStateDictFn]] = {}
+_BUDGET_DESERIALIZERS: dict[str, BudgetFromStateDictFn] = {}
+_BUDGET_TYPES: dict[str, type[Any]] = {}
+_BUDGET_LOCK = RLock()
+
+
+def _budget_type_name(typ: type[Any]) -> str:
+    return f"{typ.__module__}.{typ.__qualname__}"
+
+
+def register_budget_serializer(
+    typ: type[Any],
+    state_dict_fn: BudgetStateDictFn,
+    from_state_dict_fn: BudgetFromStateDictFn,
+    *,
+    type_name: str | None = None,
+) -> None:
+    """Register checkpoint serialization for a concrete :class:`Budget` type.
+
+    External implementations of the public ``Budget`` protocol must register a
+    codec before they can be embedded in an :class:`Accountant` checkpoint.
+    ``state_dict_fn`` must return JSON-compatible data and
+    ``from_state_dict_fn`` must reconstruct the budget from that data alone.
+
+    Args:
+        typ: Concrete budget implementation to register.
+        state_dict_fn: Converts a budget instance to checkpoint state.
+        from_state_dict_fn: Reconstructs a budget from checkpoint state.
+        type_name: Stable checkpoint discriminator. Defaults to the fully
+            qualified concrete type name.
+
+    Raises:
+        ValueError: If ``type_name`` is already registered for another type.
+    """
+    with _BUDGET_LOCK:
+        name = type_name or _budget_type_name(typ)
+        registered_type = _BUDGET_TYPES.get(name)
+        if registered_type is not None and registered_type is not typ:
+            raise ValueError(f"Budget checkpoint type name already registered: {name}")
+        previous = _BUDGET_SERIALIZERS.get(typ)
+        if previous is not None and previous[0] != name:
+            _BUDGET_DESERIALIZERS.pop(previous[0], None)
+            _BUDGET_TYPES.pop(previous[0], None)
+        _BUDGET_SERIALIZERS[typ] = (name, state_dict_fn)
+        _BUDGET_DESERIALIZERS[name] = from_state_dict_fn
+        _BUDGET_TYPES[name] = typ
+
+
+def budget_state_dict(budget: Budget) -> dict[str, Any]:
+    """Return self-describing checkpoint state for a registered budget."""
+    with _BUDGET_LOCK:
+        serializer = _BUDGET_SERIALIZERS.get(type(budget))
+    if serializer is None:
+        raise TypeError(
+            f"Cannot serialize budget {_budget_type_name(type(budget))}: "
+            "no budget serializer is registered. Register one with "
+            "`register_budget_serializer`."
+        )
+    type_name, state_dict_fn = serializer
+    state = dict(state_dict_fn(budget))
+    if "type" in state:
+        raise ValueError(
+            f"Budget serializer for {_budget_type_name(type(budget))} returned "
+            "reserved key 'type'."
+        )
+    return {"type": type_name} | state
+
+
+def budget_from_state_dict(state: Mapping[str, Any]) -> Budget:
+    """Reconstruct a registered budget from self-describing checkpoint state."""
+    data = dict(state)
+    try:
+        type_name = data.pop("type")
+    except KeyError as exc:
+        raise ValueError("Budget checkpoint is missing required key 'type'.") from exc
+    if not isinstance(type_name, str):
+        raise ValueError("Budget checkpoint key 'type' must be a string.")
+    with _BUDGET_LOCK:
+        from_state_dict_fn = _BUDGET_DESERIALIZERS.get(type_name)
+    if from_state_dict_fn is None:
+        raise ValueError(
+            f"Cannot restore budget type {type_name!r}: no budget serializer is registered."
+        )
+    return from_state_dict_fn(data)
+
+
+def _dataclass_budget_state_dict(budget: Any) -> dict[str, Any]:
+    return {f.name: getattr(budget, f.name) for f in fields(budget)}
+
+
+def _register_builtin_budget_serializers() -> None:
+    for budget_type in (
+        EpsilonBudget,
+        DeltaBudget,
+        AdvantageBudget,
+        BetaBudget,
+        RiskBudget,
+    ):
+        register_budget_serializer(
+            budget_type,
+            _dataclass_budget_state_dict,
+            lambda state, cls=budget_type: cls(**dict(state)),
+            type_name=budget_type.__name__,
+        )
+
+
+_register_builtin_budget_serializers()
+
+
+# =============================================================================
 # Budget factories
 # =============================================================================
 
@@ -366,6 +484,8 @@ __all__ = [
     "AdvantageBudget",
     "BetaBudget",
     "RiskBudget",
+    # Serialization
+    "register_budget_serializer",
     # Budget factories
     "epsilon_budget",
     "delta_budget",

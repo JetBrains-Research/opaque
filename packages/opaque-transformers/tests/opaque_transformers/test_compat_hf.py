@@ -308,7 +308,6 @@ def test_dp_overrides_layered_on_top(tmp_path):
         privacy_noise_multiplier=0.8,
         clipping_norm=1.0,
         privacy_noise_mechanism="gaussian",
-        privacy_noise_radius=3.0,
         clipping_mode="fixed",
     )
     assert opaque.privacy_noise_multiplier == 0.8

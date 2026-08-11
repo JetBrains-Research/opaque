@@ -18,6 +18,7 @@ from opaque.distributed import is_distributed
 
 _NOISE_STATE_FIELD_OPS: dict[str, str] = {
     "_step_counter": "assert_equal",
+    "_rng_key": "local",
 }
 
 

@@ -12,10 +12,11 @@ Apple MPS (and CPU). ``opaque_moe`` dispatches here on non-CUDA hosts when
 Tokens are sorted by expert and run through ``torch._grouped_mm`` for the three
 mode-1 (offset-grouped along the token dim) GEMMs — forward up-proj, forward
 down-proj, backward ``dx``. The mode-2 per-group weight grads (``dW1``/``dW2``)
-can't use ``_grouped_mm`` (it requires 16-byte-aligned group sizes, unusable for
-data-dependent MoE groups), so :func:`_grouped_AtB` does ``out[g] = A_g^T @ B_g``
-over the variable-size row groups with a per-group loop (G = E, or B*E for the
-per-sample DP path — both small). All reductions accumulate in fp32.
+are ``out[g] = A_g^T @ B_g`` (contraction grouped along the *token* axis).
+``torch._grouped_mm``'s 2D×2D layout expresses this — its 16-byte rule is on
+matrix *strides*, not group sizes — but :func:`_grouped_AtB` does it with an
+explicit per-group loop (G = E, or B*E for the per-sample DP path — both small)
+so it stays safe inside the vmap rules. All reductions accumulate in fp32.
 
 Per-sample weight grads under ``vmap(grad)`` (DP-SGD) use **virtual experts**:
 sample ``b``'s tokens for real expert ``e`` go to group ``b*E + e``, so the
@@ -54,9 +55,9 @@ def _grouped_AtB(A, B, seg_offs, G):
     (exclusive prefix, length G+1). ``A`` (M,P), ``B`` (M,Q) -> ``out`` (G,P,Q).
 
     Per-group matmul loop (G is E or B*E — small). fp32 accumulate, cast to
-    ``A.dtype``. This is the mode-2 weight grad ``torch._grouped_mm`` can't do.
-    The functions here run inside explicit vmap rules (regular tensors), so a
-    Python loop + in-place group writes are safe.
+    ``A.dtype``. Same op as ``torch._grouped_mm(A.mT, B, offs)`` (2D×2D layout);
+    done as an explicit loop because these functions run inside vmap rules
+    (regular tensors), so a Python loop + in-place group writes are safe.
     """
     P, Q = A.shape[1], B.shape[1]
     out = torch.zeros(G, P, Q, dtype=A.dtype, device=A.device)

@@ -65,12 +65,24 @@ from opaque.api.patches.transformers._registry import (
     supported_families,
 )
 from opaque.api.patches.transformers._router import apply_transformers_model_patches
+from opaque.api.patches.transformers.types import (
+    FamilyPatchFn,
+    ForwardFactory,
+    ForwardFn,
+    ModelPatchFn,
+    ModulePatcher,
+)
 
 __all__ = [
     "apply_transformers_model_patches",
     "family_name",
+    "FamilyPatchFn",
+    "ForwardFactory",
+    "ForwardFn",
     "make_apply_family_patches",
     "make_apply_model_patches",
+    "ModelPatchFn",
+    "ModulePatcher",
     "register_activation_kind",
     "register_family",
     "register_fused_add_rms_kind",

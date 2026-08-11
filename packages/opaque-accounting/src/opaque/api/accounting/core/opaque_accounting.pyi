@@ -113,7 +113,11 @@ class Pld:
         """Self-compose this PLD *count* times (homogeneous repetition).
 
         Args:
-            count: Repetition count. Must be > 0.
+            count: Repetition count. Must satisfy ``1 <= count <= 2**32 - 1``.
+
+        Raises:
+            ValueError: If count is not positive.
+            OverflowError: If count exceeds 2**32 - 1.
 
         Returns:
             A new self-composed PLD.

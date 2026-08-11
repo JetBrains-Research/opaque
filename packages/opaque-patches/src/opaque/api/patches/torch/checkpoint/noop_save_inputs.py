@@ -15,6 +15,7 @@ from __future__ import annotations
 
 
 def apply() -> None:
+    """Install a vmap rule for legacy checkpoint input bookkeeping."""
     try:
         from torch.utils.checkpoint import _NoopSaveInputs
     except ImportError:

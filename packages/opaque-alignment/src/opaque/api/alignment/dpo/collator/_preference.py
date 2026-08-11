@@ -29,6 +29,11 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from opaque.api.alignment.dpo.collator.types import (
+        PreferenceBatch,
+        PreferenceExample,
+    )
+
 __all__ = ["preference_collator"]
 
 
@@ -99,7 +104,7 @@ def preference_collator(
     max_length: int,
     *,
     pad_to_multiple_of: int | None = None,
-) -> Callable[[list[dict]], dict[str, torch.Tensor]]:
+) -> Callable[[list[PreferenceExample]], PreferenceBatch]:
     """DPO preference collator — factory returning a callable.
 
     .. note:: Layout choice
@@ -117,7 +122,7 @@ def preference_collator(
             independently rounded up to the nearest multiple.
 
     Returns:
-        A callable ``collate(batch: list[dict]) -> dict[str, torch.Tensor]``
+        A callable ``collate(batch: list[PreferenceExample]) -> PreferenceBatch``
         that accepts a list of example dicts and returns:
 
         **Mandatory keys** (always present):
@@ -148,7 +153,7 @@ def preference_collator(
     ``ref_rejected_logps: float``.
     """
 
-    def collate(batch: list[dict]) -> dict[str, torch.Tensor]:
+    def collate(batch: list[PreferenceExample]) -> PreferenceBatch:
         # ------------------------------------------------------------------ #
         # Extract per-side sequences.
         # ------------------------------------------------------------------ #
@@ -198,7 +203,7 @@ def preference_collator(
         # ------------------------------------------------------------------ #
         # Assemble output dict.
         # ------------------------------------------------------------------ #
-        out: dict[str, torch.Tensor] = {
+        out: PreferenceBatch = {
             "chosen_input_ids": chosen_input_ids,
             "chosen_attention_mask": chosen_attention_mask,
             "chosen_completion_mask": chosen_completion_mask,

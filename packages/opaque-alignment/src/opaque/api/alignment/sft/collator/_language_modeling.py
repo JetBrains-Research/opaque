@@ -38,6 +38,8 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from opaque.api.alignment.sft.collator.types import LMBatch, LMExample
+
 __all__ = ["language_modeling_collator"]
 
 _IGNORE_INDEX: int = -100
@@ -83,7 +85,7 @@ class _LMCollator:
     # Callable interface
     # ------------------------------------------------------------------
 
-    def __call__(self, examples: list[dict]) -> dict[str, torch.Tensor]:
+    def __call__(self, examples: list[LMExample]) -> LMBatch:
         """Collate *examples* into a padded batch.
 
         Args:
@@ -166,7 +168,7 @@ class _LMCollator:
                 labels_t[i, :seq_len] = _IGNORE_INDEX
 
         # ---- Assemble output ----------------------------------------
-        out: dict[str, torch.Tensor] = {
+        out: LMBatch = {
             "input_ids": input_ids_t,
             "attention_mask": attention_mask_t,
             "labels": labels_t,
@@ -179,7 +181,7 @@ class _LMCollator:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _empty_batch(self) -> dict[str, torch.Tensor]:
+    def _empty_batch(self) -> LMBatch:
         """Return a well-typed empty batch (B=0) for the zero-example edge case."""
         empty = torch.zeros((0, 0), dtype=torch.long)
         return {
@@ -200,7 +202,7 @@ def language_modeling_collator(
     *,
     completion_only_loss: bool = False,
     pad_to_multiple_of: int | None = None,
-) -> Callable[[list[dict]], dict[str, torch.Tensor]]:
+) -> Callable[[list[LMExample]], LMBatch]:
     """Return a callable that collates per-example dicts into a padded :class:`LMBatch`.
 
     This is a factory function: it returns a
@@ -224,7 +226,7 @@ def language_modeling_collator(
             ``64``).  ``None`` disables rounding.
 
     Returns:
-        A ``collate(examples: list[dict]) -> dict[str, torch.Tensor]``
+        A ``collate(examples: list[LMExample]) -> LMBatch``
         callable.  See :class:`~opaque.api.alignment.sft.collator.types.LMBatch`
         for the output schema.
 

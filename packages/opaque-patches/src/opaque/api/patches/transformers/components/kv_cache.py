@@ -1,5 +1,8 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Key-value cache handling patches for functional per-example gradients."""
+
+
 def _disable_kv_cache(forward_fn):
     """Wrap forward to disable KV cache when no existing cache is passed.
 

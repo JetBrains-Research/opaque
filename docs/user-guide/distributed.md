@@ -275,7 +275,7 @@ process group and raise `RuntimeError`.
 | `sum_gradients_(grads)` | In-place AllReduce SUM on a gradient PyTree |
 | `reduce_pytree(pytree, op)` | Return a reduced copy of a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_pytree_(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
-| `reduce_scalar(value, op)` | Reduce a Python float across ranks |
+| `reduce_scalar(value, op, device, *, compute_dtype)` | Reduce a Python float or integer across ranks; floats default to fp32 and can request fp64, while integers use an exact int64 path |
 | `all_reduce(tensor, op)` | Return an all-reduced tensor copy |
 | `all_reduce_(tensor, op)` | In-place AllReduce on a single tensor |
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |

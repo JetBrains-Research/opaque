@@ -475,7 +475,7 @@ pub fn random_allocation_gaussian_pld(
         let composed = if rounds == 1 {
             single
         } else {
-            single.self_compose(rounds)
+            single.self_compose(rounds)?
         };
         out = Some(match out {
             None => composed,
@@ -663,6 +663,7 @@ mod tests {
             let every_step = gaussian_pld(1.0, &c)
                 .unwrap()
                 .self_compose(t)
+                .unwrap()
                 .epsilon_at(1e-8);
             assert!(
                 alloc >= every_step - 1e-9,
@@ -718,6 +719,7 @@ mod tests {
         let po = poisson_gaussian_pld(sigma, 1.0 / t as f64, &c)
             .unwrap()
             .self_compose(t)
+            .unwrap()
             .epsilon_at(1e-8);
         assert!(
             ra <= po * 1.10,

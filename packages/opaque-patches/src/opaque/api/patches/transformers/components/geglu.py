@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""GeGLU MLP replacements backed by Opaque's vmap-safe kernels."""
+
 from __future__ import annotations
 
 
