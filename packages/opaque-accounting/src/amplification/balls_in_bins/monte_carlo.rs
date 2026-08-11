@@ -46,6 +46,13 @@ use super::cyclic_cholesky::CyclicBandedCholesky;
 /// machine.
 const SAMPLES_PER_SHARD: usize = 1024;
 
+fn shard_seed(seed: u64, shard: usize, add_direction: bool) -> u64 {
+    // Every possible shard has an even offset, reserving the adjacent odd
+    // offset for the add direction. `num_samples` bounds shard well below
+    // u64::MAX / 2, so the multiplication cannot overflow.
+    seed.wrapping_add((shard as u64) * 2 + u64::from(add_direction))
+}
+
 /// Sample one privacy loss value from the BnB dominating pair.
 ///
 /// For the "remove" direction: X ~ P, Y = log(P(X)/Q(X))
@@ -194,68 +201,53 @@ pub fn bnb_mc_pld(
     // Partition samples into fixed, seed-indexed shards. Rayon may execute
     // these shards on any number of workers without changing the streams or
     // their output order.
-    let num_shards =
-        num_samples / SAMPLES_PER_SHARD + usize::from(num_samples % SAMPLES_PER_SHARD != 0);
-
     // Sample "remove" direction
-    let remove_samples: Vec<f64> = (0..num_shards)
-        .into_par_iter()
-        .map(|shard| {
-            let start = shard * SAMPLES_PER_SHARD;
-            let end = (start + SAMPLES_PER_SHARD).min(num_samples);
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(shard as u64));
+    let mut remove_samples = vec![0.0f64; num_samples];
+    remove_samples
+        .par_chunks_mut(SAMPLES_PER_SHARD)
+        .enumerate()
+        .for_each(|(shard, samples)| {
+            let mut rng = StdRng::seed_from_u64(shard_seed(seed, shard, false));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
-            (start..end)
-                .map(|_| {
-                    sample_privacy_loss_remove(
-                        gram,
-                        &chol,
-                        b,
-                        sigma,
-                        inv_2sig2,
-                        &diag_terms,
-                        &mut z_buf,
-                        &mut u_buf,
-                        &mut rng,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .flatten()
-        .collect();
+            for sample in samples {
+                *sample = sample_privacy_loss_remove(
+                    gram,
+                    &chol,
+                    b,
+                    sigma,
+                    inv_2sig2,
+                    &diag_terms,
+                    &mut z_buf,
+                    &mut u_buf,
+                    &mut rng,
+                );
+            }
+        });
 
     // Sample "add" direction
-    let add_samples: Vec<f64> = (0..num_shards)
-        .into_par_iter()
-        .map(|shard| {
-            let start = shard * SAMPLES_PER_SHARD;
-            let end = (start + SAMPLES_PER_SHARD).min(num_samples);
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + shard as u64));
+    let mut add_samples = vec![0.0f64; num_samples];
+    add_samples
+        .par_chunks_mut(SAMPLES_PER_SHARD)
+        .enumerate()
+        .for_each(|(shard, samples)| {
+            let mut rng = StdRng::seed_from_u64(shard_seed(seed, shard, true));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
-            (start..end)
-                .map(|_| {
-                    sample_privacy_loss_add(
-                        gram,
-                        &chol,
-                        b,
-                        sigma,
-                        inv_2sig2,
-                        &diag_terms,
-                        &mut z_buf,
-                        &mut u_buf,
-                        &mut rng,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .flatten()
-        .collect();
+            for sample in samples {
+                *sample = sample_privacy_loss_add(
+                    gram,
+                    &chol,
+                    b,
+                    sigma,
+                    inv_2sig2,
+                    &diag_terms,
+                    &mut z_buf,
+                    &mut u_buf,
+                    &mut rng,
+                );
+            }
+        });
 
     // Build PMFs from samples
     let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
