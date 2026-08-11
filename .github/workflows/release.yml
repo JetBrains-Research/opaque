@@ -323,11 +323,11 @@ jobs:
 
       - name: Publish release wheels to JetBrains Packages
         env:
-          UV_PUBLISH_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
-          UV_PUBLISH_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
+          TWINE_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
-          uv publish \
-            --publish-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
+          uvx --from twine==5.1.1 twine upload \
+            --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
 
       - name: Attach wheels to Release
