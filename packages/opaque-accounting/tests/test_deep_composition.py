@@ -9,6 +9,8 @@ few hundred steps — making long-running accountants un-checkpointable.
 from __future__ import annotations
 
 import dataclasses
+import gc
+import tracemalloc
 
 import pytest
 
@@ -201,6 +203,22 @@ class TestDeepRepr:
         for _ in range(3_000):
             p = CachedProcess(Composed(p, acc.eps_delta(0.01, 1e-9)))
         assert repr(p).startswith("CachedProcess(inner=")
+
+    def test_repr_memory_proportional_to_output(self):
+        """#334 review: a skewed spine must not retain a string per node
+        (the memoized version peaked ~3 GB for a ~600 KB result)."""
+        p = _hetero_chain(DEPTH)
+        repr(_hetero_chain(2))  # warm lazy imports outside the traced window
+        gc.collect()
+        tracemalloc.start()
+        try:
+            tracemalloc.reset_peak()
+            s = repr(p)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # Measured ~3x output; the quadratic version was ~5000x.
+        assert peak < 20 * len(s)
 
     def test_shared_child_matches_dataclass_format(self):
         x = acc.eps_delta(0.1, 1e-9)

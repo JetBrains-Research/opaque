@@ -6,6 +6,13 @@ delegate ``__repr__`` here so deep chains — left- or right-skewed
 :class:`._cached.CachedProcess` docstring recommends — render without
 overflowing the interpreter stack.  Output is string-identical to the
 dataclass-generated reprs.
+
+Repr tokens stream through an explicit stack into one chunk buffer, so
+live memory is proportional to the final string rather than quadratic in
+spine depth.  A child shared by two parents is re-walked per occurrence;
+the walk stays time-proportional to the output, which is itself what
+grows under sharing.  Non-wrapper leaves render via their own ``repr``,
+which is safe because leaves hold no unbounded ``DpProcess`` spine.
 """
 
 from __future__ import annotations
@@ -17,45 +24,28 @@ if TYPE_CHECKING:
 
 
 def iter_repr(process: DpProcess) -> str:
-    """Iterative post-order repr of a ``DpProcess`` tree."""
+    """Iterative pre-order repr of a ``DpProcess`` tree."""
     # Lazy imports break the cycle: each wrapper module imports this
     # helper for its own ``__repr__``.
     from ._cached import CachedProcess
     from ._composed import Composed
     from ._repeated import Repeated
 
-    # id-keyed part strings; plain lookups (never popped) so a child
-    # object shared by two parents renders once and serves both.
-    parts: dict[int, str] = {}
-    stack: list[tuple[DpProcess, bool]] = [(process, False)]
+    chunks: list[str] = []
+    # Nodes still to render plus literal tokens to emit, pushed in
+    # reverse emission order.  Tokens are exact ``str`` instances, so
+    # the ``type`` check cannot swallow an exotic str-subclass leaf.
+    stack: list[DpProcess | str] = [process]
     while stack:
-        node, expanded = stack.pop()
-        if not expanded and id(node) in parts:
-            continue  # shared subtree already rendered
-        if isinstance(node, Composed):
-            if expanded:
-                parts[id(node)] = (
-                    f"Composed(left={parts[id(node.left)]}, "
-                    f"right={parts[id(node.right)]})"
-                )
-            else:
-                stack.append((node, True))
-                stack.append((node.right, False))
-                stack.append((node.left, False))
-        elif isinstance(node, Repeated):
-            if expanded:
-                parts[id(node)] = (
-                    f"Repeated(inner={parts[id(node.inner)]}, count={node.count!r})"
-                )
-            else:
-                stack.append((node, True))
-                stack.append((node.inner, False))
-        elif isinstance(node, CachedProcess):
-            if expanded:
-                parts[id(node)] = f"CachedProcess(inner={parts[id(node.inner)]})"
-            else:
-                stack.append((node, True))
-                stack.append((node.inner, False))
+        item = stack.pop()
+        if type(item) is str:
+            chunks.append(item)
+        elif isinstance(item, Composed):
+            stack += (")", item.right, ", right=", item.left, "Composed(left=")
+        elif isinstance(item, Repeated):
+            stack += (f", count={item.count!r})", item.inner, "Repeated(inner=")
+        elif isinstance(item, CachedProcess):
+            stack += (")", item.inner, "CachedProcess(inner=")
         else:
-            parts[id(node)] = repr(node)
-    return parts[id(process)]
+            chunks.append(repr(item))
+    return "".join(chunks)
