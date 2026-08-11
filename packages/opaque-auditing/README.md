@@ -6,8 +6,8 @@ loss-based membership-inference attacks.
 
 ## Install
 
-Install the root package as described in the
-[repository installation guide](../../README.md#installation).
+Install the root package as described in the [repository installation guide](
+https://github.com/JetBrains-Research/opaque#installation).
 Use its `auditing` extra to include this component.
 
 `opaque-auditing` depends on `opaque-engine` and `scipy`; both install

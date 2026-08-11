@@ -8,8 +8,8 @@ bounded — [Chen and Hale, 2024](https://arxiv.org/abs/2211.17230)), clipping
 
 ## Install
 
-Install the root package as described in the
-[repository installation guide](../../README.md#installation).
+Install the root package as described in the [repository installation guide](
+https://github.com/JetBrains-Research/opaque#installation).
 `opaque-dpsgd` is included in the default `opaque` package set.
 
 ## Quick start
