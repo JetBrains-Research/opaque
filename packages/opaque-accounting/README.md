@@ -16,7 +16,7 @@ It provides the synchronized `opaque-accounting` distribution:
 
 ```bash
 pip install opaque-accounting \
-  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index-url https://packages.jetbrains.team/pypi/p/fed/python/simple/
 python -c "from opaque.accounting import identity; print(identity().epsilon_at(1e-5))"
 ```
 

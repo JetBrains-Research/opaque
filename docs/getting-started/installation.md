@@ -11,20 +11,20 @@
 - Python 3.11 or 3.12
 - PyTorch 2.9 or later
 
-## From the JetBrains Artifact Registry
+## From JetBrains Packages
 
 Install `opaque` as the single public package entrypoint:
 
 ```bash
 pip install opaque \
-  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index-url https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
 
 Or with uv:
 
 ```bash
 uv add opaque \
-  --index https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
 
 ### Extras
