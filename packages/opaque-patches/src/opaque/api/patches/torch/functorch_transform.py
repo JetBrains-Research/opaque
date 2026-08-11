@@ -10,6 +10,7 @@ from __future__ import annotations
 
 
 def under_functorch_transform() -> bool:
+    """Return whether a functorch transform is active on this thread."""
     try:
         from torch._C._functorch import peek_interpreter_stack
 

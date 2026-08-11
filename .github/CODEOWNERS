@@ -1,0 +1,3 @@
+# Repository automation and release controls require Federated Compute review.
+/.github/ @JetBrains-Research/federated-compute
+/cliff.toml @JetBrains-Research/federated-compute

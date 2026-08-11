@@ -501,9 +501,12 @@ def test_dpo_mixed_normalization_mpo_trains(tmp_path):
     assert torch.isfinite(torch.tensor(out.training_loss))
 
 
-def test_dpo_tr_dpo_syncs_reference(tmp_path):
+def test_dpo_tr_dpo_syncs_reference(tmp_path, monkeypatch):
     # TR-DPO: full FT, reference recomputed per step from an EMA reference that
     # tracks the policy. With sync_steps=1 the reference must move during training.
+    from opaque.api.alignment.dpo.reference import _precompute
+
+    monkeypatch.setattr(_precompute.tempfile, "gettempdir", lambda: str(tmp_path))
     torch.manual_seed(0)
     trainer = DPOTrainer(
         model=_tiny_model(),
@@ -527,6 +530,7 @@ def test_dpo_tr_dpo_syncs_reference(tmp_path):
     after = dict(trainer._tr_ref.named_parameters())[name].detach()
     assert out.global_step == 2
     assert not torch.allclose(before, after)  # EMA moved the reference
+    assert not (tmp_path / "opaque_ref_cache").exists()
     # Eval scores against the current EMA reference (exercises _inject_tr_ref_logps
     # in prediction_step), not the stale seed columns.
     metrics = trainer.evaluate()

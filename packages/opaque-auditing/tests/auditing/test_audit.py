@@ -6,7 +6,7 @@ import pytest
 import opaque.auditing as auditing
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip, OneRunEstimate
-from opaque.random import key
+from opaque.random import fold_in, key
 from opaque.random.types import RngKey
 
 
@@ -400,3 +400,25 @@ class TestCoinFlipFunction:
         dataset = list(range(10))
         with pytest.raises(ValueError, match="exceeds dataset size"):
             auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+
+    def test_coin_flip_uses_reproducible_domain_separated_keys(self):
+        dataset = list(range(100))
+        root_key = key(42)
+        selection_key = fold_in(root_key, "auditing.canary_selection")
+        coin_key = fold_in(root_key, "auditing.coin_flip")
+        mechanism_key = fold_in(root_key, "mechanism.noise")
+
+        assert len({selection_key.seed, coin_key.seed, mechanism_key.seed}) == 3
+
+        expected_indices = np.random.default_rng(selection_key.seed).choice(
+            len(dataset), size=20, replace=False
+        )
+        expected_mask = np.random.default_rng(coin_key.seed).random(20) < 0.5
+
+        first = auditing.coin_flip(dataset, num_canaries=20, key=root_key)
+        second = auditing.coin_flip(dataset, num_canaries=20, key=root_key)
+
+        np.testing.assert_array_equal(first.canary_indices, expected_indices)
+        np.testing.assert_array_equal(first._in_mask, expected_mask)
+        np.testing.assert_array_equal(first.canary_indices, second.canary_indices)
+        np.testing.assert_array_equal(first._in_mask, second._in_mask)

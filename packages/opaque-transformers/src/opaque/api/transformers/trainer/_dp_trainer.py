@@ -793,6 +793,8 @@ class DPTrainer:
                 ``args.resume_from_checkpoint``. ``True`` auto-detects the latest
                 ``checkpoint-*`` under ``args.output_dir``. A string or
                 ``PathLike`` is treated as the concrete checkpoint directory.
+            ignore_keys_for_eval: Model-output keys to omit while evaluating
+                during training.
 
         Resume semantics under DP differ from HF's batch-replay model:
 
@@ -1692,7 +1694,7 @@ class DPTrainer:
 
                             n_tokens = int(
                                 reduce_scalar(
-                                    float(n_tokens),
+                                    n_tokens,
                                     op="sum",
                                     device=self._device,
                                 )
@@ -2660,10 +2662,10 @@ class DPTrainer:
 
             total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
             loss_samples = int(
-                reduce_scalar(float(loss_samples), op="sum", device=self._device)
+                reduce_scalar(loss_samples, op="sum", device=self._device)
             )
             total_samples = int(
-                reduce_scalar(float(total_samples), op="sum", device=self._device)
+                reduce_scalar(total_samples, op="sum", device=self._device)
             )
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
