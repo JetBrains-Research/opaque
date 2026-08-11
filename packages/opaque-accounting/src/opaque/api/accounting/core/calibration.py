@@ -100,15 +100,21 @@ def calibrate(
 ) -> CalibrateResult:
     """Binary search for parameter achieving target privacy metric.
 
-    Finds the value of a parameter (e.g., noise_multiplier) such that
-    the resulting DpProcess achieves a target privacy guarantee.
+    Finds the value of a parameter (e.g. noise_multiplier, sample rate,
+    or step count) such that the resulting DpProcess achieves a target
+    privacy guarantee.
 
     **Metric Direction:**
-    Each budget declares a ``decreasing`` property that tells the search
-    whether the metric decreases (True) or increases (False) as the
-    calibrated parameter grows.  Epsilon/delta/advantage are decreasing;
-    beta/risk are increasing.  The process metric must be monotone in that
-    declared direction, as it is when calibrating a noise multiplier.
+    Each budget declares a ``decreasing`` property describing the metric
+    *kind*: privacy-loss metrics (epsilon/delta/advantage) are safe
+    at-or-below the target, privacy-gain metrics (beta/risk) at-or-above.
+    The direction the metric moves as the calibrated *parameter* grows is
+    derived automatically by probing the metric at both endpoints — a
+    noise multiplier decreases privacy-loss metrics while a sample rate
+    or step count increases them, and both directions are supported.  The
+    metric must be monotone in the parameter over ``[param_min,
+    param_max]``; flat or detectably non-monotone parameterizations raise
+    ``ValueError``.
 
     Successful results are one-sided and privacy-safe.  A decreasing
     privacy-loss metric satisfies ``achieved <= target``; an increasing
@@ -131,15 +137,16 @@ def calibrate(
 
             Important: If process() raises an exception, it propagates immediately.
 
-        param_min: Lower, unsafe bound for the search
-            - For decreasing metrics: metric(param_min) >= budget.value
-            - For increasing metrics: metric(param_min) <= budget.value
-            - Example: a low noise_multiplier
+        param_min: Lower bound for the search.  Exactly one endpoint of
+            ``[param_min, param_max]`` must be privacy-safe for the
+            target; which one is detected automatically by probing.
+            - Example: a low noise_multiplier (unsafe end), or a low
+              sample rate (safe end)
 
-        param_max: Upper, privacy-safe bound for the search
-            - For decreasing metrics: metric(param_max) <= budget.value
-            - For increasing metrics: metric(param_max) >= budget.value
-            - Example: a high noise_multiplier
+        param_max: Upper bound for the search (see ``param_min`` — the
+            safe endpoint is auto-detected, not positional).
+            - Example: a high noise_multiplier (safe end), or a high
+              sample rate (unsafe end)
 
         tolerance: Positive, finite relative convergence tolerance
             - Uses ``math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0)``
@@ -166,8 +173,13 @@ def calibrate(
     Raises:
         ValueError: If tolerance is not finite and positive, or max_iterations is not positive
         ValueError: If param_min >= param_max
-        ValueError: If bounds don't bracket the target (both val_min/val_max above or below target)
-        ValueError: If budget evaluation returns inf or nan at the bounds
+        ValueError: If bounds don't bracket the target (neither or both endpoints privacy-safe)
+        ValueError: If budget evaluation returns NaN at the bounds, or infinity
+            on the privacy-safe endpoint (infinity on the unsafe endpoint is
+            accepted — the target is below it by definition)
+        ValueError: If the metric is flat across the bounds, or an interior
+            probe escapes the endpoint value envelope (non-monotone
+            parameterization)
         RuntimeError: If no privacy-safe endpoint converges within max_iterations
         Exception: If process() or budget.evaluate() raises an exception
 
@@ -312,52 +324,68 @@ def _calibrate_impl(
             f"Try expanding the search range or checking that process() produces valid DpProcess objects."
         )
 
-    # Determine search direction from the budget
-    decreasing = budget.decreasing
-    if decreasing:
-        # metric decreases with param: val_min is high, val_max is low
-        lo_val, hi_val = val_min, val_max
-    else:
-        # metric increases with param: val_min is low, val_max is high
-        lo_val, hi_val = val_max, val_min
-
-    # Bracketing check: inf on the "high" side is fine (target < inf),
-    # but inf on the "low" side means target is unreachable.
-    if math.isinf(hi_val):
-        raise ValueError(
-            f"Budget evaluation returned infinity on the wrong max_norm: "
-            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
-            f"This typically means the privacy target is unreachable with these parameter bounds. "
-            f"Try expanding the search range or checking that process() produces valid DpProcess objects."
-        )
-
-    if not math.isinf(lo_val) and not (hi_val <= budget.value <= lo_val):
-        raise ValueError(
-            f"Budget {budget.name}={budget.value:.6f} not in range "
-            f"[{min(val_min, val_max):.6f}, {max(val_min, val_max):.6f}] "
-            f"for param range [{param_min}, {param_max}]. "
-            f"The target may be unreachable with these bounds."
-        )
-
-    if math.isinf(lo_val) and budget.value < hi_val:
-        raise ValueError(
-            f"Budget {budget.name}={budget.value:.6f} below finite max_norm {hi_val:.6f} "
-            f"for param range [{param_min}, {param_max}]. "
-            f"The target may be unreachable with these bounds."
-        )
+    # Metric-kind: privacy-loss metrics (epsilon/delta/advantage) are safe
+    # at-or-below the target; privacy-gain metrics (beta/risk) at-or-above.
+    # This is a property of the METRIC.  The direction the metric moves as
+    # the calibrated PARAMETER grows is derived below by probing both
+    # bracket ends (values already computed above) — noise multipliers make
+    # privacy-loss metrics decrease, but sample rates / step counts make
+    # them increase, and both are valid calibration targets.
+    safe_when_below = budget.decreasing
 
     def is_safe(achieved: float) -> bool:
-        if decreasing:
+        if safe_when_below:
             return achieved <= budget.value
         return achieved >= budget.value
 
-    # The existing bracketing contract makes param_max the proven-safe bound.
-    # Retain its already-evaluated metric so every successful result is safe and
-    # exhaustion does not require an additional, untracked process evaluation.
-    lo = param_min
-    hi = param_max
-    safe_param = param_max
-    safe_value = val_max
+    if val_min == val_max:
+        raise ValueError(
+            f"Metric {budget.name} is flat over param range "
+            f"[{param_min}, {param_max}] (value {val_min} at both ends); "
+            f"cannot infer a monotone search direction. Check that the "
+            f"parameter actually affects the process."
+        )
+    safe_at_max = (val_max < val_min) if safe_when_below else (val_max > val_min)
+
+    if safe_at_max:
+        safe_param, safe_value = param_max, val_max
+        unsafe_param, unsafe_value = param_min, val_min
+    else:
+        safe_param, safe_value = param_min, val_min
+        unsafe_param, unsafe_value = param_max, val_max
+
+    # inf on the unsafe endpoint is fine (the target is < inf); inf on the
+    # safe endpoint means the target is unreachable within the bracket.
+    if math.isinf(safe_value):
+        raise ValueError(
+            f"Budget evaluation returned infinity on the privacy-safe endpoint: "
+            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+            f"The privacy target is unreachable with these parameter bounds."
+        )
+    if not is_safe(safe_value):
+        raise ValueError(
+            f"Budget {budget.name}={budget.value:.6f} not bracketed: neither "
+            f"endpoint of [{param_min}, {param_max}] is privacy-safe "
+            f"(values {val_min:.6f}, {val_max:.6f}). "
+            f"The target may be unreachable with these bounds."
+        )
+    if not math.isinf(unsafe_value) and is_safe(unsafe_value):
+        raise ValueError(
+            f"Budget {budget.name}={budget.value:.6f} not bracketed: both "
+            f"endpoints of [{param_min}, {param_max}] are privacy-safe "
+            f"(values {val_min:.6f}, {val_max:.6f}). If the metric is not "
+            f"monotone in the parameter, calibration is unsupported."
+        )
+
+    # Monotonicity envelope: any interior probe of a monotone metric stays
+    # inside the endpoint value range; escaping it means the parameterization
+    # is not monotone and bisection would silently mis-calibrate.  Padded by
+    # a small relative tolerance so PLD-grid noise near the endpoints (the
+    # metric's numerical floor) cannot hard-fail a legitimate calibration.
+    env_lo = min(val_min, val_max)
+    env_hi = max(val_min, val_max)
+    env_pad = 1e-9 * max(abs(env_lo), abs(env_hi), 1.0)
+
     iterations = 0
 
     if math.isclose(
@@ -376,7 +404,7 @@ def _calibrate_impl(
 
     for iteration in range(max_iterations):
         iterations = iteration + 1
-        mid = (lo + hi) / 2
+        mid = (unsafe_param + safe_param) / 2
         proc = process(mid)
         current = budget.evaluate(proc)
 
@@ -387,12 +415,21 @@ def _calibrate_impl(
                 f"produces valid DpProcess objects for all parameter values."
             )
 
+        # A monotone metric stays inside the endpoint value envelope.
+        if not math.isinf(current) and not (
+            env_lo - env_pad <= current <= env_hi + env_pad
+        ):
+            raise ValueError(
+                f"Metric {budget.name} is not monotone in the calibrated "
+                f"parameter: value {current:.6f} at param={mid} lies outside "
+                f"the bracket value range [{env_lo:.6f}, {env_hi:.6f}]."
+            )
+
         if is_safe(current):
-            hi = mid
             safe_param = mid
             safe_value = current
         else:
-            lo = mid
+            unsafe_param = mid
 
         # Convergence is accepted only from the proven privacy-safe endpoint.
         if math.isclose(
@@ -412,7 +449,8 @@ def _calibrate_impl(
     raise RuntimeError(
         f"Calibration for {budget.name} did not converge: "
         f"target={budget.value}, relative tolerance={tolerance}, "
-        f"iterations={iterations}, final bracket=[{lo}, {hi}], "
+        f"iterations={iterations}, "
+        f"final bracket=(unsafe={unsafe_param}, safe={safe_param}), "
         f"last safe achieved={safe_value} at param={safe_param}."
     )
 

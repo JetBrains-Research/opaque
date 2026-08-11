@@ -676,11 +676,12 @@ Binary search for a parameter value such that `process(param)` produces a
 | `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
-Its metric must be monotone in the direction declared by the budget. The
-current direction contract supports parameters such as `noise_multiplier`,
-whose increase improves privacy: epsilon, delta, and advantage decrease, while
-beta and risk increase. `param_min` must be the unsafe endpoint and `param_max`
-the privacy-safe endpoint under that contract.
+Its metric must be monotone in the parameter over `[param_min, param_max]`;
+the search direction is derived automatically by probing both endpoints, so
+noise-multiplier-like parameters (increase improves privacy) and
+sample-rate/step-like parameters (increase spends privacy) are both
+supported. Exactly one endpoint must be privacy-safe; which one is detected,
+not positional.
 
 ```python
 import opaque.accounting as acc
@@ -762,9 +763,10 @@ optimize and what value to achieve.
 | `cal.beta_budget(beta, alpha)`      | Type-II error at given Type-I error     | No                    |
 | `cal.risk_budget(risk, prior)`      | Bayes risk under optimal adversary      | No                    |
 
-"Decreasing with noise" indicates whether the metric decreases as the
-calibrated parameter (typically noise_multiplier) increases. The binary search
-adapts direction automatically based on the budget's `decreasing` property.
+"Decreasing with noise" indicates the metric kind: privacy-loss metrics
+(epsilon/delta/advantage) are safe at-or-below the target, privacy-gain
+metrics (beta/risk) at-or-above. The binary search derives the parameter
+direction automatically by probing both bracket endpoints.
 
 ```python
 # (epsilon, delta)-DP
