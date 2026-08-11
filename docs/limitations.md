@@ -59,7 +59,7 @@ and are not covered by default CI.
 ## Kernel patching lives in `opaque.patches`
 
 Kernel optimization and patching for Hugging Face models are part of
-`opaque.patches` and is CUDA+Triton only.
+`opaque.patches` and are available only with CUDA and Triton.
 
 Low-level Triton-backed autograd primitives are internal
 implementation details and should not be imported directly in user

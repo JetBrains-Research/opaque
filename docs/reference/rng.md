@@ -52,7 +52,7 @@ keys = split(k, num=10)  # Returns tuple
 
 # Loop pattern — split and advance
 for step in range(100):
-    key, step_key = split(key, num=2)
+    k, step_key = split(k, num=2)
     result = do_something_random(step_key)
 ```
 
