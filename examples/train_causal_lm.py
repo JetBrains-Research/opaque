@@ -43,6 +43,7 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
+import math
 import os
 import sys
 import time
@@ -624,6 +625,25 @@ def parse_args():
         type=int,
         default=32,
         help="Top singular values per layer used to score W0 for allocation.",
+    )
+    train_group.add_argument(
+        "--eval-bpb",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Compute per-example bits-per-byte (NLL / UTF-8 bytes) on the eval set "
+            "at the end of training. Far higher SNR than aggregate eval loss "
+            "(Signal-and-Noise, arXiv 2508.13144: ~20x on code) and yields "
+            "per-example values for paired bootstrap tests."
+        ),
+    )
+    train_group.add_argument(
+        "--eval-bpb-samples", type=int, default=512,
+        help="Number of eval examples to score for BPB (default 512).",
+    )
+    train_group.add_argument(
+        "--eval-bpb-microbatch", type=int, default=2,
+        help="Micro-batch for BPB scoring (logits are large; keep small).",
     )
     lora_group.add_argument(
         "--dump-core-spectra",
@@ -1566,6 +1586,51 @@ def main():
                 total_tokens += len(input_ids)
 
             return total_loss / total_tokens
+
+    def eval_bpb(trainable, n_samples=512, microbatch=2):
+        """Per-example bits-per-byte: token NLL (bits) / UTF-8 bytes of the text.
+
+        Byte-normalised so it is tokenizer-independent and interpretable as
+        compression. Returns (aggregate_bpb, [per-example bpb]); the per-example
+        list is what enables paired bootstrap / sign-flip tests across arms,
+        which a single scalar eval loss cannot support.
+        """
+        pad_id = tokenizer.pad_token_id
+        per_example: list[float] = []
+        tot_bits = 0.0
+        tot_bytes = 0
+        seen = 0
+        ln2 = math.log(2.0)
+        with torch.no_grad():
+            for (input_ids,) in eval_loader:
+                if seen >= n_samples:
+                    break
+                for lo in range(0, input_ids.shape[0], microbatch):
+                    if seen >= n_samples:
+                        break
+                    chunk = input_ids[lo : lo + microbatch]
+                    logits = fmodel(merged_params(trainable), chunk).logits
+                    # next-token prediction: logits[:, :-1] predicts chunk[:, 1:]
+                    logp = torch.log_softmax(logits[:, :-1, :].float(), dim=-1)
+                    tgt = chunk[:, 1:]
+                    nll = -logp.gather(-1, tgt.unsqueeze(-1)).squeeze(-1)  # nats
+                    valid = (tgt != pad_id) if pad_id is not None else torch.ones_like(tgt, dtype=torch.bool)
+                    nll = nll * valid
+                    for i in range(chunk.shape[0]):
+                        if seen >= n_samples:
+                            break
+                        ids = chunk[i]
+                        if pad_id is not None:
+                            ids = ids[ids != pad_id]
+                        text = tokenizer.decode(ids, skip_special_tokens=True)
+                        nbytes = max(1, len(text.encode("utf-8")))
+                        bits = float(nll[i].sum().item()) / ln2
+                        per_example.append(bits / nbytes)
+                        tot_bits += bits
+                        tot_bytes += nbytes
+                        seen += 1
+                    del logits, logp, nll
+        return (tot_bits / max(1, tot_bytes)), per_example
 
     # Build clipping norm (scalar or per-group)
     if args.per_group_clipping:
@@ -2628,6 +2693,34 @@ def main():
                 v.detach().copy_(best_snapshot[k].to(v.device, v.dtype))
         else:
             print(f"\nBest checkpoint IS the final step ({global_step}); no restore needed.")
+
+    # Bits-per-byte on the eval set (high-SNR primary metric; per-example values
+    # are logged so arms can be compared with paired bootstrap / sign-flip tests).
+    if getattr(args, "eval_bpb", False) and is_main_process:
+        import json as _json
+
+        print(f"\nComputing BPB on {args.eval_bpb_samples} eval examples...")
+        _t0 = time.time()
+        _bpb, _bpb_list = eval_bpb(
+            trainable_params,
+            n_samples=args.eval_bpb_samples,
+            microbatch=args.eval_bpb_microbatch,
+        )
+        _mean = sum(_bpb_list) / max(1, len(_bpb_list))
+        _var = sum((x - _mean) ** 2 for x in _bpb_list) / max(1, len(_bpb_list) - 1)
+        _sem = (_var ** 0.5) / max(1, len(_bpb_list)) ** 0.5
+        print(
+            f"  eval/bpb = {_bpb:.6f} bits/byte  (per-example mean {_mean:.6f} "
+            f"± {_sem:.6f} SEM, n={len(_bpb_list)}, {time.time()-_t0:.0f}s)"
+        )
+        if use_wandb:
+            wandb.run.summary["eval/bpb"] = _bpb
+            wandb.run.summary["eval/bpb_per_example_mean"] = _mean
+            wandb.run.summary["eval/bpb_per_example_sem"] = _sem
+            wandb.run.summary["eval/bpb_n"] = len(_bpb_list)
+            wandb.run.summary["eval/bpb_per_example_json"] = _json.dumps(
+                [round(x, 6) for x in _bpb_list]
+            )
 
     # Optional: dump per-layer core spectra for Rényi rank allocation (probe).
     # Pair with --max-steps N for a short warm-up; feed the JSON to
