@@ -43,10 +43,17 @@ class StreamingMatrix(Generic[State]):
             or a template with the expected shape.
         multiply_next: Returns (next_output, updated_state) from
             (next_input, current_state).
+        row_norms_squared_fn: Optional closed-form implementation of
+            :meth:`row_norms_squared`.  Builders that know the matrix
+            structure (e.g. Toeplitz) attach one to avoid the generic
+            O(n^2) probing; it must return the same values the probing
+            fallback would.  Compositions drop it (falling back to
+            probing) rather than propagate a stale closed form.
     """
 
     init_multiply: Callable[[Any], State]
     multiply_next: Callable[[Any, State], tuple[Any, State]]
+    row_norms_squared_fn: Callable[[int], torch.Tensor] | None = None
 
     @classmethod
     def from_array_implementation(
@@ -119,6 +126,8 @@ class StreamingMatrix(Generic[State]):
         Returns:
             A tensor of length n with row-wise L2^2 norms.
         """
+        if self.row_norms_squared_fn is not None:
+            return self.row_norms_squared_fn(n)
         zero = torch.zeros(n, dtype=torch.float64)
         state = self.init_multiply(zero)
         norms = torch.zeros(n, dtype=torch.float64)

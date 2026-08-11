@@ -17,8 +17,10 @@ import functools
 from collections.abc import Callable
 from typing import Any, Protocol, TypeAlias, TypeVar
 
+import numpy as np
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
+from scipy.signal import lfilter as scipy_lfilter
 
 from . import (
     _checks as checks,
@@ -165,6 +167,8 @@ def pad_coefs_to_n(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
 def inverse_as_streaming_matrix(
     coef: torch.Tensor,
     column_normalize_for_n: int | None = None,
+    *,
+    inverse_coefficients: torch.Tensor | None = None,
 ) -> streaming_matrix.StreamingMatrix:
     """Create C^{-1} as a StreamingMatrix.
 
@@ -173,15 +177,57 @@ def inverse_as_streaming_matrix(
 
     This implements Algorithm 9 from https://arxiv.org/abs/2306.08153.
 
+    The returned matrix carries a closed-form ``row_norms_squared``:
+    C^{-1} is lower-triangular Toeplitz, so its squared row norms are
+    ``cumsum(inverse_coef**2)`` (rescaled by the normalization diagonal
+    when ``column_normalize_for_n`` is set).  That is O(bands * n) at
+    query time instead of the O(bands * n^2) generic probing.
+
     Args:
         coef: Toeplitz coefficients of the strategy matrix.
         column_normalize_for_n: If set, column-normalize C for this size.
+        inverse_coefficients: Optional known Toeplitz coefficients of the
+            un-normalized C^{-1}, treated as zero past their length (e.g.
+            BISR's banded inverse).  Skips the O(bands * n) inversion
+            recurrence inside the closed-form row norms.  Validated at
+            construction: raises ``ValueError`` unless
+            ``toeplitz(coef) @ toeplitz(inverse_coefficients)`` is the
+            identity.  Gradients do not flow through the hint (it is
+            redundant with ``coef``); a grad-carrying hint falls back to
+            the probing path like a grad-carrying ``coef`` does.
 
     Returns:
         A StreamingMatrix representing C^{-1}.
+
+    Raises:
+        ValueError: If ``inverse_coefficients`` does not invert ``coef``.
     """
     coef, _ = _reconcile(coef, column_normalize_for_n)
     bands = coef.shape[0]
+
+    hint_requires_grad = False
+    inv_hint: torch.Tensor | None = None
+    if inverse_coefficients is not None:
+        hint_requires_grad = (
+            isinstance(inverse_coefficients, torch.Tensor)
+            and inverse_coefficients.requires_grad
+        )
+        inv_hint = (
+            torch.as_tensor(inverse_coefficients).detach().cpu().to(torch.float64)
+        )
+        # Entries past both coefficient windows hold only the truncation
+        # tail of a length-n coef (e.g. BISR's dense strategy recovery),
+        # not an inconsistency inside the n x n matrix — ignore them.
+        window = max(coef.shape[0], inv_hint.shape[0])
+        product = np.convolve(coef.detach().cpu().numpy(), inv_hint.numpy())[:window]
+        identity = np.zeros_like(product)
+        identity[0] = 1.0
+        if not np.allclose(product, identity, atol=1e-8):
+            raise ValueError(
+                "inverse_coefficients is not the Toeplitz inverse of coef: "
+                "max |toeplitz(coef) @ toeplitz(inverse_coefficients) - I| = "
+                f"{np.abs(product - identity).max():.3e}"
+            )
 
     def init(abstract_yi):
         dtype = abstract_yi.dtype
@@ -203,12 +249,41 @@ def inverse_as_streaming_matrix(
 
     Cinv = streaming_matrix.StreamingMatrix.from_array_implementation(init, _next)
 
+    col_norms: torch.Tensor | None = None
     if column_normalize_for_n is not None:
         full_coef = pad_coefs_to_n(coef, column_normalize_for_n)
         col_norms = torch.sqrt(torch.cumsum(full_coef**2, dim=0)).flip(0)
         Cinv = streaming_matrix.scale_rows_and_columns(Cinv, row_scale=col_norms)
 
-    return Cinv
+    # ``fallback`` has no row_norms_squared_fn, so calling its
+    # row_norms_squared runs the generic probing — no recursion.
+    fallback = Cinv
+
+    def _row_norms_squared(n: int) -> torch.Tensor:
+        if coef.requires_grad or hint_requires_grad:
+            # lfilter would silently detach the autograd graph; keep the
+            # differentiable probing path for optimization use.
+            return fallback.row_norms_squared(n)
+        if n == 0:
+            return torch.zeros(0, dtype=torch.float64, device="cpu")
+        if inv_hint is not None:
+            inv_coefs = pad_coefs_to_n(inv_hint, n)
+        else:
+            impulse = np.zeros(n)
+            impulse[0] = 1.0
+            inv_coefs = torch.from_numpy(
+                scipy_lfilter([1.0], coef.detach().cpu().numpy(), impulse)
+            )
+        norms = torch.cumsum(inv_coefs.square(), dim=0)
+        if col_norms is not None:
+            # Past ``column_normalize_for_n`` the probing path repeats the
+            # last diagonal entry (see ``diagonal``); mirror that here.
+            idx = torch.arange(n, device="cpu").clamp(max=col_norms.numel() - 1)
+            scale = col_norms.detach().cpu()[idx]
+            norms = norms * scale.square()
+        return norms
+
+    return dataclasses.replace(Cinv, row_norms_squared_fn=_row_norms_squared)
 
 
 def optimal_max_error_strategy_coefs(n: int) -> torch.Tensor:

@@ -1,5 +1,7 @@
 """Tests for BisrStrategy factory, runtime dispatch, and accounting equivalence."""
 
+import dataclasses
+
 import pytest
 import torch
 
@@ -155,6 +157,17 @@ class TestBisrStrategy:
         torch.testing.assert_close(
             expected_dense, manual_streaming.materialize(n_steps)
         )
+
+    @pytest.mark.parametrize("normalized", [False, True])
+    def test_row_norms_closed_form_matches_probing(self, normalized):
+        n_steps = 12
+        strategy = bisr_strategy(bandwidth=3, normalized=normalized)
+        streaming = strategy.streaming_matrix(n_steps=n_steps)
+        closed_form = streaming.row_norms_squared(n_steps)
+        probing = dataclasses.replace(
+            streaming, row_norms_squared_fn=None
+        ).row_norms_squared(n_steps)
+        torch.testing.assert_close(closed_form, probing, atol=1e-10, rtol=1e-10)
 
     def test_matches_old_sensitivity(self):
         assert bisr_strategy(bandwidth=4).sensitivity(**_PART) > 0
