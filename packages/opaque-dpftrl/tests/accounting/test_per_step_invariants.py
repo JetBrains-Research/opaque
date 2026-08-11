@@ -59,9 +59,9 @@ def _atomic_unit(proc: DpHorizonProcess) -> int:
 def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
     """K-step ε via ``per_step(proc) * K`` — the public API surface.
 
-    MC kwargs are read off the global ``acc.set_discretization`` config
-    when the underlying amplifier is MC-based; tests pin them with the
-    :func:`_seed_mc` fixture.
+    MC kwargs could be passed per call (``epsilon_at`` forwards
+    ``num_mc_samples`` / ``seed``); these tests pin them globally with the
+    :func:`_seed_mc` fixture so every call site resolves the same config.
     """
     if K <= 0:
         return Identity().epsilon_at(delta)
@@ -73,9 +73,10 @@ def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
 def _seed_mc():
     """Pin global MC discretization for MC-based amplifiers.
 
-    ``Repeated.pld()`` → ``repeated_pld(count)`` only accepts the core
-    discretization kwargs; MC sample budget / seed must come from the
-    global config.  Set globally for the duration of the test.
+    ``Repeated.pld()`` → ``repeated_pld(count)`` also forwards
+    ``num_mc_samples`` / ``seed`` per call; pinning them globally keeps
+    the shared helpers here parameter-free.  Set for the duration of the
+    test.
     """
     acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
     yield
