@@ -87,9 +87,8 @@ class GdpMethod:
             raise RuntimeError(
                 f"cannot invert μ-GDP p-value for (m={m}, r={r}, u={u}) at "
                 f"corrected significance={significance}: p-value stays below it for "
-                f"every μ up to {mu_hi:g}. With r > {_MAX_EXACT_RANKS} "
-                f"truncated ranks pin the Chernoff bound; use fewer canaries "
-                f"or a larger significance."
+                f"every μ up to {mu_hi:g}; use fewer canaries or a larger "
+                f"significance."
             )
 
         mu_lo = 0.0
