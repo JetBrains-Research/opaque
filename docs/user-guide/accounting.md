@@ -535,11 +535,11 @@ flat = state_dict(acct)
 # ... torch.save(flat, path) / flat = torch.load(path) ...
 ```
 
-The flat mapping may include ``torch.Tensor`` and NumPy arrays. Persist it with
-:func:`torch.save` / :func:`torch.load` (or another pickle-compatible format),
-not JSON, unless every leaf is JSON-serialisable.
+The flat mapping may include `torch.Tensor` and NumPy arrays. Persist it with
+`torch.save` / `torch.load` (or another pickle-compatible format), not JSON,
+unless every leaf is JSON-serializable.
 
-For a bare ``DpProcess``, use ``from_state_dict(identity(), flat)`` (or any
+For a bare `DpProcess`, use `from_state_dict(identity(), flat)` (or any
 concrete process as the template).
 
 ## Discretization

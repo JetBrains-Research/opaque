@@ -64,11 +64,11 @@ $$S^2 = 1 + \sum_{i,j} \frac{\omega_i \cdot \omega_j}{1 - \theta_i \cdot \theta_
 
 When examples can participate multiple times with at least `min_sep` steps
 between participations, sensitivity uses the Toeplitz min-sep algorithm
-(Theorem 2, BSR paper). The algorithm:
+(Theorem 2 of the BSR paper). The algorithm:
 
-1. Pads coefficients to min-sep blocks
-2. Computes cumulative sums within blocks
-3. Uses sliding-window subtraction to find the worst-case participation
+1. Pads coefficients to min-sep blocks.
+2. Computes cumulative sums within blocks.
+3. Uses sliding-window subtraction to find the worst-case participation.
 
 **Fixed-epoch participation** is not natively supported by BLT.
 
@@ -85,7 +85,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
 - Optional **`lr_schedule`** weights the optimizer objective on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\) while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.
-- **Subsampling**: BLT does not use ``dpftrl_acc.poisson`` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
+- **Subsampling**: BLT does not use `dpftrl_acc.poisson` as BandMF does; combine it with Balls-in-Bins when using correlated MF with epoch structure (see examples).
 - Overview: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
 
 ## Supported amplifications
@@ -100,7 +100,7 @@ sensitivity computation. There is no external amplification wrapper.
 | `dpftrl_acc.poisson` | No | For BandMF / identity MF |
 
 If you need subsampling amplification with correlated noise, use
-[BandMF](band-mf.md) with :func:`opaque.dpftrl.accounting.poisson` instead.
+[BandMF](band-mf.md) with `opaque.dpftrl.accounting.poisson` instead.
 
 !!! note "Multi-epoch vs subsampling"
     BLT and Poisson subsampling solve different problems. Poisson subsampling
@@ -109,7 +109,7 @@ If you need subsampling amplification with correlated noise, use
     multi-participation (min-sep / max-participations) sensitivity computation.
     BLT itself does **not** model subsampling amplification and has no
     `sample_rate` parameter. If you need subsampling with correlated noise,
-    use [BandMF](band-mf.md) with :func:`opaque.dpftrl.accounting.poisson` instead.
+    use [BandMF](band-mf.md) with `opaque.dpftrl.accounting.poisson` instead.
 
 ## Code examples
 

@@ -42,7 +42,7 @@ EMA-updated reference policy variant exposed on the trainer surface.
 ## 1. Reference log-probabilities
 
 Run the frozen reference once over the dataset, *before* training, and cache
-the per-example chosen/rejected logps when reuse is useful.
+the per-example chosen/rejected logps when reuse is needed.
 `opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset` takes a
 `ref(batch) -> {col: (B,) tensor}` callable (wrap your model into one),
 runs a single `torch.no_grad()` pass, gathers across ranks, and caches to
@@ -86,6 +86,8 @@ dataset = compute_ref_logprobs_for_dataset(
 For the example above, the stored metadata contract is:
 
 ```python
+import hashlib
+
 dataset_id = getattr(dataset, "_fingerprint", None)
 if dataset_id is None:
     dataset_id = repr(dataset)
@@ -223,7 +225,7 @@ and CPO is pure composition of existing heads.
 ## 4. DP-SGD loop
 
 The clip/noise/optimizer/sampler glue is identical to
-[SFT](sft.md#3-vmapgrad-clip-noise-optimizer); only `batch_argnums` grows
+[SFT](sft.md#3-vmapgrad-clipping-noise-and-optimization); only `batch_argnums` grows
 to cover all eight per-example arguments:
 
 ```python
@@ -248,7 +250,7 @@ for indices in sampler:
     trainable = torchopt.apply_updates(trainable, updates)
 ```
 
-## 5. Reward-metric eval
+## 5. Reward-metric evaluation
 
 DPO has no token-level CE eval objective, so evaluate with reward metrics
 on held-out pairs. `opaque.alignment.dpo.metric.reward_metrics` takes the

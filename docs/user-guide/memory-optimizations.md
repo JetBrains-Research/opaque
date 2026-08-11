@@ -23,7 +23,7 @@ term dominates for large models.
 | 7B + LoRA r=8 | ~2.5 GB | ~160 MB | ~10 MB |
 
 LoRA dramatically reduces gradient memory because only the adapter
-parameters (~0.1% of model) require per-example gradients.  Use
+parameters (~0.1% of the model) require per-example gradients. Use
 `make_functional(model, partition_trainable=True)` to expose only the
 trainable subset to `vmap(grad(...))` — see [Utilities reference —
 `make_functional`](../reference/utilities.md#trainable-frozen-partition-for-peft-and-lora).
@@ -34,7 +34,7 @@ Microbatching reduces $M$ by processing the batch in chunks. With
 `microbatch_size=16` and `batch_size=256`, vmap runs 16 forward-backward
 passes of 16 examples each, accumulating the clipped gradients. Memory
 drops from $256 \cdot P$ to $16 \cdot P$ for the gradient term, at the
-cost of 16x more sequential computation.
+cost of 16× more sequential computation.
 
 ```python
 grad_fn, clip_state = clipped_grad(
@@ -100,7 +100,7 @@ def my_model(x):
 grads = vmap(grad(my_model))(batch_x)
 ```
 
-**With HuggingFace models:**
+**With Hugging Face models:**
 
 ```python
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")

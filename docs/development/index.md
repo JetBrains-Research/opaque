@@ -3,7 +3,7 @@
 This guide is for contributors working from a GitHub fork or a local clone of
 Opaque. It summarizes the maintained workflow in
 [CONTRIBUTING.md](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md);
-consult that file for the full test, documentation, and pull-request conventions.
+consult that file for the full testing, documentation, and pull-request conventions.
 
 ## Get the source
 

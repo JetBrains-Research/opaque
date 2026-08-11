@@ -1,8 +1,8 @@
 # BISR (Banded Inverse Square Root)
 
-**BISR** (Kalinin et al., ICLR 2026) generalises [DP-λCGD](lambda-cgd.md) from
-bandwidth 2 to arbitrary bandwidth p ≥ 2. The inverse of the strategy matrix
-C^{-1} is a banded Toeplitz matrix whose coefficients are analytically determined
+**BISR** (Kalinin et al., ICLR 2026) generalizes [DP-λCGD](lambda-cgd.md) from
+bandwidth 2 to an arbitrary bandwidth \(p \geq 2\). The inverse of the strategy matrix
+\(C^{-1}\) is a banded Toeplitz matrix whose coefficients are analytically determined
 from the inverse square root of the workload matrix.
 
 - **Paper**: [Back to Square Roots: An Optimal Bound on the Matrix Factorization Error for Multi-Epoch Differentially Private SGD](https://arxiv.org/abs/2505.12128)
@@ -101,7 +101,7 @@ and computes the linear combination defined by the BISR coefficients.
 - **BnB sampling**: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).
 - **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
 - **`lr_schedule` affects accounting only**: BISR coefficients remain analytically determined by its existing workload model. Supplying a schedule uses the matching step-weighted Gram for Balls-in-Bins accounting; it does not change the BISR strategy or introduce additional optimizer parameters. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
-- **Not BSR**: BISR bands the **inverse** square root construction (generalised λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD+momentum+weight decay.
+- **Not BSR**: BISR bands the **inverse** square-root construction (generalized λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD with momentum and weight decay.
 - For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../../user-guide/dp-ftrl.md).
 
 ## Bandwidth selection

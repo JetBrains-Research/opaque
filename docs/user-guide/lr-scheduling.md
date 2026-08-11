@@ -2,7 +2,7 @@
 
 Standard ML LR schedules — linear / cosine decay with warmup — work
 without modification under DP-SGD: they scale the already-clipped,
-already-noised update direction.  The privacy guarantee is
+already-noised update direction. The privacy guarantee is
 unchanged.
 
 This page explains the schedules and warmup composition Opaque
@@ -14,11 +14,11 @@ pattern for using them with TorchOpt functional optimizers.
 The first few hundred steps of DP-SGD update parameters using a
 gradient direction that's heavily contaminated by Gaussian noise — at
 typical noise multipliers, the signal-to-noise ratio per step is
-small even when the average over many steps is informative.  A high
-LR early in training amplifies that noise into the parameters.  A
+small even when the average over many steps is informative. A high
+LR early in training amplifies that noise into the parameters. A
 short linear ramp from `0` to `base_lr` over the first few percent of
 total steps gives the optimizer's moment estimators time to average
-the noise out before they're scaled by the full step size.  The same
+the noise out before they're scaled by the full step size. The same
 schedule that's a nice-to-have for non-private fine-tuning becomes
 load-bearing under DP.
 
@@ -43,7 +43,7 @@ needed.
 import torchopt
 from opaque.scheduling import linear_schedule
 
-# Linear decay 1e-3 -> 0 over 10 000 steps.
+# Linear decay from 1e-3 to 0 over 10,000 steps.
 schedule = linear_schedule(1e-3, 0.0, transition_steps=10_000)
 opt = torchopt.adamw(lr=schedule)
 ```
@@ -102,7 +102,7 @@ schedule = with_warmup(decay, transition_steps=W, ramp="cosine")
 
 ### Non-zero warmup floor
 
-The default warmup ramps from `0`.  Some optimizers (StableAdamW, for
+The default warmup ramps from `0`. Some optimizers (StableAdamW, for
 example) prefer a non-trivial first step; pass `init_value` to start
 the ramp at a fraction of the inner schedule's value instead of zero:
 
@@ -168,7 +168,7 @@ schedule = with_restarts(inner, transition_steps=N, num_cycles=k)
 ```
 
 Each cycle the schedule snaps back to `inner(0)` and runs the curve
-over its own `cycle_length`.  Composes with `with_warmup` the same
+over its own `cycle_length`. It composes with `with_warmup` the same
 way as any other decay.
 
 ## Warmup-Stable-Decay (WSD)
@@ -201,7 +201,7 @@ opt = torchopt.adamw(lr=schedule)
 
 The stable middle plateau enables **decay-only fine-tuning**: resume
 from any checkpoint inside the stable region and run only the decay
-tail without re-training the warmup.  That makes WSD a natural fit
+tail without re-training the warmup. That makes WSD a natural fit
 for "anytime" training where the final compute budget isn't fixed up
 front.
 
@@ -213,13 +213,13 @@ progress to the factor applied to `(init_value - end_value)`.
 ## Mapping from `transformers` schedule names
 
 `transformers` exposes a number of named cosine variants for
-historical reasons.  Opaque's `cosine_schedule` and the composition
+historical reasons. Opaque's `cosine_schedule` and the composition
 primitives subsume all of them; the table below shows the recipe for
-each.  No engine-side alias is needed — pass the equivalent
+each. No engine-side alias is needed — pass the equivalent
 construction directly.
 
 The HF schedules all include a `0 → base_lr` warmup over the first
-`W` steps.  Each Opaque recipe configures the inner cosine with
+`W` steps. Each Opaque recipe configures the inner cosine with
 `transition_begin=W` (so the cosine returns `init_value` during the
 warmup window) and wraps it with `with_warmup(..., transition_steps=W)`
 so that leading plateau is rescaled into the ramp.
@@ -251,7 +251,7 @@ The optimizer maintains its own counter inside `opt_state` (via
 `scale_by_neg_lr`), so calling `schedule(step)` for logging does
 not interfere with how the optimizer applies the schedule.
 
-## See Also
+## See also
 
 - [Schedules API](../reference/schedules.md) — full signatures and behavior.
 - [Optimizers User Guide](optimizers.md) — bias correction, weight decay, AdamW-BC.

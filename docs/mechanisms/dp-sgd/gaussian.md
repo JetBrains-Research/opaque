@@ -70,12 +70,12 @@ training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 ```
 
-### Truncated Poisson subsampling (``poisson`` with a batch cap)
+### Truncated Poisson subsampling (`poisson` with a batch cap)
 
-Production variant that caps batch size. Capping stabilises batches and
+Production variant that caps batch size. Capping stabilizes batches and
 memory but **weakens** privacy versus plain Poisson at the same
-``sample_rate`` unless noise is recalibrated—use ``truncated_batch_size`` and
-``dataset_size`` together on :func:`opaque.dpsgd.accounting.poisson`.
+`sample_rate` unless noise is recalibrated—use `truncated_batch_size` and
+`dataset_size` together with `opaque.dpsgd.accounting.poisson`.
 
 ```python
 n = 50_000
@@ -110,7 +110,7 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=noise_multiplier,
+    noise_multiplier=noise_multiplier,
     key=key(42),
 )
 
@@ -124,6 +124,7 @@ for batch in dataloader:
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 
 # Single step
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01)
@@ -167,7 +168,7 @@ print(f"σ/Δ = {noise_multiplier:.4f}, achieved ε = {result.achieved:.4f}")
 
 ## Bounded noise variant
 
-Pass ``bound=B`` (or ``bound=(low, high)``) to `gaussian_noise()` to sample
+Pass `bound=B` (or `bound=(low, high)`) to `gaussian_noise()` to sample
 from a Gaussian renormalized over $[-B, B]$ (or $[\text{low}, \text{high}]$)
 per coordinate — the *bounded Gaussian mechanism* of
 [Chen and Hale (2024)](https://arxiv.org/abs/2211.17230).
@@ -182,13 +183,13 @@ import opaque.accounting as acc
 
 # Noise injection: bounded support, symmetric absolute bound
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=noise_multiplier, bound=3.0, key=key(42),
+    noise_multiplier=noise_multiplier, bound=3.0, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 # Asymmetric bound:
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=noise_multiplier, bound=(-1.0, 4.0), key=key(42),
+    noise_multiplier=noise_multiplier, bound=(-1.0, 4.0), key=key(42),
 )
 
 # Accounting (unchanged from the unbounded mechanism)

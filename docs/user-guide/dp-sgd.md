@@ -96,10 +96,10 @@ noise_fn, noise_state = gaussian_noise(
 )
 ```
 
-For bounded noise support, pass ``bound=...`` to
+For bounded noise support, pass `bound=...` to
 `opaque.dpsgd.noise.gaussian_noise` — same accounting, inverse-CDF
-sampling, accepts a positive scalar (symmetric ``[-B, B]``) or a
-``(low, high)`` tuple.
+sampling, and accepts a positive scalar (symmetric `[-B, B]`) or a
+`(low, high)` tuple.
 
 ## 4. Sampling
 

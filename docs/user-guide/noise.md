@@ -555,12 +555,12 @@ Values are illustrative; actual results depend on problem specifics.
 
 ### MF noise with Poisson sampling
 
-``CyclicPoissonSampler`` splits the data into ``bands`` groups and, at step
-``i``, samples only group ``i % bands`` with per-example probability
-``sample_rate``.  Use ``bands=1`` with ``identity_strategy`` / ``identity_mf``
-so each step is plain Poisson on the full dataset; for BandMF, match ``bands``
-to ``band_mf_strategy``.  That keeps the data schedule aligned with ``mf_gaussian_noise``
-and ``dpftrl_acc.poisson``:
+`CyclicPoissonSampler` splits the data into `bands` groups and, at step
+`i`, samples only group `i % bands` with per-example probability
+`sample_rate`. Use `bands=1` with `identity_strategy` / `identity_mf`
+so each step is plain Poisson on the full dataset; for BandMF, match `bands`
+to `band_mf_strategy`. That keeps the data schedule aligned with
+`mf_gaussian_noise` and `dpftrl_acc.poisson`:
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -581,7 +581,7 @@ In distributed training, all devices must add the same noise to maintain model
 consistency. Pass the **same key** on every rank:
 
 ```python
-# Same key on all ranks -> identical noise -> models stay in sync
+# Same key on all ranks → identical noise → models stay in sync
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 ```
 
@@ -605,13 +605,13 @@ noise state type. See [Distributed Training](distributed.md) for details.
 
 ## References
 
-- [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
-- [Dvijotham et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
-- [McMahan et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
-- [Kalinin et al., 2026](https://arxiv.org/abs/2601.22334) -- DP-λCGD
-- [Kalinin et al., 2026](https://arxiv.org/abs/2505.12128) -- BISR
-- [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
-- [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
+- [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) — BandMF
+- [Dvijotham et al., 2024](https://arxiv.org/abs/2404.16706) — BLT
+- [McMahan et al., 2024](https://arxiv.org/abs/2408.08868) — Multi-epoch BLT
+- [Kalinin et al., 2026](https://arxiv.org/abs/2601.22334) — DP-λCGD
+- [Kalinin et al., 2026](https://arxiv.org/abs/2505.12128) — BISR
+- [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) — Inversion theorem
+- [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) — DP-FTRL
 
 ## API reference
 
