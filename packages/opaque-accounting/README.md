@@ -10,8 +10,13 @@ The native module exposes flat functions that take scalar parameters
 and return opaque `Pld` handles; the Python side owns composition,
 repetition, caching, and calibration.
 
+Install the root package as described in the [repository installation guide](
+https://github.com/JetBrains-Research/opaque#installation).
+It provides the synchronized `opaque-accounting` distribution:
+
 ```bash
-pip install opaque-accounting
+pip install opaque-accounting \
+  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 python -c "from opaque.accounting import identity; print(identity().epsilon_at(1e-5))"
 ```
 
