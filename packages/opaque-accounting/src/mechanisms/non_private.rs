@@ -68,7 +68,11 @@ mod tests {
         let g = crate::mechanisms::gaussian_pld(1.0, &config).unwrap();
 
         // non_private is the annihilator: composing with anything stays non-private.
-        let composed = np.self_compose(1).compose(&g.self_compose(1)).unwrap();
+        let composed = np
+            .self_compose(1)
+            .unwrap()
+            .compose(&g.self_compose(1).unwrap())
+            .unwrap();
         for &delta in &[1e-10, 1e-5, 0.1] {
             assert!(
                 composed.epsilon_at(delta).is_infinite(),

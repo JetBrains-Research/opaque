@@ -700,6 +700,60 @@ class TestDPTrainerAdaptiveClipping:
 class TestDPTrainerLRScheduling:
     """Test that ``lr_scheduler`` and warmup actually take effect."""
 
+    def test_fractional_epochs_use_fractional_step_horizon(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """A partial final epoch drives training, scheduling, and accounting."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=-1,
+                num_train_epochs=1.25,
+                learning_rate=1e-3,
+                lr_scheduler="linear",
+                eval_strategy="no",
+                logging_steps=1,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        output = trainer.train()
+
+        assert output.global_step == 3
+        assert trainer.state.max_steps == 3
+        assert trainer.state.privacy_total_steps == 3
+        lrs = [
+            entry["learning_rate"]
+            for entry in trainer.state.log_history
+            if "learning_rate" in entry
+        ]
+        assert lrs == pytest.approx([1e-3, 1e-3 * 2 / 3, 1e-3 / 3])
+
+    def test_sub_epoch_training_runs_one_step(self, gpt2_with_lora, tiny_lm_dataset):
+        """A positive fraction below one does not truncate to zero steps."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=-1,
+                num_train_epochs=0.25,
+                eval_strategy="no",
+                logging_steps=1,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        output = trainer.train()
+
+        assert output.global_step == 1
+        assert trainer.state.max_steps == 1
+        assert trainer.state.privacy_total_steps == 1
+
     def test_constant_lr_logged_at_base(self, gpt2_with_lora, tiny_lm_dataset):
         """lr_scheduler='constant' logs base_lr at every step."""
         model, tokenizer = gpt2_with_lora

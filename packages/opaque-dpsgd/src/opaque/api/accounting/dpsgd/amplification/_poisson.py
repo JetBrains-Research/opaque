@@ -35,6 +35,11 @@ class Poisson(DpProcess):
     dataset_size: int | None = None
 
     def __post_init__(self):
+        sample_rate = float(self.sample_rate)
+        if not 0 < sample_rate < 1:
+            raise ValueError(f"sample_rate must be in (0, 1), got {self.sample_rate}")
+        object.__setattr__(self, "sample_rate", sample_rate)
+
         # Validate truncation pairing here (not only in the factory) so direct
         # construction and deserialization can't pass an unpaired
         # ``(truncated_batch_size, dataset_size)`` into
@@ -133,7 +138,7 @@ def poisson(
         inner: The base mechanism — :func:`gaussian`, :func:`adaclip`, or
             :func:`opaque.accounting.nonprivate`.
         sample_rate: Probability of including each example
-            (``E[batch_size] / |D|``).
+            (``E[batch_size] / |D|``), strictly between zero and one.
         truncated_batch_size: Optional max batch-size cap; switches the
             analysis to truncated Poisson.
         dataset_size: Required when ``truncated_batch_size`` is set;
@@ -165,10 +170,9 @@ def poisson(
                 f"mechanism, got {type(inner).__name__}. "
                 "Example: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), rate)"
             )
-    if not 0 < float(sample_rate) <= 1:
-        raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
     # Pairing + per-field bounds on truncated_batch_size / dataset_size are
-    # validated in ``Poisson.__post_init__`` so direct construction stays safe.
+    # validated in ``Poisson.__post_init__`` so direct construction,
+    # deserialization, and this factory stay consistent.
     return Poisson(
         inner=inner,
         sample_rate=float(sample_rate),

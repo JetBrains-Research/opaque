@@ -8,17 +8,19 @@ from typing import Any
 def _validate_batch_argnums(batch_argnums: tuple[int, ...], n_non_batch: int) -> None:
     """Validate batch_argnums constraints."""
     if not batch_argnums:
-        raise ValueError("batch_argnums must be non-empty")
+        raise ValueError(f"batch_argnums must be non-empty, got {batch_argnums}")
     if any(a < 0 for a in batch_argnums):
         raise ValueError(f"batch_argnums must be non-negative, got {batch_argnums}")
     if len(set(batch_argnums)) != len(batch_argnums):
         raise ValueError(f"batch_argnums must be unique, got {batch_argnums}")
+    if tuple(sorted(batch_argnums)) != batch_argnums:
+        raise ValueError(f"batch_argnums must be sorted, got {batch_argnums}")
     n_total = n_non_batch + len(batch_argnums)
     if max(batch_argnums) >= n_total:
         raise ValueError(
             f"batch_argnums index {max(batch_argnums)} out of range for "
             f"{n_total} total arguments ({n_non_batch} non-batched + "
-            f"{len(batch_argnums)} batched)"
+            f"{len(batch_argnums)} batched), got {batch_argnums}"
         )
 
 

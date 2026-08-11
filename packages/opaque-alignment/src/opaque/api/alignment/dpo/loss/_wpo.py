@@ -13,7 +13,7 @@ weighting each preference pair by how likely the *current* policy is to have
 produced the completion.  The weight is the policy's average per-token
 probability on the completion::
 
-    avg_logp = (per_token_logps * mask).sum(-1) / mask.sum(-1).clamp(min=1)
+    avg_logp = sum(masked per_token_logps) / completion_token_count
     weight   = avg_logp.detach().exp()
 
 The weight is ``.detach()``-ed, so it carries no gradient — it acts purely as
@@ -23,10 +23,9 @@ non-detached weight would couple the gradient through the probability term.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import torch
 
-if TYPE_CHECKING:
-    import torch
+from opaque.api.alignment._compute_dtype import _compute_dtype
 
 __all__ = ["wpo_weights"]
 
@@ -40,7 +39,7 @@ def wpo_weights(
     Computes the policy's average per-token probability on the completion and
     returns its (detached) exponential::
 
-        avg_logp = (per_token_logps * mask).sum(-1) / mask.sum(-1).clamp(min=1)
+        avg_logp = sum(masked per_token_logps) / completion_token_count
         return avg_logp.detach().exp()
 
     The result is **detached**: it contributes no gradient and serves only as
@@ -61,6 +60,8 @@ def wpo_weights(
         there is no division by zero.
     """
     mask = completion_mask.to(per_token_logps.dtype)
-    token_count = mask.sum(dim=-1).clamp(min=1)
-    avg_logp = (per_token_logps * mask).sum(dim=-1) / token_count
+    acc_dtype = _compute_dtype(per_token_logps)
+    token_count = completion_mask.to(torch.bool).sum(dim=-1).clamp(min=1)
+    avg_logp = (per_token_logps * mask).to(acc_dtype).sum(dim=-1)
+    avg_logp = avg_logp / token_count.to(acc_dtype)
     return avg_logp.detach().exp()

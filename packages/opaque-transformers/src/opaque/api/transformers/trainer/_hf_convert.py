@@ -417,7 +417,10 @@ def _convert_hf_training_arguments(
     baseline_output_dir = source_values.get("output_dir") or tempfile.mkdtemp(
         prefix="opaque_baseline_"
     )
-    baseline = type(hf_args)(output_dir=baseline_output_dir)
+    baseline_kwargs = {"output_dir": baseline_output_dir}
+    if source_values.get("use_cpu"):
+        baseline_kwargs["use_cpu"] = True
+    baseline = type(hf_args)(**baseline_kwargs)
     source_defaults = _get_dataclass_field_values(baseline)
 
     # Wrap REJECT and TRANSFORM signatures into the dispatcher contract.

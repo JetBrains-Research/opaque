@@ -40,7 +40,11 @@ from opaque.api.patches.transformers.components.masking import (
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from opaque.api.patches.transformers.types import (
+        FamilyPatchFn,
+        ForwardFn,
+        ModulePatcher,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +57,7 @@ def _reset_patched_families() -> None:
     _PATCHED_FAMILIES.clear()
 
 
-def family_name(model) -> str | None:
+def family_name(model: object) -> str | None:
     """Return the opaque-patches family name for an HF model instance.
 
     Tries ``model.config.model_type`` first (the HF-canonical signal),
@@ -78,12 +82,12 @@ def make_apply_family_patches(
     *,
     family: str,
     module_path: str,
-    repeat_kv_replacement: Callable | None = vmap_repeat_kv,
-    eager_attention_replacement: Callable | None = vmap_eager_attention_forward,
-    sdpa_attention_replacement: Callable | None = None,
-    rope_replacement: Callable | None = _opaque_apply_rotary_pos_emb,
-    masking_module_patcher: Callable | None = apply_module_masking_patch,
-) -> Callable:
+    repeat_kv_replacement: ForwardFn | None = vmap_repeat_kv,
+    eager_attention_replacement: ForwardFn | None = vmap_eager_attention_forward,
+    sdpa_attention_replacement: ForwardFn | None = None,
+    rope_replacement: ForwardFn | None = _opaque_apply_rotary_pos_emb,
+    masking_module_patcher: ModulePatcher | None = apply_module_masking_patch,
+) -> FamilyPatchFn:
     """Build an ``apply_X_family_patches`` function for a given family.
 
     The returned function patches module-level attributes of
@@ -129,7 +133,7 @@ def make_apply_family_patches(
         performance: bool = True,
         compat: bool = True,
         kernels: bool | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> None:
         if kernels is None:
             kernels = performance

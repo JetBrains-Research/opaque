@@ -1,50 +1,153 @@
 #!/bin/sh
-set -e
+set -eu
 
-# Opaque is a Python (uv) + Rust monorepo. This script bootstraps a cloud
-# development environment: it installs the system build deps, uv, and a Rust
-# toolchain (needed by the opaque-accounting PyO3/maturin build), then syncs
-# the full contributor workspace. All steps are idempotent.
+REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opaque-air"
+STATE_DIR="$CACHE_ROOT/startup"
+SYNC_STAMP="$STATE_DIR/dev-sync.sha256"
 
-# 1. System packages for curl-based installers and the Rust/maturin build.
-if ! command -v cc >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-        if [ "$(id -u)" -eq 0 ]; then
-            apt-get update
-            apt-get install -y --no-install-recommends \
-                curl ca-certificates build-essential pkg-config git
-        elif command -v sudo >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends \
-                curl ca-certificates build-essential pkg-config git
-        else
-            echo "A C compiler is required but neither root nor sudo is available." >&2
-            exit 1
-        fi
-    else
-        echo "A C compiler is required to build opaque-accounting, but no supported package manager is available." >&2
+mkdir -p "$STATE_DIR"
+
+apt_get() {
+    apt-get \
+        -o "Acquire::http::Proxy=${HTTP_PROXY:-}" \
+        -o "Acquire::https::Proxy=${HTTPS_PROXY:-${HTTP_PROXY:-}}" \
+        "$@"
+}
+
+ensure_apt_https_sources() {
+    sources_file="/etc/apt/sources.list.d/ubuntu.sources"
+
+    if [ ! -f "$sources_file" ]; then
+        return
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        sed -i \
+            -e 's|http://archive.ubuntu.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' \
+            -e 's|http://security.ubuntu.com/ubuntu/|https://security.ubuntu.com/ubuntu/|g' \
+            "$sources_file"
+        return
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo sed -i \
+            -e 's|http://archive.ubuntu.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' \
+            -e 's|http://security.ubuntu.com/ubuntu/|https://security.ubuntu.com/ubuntu/|g' \
+            "$sources_file"
+    fi
+}
+
+ensure_system_packages() {
+    if command -v cc >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+        return
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Required system packages are missing and no supported package manager is available." >&2
         exit 1
     fi
-fi
 
-# 2. Install uv if it is missing (installs into ~/.local/bin).
-if ! command -v uv >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
+    ensure_apt_https_sources
+
+    if [ "$(id -u)" -eq 0 ]; then
+        apt_get update
+        apt_get install -y --no-install-recommends \
+            curl ca-certificates build-essential pkg-config git
+        return
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo apt-get \
+            -o "Acquire::http::Proxy=${HTTP_PROXY:-}" \
+            -o "Acquire::https::Proxy=${HTTPS_PROXY:-${HTTP_PROXY:-}}" \
+            update
+        sudo apt-get \
+            -o "Acquire::http::Proxy=${HTTP_PROXY:-}" \
+            -o "Acquire::https::Proxy=${HTTPS_PROXY:-${HTTP_PROXY:-}}" \
+            install -y --no-install-recommends \
+            curl ca-certificates build-essential pkg-config git
+        return
+    fi
+
+    echo "Required system packages are missing and neither root nor sudo is available." >&2
+    exit 1
+}
+
+ensure_uv() {
+    if ! command -v uv >/dev/null 2>&1; then
+        curl -x "${HTTPS_PROXY:-${HTTP_PROXY:-}}" -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+}
+
+ensure_rust() {
+    if ! command -v cargo >/dev/null 2>&1; then
+        curl -x "${HTTPS_PROXY:-${HTTP_PROXY:-}}" --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    fi
+}
+
+persist_shell_env() {
+    grep -q 'opaque uv/cargo PATH' "$HOME/.bashrc" 2>/dev/null || \
+        printf '\n# opaque uv/cargo PATH\nexport PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"\n' >> "$HOME/.bashrc"
+    grep -q 'PYTHONUNBUFFERED' "$HOME/.bashrc" 2>/dev/null || \
+        echo 'export PYTHONUNBUFFERED=1' >> "$HOME/.bashrc"
+}
+
+sync_fingerprint() {
+    cat \
+        "$REPO_ROOT/pyproject.toml" \
+        "$REPO_ROOT/uv.lock" \
+        "$REPO_ROOT/Cargo.lock" \
+        "$REPO_ROOT/.air/cloud/startup.sh" | sha256sum | awk '{print $1}'
+}
+
+warm_workspace() {
+    current_fingerprint=$(sync_fingerprint)
+    previous_fingerprint=""
+
+    if [ -f "$SYNC_STAMP" ]; then
+        previous_fingerprint=$(cat "$SYNC_STAMP")
+    fi
+
+    if [ ! -d "$REPO_ROOT/.venv" ] || [ "$current_fingerprint" != "$previous_fingerprint" ]; then
+        cd "$REPO_ROOT"
+        uv sync --group dev --all-packages --extra all
+        cargo test --workspace --no-run
+        printf '%s' "$current_fingerprint" > "$SYNC_STAMP"
+    fi
+}
+
+healthcheck() {
+    cd "$REPO_ROOT"
+
+    uv run python - <<'PY'
+import opaque.accounting
+import opaque.auditing
+import opaque.distributed
+import opaque.dpftrl
+import opaque.dpsgd
+import opaque.functional
+import opaque.precision
+import opaque.profiling
+import opaque.random
+import opaque.scheduling
+import opaque.serialization
+PY
+
+    uv run pytest \
+        packages/opaque-accounting/tests/test_smoke.py \
+        tests/contracts/test_pep420_no_init.py \
+        -m "not cuda and not mps and not slow" \
+        -q
+}
+
+ensure_system_packages
+ensure_uv
+ensure_rust
+
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+export PYTHONUNBUFFERED=1
 
-# 3. Ensure a Rust toolchain is available for opaque-accounting.
-if ! command -v cargo >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-fi
-export PATH="$HOME/.cargo/bin:$PATH"
-
-# 4. Persist the PATH additions and unbuffered output for the agent's shells.
-grep -q 'opaque uv/cargo PATH' "$HOME/.bashrc" 2>/dev/null || \
-    printf '\n# opaque uv/cargo PATH\nexport PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"\n' >> "$HOME/.bashrc"
-grep -q 'PYTHONUNBUFFERED' "$HOME/.bashrc" 2>/dev/null || \
-    echo 'export PYTHONUNBUFFERED=1' >> "$HOME/.bashrc"
-
-# 5. Install the complete contributor environment. The first sync also builds
-#    the opaque-accounting Rust extension via maturin (~30s cold, cached after).
-uv sync --group dev --all-packages --extra all
+persist_shell_env
+warm_workspace
+healthcheck

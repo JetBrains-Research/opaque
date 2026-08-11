@@ -11,10 +11,13 @@ and import from the implementation paths.
 
 from __future__ import annotations
 
+import stat
+
 import datasets
 import pytest
 import torch
 
+from opaque.api.alignment.dpo.reference import _precompute
 from opaque.api.alignment.dpo.reference._precompute import (
     compute_ref_logprobs_for_dataset,
 )
@@ -283,7 +286,7 @@ def test_bfloat16_ref_logps_round_trip(tmp_path) -> None:
 
 
 def test_missing_cache_dir_is_created(tmp_path) -> None:
-    """A non-existent cache_dir is created on the first (miss) write."""
+    """A new cache directory and archive are owner-only."""
     dataset = _make_dataset()
     cache_dir = tmp_path / "nested" / "does_not_exist_yet"
     assert not cache_dir.exists()
@@ -300,6 +303,78 @@ def test_missing_cache_dir_is_created(tmp_path) -> None:
     assert cache_dir.exists(), "cache_dir should be created on first write"
     cache_files = list(cache_dir.glob("*.safetensors"))
     assert cache_files, "expected a .safetensors cache file to be written"
+    assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o700
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in cache_files)
+
+
+def test_cache_hit_restores_private_permissions(tmp_path) -> None:
+    """Existing cache artifacts are made owner-only before a hit is loaded."""
+    dataset = _make_dataset()
+    cache_dir = tmp_path / "cache"
+    cache_identity = {"purpose": "permissions"}
+
+    compute_ref_logprobs_for_dataset(
+        dataset,
+        _CountingRef(),
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity=cache_identity,
+        cache_dir=str(cache_dir),
+    )
+    cache_file = next(cache_dir.glob("*.safetensors"))
+    cache_dir.chmod(0o755)
+    cache_file.chmod(0o644)
+
+    ref = _CountingRef()
+    compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity=cache_identity,
+        cache_dir=str(cache_dir),
+    )
+
+    assert ref.calls == 0
+    assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+
+def test_cache_permission_error_explains_remediation(tmp_path, monkeypatch) -> None:
+    """Permission failures identify the safe cache configuration options."""
+
+    def raise_permission_error(_path, _mode):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(_precompute.Path, "chmod", raise_permission_error)
+
+    with pytest.raises(PermissionError, match="pass a private writable cache_dir"):
+        _precompute._secure_cache_path(str(tmp_path / "cache" / "logps.safetensors"))
+
+
+def test_disabled_cache_does_not_create_artifacts(tmp_path) -> None:
+    """Non-reusable reference values are computed without touching disk."""
+    dataset = _make_dataset()
+    cache_dir = tmp_path / "cache"
+    ref = _CountingRef()
+
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity={"purpose": "non-persistent"},
+        cache_dir=str(cache_dir),
+        use_cache=False,
+    )
+
+    assert ref.examples_seen == len(dataset)
+    assert not cache_dir.exists()
+    for name in OUTPUT_COLUMNS:
+        assert result[name] == pytest.approx(_expected(name, list(dataset["idx"])))
 
 
 def test_unsupported_cache_identity_value_raises(tmp_path) -> None:

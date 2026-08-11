@@ -66,9 +66,9 @@ def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
         _assert_object_equal(groups, name=f"{name}.groups")
         _assert_object_equal(set(values), name=f"{name}.values.keys")
         for group_name, value in values.items():
-            assert_scalar_equal(float(value), name=f"{name}.values[{group_name!r}]")
+            assert_scalar_equal(value, name=f"{name}.values[{group_name!r}]")
         return
-    assert_scalar_equal(float(value), name=name)
+    assert_scalar_equal(value, name=name)
 
 
 def _assert_wrapper_reduction_supported(pytree: ClippedPytree, op: str) -> None:

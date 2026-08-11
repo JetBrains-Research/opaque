@@ -33,13 +33,13 @@ if TYPE_CHECKING:
 def _momentum_workload_coef(
     momentum: float,
     n: int,
-    lr_schedule: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Compute Toeplitz workload coefficients for momentum-SGD + LR schedule.
+    """Compute Toeplitz workload coefficients for momentum-SGD.
 
-    For momentum β and per-step learning rates η_t, the workload matrix W
-    has entries W[t,s] = η_t · β^{t-s} for s ≤ t.  The Toeplitz
-    coefficients are [η_0, η_1·β, η_2·β², ...].
+    For momentum β, the workload matrix has entries
+    ``W[t, s] = β ** (t - s)`` for ``s <= t``. Learning-rate schedules
+    scale workload *rows* and are applied separately as per-step query
+    weights by the optimizer objective.
     """
     if momentum < 0:
         raise ValueError(f"momentum must be >= 0, got {momentum}")
@@ -53,20 +53,9 @@ def _momentum_workload_coef(
         )
         coef = torch.zeros(n, dtype=torch.float64)
         coef[0] = 1.0
-        if lr_schedule is not None:
-            lr = torch.as_tensor(lr_schedule, dtype=torch.float64)
-            coef[0] = lr[0]
         return coef
 
-    base = torch.tensor([momentum**i for i in range(n)], dtype=torch.float64)
-
-    if lr_schedule is not None:
-        lr = torch.as_tensor(lr_schedule, dtype=torch.float64)
-        if lr.shape[0] != n:
-            raise ValueError(f"lr_schedule length ({lr.shape[0]}) must equal n ({n})")
-        return lr * base
-
-    return base
+    return torch.tensor([momentum**i for i in range(n)], dtype=torch.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +83,13 @@ def _band_mf_coefficients_cached(
     if bands < 1 or bands > n_steps:
         raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
     lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
-    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr)
-    return optimize_toeplitz(n_steps, bands, workload_coef=workload_coef)
+    workload_coef = _momentum_workload_coef(momentum, n_steps)
+    return optimize_toeplitz(
+        n_steps,
+        bands,
+        workload_coef=workload_coef,
+        query_weights=lr,
+    )
 
 
 # ---------------------------------------------------------------------------

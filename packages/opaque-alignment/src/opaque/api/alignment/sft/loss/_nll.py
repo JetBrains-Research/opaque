@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from opaque.api.alignment._compute_dtype import _compute_dtype
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
@@ -49,8 +50,8 @@ def nll_loss(
     labels, and returns the **per-example mean** of the negative per-token
     log-probabilities over non-ignored tokens.
 
-    The divisor ``mask.sum(-1).clamp(min=1)`` is computed per example from
-    this example's data only.
+    The exact shifted-label token count is computed per example from this
+    example's data only.
 
     Args:
         logits: Float tensor of shape ``(..., T, V)`` where ``T`` is the
@@ -62,8 +63,7 @@ def nll_loss(
     Returns:
         Float tensor of shape ``(...)`` (0-dim for a single example, shape
         ``(B,)`` for a batch).  Each entry is the per-example mean NLL over
-        non-ignored shifted tokens: ``(-logp * mask).sum(-1) /
-        mask.sum(-1).clamp(min=1)``.
+        non-ignored shifted tokens.
     """
     # Shift: logits[..., :-1, :] predicts labels[..., 1:]
     shifted_logits = logits[..., :-1, :]  # (..., T-1, V)
@@ -79,8 +79,10 @@ def nll_loss(
     # Per-token log-probabilities at the (clamped) target indices
     logp = selective_log_softmax(shifted_logits, clamped_labels)  # (..., T-1)
 
-    # Per-example mean NLL over non-ignored tokens; clamp divisor ≥ 1
-    nll = (-logp * mask).sum(-1) / mask.sum(-1).clamp(min=1)  # (...)
+    # Accumulate in >= fp32 with an exact token count so eager matches fused.
+    acc_dtype = _compute_dtype(logp)
+    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)
+    nll = (-logp * mask).to(acc_dtype).sum(-1) / n_valid.to(acc_dtype)  # (...)
     return nll
 
 

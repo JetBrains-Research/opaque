@@ -10,15 +10,22 @@ tensor shapes use ``(B, L)`` for micro-batch size ``B`` and padded length ``L``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     import torch
 
-__all__ = ["LMBatch"]
+__all__ = ["LMBatch", "LMExample"]
 
 
-class LMBatch(TypedDict, total=False):
+class LMExample(TypedDict):
+    """One tokenized causal-language-model example accepted by the collator."""
+
+    input_ids: list[int]
+    completion_mask: NotRequired[list[int]]
+
+
+class LMBatch(TypedDict):
     """Output schema for :func:`language_modeling_collator`.
 
     All present fields are :class:`torch.Tensor` instances with ``dtype=torch.long``.
@@ -56,4 +63,4 @@ class LMBatch(TypedDict, total=False):
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
     labels: torch.Tensor
-    completion_mask: torch.Tensor
+    completion_mask: NotRequired[torch.Tensor]

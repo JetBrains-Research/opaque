@@ -111,7 +111,7 @@ class SFTConfig(TrainingArguments):
         # TRL parity: default bf16 on when supported and no precision was set.
         # The base still raises if bf16 was set explicitly on unsupported
         # hardware, so only auto-enable when it's actually available.
-        if not self.bf16 and not self.bf16_full_eval:
+        if not self.use_cpu and not self.bf16 and not self.bf16_full_eval:
             import torch
 
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
@@ -129,7 +129,6 @@ class SFTConfig(TrainingArguments):
         privacy_target_delta: float | None = None,
         clipping_norm: float | dict[str, float] | None = None,
         privacy_noise_mechanism: str = "gaussian",
-        privacy_noise_radius: float = 3.0,
         clipping_mode: str = "fixed",
         clipping_kwargs: dict[str, Any] | None = None,
         sampling_mode: str = "auto",
@@ -172,7 +171,6 @@ class SFTConfig(TrainingArguments):
             "privacy_noise_multiplier": privacy_noise_multiplier,
             "privacy_target_epsilon": privacy_target_epsilon,
             "privacy_noise_mechanism": privacy_noise_mechanism,
-            "privacy_noise_radius": privacy_noise_radius,
             "clipping_mode": clipping_mode,
             "sampling_mode": sampling_mode,
         }

@@ -39,6 +39,7 @@ def _stack() -> list:
 
 
 def apply() -> None:
+    """Install functional-parameter rebinding for checkpoint recomputation."""
     _wrap_reparametrize_module()
     _wrap_checkpoint_frame()
 

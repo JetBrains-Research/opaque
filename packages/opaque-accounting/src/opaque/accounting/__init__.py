@@ -45,6 +45,7 @@ from opaque.api.accounting.core import (
     mechanisms,
     nonprivate,
     per_step,
+    register_budget_serializer,
     repeat,
     risk_budget,
     set_discretization,
@@ -78,5 +79,6 @@ __all__ = [
     "advantage_budget",
     "beta_budget",
     "risk_budget",
+    "register_budget_serializer",
     "calibrate",
 ]

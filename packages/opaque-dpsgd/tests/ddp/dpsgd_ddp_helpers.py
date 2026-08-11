@@ -209,9 +209,15 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         grads, new_state = grad_fn(params, x, y, state=clip_state)
         new_state = sync(new_state)
 
+        # Full advertised distributed chain: grad_fn -> sync -> sum_gradients
+        # (mirrors the docstring example in _adaptive.py, issue #415).
+        summed = sum_gradients(grads)
+
         assert new_state._current_clipping_norm > 0
         assert new_state._step == 1
         assert grads is not None
+        # ``summed`` is a ClippedPytree; its real tensors live under ``.pytree``.
+        assert all(torch.isfinite(leaf).all() for leaf in tree_leaves(summed.pytree))
     finally:
         _cleanup_ddp()
 

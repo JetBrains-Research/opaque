@@ -359,32 +359,48 @@ class TestTruncatedPoissonValidity:
 
 
 class TestParallelPoissonCrossValidation:
-    """ParallelPoisson mechanism: verify against dp_accounting equivalent."""
+    """ParallelPoisson mechanism: verify native worker-count behavior."""
 
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     @pytest.mark.parametrize("q", [0.001, 0.0005])
-    @pytest.mark.parametrize("num_workers", [2, 4])
-    def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
-        """ParallelPoisson(G(σ), q, k) should give sensible epsilon."""
-        proc = (
-            dpsgd_acc.parallel_poisson(
-                dpsgd_acc.gaussian(sigma), sample_rate=q, num_workers=num_workers
-            )
-            * 500
+    def test_parallel_poisson_matches_native_worker_behavior(self, sigma, q):
+        """One worker is Poisson; additional workers strictly increase epsilon."""
+        inner = dpsgd_acc.gaussian(sigma)
+        eps_poisson = (dpsgd_acc.poisson(inner, q) * 500).epsilon_at(1e-5)
+        eps_by_workers = {
+            num_workers: (
+                dpsgd_acc.parallel_poisson(inner, q, num_workers) * 500
+            ).epsilon_at(1e-5)
+            for num_workers in (1, 2, 4, 8)
+        }
+
+        assert eps_by_workers[1] == pytest.approx(eps_poisson, abs=1e-6)
+        assert (
+            eps_by_workers[1]
+            < eps_by_workers[2]
+            < eps_by_workers[4]
+            < eps_by_workers[8]
         )
-        eps = proc.epsilon_at(1e-5)
 
-        # Must be finite and positive
-        assert math.isfinite(eps)
-        assert eps > 0
+    def test_parallel_poisson_matches_pinned_reference(self):
+        """Worker-count privacy loss matches the native reference calculation."""
+        inner = dpsgd_acc.gaussian(0.8)
+        epsilons = tuple(
+            (dpsgd_acc.parallel_poisson(inner, 0.001, num_workers) * 500).epsilon_at(
+                1e-5
+            )
+            for num_workers in (1, 2, 4, 8)
+        )
 
-        # Compare with non-parallel: parallel sampling should account for duplication
-        # (when same example appears in multiple workers)
-        proc_no_acc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * 500
-        eps_no_acc = proc_no_acc.epsilon_at(1e-5)
-        # Both should be reasonable
-        assert math.isfinite(eps_no_acc)
-        assert eps_no_acc > 0
+        assert epsilons == pytest.approx(
+            (
+                0.23982423090879623,
+                0.5325659019424767,
+                1.124570816812394,
+                2.255585330074185,
+            ),
+            rel=1e-6,
+        )
 
 
 # ============================================================================

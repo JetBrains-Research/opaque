@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Fused vmap-compatible PEFT LoRA QKV projection replacement."""
+
 from __future__ import annotations
 
 import sys

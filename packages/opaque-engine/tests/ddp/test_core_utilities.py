@@ -6,6 +6,7 @@ For actual multi-device distributed tests, see ``test_collectives.py`` and
 """
 
 import importlib
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -94,6 +95,29 @@ class TestNonDistributed:
         # Should not raise
         barrier()
 
+    def test_reduce_scalar_preserves_integer_type_without_distribution(self):
+        value = 2**24 + 1
+
+        result = reduce_scalar(value, op="sum")
+
+        assert isinstance(result, int)
+        assert result == value
+
+    def test_reduce_scalar_integer_mean_returns_float_without_distribution(self):
+        result = reduce_scalar(2**24 + 1, op="mean")
+
+        assert isinstance(result, float)
+        assert result == float(2**24 + 1)
+
+    @pytest.mark.parametrize("bad_dtype", [torch.int64, torch.bool, torch.complex64])
+    def test_reduce_scalar_rejects_nonfloating_compute_dtype(self, bad_dtype):
+        with pytest.raises(TypeError, match="real floating-point"):
+            reduce_scalar(1.0, compute_dtype=bad_dtype)
+
+    def test_reduce_scalar_rejects_compute_dtype_for_integer_values(self):
+        with pytest.raises(TypeError, match="only supported for floating-point"):
+            reduce_scalar(1, compute_dtype=torch.float64)
+
 
 class TestAllReduceValidation:
     """Tests for all_reduce/all_reduce_ parameter validation."""
@@ -127,6 +151,35 @@ class TestAllReduceValidation:
                 all_reduce(tensor, op=op)
             with pytest.raises(RuntimeError, match="not initialized"):
                 all_reduce_(tensor, op=op)
+
+
+class TestSyncObjectSchema:
+    @dataclass(frozen=True)
+    class _State:
+        count: int
+        label: str
+
+    @dataclass(frozen=True)
+    class _BooleanState:
+        enabled: bool
+
+    def test_requires_a_complete_field_schema(self):
+        with pytest.raises(ValueError, match="missing fields"):
+            sync_object(self._State(count=1, label="local"), {"count": "sum"})
+
+    def test_rejects_unknown_schema_fields(self):
+        with pytest.raises(ValueError, match="unknown fields"):
+            sync_object(
+                self._State(count=1, label="local"),
+                {"count": "sum", "label": "local", "missing": "local"},
+            )
+
+    def test_callable_cannot_replace_boolean_field(self, monkeypatch):
+        import opaque.api.engine.distributed._state as state_module
+
+        monkeypatch.setattr(state_module, "is_distributed", lambda: True)
+        with pytest.raises(TypeError, match="cannot update a bool field"):
+            sync_object(self._BooleanState(enabled=True), {"enabled": lambda _: 1})
 
 
 class TestBoundedGradientAggregation:
