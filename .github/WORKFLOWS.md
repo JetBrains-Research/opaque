@@ -6,7 +6,7 @@ This directory contains automated workflows for the Opaque project.
 
 ### 🧪 CI (`ci.yml`)
 
-**Triggers**: Push to `main`, Pull Requests to `main`
+**Triggers**: Push to `main` and manual dispatch
 
 **Jobs**:
 
@@ -24,7 +24,7 @@ This directory contains automated workflows for the Opaque project.
 
 ### 📚 Documentation Deployment (`docs.yml`)
 
-**Triggers**: Push to `main`, Manual workflow dispatch
+**Triggers**: Pushes to `main` or release tags, and manual dispatch from those refs
 
 **Jobs**:
 
@@ -73,16 +73,14 @@ The documentation will be automatically deployed to `https://jetbrains-research.
 
 #### 3. Branch Protection Rules
 
-Recommended settings for `main` branch:
+The active `main` ruleset requires:
 
-- ✅ Require a pull request before merging
-- ✅ Require status checks to pass:
-  - `Test on Python 3.11`
-  - `Test on Python 3.12`
-  - `Lint and Format Check`
-  - `Build package`
-  - `Build documentation (PR check)` (for docs changes)
-- ✅ Require branches to be up to date
+- ✅ Pull requests with one approval, current branches, and resolved threads
+- ✅ Code-owner approval for paths defined in `CODEOWNERS`
+- ✅ Squash-only, linear history, and no force pushes or deletions
+- ✅ `Cross-package import smoke test`, `Build documentation`, `Format Python`,
+  `Format Rust`, `Conventional Commits PR title`, `Python tests`, and
+  `Rust tests`
 
 ### For Contributors
 
@@ -177,8 +175,10 @@ Total PR check time: ~3-4 minutes
 
 Workflows follow security best practices:
 
-- ✅ Pin action versions (`@v4`, `@v5`)
-- ✅ Minimal permissions (read-only where possible)
+- ✅ Pin every action to an immutable full commit SHA
+- ✅ Default to read-only tokens; elevate write, Pages, packages, and OIDC
+  permissions only in trusted publishing/deployment jobs
+- ✅ Run fork pull requests without repository, package, or cloud credentials
 - ✅ No secrets in logs
 - ✅ Dependabot updates for actions
 
