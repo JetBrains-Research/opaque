@@ -8,7 +8,7 @@ Opaque implements two families:
 - **[DP-SGD mechanisms](dp-sgd/index.md)** — independent (per-step)
   noise. Simple, broadly applicable, composes step-by-step.
 - **[DP-FTRL mechanisms](dp-ftrl/index.md)** — correlated noise across
-  the whole training run via matrix factorisation. Reduces effective
+  the whole training run via matrix factorization. Reduces effective
   noise on cumulative updates at the cost of fixing the training
   length in advance.
 
@@ -21,7 +21,7 @@ gradient sum. Simple and broadly applicable.
 |-----------|--------------------|----------|
 | [Gaussian](dp-sgd/gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ |
 
-For bounded noise support, pass ``bound=B`` (or ``bound=(low, high)``) to
+For bounded noise support, pass `bound=B` (or `bound=(low, high)`) to
 `gaussian_noise()` while accounting with `opaque.dpsgd.accounting.gaussian()`.
 See [Gaussian — Bounded noise variant](dp-sgd/gaussian.md#bounded-noise-variant).
 
@@ -41,7 +41,7 @@ second-moment caveats), see the [DP-FTRL user guide](../user-guide/dp-ftrl.md).
 | [BandMF](dp-ftrl/band-mf.md) | Banded Toeplitz | $O(\text{bands})$ | General use, moderate runs |
 | [BLT](dp-ftrl/blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
 | [DP-λCGD](dp-ftrl/lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
-| [BISR](dp-ftrl/bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal, generalises λCGD |
+| [BISR](dp-ftrl/bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal; generalizes λCGD |
 | [BSR](dp-ftrl/bsr.md) | Banded square root (closed form) | $O(p)$ | Paper `alpha`, `beta` kwargs; no optimizer at init |
 | Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
 
@@ -56,7 +56,7 @@ Need correlated noise across steps (DP-FTRL)?
 │
 └─ Yes ── Constraints?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
-          ├─ Asymptotically optimal → BISR (generalises λCGD)
+          ├─ Asymptotically optimal → BISR (generalizes λCGD)
           ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
           ├─ n < 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)
           └─ n > 5000, multi-epoch → BLT (memory-efficient)
@@ -74,17 +74,10 @@ mechanisms support all amplification types:
 
 | Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.random_allocation` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
 |-----------|:-:|:-:|:-:|:-:|:-:|
-| BandMF    | No | No | No | Yes | No |
-| BLT       | No | No | No | No | Yes |
-| λCGD      | No | No | No | No | Yes |
-| BSR       | No | No | No | No | Yes |
-| BISR      | No | No | No | No | Yes |
-| Identity  | Yes | Yes | Yes | Yes | Yes |
-|-----------|:-----------:|:---------------------:|:-------------------:|:-------------------:|:-----------------:|
 | Gaussian | Yes | Yes | Yes | — | — |
 | BandMF | — | — | — | Yes | — |
 | Identity MF | — | — | — | Yes | Yes |
-| BLT | *internal* | — | — | — | Yes |
+| BLT | — | — | — | — | Yes |
 | DP-λCGD | — | — | — | — | Yes |
 | BISR | — | — | — | — | Yes |
 | BSR | — | — | — | — | Yes |
@@ -144,4 +137,3 @@ lcgd = dpftrl_acc.balls_in_bins(
 for name, proc in [("Gaussian", gauss), ("BandMF", band), ("λCGD", lcgd)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```
-

@@ -1,7 +1,8 @@
 # Sampling
 
-Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation) and
-`opaque.dpftrl.sampling` (cyclic Poisson with optional ``bands``, b-min-sep, balls-in-bins, sequential).
+Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation)
+and `opaque.dpftrl.sampling` (cyclic Poisson with optional `bands`, b-min-sep,
+balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
 privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
 
@@ -26,9 +27,9 @@ Opaque provides these sampling strategies:
    as such. Amplifies strictly more than Poisson at the matched rate `1/num_bins`.
 
 3. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
-   ``bands`` disjoint groups; step ``i`` samples only group ``i % bands``, with
-   independent inclusion at ``sample_rate``.  Use ``bands=1`` for identity MF
-   (full dataset each step); for BandMF, match ``bands`` to the MF strategy.
+   `bands` disjoint groups; step `i` samples only group `i % bands`, with
+   independent inclusion at `sample_rate`. Use `bands=1` for identity MF
+   (full dataset each step); for BandMF, match `bands` to the MF strategy.
 
 4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
@@ -170,11 +171,11 @@ Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 
 ## CyclicPoissonSampler (DP-FTRL)
 
-Partitions the dataset into ``bands`` groups and, at step ``i``, draws only
-from group ``i % bands``, with each eligible example included independently at
-``sample_rate`` (Binomial batch size within the group).  Identity MF uses
-``bands=1``; BandMF uses ``bands`` equal to the mechanism’s band count—both
-pair with ``dpftrl_acc.poisson``.
+Partitions the dataset into `bands` groups and, at step `i`, draws only
+from group `i % bands`, with each eligible example included independently at
+`sample_rate` (Binomial batch size within the group). Identity MF uses
+`bands=1`; BandMF uses `bands` equal to the mechanism’s band count — both
+pair with `dpftrl_acc.poisson`.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -194,7 +195,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sample_rate` | `float` | required | Probability of including each eligible example, in (0, 1] |
-| `bands` | `int` | `1` | Groups in the cycle. `1` = identity-style (full dataset each step). `>1` = cyclic BandMF-style (match strategy ``bands``). |
+| `bands` | `int` | `1` | Groups in the cycle. `1` = identity-style (full dataset each step). `>1` = cyclic BandMF-style (match strategy `bands`). |
 | `n_steps` | `int` | `1` | Total batches to yield |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` (only used when `bands > 1`) or `INDEPENDENT` |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
@@ -202,8 +203,8 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 In distributed training, shard the dataset with `local_shard()` and pass
 a per-rank key via `fold_in(key, rank)`. Best used with `mf_gaussian_noise`
 for correlated noise (DP-FTRL); account with
-`dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`.  There is no
-batch-size cap on this sampler; ``dpftrl_acc.poisson`` matches uncapped
+`dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)`. There is no
+batch-size cap on this sampler; `dpftrl_acc.poisson` matches uncapped
 Poisson draws only.
 
 ## Distributed Helpers

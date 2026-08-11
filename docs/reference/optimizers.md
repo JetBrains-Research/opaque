@@ -4,7 +4,7 @@ Opaque ships its own functional optimizer library at
 `opaque.optimizers`: Opaque-built factories with
 DP-aware paths, plus a curated set of `torchopt` re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
-noise.  All factories return
+noise. All factories return
 [TorchOpt](https://torchopt.readthedocs.io/) `GradientTransformation`s
 and route DP metadata from `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
@@ -48,7 +48,7 @@ an alternative answer to the same v-update bias.
 | **`adadelta`** | Two-EMA BC: φ_g on `E[g²]` and per-element φ_dx on `E[Δx²]` | LR-free DP optimizer; useful when learning-rate tuning is hard |
 | **`ademamix`** | φ-EMA on v̂ + private second moments | Long-horizon training (slow EMA captures long-range signal) |
 | **`adafactor`** | Factored second moment; optional per-factor φ-EMA when `noise_bias_correction=True` | Recommended default for DP LM fine-tuning (relative step scaling); see [user guide](../user-guide/optimizers.md) |
-| **`lion`** | (planned: sign gating) | Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant |
+| **`lion`** | No second-moment correction | Smaller state than Adam; vanilla works under noise |
 | **`rmsprop`** | φ-EMA on v + private second moments | Adaptive without first moment; cheaper than Adam |
 | **`adagrad`** | cumulative `Φ_acc` subtraction | Sparse-gradient settings; **the correction is mandatory** — vanilla Adagrad's denominator runs away under DP noise |
 | **`schedule_free`** | post-processing (transparent forward) | Wrapper around any base optimizer; replaces external LR schedules |
@@ -97,7 +97,7 @@ whatever noise-aware machinery it has when `noise_bias_correction=True`:
 | `adadelta` | Two parallel ρ-EMAs: `φ_g` of σ² (subtracted from `E[g²]`) and `φ_dx` of `coef² σ²` per element (subtracted from `E[Δx²]`).  No published prior — derived by propagating Gaussian variance through the linear scaling step. |
 | `rmsprop` | α-EMA of σ², subtracted from v before sqrt (no `(1−α^t)` divide; v and φ accumulate at the same rate) |
 | `adagrad` | Cumulative Σ σ², subtracted from v_acc before sqrt (no decay in either) |
-| `lion` | (planned) sign gating when per-coordinate SNR is below threshold |
+| `lion` | No second-moment correction |
 | `schedule_free` | Forwarded transparently to the wrapped base |
 
 ```python
@@ -110,7 +110,7 @@ Raw pytree updates use standard optimizer math.
 ### `noisy_squared_grads`
 
 Substitutes a privately-estimated `g²` stream in place of squaring the
-(already noised) gradient.  `mf_gaussian_noise(..., second_moment_strategy=...)` returns
+(already noised) gradient. `mf_gaussian_noise(..., second_moment_strategy=...)` returns
 a paired output that Opaque optimizers route automatically:
 
 ```python
@@ -177,8 +177,8 @@ for step in range(num_steps):
 ## Schedule-free wrapper
 
 `schedule_free` wraps any base `GradientTransformation` (Opaque-built
-or torchopt) with Defazio's schedule-free averaging
-([arXiv:2405.15682](https://arxiv.org/abs/2405.15682)).  Three weight
+or TorchOpt) with Defazio's schedule-free averaging
+([arXiv:2405.15682](https://arxiv.org/abs/2405.15682)). Three weight
 sequences internally: `z` (raw iterate), `x` (Polyak-Ruppert average,
 the published params), `y = (1-β)z + βx` (forward-pass weights).
 
@@ -198,7 +198,7 @@ eval_params = opt_state.x
 ```
 
 **DP-utility note**: under DP, `x_t = (1/n) Σ z_s` is a Polyak-Ruppert
-average of noised iterates.  When per-step iterate noise is approximately
+average of noised iterates. When per-step iterate noise is approximately
 independent, `Var[x_n] ≈ Var[z]/n` — the published checkpoint has
 significantly lower noise than the final iterate at the same privacy
 budget.  This is a real DP-utility win specific to averaging-based
@@ -206,11 +206,11 @@ methods.
 
 ---
 
-## Serialisation
+## Serialization
 
-``state_dict`` / ``from_state_dict`` live in :mod:`opaque.serialization`.  They
-walk chain state, encoding every tensor leaf and Python primitive into a flat
-``{path: value}`` dict ready for ``torch.save``.  Restore returns a **new**
+`state_dict` / `from_state_dict` live in `opaque.serialization`. They walk
+chain state, encoding every tensor leaf and Python primitive into a flat
+`{path: value}` dict ready for `torch.save`. Restore returns a **new**
 object and never mutates the template.
 
 ```python
@@ -238,10 +238,10 @@ releases load cleanly from older checkpoints.
 ## DDP compatibility
 
 When using `torch.nn.parallel.DistributedDataParallel`, Opaque's
-functional gradient pipeline runs *inside* each rank.  DDP handles the
+functional gradient pipeline runs *inside* each rank. DDP handles the
 all-reduce of noisy gradients across ranks; the optimizer state stays
 synchronised because `optimizer.update` is a pure function and all
-ranks receive identical noisy gradients after `sum_gradients` + noise
+ranks receive identical noisy gradients after `sum_gradients` and noise
 addition with the same key on all ranks.
 
 Use `local_shard()` to partition the dataset across ranks and pass a

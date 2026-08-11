@@ -1,13 +1,13 @@
 # DP-λCGD
 
 **DP-λCGD** (Kalinin et al., 2026) is a correlated noise mechanism that uses a
-single parameter λ ∈ [0, 1) to control noise correlation across training steps.
+single parameter \(\lambda \in [0, 1)\) to control noise correlation across training steps.
 Its key advantage is **zero extra memory** — noise correlation is achieved via
 PRNG seed replay instead of storing previous noise vectors.
 
 - **Paper**: [DP-λCGD: Efficient Noise Correlation for Differentially Private Model Training](https://arxiv.org/abs/2601.22334)
-- **Strategy matrix**: Lower-triangular Toeplitz with entries C[i,j] = λ^{i-j}
-- **Inverse**: Bidiagonal — 1 on diagonal, -λ on subdiagonal (bandwidth 2)
+- **Strategy matrix**: Lower-triangular Toeplitz with entries \(C_{i,j} = \lambda^{i-j}\)
+- **Inverse**: Bidiagonal — 1 on the diagonal, \(-\lambda\) on the subdiagonal (bandwidth 2)
 - **Memory**: Zero extra (PRNG replay regenerates previous noise from its seed)
 - **Amplification**: Balls-in-Bins (BnB) with MC dominating pair accounting
 
@@ -49,7 +49,7 @@ eps = training.epsilon_at(1e-5)
 
 | Parameter | Description |
 |-----------|-------------|
-| `lambda_` | Correlation coefficient in [0, 1). λ=0 is DP-SGD. |
+| `lambda_` | Correlation coefficient in \([0, 1)\). \(\lambda = 0\) is DP-SGD. |
 | `n_steps` | Total training steps |
 | `min_sep` | Steps per epoch (= bins per epoch) |
 | `max_participations` | Number of epochs |
@@ -106,4 +106,4 @@ At each step t, the noise function:
 ## Relationship to BISR
 
 DP-λCGD is the bandwidth-2 special case of [BISR](bisr.md). For bandwidth > 2,
-use `bisr_strategy(...)` which generalises the correlation structure.
+use `bisr_strategy(...)`, which generalizes the correlation structure.

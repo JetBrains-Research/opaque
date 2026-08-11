@@ -33,7 +33,7 @@ We welcome all kinds of contributions:
 - **Documentation**: Clarifications, examples, tutorial notebooks
 - **DP validation**: Cross-validation against JAX-Privacy, numerical comparisons
 - **Performance**: Profiling, optimization, memory efficiency improvements
-- **Examples**: Real-world training pipelines (HuggingFace LLMs, vision classification, etc.)
+- **Examples**: Real-world training pipelines (Hugging Face LLMs, vision classification, etc.)
 
 No contribution is too small!
 
@@ -105,10 +105,10 @@ only re-exports; user-facing examples should import through those façades.
 Opaque follows a Test-Driven Development workflow:
 
 1. **Test First**: Write failing test defining the API
-2. **Implement**: Make test pass (minimal code to pass)
+2. **Implement**: Make the test pass (minimal code to pass)
 3. **Document**: Add docstrings with usage examples
 4. **Refactor**: Improve code quality and structure
-5. **Verify**: Run full test suite with coverage
+5. **Verify**: Run the full test suite with coverage
 
 ---
 
@@ -125,7 +125,7 @@ uv sync --group examples --all-packages --extra all  # Training examples: datase
 uv sync --group docs --all-packages                  # MkDocs stack and documented package sources
 
 # Package extras (compose with --extra):
-#   opaque[transformers]             — HuggingFace + patching stack
+#   opaque[transformers]             — Hugging Face + patching stack
 #   opaque[dpftrl]                   — DP-FTRL mechanisms
 #   opaque[auditing]                 — empirical privacy auditing
 #   opaque-accounting[cross-validation] — dp-accounting, riskcal
@@ -168,16 +168,16 @@ uv run pytest -m mps
 uv run pytest -m slow
 ```
 
-Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
+Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[transformers]`)
-- Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
+- Hugging Face tests: Skip if `transformers` is not installed (install via `opaque[transformers]`)
+- Cross-validation: Skip if `dp-accounting` is not installed (install via `opaque-accounting[cross-validation]`)
 
-No manual marker exclusion needed - tests skip automatically when dependencies are missing.
+No manual marker exclusion is needed—tests skip automatically when dependencies are missing.
 
 ### GPU and Multi-GPU Tests
 

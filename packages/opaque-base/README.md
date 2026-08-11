@@ -14,8 +14,8 @@ handlers against:
   `opaque-engine` and `opaque-accounting` independently.
 
 `opaque-base` has **no third-party dependencies** — only the Python
-stdlib. This is what lets `opaque-accounting` ship as a torch-free
+standard library. This is what lets `opaque-accounting` ship as a torch-free
 standalone wheel: it depends only on `opaque-base`.
 
-User-facing API lives at the `opaque.serialization` façade (shipped by
+The user-facing API lives at the `opaque.serialization` façade (shipped by
 this wheel).

@@ -2,8 +2,8 @@
 
 Functional torchopt-based optimizers with a DP-aware update surface.
 
-Implementation lives at `opaque.api.optimizers.*`; user-facing façade
-at `opaque.optimizers`. The wheel ships:
+The implementation lives at `opaque.api.optimizers.*`; the user-facing façade
+lives at `opaque.optimizers`. The wheel ships:
 
 - `opaque.api.optimizers.{adamw,adam,sgd,radam,adafactor,adagrad,
   adadelta,rmsprop,lion,ademamix,schedule_free}` — optimizer factories.
@@ -15,5 +15,5 @@ at `opaque.optimizers`. The wheel ships:
   `resolve_noise_variance` helpers.
 
 Depends on `opaque-engine` (for `ClippedPytree` / `NoisedPytree` /
-`PerGroup`). Used as an extras-installed dependency from
-`opaque-dpsgd[optimizers]` and `opaque-dpftrl[optimizers]`.
+`PerGroup`). It is installed by the `optimizers` extras of
+`opaque-dpsgd` and `opaque-dpftrl`.

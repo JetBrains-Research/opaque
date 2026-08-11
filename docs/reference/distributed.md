@@ -78,10 +78,10 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-The ``sync()`` machinery is type-dispatched: clipping and noise states
-register themselves with ``opaque.distributed._state.register_sync_type``
-and ship the right per-state aggregation rule.  Lower-level scalar
-reductions, tensor gathers, and object syncs live in ``_state.py``;
+The `sync()` machinery is type-dispatched: clipping and noise states
+register themselves with `opaque.distributed._state.register_sync_type`
+and provide the right per-state aggregation rule. Lower-level scalar
+reductions, tensor gathers, and object syncs live in `_state.py`;
 they're internal plumbing for the registered DP runtime objects rather
 than headline API.
 

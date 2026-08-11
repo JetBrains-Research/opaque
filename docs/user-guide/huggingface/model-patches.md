@@ -1,9 +1,9 @@
 # Model Patches and Kernels
 
-`opaque.patches` is a standalone library that makes HuggingFace
+`opaque.patches` is a standalone library that makes Hugging Face
 Transformers models work under `torch.func.vmap(grad(...))` and
 provides fused Triton kernels for the hot ops on the forward /
-backward path.  It predates and operates independently of
+backward path. It predates and operates independently of
 `DPTrainer` — any code that drives DP-SGD over HF models (the
 trainer, a hand-rolled training loop, a custom orchestration layer)
 can use the same APIs.
@@ -19,12 +19,12 @@ Two concerns are handled:
 
 - **Compat patches** — vmap-safety rewrites for attention, causal
   masks, KV-cache, batchify wrappers, gradient checkpointing, and
-  collator behaviour under Poisson sampling.  Required so
+  collator behavior under Poisson sampling. Required so
   `vmap(grad(...))` over a per-example loss closure doesn't trip on
   hardcoded batch-dim indexing or data-dependent control flow.
 - **Performance kernels** — fused Triton kernels for RoPE, RMSNorm,
   activations (SwiGLU / GeGLU), cross-entropy, optional fused linear
-  CE, and fused LoRA.  Drop-in numerically-equivalent replacements;
+  CE, and fused LoRA. Drop-in, numerically equivalent replacements;
   significant memory savings on long-sequence models.
 
 ## API surface
@@ -82,7 +82,7 @@ apply_runtime_patches(
 `torch.func.vmap` removes the batch dimension: a function that
 normally receives input of shape `(batch, seq_len, hidden)` instead
 receives `(seq_len, hidden)`, with `vmap` handling batching
-externally.  HuggingFace models use hardcoded dimension indices
+externally. Hugging Face models use hardcoded dimension indices
 (e.g. `x.shape[0]` for batch size) and data-dependent control flow
 that break under vmap.
 
@@ -269,7 +269,7 @@ fused backward that reads 3 tensors and writes 2–3 in a single pass.
 ### Rotary position embeddings (RoPE)
 
 Fused RoPE applies rotary embeddings to Q and K tensors
-simultaneously.  Supports grouped-query attention (GQA) where Q and
+simultaneously. Supports grouped-query attention (GQA) where Q and
 K have different head counts. The underlying position encoding follows
 [*RoFormer: Enhanced Transformer with Rotary Position Embedding*](https://arxiv.org/abs/2104.09864).
 
@@ -291,7 +291,7 @@ Available standalone as `opaque.patches.kernels.opaque_cross_entropy_loss`.
 
 Computes the loss directly from hidden states and the `lm_head`
 weight matrix using tiled matrix multiplication inside the Triton
-kernel, never materialising the full logits tensor.  For Mellum-4b
+kernel, never materializing the full logits tensor. For Mellum-4b
 with 128K vocab, this avoids the ~2 GB `logits = hidden_states @
 lm_head.T` allocation that the non-fused path produces per forward
 pass.
@@ -379,7 +379,7 @@ loss_fn = with_batch_dim(loss_fn, batch_argnums=(1, 2))
 ```
 
 `batch_argnums` specifies which positional arguments get
-`unsqueeze(0)`.  Under `vmap`, `input_ids` arrives as `(seq,)`; the
+`unsqueeze(0)`. Under `vmap`, `input_ids` arrives as `(seq,)`; the
 wrapper makes it `(1, seq)` before the model sees it.
 
 ### Wrapping the model forward
