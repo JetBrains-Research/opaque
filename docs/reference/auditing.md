@@ -132,7 +132,7 @@ auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
 ```
 
 Build a one-run privacy estimate from canary scores. Splits scores by
-the coin-flip partition, precomputes the Pareto-optimal ROC frontier,
+the coin-flip partition, precomputes the empirical ROC,
 and returns a frozen estimate.
 
 | Parameter | Type | Default | Description |
@@ -189,7 +189,7 @@ class OneRunEstimate  # frozen dataclass
 ```
 
 Precomputed one-run audit estimate, returned by `auditing.one_run()`.
-Holds the Pareto-optimal threshold structure and exposes:
+Holds the empirical ROC counts and exposes:
 
 - a **default audit-method surface** (`epsilon_at`, `delta_at`, `beta_at`,
   `advantage`) that dispatches to μ-GDP — the paper-recommended default
@@ -278,7 +278,7 @@ estimate.attack_beta_at(*, alpha) -> float | np.ndarray
 ```
 
 Empirical attack β at given FPR: `1 − TPR` interpolated from the
-Pareto-optimal ROC frontier. Distinct from
+empirical ROC. Distinct from
 [`beta_at`](#beta_at) which is the theoretical f-DP β at the
 inferred μ̂-GDP.
 
