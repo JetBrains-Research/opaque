@@ -340,7 +340,7 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
           uv publish \
-            --publish-url https://packages.jetbrains.team/pypi/p/fed/python/legacy \
+            --publish-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
 
   # ---------------------------------------------------------------------------
