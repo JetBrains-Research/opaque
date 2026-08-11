@@ -10,8 +10,11 @@ The native module exposes flat functions that take scalar parameters
 and return opaque `Pld` handles; the Python side owns composition,
 repetition, caching, and calibration.
 
+Install the root package as described in the
+[repository installation guide](../../README.md#installation).
+It provides the synchronized `opaque-accounting` distribution:
+
 ```bash
-pip install opaque-accounting
 python -c "from opaque.accounting import identity; print(identity().epsilon_at(1e-5))"
 ```
 
