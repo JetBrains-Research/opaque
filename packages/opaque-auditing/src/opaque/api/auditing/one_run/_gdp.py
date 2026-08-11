@@ -19,6 +19,7 @@ import scipy.special
 import scipy.stats
 
 from opaque.api.auditing.one_run._stats import (
+    corrected_significance,
     search_ceiling,
     validate_delta,
     validate_significance,
@@ -30,10 +31,10 @@ if TYPE_CHECKING:
 
 _TOL_MU = 0.01
 
-# Maximum number of ranks to compute exactly.  Higher ranks (sorted by |L|)
-# have lower error probability (more confident).  Truncated low-confidence
-# ranks use v_k = 0.5 (conservative).  2000 ranks × 10K grid ≈ 160 MB;
-# covers the top 20 % for n = 10K, which dominates the Chernoff sum.
+# Maximum number of ranks to compute exactly. Higher ranks (sorted by |L|)
+# have lower error probability (more confident). Omitted ranks use the first
+# computed rank's error probability, a lower bound that makes the lower-tail
+# p-value conservative. 2000 ranks × 10K grid ≈ 160 MB.
 _MAX_EXACT_RANKS = 2000
 
 # Search caps for _mu_at.  Rank truncation can leave the p-value below
@@ -63,12 +64,16 @@ class GdpMethod:
 
         Raises:
             RuntimeError: If no finite μ brings the p-value up to
-                ``significance``, which truncated ranks (v_k = 0.5) can cause
-                for strong attacks with more than ``_MAX_EXACT_RANKS`` guesses.
+                ``significance`` for the observed number of errors.
         """
         validate_significance(significance)
         m = self._estimate.n_in + self._estimate.n_out
         r, u = self._estimate._best_r_u(threshold)
+        significance = corrected_significance(
+            significance,
+            threshold=threshold,
+            num_scores=m,
+        )
 
         # Bracket: start from the (ε, δ)-DP ceiling (a generous over-estimate
         # asymptotically for μ-GDP) and expand while the p-value is still
@@ -81,7 +86,7 @@ class GdpMethod:
         else:
             raise RuntimeError(
                 f"cannot invert μ-GDP p-value for (m={m}, r={r}, u={u}) at "
-                f"significance={significance}: p-value stays below it for "
+                f"corrected significance={significance}: p-value stays below it for "
                 f"every μ up to {mu_hi:g}. With r > {_MAX_EXACT_RANKS} "
                 f"truncated ranks pin the Chernoff bound; use fewer canaries "
                 f"or a larger significance."
@@ -320,7 +325,9 @@ def _p_value(
     Builds a discretised base pair for the Gaussian trade-off function,
     computes the conditional error probability v_k for the top r' ranks
     via numerical integration, then applies a Chernoff tail bound on the
-    sum of independent heterogeneous Bernoullis.
+    sum of independent heterogeneous Bernoullis. Omitted lower ranks use
+    the first computed v_k, which is a conservative lower bound on their
+    error probabilities.
     """
     if not math.isfinite(mu) or mu <= 0.0:
         return 1.0  # perfectly private / non-finite — can't reject
@@ -328,8 +335,8 @@ def _p_value(
     grid = _gdp_base_pair_grid(mu, grid_size)
     r_prime = min(r, _MAX_EXACT_RANKS)
     v_k = _compute_v_k(n, r_prime, grid)
-    n_trunc = r - r_prime  # truncated ranks use v_k = 0.5
-    return _chernoff_lower_tail(v_k, n_trunc, u)
+    trunc_v = float(v_k[0]) if r > r_prime else None
+    return _chernoff_lower_tail(v_k, n_trunc=r - r_prime, u=u, trunc_v=trunc_v)
 
 
 def _compute_v_k(n: int, r_prime: int, grid: _BaseGrid) -> np.ndarray:
@@ -371,31 +378,41 @@ def _compute_v_k(n: int, r_prime: int, grid: _BaseGrid) -> np.ndarray:
     return np.clip(np.exp(log_v_k), 0.0, 0.5)
 
 
-def _chernoff_lower_tail(v_k: np.ndarray, n_trunc: int, u: int) -> float:
+def _chernoff_lower_tail(
+    v_k: np.ndarray,
+    n_trunc: int,
+    u: int,
+    trunc_v: float | None = None,
+) -> float:
     """Chernoff bound on P(Σ V_k ≤ u)  (Xiang et al. 2025, Theorem 3).
 
     V_k are independent Bernoulli(v_k) for the exactly-computed ranks,
-    plus n_trunc independent Bernoulli(0.5) for the truncated ranks.
+    plus n_trunc Bernoullis bounded below by ``trunc_v``. Replacing omitted
+    probabilities with this lower bound increases the lower-tail p-value.
     Returns the minimised upper bound, or 1.0 if observed errors are not
     below expectation.
     """
-    expected = float(np.sum(v_k)) + n_trunc * 0.5
+    if n_trunc and trunc_v is None:
+        raise ValueError("trunc_v is required when ranks are truncated")
+    trunc_v = 0.0 if trunc_v is None else trunc_v
+    expected = float(np.sum(v_k)) + n_trunc * trunc_v
     if u >= expected:
         return 1.0
 
     if u == 0:
-        # λ → −∞ minimum: P = Π(1−v_k) · 0.5^n_trunc
+        # λ → −∞ minimum: P = Π(1−v_k) · (1−trunc_v)^n_trunc
         log_pval = float(
             np.sum(np.log(np.maximum(1.0 - v_k, 1e-300)))
-        ) + n_trunc * math.log(0.5)
+        ) + n_trunc * math.log1p(-trunc_v)
         return min(math.exp(log_pval), 1.0)
 
     # Bisect for λ* ∈ (−50, 0) where dκ/dλ = 0.
-    # κ(λ) = −λu + Σ ln(1 − v_k + v_k·e^λ) + n_trunc·ln((1+e^λ)/2)
+    # κ(λ) = −λu + Σ ln(1 − v_k + v_k·e^λ)
+    #        + n_trunc·ln(1 − trunc_v + trunc_v·e^λ)
     def _kappa_deriv(lam: float) -> float:
         e_lam = math.exp(lam)
         exact = float(np.sum(v_k * e_lam / (1.0 - v_k + v_k * e_lam)))
-        trunc = n_trunc * e_lam / (1.0 + e_lam)
+        trunc = n_trunc * trunc_v * e_lam / (1.0 - trunc_v + trunc_v * e_lam)
         return -u + exact + trunc
 
     lam_lo, lam_hi = -50.0, 0.0
@@ -416,6 +433,6 @@ def _chernoff_lower_tail(v_k: np.ndarray, n_trunc: int, u: int) -> float:
     kappa = (
         -lam_star * u
         + float(np.sum(np.log(1.0 - v_k + v_k * e_lam)))
-        + n_trunc * math.log((1.0 + e_lam) / 2.0)
+        + n_trunc * math.log(1.0 - trunc_v + trunc_v * e_lam)
     )
     return min(math.exp(kappa), 1.0)

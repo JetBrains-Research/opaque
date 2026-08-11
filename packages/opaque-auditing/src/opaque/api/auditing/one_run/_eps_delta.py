@@ -25,6 +25,7 @@ import scipy.special
 import scipy.stats
 
 from opaque.api.auditing.one_run._stats import (
+    corrected_significance,
     search_ceiling,
     validate_delta,
     validate_significance,
@@ -67,6 +68,11 @@ class EpsDeltaMethod:
         validate_delta(delta)
         r, u = self._estimate._best_r_u(threshold)
         m = self._estimate.n_in + self._estimate.n_out
+        significance = corrected_significance(
+            significance,
+            threshold=threshold,
+            num_scores=m,
+        )
         eps_hi = search_ceiling(m, delta, significance)
 
         eps_lo = 0.0
@@ -89,7 +95,12 @@ class EpsDeltaMethod:
         significance: float = 0.05,
         threshold: float | None = None,
     ) -> float:
-        """Epsilon lower bound at the given (δ, significance)."""
+        """Epsilon lower bound at the given (δ, significance).
+
+        Without ``threshold``, the threshold is selected from score labels and
+        Bonferroni-corrected over all possible score thresholds. A supplied
+        threshold is treated as one pre-specified test.
+        """
         return self._epsilon_at(delta, significance, threshold)
 
     def delta_at(
@@ -108,6 +119,11 @@ class EpsDeltaMethod:
         if epsilon < 0:
             raise ValueError(f"epsilon must be >= 0, got {epsilon}")
         r, u = self._estimate._best_r_u(threshold)
+        significance = corrected_significance(
+            significance,
+            threshold=threshold,
+            num_scores=r,
+        )
 
         if _p_value(r, u, epsilon, 0.0) >= significance:
             return 0.0

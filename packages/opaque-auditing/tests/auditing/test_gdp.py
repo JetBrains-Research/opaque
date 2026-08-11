@@ -6,6 +6,7 @@ discretised base pair, and order-statistics p-value.
 
 from __future__ import annotations
 
+import importlib
 import math
 
 import numpy as np
@@ -21,6 +22,8 @@ from opaque.api.auditing.one_run._gdp import (
 )
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
+
+gdp_module = importlib.import_module("opaque.api.auditing.one_run._gdp")
 
 
 class _StubEstimate:
@@ -187,18 +190,28 @@ class TestPValue:
     def test_non_finite_mu_returns_one(self, mu):
         assert _p_value(100, 100, 0, mu, 64) == 1.0
 
+    def test_rank_truncation_is_conservative_against_exact_ranks(self, monkeypatch):
+        """Omitted ranks use the boundary v_k lower bound for a valid upper p-value."""
+        kwargs = {"n": 500, "r": 500, "u": 100, "mu": 1.0, "grid_size": 256}
+        monkeypatch.setattr(gdp_module, "_MAX_EXACT_RANKS", 50)
+        truncated = _p_value(**kwargs)
+        monkeypatch.setattr(gdp_module, "_MAX_EXACT_RANKS", 500)
+        exact = _p_value(**kwargs)
+        assert truncated >= exact
+
 
 # ---- GdpMethod._mu_at bracket / bisection caps -----------------------------
 
 
 class TestMuAtTermination:
-    """Regression: a strong attack past rank truncation must raise, not hang."""
+    """Large audits with truncated ranks remain finite and invertible."""
 
     @pytest.mark.parametrize(("n_half", "u"), [(1500, 0), (2500, 1400)])
-    def test_strong_attack_past_truncation_raises(self, n_half, u):
+    def test_strong_attack_past_truncation_inverts(self, n_half, u):
         method = GdpMethod(_estimate=_StubEstimate(n_half, n_half, u), grid_size=64)
-        with pytest.raises(RuntimeError, match="cannot invert μ-GDP p-value"):
-            method._mu_at(0.05, None)
+        mu = method._mu_at(0.05, None)
+        assert math.isfinite(mu)
+        assert mu > 0.0
 
     def test_below_truncation_still_inverts(self):
         method = GdpMethod(_estimate=_StubEstimate(500, 500, u=0), grid_size=256)

@@ -178,9 +178,11 @@ class OneRunEstimate:
     ) -> float:
         """Epsilon lower bound from the default μ-GDP audit method.
 
-        Shortcut for ``self.gdp().epsilon_at(...)``.  For non-Gaussian-DP
-        mechanisms use ``self.eps_delta().epsilon_at(...)`` explicitly.
-        Requires ``delta > 0`` — μ-GDP is incompatible with pure ε-DP.
+        Shortcut for ``self.gdp().epsilon_at(...)``. Without ``threshold``,
+        the label-selected threshold uses Bonferroni correction over all
+        candidate score thresholds. For non-Gaussian-DP mechanisms use
+        ``self.eps_delta().epsilon_at(...)`` explicitly. Requires ``delta >
+        0`` — μ-GDP is incompatible with pure ε-DP.
         """
         return self.gdp().epsilon_at(
             delta=delta,

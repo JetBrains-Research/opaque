@@ -19,6 +19,24 @@ def validate_delta(delta: float) -> None:
         raise ValueError(f"delta must be in [0, 1], got {delta}")
 
 
+def corrected_significance(
+    significance: float,
+    *,
+    threshold: float | None,
+    num_scores: int,
+) -> float:
+    """Return the per-test significance for a one-run audit query.
+
+    A supplied threshold is pre-specified, so it is one test.  The default
+    threshold is selected from score labels, so Bonferroni correct over the
+    at-most ``num_scores + 1`` score thresholds (including ``inf``).
+    """
+    validate_significance(significance)
+    if threshold is not None:
+        return significance
+    return significance / (num_scores + 1)
+
+
 def search_ceiling(m: int, delta: float, significance: float) -> float:
     """Maximum ε any one-run audit at ``(m, delta, significance)`` can return.
 

@@ -12,6 +12,7 @@ import scipy.special
 import scipy.stats
 
 from opaque.api.auditing.one_run._eps_delta import _p_value
+from opaque.api.auditing.one_run._stats import corrected_significance
 from opaque.auditing import one_run
 from opaque.auditing.types import CoinFlip
 
@@ -79,6 +80,18 @@ class TestPValue:
         assert p > 0.5
 
 
+class TestThresholdSelectionCorrection:
+    """Bonferroni correction for label-selected thresholds."""
+
+    def test_explicit_threshold_is_one_pre_specified_test(self):
+        assert corrected_significance(0.05, threshold=1.0, num_scores=100) == 0.05
+
+    def test_default_threshold_corrects_all_possible_score_thresholds(self):
+        assert (
+            corrected_significance(0.05, threshold=None, num_scores=100) == 0.05 / 101
+        )
+
+
 # ---- OneRunEstimate.eps_delta() --------------------------------------------
 
 
@@ -125,6 +138,39 @@ class TestEpsDeltaMethod:
         est = _make_estimate(np.arange(1000, 2000), np.arange(0, 1000))
         eps = est.eps_delta().epsilon_at(delta=0.0, threshold=1000)
         assert eps > 5.0
+
+    @pytest.mark.parametrize("swap_adjacency", [False, True])
+    def test_default_threshold_is_calibrated_under_null(self, swap_adjacency):
+        """Bonferroni-corrected label selection controls 200 null audits.
+
+        Three binomial standard errors give documented finite-run slack above
+        the nominal 5% family-wise false-positive rate.
+        """
+        runs = 200
+        alpha = 0.05
+        rng = np.random.default_rng(20260811)
+        false_positives = 0
+        for _ in range(runs):
+            first = rng.normal(size=50)
+            second = rng.normal(size=50)
+            in_scores, out_scores = (
+                (second, first) if swap_adjacency else (first, second)
+            )
+            estimate = _make_estimate(in_scores, out_scores)
+            false_positives += (
+                estimate.eps_delta().epsilon_at(
+                    delta=0.0,
+                    significance=alpha,
+                )
+                > 0.0
+            )
+
+        slack = 3 * np.sqrt(alpha * (1 - alpha) / runs)
+        assert false_positives / runs <= alpha + slack
+
+    def test_identical_scores_are_a_negative_control(self):
+        estimate = _make_estimate(np.ones(50), np.ones(50))
+        assert estimate.eps_delta().epsilon_at(delta=0.0) == 0.0
 
 
 # ---- delta_at --------------------------------------------------------------
