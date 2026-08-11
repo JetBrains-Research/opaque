@@ -1,10 +1,10 @@
 # SFT & DPO trainers end-to-end
 
-The [SFT](sft.md) and [DPO](dpo.md) guides build a DP run by hand from
-`opaque.alignment` primitives. This guide covers the **class trainers** that
+The [SFT](sft.md) and [DPO](dpo.md) guides build a DP run manually from
+`opaque.alignment` primitives. This guide covers the **class-based trainers** that
 wrap that pipeline: `opaque.transformers.trl.SFTTrainer` and `DPOTrainer`.
 They mirror `trl.SFTTrainer` / `trl.DPOTrainer` in structure and method names,
-but route the gradient through opaque's per-example DP
+but route the gradient through Opaque's per-example DP
 [`DPTrainer`](../user-guide/huggingface/dptrainer.md) — one Poisson round is
 one clip-noise-step. The alignment collators, losses, and reference helpers are
 the same primitives the by-hand guides use; the trainer is the orchestration
@@ -187,9 +187,9 @@ normalized variants.
 How the reference is resolved (no `reference_free` flag exists — reference-need
 is derived from `loss_type`, below):
 
-| `ref_model` | Behaviour |
+| `ref_model` | Behavior |
 |---|---|
-| a module | Used as-is; left in the device/mode it arrived in. |
+| a module | Used as-is; left in the device and mode in which it arrived. |
 | a **string** | Loaded via `AutoModelForCausalLM.from_pretrained(ref_model, **model_init_kwargs)` — `model_init_kwargs` is threaded into the reference load too. |
 | `None`, PEFT policy | The base model is the reference; the adapter is disabled around the reference forward (`null_ref_context`). No second model. |
 | `None`, string/path policy | A reference **copy is auto-loaded** from the policy path. |
@@ -244,7 +244,7 @@ reward; CPO's sigmoid uses the summed policy log-probs.
 
 Passing `loss_type` as a list combines the heads into one per-example loss
 (MPO — Mix of Preference Objectives — via `mpo_combine`). `loss_weights` (a
-list of floats, defaulting to all-ones) weights each term and **must match the
+list of floats, defaulting to all ones) weights each term and **must match the
 length of `loss_type`**; duplicate loss names are rejected. A list may freely
 mix length-normalized and summed variants — the reference is always precomputed
 summed and normalized per head at loss time.
@@ -301,8 +301,8 @@ channel without leaking gradient; the eval loop aggregates the same dict under
 ## Converting from HF / TRL
 
 Pipelines that already construct an HF `TrainingArguments` or a
-`trl.SFTConfig` / `trl.DPOConfig` can hand the existing config to the
-opaque equivalents through three classmethods:
+`trl.SFTConfig` / `trl.DPOConfig` can pass the existing config to the
+Opaque equivalents through three class methods:
 
 - `TrainingArguments.from_hf(hf_args, ...)` — base HF translation.
 - `SFTConfig.from_trl(trl_sft_cfg, ...)` — TRL SFT translation.
@@ -310,7 +310,7 @@ opaque equivalents through three classmethods:
 - `DPOConfig.from_trl(trl_dpo_cfg, ...)` — TRL DPO translation. Same
   extra.
 
-Each classmethod accepts the same DP-knob kwargs as a regular opaque
+Each class method accepts the same DP-knob kwargs as a regular Opaque
 config — at least one of `privacy_noise_multiplier` or
 `privacy_target_epsilon` is required, the rest have sensible defaults.
 
@@ -384,7 +384,7 @@ Pass `strict=False` to suppress the warnings entirely.
 
 ### Round-trip is one-way
 
-The classmethods only translate HF/TRL → opaque. Opaque-only fields
+The class methods only translate HF/TRL → Opaque. Opaque-only fields
 (every DP knob, `microbatch_size > per_device_eval_batch_size`,
 opaque-specific clipping / sampling / noise-mechanism families) cannot
 be expressed in HF or TRL terms, so the reverse conversion is not

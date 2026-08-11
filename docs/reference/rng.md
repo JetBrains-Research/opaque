@@ -1,17 +1,18 @@
 # Random Number Generation API
 
-Opaque provides immutable, JAX-style RNG key semantics with explicit key threading for deterministic and reproducible DP training.
+Opaque provides immutable, JAX-style RNG key semantics with explicit key
+threading for deterministic and reproducible DP training.
 
 ## Overview
 
 The `opaque.random` module provides:
 
-- **Core primitives**: `RngKey`, `split()`, `fold_in()` - Functional RNG with immutable keys
+- **Core primitives**: `RngKey`, `split()`, `fold_in()` — Functional RNG with immutable keys
 - **Convenience helpers**:
-  - `key()` - Create RngKey from integer seed
-  - `random_key()` - Non-deterministic key from system entropy
-  - `set_reproducible_pytorch_seed()` - Configure PyTorch/CUDNN reproducibility
-- **Bridge function**: `generator_from_key()` - Create torch.Generator from RngKey
+  - `key()` — Create an RngKey from an integer seed
+  - `random_key()` — Nondeterministic key from system entropy
+  - `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
+- **Bridge function**: `generator_from_key()` — Create a `torch.Generator` from an RngKey
 
 ## Quick Reference
 
@@ -32,7 +33,7 @@ from opaque.random import random_key, set_reproducible_pytorch_seed
 # From integer seed (reproducible)
 k = key(42)
 
-# Non-deterministic (for prototyping)
+# Nondeterministic (for prototyping)
 k = random_key()  # Uses system entropy
 
 # From torch.Generator
@@ -44,12 +45,12 @@ k = RngKey(seed=42)  # Equivalent for reproducible use
 
 ```python
 # Binary split (most common)
-k1, k2 = split(key, num=2)
+k1, k2 = split(k, num=2)
 
 # Multi-way split
-keys = split(key, num=10)  # Returns tuple
+keys = split(k, num=10)  # Returns tuple
 
-# Loop pattern - split and advance
+# Loop pattern — split and advance
 for step in range(100):
     key, step_key = split(key, num=2)
     result = do_something_random(step_key)
@@ -123,7 +124,7 @@ k = key(42)
 
 #### random_key() → RngKey
 
-Create a non-deterministic RngKey using system entropy.
+Create a nondeterministic RngKey using system entropy.
 
 ```python
 from opaque.random import random_key
@@ -233,7 +234,7 @@ tensor = torch.randn(10, generator=gen)
 
 #### set_reproducible_pytorch_seed(key_val: RngKey) → None
 
-Configure PyTorch and CUDNN for reproducible training from a single RngKey.
+Configure PyTorch and cuDNN for reproducible training from a single RngKey.
 
 ```python
 from opaque.random import key, fold_in, set_reproducible_pytorch_seed

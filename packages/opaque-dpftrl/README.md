@@ -3,14 +3,13 @@
 Matrix-factorization noise mechanisms for Opaque: BLT, BSR, BiSR,
 band-MF, lambda-CGD, identity — plus the MF-specific participation
 samplers (b-min-separation, Poisson, balls-in-bins, sequential
-batches). Functional optimizers (including the universal ``adamw``
-that consumes private ``noisy_squared_grads`` streams) live in
+batches). Functional optimizers (including the universal `adamw`
+that consumes private `noisy_squared_grads` streams) live in
 [`opaque.optimizers`](../opaque-optimizers/README.md).
 
 ## Install
 
-Install the root package as described in the [repository installation guide](
-https://github.com/JetBrains-Research/opaque#installation),
+Install the root package as described in the [repository installation guide](https://github.com/JetBrains-Research/opaque#installation),
 using its `dpftrl` extra to include this component.
 
 ## Quick start

@@ -1,6 +1,6 @@
 # Schedules
 
-Pure-Python step-indexed scalar schedules.  Each public function
+Pure-Python step-indexed scalar schedules. Each public function
 returns a plain `Callable[[int], float]` that plugs straight into
 `torchopt.adamw(lr=...)` or Opaque factories such as
 [`adamw`](optimizers.md), `adam`, and
@@ -23,7 +23,7 @@ Public surface:
 A decay curve is configured by `transition_begin` (when decay starts)
 and `transition_steps` (how long it takes); it returns its
 `init_value` during `[0, transition_begin)` and decays during
-`[transition_begin, transition_begin + transition_steps]`.  Wrap the
+`[transition_begin, transition_begin + transition_steps]`. Wrap the
 decay with `with_warmup` to multiply it by a `0 → 1` ramp during the
 first `transition_steps` steps — turning the leading plateau into a
 warmup ramp.
@@ -40,7 +40,7 @@ decay = cosine_schedule(
     transition_steps=N - W, transition_begin=W,
 )
 
-# Replace the plateau with a 0 -> base_lr ramp.
+# Replace the plateau with a 0 → base_lr ramp.
 schedule = with_warmup(decay, transition_steps=W)
 
 opt = torchopt.adamw(lr=schedule)
@@ -54,7 +54,7 @@ opt = torchopt.adamw(lr=schedule)
 constant_schedule(value: float) -> Callable[[int], float]
 ```
 
-Returns `value` at every step.  Equivalent to passing a float
+Returns `value` at every step. Equivalent to passing a float
 directly to TorchOpt's `lr` argument; `with_warmup` accepts a float
 as the same shorthand.
 
@@ -81,14 +81,14 @@ linear_schedule(
 ```
 
 Linear interpolation from `init_value` to `end_value` over
-`transition_steps`, starting at `transition_begin`.  Steps before
+`transition_steps`, starting at `transition_begin`. Steps before
 `transition_begin` hold at `init_value`; steps after the transition
 hold at `end_value`.
 
 ```python
 from opaque.scheduling import linear_schedule
 
-# 1e-3 -> 0 over 1000 steps.
+# 1e-3 → 0 over 1000 steps.
 sched = linear_schedule(1e-3, 0.0, transition_steps=1000)
 ```
 
@@ -107,7 +107,7 @@ polynomial_schedule(
 ```
 
 Polynomial transition from `init_value` to `end_value`:
-`end + (init - end) * (1 - count/T)^power`.  `power=1` reduces to
+`end + (init - end) * (1 - count/T)^power`. `power=1` reduces to
 [`linear_schedule`](#linear_schedule); larger `power` produces a
 flatter early phase and steeper late drop.
 
@@ -135,9 +135,9 @@ exponential_schedule(
 
 Geometric schedule: `init * decay_rate^((step - transition_begin) / transition_steps)`.
 The shape is exponential; the direction depends on `decay_rate` —
-`< 1` decays, `> 1` grows, `== 1` stays constant.  With
+`< 1` decays, `> 1` grows, `== 1` stays constant. With
 `staircase=True` the exponent is floored, so the value moves in
-discrete jumps every `transition_steps`.  `end_value`, when set,
+discrete jumps every `transition_steps`. `end_value`, when set,
 clamps the result (lower bound for `decay_rate < 1`, upper bound for
 `decay_rate > 1`).
 
@@ -179,7 +179,7 @@ greater than `0.5` produce additional oscillations clamped at zero.
 ```python
 from opaque.scheduling import cosine_schedule
 
-# Single half-cosine 1e-3 -> 0 over 1000 steps.
+# Single half-cosine from 1e-3 to 0 over 1,000 steps.
 sched = cosine_schedule(1e-3, 0.0, transition_steps=1000)
 
 # 1.5 oscillations over 1000 steps.
@@ -407,7 +407,7 @@ unknown string.
 
 ---
 
-## See Also
+## See also
 
 - [Optimizers API](optimizers.md) — pass any of these schedules to TorchOpt's `lr` argument.
 - [LR Scheduling User Guide](../user-guide/lr-scheduling.md) — patterns and DP-specific guidance.

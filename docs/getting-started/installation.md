@@ -13,14 +13,14 @@
 
 ## From JetBrains Packages
 
-Install `opaque` as the single public package entrypoint:
+Install `opaque` as the single public package entry point:
 
 ```bash
 pip install opaque \
   --index-url https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
 
-Or with uv:
+Or with `uv`:
 
 ```bash
 uv add opaque \
@@ -89,7 +89,7 @@ query the installed distributions individually.
 ## PyCharm
 
 In PyCharm, select the `uv` interpreter for the project where you ran
-`uv add`. Completion and Quick Documentation follow Opaque's public façade
+`uv add`. Code completion and Quick Documentation follow Opaque's public façade
 imports, such as `opaque.dpsgd.clipping`, `opaque.dpsgd.noise`, and
 `opaque.accounting`; avoid copying `opaque.api.*` paths from implementation
 tracebacks into application code. Clone Opaque and use an editable workspace

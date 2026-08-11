@@ -42,7 +42,7 @@ The output is an `LMBatch` (`opaque.alignment.sft.collator.types`) with
 `input_ids`/`attention_mask`/`labels` of shape `(B, L)`. Padding and
 (when `completion_only_loss=True`) prompt tokens are set to `-100` in
 `labels` so the loss ignores them; an optional `completion_mask` is
-emitted too. Sequences longer than `max_length` are truncated keep-start
+emitted too. Sequences longer than `max_length` are truncated with keep-start
 (matching TRL's `SFTTrainer`); no example is dropped. Pass
 `pad_to_multiple_of=` to round the padded length up.
 
@@ -118,16 +118,16 @@ exposes the direct functions, not a registry.
 the `(T, V)` logits dominate memory. The fused twins `fused_nll_loss` /
 `fused_dft_loss` take `hidden_states` `(T, H)` and the `lm_head` weight
 `(V, H)` instead, and never materialize logits — on CUDA + half precision
-with `opaque-alignment[patches]` installed they call a fused linear-CE
+with `opaque-alignment[patches]` installed, they call a fused linear-CE
 kernel and recompute the LSE in the backward; otherwise they fall back to
 the eager projection. They are numerically equivalent to the eager form.
 Unlike the eager losses, the fused ones are strictly per-example (one
 `(T, H)` sequence, batched only by the outer `vmap`); do not call them on
 a batch axis directly. Use the fused path when activation memory is the
-bottleneck and you are on a CUDA half-precision setup, the eager path
-otherwise.
+bottleneck and you are on a CUDA half-precision setup; otherwise, use the
+eager path.
 
-## 3. vmap(grad), clip, noise, optimizer
+## 3. `vmap(grad)`, clipping, noise, and optimization
 
 `opaque.dpsgd.clipping.clipped_grad` wraps the per-example loss in
 `vmap(grad(...))`, clips each per-example gradient to `clipping_norm`, and

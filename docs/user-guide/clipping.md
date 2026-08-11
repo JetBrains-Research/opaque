@@ -11,13 +11,13 @@ Opaque provides three high-level clipping functions:
 - **`auto_clipped_grad`** ([`opaque.dpsgd.clipping`](../reference/clipping.md)) — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023). Algorithm-agnostic: composes with both DP-SGD's Gaussian mechanism and DP-FTRL's matrix-factorization mechanisms.
 - **`adaptive_clipped_grad`** ([`opaque.dpsgd.clipping`](../reference/clipping.md)) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.
 
-For DP-FTRL, import ``clipped_grad``, ``auto_clipped_grad``, and ``per_group``
-from :mod:`opaque.dpftrl.clipping`.
+For DP-FTRL, import `clipped_grad`, `auto_clipped_grad`, and `per_group`
+from `opaque.dpftrl.clipping`.
 
 Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
 are documented in the [Clipping API Reference](../reference/clipping.md).
 
-## `clipped_grad` -- recommended API
+## `clipped_grad` — recommended API
 
 `clipped_grad` wraps a per-example loss function. It computes per-example
 gradients, clips each to a maximum L2 norm, and sums the result. This is the
@@ -538,7 +538,7 @@ Because the per-record sensitivity bound `R` is constant and
 data-independent, AUTO-S satisfies the constant per-step sensitivity
 assumption that matrix-factorization privacy proofs rely on. The
 returned `ClippedPytree.max_norm` is the same value (`R / normalize_by`)
-on every step, so it flows through `mf_gaussian_noise` exactly like fixed clipping
+on every step, so it flows through `mf_gaussian_noise` exactly as fixed clipping
 does:
 
 ```python

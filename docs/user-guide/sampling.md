@@ -83,12 +83,11 @@ sample rates, the standard deviation is roughly `sqrt(expected_batch_size)`.
 
 ### Truncated Poisson (batch cap)
 
-Use :class:`~opaque.dpsgd.sampling.PoissonSampler` with
-``truncated_batch_size`` set. When a Poisson draw exceeds that cap, a
+Use `PoissonSampler` with `truncated_batch_size` set. When a Poisson draw exceeds that cap, a
 uniform random subset of the selected indices is kept. That caps batch
 size (more stable training and memory) but **weakens** privacy relative to
-plain Poisson at the same ``sample_rate``—account with
-``dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)`` so the
+plain Poisson at the same `sample_rate` — account with
+`dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)` so the
 PLD matches the cap.
 
 ```python
@@ -111,7 +110,7 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|-------------|
 | `truncated_batch_size` | `int` | Upper bound on batch size |
 
-Privacy accounting (truncated form of ``poisson``):
+Privacy accounting (truncated form of `poisson`):
 
 ```python
 step = dpsgd_acc.poisson(
@@ -125,18 +124,18 @@ training = step * num_steps
 
 ### `CyclicPoissonSampler` (DP-FTRL)
 
-The dataset is split into ``bands`` disjoint groups (``partition_type`` fixes
-how, when ``bands > 1``).  Step ``i`` draws only from group ``i % bands``: each
-example in that group is kept independently with probability ``sample_rate``,
-so the within-step batch size is Binomial.  Training steps therefore advance a
+The dataset is split into `bands` disjoint groups (`partition_type` fixes
+how, when `bands > 1`). Step `i` draws only from group `i % bands`: each
+example in that group is kept independently with probability `sample_rate`,
+so the within-step batch size is Binomial. Training steps therefore advance a
 fixed rotation over which group is active, while inclusion inside the active
 group stays Poisson-style.
 
-For an identity MF baseline (``identity_strategy()``), use ``bands=1`` so the
+For an identity MF baseline (`identity_strategy()`), use `bands=1` so the
 lone group is the full dataset and every step is plain Poisson on all
-examples, matching whole-process ``dpftrl_acc.poisson`` over
-``dpftrl_acc.mf_gaussian(nm, identity_strategy())``.  For BandMF, set
-``bands`` to the same count as in ``band_mf_strategy(bands=...)`` so
+examples, matching whole-process `dpftrl_acc.poisson` over
+`dpftrl_acc.mf_gaussian(nm, identity_strategy())`. For BandMF, set
+`bands` to the same count as in `band_mf_strategy(bands=...)` so
 participation matches correlated ``mf_gaussian_noise``.
 
 ```python
@@ -161,16 +160,16 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | any with `__len__` | required | The dataset |
 | `sample_rate` | `float` in (0, 1] | required | Inclusion probability within each active group |
-| `bands` | `int` | 1 | Number of groups in the cycle (``1`` = full dataset each step; match strategy for BandMF). |
+| `bands` | `int` | 1 | Number of groups in the cycle (`1` = full dataset each step; match strategy for BandMF). |
 | `n_steps` | `int` | 1 | Total batches to yield |
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How examples are assigned to groups |
 | `key` | `RngKey` | required | RNG key |
 
 **Partition types:**
 
-- `PartitionType.EQUAL_SPLIT` -- shuffle the dataset, then split into groups
+- `PartitionType.EQUAL_SPLIT` — shuffle the dataset, then split into groups
   of equal size. Deterministic group sizes.
-- `PartitionType.INDEPENDENT` -- assign each example to a random group
+- `PartitionType.INDEPENDENT` — assign each example to a random group
   (multinomial). Group sizes vary.
 
 See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how this
@@ -292,12 +291,12 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 
 `acc.balls_in_bins(mechanism, num_bins, num_epochs)` returns the
 **total** multi-epoch privacy cost — do not compose further with
-`* num_epochs`.  In a training loop, book the cost once before training
+`* num_epochs`. In a training loop, book the cost once before training
 begins; the per-step accumulator does not compose for BnB.
 
 `BallsInBinsSampler` is incompatible with parallel-Poisson DDP
 (`--no-shard`): each rank must work a disjoint shard so every example
-participates exactly once per epoch globally.  Pass `--shard` (or its
+participates exactly once per epoch globally. Pass `--shard` (or its
 DDP equivalent) when using BnB across multiple ranks.
 
 ## Sequential batch sampling
@@ -351,7 +350,7 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
 Do not pass `batch_size`, `shuffle`, or `sampler` when using
-`batch_sampler` -- PyTorch does not allow combining these parameters.
+`batch_sampler` — PyTorch does not allow combining these parameters.
 
 Because Poisson sampling produces variable-size batches, your training code
 should handle batches of different sizes. In practice this is rarely a
@@ -367,7 +366,7 @@ and derive a per-rank key via `fold_in(key, rank)`:
    any remainder.
 2. The RNG key is diversified per rank via `fold_in(key, rank)`, so
    different ranks sample different subsets of their shard.
-3. No communication is needed -- each rank samples independently from its
+3. No communication is needed — each rank samples independently from its
    own partition.
 
 ```python
@@ -483,17 +482,17 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 | Sampler | Batch size | Privacy | Use case |
 |---------|-----------|---------|----------|
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
-| `PoissonSampler` + ``truncated_batch_size`` | Bounded above | Weaker than plain Poisson (same ``sample_rate``) | Production, stable batch sizes / memory |
-| `RandomAllocationSampler` (``opaque.dpsgd``) | Variable (Binomial) | Stronger than Poisson at rate ``1/num_bins`` | DP-SGD, whole-epoch passes |
-| `CyclicPoissonSampler` (``opaque.dpftrl``) | Variable | ``dpftrl_acc.poisson`` | DP-FTRL; identity MF → ``bands=1``; BandMF → ``bands`` = strategy |
+| `PoissonSampler` + `truncated_batch_size` | Bounded above | Weaker than plain Poisson (same `sample_rate`) | Production, stable batch sizes / memory |
+| `RandomAllocationSampler` (`opaque.dpsgd`) | Variable (Binomial) | Stronger than Poisson at rate `1/num_bins` | DP-SGD, whole-epoch passes |
+| `CyclicPoissonSampler` (`opaque.dpftrl`) | Variable | `dpftrl_acc.poisson` | DP-FTRL; identity MF → `bands=1`; BandMF → `bands` = strategy |
 | `BallsInBinsSampler` | Variable (Binomial) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSampler` is sufficient.
-Use ``truncated_batch_size`` when you need **capped** batch sizes; expect
-**worse** privacy than plain Poisson at the same ``sample_rate`` unless you
+Use `truncated_batch_size` when you need **capped** batch sizes; expect
+**worse** privacy than plain Poisson at the same `sample_rate` unless you
 recalibrate noise. For DP-FTRL, use
-``opaque.dpftrl.sampling.CyclicPoissonSampler`` as in the section above.
+`opaque.dpftrl.sampling.CyclicPoissonSampler` as in the section above.
 `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.

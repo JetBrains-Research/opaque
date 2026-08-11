@@ -22,7 +22,7 @@ hidden mutation.
 ## Packages
 
 Install and depend on `opaque` only. The repository is implemented as
-[PEP 420] namespace sub-packages under the shared `opaque.*` namespace:
+[PEP 420] namespace packages under the shared `opaque.*` namespace:
 
 | Distribution | Import roots | Purpose |
 |---|---|---|
@@ -155,7 +155,7 @@ for batch_x, batch_y in dataloader:
 - **Privacy auditing**: empirical privacy validation via membership inference.
 - **Distributed training**: DDP-compatible with synchronized noise and
   gradient aggregation via `opaque.distributed`.
-- **HuggingFace compatibility**: automatic `vmap` patching for LLaMA, Mistral,
+- **Hugging Face compatibility**: automatic `vmap` patching for LLaMA, Mistral,
   Qwen2/3, Phi-3, Gemma/Gemma2, Granite, Cohere/Cohere2, plus fused Triton
   kernels via `opaque.patches`.
 

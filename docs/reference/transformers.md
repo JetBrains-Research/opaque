@@ -1,8 +1,8 @@
 # Transformers Integration
 
 API reference for `opaque.transformers` — `DPTrainer`,
-`TrainingArguments`, and the public state objects.  For task-shaped
-usage guides, see [HuggingFace Integration](../user-guide/huggingface/index.md).
+`TrainingArguments`, and the public state objects. For task-shaped
+usage guides, see [Hugging Face Integration](../user-guide/huggingface/index.md).
 
 ## Overview
 
@@ -19,8 +19,8 @@ from opaque.patches import apply_runtime_patches
 
 | Symbol | Purpose |
 |---|---|
-| `DPTrainer` | DP-SGD trainer mirroring the HuggingFace `Trainer` interface. |
-| `TrainingArguments` | Standalone dataclass — full HF parity for the subset DPTrainer honours, plus DP-specific fields. |
+| `DPTrainer` | DP-SGD trainer mirroring the Hugging Face `Trainer` interface. |
+| `TrainingArguments` | Standalone dataclass — full HF parity for the subset DPTrainer honors, plus DP-specific fields. |
 | `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
@@ -55,7 +55,7 @@ DPTrainer(
 | `train_dataset` | `Dataset \| None` | May be `None` only when `train()` is not called. |
 | `eval_dataset` | `Dataset \| None` | Required when `args.eval_strategy != "no"`. |
 | `processing_class` | `PreTrainedTokenizerBase \| SequenceFeatureExtractor \| None` | Used for the default collator selection and token-count metrics. |
-| `compute_loss_func` | `Callable[[outputs, labels], Tensor] \| None` | Per-example loss override; **called under vmap** with one example's `outputs` and `labels`.  NOT HF's `(outputs, labels, num_items_in_batch) -> scalar` signature. |
+| `compute_loss_func` | `Callable[[outputs, labels], Tensor] \| None` | Per-example loss override; **called under vmap** with one example's `outputs` and `labels`. Not HF's `(outputs, labels, num_items_in_batch) -> scalar` signature. |
 | `compute_metrics` | `Callable[[EvalPrediction], dict] \| None` | Standard HF callback over concatenated predictions / label_ids / inputs / losses. |
 | `callbacks` | `list[TrainerCallback] \| None` | User callbacks; `DefaultFlowCallback` is auto-prepended. |
 | `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.**  Passing non-`None` raises `RuntimeError`: DPTrainer owns the functional torchopt optimizer. |
@@ -74,10 +74,10 @@ trainer.evaluate(eval_dataset=None, ignore_keys=None, metric_key_prefix="eval") 
 trainer.predict(test_dataset, ignore_keys=None, metric_key_prefix="test") -> EvaluationResult
 ```
 
-`resume_from_checkpoint` accepts a path string, `True` (auto-find the
+`resume_from_checkpoint` accepts a path string, `True` (automatically find the
 latest `checkpoint-*/` under `output_dir`), `False`, or `None`.
 
-`evaluate` returns the metrics dict only.  Side effects on each call:
+`evaluate` returns the metrics dict only. Side effects on each call:
 
 - Installs the cached-accountant barrier on the active training
   context.

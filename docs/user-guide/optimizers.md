@@ -103,9 +103,9 @@ optimizer = sgd(lr=0.01, momentum=0.9)
 ```
 
 **RMSprop** (`rmsprop`) is adaptive but cheaper
-than Adam (no first moment).  ``noise_bias_correction=True`` enables
-the same flavour of φ-EMA subtraction as AdamW; off by default,
-flip on to ablate:
+than Adam (no first moment). `noise_bias_correction=True` enables
+the same flavor of φ-EMA subtraction as AdamW; it is off by default.
+Enable it to ablate:
 
 ```python
 from opaque.optimizers import rmsprop
@@ -113,8 +113,8 @@ optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_bias_correction=True)
 ```
 
 **Adagrad** (`adagrad`) is for sparse-gradient
-settings.  Its accumulator does not decay, so under DP noise ``v_acc``
-absorbs ``t·σ²`` over training; ``noise_bias_correction=True``
+settings. Its accumulator does not decay, so under DP noise `v_acc`
+absorbs `t·σ²` over training; `noise_bias_correction=True`
 subtracts a matching cumulative term:
 
 ```python
@@ -123,7 +123,7 @@ optimizer = adagrad(lr=1e-2, noise_bias_correction=True)
 ```
 
 Whether the correction helps in practice depends on the workload —
-ablate against ``noise_bias_correction=False``.
+ablate against `noise_bias_correction=False`.
 
 **AdEMAMix**, **Adafactor**, **Lion**, **schedule-free** — see the
 [API reference](../reference/optimizers.md#whats-in-opaqueoptimizers) for
@@ -144,7 +144,7 @@ bias of $\sigma^2$ to every component of $\hat{v}_t$.
 
 Opaque provides two independent corrections, both selected at
 `update()` time.  They address the same problem from different
-angles and **must not be combined** at the same call — using both
+angles and **must not be combined** in the same call — using both
 would double-correct the second moment.
 
 ### `NoisedPytree`: bias correction by variance subtraction
@@ -229,7 +229,7 @@ above.
 | LR-robust alternative to AdamW | `radam` | Rectification gate flattens LR sensitivity to ±0.1% across ±3× |
 | Sign-based, lowest memory | `lion` | No second moment; sharp LR optimum (~AdamW LR / 10) |
 | DP-FTRL without an Adam-family update | `sgd` | No second moment to correct |
-| DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatised `g²` stream in place of squaring noised grads |
+| DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatized `g²` stream for squaring noised gradients |
 | DP-FTRL with Adam, no extra budget | `adamw(noise_bias_correction=True)` | BC alternative when the second-moment overhead isn't acceptable |
 | Sparse gradients under DP | `adagrad` | `noise_bias_correction=True` is essentially mandatory — without it the un-decaying accumulator absorbs `t·σ²` |
 | RMSprop user under DP | `rmsprop` | LR-sensitive; tune carefully (lr=1e-4 worked in our sweep, 5e-4 diverged) |
@@ -323,10 +323,10 @@ $$E[v_t] = \sum_s g_s^2 \;+\; t \sigma^2$$
 The noise term grows linearly forever.  After enough steps the
 denominator is dominated by accumulated noise; updates become
 effectively random and the per-coordinate LR shrinks indefinitely.
-``adagrad(noise_bias_correction=True, ...)`` subtracts a parallel
+`adagrad(noise_bias_correction=True, ...)` subtracts a parallel
 cumulative $\Phi_\text{acc}$ to counter this.  Whether the corrected
 denominator is preferable to vanilla Adagrad in practice depends on
-the workload — ablate against ``noise_bias_correction=False`` rather
+the workload — ablate against `noise_bias_correction=False` rather
 than treating BC as a default.
 
 ### RAdam under DP
@@ -340,7 +340,7 @@ not consumed at all.  This makes the warmup phase naturally DP-robust:
 the noise in `v` cannot affect the update because it isn't read.
 
 Once `ρ_t > 5`, the standard Adam DP-BC story applies — subtract a
-β₂-EMA of `σ²` from `v̂` before the sqrt.  ``radam``
+β₂-EMA of `σ²` from `v̂` before the sqrt. `radam`
 advances the φ-EMA every step (warmup included) so that at the first
 rectified step the correction reflects all prior noise contributions to
 `v`, not just the current step.
@@ -355,7 +355,7 @@ Under DP both EMAs accumulate noise:
 - `E[Δx²]_t` accumulates `coef_t² · σ²` per element because
   `Δx_t = -coef_t · g̃_t` is linear in the noised gradient.
 
-``adadelta`` maintains two parallel φ-EMAs at the
+`adadelta` maintains two parallel φ-EMAs at the
 same decay `ρ` and subtracts both biases. `φ_g` is scalar (or
 per-group), while `φ_dx` is per-element because the per-step update-noise
 variance varies element-wise even when `σ` is scalar. This adds one scalar
@@ -441,7 +441,7 @@ the wrapper's averaging is the implicit schedule.
 ## Checkpoint round-tripping
 
 The optimizer state is a `torchopt` chain tuple of dataclasses; flatten
-it to a serialisable dict via :mod:`opaque.serialization`:
+it to a serializable dict via `opaque.serialization`:
 
 ```python
 from opaque.optimizers import adamw

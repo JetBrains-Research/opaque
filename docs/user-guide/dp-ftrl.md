@@ -52,7 +52,7 @@ generation.
 ```python
 from opaque.dpftrl.noise import (
     band_mf_strategy,    # numerical Toeplitz optimization
-    blt_strategy,        # buffered linear toeplitz, multi-epoch
+    blt_strategy,        # buffered linear Toeplitz, multi-epoch
     bisr_strategy,       # banded inverse square root
     bsr_strategy,        # banded square root, closed-form
     lambda_cgd_strategy, # PRNG replay, O(1) memory
@@ -101,7 +101,7 @@ Three amplification factories under
 
 Each amplification factory wraps a mechanism into a single
 `DpProcess` describing the full training run. **Always pass the same
-strategy object** into `mf_gaussian_noise` and the accounting factory — that's
+strategy object** to `mf_gaussian_noise` and the accounting factory — that is
 how DP correctness is preserved.
 
 ### Step-by-step ε reporting (`per_step`)
@@ -129,8 +129,8 @@ for batch in dataloader:
 ```
 
 For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-Monte Carlo PLDs are point estimates without that guarantee. `K >
-proc.n_steps` raises.
+Monte Carlo PLDs are point estimates without that guarantee.
+`K > proc.n_steps` raises.
 
 ## 3. Clipping
 
@@ -162,12 +162,12 @@ the same invariant MF accounting requires of fixed clipping.
 **Choosing among the three.** Scalar `clipped_grad` is the right
 default. Reach for `per_group` clipping when one or more parameter
 groups have substantially different gradient magnitudes than the
-rest — a freshly initialised head on top of frozen pretrained
+rest — a freshly initialized head on top of frozen pretrained
 layers, or a LoRA target whose gradients sit far below its
 siblings: the non-uniform `σᵢ ∝ √Cᵢ` noise allocation concentrates
 less noise on small-gradient groups without sacrificing much
 sensitivity on the dominant ones, and on heterogeneous workloads
-this recovers a small eval-loss improvement over scalar clipping
+this recovers a small evaluation-loss improvement over scalar clipping
 at the same joint budget. Setting `Cᵢ` substantially tighter than
 the per-group typical magnitudes (e.g. half the per-group median)
 regresses below scalar — clipping bias dominates the
@@ -257,7 +257,7 @@ it. See [Optimizers](optimizers.md) for the full second-moment story.
 **Stability under the paired release.** The math holds under MF
 (the predicted σ_first inflation matches the formula referenced in
 [Noise](noise.md)), but Adam-family optimizer stability is
-workload-dependent. The destabilisation risk comes from the
+workload-dependent. The destabilization risk comes from the
 v update: when per-coordinate gradient signal is small relative to
 the second-stream σ — common when some parameter groups have very
 small gradients — Adam's per-coordinate scaling accumulates bias

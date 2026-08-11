@@ -1,6 +1,6 @@
 # BSR (Banded Square Root)
 
-**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism where the **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the workload :math:`A_{\alpha,\beta}` in the paper (multiplicative decay :math:`\alpha`, Polyak momentum :math:`\beta`).
+**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism whose **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the paper's workload \(A_{\alpha,\beta}\) (multiplicative decay \(\alpha\), Polyak momentum \(\beta\)).
 
 Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS optimization step at initialization.
 
@@ -42,7 +42,7 @@ eps = training.epsilon_at(1e-5)
 | `bandwidth` | Bandwidth \(p\) (≥ 1). Coefficients \(c_j\) for \(j \ge p\) are zero. |
 | `n_steps` | Total training steps |
 | `min_sep` | Minimum separation between participations (typically steps per epoch) |
-| `max_participations` | Maximum participations per user (epochs) |
+| `max_participations` | Maximum number of participations per user (epochs) |
 | `alpha` | Paper \(\alpha \in (0, 1]\) |
 | `beta` | Paper \(\beta \in [0, 1)\); must satisfy \(\alpha > \beta\) |
 

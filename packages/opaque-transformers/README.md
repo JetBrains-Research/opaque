@@ -6,14 +6,13 @@ Hugging Face trainer integration for Opaque: DP-aware training loop
 
 ## Install
 
-Install the root package as described in the [repository installation guide](
-https://github.com/JetBrains-Research/opaque#installation).
+Install the root package as described in the [repository installation guide](https://github.com/JetBrains-Research/opaque#installation).
 Use its `transformers` extra for trainer integration or `trl` for TRL config
 conversion.
 
 Depends on `opaque-engine`, `opaque-patches`, `opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, plus
-`transformers>=4.57`, `peft>=0.13` and `datasets>=2.0`.
+`transformers>=4.57`, `peft>=0.13`, and `datasets>=2.0`.
 
 For Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy), install
 `opaque-patches[transformers]` — kernels are a dependency of `opaque-patches`
