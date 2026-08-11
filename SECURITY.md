@@ -28,11 +28,11 @@ security report.
 ## What Is Not a Security Report
 
 Opaque is a research software library. Report routine library defects,
-including concerns about differential privacy guarantees, privacy accounting,
-mechanisms, clipping, noise, and sampling, through the [public issue
-tracker][issues]. Use the private channel only when a defect enables a security
-vulnerability, exposes confidential information, or otherwise requires
-coordinated disclosure.
+including non-sensitive concerns about differential privacy guarantees, privacy
+accounting, mechanisms, clipping, noise, and sampling, through the [public
+issue tracker][issues]. Use the private channel when a defect may have a
+material privacy impact, enables a security vulnerability, exposes
+confidential information, or otherwise requires coordinated disclosure.
 
 ## Handling and Disclosure
 
@@ -42,9 +42,9 @@ and disclosure process. Please allow reasonable time for a fix or mitigation
 before public disclosure. When a fix is released, maintainers will publish
 affected versions, remediation guidance, and credit where requested.
 
-Opaque is a research software library. This policy covers vulnerabilities in
-the repository and its released packages; it does not cover third-party
-dependencies or deployments that have not been modified by Opaque.
+This policy covers vulnerabilities in the repository and its released packages,
+including dependency vulnerabilities that materially affect Opaque. Report
+dependency vulnerabilities to their upstream project as well.
 
 [coordinated-disclosure]: https://www.jetbrains.com/legal/docs/terms/coordinated-disclosure/
 [issues]: https://github.com/JetBrains-Research/opaque/issues
