@@ -41,20 +41,34 @@ def assert_scalar_equal(
     name: str,
     atol: float = 1e-8,
     rtol: float = 1e-5,
+    compute_dtype: torch.dtype | None = None,
     device: torch.device | None = None,
 ) -> None:
-    """Raise if ``value`` is not equal across ranks within tolerance."""
+    """Raise if ``value`` is not equal across ranks within tolerance.
+
+    Integer values are compared exactly through the integer reduction path.
+    Floating-point values use ``compute_dtype`` (float32 by default).
+    """
     if not is_distributed():
         return
 
-    min_value = reduce_scalar(float(value), op="min", device=device)
-    max_value = reduce_scalar(float(value), op="max", device=device)
-    if not torch.isclose(
-        torch.tensor(min_value),
-        torch.tensor(max_value),
-        atol=atol,
-        rtol=rtol,
-    ):
+    min_value = reduce_scalar(
+        value, op="min", compute_dtype=compute_dtype, device=device
+    )
+    max_value = reduce_scalar(
+        value, op="max", compute_dtype=compute_dtype, device=device
+    )
+    if isinstance(value, int) and not isinstance(value, bool):
+        equal = min_value == max_value
+    else:
+        dtype = compute_dtype or torch.float32
+        equal = torch.isclose(
+            torch.tensor(min_value, dtype=dtype),
+            torch.tensor(max_value, dtype=dtype),
+            atol=atol,
+            rtol=rtol,
+        )
+    if not equal:
         raise RuntimeError(
             f"{name} mismatch across ranks: min={min_value}, max={max_value}."
         )
@@ -84,20 +98,45 @@ def assert_pytree_equal(
         return leaf
 
     tree_map(_accumulate, pytree)
-    assert_scalar_equal(total, name=name, atol=atol, rtol=rtol)
+    assert_scalar_equal(
+        total,
+        name=name,
+        atol=atol,
+        rtol=rtol,
+        compute_dtype=torch.float64,
+    )
 
 
 def reduce_scalar(
-    value: float,
+    value: float | int,
     op: str = "mean",
     device: torch.device | None = None,
-) -> float:
-    """All-reduce a Python scalar and return the reduced float.
+    *,
+    compute_dtype: torch.dtype | None = None,
+) -> float | int:
+    """All-reduce a Python scalar.
 
     For NCCL backends, a CUDA device is required. If ``device`` is None a
     sensible one is inferred (current CUDA device for NCCL, else CPU).
+
+    Integer values use an exact ``torch.int64`` collective. Floating-point
+    values use ``compute_dtype`` when supplied and float32 otherwise.
+    Integer means are computed from an exact integer sum and returned as a
+    Python float.
     """
+    if isinstance(value, bool) or not isinstance(value, (float, int)):
+        raise TypeError(f"value must be a float or int, got {type(value)}")
+    if compute_dtype is not None and not torch.is_floating_point(
+        torch.empty((), dtype=compute_dtype)
+    ):
+        raise TypeError(
+            f"compute_dtype must be a real floating-point dtype, got {compute_dtype!r}."
+        )
+    if isinstance(value, int) and compute_dtype is not None:
+        raise TypeError("compute_dtype is only supported for floating-point values.")
     if not is_distributed():
+        if isinstance(value, int) and op == "mean":
+            return float(value)
         return value
 
     if device is None:
@@ -117,7 +156,15 @@ def reduce_scalar(
         else:
             device = torch.device("cpu")
 
-    tensor = torch.tensor(value, dtype=torch.float32, device=device)
+    is_integer = isinstance(value, int)
+    tensor = torch.tensor(
+        value,
+        dtype=torch.int64 if is_integer else compute_dtype or torch.float32,
+        device=device,
+    )
+    if is_integer and op == "mean":
+        all_reduce_(tensor, op="sum")
+        return tensor.item() / get_world_size()
     all_reduce_(tensor, op=op)
     return tensor.item()
 
@@ -342,7 +389,13 @@ def sync_object(
                     f"field_ops[{field_name!r}]='assert_equal' requires a float or int, "
                     f"got {type(value).__name__}."
                 )
-            assert_scalar_equal(value, name=f"{type(state).__name__}.{field_name}")
+            assert_scalar_equal(
+                value,
+                name=f"{type(state).__name__}.{field_name}",
+                atol=0.0,
+                rtol=0.0,
+                compute_dtype=torch.float64 if isinstance(value, float) else None,
+            )
             continue
         if field_op == "assert_optional_equal":
             is_present = int(value is not None)
@@ -359,7 +412,13 @@ def sync_object(
                     f"field_ops[{field_name!r}]='assert_optional_equal' requires "
                     f"a float, int, or None, got {type(value).__name__}."
                 )
-            assert_scalar_equal(value, name=f"{type(state).__name__}.{field_name}")
+            assert_scalar_equal(
+                value,
+                name=f"{type(state).__name__}.{field_name}",
+                atol=0.0,
+                rtol=0.0,
+                compute_dtype=torch.float64 if isinstance(value, float) else None,
+            )
             continue
         if not isinstance(value, (float, int)) or isinstance(value, bool):
             raise TypeError(

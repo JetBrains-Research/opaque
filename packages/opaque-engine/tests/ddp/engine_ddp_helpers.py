@@ -12,6 +12,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 
+@dataclass(frozen=True)
+class _ScalarExactnessState:
+    value: int
+
+
 def _is_ddp_available() -> bool:
     return dist.is_available() and torch.cuda.is_available()
 
@@ -374,6 +379,49 @@ def _worker_gather_optional_ragged(rank: int, world_size: int, port: int) -> Non
         )
         with pytest.raises(TypeError, match="matching pytree structures"):
             gather_pytree(incompatible_structure)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_scalar_exactness_gloo(rank: int, world_size: int, port: int) -> None:
+    from opaque.api.engine.distributed._state import (
+        assert_scalar_equal,
+        reduce_scalar,
+        sync_object,
+    )
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        integer_value = 2**24 + rank
+        assert reduce_scalar(integer_value, op="min") == 2**24
+        assert reduce_scalar(integer_value, op="max") == 2**24 + 1
+        assert reduce_scalar(integer_value, op="sum") == 2 * 2**24 + 1
+
+        float_value = 1.0 + rank * 2**-30
+        assert (
+            reduce_scalar(
+                float_value,
+                op="max",
+                compute_dtype=torch.float64,
+            )
+            == 1.0 + 2**-30
+        )
+
+        with pytest.raises(RuntimeError, match="integer"):
+            assert_scalar_equal(integer_value, name="integer")
+        with pytest.raises(RuntimeError, match="float64"):
+            assert_scalar_equal(
+                float_value,
+                name="float64",
+                atol=0.0,
+                rtol=0.0,
+                compute_dtype=torch.float64,
+            )
+        with pytest.raises(RuntimeError, match=r"_ScalarExactnessState\.value"):
+            sync_object(
+                _ScalarExactnessState(integer_value),
+                field_ops={"value": "assert_equal"},
+            )
     finally:
         _cleanup_ddp()
 

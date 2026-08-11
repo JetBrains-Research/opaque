@@ -83,22 +83,20 @@ def sync_perf_state(state: PerfState) -> PerfState:
     )
 
     assert_scalar_equal(
-        float(state.num_steps),
+        state.num_steps,
         name="PerfState.num_steps",
         device=device,
     )
 
     total_time = reduce_scalar(float(state.total_time), op="max", device=device)
-    total_samples = int(
-        reduce_scalar(float(state.total_samples), op="sum", device=device)
-    )
+    total_samples = int(reduce_scalar(state.total_samples, op="sum", device=device))
     max_peak = reduce_scalar(float(state.max_peak_memory_gb), op="max", device=device)
 
     total_time_stable = reduce_scalar(
         float(state.total_time_stable), op="max", device=device
     )
     total_samples_stable = int(
-        reduce_scalar(float(state.total_samples_stable), op="sum", device=device)
+        reduce_scalar(state.total_samples_stable, op="sum", device=device)
     )
 
     last_step = _sync_step_perf(state.last_step, device)
@@ -129,7 +127,7 @@ def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
     for name in _synchronized_stage_names(tracker):
         stage = tracker._stages[name]
         assert_scalar_equal(
-            float(stage.num_steps),
+            stage.num_steps,
             name=f"PerfStage({name!r}).num_steps",
             device=device,
         )
@@ -139,7 +137,7 @@ def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
         s._warmup_steps = stage._warmup_steps
         s.total_time = reduce_scalar(float(stage.total_time), op="max", device=device)
         s.total_samples = int(
-            reduce_scalar(float(stage.total_samples), op="sum", device=device)
+            reduce_scalar(stage.total_samples, op="sum", device=device)
         )
         s.max_peak_memory_gb = reduce_scalar(
             float(stage.max_peak_memory_gb), op="max", device=device
