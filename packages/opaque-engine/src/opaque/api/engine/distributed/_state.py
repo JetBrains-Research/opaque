@@ -380,6 +380,11 @@ def sync_object(
                 result = field_op(value)
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
+            if isinstance(value, bool):
+                raise TypeError(
+                    f"Callable field_ops[{field_name!r}] cannot update a bool field; "
+                    "use 'local' or return None for assertion-only behavior."
+                )
             synced = int(result) if isinstance(value, int) else float(result)
             updates[field_name] = synced
             continue
