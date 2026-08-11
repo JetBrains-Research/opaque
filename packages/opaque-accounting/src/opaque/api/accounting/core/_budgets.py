@@ -50,10 +50,13 @@ class Budget(Protocol):
     - **evaluate(process)**: Compute metric value for a process
     - **value**: Budget threshold value to achieve
     - **name**: Human-readable name for debugging
-    - **decreasing**: Whether the metric decreases as the calibrated parameter
-      increases.  For noise_multiplier calibration this is ``True`` for
-      privacy-loss metrics (epsilon, delta, advantage) and ``False`` for
-      privacy-gain metrics (beta, risk) which *increase* with noise.
+    - **decreasing**: Metric kind — ``True`` for privacy-loss metrics
+      (epsilon, delta, advantage), which are privacy-safe at-or-below the
+      target; ``False`` for privacy-gain metrics (beta, risk), safe
+      at-or-above.  The direction the metric moves as the calibrated
+      *parameter* grows is not declared here: calibration derives it by
+      probing both bracket endpoints (a noise multiplier decreases
+      privacy-loss metrics; a sample rate or step count increases them).
     """
 
     value: float
