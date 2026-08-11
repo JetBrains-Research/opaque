@@ -322,8 +322,8 @@ page. There is no `CHANGELOG.md` to maintain.
 | State | Version | Where |
 |---|---|---|
 | PR push | `0.X.Y.devN+pr.<num>.g<sha>` | workflow artifacts on the PR's Actions run (14-day retention) |
-| Push to `main` | `0.X.Y.devN+g<sha>` | GCP Artifact Registry (dev channel) |
-| Published Release `vX.Y.Z` | `X.Y.Z` | GCP + GitHub Release assets |
+| Push to `main` | `0.X.Y.devN+g<sha>` | JetBrains Packages (dev channel) |
+| Published Release `vX.Y.Z` | `X.Y.Z` | JetBrains Packages + GitHub Release assets |
 
 ### Releasing
 
@@ -341,7 +341,7 @@ page. There is no `CHANGELOG.md` to maintain.
    - `tag-guard` verifies the tag's commit is reachable from `origin/main`.
    - Matrix builds: 7 Python wheels + `opaque-accounting` for
      linux-{amd64, arm64} and macos-arm64.
-   - Wheels publish to GCP Artifact Registry at the clean version.
+   - Wheels publish to JetBrains Packages at the clean version.
    - Wheels attach to the Release as assets.
 
 ### Release-note conventions
@@ -396,7 +396,7 @@ If a release is broken, delete the tag + GitHub Release, then recut:
 git tag -d v0.2.0
 git push --delete origin v0.2.0
 # Delete the GitHub Release via gh CLI or UI; delete the wheel from
-# GCP Artifact Registry (`gcloud artifacts versions delete`).
+# JetBrains Packages (delete the published version from the package registry).
 ```
 
 Then prep a fresh draft for `v0.2.1` with the fix.

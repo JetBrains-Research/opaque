@@ -298,13 +298,12 @@ jobs:
           retention-days: 90
 
   publish:
-    name: Publish to GCP + attach Release assets
+    name: Publish to JetBrains Packages + attach Release assets
     needs: [merge-wheels, release-tests, validate-release-wheels]
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
-      id-token: write
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -320,24 +319,15 @@ jobs:
           echo "Releasing ${{ github.event.release.tag_name }}. Artifacts:"
           ls -lh dist/*.whl dist/*.tar.gz
 
-      - name: Authenticate to GCP
-        id: gcp-auth
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
-          token_format: access_token
-          access_token_lifetime: 3600s
-
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
-      - name: Publish release wheels to GCP
+      - name: Publish release wheels to JetBrains Packages
         env:
-          UV_PUBLISH_USERNAME: oauth2accesstoken
-          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
+          UV_PUBLISH_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
           uv publish \
-            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
+            --publish-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
 
       - name: Attach wheels to Release
