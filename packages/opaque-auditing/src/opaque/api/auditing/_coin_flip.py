@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 __all__ = ["CoinFlip", "coin_flip"]
 
+_CANARY_SELECTION_DOMAIN = "auditing.canary_selection"
+_COIN_FLIP_DOMAIN = "auditing.coin_flip"
+
 
 @dataclasses.dataclass(frozen=True)
 class CoinFlip:
@@ -160,9 +163,9 @@ def coin_flip(
             f"num_canaries ({num_canaries}) exceeds dataset size ({dataset_size})"
         )
 
-    rng = np.random.default_rng(key.seed)
+    rng = np.random.default_rng(fold_in(key, _CANARY_SELECTION_DOMAIN).seed)
     canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
-    coin_rng = np.random.default_rng(fold_in(key, 1).seed)
+    coin_rng = np.random.default_rng(fold_in(key, _COIN_FLIP_DOMAIN).seed)
     in_mask = coin_rng.random(num_canaries) < 0.5
 
     return CoinFlip(

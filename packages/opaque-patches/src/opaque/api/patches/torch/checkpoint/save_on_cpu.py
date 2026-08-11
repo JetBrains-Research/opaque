@@ -17,6 +17,7 @@ import torch
 
 
 def apply() -> None:
+    """Install a vmap-safe pinned-memory ``save_on_cpu`` implementation."""
     import torch.autograd.graph as autograd_graph
 
     orig = autograd_graph.save_on_cpu

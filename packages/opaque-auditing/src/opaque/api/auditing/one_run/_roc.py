@@ -1,7 +1,8 @@
 """ROC curve helpers for one-run privacy auditing.
 
-Pareto-optimal threshold computation and TPR/FPR interpolation
-used by the one-run estimator.
+Raw empirical ROC (TN/FN counts at every threshold) with an optional
+Pareto-frontier (hull) restriction, plus TPR/FPR interpolation, used by the
+one-run estimator.
 """
 
 from __future__ import annotations
@@ -35,8 +36,17 @@ def pareto_frontier(points: np.ndarray) -> np.ndarray:
 def get_tn_fn_counts(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
+    *,
+    hull: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute TN/FN counts at each threshold, filtered to Pareto frontier."""
+    """Compute TN/FN counts at each threshold along the empirical ROC.
+
+    Returns the **raw** empirical ROC by default.  ``hull=True`` restricts the
+    points to the Pareto frontier (upper-left convex hull); that is useful for
+    optimal-threshold audit statistics but a biased basis for AUC / coverage
+    (the hull's area sits systematically above 0.5 under the null), so raw is
+    the default (#378).
+    """
     in_scores = np.asarray(in_scores)
     out_scores = np.asarray(out_scores)
 
@@ -52,10 +62,17 @@ def get_tn_fn_counts(
     fn_counts = np.searchsorted(in_sorted, thresholds, side="left")
     tn_counts = np.searchsorted(out_sorted, thresholds, side="left")
 
-    counts = np.stack([fn_counts, tn_counts], axis=1)
-    indices = pareto_frontier(counts)
+    # The terminal (reject-all) threshold must count EVERY score, including any
+    # ``+inf`` that is not strictly ``< inf`` under ``side="left"``.  Pin it to
+    # the totals so TPR/FPR/AUC denominators are the true ``n_in`` / ``n_out``
+    # rather than the finite-only counts (#378).
+    fn_counts[-1] = in_sorted.size
+    tn_counts[-1] = out_sorted.size
 
-    return thresholds[indices], tn_counts[indices], fn_counts[indices]
+    if hull:
+        indices = pareto_frontier(np.stack([fn_counts, tn_counts], axis=1))
+        return thresholds[indices], tn_counts[indices], fn_counts[indices]
+    return thresholds, tn_counts, fn_counts
 
 
 def tpr_at_given_fpr(
@@ -63,7 +80,7 @@ def tpr_at_given_fpr(
     tp_counts: np.ndarray,
     fp_counts: np.ndarray,
 ) -> np.ndarray | float:
-    """Maximum TPR at a given FPR, with linear interpolation."""
+    """TPR at a given FPR along the empirical ROC (linear interpolation)."""
     fpr_arr = np.asarray(fpr)
     if not np.all((fpr_arr >= 0) & (fpr_arr <= 1)):
         raise ValueError(f"fpr must be in [0, 1], got {fpr}")
@@ -79,7 +96,13 @@ def tpr_at_given_fpr(
 
     fp_left = fp_counts[threshold - 1]
     fp_right = fp_counts[threshold]
-    q = (target_fp_count - fp_left) / (fp_right - fp_left)
+    # The raw ROC can carry a zero-width (vertical) segment at the clamped
+    # terminal index (repeated final FP counts, e.g. in ``[0, 2]`` / out
+    # ``[1]`` at ``fpr=1``): interpolating across it is 0/0.  The TPR at that
+    # FPR is the segment's top, so take ``q -> 1`` instead of NaN.
+    denom = fp_right - fp_left
+    safe_denom = np.where(denom > 0, denom, 1)
+    q = np.where(denom > 0, (target_fp_count - fp_left) / safe_denom, 1.0)
 
     tp_left = tp_counts[threshold - 1]
     tp_right = tp_counts[threshold]

@@ -1,5 +1,7 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""vmap-compatible causal-mask implementations for patched transformers."""
+
 import torch
 
 from opaque.api.patches.transformers.components.attention import vmap_repeat_kv

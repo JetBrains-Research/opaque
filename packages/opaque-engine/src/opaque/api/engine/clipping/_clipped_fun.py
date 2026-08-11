@@ -162,6 +162,8 @@ def _microbatch_accumulate(
             Independent of ``dtype``: ``compute_dtype=fp32`` with
             ``dtype=None`` accumulates in fp32 internally and casts back
             to input dtype at the boundary.
+        second_moment: Whether to accumulate per-example gradient second
+            moments alongside the clipped sum.
 
     Returns:
         Tuple of (accumulated_values, concatenated_aux)

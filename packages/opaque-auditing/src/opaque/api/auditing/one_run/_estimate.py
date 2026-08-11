@@ -1,7 +1,7 @@
 """One-run privacy audit estimator.
 
-The ``one_run()`` function precomputes the Pareto-optimal threshold
-structure from canary scores and returns a frozen ``OneRunEstimate``.
+The ``one_run()`` function precomputes the empirical ROC (TN/FN counts at
+every threshold) from canary scores and returns a frozen ``OneRunEstimate``.
 Epsilon estimation goes through a method object obtained from one of the
 factory methods (``eps_delta()``, ``gdp()``); attack-side metrics
 (``auc``, ``beta_at``) live directly on the estimate.
@@ -45,8 +45,8 @@ def one_run(
 ) -> OneRunEstimate:
     """Build a one-run privacy estimate from canary scores.
 
-    Splits scores by the coin-flip partition, precomputes the
-    Pareto-optimal ROC frontier, and returns a frozen estimate.
+    Splits scores by the coin-flip partition, precomputes the raw
+    empirical ROC, and returns a frozen estimate.
 
     Args:
         scores: Per-canary membership scores, shape ``(num_canaries,)``.
@@ -108,8 +108,8 @@ def one_run(
 class OneRunEstimate:
     """Precomputed one-run audit estimate.
 
-    Constructed by :func:`one_run`.  Holds the Pareto-optimal threshold
-    structure shared by every audit method.
+    Constructed by :func:`one_run`.  Holds the empirical ROC counts
+    shared by every audit method.
 
     Epsilon estimation: call :meth:`eps_delta` or :meth:`gdp` to get the
     corresponding audit method, then ``.epsilon_at(delta=…)``.
@@ -313,7 +313,7 @@ class OneRunEstimate:
     def attack_beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
         """Empirical attack β: 1 − TPR at FPR = ``alpha``.
 
-        Interpolated from the attack's Pareto-optimal ROC frontier;
+        Interpolated from the attack's empirical ROC;
         independent of the audit method.  For the *theoretical* β under
         the inferred μ̂-GDP guarantee, use :meth:`beta_at`.
 

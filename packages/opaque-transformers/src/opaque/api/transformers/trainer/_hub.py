@@ -120,6 +120,7 @@ def push_to_hub(
     output_dir via ``upload_folder``.
 
     Args:
+        trainer: DP trainer whose saved model and output directory are uploaded.
         commit_message: Hub commit message.
         blocking: If True, wait for the upload to complete before returning.
         token: Override ``args.hub_token`` for this call.

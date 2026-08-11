@@ -6,10 +6,10 @@ Hugging Face trainer integration for Opaque: DP-aware training loop
 
 ## Install
 
-```bash
-pip install opaque-transformers                 # trainer integration
-pip install "opaque-transformers[trl]"          # + TRL config conversion
-```
+Install the root package as described in the [repository installation guide](
+https://github.com/JetBrains-Research/opaque#installation).
+Use its `transformers` extra for trainer integration or `trl` for TRL config
+conversion.
 
 Depends on `opaque-engine`, `opaque-patches`, `opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, plus

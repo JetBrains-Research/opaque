@@ -3,9 +3,12 @@
 :func:`compute_ref_logprobs_for_dataset` runs a single one-shot forward pass
 over a :class:`datasets.Dataset` to materialise per-example reference logprobs
 (e.g. ``ref_chosen_logps`` / ``ref_rejected_logps`` for DPO) and attaches them
-to the dataset as new columns. Results are persisted to a content-addressed
-``.safetensors`` cache so the (expensive) reference forward runs at most once
-per ``(dataset, cache_identity, output_columns)`` triple.
+to the dataset as new columns. When enabled, results are persisted to a content-addressed ``.safetensors``
+cache so the (expensive) reference forward runs at most once per
+``(dataset, cache_identity, output_columns)`` triple. Cache archives contain
+private per-example values, so cache directories and files are owner-only.
+Callers remove a selected cache directory when its contents are no longer
+needed.
 
 **Outside vmap only.** This helper iterates a ``DataLoader``, runs a forward
 pass under ``torch.no_grad()``, gathers across ranks, and writes a file. It must
@@ -67,9 +70,9 @@ if TYPE_CHECKING:
 __all__ = ["compute_ref_logprobs_for_dataset"]
 
 
-# Default cache root, lazily created on first miss. A subdirectory of the
-# system temp dir keeps the cache off the dataset's own storage and lets the
-# OS reclaim it.
+# Default cache root, lazily created when caching is enabled. A subdirectory of
+# the system temp dir keeps the cache off the dataset's own storage and lets
+# the OS reclaim it.
 _DEFAULT_CACHE_SUBDIR = "opaque_ref_cache"
 _CACHE_EXT = ".safetensors"
 _CACHE_FINGERPRINT_VERSION = 2
@@ -177,18 +180,34 @@ def _load_cache(
     return {name: restored[name] for name in output_columns}
 
 
+def _secure_cache_path(path: str) -> None:
+    """Create the cache root and restrict any existing archive to its owner."""
+    cache_dir = Path(path).parent
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        cache_dir.chmod(0o700)
+        cache_file = Path(path)
+        if cache_file.exists():
+            cache_file.chmod(0o600)
+    except PermissionError as error:
+        raise PermissionError(
+            f"cannot secure reference-logprob cache directory {cache_dir}; "
+            "pass a private writable cache_dir or set use_cache=False"
+        ) from error
+
+
 def _save_cache(
     path: str,
     columns: dict[str, torch.Tensor],
 ) -> None:
     """Flatten ``columns`` through ``state_dict`` and write the safetensors cache.
 
-    The parent directory is created if missing. ``state_dict`` flattens the
-    column dict into a flat ``str -> torch.Tensor`` mapping; the values are
+    The parent directory and archive are owner-only. ``state_dict`` flattens
+    the column dict into a flat ``str -> torch.Tensor`` mapping; the values are
     written directly via :func:`safetensors.torch.save_file` with no dtype
     conversion (native bf16/fp16/fp32 round-trip).
     """
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    _secure_cache_path(path)
     flat = state_dict(columns)
     tensors: dict[str, torch.Tensor] = {}
     for key, value in flat.items():
@@ -197,6 +216,7 @@ def _save_cache(
         else:
             tensors[key] = torch.as_tensor(value).cpu().contiguous()
     _safetensors_save(tensors, path)
+    Path(path).chmod(0o600)
 
 
 def compute_ref_logprobs_for_dataset(
@@ -208,15 +228,20 @@ def compute_ref_logprobs_for_dataset(
     cache_identity: Any,
     batch_size: int = 8,
     cache_dir: str | None = None,
+    use_cache: bool = True,
 ) -> Any:
-    """Compute per-example reference logprobs once, with a ``.safetensors`` cache.
+    """Compute per-example reference logprobs, optionally using a cache.
 
     Runs a single pass over ``dataset`` calling ``ref(batch)`` for each
     collated batch, collecting one ``(B,)`` tensor per name in
     ``output_columns``, and attaches the concatenated per-example results to
     ``dataset`` as new columns. The forward runs under ``torch.no_grad()``.
-    Results are cached to a content-addressed ``.safetensors`` file keyed on
-    ``(dataset._fingerprint, cache_identity, output_columns)``.
+    When ``use_cache`` is true, results are cached to a content-addressed
+    ``.safetensors`` file keyed on ``(dataset._fingerprint, cache_identity,
+    output_columns)``. The cache directory and archive are owner-only because
+    they contain private per-example values. The caller is responsible for
+    removing selected cache directories when their contents are no longer
+    needed.
 
     **Outside vmap only** — see the module docstring.
 
@@ -242,24 +267,31 @@ def compute_ref_logprobs_for_dataset(
         batch_size: ``DataLoader`` batch size for the forward pass. Default 8.
         cache_dir: Directory for the ``.safetensors`` cache. Defaults to
             ``<tempdir>/opaque_ref_cache`` (created on first miss).
+        use_cache: Whether to read or write the persistent cache. Set to
+            ``False`` when results cannot be reused, such as TR-DPO seed
+            values that are overwritten before each training and evaluation
+            step.
 
     Returns:
         ``dataset`` with one new column per name in ``output_columns``, each of
         length ``len(dataset)``.
     """
     columns = tuple(output_columns)
-    fingerprint = _cache_fingerprint(dataset, cache_identity, columns)
-    path = _cache_path(cache_dir, fingerprint)
+    path: str | None = None
+    if use_cache:
+        fingerprint = _cache_fingerprint(dataset, cache_identity, columns)
+        path = _cache_path(cache_dir, fingerprint)
+        _secure_cache_path(path)
 
-    cached = _load_cache(path, columns)
-    if cached is not None:
-        # HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no
-        # bf16 column type, so demote to a Python ``float`` list at the
-        # storage boundary (explicit, single conversion).
-        result = dataset
-        for name in columns:
-            result = result.add_column(name, cached[name].float().tolist())
-        return result
+        cached = _load_cache(path, columns)
+        if cached is not None:
+            # HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no
+            # bf16 column type, so demote to a Python ``float`` list at the
+            # storage boundary (explicit, single conversion).
+            result = dataset
+            for name in columns:
+                result = result.add_column(name, cached[name].float().tolist())
+            return result
 
     # MISS: run the reference forward once over the dataset.
     loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collator)
@@ -284,10 +316,11 @@ def compute_ref_logprobs_for_dataset(
         gathered[name] = gather_for_metrics(local)
 
     # Only the main process writes the cache; all ranks sync before returning.
-    if is_main_process():
+    if use_cache and is_main_process():
         cpu_columns = {
             name: gathered[name].detach().cpu().contiguous() for name in columns
         }
+        assert path is not None
         _save_cache(path, cpu_columns)
     wait_for_everyone()
 

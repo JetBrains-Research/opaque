@@ -240,6 +240,11 @@ def _ce_forward_impl(
     Returns (losses, logsumexp) both of shape (n_rows,).
 
     Args:
+        logits_flat: Flattened logits with one row per target token.
+        labels_flat: Flattened target-token indices.
+        n_rows: Number of flattened token rows.
+        vocab_size: Number of logits in each token row.
+        device: Device on which to allocate kernel intermediates.
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
         label_smoothing: ``F.cross_entropy``-style smoothing weight in
@@ -468,6 +473,8 @@ class _CrossEntropyBackward(torch.autograd.Function):
 
 
 class Opaque_CrossEntropyLoss(torch.autograd.Function):
+    """Per-token cross-entropy autograd kernel with a custom vmap rule."""
+
     @staticmethod
     def forward(
         logits, labels, logit_softcapping=0, logit_scaling=0, label_smoothing=0.0
@@ -475,6 +482,8 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         """New-style API forward without ctx parameter.
 
         Args:
+            logits: Logits whose final dimension is the vocabulary axis.
+            labels: Target token indices, with ``-100`` marking ignored tokens.
             logit_softcapping: Gemma 2 softcap value (0 = disabled).
             logit_scaling: Cohere logit scale value (0 = disabled).
             label_smoothing: ``F.cross_entropy``-style smoothing weight
@@ -583,6 +592,8 @@ def opaque_cross_entropy_loss(
     """Convenience wrapper.
 
     Args:
+        logits: Logits whose final dimension is the vocabulary axis.
+        labels: Target token indices, with ``-100`` marking ignored tokens.
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
         label_smoothing: ``F.cross_entropy``-style smoothing weight in

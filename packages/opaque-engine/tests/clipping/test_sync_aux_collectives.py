@@ -47,9 +47,9 @@ class TestSyncClippingRateCollectiveSequence:
         )
         nonempty_rate = _sync_clipping_rate(0.5, torch.ones(4))
 
-        assert len(empty_calls) == len(nonempty_calls) == 2
-        assert [op for _, op in empty_calls] == ["sum", "sum"]
-        assert [op for _, op in nonempty_calls] == ["sum", "sum"]
+        assert len(empty_calls) == len(nonempty_calls) == 4
+        assert [op for _, op in empty_calls] == ["min", "max", "sum", "sum"]
+        assert [op for _, op in nonempty_calls] == ["min", "max", "sum", "sum"]
         assert empty_rate == 0.0
         assert nonempty_rate == 0.5
 
@@ -60,16 +60,18 @@ class TestSyncClippingRateCollectiveSequence:
         monkeypatch.setattr(dist_mod, "reduce_scalar", _recording_reduce(calls))
         _sync_clipping_rate(0.0, torch.empty(0))
 
-        assert calls[0] == (0.0, "sum")  # rate * n
-        assert calls[1] == (0.0, "sum")  # n
+        assert calls[0] == (1.0, "min")  # clipping-rate presence
+        assert calls[1] == (1.0, "max")  # clipping-rate presence
+        assert calls[2] == (0.0, "sum")  # rate * n
+        assert calls[3] == (0.0, "sum")  # n
 
-    def test_none_rate_short_circuits_without_collectives(self, monkeypatch):
+    def test_none_rate_uses_presence_collectives(self, monkeypatch):
         import opaque.api.engine.clipping._distributed as dist_mod
 
         calls: list[tuple[float, str]] = []
         monkeypatch.setattr(dist_mod, "reduce_scalar", _recording_reduce(calls))
         assert _sync_clipping_rate(None, torch.empty(0)) is None
-        assert calls == []
+        assert calls == [(0.0, "min"), (0.0, "max")]
 
 
 class TestSplitAuxFieldsSchema:
@@ -83,7 +85,7 @@ class TestSplitAuxFieldsSchema:
             batch_size=0,
             group_norms=None,
         )
-        tensor_fields, scalar_fields = _split_aux_fields(aux)
+        tensor_fields, scalar_fields = _split_aux_fields(aux, ClippedGradAux)
 
         assert set(scalar_fields) == _SCALAR_AUX_FIELDS
         assert "loss_values" in tensor_fields
@@ -110,8 +112,8 @@ class TestSplitAuxFieldsSchema:
             clipping_rate=0.25,
             batch_size=3,
         )
-        empty_t, empty_s = _split_aux_fields(empty)
-        nonempty_t, nonempty_s = _split_aux_fields(nonempty)
+        empty_t, empty_s = _split_aux_fields(empty, ClippedGradAux)
+        nonempty_t, nonempty_s = _split_aux_fields(nonempty, ClippedGradAux)
         assert set(empty_t) == set(nonempty_t)
         assert set(empty_s) == set(nonempty_s)
 
@@ -244,8 +246,8 @@ class TestSyncAuxCollectiveParity:
 
         empty_ops = [op for _, op in _run(empty)]
         nonempty_ops = [op for _, op in _run(nonempty)]
-        # clipping_rate: 2× sum, batch_size: 1× sum
-        assert empty_ops == nonempty_ops == ["sum", "sum", "sum"]
+        # clipping-rate presence: min/max, weighted rate: 2× sum, batch-size: sum
+        assert empty_ops == nonempty_ops == ["min", "max", "sum", "sum", "sum"]
 
     def test_empty_and_nonempty_fun_aux_same_reduce_schedule(self, monkeypatch):
         import opaque.api.engine.clipping._distributed as dist_mod
@@ -275,4 +277,4 @@ class TestSyncAuxCollectiveParity:
             clipping_rate=1.0,
             batch_size=2,
         )
-        assert _run(empty) == _run(nonempty) == ["sum", "sum", "sum"]
+        assert _run(empty) == _run(nonempty) == ["min", "max", "sum", "sum", "sum"]
