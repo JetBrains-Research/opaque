@@ -285,7 +285,7 @@ class TestCalibrateSafeEndpoint:
         assert "target=1.0" in message
         assert "relative tolerance=1e-06" in message
         assert "iterations=4" in message
-        assert "final bracket=[" in message
+        assert "final bracket=(unsafe=" in message
         assert "last safe achieved=0.5" in message
         assert len(calls) == 2 + 4
 
@@ -469,3 +469,41 @@ class TestCalibrateResult:
     def test_repr_not_converged(self):
         r = CalibrateResult(1.0, 3.1, 3.0, 100, False)
         assert "max iterations" in repr(r)
+
+
+class TestCalibrateDirectionIntegration:
+    """PLD-mechanism regressions for probe-derived search direction (#333).
+
+    The fast quadrant/rejection coverage lives in
+    ``packages/opaque-accounting/tests/test_calibrate_direction.py``; these
+    pin the real Poisson/Gaussian shapes end-to-end (PLD-heavy, slow-marked).
+    """
+
+    @pytest.mark.slow
+    def test_sample_rate_calibration_converges(self):
+        # epsilon INCREASES with sample rate; raised ValueError before #333.
+        budget = cal.epsilon_budget(3.0, delta=1e-5)
+        result = cal.calibrate(
+            budget,
+            lambda sr: dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sr) * 1000,
+            param_min=0.001,
+            param_max=0.05,
+            tolerance=1e-4,
+        )
+        assert result.converged
+        assert result.achieved <= 3.0
+        check = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), result.param) * 1000
+        assert check.epsilon_at(1e-5) == pytest.approx(3.0, rel=1e-3)
+
+    @pytest.mark.slow
+    def test_noise_multiplier_regression_value_unchanged(self):
+        # The classic decreasing direction still lands the same parameter.
+        result = cal.calibrate(
+            cal.epsilon_budget(3.0, delta=1e-5),
+            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * 500,
+            param_min=0.1,
+            param_max=10.0,
+            tolerance=1e-4,
+        )
+        assert result.achieved <= 3.0
+        assert result.param == pytest.approx(1.2656, rel=1e-2)
