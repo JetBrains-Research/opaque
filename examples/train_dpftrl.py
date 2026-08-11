@@ -1159,6 +1159,18 @@ def main():
     # with probability ``sample_rate`` across ranks.
     sample_rate = args.batch_size / global_train_size
     expected_steps_per_epoch = global_train_size // args.batch_size
+    # ``total_steps`` is the full training horizon (``num_epochs *
+    # steps_per_epoch``).  ``--max-steps`` is an early-termination knob
+    # (semantically "stop at step N"), NOT a horizon override: the sampler
+    # and every privacy / accounting / strategy object below are sized
+    # against the full horizon so the executed stream, calibration, MF
+    # workload coefficients, and the LR schedule all describe the same
+    # un-truncated training run.  Only the training loop terminates early
+    # when ``global_step >= args.max_steps``.
+    total_steps = args.num_epochs * expected_steps_per_epoch
+    stop_at_step = (
+        min(total_steps, args.max_steps) if args.max_steps is not None else total_steps
+    )
     # The global expected batch is split across ranks, so the per-rank
     # batch_size for non-Poisson samplers (BLT sequential and BnB) is
     # reduced.  Poisson samplers handle this implicitly via ``sample_rate``
@@ -1186,12 +1198,17 @@ def main():
     # its own deterministic partition.
     base_sampler_key = fold_in(key(args.seed), rank) if is_ddp else key(args.seed)
 
-    # Create sampler (or per-epoch sampler factory).  All samplers are
-    # single-pass (their ``_consumed`` cursor persists across ``__iter__``
-    # calls), so every branch constructs a fresh object per epoch.
-    # Deterministic samplers (BnB, sequential) rebuild with the SAME key /
-    # arguments so the partition / batch order is identical every epoch;
-    # Poisson samplers fold in the epoch index for fresh draws.
+    # Create ONE sampler spanning the full ``total_steps`` stream.  The
+    # samplers are resumable streams (their ``_consumed`` cursor persists
+    # across ``__iter__`` calls), so a single object carries its
+    # participation contract — fixed BnB partition, b-min-sep cooldown,
+    # cyclic band phase — across every epoch boundary of the run.
+    # Rebuilding per epoch would redraw the randomized samplers' Markov /
+    # partition state at each boundary, silently violating the
+    # min-separation contract the accounting below assumes over
+    # ``total_steps``.  Constructor validation (bin counts / divisibility
+    # / empty dataset) still fires here at config time, before model
+    # loading.
     if args.mechanism == "band_mf":
         p0 = sample_rate  # E[batch]/|D| per iteration (same as ``dpftrl_acc.poisson`` regime)
         sampling_prob = 0.0
@@ -1203,16 +1220,14 @@ def main():
                     f"poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                     f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
                 )
-
-            def make_epoch_sampler(epoch):
-                return CyclicPoissonSampler(
-                    train_dataset,
-                    sample_rate=sampling_prob,
-                    bands=args.bands,
-                    n_steps=expected_steps_per_epoch,
-                    truncated_batch_size=args.truncated_batch_size,
-                    key=fold_in(base_sampler_key, epoch),
-                )
+            train_sampler = CyclicPoissonSampler(
+                train_dataset,
+                sample_rate=sampling_prob,
+                bands=args.bands,
+                n_steps=total_steps,
+                truncated_batch_size=args.truncated_batch_size,
+                key=base_sampler_key,
+            )
         else:
             if args.bands > 1 and p0 * (args.bands - 1) >= 1.0:
                 raise ValueError(
@@ -1224,70 +1239,53 @@ def main():
                 raise ValueError(
                     f"b_min_sep per-iteration p = {p_bms:.4f} > 1.0; reduce batch size or bands."
                 )
-
-            def make_epoch_sampler(epoch):
-                return BMinSepSampler(
-                    train_dataset,
-                    bands=args.bands,
-                    sampling_prob=p_bms,
-                    n_steps=expected_steps_per_epoch,
-                    key=fold_in(base_sampler_key, epoch),
-                )
+            train_sampler = BMinSepSampler(
+                train_dataset,
+                bands=args.bands,
+                sampling_prob=p_bms,
+                n_steps=total_steps,
+                key=base_sampler_key,
+            )
 
     elif args.mechanism == "blt":
-        # Fresh sampler each epoch: SequentialBatchSampler is single-pass,
-        # so reusing one object would yield zero batches from epoch 2 on.
-        # Construction is fully deterministic (no RNG), so every epoch
-        # repeats the identical fixed batch order — exactly the
-        # min_sep / max_participations contract the BLT accounting assumes.
-
-        def make_epoch_sampler(epoch):
-            return SequentialBatchSampler(
-                train_dataset,
-                batch_size=per_rank_batch_size,
-            )
+        # Deterministic fixed order cycling for the whole run: min_sep =
+        # steps/epoch and max_participations = num_epochs — the BLT
+        # accounting contract — are enforced by the sampler itself.
+        train_sampler = SequentialBatchSampler(
+            train_dataset,
+            batch_size=per_rank_batch_size,
+            n_steps=total_steps,
+        )
 
     elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
-        # A fresh BnB sampler is constructed each epoch (samplers are
-        # single-pass) but ALWAYS with the same key — the bin assignment is
-        # deterministic from ``(key, num_bins, num_samples)``, so the same
-        # fixed partition is reused every epoch as required by BnB privacy
-        # accounting (Lemma 3.2 of Choquette-Choo et al. 2024).  Under DDP
-        # each rank partitions its disjoint shard into the same number of
-        # bins; combined across ranks every global example still appears in
-        # exactly one bin so BnB privacy holds unchanged.  We deliberately
-        # use the un-folded ``key(args.seed)`` (rather than
-        # ``base_sampler_key``, which is rank-folded for randomized
-        # samplers): together with the equal shard sizes guaranteed above
-        # this gives every rank the same empty/non-empty bin pattern within
-        # its local index space, so all ranks yield an identical number of
-        # batches and the cross-rank collectives in the training loop stay
-        # in lockstep.
-
-        def make_epoch_sampler(epoch):
-            return BallsInBinsSampler(
-                train_dataset,
-                num_bins=expected_steps_per_epoch,
-                n_steps=expected_steps_per_epoch,
-                key=key(args.seed),
-            )
+        # One BnB sampler for the run: the bin assignment is drawn once and
+        # round-robins over ``total_steps`` slots (per-bin participation =
+        # num_epochs), as BnB privacy accounting requires (Lemma 3.2 of
+        # Choquette-Choo et al. 2024).  Under DDP each rank partitions its
+        # disjoint shard into the same number of bins; combined across
+        # ranks every global example still appears in exactly one bin so
+        # BnB privacy holds unchanged.  We deliberately use the un-folded
+        # ``key(args.seed)`` (rather than ``base_sampler_key``, which is
+        # rank-folded for randomized samplers): together with the equal
+        # shard sizes guaranteed above this gives every rank the same
+        # empty/non-empty bin pattern within its local index space, so all
+        # ranks yield an identical number of batches and the cross-rank
+        # collectives in the training loop stay in lockstep.
+        train_sampler = BallsInBinsSampler(
+            train_dataset,
+            num_bins=expected_steps_per_epoch,
+            n_steps=total_steps,
+            key=key(args.seed),
+        )
 
     else:  # identity, none
-
-        def make_epoch_sampler(epoch):
-            return CyclicPoissonSampler(
-                train_dataset,
-                sample_rate=sample_rate,
-                n_steps=expected_steps_per_epoch,
-                truncated_batch_size=args.truncated_batch_size,
-                key=fold_in(base_sampler_key, epoch),
-            )
-
-    # Fail fast: constructor validation (bin counts / divisibility / empty
-    # dataset) should fire at config time, not after ~800 lines of model
-    # loading — the discarded epoch-0 instance is cheap and side-effect-free
-    # (samplers are pure functions of their key + arguments).
-    make_epoch_sampler(0)
+        train_sampler = CyclicPoissonSampler(
+            train_dataset,
+            sample_rate=sample_rate,
+            n_steps=total_steps,
+            truncated_batch_size=args.truncated_batch_size,
+            key=base_sampler_key,
+        )
 
     if is_main_process:
         print("\nSampling:")
@@ -1473,20 +1471,7 @@ def main():
         else float(clip_norm) / args.batch_size
     )
 
-    # --- Training horizon, LR schedule ---
-    # ``total_steps`` is the full training horizon (``num_epochs *
-    # steps_per_epoch``).  ``--max-steps`` is an early-termination knob
-    # (semantically "stop at step N"), NOT a horizon override: every
-    # privacy / accounting / strategy object below is sized against the
-    # full horizon so calibration, MF workload coefficients, and the LR
-    # schedule all describe the same un-truncated training run.  Only
-    # the inner ``for`` loop terminates early when ``global_step >=
-    # args.max_steps``.
-    total_steps = args.num_epochs * expected_steps_per_epoch
-    stop_at_step = (
-        min(total_steps, args.max_steps) if args.max_steps is not None else total_steps
-    )
-
+    # --- LR schedule ---
     lr_schedule = make_lr_schedule(
         args.learning_rate,
         total_steps,
@@ -2028,173 +2013,177 @@ def main():
             step=0,
         )
 
-    for epoch in range(args.num_epochs):
-        print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
-        print("-" * 80)
+    # One DataLoader over the full ``total_steps`` stream; "epoch" is now
+    # only a derived logging label.  Keep ``num_workers=0``: worker
+    # prefetch would advance the sampler cursor ahead of executed steps.
+    train_loader = DataLoader(
+        train_dataset,
+        batch_sampler=train_sampler,
+        collate_fn=collate,
+    )
 
-        epoch_loader = DataLoader(
-            train_dataset,
-            batch_sampler=make_epoch_sampler(epoch),
-            collate_fn=collate,
-        )
-
-        for step_idx, batch in enumerate(epoch_loader):
-            if global_step >= stop_at_step:
-                break
-
-            # Accounting (data-independent, before execution).
-            accounting |= step_proc
-
-            (input_ids,) = batch
-            batch_size = len(input_ids)
-
-            lr_t = float(lr_schedule(global_step))
-
-            with tracker.train(batch_size=batch_size) as sp:
-                with offload_ctx:
-                    (grads, aux), clip_state = grad_fn(
-                        trainable_params,
-                        input_ids,
-                        state=clip_state,
-                    )
-
-                # ``grads`` is a ``SecondMomentClippingOutput`` when
-                # ``--second-moment`` is on (clipped_grad produced both
-                # streams per-example), or a single ``ClippedPytree``
-                # otherwise — the noise function dispatches polymorphically.
-                if is_ddp:
-                    clip_state, aux = sync(clip_state, aux)
-                    if isinstance(grads, SecondMomentClippingOutput):
-                        sum_gradients_(grads.grads)
-                        sum_gradients_(grads.squared_grads)
-                    else:
-                        sum_gradients_(grads)
-                sp.mark("clip")
-
-                noisy_grads, noise_state = noise_fn(grads, noise_state)
-                # All ranks generate identical noise from the same seed
-                # (no rank-fold in the noise key) so the per-rank
-                # ``noisy_grads`` already agree.  ``sync(noise_state)``
-                # is a cheap cross-rank consistency check on the
-                # internal step counter and latched sensitivity bound —
-                # see :mod:`opaque.dpftrl.noise._distributed`.
-                if is_ddp and not isinstance(noisy_grads, SecondMomentNoiseOutput):
-                    noise_state = sync(noise_state)
-                if isinstance(noisy_grads, SecondMomentNoiseOutput):
-                    step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
-                else:
-                    step_noise_stddev = noisy_grads.noise_stddev
-                sp.mark("noise")
-
-                updates, opt_state = optimizer.update(
-                    noisy_grads,
-                    opt_state,
-                    params=trainable_params,
-                )
-                trainable_params = torchopt.apply_updates(trainable_params, updates)
-                sp.mark("optimizer")
-
-            if batch_size == 0:
-                global_step += 1
-                continue
-
-            # --- Step metrics ---
-            avg_loss = aux.loss_values.mean().item()
-            clip_rate = aux.clipping_rate
-            mean_grad_norm = aux.grad_norms.mean().item()
-            losses.append(avg_loss)
-            clip_rates.append(clip_rate)
-            global_step += 1
-
-            # --- Logging ---
-            if global_step % args.log_steps == 0:
-                if use_wandb:
-                    wb_metrics = {
-                        "train/loss": avg_loss,
-                        "train/batch_size": batch_size,
-                        "train/clipping_norm": (
-                            clip_norm.effective
-                            if isinstance(clip_norm, PerGroup)
-                            else clip_norm
-                        ),
-                        "train/clip_rate": clip_rate,
-                        "train/grad_norm_mean": mean_grad_norm,
-                        "train/clipped_grad_norm_mean": (
-                            aux.clipped_grad_norms.mean().item()
-                            if getattr(aux, "clipped_grad_norms", None) is not None
-                            else 0.0
-                        ),
-                        "train/noise_std": (
-                            step_noise_stddev.effective
-                            if isinstance(step_noise_stddev, PerGroup)
-                            else step_noise_stddev
-                        ),
-                        "train/lr": lr_t,
-                        **tracker.train.last.to_dict(prefix="train/"),
-                    }
-                    if (
-                        isinstance(clip_norm, PerGroup)
-                        and getattr(aux, "group_norms", None) is not None
-                    ):
-                        for gname in clip_norm.values:
-                            gn_bound = clip_norm.values[gname]
-                            wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
-                            gnorms = aux.group_norms[gname]
-                            wb_metrics[f"group/grad_norm/{gname}"] = (
-                                gnorms.mean().item()
-                            )
-                            gn_clipped = float((gnorms > gn_bound).sum().item())
-                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
-                                1.0, float(batch_size)
-                            )
-                            if isinstance(step_noise_stddev, PerGroup):
-                                wb_metrics[f"group/noise_std/{gname}"] = (
-                                    step_noise_stddev.values[gname]
-                                )
-                    wandb.log(wb_metrics, step=global_step)
-
-                last = tracker.train.last
-                print(
-                    f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
-                    f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
-                    f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
-                    f"LR: {lr_t:.2e} | "
-                    f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
-                )
-
-            # --- Eval ---
-            if global_step % args.eval_steps == 0:
-                current_eval_loss = eval_loss(trainable_params)
-                # Cache PLD before eval so it serves as an opaque boundary
-                # for subsequent ``|`` calls — Repeated nodes from later
-                # steps merge into a fresh suffix instead of re-doing the
-                # full FFT each time.
-                accounting = acc.cached(accounting)
-                epsilon = accounting.epsilon_at(args.target_delta)
-                eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
-                metrics: dict[str, float] = {
-                    "eval/loss": current_eval_loss,
-                    "privacy/epsilon": epsilon,
-                }
-                if args.audit and audit_cf is not None:
-                    audit_estimate = run_audit(trainable_params)
-                    if audit_estimate is not None:
-                        audit_eps = _audit_method(audit_estimate).epsilon
-                        audit_auc = audit_estimate.attack_auc()
-                        metrics["privacy/epsilon_audit"] = audit_eps
-                        metrics["privacy/audit_auc"] = audit_auc
-                        eval_msg += (
-                            f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
-                            f", AUC={audit_auc:.4f}"
-                        )
-                if use_wandb:
-                    wandb.log(metrics, step=global_step)
-                print(eval_msg)
-
+    for batch in train_loader:
         if global_step >= stop_at_step:
             if args.max_steps is not None:
                 print(f"\nReached --max-steps={args.max_steps}, stopping.")
             break
+        if global_step % expected_steps_per_epoch == 0:
+            print(
+                f"\nEpoch {global_step // expected_steps_per_epoch + 1}"
+                f"/{args.num_epochs}"
+            )
+            print("-" * 80)
+
+        # Accounting (data-independent, before execution).
+        accounting |= step_proc
+
+        (input_ids,) = batch
+        batch_size = len(input_ids)
+
+        lr_t = float(lr_schedule(global_step))
+
+        with tracker.train(batch_size=batch_size) as sp:
+            with offload_ctx:
+                (grads, aux), clip_state = grad_fn(
+                    trainable_params,
+                    input_ids,
+                    state=clip_state,
+                )
+
+            # ``grads`` is a ``SecondMomentClippingOutput`` when
+            # ``--second-moment`` is on (clipped_grad produced both
+            # streams per-example), or a single ``ClippedPytree``
+            # otherwise — the noise function dispatches polymorphically.
+            if is_ddp:
+                clip_state, aux = sync(clip_state, aux)
+                if isinstance(grads, SecondMomentClippingOutput):
+                    sum_gradients_(grads.grads)
+                    sum_gradients_(grads.squared_grads)
+                else:
+                    sum_gradients_(grads)
+            sp.mark("clip")
+
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
+            # All ranks generate identical noise from the same seed
+            # (no rank-fold in the noise key) so the per-rank
+            # ``noisy_grads`` already agree.  ``sync(noise_state)``
+            # is a cheap cross-rank consistency check on the
+            # internal step counter and latched sensitivity bound —
+            # see :mod:`opaque.dpftrl.noise._distributed`.
+            if is_ddp and not isinstance(noisy_grads, SecondMomentNoiseOutput):
+                noise_state = sync(noise_state)
+            if isinstance(noisy_grads, SecondMomentNoiseOutput):
+                step_noise_stddev = noisy_grads.noisy_grads.noise_stddev
+            else:
+                step_noise_stddev = noisy_grads.noise_stddev
+            sp.mark("noise")
+
+            updates, opt_state = optimizer.update(
+                noisy_grads,
+                opt_state,
+                params=trainable_params,
+            )
+            trainable_params = torchopt.apply_updates(trainable_params, updates)
+            sp.mark("optimizer")
+
+        if batch_size == 0:
+            global_step += 1
+            continue
+
+        # --- Step metrics ---
+        avg_loss = aux.loss_values.mean().item()
+        clip_rate = aux.clipping_rate
+        mean_grad_norm = aux.grad_norms.mean().item()
+        losses.append(avg_loss)
+        clip_rates.append(clip_rate)
+        global_step += 1
+
+        # --- Logging ---
+        if global_step % args.log_steps == 0:
+            if use_wandb:
+                wb_metrics = {
+                    "train/loss": avg_loss,
+                    "train/batch_size": batch_size,
+                    "train/clipping_norm": (
+                        clip_norm.effective
+                        if isinstance(clip_norm, PerGroup)
+                        else clip_norm
+                    ),
+                    "train/clip_rate": clip_rate,
+                    "train/grad_norm_mean": mean_grad_norm,
+                    "train/clipped_grad_norm_mean": (
+                        aux.clipped_grad_norms.mean().item()
+                        if getattr(aux, "clipped_grad_norms", None) is not None
+                        else 0.0
+                    ),
+                    "train/noise_std": (
+                        step_noise_stddev.effective
+                        if isinstance(step_noise_stddev, PerGroup)
+                        else step_noise_stddev
+                    ),
+                    "train/lr": lr_t,
+                    **tracker.train.last.to_dict(prefix="train/"),
+                }
+                if (
+                    isinstance(clip_norm, PerGroup)
+                    and getattr(aux, "group_norms", None) is not None
+                ):
+                    for gname in clip_norm.values:
+                        gn_bound = clip_norm.values[gname]
+                        wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
+                        gnorms = aux.group_norms[gname]
+                        wb_metrics[f"group/grad_norm/{gname}"] = (
+                            gnorms.mean().item()
+                        )
+                        gn_clipped = float((gnorms > gn_bound).sum().item())
+                        wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
+                            1.0, float(batch_size)
+                        )
+                        if isinstance(step_noise_stddev, PerGroup):
+                            wb_metrics[f"group/noise_std/{gname}"] = (
+                                step_noise_stddev.values[gname]
+                            )
+                wandb.log(wb_metrics, step=global_step)
+
+            last = tracker.train.last
+            _e, _s = divmod(global_step - 1, expected_steps_per_epoch)
+            print(
+                f"Step {global_step:4d} [E{_e + 1} S{_s + 1:3d}/{expected_steps_per_epoch:3d}] | "
+                f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
+                f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
+                f"LR: {lr_t:.2e} | "
+                f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
+            )
+
+        # --- Eval ---
+        if global_step % args.eval_steps == 0:
+            current_eval_loss = eval_loss(trainable_params)
+            # Cache PLD before eval so it serves as an opaque boundary
+            # for subsequent ``|`` calls — Repeated nodes from later
+            # steps merge into a fresh suffix instead of re-doing the
+            # full FFT each time.
+            accounting = acc.cached(accounting)
+            epsilon = accounting.epsilon_at(args.target_delta)
+            eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+            metrics: dict[str, float] = {
+                "eval/loss": current_eval_loss,
+                "privacy/epsilon": epsilon,
+            }
+            if args.audit and audit_cf is not None:
+                audit_estimate = run_audit(trainable_params)
+                if audit_estimate is not None:
+                    audit_eps = _audit_method(audit_estimate).epsilon
+                    audit_auc = audit_estimate.attack_auc()
+                    metrics["privacy/epsilon_audit"] = audit_eps
+                    metrics["privacy/audit_auc"] = audit_auc
+                    eval_msg += (
+                        f", ε_audit[{args.audit_method}]={audit_eps:.4f}"
+                        f", AUC={audit_auc:.4f}"
+                    )
+            if use_wandb:
+                wandb.log(metrics, step=global_step)
+            print(eval_msg)
+
 
     # ===================================================================
     # Final summary

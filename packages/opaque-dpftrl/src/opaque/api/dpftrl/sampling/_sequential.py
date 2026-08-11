@@ -22,6 +22,13 @@ class SequentialBatchSampler(Sampler):
     ``[0, ..., B-1], [B, ..., 2B-1], ...``.  The last chunk is dropped
     when smaller than ``batch_size``.
 
+    With ``n_steps`` set, the fixed batch order cycles: pass 2 repeats
+    the identical batches in the identical order, so across the run
+    every example participates exactly ``n_steps // num_batches`` times
+    with exactly ``num_batches`` steps between participations — the
+    ``min_sep`` / ``max_participations`` contract the BLT accounting
+    assumes, enforced by one sampler over the whole stream.
+
     This sampler has no RNG key — it is fully deterministic.
     Call ``dataset.shuffle(seed=...)`` once beforehand to randomise
     which examples land in which batch.
@@ -29,13 +36,22 @@ class SequentialBatchSampler(Sampler):
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
         batch_size: Exact number of examples per batch (must be ≥ 1).
+        n_steps: Total number of batches to yield across the run.  Must
+            be a positive multiple of the per-pass batch count
+            (``len(data_source) // batch_size``), so participation
+            counts stay uniform.  ``None`` yields a single pass.
 
     Example:
         >>> sampler = SequentialBatchSampler(dataset, batch_size=256)
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
     """
 
-    def __init__(self, data_source: object, batch_size: int):
+    def __init__(
+        self,
+        data_source: object,
+        batch_size: int,
+        n_steps: int | None = None,
+    ):
         super().__init__()
 
         if len(data_source) == 0:
@@ -47,29 +63,48 @@ class SequentialBatchSampler(Sampler):
         self._num_samples = len(data_source)
         self._batch_size = batch_size
         self._num_batches = self._num_samples // self._batch_size
+
+        if n_steps is not None:
+            if n_steps < 1:
+                raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
+            if self._num_batches == 0:
+                raise ValueError(
+                    f"batch_size ({batch_size}) exceeds dataset size "
+                    f"({self._num_samples}); no complete batch to cycle."
+                )
+            if n_steps % self._num_batches != 0:
+                raise ValueError(
+                    f"n_steps ({n_steps}) must be a positive multiple of the "
+                    f"per-pass batch count ({self._num_batches}); a partial "
+                    "final pass would make participation counts non-uniform."
+                )
+        self.n_steps = n_steps
         self._consumed = 0
 
     def __iter__(self) -> Iterator[list[int]]:
         """Yield fixed-size batches of contiguous indices.
 
-        The last incomplete batch (if any) is dropped.  Iteration
-        resumes from ``self._consumed`` so a loaded sampler continues
-        at its saved cursor.
+        The last incomplete batch (if any) is dropped.  With ``n_steps``
+        set, the fixed order cycles until ``n_steps`` batches have been
+        yielded.  Iteration resumes from ``self._consumed`` so a loaded
+        sampler continues at its saved cursor.
         """
-        for i in range(self._consumed, self._num_batches):
-            start = i * self._batch_size
+        total = self._num_batches if self.n_steps is None else self.n_steps
+        for i in range(self._consumed, total):
+            start = (i % self._num_batches) * self._batch_size
             # Increment before yield so a snapshot taken mid-iter
             # reports the count of batches actually emitted so far.
             self._consumed = i + 1
             yield list(range(start, start + self._batch_size))
 
     def __len__(self) -> int:
-        """Complete batches remaining (``_num_batches - consumed``).
+        """Declared batches remaining.
 
         After a partial run, reflects what ``__iter__`` will yield —
         so ``len(DataLoader(...))`` matches the resumed iteration count.
         """
-        return self._num_batches - self._consumed
+        total = self._num_batches if self.n_steps is None else self.n_steps
+        return total - self._consumed
 
     @property
     def consumed(self) -> int:
@@ -95,6 +130,7 @@ def _state_dict_sequential(s: SequentialBatchSampler) -> dict[str, Any]:
         "consumed": int(s._consumed),
         "num_samples": int(s._num_samples),
         "batch_size": int(s._batch_size),
+        "n_steps": s.n_steps,
     }
 
 
@@ -102,6 +138,10 @@ def _from_state_dict_sequential(
     template: SequentialBatchSampler, sd: Mapping[str, Any]
 ) -> SequentialBatchSampler:
     """Rebuild ``SequentialBatchSampler`` at the saved cursor.
+
+    ``n_steps`` comes from the template — the caller may extend or
+    shorten the run on resume; the cursor fixes the resume position
+    within the cycling order.
 
     Raises ``ValueError`` if the template dataset length differs from
     the snapshot — ``_num_batches = num_samples // batch_size`` drives
@@ -120,6 +160,7 @@ def _from_state_dict_sequential(
     sampler = SequentialBatchSampler(
         template.data_source,
         batch_size=int(sd["batch_size"]),
+        n_steps=template.n_steps,
     )
     sampler._consumed = int(sd["consumed"])
     return sampler
