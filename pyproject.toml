@@ -162,6 +162,9 @@ docs = [
 # avoiding collisions when multiple packages share directory names (e.g.
 # tests/noise/ in both opaque-dpsgd and opaque-dpftrl).
 addopts = "--import-mode=importlib"
+# Repository-owned developer tools such as ``benchmarks`` are intentionally
+# not shipped by the umbrella wheel, but their contracts still run in pytest.
+pythonpath = ["."]
 
 # Test discovery walks the whole `packages/` tree — any package with a
 # `tests/` dir is picked up automatically. New packages, renames, and

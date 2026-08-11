@@ -226,7 +226,7 @@ above.
 | DP-SGD default (LM fine-tuning) | `adafactor` | Recommended default — relative-step normalization makes BC a no-op |
 | Adam-family without LR tuning | `adamw` (BC off) | BC-off auto-shrinks effective LR; forgiving |
 | Adam-family with tuned LR | `adamw(noise_bias_correction=True)` | BC reaches min faster at the right LR |
-| LR-robust alternative to AdamW | `radam` | Rectification gate flattens LR sensitivity to ±0.1% across ±3× |
+| LR-robust alternative to AdamW | `radam` | Rectification can reduce LR sensitivity; tune it on the target workload |
 | Sign-based, lowest memory | `lion` | No second moment; sharp LR optimum (~AdamW LR / 10) |
 | DP-FTRL without an Adam-family update | `sgd` | No second moment to correct |
 | DP-FTRL with Adam, private second moments | `adamw(...) + SecondMomentNoiseOutput` | Substitutes a privatized `g²` stream for squaring noised gradients |

@@ -1,0 +1,759 @@
+{
+  "case": {
+    "config": {
+      "dtype": "float32",
+      "expert_counts": [
+        8,
+        16,
+        32,
+        64,
+        128
+      ],
+      "hidden_dim": 256,
+      "intermediate_dim": 128,
+      "seed": 417,
+      "tokens": 256,
+      "top_k": 2,
+      "weight_scale": 0.05
+    },
+    "description": "Dense versus grouped-MoE forward/backward crossover on MPS.",
+    "id": "patches.moe_dispatch",
+    "source_digest": "62bfa0121f078c6b98b37fbd1f8ce92a1396cdf3a38cb722761cf86a7054fe86",
+    "sources": {
+      "benchmarks/cases/moe.py": "dec3e9057c59ded1ed7a09e77bfe2f77f9c92d7497b3d1d4a45100cd58091d83",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "benchmarks/measurement.py": "05e1f6228c5f316f12c4535661ab3525c959c6bfddf4049cf5bf1de450b12736",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/__init__.py": "b885d0ed1b948c57d919096d36ec6c8a274bf307cb253b14ab112a58529bd481",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/_grouped_moe.py": "1b7f2437f179f79dc10f92ba37d59f3268abfc932b1f8b6d212fcaa73da487c0",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/_linear_ce_chunked.py": "44559c6955735e760fdb1f3104ee4bd50c44d1fb6b92028199cad2986e147f68",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py": "2c98e326ec32b166be9b3dad00d487068986640b75372e015a33bee4334fd395",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/cross_entropy.py": "3c7eb2f7ccebf84fdee86a9ae8dcc18a9f38a370452386f53da29c023a13a023",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py": "781d2677861b45f931dfba5ecb8cc0bf08f877fa57c88d96934c15b0ba8e5876",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/fused_moe.py": "8b2be08351052313c22623a1b55314bb64c684009427fa0dc4e256f9c939ba58",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/geglu.py": "782021691f39fff875297884250a3ac947be20d946df0ceae6636183b0688db7",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py": "659d160960ba00ed75b829090647ba95527eea90a1cf3d2612c1af13233de164",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/lora.py": "b620a72ae4e97ac257973510553646d7cc0776f76563f4320f584e8d2e18bb29",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py": "3db14cba7b322b6d21726aaa8bfee9b9697da793e7b97e0cf858a700dfa39b5c",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py": "9a91ec29f020478885aacba2df7a6f2b7d55a542fcbd61c3eafaf53becb14c85",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py": "b954d8c6ecea8faa55ff8697d731e99145138ba9a8ddfc4d07f5741730d876ec",
+      "packages/opaque-patches/src/opaque/api/patches/kernels/swiglu.py": "229156a6d1e614d0025bb7650800e6711473b2653ac09629f18a36049aa96f6a",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [
+    {
+      "baseline": "dense_e8",
+      "candidate": "grouped_e8",
+      "metric": "wall_time_ms",
+      "name": "grouped_speedup_e8",
+      "unit": "ratio",
+      "value": 0.5643518534591838
+    },
+    {
+      "baseline": "dense_e16",
+      "candidate": "grouped_e16",
+      "metric": "wall_time_ms",
+      "name": "grouped_speedup_e16",
+      "unit": "ratio",
+      "value": 0.6891629361945525
+    },
+    {
+      "baseline": "dense_e32",
+      "candidate": "grouped_e32",
+      "metric": "wall_time_ms",
+      "name": "grouped_speedup_e32",
+      "unit": "ratio",
+      "value": 0.6211659872829512
+    },
+    {
+      "baseline": "dense_e64",
+      "candidate": "grouped_e64",
+      "metric": "wall_time_ms",
+      "name": "grouped_speedup_e64",
+      "unit": "ratio",
+      "value": 0.9659167330371902
+    },
+    {
+      "baseline": "dense_e128",
+      "candidate": "grouped_e128",
+      "metric": "wall_time_ms",
+      "name": "grouped_speedup_e128",
+      "unit": "ratio",
+      "value": 1.0937462883205211
+    }
+  ],
+  "measurements": [
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 53248000
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16777216
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 70025216
+        },
+        "wall_time_ms": {
+          "samples": [
+            7.592791,
+            6.331208,
+            5.47775,
+            4.882334,
+            5.666709,
+            5.943125,
+            5.923125,
+            6.181125,
+            6.064041,
+            5.856625
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 7.592791,
+            "mean": 5.9918833,
+            "median": 5.933125,
+            "min": 4.882334,
+            "stdev": 0.6948730322611382
+          },
+          "unit": "ms",
+          "value": 5.933125
+        }
+      },
+      "name": "dense_e8",
+      "parameters": {
+        "experts": 8,
+        "implementation": "dense"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 53280768
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 70074368
+        },
+        "wall_time_ms": {
+          "samples": [
+            11.906917,
+            9.264459,
+            9.910958,
+            10.733458,
+            11.042,
+            10.292875,
+            10.735583,
+            8.810292,
+            10.218125,
+            11.060917
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 11.906917,
+            "mean": 10.3975584,
+            "median": 10.5131665,
+            "min": 8.810292,
+            "stdev": 0.9094483032332414
+          },
+          "unit": "ms",
+          "value": 10.5131665
+        }
+      },
+      "name": "grouped_e8",
+      "parameters": {
+        "experts": 8,
+        "implementation": "grouped"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 53346304
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16777216
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 70123520
+        },
+        "wall_time_ms": {
+          "samples": [
+            5.566666,
+            4.993667,
+            4.613625,
+            4.392875,
+            4.569667,
+            4.390375,
+            4.819292,
+            4.368209,
+            4.9405,
+            4.985334
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 5.566666,
+            "mean": 4.764021,
+            "median": 4.7164585,
+            "min": 4.368209,
+            "stdev": 0.37632369434068613
+          },
+          "unit": "ms",
+          "value": 4.7164585
+        }
+      },
+      "name": "dense_e16",
+      "parameters": {
+        "experts": 16,
+        "implementation": "dense"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 53346304
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 70139904
+        },
+        "wall_time_ms": {
+          "samples": [
+            12.427458,
+            9.793209,
+            7.942042,
+            7.089875,
+            6.940041,
+            6.740042,
+            6.742541,
+            6.616541,
+            6.367666,
+            6.747458
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 12.427458,
+            "mean": 7.7406873,
+            "median": 6.8437494999999995,
+            "min": 6.367666,
+            "stdev": 1.9269083953071935
+          },
+          "unit": "ms",
+          "value": 6.8437494999999995
+        }
+      },
+      "name": "grouped_e16",
+      "parameters": {
+        "experts": 16,
+        "implementation": "grouped"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 86966272
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 25165824
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 112132096
+        },
+        "wall_time_ms": {
+          "samples": [
+            6.729167,
+            6.111084,
+            5.964792,
+            6.281792,
+            6.275041,
+            6.094375,
+            6.136834,
+            6.202041,
+            6.067917,
+            5.7725
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 6.729167,
+            "mean": 6.1635542999999995,
+            "median": 6.123959,
+            "min": 5.7725,
+            "stdev": 0.24891714003305074
+          },
+          "unit": "ms",
+          "value": 6.123959
+        }
+      },
+      "name": "dense_e32",
+      "parameters": {
+        "experts": 32,
+        "implementation": "dense"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 86949888
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 103743488
+        },
+        "wall_time_ms": {
+          "samples": [
+            11.345292,
+            9.922584,
+            10.442666,
+            10.240708,
+            10.258125,
+            9.795041,
+            9.579458,
+            9.614208,
+            9.460125,
+            9.10175
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 11.345292,
+            "mean": 9.9759957,
+            "median": 9.858812499999999,
+            "min": 9.10175,
+            "stdev": 0.6321551403654453
+          },
+          "unit": "ms",
+          "value": 9.858812499999999
+        }
+      },
+      "name": "grouped_e32",
+      "parameters": {
+        "experts": 32,
+        "implementation": "grouped"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1160757248
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 33554432
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1194311680
+        },
+        "wall_time_ms": {
+          "samples": [
+            12.562084,
+            12.214666,
+            12.373792,
+            12.405917,
+            13.351958,
+            12.256875,
+            11.916542,
+            11.884208,
+            11.499,
+            11.872834
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 13.351958,
+            "mean": 12.2337876,
+            "median": 12.235770500000001,
+            "min": 11.499,
+            "stdev": 0.5056638081220456
+          },
+          "unit": "ms",
+          "value": 12.235770500000001
+        }
+      },
+      "name": "dense_e64",
+      "parameters": {
+        "experts": 64,
+        "implementation": "dense"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1160757248
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 3.5762786865234375e-07
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1177550848
+        },
+        "wall_time_ms": {
+          "samples": [
+            14.264542,
+            12.41275,
+            12.291667,
+            12.814417,
+            12.869417,
+            12.416791,
+            12.250417,
+            12.529833,
+            12.844917,
+            12.805209
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 14.264542,
+            "mean": 12.749996,
+            "median": 12.667521,
+            "min": 12.250417,
+            "stdev": 0.5828280031021159
+          },
+          "unit": "ms",
+          "value": 12.667521
+        }
+      },
+      "name": "grouped_e64",
+      "parameters": {
+        "experts": 64,
+        "implementation": "grouped"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1127268352
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 58720256
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1185988608
+        },
+        "wall_time_ms": {
+          "samples": [
+            23.221167,
+            22.327916,
+            21.905625,
+            22.07675,
+            22.006541,
+            22.239,
+            22.216875,
+            21.891291,
+            22.216875,
+            21.907584
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 23.221167,
+            "mean": 22.2009624,
+            "median": 22.146812500000003,
+            "min": 21.891291,
+            "stdev": 0.39176350088065504
+          },
+          "unit": "ms",
+          "value": 22.146812500000003
+        }
+      },
+      "name": "dense_e128",
+      "parameters": {
+        "experts": 128,
+        "implementation": "dense"
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1110491136
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 7.450580596923828e-07
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1127284736
+        },
+        "wall_time_ms": {
+          "samples": [
+            20.858333,
+            19.579875,
+            19.527833,
+            19.223917,
+            19.455791,
+            19.964583,
+            20.532583,
+            20.625375,
+            21.824917,
+            25.541708
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 25.541708,
+            "mean": 20.7134915,
+            "median": 20.248583,
+            "min": 19.223917,
+            "stdev": 1.8755974397451332
+          },
+          "unit": "ms",
+          "value": 20.248583
+        }
+      },
+      "name": "grouped_e128",
+      "parameters": {
+        "experts": 128,
+        "implementation": "grouped"
+      }
+    }
+  ],
+  "notes": [
+    "Both paths include forward and backward. The grouped path is invoked directly so counts below the production dispatch threshold are measured."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "patches.moe_dispatch",
+      "--preset",
+      "reference",
+      "--device",
+      "mps",
+      "--warmup",
+      "3",
+      "--repeats",
+      "10"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": {
+        "memory_bytes": 115448725504,
+        "name": "Apple M5 Max",
+        "runtime": "26.6",
+        "type": "mps"
+      },
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:55:53.626927Z"
+  },
+  "schema_version": 1
+}

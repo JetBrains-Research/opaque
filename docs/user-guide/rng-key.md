@@ -286,8 +286,11 @@ set_reproducible_pytorch_seed(key(42))
 # Disables torch.backends.cudnn.benchmark
 ```
 
-This has a 10-30% performance cost due to deterministic algorithm
-selection. Call it once at training startup if you need full reproducibility.
+Deterministic-algorithm overhead depends on the operation, shape, device, and
+software stack. Run the `engine.determinism` case in the
+[benchmark evidence](../benchmarks.md) on the target workload rather than
+assuming a fixed penalty. Call the helper once at training startup if you need
+full reproducibility.
 
 ## Checkpoint and resume
 

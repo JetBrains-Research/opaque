@@ -42,11 +42,12 @@ def gradient_scores(
     ``loss_fn`` (position 0), matching the default ``argnums=0`` of
     :func:`~opaque.clipped_grad`.
 
-    Processes one sample at a time to keep peak GPU memory at 2× model
-    size regardless of model or batch size.  ``torch.func.grad`` is a
-    functional transform that operates independently of the standard
-    autograd context, so the loop runs inside ``torch.no_grad()`` for
-    efficiency (same as :func:`~opaque.api.auditing.attacks._loss.loss_scores`).
+    Processes one sample at a time so per-example gradient storage does not
+    scale with the dataloader batch size. Actual peak memory also includes the
+    model, activations, allocator state, and backend workspaces. ``torch.func.grad``
+    is a functional transform that operates independently of the standard
+    autograd context, so the loop runs inside ``torch.no_grad()`` for efficiency
+    (same as :func:`~opaque.api.auditing.attacks._loss.loss_scores`).
 
     When ``reference_scores`` are provided, the returned scores are
     ``current - reference``, which equals

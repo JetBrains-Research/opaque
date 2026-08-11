@@ -1,0 +1,569 @@
+{
+  "case": {
+    "config": {
+      "dtype": "float32",
+      "matrix_columns": 2048,
+      "matrix_rows": 2048,
+      "vector_size": 2048
+    },
+    "description": "Initialized tensor-state size and initialization time by optimizer.",
+    "id": "optimizers.state",
+    "source_digest": "4274d25b411f307a670fb2e3aad74c2d981eecf4333b8dd6cc12cda784d5bab2",
+    "sources": {
+      "benchmarks/cases/optimizers.py": "94206657d021bee7a1d263f5ffc4b79f53e4c1938665c71481e9e8ecf4e65b46",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "benchmarks/measurement.py": "05e1f6228c5f316f12c4535661ab3525c959c6bfddf4049cf5bf1de450b12736",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/__init__.py": "efbf29c578cd1753af8167f802cfa5466a3d617c64aa2164b6095982d976372b",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_adadelta.py": "133a052a3782ab4c60717f5397ba1b5daaad6b30c55841894ca79993fce36878",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_adafactor.py": "8a952bb41299bdfd5923e6edf0dac22e501dd6b993ccb01fd78a0c0dda87a7eb",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_adagrad.py": "d72e9f391de486057dad9e17cdfa3fa6084b3170ff2a46610f8aac7cc88bbfd7",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_adam.py": "53e871696a27d326477ae4819c37d9ad3af8b5276680b84efb9d0cb057f7daf8",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_ademamix.py": "7686529b0534708f66f5487ba02d1267880760bf28434eb596cdc1aa027d54b5",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_bias_correction.py": "04dc42b69193163abf018c73bb7405100ae991afc60c0cdcedf63f39c3cea082",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_chain.py": "f611e123b57789a62221cd1e6d582152e13ef660d543bd25d2007d7e06412f11",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_lion.py": "63e63d450456abf7f08f1ed7153489009f5da90cfaa8fafda551caf6a70f72cd",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_radam.py": "8929c6d2f7ddc0ce1a7de978c9c56920f2de10316e6a96fde56a7a11f8810d68",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_rmsprop.py": "32bcb9edff8f18ed320473b5031ec25754dce44208fe780aa2b51262032ca216",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py": "0db1686d33aacc1d790e4f51f33ab861ffa3b6055fc665e8bd843ccf2f66eba3",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/_sgd.py": "75c99fea5cccca5063886f8a8db2eb7575f988cc941e209b7d5339b90907da32",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/distributed.py": "3d449c79d346a126e61f87b33fceb8ff1a7d345e47772f955c35d13b7f5d65d1",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "packages/opaque-optimizers/src/opaque/api/optimizers/types.py": "0b817fed9e9b37cea711f525c0b3a272722affa2fd97857ba498f8fa5db39361",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [],
+  "measurements": [
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.014458,
+            0.002333,
+            0.001417,
+            0.001334,
+            0.001208,
+            0.001208,
+            0.001166,
+            0.001208,
+            0.001208,
+            0.001042
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.014458,
+            "mean": 0.0026582000000000003,
+            "median": 0.001208,
+            "min": 0.001042,
+            "stdev": 0.00416181319459039
+          },
+          "unit": "ms",
+          "value": 0.001208
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 0
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 0.0
+        }
+      },
+      "name": "sgd",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.449625,
+            0.092416,
+            0.088084,
+            0.090042,
+            0.08925,
+            0.0895,
+            0.089208,
+            0.081959,
+            0.083083,
+            0.094916
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.449625,
+            "mean": 0.12480830000000001,
+            "median": 0.089375,
+            "min": 0.081959,
+            "stdev": 0.11419358923536625
+          },
+          "unit": "ms",
+          "value": 0.089375
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 1.0
+        }
+      },
+      "name": "sgd_momentum",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.138458,
+            0.103208,
+            0.083917,
+            0.081834,
+            0.093375,
+            0.0975,
+            0.082583,
+            0.113375,
+            0.126708,
+            0.101334
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.138458,
+            "mean": 0.10222919999999999,
+            "median": 0.099417,
+            "min": 0.081834,
+            "stdev": 0.019078091290506204
+          },
+          "unit": "ms",
+          "value": 0.099417
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 1.0
+        }
+      },
+      "name": "lion",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.070625,
+            0.01225,
+            0.00775,
+            0.007,
+            0.006542,
+            0.006292,
+            0.006167,
+            0.006041,
+            0.006458,
+            0.006417
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.070625,
+            "mean": 0.013554199999999999,
+            "median": 0.006500000000000001,
+            "min": 0.006041,
+            "stdev": 0.020137440253308152
+          },
+          "unit": "ms",
+          "value": 0.006500000000000001
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 24576
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 0.0014641288433382138
+        }
+      },
+      "name": "adafactor",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.279333,
+            0.237292,
+            0.255875,
+            0.242416,
+            0.276625,
+            0.27125,
+            0.183583,
+            0.251875,
+            0.200958,
+            0.199875
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.279333,
+            "mean": 0.2399082,
+            "median": 0.24714550000000002,
+            "min": 0.183583,
+            "stdev": 0.03429986490028464
+          },
+          "unit": "ms",
+          "value": 0.24714550000000002
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 33570816
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 2.0
+        }
+      },
+      "name": "adamw",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.289125,
+            0.171541,
+            0.212041,
+            0.174667,
+            0.177209,
+            0.187875,
+            0.175333,
+            0.167166,
+            0.172542,
+            0.175875
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.289125,
+            "mean": 0.1903374,
+            "median": 0.17560399999999998,
+            "min": 0.167166,
+            "stdev": 0.03696124641416858
+          },
+          "unit": "ms",
+          "value": 0.17560399999999998
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 33570816
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 2.0
+        }
+      },
+      "name": "adamw_bc",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.290208,
+            0.242833,
+            0.222334,
+            0.241208,
+            0.171875,
+            0.16625,
+            0.166375,
+            0.165167,
+            0.164292,
+            0.165584
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.290208,
+            "mean": 0.1996126,
+            "median": 0.169125,
+            "min": 0.164292,
+            "stdev": 0.04582713187669991
+          },
+          "unit": "ms",
+          "value": 0.169125
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 33570816
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 2.0
+        }
+      },
+      "name": "adadelta",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    },
+    {
+      "metrics": {
+        "initialization_time_ms": {
+          "samples": [
+            0.3975,
+            0.358833,
+            0.354792,
+            0.361125,
+            0.355583,
+            0.322917,
+            0.251833,
+            0.259292,
+            0.280792,
+            0.2565
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 0.3975,
+            "mean": 0.3199167,
+            "median": 0.3388545,
+            "min": 0.251833,
+            "stdev": 0.05332532083989536
+          },
+          "unit": "ms",
+          "value": 0.3388545
+        },
+        "parameter_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16785408
+        },
+        "state_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 50356224
+        },
+        "state_bytes_per_parameter_byte": {
+          "statistic": "exact",
+          "unit": "ratio",
+          "value": 3.0
+        }
+      },
+      "name": "adadelta_bc",
+      "parameters": {
+        "dtype": "float32",
+        "matrix_shape": [
+          2048,
+          2048
+        ],
+        "vector_size": 2048
+      }
+    }
+  ],
+  "notes": [
+    "State size counts unique tensor storage only; Python object overhead is intentionally excluded."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "optimizers.state",
+      "--preset",
+      "reference",
+      "--device",
+      "cpu",
+      "--warmup",
+      "3",
+      "--repeats",
+      "10"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": null,
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:54:37.578218Z"
+  },
+  "schema_version": 1
+}

@@ -3915,10 +3915,10 @@ class DPTrainer:
 
         Applied by :meth:`_create_grad_fn` to the ``grad_fn`` (the
         ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
-        (functorch *inside* ``torch.compile``) is the supported, fusing pattern
-        (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
-        applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
-        pattern that silently no-ops to eager.
+        (functorch *inside* ``torch.compile``) is the supported, fusing pattern.
+        Its runtime and peak-memory effects are workload-dependent. Compiling the
+        inner loss and applying ``vmap(grad)`` outside is the unsupported
+        ``grad(compiled_fn)`` pattern that silently no-ops to eager.
 
         The returned compiler tries ``fullgraph=True`` first (graph breaks
         surface as a warning, then lazily downgrade to ``fullgraph=False``).

@@ -244,7 +244,9 @@ establish the memory baseline, then account for the AllReduce overhead when
 scaling.
 
 If memory is tight, reduce `microbatch_size` to leave headroom for AllReduce.
-Start from your single-device stable value and reduce by 10-20% for DDP.
+Start from your single-device stable value, then measure DDP peak memory before
+choosing the reduction; topology, bucket sizes, and tensor shapes determine the
+required headroom.
 
 ## Troubleshooting
 
@@ -252,8 +254,9 @@ Start from your single-device stable value and reduce by 10-20% for DDP.
 `step_perf`. If the model itself does not fit, use LoRA or another
 parameter-efficient method to reduce the trainable parameter count.
 
-**Low efficiency (<80%):** Memory fragmentation. Call
-`torch.cuda.empty_cache()` between steps, or reduce `microbatch_size`.
+**Low allocator efficiency:** Memory fragmentation may be responsible. Inspect
+reserved and allocated memory before calling `torch.cuda.empty_cache()` between
+steps or reducing `microbatch_size`.
 
 **Memory grows over time:** Profile across iterations to identify whether
 peak memory is increasing. Check for tensors that are accumulating outside

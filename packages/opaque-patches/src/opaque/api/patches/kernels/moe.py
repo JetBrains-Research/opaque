@@ -159,11 +159,9 @@ class Opaque_MoE(torch.autograd.Function):
         return _moe_forward(x, gate_up_proj, down_proj, w_te), 0
 
 
-# Sparse pays off only past a break-even expert count: its routing / gather /
-# grouped-weight-grad-loop overhead beats the dense O(T*E) work once E is large
-# enough. Measured crossover on MPS is ~16 experts (dense scales linearly in E,
-# sparse sub-linearly: ~2x at E=128); below it the dense path is faster, so a
-# small-expert MoE (e.g. Mixtral-8) stays dense. Config-dependent heuristic.
+# Grouped-GEMM crossover depends on token count, matrix dimensions, device, and
+# software versions. The cutoff below is a conservative dispatch heuristic, not
+# a performance guarantee; re-evaluate it with ``patches.moe_dispatch``.
 _SPARSE_MOE_MIN_EXPERTS = 16
 
 

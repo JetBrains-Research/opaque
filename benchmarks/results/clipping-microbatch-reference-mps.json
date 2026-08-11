@@ -1,0 +1,393 @@
+{
+  "case": {
+    "config": {
+      "batch_size": 64,
+      "clipping_norm": 1.0,
+      "dtype": "float32",
+      "input_dim": 512,
+      "microbatch_sizes": [
+        null,
+        32,
+        8,
+        1
+      ],
+      "output_dim": 256,
+      "seed": 417
+    },
+    "description": "Fixed-clipping throughput and peak memory across microbatch sizes.",
+    "id": "clipping.microbatch",
+    "source_digest": "00918730c1f45235c47ef2314e6267f04c0d752e32b98bcb407d10b9d0a74983",
+    "sources": {
+      "benchmarks/cases/clipping.py": "0237c668fb89af87875ffc499a1b964a70e223fab45fbce10a3eefdbe1c8f471",
+      "benchmarks/core.py": "311e11457ea414ad7252f6fc0d31aa000cbd9ca37221b7449b93afc88ab429c2",
+      "benchmarks/measurement.py": "05e1f6228c5f316f12c4535661ab3525c959c6bfddf4049cf5bf1de450b12736",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/__init__.py": "9d164172cc7a10f67f2613709342e96737272a3ab2ebafec13597b478c097b85",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_auto.py": "f6386fd65680c6f49b0dbdef361e14999b76e810f6c75b3e9b4394b19edaeee7",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_fun.py": "b16ec8c3e9ac1f0956d0cab3065325fcd9ba9db08d9966d3cb81c19adf32508b",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py": "139b5e09ccd3c71e46058c68621aa61e406756b4a38b9b7f0ffaa6c10d930cc2",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_distributed.py": "8a402fcadcd3f35f5f16eeaa0d5947bdd0324eaff11ce2ed1ee7743958a3a516",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_helpers.py": "1c508c2bd52addae54f50aa91ab3feee292694b05ecdc68e20696b786bf45f3b",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_per_group.py": "796343ba0b0212f285161ff1e14cfb1644fa7a1764e7cd19048a25cbc596d8e3",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_pytree.py": "1a2da2d72adbe4d926bdba1ad4d499921bae38afda2b0c09a7593ca06c85874b",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/_types.py": "53b5058c33f054dce1b6b9d1961f9a05f60069fbe811817609fc6f557aa506d4",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/fun.py": "2bd0ddd91f7a8345be1b7f8e3506220395fe8f9011789cf3721f1faa10c604d0",
+      "packages/opaque-engine/src/opaque/api/engine/clipping/types.py": "7ff413c4da35dcdd319968e5c2f034a4d371ded5f5755bc7a8eb4858d4806594",
+      "pyproject.toml": "d68293abe0045b27f4a10b9c2ef49ef6b58b98b5645ac4ac836832bdcbeacba8",
+      "uv.lock": "8eae7b726d0c3e94421a21806684bb8094de77628e0192649d889f7be117e50a"
+    }
+  },
+  "comparisons": [],
+  "measurements": [
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 11288576
+        },
+        "examples_per_second": {
+          "statistic": "exact",
+          "unit": "example/s",
+          "value": 16264.294790343074
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1090535424
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 0.0
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1101824000
+        },
+        "wall_time_ms": {
+          "samples": [
+            45.558792,
+            4.454083,
+            4.543917,
+            3.747541,
+            3.487083,
+            3.915708,
+            3.399458,
+            4.671709,
+            3.654292,
+            3.954292
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 45.558792,
+            "mean": 8.1386875,
+            "median": 3.935,
+            "min": 3.399458,
+            "stdev": 13.15554491797739
+          },
+          "unit": "ms",
+          "value": 3.935
+        }
+      },
+      "name": "full_batch",
+      "parameters": {
+        "microbatch_size": null
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 11321344
+        },
+        "examples_per_second": {
+          "statistic": "exact",
+          "unit": "example/s",
+          "value": 9638.43301066922
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1090535424
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 1.4901161193847656e-08
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 1101856768
+        },
+        "wall_time_ms": {
+          "samples": [
+            52.860959,
+            7.941333,
+            7.763375,
+            5.857416,
+            6.895084,
+            6.992375,
+            6.385083,
+            5.635459,
+            5.895625,
+            6.017875
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 52.860959,
+            "mean": 11.2244584,
+            "median": 6.640083499999999,
+            "min": 5.635459,
+            "stdev": 14.651419325605158
+          },
+          "unit": "ms",
+          "value": 6.640083499999999
+        }
+      },
+      "name": "microbatch_32",
+      "parameters": {
+        "microbatch_size": 32
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 11337728
+        },
+        "examples_per_second": {
+          "statistic": "exact",
+          "unit": "example/s",
+          "value": 4329.699880764125
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 50348032
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 1.4901161193847656e-08
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 61685760
+        },
+        "wall_time_ms": {
+          "samples": [
+            24.333292,
+            13.94175,
+            15.164875,
+            15.970208,
+            13.728375,
+            13.30125,
+            14.459834,
+            16.395917,
+            14.982375,
+            14.580875
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 24.333292,
+            "mean": 15.6858751,
+            "median": 14.781625,
+            "min": 13.30125,
+            "stdev": 3.1870152373598177
+          },
+          "unit": "ms",
+          "value": 14.781625
+        }
+      },
+      "name": "microbatch_8",
+      "parameters": {
+        "microbatch_size": 8
+      }
+    },
+    {
+      "metrics": {
+        "baseline_device_bytes": {
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 11337728
+        },
+        "examples_per_second": {
+          "statistic": "exact",
+          "unit": "example/s",
+          "value": 1122.858314439488
+        },
+        "incremental_peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 16793600
+        },
+        "max_abs_error": {
+          "statistic": "exact",
+          "unit": "absolute",
+          "value": 4.470348358154297e-08
+        },
+        "peak_device_bytes": {
+          "method": "sampled_driver_allocated",
+          "statistic": "exact",
+          "unit": "byte",
+          "value": 28131328
+        },
+        "wall_time_ms": {
+          "samples": [
+            65.809667,
+            55.39825,
+            57.2455,
+            55.64675,
+            57.449958,
+            57.538,
+            55.147125,
+            64.900708,
+            56.749292,
+            54.795542
+          ],
+          "statistic": "median",
+          "summary": {
+            "count": 10,
+            "max": 65.809667,
+            "mean": 58.0680792,
+            "median": 56.997395999999995,
+            "min": 54.795542,
+            "stdev": 3.9711205834519756
+          },
+          "unit": "ms",
+          "value": 56.997395999999995
+        }
+      },
+      "name": "microbatch_1",
+      "parameters": {
+        "microbatch_size": 1
+      }
+    }
+  ],
+  "notes": [
+    "CUDA peak bytes are peak allocated bytes; MPS peak bytes are sampled driver allocation at 0.5 ms intervals; CPU exposes no allocator peak."
+  ],
+  "provenance": {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "benchmarks",
+      "run",
+      "clipping.microbatch",
+      "--preset",
+      "reference",
+      "--device",
+      "mps",
+      "--warmup",
+      "3",
+      "--repeats",
+      "10"
+    ],
+    "git": {
+      "commit": "17c58f8ce4439f7d83f6a21e1200d861f54c34ca",
+      "dirty": true,
+      "dirty_paths": [
+        ".gitignore",
+        "Cargo.lock",
+        "docs/user-guide/memory-optimizations.md",
+        "docs/user-guide/optimizers.md",
+        "docs/user-guide/rng-key.md",
+        "mkdocs.yml",
+        "packages/opaque-accounting/Cargo.toml",
+        "packages/opaque-accounting/src/numerics/fft.rs",
+        "packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py",
+        "packages/opaque-engine/src/opaque/api/engine/random/_helpers.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+        "packages/opaque-patches/src/opaque/api/patches/kernels/moe.py",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+        "pyproject.toml",
+        ".github/workflows/benchmarks.yml",
+        "benchmarks/README.md",
+        "benchmarks/__init__.py",
+        "benchmarks/__main__.py",
+        "benchmarks/cases/__init__.py",
+        "benchmarks/cases/accounting.py",
+        "benchmarks/cases/clipping.py",
+        "benchmarks/cases/determinism.py",
+        "benchmarks/cases/dpftrl.py",
+        "benchmarks/cases/fused_linear_cross_entropy.py",
+        "benchmarks/cases/fused_swiglu.py",
+        "benchmarks/cases/moe.py",
+        "benchmarks/cases/optimizers.py",
+        "benchmarks/cases/training.py",
+        "benchmarks/claims.py",
+        "benchmarks/claims.toml",
+        "benchmarks/cli.py",
+        "benchmarks/core.py",
+        "benchmarks/inventory.py",
+        "benchmarks/measurement.py",
+        "benchmarks/reporting.py",
+        "benchmarks/results/accounting-fft-reference-cpu.json",
+        "benchmarks/results/clipping-microbatch-reference-mps.json",
+        "benchmarks/results/dpftrl-strategy_init-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-cpu.json",
+        "benchmarks/results/engine-determinism-reference-mps.json",
+        "benchmarks/results/optimizers-state-reference-cpu.json",
+        "benchmarks/results/patches-moe_dispatch-large-mps.json",
+        "benchmarks/results/patches-moe_dispatch-reference-mps.json",
+        "benchmarks/verify.py",
+        "docs/benchmarks.md",
+        "packages/opaque-accounting/benches/fft.rs",
+        "tests/benchmarks/test_claims.py",
+        "tests/benchmarks/test_cli.py",
+        "tests/benchmarks/test_core.py",
+        "tests/benchmarks/test_inventory.py",
+        "tests/benchmarks/test_registry.py",
+        "tests/benchmarks/test_reporting.py",
+        "tests/benchmarks/test_training.py"
+      ]
+    },
+    "hardware": {
+      "accelerator": {
+        "memory_bytes": 115448725504,
+        "name": "Apple M5 Max",
+        "runtime": "26.6",
+        "type": "mps"
+      },
+      "cpu": "Apple M5 Max",
+      "machine": "arm64",
+      "memory_bytes": 137438953472
+    },
+    "software": {
+      "packages": {
+        "opaque": "0.12.1.dev70+g17c58f8c.d20260806",
+        "opaque-accounting": "0.0.0.dev0",
+        "opaque-engine": "0.12.1.dev70+g17c58f8c",
+        "opaque-optimizers": "0.12.1.dev70+g17c58f8c",
+        "opaque-patches": "0.12.1.dev70+g17c58f8c",
+        "torch": "2.10.0",
+        "torchopt": "0.7.3"
+      },
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.13",
+      "tools": {
+        "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+        "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+      }
+    },
+    "timestamp_utc": "2026-08-06T06:55:41.903660Z"
+  },
+  "schema_version": 1
+}
