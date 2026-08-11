@@ -189,6 +189,12 @@ class SFTTrainer(DPTrainer):
         # kernel (logits-free on CUDA, eager fallback elsewhere); ``nll`` / ``dft``
         # dispatch to an alignment head.
         self._loss_type: str = args.loss_type
+        # ``dft`` is a per-example objective in its own right (token-normalized
+        # with a DP-safe per-example divisor): eval aggregates it as the plain
+        # per-example mean matching training, not the per-token CE
+        # reconstruction, so no realized token-count divisor enters
+        # best-model selection (#384 review).
+        self._eval_token_weighted_loss = args.loss_type != "dft"
         # Gate logits-derived completion telemetry (entropy / mean_token_accuracy
         # / logits/*). When off, the (loss, aux) seam returns an empty aux dict so
         # the loss path runs without materialising those metrics.
@@ -553,6 +559,95 @@ class SFTTrainer(DPTrainer):
         if return_logits:
             return loss, logits
         return loss
+
+    def prediction_step(
+        self,
+        model: Any,
+        inputs: dict[str, Any],
+        prediction_loss_only: bool,
+        ignore_keys: list[str] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        """Evaluate SFT with the *training* objective.
+
+        For ``loss_type="dft"`` the model's built-in cross-entropy differs from
+        the detached-confidence-weighted DFT loss used in training, so eval —
+        and best-model selection — must score with the per-example DFT loss.
+        The base loop only routes through the per-example loss when predictions
+        are also requested (``include_for_metrics=['loss']`` and not
+        ``prediction_loss_only``); the common best-model-selection path
+        (``prediction_loss_only=True``) would otherwise read the model's CE.
+        This override always scores DFT via the base per-example eval closure,
+        while still surfacing logits (``ignore_keys``-filtered, base parity)
+        and labels so ``compute_metrics`` keeps working.  ``eval_loss``
+        aggregates as the plain per-example mean in every mode
+        (``_eval_token_weighted_loss = False``): the DFT scalar is already
+        token-normalized with a DP-safe per-example divisor, so no
+        token-count reweighting is applied.  ``nll`` / ``chunked_nll`` equal
+        the model's CE head and keep the inherited path (#384).
+        """
+        if self._loss_type != "dft":
+            return super().prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys
+            )
+        del model
+        label_keys = list(self._label_names) if self._label_names else []
+        has_labels = bool(label_keys) and all(
+            inputs.get(k) is not None for k in label_keys
+        )
+        inputs = self._prepare_input(inputs)
+
+        # Reuse the base per-example eval closure — it forwards through
+        # ``compute_per_example_loss`` (the DFT head) and returns per-example
+        # ``(loss, logits)``.
+        vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn()
+        if self._ctx is not None:
+            trainable = self._ctx.trainable_params
+        else:
+            trainable = {
+                name: p for name, p in self._model.named_parameters() if p.requires_grad
+            }
+        # Fail loudly on a mismatched eval collator (base-path parity) —
+        # a missing key would otherwise surface as an opaque vmap error.
+        missing = [k for k in batch_keys if inputs.get(k) is None]
+        if missing:
+            raise KeyError(
+                "DFT eval expects the eval batch to carry the train-discovered "
+                f"keys {list(batch_keys)!r}, but {missing!r} are absent (or "
+                "None); align the eval collator/dataset with the training one."
+            )
+        batch_args = tuple(inputs[k] for k in batch_keys)
+
+        amp_dtype = self._amp_dtype
+        was_training = self._model.training
+        if was_training:
+            self._model.eval()
+        try:
+            with torch.no_grad():
+                if amp_dtype is not None:
+                    with torch.autocast(device_type=self._device.type, dtype=amp_dtype):
+                        loss, logits = vmapped_fn(trainable, *batch_args)
+                else:
+                    loss, logits = vmapped_fn(trainable, *batch_args)
+        finally:
+            if was_training:
+                self._model.train()
+
+        loss = loss.detach()
+        if prediction_loss_only:
+            return loss, None, None
+        # Same logits filtering as the base per-example path
+        # (``DPTrainer.prediction_step``).
+        preds = (
+            None
+            if (ignore_keys and "logits" in ignore_keys)
+            else (logits.detach() if logits is not None else None)
+        )
+        if has_labels:
+            label_values = tuple(inputs[k].detach() for k in label_keys)
+            labels = label_values[0] if len(label_values) == 1 else label_values
+        else:
+            labels = None
+        return loss, preds, labels
 
     def compute_per_example_loss_and_metrics(
         self,
