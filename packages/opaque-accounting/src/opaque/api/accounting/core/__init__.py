@@ -33,6 +33,7 @@ except PackageNotFoundError:
 # the unified ``opaque.api.base.serialization`` registry.
 import opaque.api.accounting.core._serialization  # noqa: F401
 from opaque.api.accounting.core._accountant import Accountant
+from opaque.api.accounting.core._budgets import register_budget_serializer
 from opaque.api.accounting.core.calibration import (
     advantage_budget,
     beta_budget,
@@ -84,5 +85,6 @@ __all__ = [
     "advantage_budget",
     "beta_budget",
     "risk_budget",
+    "register_budget_serializer",
     "calibrate",
 ]

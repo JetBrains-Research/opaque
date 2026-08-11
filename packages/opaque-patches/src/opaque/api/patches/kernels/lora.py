@@ -1315,7 +1315,19 @@ def opaque_lora_mlp(
     """Apply LoRA MLP with configurable GLU activation and vmap support.
 
     Args:
-        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd: Standard LoRA MLP inputs.
+        X: MLP input activations.
+        Wg: Base gate-projection weight.
+        Ag: Gate-projection LoRA down-projection weight.
+        Bg: Gate-projection LoRA up-projection weight.
+        Sg: Gate-projection LoRA scaling factor.
+        Wu: Base up-projection weight.
+        Au: Up-projection LoRA down-projection weight.
+        Bu: Up-projection LoRA up-projection weight.
+        Su: Up-projection LoRA scaling factor.
+        Wd: Base down-projection weight.
+        Ad: Down-projection LoRA down-projection weight.
+        Bd: Down-projection LoRA up-projection weight.
+        Sd: Down-projection LoRA scaling factor.
         activation: Activation type - "swiglu" (default), "geglu_exact", or "geglu_approx".
 
     Returns:

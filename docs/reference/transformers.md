@@ -171,7 +171,7 @@ Dataclass surface.  Every field listed here exists on
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `privacy_target_epsilon` | `float \| None` | `None` | User target ε.  When set, calibration searches for the smallest noise multiplier that achieves this. |
-| `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / (10 * dataset_size)` when unset. |
+| `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / dataset_size**1.1` when unset. |
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
 | `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
@@ -179,9 +179,8 @@ Dataclass surface.  Every field listed here exists on
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
-| `privacy_noise_radius` | `float` | `3.0` | Calibration search bound. |
 | `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
-| `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
+| `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.11, "max": 10.0, "tolerance": 1e-3}`. |
 
 ### Patches and kernels
 
@@ -241,8 +240,8 @@ NPU, XLA) are rejected with a redirect message.
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `num_train_epochs` | `float` | `3.0` | Epoch count.  `state.epoch` is fractional. |
-| `max_steps` | `int` | `-1` | When `>= 0`, overrides `num_train_epochs`. |
+| `num_train_epochs` | `float` | `3.0` | Epoch count. Fractional values run `ceil(num_train_epochs * steps_per_epoch)` steps; `state.epoch` is fractional. |
+| `max_steps` | `int` | `-1` | When `> 0`, overrides `num_train_epochs`. |
 
 ### Logging
 

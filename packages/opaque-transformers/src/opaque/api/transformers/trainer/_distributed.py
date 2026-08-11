@@ -14,6 +14,7 @@ process group is up.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 from typing import Any
 
@@ -21,9 +22,11 @@ import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
 from opaque.distributed.collectives import barrier as _opaque_barrier
+from transformers.utils import logging as _hf_logging
 
 __all__ = [
     "DDPState",
+    "apply_logging",
     "barrier",
     "resolve_ddp_state",
     "should_log",
@@ -37,6 +40,10 @@ _BACKEND_ENV_DEPENDENT_HINTS = {
     "cncl": "Cambricon MLU/CNCL runtime",
     "mccl": "Moore Threads MUSA/MCCL runtime",
 }
+
+# HF trainer_log_levels parity: level-name -> int, with "passive" = -1
+# ("leave the current verbosity unchanged").
+_TRAINER_LOG_LEVELS = {**_hf_logging.get_log_levels_dict(), "passive": -1}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -171,6 +178,27 @@ def should_log(args: Any, ddp: DDPState) -> bool:
     if args.log_on_each_node:
         return ddp.is_local_zero
     return ddp.is_world_zero
+
+
+def apply_logging(args: Any, ddp: DDPState) -> int:
+    """Set this rank's logging verbosity (HF parity) and return the raw level.
+
+    Mirrors HF's ``TrainingArguments.get_process_log_level``: the main process
+    uses ``args.log_level`` and replicas use ``args.log_level_replica`` (the
+    main/replica split reuses :func:`should_log`). ``"passive"`` (-1) leaves the
+    current verbosity untouched. Concrete levels are applied to both the
+    transformers-namespace logger and opaque's root logger, so
+    ``log_level_replica`` actually quiets replica emissions from either.
+    """
+    raw = (
+        _TRAINER_LOG_LEVELS[args.log_level]
+        if should_log(args, ddp)
+        else _TRAINER_LOG_LEVELS[args.log_level_replica]
+    )
+    if raw != -1:
+        _hf_logging.set_verbosity(raw)
+        logging.getLogger("opaque").setLevel(raw)
+    return raw
 
 
 def should_save(args: Any, ddp: DDPState) -> bool:

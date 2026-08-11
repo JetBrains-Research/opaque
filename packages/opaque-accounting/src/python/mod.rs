@@ -30,6 +30,7 @@ impl From<PldError> for PyErr {
             | PldError::InfiniteBounds(_)
             | PldError::UnsupportedEvent(_) => PyValueError::new_err(message),
             PldError::NumericalError(_)
+            | PldError::SelfCompositionTooLarge { .. }
             | PldError::InsufficientMass(_, _)
             | PldError::CalibrationEvaluationFailed(_)
             | PldError::CalibrationConvergenceFailed { .. }
@@ -67,6 +68,14 @@ mod tests {
                     PldError::NumericalError("unstable convolution".into()),
                     false,
                     "unstable convolution",
+                ),
+                (
+                    PldError::SelfCompositionTooLarge {
+                        requested: 64,
+                        maximum: 32,
+                    },
+                    false,
+                    "exceeding the 32-element limit",
                 ),
                 (
                     PldError::InsufficientMass(0.2, 0.1),

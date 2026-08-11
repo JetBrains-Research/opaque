@@ -4,12 +4,62 @@ import pytest
 import torch
 
 from opaque.api.dpftrl.noise._engine import MFNoiseState, _matrix_factorization_noise
-from opaque.api.dpftrl.noise._streaming_matrix import identity, prefix_sum
+from opaque.api.dpftrl.noise._streaming_matrix import (
+    StreamingMatrix,
+    identity,
+    prefix_sum,
+)
 from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
 from opaque.random import key
+
+
+def _dense_as_streaming(matrix: torch.Tensor) -> StreamingMatrix:
+    def init_multiply(_: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return ()
+
+    def multiply_next(
+        value: torch.Tensor, previous: tuple[torch.Tensor, ...]
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+        row = matrix[len(previous), : len(previous) + 1]
+        inputs = (*previous, value)
+        output = sum(
+            (
+                coefficient * noise
+                for coefficient, noise in zip(row, inputs, strict=True)
+            ),
+            start=torch.zeros_like(value),
+        )
+        return output, inputs
+
+    return StreamingMatrix(init_multiply, multiply_next)
+
+
+def _empirical_sequence_covariance(
+    noising: torch.Tensor | StreamingMatrix,
+    *,
+    n_steps: int,
+) -> torch.Tensor:
+    grad = torch.zeros(512, dtype=torch.float64)
+    sequences = []
+    for seed in range(64):
+        noise_fn, state = _matrix_factorization_noise(
+            grad,
+            noising,
+            key=key(seed),
+            compute_dtype=torch.float64,
+            n_steps=n_steps,
+        )
+        rows = []
+        for _ in range(n_steps):
+            noised, state = noise_fn(grad, state, stddev=1.0)
+            rows.append(noised)
+        sequences.append(torch.stack(rows, dim=1))
+    samples = torch.cat(sequences, dim=0)
+    centered = samples - samples.mean(dim=0)
+    return centered.T @ centered / (len(samples) - 1)
 
 
 class TestDenseMatrixFactorizationNoise:
@@ -36,6 +86,16 @@ class TestDenseMatrixFactorizationNoise:
         grad = torch.zeros(10)
         with pytest.raises(ValueError, match="2D"):
             _matrix_factorization_noise(grad, torch.ones(5), key=key(42))
+
+    def test_sequence_covariance_matches_noising_matrix(self):
+        noising = torch.tensor(
+            [[1.0, 0.0, 0.0], [0.5, 1.0, 0.0], [-0.25, 0.2, 1.0]],
+            dtype=torch.float64,
+        )
+
+        observed = _empirical_sequence_covariance(noising, n_steps=len(noising))
+
+        torch.testing.assert_close(observed, noising @ noising.T, atol=0.025, rtol=0)
 
 
 class TestStreamingMatrixFactorizationNoise:
@@ -120,3 +180,33 @@ class TestStreamingMatrixFactorizationNoise:
         grad = torch.zeros(10)
         _noise_fn, state = _matrix_factorization_noise(grad, identity(), key=key(42))
         assert isinstance(state, MFNoiseState)
+
+    def test_sequence_covariance_matches_noising_matrix(self):
+        noising = torch.tensor(
+            [[1.0, 0.0, 0.0], [0.5, 1.0, 0.0], [-0.25, 0.2, 1.0]],
+            dtype=torch.float64,
+        )
+
+        observed = _empirical_sequence_covariance(
+            _dense_as_streaming(noising), n_steps=len(noising)
+        )
+
+        torch.testing.assert_close(observed, noising @ noising.T, atol=0.025, rtol=0)
+
+    def test_continuation_reuses_the_same_next_column_draw(self):
+        grad = torch.zeros(32, dtype=torch.float64)
+        noising = _dense_as_streaming(torch.tril(torch.ones(4, 4, dtype=torch.float64)))
+        noise_fn, state = _matrix_factorization_noise(
+            grad,
+            noising,
+            key=key(42),
+            compute_dtype=torch.float64,
+            n_steps=4,
+        )
+        for _ in range(2):
+            _, state = noise_fn(grad, state, stddev=1.0)
+
+        continued, _ = noise_fn(grad, state, stddev=1.0)
+        resumed, _ = noise_fn(grad, state, stddev=1.0)
+
+        torch.testing.assert_close(resumed, continued)

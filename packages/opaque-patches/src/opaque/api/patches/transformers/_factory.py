@@ -61,7 +61,11 @@ from opaque.api.patches.transformers.components.swiglu import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from opaque.api.patches.transformers.types import (
+        FamilyPatchFn,
+        ForwardFactory,
+        ModelPatchFn,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -109,10 +113,7 @@ _FUSED_ADD_RMS_FACTORIES = {
 # ----------------------------------------------------------------------------
 
 
-def register_activation_kind(
-    name: str,
-    factory: Callable,
-) -> None:
+def register_activation_kind(name: str, factory: ForwardFactory) -> None:
     """Register a custom gated-activation forward factory under ``name``.
 
     Args:
@@ -124,26 +125,29 @@ def register_activation_kind(
     _ACTIVATION_FACTORIES[name] = factory
 
 
-def register_rms_norm_kind(name: str, factory: Callable) -> None:
+def register_rms_norm_kind(name: str, factory: ForwardFactory) -> None:
     """Register a custom RMSNorm forward factory under ``name`` (read by
     ``make_apply_model_patches(rms_norm_kind=name)``)."""
     _RMSNORM_FACTORIES[name] = factory
 
 
-def register_fused_add_rms_kind(name: str, factory: Callable) -> None:
+def register_fused_add_rms_kind(name: str, factory: ForwardFactory) -> None:
     """Register a custom fused-add-RMSNorm DecoderLayer factory under
     ``name`` (read by
     ``make_apply_model_patches(fused_add_rms_kind=name)``)."""
     _FUSED_ADD_RMS_FACTORIES[name] = factory
 
 
-def register_moe_kind(name: str, factory: Callable) -> None:
+def register_moe_kind(name: str, factory: ForwardFactory) -> None:
     """Register a custom MoE experts-forward factory under ``name`` (read by
     ``make_apply_model_patches(moe_kind=name)``)."""
     _MOE_FACTORIES[name] = factory
 
 
-def _resolve(spec, registry: dict[str, Callable]) -> Callable | None:
+def _resolve(
+    spec: str | ForwardFactory | None,
+    registry: dict[str, ForwardFactory],
+) -> ForwardFactory | None:
     """Convert a kind-spec to a factory callable.
 
     ``spec`` accepts: ``None`` (no patch), a registered string name,
@@ -164,14 +168,14 @@ def _resolve(spec, registry: dict[str, Callable]) -> Callable | None:
 def make_apply_model_patches(
     *,
     family: str,
-    family_apply: Callable,
+    family_apply: FamilyPatchFn,
     module_path: str,
     classes: dict[str, str],
-    activation_kind: str | Callable | None = None,
-    rms_norm_kind: str | Callable | None = None,
-    fused_add_rms_kind: str | Callable | None = None,
-    moe_kind: str | Callable | None = None,
-) -> Callable:
+    activation_kind: str | ForwardFactory | None = None,
+    rms_norm_kind: str | ForwardFactory | None = None,
+    fused_add_rms_kind: str | ForwardFactory | None = None,
+    moe_kind: str | ForwardFactory | None = None,
+) -> ModelPatchFn:
     """Build an ``apply_X_patches`` function for a given family.
 
     The returned function applies family-runtime patches lazily on first
@@ -230,12 +234,12 @@ def make_apply_model_patches(
     moe_factory = _resolve(moe_kind, _MOE_FACTORIES)
 
     def apply(
-        model=None,
+        model: object | None = None,
         *,
         performance: bool = True,
         compat: bool = True,
         kernels: bool | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> None:
         # ``kernels`` requests accelerated kernels; each install below checks the
         # environment. ``triton_ok`` gates the Triton-only kernels (activation /

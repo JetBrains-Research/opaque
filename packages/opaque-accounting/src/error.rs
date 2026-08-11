@@ -34,6 +34,12 @@ pub enum PldError {
     #[error("Numerical error: {0}")]
     NumericalError(String),
 
+    /// Exact self-composition exceeds the bounded FFT size.
+    #[error(
+        "Exact self-composition requires an FFT buffer of {requested} elements, exceeding the {maximum}-element limit; configure a positive tail-mass truncation budget or use a coarser grid"
+    )]
+    SelfCompositionTooLarge { requested: usize, maximum: usize },
+
     /// Insufficient probability mass for the requested delta
     #[error("Insufficient probability mass: {0} > {1}")]
     InsufficientMass(f64, f64),

@@ -213,6 +213,35 @@ def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     assert reported >= target_eps - 0.5
 
 
+def test_fractional_epochs_calibrate_and_compose_resolved_horizon(
+    gpt2_lora, lm_dataset, tmp_path
+):
+    """Fractional epochs calibrate and compose their ceiling step horizon."""
+    model, tok = gpt2_lora
+    target_eps, delta = 8.0, 1e-5
+    args = _args(
+        tmp_path,
+        max_steps=-1,
+        num_train_epochs=1.25,
+        privacy_noise_multiplier=None,
+        privacy_target_epsilon=target_eps,
+        privacy_target_delta=delta,
+        save_strategy="no",
+    )
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
+    )
+    out = trainer.train()
+
+    sigma = trainer.state.privacy_resolved_noise_multiplier
+    q = trainer.state.privacy_sample_rate
+    assert trainer.state.privacy_total_steps == 3
+    assert out.global_step == 3
+    assert out.metrics["privacy_epsilon"] == pytest.approx(
+        _reference_epsilon(sigma, q, 3, delta), rel=1e-3
+    )
+
+
 def test_random_allocation_calibration_and_step_accounting(
     gpt2_lora, lm_dataset, tmp_path
 ):

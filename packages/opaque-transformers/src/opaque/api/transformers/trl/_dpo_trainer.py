@@ -30,7 +30,6 @@ import dataclasses
 import hashlib
 import json
 import math
-import uuid
 from collections.abc import Mapping
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any
@@ -694,8 +693,7 @@ class DPOTrainer(DPTrainer):
 
         TR-DPO recomputes the reference logps each step (``_augment_inputs``), so
         the seed values don't matter for correctness — they only populate the
-        columns so ``batch_keys`` includes them. The seed is therefore not cached
-        (a per-run nonce in the cache key).
+        columns so ``batch_keys`` includes them. The seed is not persisted.
         """
         ref = ref_model if ref_model is not None else copy.deepcopy(model)
         if disable_dropout:
@@ -704,8 +702,6 @@ class DPOTrainer(DPTrainer):
         for p in ref.parameters():
             p.requires_grad_(False)
         self._tr_ref = ref
-
-        nonce = uuid.uuid4().hex
 
         def seed(dataset: Any) -> Any:
             if dataset is None or isinstance(dataset, dict):
@@ -716,7 +712,8 @@ class DPOTrainer(DPTrainer):
                 collator=collator,
                 output_columns=_REF_COLUMNS,
                 batch_size=batch_size,
-                cache_identity={"kind": "trdpo-seed", "nonce": nonce},
+                cache_identity={"kind": "trdpo-seed"},
+                use_cache=False,
             )
 
         return seed(train_dataset), seed(eval_dataset)

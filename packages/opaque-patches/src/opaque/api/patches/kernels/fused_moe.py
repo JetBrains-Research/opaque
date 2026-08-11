@@ -11,10 +11,13 @@ torch path for CPU/fp32.
 Strategy (per the MoE-port lessons): tokens are sorted by expert and run through
 ``torch._grouped_mm`` for the three mode-1 (offset-grouped along the token dim)
 GEMMs — forward up-proj, forward down-proj, backward ``dx``. The mode-2
-per-group weight grads (``dW1``/``dW2``) can't use ``_grouped_mm`` (it asserts
-16-byte-aligned group sizes — unusable for data-dependent MoE groups), so a
-single custom Triton kernel :func:`_grouped_AtB` computes ``out[g] = A_g^T @ B_g``
-over the variable-size row groups. All reductions accumulate in fp32.
+per-group weight grads (``dW1``/``dW2``) compute ``out[g] = A_g^T @ B_g`` with
+the contraction grouped along the *token* axis. ``torch._grouped_mm`` expresses
+this via its 2D×2D layout (``_grouped_mm(A.mT, B, offs)``); its 16-byte rule is
+on matrix *strides* (the ``2I``/``H``/``I`` model dims), not the data-dependent
+group sizes. A single custom Triton kernel :func:`_grouped_AtB` computes it
+directly over the variable-size row groups as a fused variant (perf comparison
+pending — #417). All reductions accumulate in fp32.
 
 Per-sample weight grads under ``vmap(grad)`` (DP-SGD) use **virtual experts**:
 sample ``b``'s tokens for real expert ``e`` are assigned to group ``b*E + e``, so
@@ -109,7 +112,8 @@ def _grouped_AtB_kernel(
 def _grouped_AtB(A, B, seg_offs, G):
     """``out[g] = A[group g]^T @ B[group g]`` for row-groups defined by ``seg_offs``
     (exclusive prefix, length G+1). ``A`` (M,P), ``B`` (M,Q) -> ``out`` (G,P,Q).
-    fp32 accumulate, cast to ``A.dtype``. The mode-2 weight grad torch can't do."""
+    fp32 accumulate, cast to ``A.dtype``. Same op as ``torch._grouped_mm(A.mT,
+    B, offs)`` (2D×2D layout); kept as a fused Triton variant."""
     A = A.contiguous()
     B = B.contiguous()
     P, Q = A.shape[1], B.shape[1]
@@ -151,7 +155,7 @@ def _grouped_mm(A, Bw, ends):
     ``Bw`` (G,Kc,Nc) -> (M,Nc). ``ends`` = int32 cumulative group ends.
 
     ``Bw`` may be a non-contiguous ``.mT`` view — grouped_mm consumes it directly,
-    avoiding a transient full-weight copy (matters at MoE scale)."""
+    avoiding a transient full-weight copy."""
     return torch._grouped_mm(A.contiguous(), Bw, offs=ends)
 
 
@@ -208,12 +212,13 @@ def _fused_moe_backward(
     ``dW2`` (n_groups,H,I), ``dtw`` (N,K).
 
     The mode-1 GEMMs (forward recompute, ``dh``, ``dx``) use **real-expert**
-    grouping with the shared weights (``E <= 1024`` groups — within
-    ``torch._grouped_mm``'s cap). The mode-2 per-group weight grads use
+    grouping with the shared weights. The mode-2 per-group weight grads use
     ``group_of_row`` (== real expert for the summed path, or the virtual expert
     ``b*E+e`` for the per-sample DP path) and run through the custom
-    :func:`_grouped_AtB` Triton kernel, which has no group cap and needs no
-    repeated-weight buffer.
+    :func:`_grouped_AtB` Triton kernel, which keeps each group's grad separate
+    (never summed across groups). ``torch._grouped_mm``'s 2D×2D layout expresses
+    the same op; the Triton path is a fused variant (perf comparison pending —
+    #417).
 
     ``compute_wgrad=False`` skips the mode-2 weight grads (returns
     ``dW1=dW2=None``) for frozen expert weights: their per-sample

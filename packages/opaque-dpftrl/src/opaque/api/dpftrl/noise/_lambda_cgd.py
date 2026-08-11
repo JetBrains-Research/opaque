@@ -20,7 +20,7 @@ References:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
@@ -41,6 +41,7 @@ from ._engine import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from opaque.api.engine.scheduling.types import Schedule
     from opaque.random.types import RngKey
     from opaque.types import PerGroup
 
@@ -53,6 +54,15 @@ def _native():
     return _n
 
 
+def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
+    """Materialize a schedule at ``[0, n)`` for a cached Gram query."""
+    return (
+        None
+        if lr_schedule is None
+        else tuple(float(lr_schedule(step)) for step in range(n))
+    )
+
+
 @lru_cache(maxsize=256)
 def _lambda_cgd_gram_matrix_cached(
     lambda_: float,
@@ -60,8 +70,21 @@ def _lambda_cgd_gram_matrix_cached(
     n_steps: int,
     min_sep: int,
     max_participations: int | None,
+    lr_key: tuple[float, ...] | None,
 ) -> tuple[float, ...]:
     """Gram sequence for λ-CGD; cached across repeated σ / PLD probes."""
+    if lr_key is not None:
+        return tuple(
+            _native().lambda_cgd_gram_matrix_lr(
+                lambda_,
+                0.0,
+                n_steps,
+                min_sep,
+                max_participations,
+                normalized,
+                list(lr_key),
+            )
+        )
     return tuple(
         _native().lambda_cgd_gram_matrix(
             lambda_, n_steps, min_sep, max_participations, normalized
@@ -97,6 +120,7 @@ class LambdaCgdStrategy:
 
     lambda_: float
     normalized: bool = True
+    lr_schedule: Schedule | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
@@ -112,7 +136,12 @@ class LambdaCgdStrategy:
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
         return _lambda_cgd_gram_matrix_cached(
-            self.lambda_, self.normalized, n_steps, min_sep, max_participations
+            self.lambda_,
+            self.normalized,
+            n_steps,
+            min_sep,
+            max_participations,
+            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
@@ -167,17 +196,24 @@ def lambda_cgd_strategy(
     *,
     lambda_: float,
     normalized: bool = True,
+    lr_schedule: Schedule | None = None,
 ) -> LambdaCgdStrategy:
     """Create a DP-lambda-CGD strategy recipe (bandwidth=2, PRNG-replay noise).
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
         normalized: Use column-normalized matrix (default True).
+        lr_schedule: Optional per-step learning-rate schedule used for
+            schedule-weighted Gram accounting. λ-CGD remains momentum-free.
 
     Returns:
         A :class:`LambdaCgdStrategy` recipe.
     """
-    return LambdaCgdStrategy(lambda_=lambda_, normalized=normalized)
+    return LambdaCgdStrategy(
+        lambda_=lambda_,
+        normalized=normalized,
+        lr_schedule=lr_schedule,
+    )
 
 
 # ---------------------------------------------------------------------------

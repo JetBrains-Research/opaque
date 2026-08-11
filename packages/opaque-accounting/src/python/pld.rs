@@ -1,5 +1,6 @@
 //! PyPld: opaque handle wrapping PrivacyLossDistribution.
 
+use pyo3::exceptions::{PyOverflowError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::pld::PrivacyLossDistribution;
@@ -25,6 +26,17 @@ pub struct PyPld {
 impl PyPld {
     pub(super) fn new(inner: PrivacyLossDistribution) -> Self {
         Self { inner }
+    }
+
+    fn composition_count(count: i64) -> PyResult<usize> {
+        if count <= 0 {
+            return Err(PyValueError::new_err("count must be greater than zero"));
+        }
+
+        let overflow = || PyOverflowError::new_err(format!("count must not exceed {}", u32::MAX));
+        let count = u32::try_from(count).map_err(|_| overflow())?;
+
+        usize::try_from(count).map_err(|_| overflow())
     }
 }
 
@@ -126,22 +138,27 @@ impl PyPld {
     /// Args:
     ///     count (int): Repetition count. Must be > 0.
     ///
+    /// Raises:
+    ///     ValueError: If count is not positive.
+    ///     OverflowError: If count exceeds 2**32 - 1.
+    ///     RuntimeError: If exact composition exceeds the bounded FFT size.
+    ///
     /// Returns:
     ///     Pld: Self-composed PLD.
     #[pyo3(text_signature = "(self, count)")]
-    fn self_compose(&self, count: usize) -> PyPld {
-        PyPld {
-            inner: self.inner.self_compose(count),
-        }
+    fn self_compose(&self, count: i64) -> PyResult<PyPld> {
+        Ok(PyPld {
+            inner: self.inner.self_compose(Self::composition_count(count)?)?,
+        })
     }
 
     /// ``pld * k`` is shorthand for ``pld.self_compose(k)``.
-    fn __mul__(&self, count: usize) -> PyPld {
+    fn __mul__(&self, count: i64) -> PyResult<PyPld> {
         self.self_compose(count)
     }
 
     /// ``k * pld`` also works.
-    fn __rmul__(&self, count: usize) -> PyPld {
+    fn __rmul__(&self, count: i64) -> PyResult<PyPld> {
         self.self_compose(count)
     }
 

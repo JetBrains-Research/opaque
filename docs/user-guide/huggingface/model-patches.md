@@ -218,8 +218,12 @@ are left untouched. Disable with `apply_model_patches(model, moe=False)`.
 GPT-OSS and DeepSeek-V4 use custom expert activations (clamped SwiGLU + MXFP4 /
 scaled experts), so their experts are intentionally left to HF — only RMSNorm,
 RoPE (where standard), and cross-entropy are patched (mirrors Liger's choices).
-The current `Opaque_MoE` is dense (correctness + DP/vmap compatibility); a fused
-Triton grouped-GEMM kernel is the planned performance follow-up.
+The dense `Opaque_MoE` is the always-correct DP/vmap-safe fallback. `opaque_moe`
+dispatches to a sparse grouped-GEMM path only where it pays off: CUDA bf16/fp16
+hosts with Triton use the fused Triton kernel (`Opaque_FusedMoE`); otherwise a
+large-expert MoE (`E >= 16`) with `torch._grouped_mm` available uses the MPS/CPU
+`Opaque_GroupedMoE` variant. Smaller MoEs (e.g. Mixtral-8) and fp32 / no-Triton
+hosts stay on the dense path.
 
 The original dense **Mellum** (`Mellum-4b`, `model_type="llama"`) needs no MoE
 support — it is a Llama checkpoint served by the `llama` family.

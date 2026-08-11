@@ -56,7 +56,11 @@ mod tests {
         let g = crate::mechanisms::gaussian_pld(1.0, &config).unwrap();
 
         // Identity is the neutral element: composing with Gaussian gives the same result.
-        let composed = id.self_compose(1).compose(&g.self_compose(1)).unwrap();
+        let composed = id
+            .self_compose(1)
+            .unwrap()
+            .compose(&g.self_compose(1).unwrap())
+            .unwrap();
         for &delta in &[1e-10, 1e-5, 0.1] {
             let eps_g = g.epsilon_at(delta);
             let eps_c = composed.epsilon_at(delta);

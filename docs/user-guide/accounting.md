@@ -90,6 +90,11 @@ eps = total.epsilon_at(delta=1e-5)
 Composition is automatically optimized: identical processes are merged into
 repeated nodes (2 FFTs instead of N), and identity processes are elided.
 
+Large homogeneous compositions require a positive `tail_mass_truncation`
+budget. Setting it to zero requests exact composition; if the requested
+composition is too large, accounting raises an error. Use a positive tail
+budget or a coarser discretization in that case.
+
 ## Mechanisms
 
 ### `dpsgd_acc.gaussian(noise_multiplier)`

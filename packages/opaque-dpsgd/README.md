@@ -2,19 +2,15 @@
 
 Differentially Private SGD mechanisms for Opaque: Gaussian noise (optionally
 bounded — [Chen and Hale, 2024](https://arxiv.org/abs/2211.17230)), clipping
-(fixed, AUTO-S, adaptive), and Poisson subsampling. Clipping entry points live in
-[`opaque.dpsgd.clipping`](../opaque-core/README.md). Functional optimizers
+(fixed, AUTO-S, adaptive), and Poisson subsampling. Functional optimizers
 (including the universal ``adamw`` with optional DP bias-correction) live in
-[`opaque.optimizers`](../opaque-core/README.md).
+[`opaque.optimizers`](../opaque-optimizers/README.md).
 
 ## Install
 
-```bash
-pip install opaque
-```
-
-This package is an internal implementation package in the `opaque.*`
-namespace. Use `opaque` as the public installation target.
+Install the root package as described in the [repository installation guide](
+https://github.com/JetBrains-Research/opaque#installation).
+`opaque-dpsgd` is included in the default `opaque` package set.
 
 ## Quick start
 
@@ -33,4 +29,4 @@ from opaque.dpsgd.sampling import PoissonSampler
 - `opaque.dpsgd.sampling` — `PoissonSampler` (optional ``truncated_batch_size``)
 
 RNG keys, pytree helpers, distributed plumbing, and serialization live in
-[`opaque-core`](../opaque-core/README.md).
+[`opaque-engine`](../opaque-engine/README.md).

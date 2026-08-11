@@ -66,29 +66,20 @@ __all__ = [
 
 
 def _assert_int_equal(value: int, *, name: str) -> None:
-    """Exact integer equality across ranks (no float tolerance window).
-
-    ``assert_scalar_equal`` uses ``torch.isclose`` with ``rtol=1e-5``, so at
-    large step counts adjacent integers fall within tolerance and the audit
-    silently misses single-step drift.  Compare integers exactly instead by
-    pinning ``atol=0`` / ``rtol=0``.
-    """
-    assert_scalar_equal(float(int(value)), name=name, atol=0.0, rtol=0.0)
+    """Exact integer equality across ranks."""
+    assert_scalar_equal(int(value), name=name)
 
 
 def _assert_str_equal(value: str, *, name: str) -> None:
-    """Cross-rank string equality via 64-bit blake2b fingerprint.
+    """Cross-rank string equality via 48-bit blake2b fingerprint.
 
     Python's built-in :func:`hash` is salted per process, so we hash the
-    UTF-8 bytes with a stable hasher.  We then collapse the 128-bit digest to
-    a ``float`` (two 32-bit halves combined exactly into a 53-bit-mantissa
-    float — see :func:`int.from_bytes`) and compare with ``atol=0`` /
-    ``rtol=0``.  Two distinct strings have astronomical collision odds at
-    this width.
+    UTF-8 bytes with a stable hasher and compare the resulting integer exactly.
+    Two distinct strings have astronomical collision odds at this width.
     """
     digest = hashlib.blake2b(value.encode("utf-8"), digest_size=6).digest()
-    fp = float(int.from_bytes(digest, "big"))
-    assert_scalar_equal(fp, name=name, atol=0.0, rtol=0.0)
+    fp = int.from_bytes(digest, "big")
+    assert_scalar_equal(fp, name=name)
 
 
 def _assert_tensor_fingerprint_equal(tensor: torch.Tensor, *, name: str) -> None:
@@ -102,14 +93,14 @@ def _assert_tensor_fingerprint_equal(tensor: torch.Tensor, *, name: str) -> None
     """
     if tensor.numel() == 0:
         # Empty tensor has no statistics; assert shape via dim count.
-        assert_scalar_equal(float(tensor.ndim), name=f"{name}.ndim", atol=0.0, rtol=0.0)
+        assert_scalar_equal(tensor.ndim, name=f"{name}.ndim")
         return
     t = tensor.detach().double()
     assert_scalar_equal(float(t.sum().item()), name=f"{name}.sum")
     assert_scalar_equal(float((t * t).sum().item()), name=f"{name}.sumsq")
     assert_scalar_equal(float(t.amin().item()), name=f"{name}.min")
     assert_scalar_equal(float(t.amax().item()), name=f"{name}.max")
-    assert_scalar_equal(float(tensor.numel()), name=f"{name}.numel", atol=0.0, rtol=0.0)
+    assert_scalar_equal(tensor.numel(), name=f"{name}.numel")
 
 
 # ---------------------------------------------------------------------------

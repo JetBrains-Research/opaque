@@ -8,8 +8,9 @@ Covers the four §7.8 dispatch paths:
 2. **LoRA-with-ref-adapter path** (§7.8 row 2): ``null_ref_context(peft_model)``
    when a ``"ref"`` adapter exists — active adapter is ``"ref"`` inside the
    block; original active adapter is restored on exit.
-3. **Separate-model path** (§7.8 row 1): ``null_ref_context(plain_model,
-   ref_model=other_plain_model)`` — no-op (doesn't raise, doesn't mutate).
+3. **Separate-model path** (§7.8 row 1): ``null_ref_context(policy,
+   ref_model=other_model)`` — no-op (doesn't raise, doesn't mutate), including
+   when either model is PEFT-wrapped.
 4. **Non-PEFT no-ref path** (§7.8 row 4): ``null_ref_context(plain_module)``
    — no-op.
 5. ``with_disabled_adapter`` no-op on a plain ``nn.Linear``.
@@ -272,6 +273,55 @@ def test_separate_model_path_noop_with_peft_policy() -> None:
 
     assert active_inside == active_before, "Separate-model path mutated PEFT adapter"
     assert active_after == active_before, "Separate-model path mutated PEFT adapter"
+
+
+def test_separate_peft_reference_path_leaves_policy_adapter_active() -> None:
+    """A PEFT reference is still separate and must not switch policy adapters."""
+    policy = _make_peft_model()
+    reference = _make_peft_model()
+    policy.add_adapter(
+        "ref",
+        LoraConfig(
+            target_modules=["linear"],
+            r=2,
+            lora_alpha=4,
+            init_lora_weights=False,
+        ),
+    )
+    policy.set_adapter("default")
+    x = torch.randn(2, 8)
+    out_before = policy(x).detach().clone()
+
+    with null_ref_context(policy, ref_model=reference):
+        active_inside = list(policy.active_adapters)
+        out_inside = policy(x)
+
+    assert active_inside == ["default"]
+    assert list(policy.active_adapters) == ["default"]
+    assert torch.allclose(out_inside, out_before)
+
+
+def test_shared_peft_reference_model_is_rejected_before_mutating_policy() -> None:
+    """Passing the policy as its own explicit reference is ambiguous and invalid."""
+    policy = _make_peft_model()
+    policy.add_adapter(
+        "ref",
+        LoraConfig(
+            target_modules=["linear"],
+            r=2,
+            lora_alpha=4,
+            init_lora_weights=False,
+        ),
+    )
+    policy.set_adapter("default")
+
+    with (
+        pytest.raises(ValueError, match="separate model"),
+        null_ref_context(policy, ref_model=policy),
+    ):
+        pytest.fail("invalid shared reference entered the context")
+
+    assert list(policy.active_adapters) == ["default"]
 
 
 # ---------------------------------------------------------------------------
