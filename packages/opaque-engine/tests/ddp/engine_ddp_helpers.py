@@ -516,3 +516,75 @@ def _worker_sync_aux_empty_vs_per_group(rank: int, world_size: int, port: int) -
         assert abs(token.item() - float(world_size)) < 1e-5
     finally:
         _cleanup_ddp()
+
+
+def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) -> None:
+    """Exercise schema mismatches without leaving Gloo ranks desynchronized."""
+    from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
+    from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+    from opaque.api.engine.profiling._distributed import (
+        sync_perf_state,
+        sync_perf_tracker,
+    )
+    from opaque.profiling import PerfState, PerfTracker, StepPerf
+
+    @dataclass(frozen=True)
+    class _CompatibleAux(ClippedGradAux):
+        pass
+
+    @dataclass(frozen=True)
+    class _UnsupportedAux(ClippedGradAux):
+        extra: torch.Tensor | None = None
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        aux = _CompatibleAux(
+            loss_values=torch.tensor([float(rank)]),
+            grad_norms=torch.tensor([1.0]),
+            clipped_grad_norms=torch.tensor([1.0]),
+            clipping_rate=0.0,
+            batch_size=1,
+        )
+        synced_aux = sync_clipped_grad_aux(aux)
+        assert type(synced_aux) is _CompatibleAux
+        assert synced_aux.batch_size == world_size
+
+        with pytest.raises(TypeError, match="synchronization schema"):
+            sync_clipped_grad_aux(_UnsupportedAux(extra=torch.tensor([float(rank)])))
+
+        with pytest.raises(RuntimeError, match="clipping_rate presence mismatch"):
+            sync_clipped_grad_aux(
+                ClippedGradAux(
+                    grad_norms=torch.empty(0),
+                    clipped_grad_norms=torch.empty(0),
+                    clipping_rate=None if rank == 0 else 0.0,
+                    batch_size=0,
+                )
+            )
+
+        ordered_tracker = PerfTracker(torch.device("cpu"), warmup_steps=0)
+        for name in ("train", "eval") if rank == 0 else ("eval", "train"):
+            stage = ordered_tracker[name]
+            stage.num_steps = 1
+        synced_tracker = sync_perf_tracker(ordered_tracker)
+        assert tuple(synced_tracker.stages) == ("eval", "train")
+
+        mismatched_tracker = PerfTracker(torch.device("cpu"), warmup_steps=0)
+        mismatched_tracker["train" if rank == 0 else "eval"].num_steps = 1
+        with pytest.raises(RuntimeError, match="stage schema mismatch"):
+            sync_perf_tracker(mismatched_tracker)
+
+        state = PerfState(
+            device=torch.device("cpu"),
+            last_step=(
+                None if rank == 0 else StepPerf(step_time_sec=1.0, batch_size=1)
+            ),
+        )
+        with pytest.raises(RuntimeError, match="StepPerf presence mismatch"):
+            sync_perf_state(state)
+
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == float(world_size)
+    finally:
+        _cleanup_ddp()

@@ -304,14 +304,17 @@ def gather_pytree(pytree: Any, dim: int = 0) -> Any:
 
 def sync_object(
     state: Any,
-    field_ops: Mapping[str, str | Callable[..., float | int | None]] | None = None,
+    field_ops: Mapping[str, str | Callable[..., float | int | None]],
     device: torch.device | None = None,
 ) -> Any:
     """All-reduce scalar fields of a dataclass, returning a new instance.
 
     ``field_ops`` maps field name to a reduction op string
-    (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal"``) or to a
-    callable ``fn(value[, device]) -> float | int | None``.
+    (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal" |
+    "assert_optional_equal" | "local"``) or to a callable
+    ``fn(value[, device]) -> float | int | None``.
+    Every dataclass field must be present in this mapping. ``"local"`` marks a
+    field whose rank-local value is intentionally carried through unchanged.
 
     **Callable semantics:** invoked on the raw field value (any type).  If the
     return value is a real ``float`` or ``int`` (not ``bool``), it replaces the
@@ -319,33 +322,57 @@ def sync_object(
     If the return value is ``None``, the callable is treated as **assertion
     only** — no field update.
 
-    Defaults to averaging all numeric fields when ``field_ops`` is None.
+    The complete schema is validated before any distributed collective begins,
+    and operations execute in dataclass declaration order rather than mapping
+    insertion order. This prevents rank-local values from changing the
+    collective schedule.
     """
-    if not is_distributed():
-        return state
-
     if not is_dataclass(state):
         raise TypeError(f"state must be a dataclass, got {type(state)}")
 
-    state_fields = {f.name for f in fields(state)}
+    dataclass_fields = fields(state)
+    state_fields = {field.name for field in dataclass_fields}
+    field_op_names = set(field_ops)
+    unknown_fields = field_op_names - state_fields
+    missing_fields = state_fields - field_op_names
+    if unknown_fields or missing_fields:
+        details = []
+        if unknown_fields:
+            details.append(f"unknown fields: {sorted(unknown_fields)}")
+        if missing_fields:
+            details.append(f"missing fields: {sorted(missing_fields)}")
+        raise ValueError(
+            "field_ops must define every dataclass field; " + "; ".join(details) + "."
+        )
 
-    if field_ops is None:
-        field_ops = {}
-        for f in fields(state):
-            val = getattr(state, f.name)
-            if isinstance(val, (float, int)) and not isinstance(val, bool):
-                field_ops[f.name] = "mean"
-    else:
-        invalid_fields = set(field_ops) - state_fields
-        if invalid_fields:
+    valid_ops = {
+        "sum",
+        "mean",
+        "max",
+        "min",
+        "product",
+        "assert_equal",
+        "assert_optional_equal",
+        "local",
+    }
+    for field in dataclass_fields:
+        field_op = field_ops[field.name]
+        if isinstance(field_op, str) and field_op not in valid_ops:
             raise ValueError(
-                f"field_ops contains non-existent fields: {invalid_fields}. "
-                f"Available fields: {state_fields}"
+                f"field_ops[{field.name!r}] has unsupported operation {field_op!r}. "
+                f"Expected one of {sorted(valid_ops)} or a callable."
             )
 
+    if not is_distributed():
+        return state
+
     updates: dict[str, Any] = {}
-    for field_name, field_op in field_ops.items():
+    for field in dataclass_fields:
+        field_name = field.name
+        field_op = field_ops[field_name]
         value = getattr(state, field_name)
+        if field_op == "local":
+            continue
         if callable(field_op):
             try:
                 result = field_op(value, device)
@@ -353,12 +380,20 @@ def sync_object(
                 result = field_op(value)
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
+            if isinstance(value, bool):
+                raise TypeError(
+                    f"Callable field_ops[{field_name!r}] cannot update a bool field; "
+                    "use 'local' or return None for assertion-only behavior."
+                )
             synced = int(result) if isinstance(value, int) else float(result)
             updates[field_name] = synced
             continue
-        if not isinstance(value, (float, int)):
-            continue
         if field_op == "assert_equal":
+            if not isinstance(value, (float, int)) or isinstance(value, bool):
+                raise TypeError(
+                    f"field_ops[{field_name!r}]='assert_equal' requires a float or int, "
+                    f"got {type(value).__name__}."
+                )
             assert_scalar_equal(
                 value,
                 name=f"{type(state).__name__}.{field_name}",
@@ -367,12 +402,35 @@ def sync_object(
                 compute_dtype=torch.float64 if isinstance(value, float) else None,
             )
             continue
-        if isinstance(field_op, str):
-            synced = reduce_scalar(value, op=field_op, device=device)
-        else:
-            raise TypeError(
-                f"field_ops[{field_name}] must be str or callable, got {type(field_op)}"
+        if field_op == "assert_optional_equal":
+            is_present = int(value is not None)
+            present_min = reduce_scalar(is_present, op="min", device=device)
+            present_max = reduce_scalar(is_present, op="max", device=device)
+            if present_min != present_max:
+                raise RuntimeError(
+                    f"{type(state).__name__}.{field_name} presence mismatch across ranks."
+                )
+            if not is_present:
+                continue
+            if not isinstance(value, (float, int)) or isinstance(value, bool):
+                raise TypeError(
+                    f"field_ops[{field_name!r}]='assert_optional_equal' requires "
+                    f"a float, int, or None, got {type(value).__name__}."
+                )
+            assert_scalar_equal(
+                value,
+                name=f"{type(state).__name__}.{field_name}",
+                atol=0.0,
+                rtol=0.0,
+                compute_dtype=torch.float64 if isinstance(value, float) else None,
             )
+            continue
+        if not isinstance(value, (float, int)) or isinstance(value, bool):
+            raise TypeError(
+                f"field_ops[{field_name!r}]={field_op!r} requires a float or int, "
+                f"got {type(value).__name__}."
+            )
+        synced = reduce_scalar(value, op=field_op, device=device)
         if isinstance(value, int):
             synced = int(synced)
         updates[field_name] = synced
