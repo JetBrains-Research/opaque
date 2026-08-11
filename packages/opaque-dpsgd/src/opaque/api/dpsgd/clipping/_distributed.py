@@ -30,6 +30,20 @@ from ._adaptive import (
     _sample_noisy_clipping_rate,
 )
 
+_ADAPTIVE_CLIP_STATE_FIELD_OPS: dict[str, str] = {
+    "_current_clipping_norm": "local",
+    "_next_clipping_norm": "local",
+    "_step": "local",
+    "_rng_key": "local",
+    "_fraction_noise_std": "local",
+    "_learning_rate": "local",
+    "_target_quantile": "local",
+    "_clipping_norm_min": "local",
+    "_clipping_norm_max": "local",
+    "_num_clipped": "sum",
+    "_batch_size": "sum",
+}
+
 __all__ = [
     "sync_adaptive_clip_state",
     "sync_adaptive_clipped_grad_aux",
@@ -84,10 +98,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     synced = sync_object(
         state,
-        field_ops={
-            "_num_clipped": "sum",
-            "_batch_size": "sum",
-        },
+        field_ops=_ADAPTIVE_CLIP_STATE_FIELD_OPS,
     )
 
     if synced._batch_size == 0:

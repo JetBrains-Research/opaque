@@ -6,6 +6,7 @@ For actual multi-device distributed tests, see ``test_collectives.py`` and
 """
 
 import importlib
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -127,6 +128,24 @@ class TestAllReduceValidation:
                 all_reduce(tensor, op=op)
             with pytest.raises(RuntimeError, match="not initialized"):
                 all_reduce_(tensor, op=op)
+
+
+class TestSyncObjectSchema:
+    @dataclass(frozen=True)
+    class _State:
+        count: int
+        label: str
+
+    def test_requires_a_complete_field_schema(self):
+        with pytest.raises(ValueError, match="missing fields"):
+            sync_object(self._State(count=1, label="local"), {"count": "sum"})
+
+    def test_rejects_unknown_schema_fields(self):
+        with pytest.raises(ValueError, match="unknown fields"):
+            sync_object(
+                self._State(count=1, label="local"),
+                {"count": "sum", "label": "local", "missing": "local"},
+            )
 
 
 class TestBoundedGradientAggregation:

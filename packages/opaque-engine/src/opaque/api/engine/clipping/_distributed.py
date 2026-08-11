@@ -65,30 +65,58 @@ def sync_clip_state(
     return state
 
 
-# Scalar aux fields reduced with a fixed all-reduce sequence. Everything else
-# is treated as gather-able (tensors / nested tensor pytrees / None placeholders)
-# so ranks with empty Poisson batches still walk the same collective schedule.
+# Each supported aux family has a complete field schema.  Do not infer this
+# from a subclass's dataclass fields: an unregistered extension could otherwise
+# make only one rank issue an extra gather.
+_AUX_FIELD_SCHEMAS = {
+    ClippedFunAux: (
+        "values",
+        "norms",
+        "clipped_norms",
+        "value_aux",
+        "clipping_rate",
+        "batch_size",
+        "group_norms",
+    ),
+    ClippedGradAux: (
+        "loss_values",
+        "grad_norms",
+        "clipped_grad_norms",
+        "loss_aux",
+        "clipping_rate",
+        "batch_size",
+        "group_norms",
+    ),
+}
 _SCALAR_AUX_FIELDS = frozenset({"clipping_rate", "batch_size"})
 
 
-def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
-    """Split dataclass fields by schema, not by runtime value.
+def _split_aux_fields(
+    aux: ClippedFunAux | ClippedGradAux,
+    schema_type: type[ClippedFunAux] | type[ClippedGradAux],
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Split a supported auxiliary output using its declared field schema."""
+    schema = _AUX_FIELD_SCHEMAS[schema_type]
+    actual = tuple(field.name for field in dataclasses.fields(aux))
+    if actual != schema:
+        unexpected = sorted(set(actual) - set(schema))
+        missing = sorted(set(schema) - set(actual))
+        details = []
+        if unexpected:
+            details.append(f"unexpected fields: {unexpected}")
+        if missing:
+            details.append(f"missing fields: {missing}")
+        raise TypeError(
+            f"{type(aux).__name__} does not match the {schema_type.__name__} "
+            f"synchronization schema ({'; '.join(details)})."
+        )
 
-    Classifying by ``isinstance`` / ``is None`` made empty-batch ranks drop
-    tensor fields from the gather map while non-empty ranks kept them, so the
-    two sides issued different collective sequences and permanently desynced
-    the process group.
-    """
-    tensor_fields: dict[str, object] = {}
-    scalar_fields: dict[str, object] = {}
-
-    for f in dataclasses.fields(aux):
-        value = getattr(aux, f.name)
-        if f.name in _SCALAR_AUX_FIELDS:
-            scalar_fields[f.name] = value
-        else:
-            tensor_fields[f.name] = value
-
+    tensor_fields = {
+        name: getattr(aux, name) for name in schema if name not in _SCALAR_AUX_FIELDS
+    }
+    scalar_fields = {
+        name: getattr(aux, name) for name in schema if name in _SCALAR_AUX_FIELDS
+    }
     return tensor_fields, scalar_fields
 
 
@@ -169,9 +197,8 @@ def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
     """
     gathered: dict[str, object] = {}
     default_device = _infer_device_from_fields(tensor_fields)
-    # Sorted keys → identical collective order on every rank.
-    for name in sorted(tensor_fields):
-        local = tensor_fields[name]
+    # Callers derive this declaration order from the registered aux schema.
+    for name, local in tensor_fields.items():
         payloads = [None] * get_world_size()
         dist.all_gather_object(payloads, _cpu_payload(local))
         device = _infer_device(local) if tree_leaves(local) else default_device
@@ -190,7 +217,14 @@ def _sync_clipping_rate(
     empty ranks issue one all-reduce while non-empty ranks issued two, which
     desynchronized the process group after a single empty Poisson draw.
     """
-    if clipping_rate is None:
+    local_presence = int(clipping_rate is not None)
+    min_presence = reduce_scalar(local_presence, op="min")
+    max_presence = reduce_scalar(local_presence, op="max")
+    if min_presence != max_presence:
+        raise RuntimeError(
+            "Clipped auxiliary clipping_rate presence mismatch across ranks."
+        )
+    if not local_presence:
         return None
 
     local_n = float(norms.numel()) if isinstance(norms, torch.Tensor) else 0.0
@@ -212,7 +246,7 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
     if not is_distributed():
         return aux
 
-    tensor_fields, scalar_fields = _split_aux_fields(aux)
+    tensor_fields, scalar_fields = _split_aux_fields(aux, ClippedFunAux)
     gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
@@ -231,7 +265,7 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
     if not is_distributed():
         return aux
 
-    tensor_fields, scalar_fields = _split_aux_fields(aux)
+    tensor_fields, scalar_fields = _split_aux_fields(aux, ClippedGradAux)
     gathered = _gather_aux_fields(tensor_fields)
 
     scalar_fields["clipping_rate"] = _sync_clipping_rate(
