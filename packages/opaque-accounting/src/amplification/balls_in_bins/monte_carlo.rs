@@ -39,6 +39,13 @@ use rayon::prelude::*;
 
 use super::cyclic_cholesky::CyclicBandedCholesky;
 
+/// Number of samples assigned to one deterministic Monte Carlo stream.
+///
+/// The shard count must depend only on `num_mc_samples`, not on the Rayon
+/// worker count: users expect a fixed seed to select the same samples on every
+/// machine.
+const SAMPLES_PER_SHARD: usize = 1024;
+
 /// Sample one privacy loss value from the BnB dominating pair.
 ///
 /// For the "remove" direction: X ~ P, Y = log(P(X)/Q(X))
@@ -184,24 +191,22 @@ pub fn bnb_mc_pld(
     // Precompute -G_kk / (2σ²) for the log-sum-exp
     let diag_terms: Vec<f64> = (0..b).map(|k| -gram[k * b + k] * inv_2sig2).collect();
 
-    // Parallel MC sampling
-    let n_threads = rayon::current_num_threads().max(1);
-    let samples_per_thread = num_samples / n_threads;
-    let remainder = num_samples - samples_per_thread * n_threads;
+    // Partition samples into fixed, seed-indexed shards. Rayon may execute
+    // these shards on any number of workers without changing the streams or
+    // their output order.
+    let num_shards =
+        num_samples / SAMPLES_PER_SHARD + usize::from(num_samples % SAMPLES_PER_SHARD != 0);
 
     // Sample "remove" direction
-    let remove_samples: Vec<f64> = (0..n_threads)
+    let remove_samples: Vec<f64> = (0..num_shards)
         .into_par_iter()
-        .flat_map(|tid| {
-            let n = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));
+        .map(|shard| {
+            let start = shard * SAMPLES_PER_SHARD;
+            let end = (start + SAMPLES_PER_SHARD).min(num_samples);
+            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(shard as u64));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
-            (0..n)
+            (start..end)
                 .map(|_| {
                     sample_privacy_loss_remove(
                         gram,
@@ -217,21 +222,21 @@ pub fn bnb_mc_pld(
                 })
                 .collect::<Vec<_>>()
         })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
         .collect();
 
     // Sample "add" direction
-    let add_samples: Vec<f64> = (0..n_threads)
+    let add_samples: Vec<f64> = (0..num_shards)
         .into_par_iter()
-        .flat_map(|tid| {
-            let n = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
+        .map(|shard| {
+            let start = shard * SAMPLES_PER_SHARD;
+            let end = (start + SAMPLES_PER_SHARD).min(num_samples);
+            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + shard as u64));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
-            (0..n)
+            (start..end)
                 .map(|_| {
                     sample_privacy_loss_add(
                         gram,
@@ -247,6 +252,9 @@ pub fn bnb_mc_pld(
                 })
                 .collect::<Vec<_>>()
         })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
         .collect();
 
     // Build PMFs from samples
@@ -432,6 +440,57 @@ mod tests {
         let pld = bnb_mc_pld(&gram, b, 1.0, &config).unwrap();
         let eps = pld.epsilon_at(1e-5);
         assert!(eps > 0.0 && eps.is_finite(), "eps = {}", eps);
+    }
+
+    #[test]
+    fn test_bnb_mc_pld_is_identical_across_thread_counts() {
+        let b = 8;
+        let mut gram = vec![0.0; b * b];
+        for i in 0..b {
+            for j in 0..b {
+                let distance = i.abs_diff(j).min(b - i.abs_diff(j));
+                gram[i * b + j] = 0.2f64.powi(distance as i32);
+            }
+        }
+        let mut config = default_config();
+        config.discretization = 1e-3;
+        config.num_mc_samples = 4096;
+        config.seed = 173;
+
+        let single_thread = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| bnb_mc_pld(&gram, b, 1.3, &config).unwrap());
+        let many_threads = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap()
+            .install(|| bnb_mc_pld(&gram, b, 1.3, &config).unwrap());
+
+        assert_eq!(
+            single_thread.pmf_remove.discretization,
+            many_threads.pmf_remove.discretization
+        );
+        assert_eq!(
+            single_thread.pmf_remove.lower_loss_index,
+            many_threads.pmf_remove.lower_loss_index
+        );
+        assert_eq!(
+            single_thread.pmf_remove.probs,
+            many_threads.pmf_remove.probs
+        );
+        assert_eq!(
+            single_thread.pmf_remove.infinity_mass,
+            many_threads.pmf_remove.infinity_mass
+        );
+
+        let single_add = single_thread.pmf_add.as_ref().unwrap();
+        let many_add = many_threads.pmf_add.as_ref().unwrap();
+        assert_eq!(single_add.discretization, many_add.discretization);
+        assert_eq!(single_add.lower_loss_index, many_add.lower_loss_index);
+        assert_eq!(single_add.probs, many_add.probs);
+        assert_eq!(single_add.infinity_mass, many_add.infinity_mass);
     }
 
     #[test]
