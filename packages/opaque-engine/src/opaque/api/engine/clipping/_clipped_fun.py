@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
-from torch.func import vmap as _vmap
 
+from opaque.api.engine.backend import active_backend
 from opaque.api.engine.clipping._helpers import normalize_to_tuple
 from opaque.api.engine.clipping._pytree import clip_pytree
 from opaque.api.engine.pytree import global_norm, tree_map
@@ -225,10 +225,10 @@ def _microbatch_accumulate(
         #   (True,  True ) → (clipped_values, squared_values, aux)
         n_outputs = 1 + int(bool(second_moment)) + int(return_aux)
         out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
-        vmapped = _vmap(
+        vmapped = active_backend().vmap(
             per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
+            in_axes=in_dims,
+            out_axes=out_dims,
             randomness="same",
         )
         outputs = vmapped(*microbatch_args)
@@ -362,10 +362,10 @@ def _microbatch_accumulate_stats_only(
 
         n_outputs = 2 + int(bool(second_moment))
         out_dims = (0,) * n_outputs
-        vmapped = _vmap(
+        vmapped = active_backend().vmap(
             per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
+            in_axes=in_dims,
+            out_axes=out_dims,
             randomness="same",
         )
         outputs = vmapped(*microbatch_args)
@@ -694,10 +694,10 @@ def clipped_fun(
             # tuple of n_outputs pytrees.
             n_outputs = 1 + int(bool(second_moment)) + int(return_aux or _return_stats)
             out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
-            vmapped = _vmap(
+            vmapped = active_backend().vmap(
                 per_example_fn,
-                in_dims=in_dims,
-                out_dims=out_dims,
+                in_axes=in_dims,
+                out_axes=out_dims,
                 randomness="same",
             )
             outputs = vmapped(*args)

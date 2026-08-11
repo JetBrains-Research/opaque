@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch.autograd.profiler import record_function
-from torch.func import grad_and_value
 
+from opaque.api.engine.backend import active_backend
 from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
@@ -232,8 +232,11 @@ def clipped_grad(
             return (grads, grad_aux), state
         return grads, state
 
-    # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
-    grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
+    # Route differentiation through the active backend.  ``value_and_grad``
+    # preserves torch's ``(grad, value)`` / ``(grad, (value, aux))`` ordering.
+    grad_and_value_fn = active_backend().value_and_grad(
+        loss_fn, argnums=argnums, has_aux=True
+    )
 
     def grad_fn(*args, **kwargs):
         grad, value_and_aux = grad_and_value_fn(*args, **kwargs)

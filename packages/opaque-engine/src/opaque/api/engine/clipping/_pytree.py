@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from collections import namedtuple
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.api.engine.backend import active_backend
 from opaque.api.engine.pytree import (
     ParamPath,
     global_norm,
     param_path_display,
-    tree_flatten_with_paths,
-    tree_map,
-    tree_unflatten,
 )
 from opaque.api.engine.types import PerGroup
+
+if TYPE_CHECKING:
+    from opaque.api.engine.backend._protocol import Backend
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
 """Auxiliary outputs from clip_pytree.
@@ -29,12 +30,13 @@ Fields:
 
 def _tensor_path_leaves(
     pytree: Any,
+    backend: Backend,
 ) -> tuple[list[ParamPath], list[torch.Tensor], Any]:
     """Flatten tensor leaves with :data:`~opaque.pytree.ParamPath` keys."""
-    paths, leaves, treedef = tree_flatten_with_paths(pytree)
+    paths, leaves, treedef = backend.tree_flatten_with_paths(pytree)
     tensor_leaves: list[torch.Tensor] = []
     for path, leaf in zip(paths, leaves, strict=True):
-        if not isinstance(leaf, torch.Tensor):
+        if not backend.is_array(leaf):
             raise TypeError(
                 f"Expected tensor leaves for per-group clipping; "
                 f"got {type(leaf).__name__} at path {path!r}."
@@ -67,20 +69,21 @@ def _validate_per_group_paths(
 def _resolve_compute_dtype_for_reduction(
     leaves: list[torch.Tensor],
     compute_dtype: torch.dtype | None,
+    backend: Backend,
 ) -> torch.dtype:
     """Pick the dtype for sum-of-squares reductions over ``leaves``."""
     if compute_dtype is not None:
         return compute_dtype
     acc = torch.float32
     for leaf in leaves:
-        if not torch.is_floating_point(leaf):
+        if not backend.is_floating(leaf):
             continue
         promoted = (
             torch.float32
             if leaf.dtype in (torch.float16, torch.bfloat16)
             else leaf.dtype
         )
-        acc = torch.promote_types(acc, promoted)
+        acc = backend.promote_dtype(acc, promoted)
     return acc
 
 
@@ -89,11 +92,12 @@ def _accumulate_group_sq_norms(
     leaves: list[torch.Tensor],
     pg: PerGroup,
     acc_dtype: torch.dtype,
+    backend: Backend,
 ) -> dict[str, torch.Tensor]:
     group_sq_norms: dict[str, torch.Tensor] = {}
     for path, tensor in zip(paths, leaves, strict=True):
         group_name = pg.groups[path]
-        sq = (tensor.to(acc_dtype) ** 2).sum()
+        sq = backend.sum(backend.square(backend.astype(tensor, acc_dtype)))
         if group_name in group_sq_norms:
             group_sq_norms[group_name] = group_sq_norms[group_name] + sq
         else:
@@ -107,12 +111,13 @@ def _scale_leaves_by_group(
     pg: PerGroup,
     group_scales: dict[str, torch.Tensor],
     treedef: Any,
+    backend: Backend,
 ) -> Any:
     scaled = [
-        group_scales[pg.groups[path]].to(dtype=leaf.dtype) * leaf
+        backend.astype(group_scales[pg.groups[path]], leaf.dtype) * leaf
         for path, leaf in zip(paths, leaves, strict=True)
     ]
-    return tree_unflatten(treedef, scaled)
+    return backend.tree_unflatten(treedef, scaled)
 
 
 def _auto_scale_per_group(
@@ -120,29 +125,30 @@ def _auto_scale_per_group(
     pg: PerGroup,
     gamma: float,
     compute_dtype: torch.dtype | None,
+    backend: Backend,
 ) -> tuple[Any, ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
-    paths, leaves, treedef = _tensor_path_leaves(pytree)
+    paths, leaves, treedef = _tensor_path_leaves(pytree, backend)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
+    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype, backend)
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
+    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, backend)
 
     group_scales: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
-        norm = torch.sqrt(sq_norm)
-        R = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
-        R = torch.clamp(R, min=0.0)
-        gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
+        norm = backend.sqrt(sq_norm)
+        R = backend.scalar(pg.values[group_name], dtype=norm.dtype, like=norm)
+        R = backend.clamp(R, lo=0.0)
+        gamma_tensor = backend.scalar(gamma, dtype=norm.dtype, like=norm)
         scale = R / (norm + gamma_tensor)
-        zero = torch.tensor(0.0, device=norm.device)
-        scale = torch.where(torch.isfinite(scale), scale, zero)
+        zero = backend.scalar(0.0, like=norm)
+        scale = backend.where(backend.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
 
-    scaled = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef)
+    scaled = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef, backend)
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
-    group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
+    group_norms = {name: backend.sqrt(sq) for name, sq in group_sq_norms.items()}
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
 
@@ -188,33 +194,31 @@ def auto_scale_pytree(
     if gamma <= 0:
         raise ValueError(f"gamma must be positive, got {gamma}")
 
-    pytree = tree_map(
-        lambda t: (
-            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
-            if isinstance(t, torch.Tensor)
-            else t
-        ),
+    backend = active_backend()
+
+    pytree = backend.tree_map(
+        lambda t: backend.nan_to_num(t) if backend.is_array(t) else t,
         pytree,
     )
 
     if isinstance(R, PerGroup):
-        return _auto_scale_per_group(pytree, R, gamma, compute_dtype)
+        return _auto_scale_per_group(pytree, R, gamma, compute_dtype, backend)
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
-    R_tensor = torch.tensor(R, dtype=orig_norm.dtype, device=orig_norm.device)
-    R_tensor = torch.clamp(R_tensor, min=0.0)
-    gamma_tensor = torch.tensor(gamma, dtype=orig_norm.dtype, device=orig_norm.device)
+    R_tensor = backend.scalar(R, dtype=orig_norm.dtype, like=orig_norm)
+    R_tensor = backend.clamp(R_tensor, lo=0.0)
+    gamma_tensor = backend.scalar(gamma, dtype=orig_norm.dtype, like=orig_norm)
 
     scale = R_tensor / (orig_norm + gamma_tensor)
-    scale = torch.where(torch.isfinite(scale), scale, torch.zeros_like(scale))
+    scale = backend.where(backend.isfinite(scale), scale, backend.zeros_like(scale))
 
     def scale_leaf(t):
-        if not isinstance(t, torch.Tensor):
+        if not backend.is_array(t):
             return t
-        return scale.to(dtype=t.dtype) * t
+        return backend.astype(scale, t.dtype) * t
 
-    scaled = tree_map(
-        lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
+    scaled = backend.tree_map(
+        lambda t: scale_leaf(t) if backend.is_array(t) else t, pytree
     )
 
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=None)
@@ -225,35 +229,36 @@ def _clip_pytree_per_group(
     pg: PerGroup,
     return_zero: bool,
     compute_dtype: torch.dtype | None,
+    backend: Backend,
 ) -> tuple[Any, ClipPytreeAux]:
     """Per-group clipping keyed by optree :data:`~opaque.pytree.ParamPath`."""
-    paths, leaves, treedef = _tensor_path_leaves(pytree)
+    paths, leaves, treedef = _tensor_path_leaves(pytree, backend)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
+    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype, backend)
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
+    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, backend)
 
     group_scales: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
-        norm = torch.sqrt(sq_norm)
-        cn = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
-        cn = torch.clamp(cn, min=0.0)
-        one = torch.tensor(1.0, device=norm.device)
-        zero = torch.tensor(0.0, device=norm.device)
-        scale = torch.minimum(one, cn / norm)
-        scale = torch.where(torch.isfinite(scale), scale, zero)
+        norm = backend.sqrt(sq_norm)
+        cn = backend.scalar(pg.values[group_name], dtype=norm.dtype, like=norm)
+        cn = backend.clamp(cn, lo=0.0)
+        one = backend.scalar(1.0, like=norm)
+        zero = backend.scalar(0.0, like=norm)
+        scale = backend.minimum(one, cn / norm)
+        scale = backend.where(backend.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
 
-    clipped = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef)
+    clipped = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef, backend)
 
     if return_zero:
-        clipped = tree_map(
-            lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t,
+        clipped = backend.tree_map(
+            lambda t: backend.zeros_like(t) if backend.is_array(t) else t,
             clipped,
         )
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
-    group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
+    group_norms = {name: backend.sqrt(sq) for name, sq in group_sq_norms.items()}
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
 
@@ -294,40 +299,40 @@ def clip_pytree(
         - NaN/Inf values: Replaced with zeros before clipping
         - return_zero=True: Returns zeros regardless of other parameters
     """
-    pytree = tree_map(
-        lambda t: (
-            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
-            if isinstance(t, torch.Tensor)
-            else t
-        ),
+    backend = active_backend()
+
+    pytree = backend.tree_map(
+        lambda t: backend.nan_to_num(t) if backend.is_array(t) else t,
         pytree,
     )
 
     if isinstance(clipping_norm, PerGroup):
-        return _clip_pytree_per_group(pytree, clipping_norm, return_zero, compute_dtype)
+        return _clip_pytree_per_group(
+            pytree, clipping_norm, return_zero, compute_dtype, backend
+        )
 
     orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
 
-    clipping_norm_tensor = torch.tensor(
-        clipping_norm, dtype=orig_norm.dtype, device=orig_norm.device
+    clipping_norm_tensor = backend.scalar(
+        clipping_norm, dtype=orig_norm.dtype, like=orig_norm
     )
-    clipping_norm_tensor = torch.clamp(clipping_norm_tensor, min=0.0)
+    clipping_norm_tensor = backend.clamp(clipping_norm_tensor, lo=0.0)
 
-    scale = torch.minimum(torch.tensor(1.0), clipping_norm_tensor / orig_norm)
-    scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))
+    scale = backend.minimum(backend.scalar(1.0), clipping_norm_tensor / orig_norm)
+    scale = backend.where(backend.isfinite(scale), scale, backend.scalar(0.0))
 
     def scale_leaf(t):
-        if not isinstance(t, torch.Tensor):
+        if not backend.is_array(t):
             return t
-        return scale.to(dtype=t.dtype) * t
+        return backend.astype(scale, t.dtype) * t
 
-    clipped = tree_map(
-        lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
+    clipped = backend.tree_map(
+        lambda t: scale_leaf(t) if backend.is_array(t) else t, pytree
     )
 
     if return_zero:
-        clipped = tree_map(
-            lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t, clipped
+        clipped = backend.tree_map(
+            lambda t: backend.zeros_like(t) if backend.is_array(t) else t, clipped
         )
 
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=None)

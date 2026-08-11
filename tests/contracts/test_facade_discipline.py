@@ -76,6 +76,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     "opaque-engine": (
         "opaque/types.py",
         "opaque/pytree.py",
+        "opaque/backend/__init__.py",
         "opaque/random/__init__.py",
         "opaque/random/types.py",
         "opaque/distributed/__init__.py",

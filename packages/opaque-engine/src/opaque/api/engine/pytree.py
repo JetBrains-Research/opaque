@@ -368,9 +368,13 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
-    if compute_dtype is not None and not torch.is_floating_point(
-        torch.empty((), dtype=compute_dtype)
-    ):
+    # Resolved lazily (once per call): a top-level import would create a cycle
+    # because the backend package imports this module's pytree wrappers.
+    from opaque.api.engine.backend import active_backend
+
+    backend = active_backend()
+
+    if compute_dtype is not None and not backend.is_floating(compute_dtype):
         raise TypeError(
             f"compute_dtype must be a real floating-point dtype, got "
             f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
@@ -379,9 +383,9 @@ def global_norm(
             f"accumulator)."
         )
 
-    leaves = tree_leaves(tree)
+    leaves = backend.tree_leaves(tree)
     if not leaves:
-        return torch.tensor(0.0, dtype=compute_dtype or torch.float32)
+        return backend.scalar(0.0, dtype=compute_dtype or torch.float32)
 
     if compute_dtype is not None:
         real_acc_dtype = compute_dtype
@@ -389,9 +393,9 @@ def global_norm(
         # Auto-promote: at least float32, but match user's intent if they
         # supplied higher-precision inputs.
         dtypes = [t.dtype for t in leaves]
-        float_dtypes = [
-            dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))
-        ]
+        float_dtypes = [dt for dt in dtypes if backend.is_floating(dt)]
+        # Complex dtype introspection has no backend primitive (the surface is
+        # real-valued); keep it torch-specific.
         complex_dtypes = [
             dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))
         ]
@@ -399,37 +403,36 @@ def global_norm(
         if complex_dtypes:
             acc_dtype = torch.complex64
             for dt in complex_dtypes:
-                acc_dtype = torch.promote_types(acc_dtype, dt)
+                acc_dtype = backend.promote_dtype(acc_dtype, dt)
             # For complex, accumulate real magnitudes in the corresponding real dtype
-            real_acc_dtype = torch.promote_types(
+            real_acc_dtype = backend.promote_dtype(
                 torch.float32, torch.tensor(0, dtype=acc_dtype).real.dtype
             )
         elif float_dtypes:
             real_acc_dtype = torch.float32
             for dt in float_dtypes:
-                real_acc_dtype = torch.promote_types(real_acc_dtype, dt)
+                real_acc_dtype = backend.promote_dtype(real_acc_dtype, dt)
         else:
             # All integer/bool → accumulate in float32
             real_acc_dtype = torch.float32
 
-    device = leaves[0].device
-    total = torch.zeros((), device=device, dtype=real_acc_dtype)
+    total = backend.scalar(0.0, dtype=real_acc_dtype, like=leaves[0])
 
     for leaf in leaves:
         if torch.is_complex(leaf):
             # ||z||^2 = (real^2 + imag^2)
-            real = leaf.real.to(real_acc_dtype)
-            imag = leaf.imag.to(real_acc_dtype)
+            real = backend.astype(leaf.real, real_acc_dtype)
+            imag = backend.astype(leaf.imag, real_acc_dtype)
             total = (
                 total
-                + (real * real).sum(dtype=real_acc_dtype)
-                + (imag * imag).sum(dtype=real_acc_dtype)
+                + backend.sum(backend.square(real), dtype=real_acc_dtype)
+                + backend.sum(backend.square(imag), dtype=real_acc_dtype)
             )
         else:
-            x = leaf.to(real_acc_dtype)
-            total = total + (x * x).sum(dtype=real_acc_dtype)
+            x = backend.astype(leaf, real_acc_dtype)
+            total = total + backend.sum(backend.square(x), dtype=real_acc_dtype)
 
-    return torch.sqrt(total)
+    return backend.sqrt(total)
 
 
 __all__ = [
