@@ -125,6 +125,48 @@ def test_torch_backend_primitives_smoke():
     assert torch.equal(doubled, x * 2)
 
 
+def test_torch_backend_float32_is_torch_float32():
+    assert TorchBackend().float32 is torch.float32
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (torch.float16, True),
+        (torch.bfloat16, True),
+        (torch.float32, False),
+        (torch.float64, False),
+        (torch.int64, False),
+        (torch.complex64, False),
+        (torch.complex128, False),
+    ],
+)
+def test_torch_backend_is_low_precision_for_arrays_and_dtypes(dtype, expected):
+    backend = TorchBackend()
+
+    assert backend.is_low_precision(dtype) is expected
+    assert backend.is_low_precision(torch.empty((), dtype=dtype)) is expected
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (torch.float16, False),
+        (torch.bfloat16, False),
+        (torch.float32, False),
+        (torch.float64, False),
+        (torch.int64, False),
+        (torch.complex64, True),
+        (torch.complex128, True),
+    ],
+)
+def test_torch_backend_is_complex_for_arrays_and_dtypes(dtype, expected):
+    backend = TorchBackend()
+
+    assert backend.is_complex(dtype) is expected
+    assert backend.is_complex(torch.empty((), dtype=dtype)) is expected
+
+
 # --- rng primitive group -------------------------------------------------
 
 

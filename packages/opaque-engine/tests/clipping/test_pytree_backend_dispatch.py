@@ -58,6 +58,26 @@ def test_global_norm_dispatches_reduction_math_through_seam():
         assert prim in recording.calls
 
 
+@pytest.mark.parametrize(
+    "tree",
+    [
+        {"w": torch.tensor([3.0, 4.0], dtype=torch.float16)},
+        {"w": torch.tensor([3.0 + 4.0j])},
+    ],
+    ids=["real_low_precision", "complex"],
+)
+def test_global_norm_dispatches_dtype_vocabulary_through_seam(tree):
+    baseline = global_norm(tree)
+
+    recording = _RecordingBackend(TorchBackend())
+    with use_backend(recording):
+        norm = global_norm(tree)
+
+    assert torch.equal(norm, baseline)
+    assert norm.dtype is torch.float32
+    assert "is_complex" in recording.calls
+
+
 def test_clip_pytree_dispatches_clip_math_through_seam():
     recording = _RecordingBackend(TorchBackend())
     tree = {"w": torch.tensor([3.0, 4.0]), "b": torch.tensor([0.0, 12.0])}
@@ -125,6 +145,29 @@ def test_clip_pytree_per_group_dispatches_through_seam():
         "tree_unflatten",
     ):
         assert prim in recording.calls, prim
+
+
+def test_clip_pytree_per_group_dispatches_low_precision_dtype_vocabulary():
+    tree = {
+        "a": torch.tensor([3.0, 4.0], dtype=torch.float16),
+        "b": torch.tensor([6.0, 8.0], dtype=torch.bfloat16),
+    }
+    pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 1.0, "g2": 2.0})
+
+    baseline, aux0 = clip_pytree(tree, pg)
+
+    recording = _RecordingBackend(TorchBackend())
+    with use_backend(recording):
+        through, aux1 = clip_pytree(tree, pg)
+
+    assert "is_low_precision" in recording.calls
+    assert torch.equal(through["a"], baseline["a"])
+    assert torch.equal(through["b"], baseline["b"])
+    assert aux0.group_norms is not None
+    assert aux1.group_norms is not None
+    for name in aux0.group_norms:
+        assert aux0.group_norms[name].dtype is torch.float32
+        assert torch.equal(aux1.group_norms[name], aux0.group_norms[name])
 
 
 def test_auto_scale_pytree_per_group_dispatches_through_seam():

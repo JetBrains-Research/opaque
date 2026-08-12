@@ -33,6 +33,7 @@ class TorchBackend:
     """PyTorch-backed implementation of the five-primitive backend surface."""
 
     name = "torch"
+    float32 = torch.float32
 
     # --- autodiff ---
     def value_and_grad(
@@ -79,6 +80,15 @@ class TorchBackend:
         if isinstance(x, torch.dtype):
             return torch.is_floating_point(torch.empty((), dtype=x))
         return torch.is_floating_point(x)
+
+    def is_low_precision(self, x: Any) -> bool:
+        dt = x if isinstance(x, torch.dtype) else x.dtype
+        return dt in (torch.float16, torch.bfloat16)
+
+    def is_complex(self, x: Any) -> bool:
+        if isinstance(x, torch.dtype):
+            return torch.is_complex(torch.empty((), dtype=x))
+        return torch.is_complex(x)
 
     def sqrt(self, x: Any) -> Any:
         return torch.sqrt(x)

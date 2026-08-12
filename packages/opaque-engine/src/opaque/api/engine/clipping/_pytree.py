@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import namedtuple
 from typing import TYPE_CHECKING, Any
 
-import torch
-
 from opaque.api.engine.backend import active_backend
 from opaque.api.engine.pytree import (
     ParamPath,
@@ -16,6 +14,8 @@ from opaque.api.engine.pytree import (
 from opaque.api.engine.types import PerGroup
 
 if TYPE_CHECKING:
+    import torch
+
     from opaque.api.engine.backend._protocol import Backend
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
@@ -74,15 +74,11 @@ def _resolve_compute_dtype_for_reduction(
     """Pick the dtype for sum-of-squares reductions over ``leaves``."""
     if compute_dtype is not None:
         return compute_dtype
-    acc = torch.float32
+    acc = backend.float32
     for leaf in leaves:
         if not backend.is_floating(leaf):
             continue
-        promoted = (
-            torch.float32
-            if leaf.dtype in (torch.float16, torch.bfloat16)
-            else leaf.dtype
-        )
+        promoted = backend.float32 if backend.is_low_precision(leaf) else leaf.dtype
         acc = backend.promote_dtype(acc, promoted)
     return acc
 

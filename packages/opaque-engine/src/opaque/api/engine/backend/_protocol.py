@@ -18,7 +18,9 @@ The surface is deliberately small and organized into five primitive groups:
    :meth:`Backend.clamp`, :meth:`Backend.zeros_like`,
    :meth:`Backend.concatenate`, :meth:`Backend.astype`,
    :meth:`Backend.scalar`, :meth:`Backend.is_array`,
-   :meth:`Backend.is_floating`, :meth:`Backend.promote_dtype`).
+   :meth:`Backend.is_floating`, :attr:`Backend.float32`,
+   :meth:`Backend.is_low_precision`, :meth:`Backend.is_complex`,
+   :meth:`Backend.promote_dtype`).
 5. **rng** — :meth:`Backend.generator`, :meth:`Backend.normal`.
 
 The protocol is structural: any object exposing these members (and a
@@ -89,12 +91,23 @@ class Backend(Protocol):
         ...
 
     # --- array math (elementwise + reduction + dtype helpers) ---
+    float32: Any
+    """Canonical single-precision floating-point dtype."""
+
     def is_array(self, x: Any) -> bool:
         """Return ``True`` if ``x`` is a backend array."""
         ...
 
     def is_floating(self, x: Any) -> bool:
         """Return ``True`` if ``x`` (an array or dtype) is floating point."""
+        ...
+
+    def is_low_precision(self, x: Any) -> bool:
+        """Return ``True`` if ``x`` (an array or dtype) is fp16 or bf16."""
+        ...
+
+    def is_complex(self, x: Any) -> bool:
+        """Return ``True`` if ``x`` (an array or dtype) is complex."""
         ...
 
     def sqrt(self, x: Any) -> Any:
