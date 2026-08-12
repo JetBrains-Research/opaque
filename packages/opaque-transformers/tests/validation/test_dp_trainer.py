@@ -202,6 +202,106 @@ class TestStopAtEpsilon:
         )
         assert trainer.state.privacy_target_epsilon_reached is True
 
+    def test_stop_at_epsilon_independent_of_logging_cadence(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """#392: the stop step is independent of ``logging_steps``.
+
+        Pre-fix the ε-budget check only fired at log boundaries, so a coarse
+        logging cadence let extra accounted updates run past target (a coarse
+        cadence would never hit a boundary and run to max_steps).  Accounting
+        is data/weight-independent, so reusing the model across runs is fine.
+        """
+
+        def _run(logging_steps: int) -> int:
+            model, tokenizer = gpt2_with_lora
+            trainer = DPTrainer(
+                model=model,
+                args=_default_args(
+                    max_steps=20,
+                    num_train_epochs=1,
+                    eval_strategy="no",
+                    save_strategy="no",
+                    logging_steps=logging_steps,
+                    privacy_noise_multiplier=1.0,
+                    privacy_target_epsilon=0.001,
+                ),
+                processing_class=tokenizer,
+                train_dataset=tiny_lm_dataset,
+                eval_dataset=tiny_lm_dataset,
+            )
+            out = trainer.train()
+            assert trainer.state.privacy_target_epsilon_reached is True
+            return out.global_step
+
+        fine = _run(1)
+        coarse = _run(999)  # no log boundary before max_steps=20
+        assert fine == coarse < 20, (fine, coarse)
+
+    def test_stop_at_epsilon_final_step_target(self, gpt2_with_lora, tiny_lm_dataset):
+        """#392 review: a target reached exactly on the final step still sets
+        the flag (the predicted-step check precedes the total_steps ceiling)."""
+        model, tokenizer = gpt2_with_lora
+
+        def _make(max_steps: int) -> DPTrainer:
+            return DPTrainer(
+                model=model,
+                args=_default_args(
+                    max_steps=max_steps,
+                    num_train_epochs=1,
+                    eval_strategy="no",
+                    save_strategy="no",
+                    logging_steps=999,
+                    privacy_noise_multiplier=1.0,
+                    privacy_target_epsilon=0.001,
+                ),
+                processing_class=tokenizer,
+                train_dataset=tiny_lm_dataset,
+                eval_dataset=tiny_lm_dataset,
+            )
+
+        probe = _make(20)
+        m = probe.train().global_step  # discover the crossing step M < 20
+        assert probe.state.privacy_target_epsilon_reached is True
+
+        exact = _make(m)  # the target now lands exactly on the final step
+        out = exact.train()
+        assert out.global_step == m
+        assert exact.state.privacy_target_epsilon_reached is True
+
+    def test_stop_does_not_advance_sampler_past_global_step(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """#392 review: stopping must not consume an extra Poisson round — the
+        checkpointed sampler cursor equals global_step, so resume skips no
+        data.  ``save_steps=999`` makes the end-of-training save the recorded
+        snapshot (it reads the live sampler at stop time)."""
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                output_dir=str(tmp_path),
+                max_steps=20,
+                num_train_epochs=1,
+                eval_strategy="no",
+                save_strategy="steps",
+                save_steps=999,
+                logging_steps=999,
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=0.001,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out = trainer.train()
+        payload = ckpt.load_dp_runtime_state(
+            str(tmp_path / f"checkpoint-{out.global_step}" / ckpt.DP_STATE_NAME)
+        )
+        assert payload.sampler_state["consumed"] == out.global_step
+
     def test_runs_to_max_steps_when_target_not_reached(
         self, gpt2_with_lora, tiny_lm_dataset
     ):
@@ -2279,3 +2379,64 @@ class TestDPTrainerEvalParity:
         # float that compute_metrics could compute.
         assert isinstance(functional_acc[0], float)
         assert isinstance(post_metrics["eval_acc"], float)
+
+
+class TestPredictStopStep:
+    """Pure-accounting unit tests for the predicted stop-at-ε step (#392)."""
+
+    @staticmethod
+    def _step():
+        import opaque.dpsgd.accounting as dacc
+
+        return dacc.poisson(dacc.gaussian(1.0), 0.02)
+
+    def test_matches_linear_scan(self):
+        from opaque.api.transformers.trainer._dp_trainer import predict_stop_step
+
+        step, delta, horizon = self._step(), 1e-5, 30
+        eps = [(step * k).epsilon_at(delta) for k in range(1, horizon + 1)]
+        target = (eps[14] + eps[15]) / 2.0  # crossing strictly inside (15, 16]
+        expected = next(k for k in range(1, horizon + 1) if eps[k - 1] >= target)
+        got = predict_stop_step(
+            None, step, target_epsilon=target, delta=delta, k0=0, horizon=horizon
+        )
+        assert got == expected
+
+    def test_unreachable_returns_none(self):
+        from opaque.api.transformers.trainer._dp_trainer import predict_stop_step
+
+        step, delta, horizon = self._step(), 1e-5, 10
+        unreachable = (step * horizon).epsilon_at(delta) * 2.0
+        assert (
+            predict_stop_step(
+                None,
+                step,
+                target_epsilon=unreachable,
+                delta=delta,
+                k0=0,
+                horizon=horizon,
+            )
+            is None
+        )
+
+    def test_resume_prefix_preserves_absolute_step(self):
+        """A resumed run (prefix = k0 accrued steps) predicts the same
+        absolute crossing step as the fresh run."""
+        from opaque.api.transformers.trainer._dp_trainer import predict_stop_step
+
+        step, delta, horizon = self._step(), 1e-5, 30
+        eps = [(step * k).epsilon_at(delta) for k in range(1, horizon + 1)]
+        target = (eps[14] + eps[15]) / 2.0
+        fresh = predict_stop_step(
+            None, step, target_epsilon=target, delta=delta, k0=0, horizon=horizon
+        )
+        k0 = 5
+        resumed = predict_stop_step(
+            step * k0,  # the resumed accountant's prefix process
+            step,
+            target_epsilon=target,
+            delta=delta,
+            k0=k0,
+            horizon=horizon,
+        )
+        assert resumed == fresh

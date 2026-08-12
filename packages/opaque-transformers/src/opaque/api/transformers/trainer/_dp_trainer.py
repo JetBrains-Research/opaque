@@ -253,6 +253,71 @@ class _TrainingContext:
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
+    # Predicted stop-at-ε crossing step (absolute), or ``None`` when the
+    # target is unreachable / unset / the accountant is Monte-Carlo based.
+    # See :func:`predict_stop_step`.
+    stop_at_step: int | None = None
+
+
+def predict_stop_step(
+    prefix_process: Any,
+    step_process: Any,
+    *,
+    target_epsilon: float,
+    delta: float,
+    k0: int,
+    horizon: int,
+) -> int | None:
+    """Predict the first accounted step where ε reaches ``target_epsilon``.
+
+    The accountant after ``k`` accrued steps is exactly
+    ``prefix ∘ step_process^(k - k0)`` — the per-step ``|=`` fold and the
+    ``Repeated`` (``*``) operator produce the same process — so for a
+    deterministic, monotone ε(k) the crossing step can be binary-searched
+    once at setup (~log2(horizon) ``epsilon_at`` probes) instead of being
+    measured during the training loop.
+
+    Returns the absolute step count in ``(k0, horizon]``, or ``None`` when
+    the target is not reached within the horizon or the ε sequence fails
+    the boundary monotonicity check (callers fall back to the log-boundary
+    stop check).
+    """
+    remaining = horizon - k0
+    if remaining < 1:
+        return None
+
+    cache: dict[int, float] = {}
+
+    def eps(j: int) -> float:
+        if j not in cache:
+            proc = (
+                step_process * j
+                if prefix_process is None
+                else prefix_process | (step_process * j)
+            )
+            cache[j] = proc.epsilon_at(delta)
+        return cache[j]
+
+    if eps(remaining) < target_epsilon:
+        return None
+    lo, hi = 1, remaining
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if eps(mid) >= target_epsilon:
+            hi = mid
+        else:
+            lo = mid + 1
+    # Guard against numerical non-monotonicity: the crossing must be a
+    # genuine boundary (ε(M-1) < target <= ε(M)); both probes are cached
+    # from the search, so the check is free.
+    if eps(lo) < target_epsilon or (lo > 1 and eps(lo - 1) >= target_epsilon):
+        log.warning(
+            "stop-at-ε prediction failed the monotone-boundary check near "
+            "step %d; falling back to the log-boundary check.",
+            k0 + lo,
+        )
+        return None
+    return k0 + lo
 
 
 class DPTrainer:
@@ -1052,6 +1117,38 @@ class DPTrainer:
                         },
                     )
 
+        # Predict the stop-at-ε step once at setup (accounting is
+        # deterministic): the crossing step is binary-searchable up front, so
+        # the in-loop check becomes a free integer comparison (#392).  Scoped
+        # to the fixed-NM + target path on deterministic accountants; the
+        # Monte-Carlo PLDs (b_min_sep / balls_in_bins) are non-monotone in k
+        # and thread-count-sensitive, so they keep the log-boundary check as
+        # their stop mechanism.
+        a = self.args
+        if (
+            a.privacy_noise_multiplier is not None
+            and a.privacy_noise_multiplier > 0
+            and a.privacy_target_epsilon is not None
+            and a.sampling_mode not in ("b_min_sep", "balls_in_bins")
+            and self.state.global_step < ctx.total_steps
+        ):
+            ctx.stop_at_step = predict_stop_step(
+                ctx.accounting.process,
+                ctx.step_process,
+                target_epsilon=a.privacy_target_epsilon,
+                delta=ctx.target_delta,
+                k0=self.state.global_step,
+                horizon=ctx.total_steps,
+            )
+            if ctx.stop_at_step is not None:
+                log.info(
+                    "stop-at-ε: will stop after step %d of %d (target ε=%g at δ=%.2e)",
+                    ctx.stop_at_step,
+                    ctx.total_steps,
+                    a.privacy_target_epsilon,
+                    ctx.target_delta,
+                )
+
         try:
             return self._inner_training_loop(
                 ctx,
@@ -1722,6 +1819,21 @@ class DPTrainer:
                     global_step,
                     ignore_keys_for_eval=ignore_keys_for_eval,
                 )
+
+                # Stop-at-ε: free integer comparison against the predicted
+                # crossing step — after the accounted step and its
+                # log/save/eval gate, before the next batch fetch, so the
+                # resumable sampler never advances past ``global_step`` and a
+                # target reached exactly on the final step still sets the
+                # flag (checked before the ``total_steps`` ceiling) (#392).
+                if ctx.stop_at_step is not None and global_step >= ctx.stop_at_step:
+                    self.state.privacy_target_epsilon_reached = True
+                    self._control.should_training_stop = True
+                    log.info(
+                        "stop-at-ε: predicted budget boundary reached at step %d",
+                        global_step,
+                    )
+                    break
 
                 if self._control.should_training_stop:
                     break
@@ -3790,12 +3902,17 @@ class DPTrainer:
             # amortized.  Mirrors ``_after_evaluate`` and the manual loop.
             ctx.accounting = acc.cached(ctx.accounting)
             epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
-            # Stop-at-ε: only fires on the fixed-NM path; the calibrated NM
-            # was sized to hit target_epsilon at max_steps, so stopping
-            # earlier would mean we over-noised the run.
+            # Stop-at-ε (fallback): owns the stop only when no crossing step
+            # was predicted (``ctx.stop_at_step is None`` — Monte-Carlo
+            # accountants, unreachable target); otherwise the in-loop integer
+            # check is the single stop owner and this block only computed ε
+            # for the log line.  Fixed-NM path only; the calibrated NM was
+            # sized to hit target_epsilon at max_steps, so stopping earlier
+            # would mean we over-noised the run.
             a = self.args
             if (
-                a.privacy_noise_multiplier is not None
+                ctx.stop_at_step is None
+                and a.privacy_noise_multiplier is not None
                 and a.privacy_noise_multiplier > 0
                 and a.privacy_target_epsilon is not None
                 and epsilon >= a.privacy_target_epsilon
