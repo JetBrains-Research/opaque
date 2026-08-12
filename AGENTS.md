@@ -7,7 +7,7 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 
 - **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.83)
 - **Package manager**: `uv`
-- **Hardware**: H200 80GB GPU for training runs; CPU/MPS for most tests
+- **Hardware**: GPU for training runs; CPU/MPS for most tests
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
 
 Opaque provides composable primitives for differentially private model
@@ -140,7 +140,7 @@ downloadable workflow artifacts on the run page (14-day retention).
 
 ```bash
 uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
-uv sync --group examples --all-packages --extra all  # examples/: torchopt, datasets, wandb + all package extras
+uv sync --group examples --all-packages --extra all  # examples and all package extras
 uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
 uv run pytest -m "slow"                           # slow tests (run on push to main)
 uv run ruff check packages/                      # lint
@@ -311,51 +311,13 @@ Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
   refactor-diary guards and have been removed now that the migration
   is complete.
 
-## MCP tools (agent extensions)
+## Training examples
 
-Two MCP extensions provide agent-accessible infrastructure tooling.
-They are installed via the JetBrains AI marketplace — this repo does
-not bundle or configure them.
-
-### jbr-fed-researcher
-
-Skills for individual contributors / experiment work:
-
-| Skill | What it does |
-| --- | --- |
-| `wandb-metrics` | Query experiment tracking on `jetbrains.wandb.io`. Default entity: `federated-compute`. |
-| `zenml-experiments` | Manage ML pipelines on `zenml.labs.jb.gg`. Default workspace: `prod`. |
-
-### jbr-fed-team
-
-Skills for team-level coordination:
-
-| Skill | What it does |
-| --- | --- |
-| `youtrack-issues` | Track issues in YouTrack (project `JBRes`, subsystem `Federated Compute`). |
-| `meta-issue-updates` | Post weekly status updates to YouTrack meta issues from meeting notes. |
-
-## Experiment tracking (W&B)
-
-- Entity: `federated-compute`, Project: `opaque`
-- Instance: `https://jetbrains.wandb.io`
-- Always `PYTHONUNBUFFERED=1` for real-time output
-- Offline by default; goes online when `WANDB_API_KEY` is set
-- Env: `WANDB_API_KEY`, `WANDB_BASE_URL`, `WANDB_ENTITY`, `WANDB_PROJECT`, `WANDB_NAME`
-
-## Training entry points
-
-```bash
-uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
-uv run python examples/train_dpftrl.py   # MF-based DP-FTRL training
-```
-
-Baseline without kernel patches:
-
-```bash
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
-  uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
-```
+The `examples/` scripts are optional integration examples. Install the
+`examples` dependency group before using them, inspect their command-line help,
+and choose a compatible model and dataset available in your environment.
+Configure any experiment tracking service through its own documented settings;
+the repository does not require a particular provider.
 
 ## Documentation
 
@@ -413,8 +375,7 @@ the canonical lint / test / Rust-test commands.
   `opaque.dpftrl.accounting`.
 - CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
 - Running the `examples/` training scripts requires the `examples` dependency
-  group (`uv sync --group examples --all-packages --extra all`, which adds
-  `datasets`, `wandb`, and related packages). Pass `--no-wandb` for offline runs.
+  group (`uv sync --group examples --all-packages --extra all`).
 - The example scripts download models and datasets from the Hugging Face Hub.
   Two constraints apply with the pinned `transformers` / `huggingface_hub`
   versions: the model must belong to a supported family (listed above), as
