@@ -260,3 +260,63 @@ depth, and is a floor constraint rather than a tuning knob.
   noise refreshing more stops helping too.
 - **DP rank inflation** (~3.8× at eps=3; r_eff 1.35→3.61 at eps=1, matched depth) —
   a measurement result, independent of utility.
+
+---
+
+## 9. eps=1 FINAL (all 6 runs verified `finished`, 27 evals each)
+
+Paired: adaptive(α=1, r_e≈9.3) − fixed(r_e=9.00), matched depth, eps=1, seeds 42/43/44.
+
+| seed | Δ `loss_min` | Δ `last5` |
+|---|---|---|
+| 42 | −8.3e-4 | −6.4e-4 |
+| 43 | −2.8e-4 | +7.9e-3 |
+| 44 | +1.7e-4 | +1.7e-3 |
+| **mean** | **−3.1e-4** (2/3 neg, t=−1.09) | **+3.0e-3** (1/3 neg, t=+1.17) |
+
+n=3 needs |t|>4.30 for p<0.05. **Neither metric is significant, and they disagree in
+SIGN** — the signature of no effect rather than a weak one.
+
+**Verdict: the eps=1 heterogeneity effect does NOT replicate.** (Same conclusion as
+the retracted §8, but on complete data; §8's numbers were computed mid-training and
+were wrong.)
+
+### 9.1 Metric choice at eps=1
+
+`loss_min` and `last5` diverge badly here because DP trajectories destabilise late.
+`loss_min` is the operationally correct primary: the trainer runs
+`--restore-best-checkpoint` by default, so **the deployed model IS the best
+checkpoint**. `last5` is reported as a stability indicator, not a utility metric.
+
+### 9.2 Side observation: adaptivity costs late-training stability
+
+Mean gap between `loss_min` and `last5` (bigger = more late blow-up):
+
+| arm | gap |
+|---|---|
+| adaptive α=1 | **0.0052** (0.0011 / 0.0122 / 0.0024) |
+| fixed r_e=9 | 0.0019 (0.0009 / 0.0039 / 0.0008) |
+
+Adaptive arms destabilise ~2.7× more late in training at eps=1. Plausible mechanism:
+re-randomising directions from an increasingly noise-dominated spectrum. n=3 and
+one run dominates ⇒ hypothesis, not a finding — but it is a *cost* of adaptivity, and
+DP practitioners care about stability.
+
+### 9.3 FINAL CROSS-REGIME VERDICT
+
+| regime | per-matrix adaptivity vs matched uniform depth |
+|---|---|
+| non-DP (7 arms, 11 runs) | mean −0.5e-4, 4/7 neg → **no effect** |
+| eps=1 (paired, 3 seeds) | loss_min −3.1e-4 (t=−1.09) / last5 +3.0e-3 (t=+1.17), signs disagree → **no effect** |
+
+**α affects utility only through average exploration depth, in both regimes. It is a
+floor constraint (stay above ~0.2), not a tuning knob, and per-matrix tailoring adds
+nothing measurable.**
+
+### 9.4 Process note
+
+This section exists because §8 was published from runs that were still training
+(26/27 evals). Lesson: **verify `state == "finished"` explicitly; do not infer
+completion from eval count.** Four candidate effects in this project have now died
+under replication (non-DP heterogeneity, α=∞ allocation on MBPP+, the retention
+effect, eps=1 heterogeneity) — plus one that died from being measured too early.
