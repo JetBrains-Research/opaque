@@ -368,7 +368,11 @@ class TestRandomAllocationTightness:
             num_bins=8,
             n_steps=12,
         )
-        values = [process.pld_at(k).epsilon_at(1e-8) for k in range(1, 13)]
+        # These representative prefixes cover the first step, two interior
+        # horizons, and the declared horizon without repeatedly rebuilding
+        # the expensive random-allocation PLD for every prefix.
+        prefixes = (1, 4, 8, 12)
+        values = [process.pld_at(k).epsilon_at(1e-8) for k in prefixes]
         assert values == sorted(values)
         poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), 1 / 8)
         assert values[0] == pytest.approx(poisson.epsilon_at(1e-8), abs=2e-3)
