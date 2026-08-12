@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1032,6 +1032,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2953,7 +2976,7 @@ term dominates for large models.</p>
 </tbody>
 </table>
 <p>LoRA dramatically reduces gradient memory because only the adapter
-parameters (~0.1% of model) require per-example gradients.  Use
+parameters (~0.1% of the model) require per-example gradients. Use
 <code>make_functional(model, partition_trainable=True)</code> to expose only the
 trainable subset to <code>vmap(grad(...))</code> — see <a href="../../reference/utilities/#trainable-frozen-partition-for-peft-and-lora">Utilities reference —
 <code>make_functional</code></a>.</p>
@@ -2962,7 +2985,7 @@ trainable subset to <code>vmap(grad(...))</code> — see <a href="../../referenc
 <code>microbatch_size=16</code> and <code>batch_size=256</code>, vmap runs 16 forward-backward
 passes of 16 examples each, accumulating the clipped gradients. Memory
 drops from <span class="arithmatex">\(256 \cdot P\)</span> to <span class="arithmatex">\(16 \cdot P\)</span> for the gradient term, at the
-cost of 16x more sequential computation.</p>
+cost of 16× more sequential computation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">loss_fn</span><span class="p">,</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
@@ -3015,7 +3038,7 @@ trade-off on your workload.</p>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">grad</span><span class="p">(</span><span class="n">my_model</span><span class="p">))(</span><span class="n">batch_x</span><span class="p">)</span>
 </code></pre></div>
-<p><strong>With HuggingFace models:</strong></p>
+<p><strong>With Hugging Face models:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">model</span><span class="o">.</span><span class="n">gradient_checkpointing_enable</span><span class="p">()</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Then proceed with make_functional, clipped_grad, etc.</span>

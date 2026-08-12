@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1104,6 +1104,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2748,10 +2771,10 @@
 <ol>
 <li><strong><code>make_functional</code></strong> converts the model so parameters are passed
    explicitly, which is required for <code>torch.func.vmap</code>.</li>
-<li><strong><code>clipped_grad</code></strong> computes per-example gradients, clips each to L2
+<li><strong><code>clipped_grad</code></strong> computes per-example gradients, clips each to an L2
    norm 1.0, and sums the result.</li>
-<li><strong><code>acc.calibrate</code></strong> binary-searches for the noise multiplier that
-   achieves epsilon=3.0 over the full training run.</li>
+<li><strong><code>acc.calibrate</code></strong> performs a binary search for the noise multiplier
+   that achieves ε = 3.0 over the full training run.</li>
 <li><strong><code>gaussian_noise</code></strong> adds calibrated Gaussian noise to the clipped
    gradient sum.</li>
 <li><strong><code>Accountant</code></strong> tracks cumulative privacy cost and checks against the
@@ -2759,10 +2782,10 @@
 </ol>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../../user-guide/">User Guide</a> -- detailed explanations of each
+<li><a href="../../user-guide/">User Guide</a> — detailed explanations of each
   component.</li>
-<li><a href="../../tutorials/">Tutorials</a> -- hands-on Jupyter notebooks.</li>
-<li><a href="../../reference/">API Reference</a> -- complete function signatures.</li>
+<li><a href="../../tutorials/">Tutorials</a> — hands-on Jupyter notebooks.</li>
+<li><a href="../../reference/">API Reference</a> — complete function signatures.</li>
 </ul>
 
 

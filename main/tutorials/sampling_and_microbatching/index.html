@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3553,7 +3576,7 @@ Ratio:             2.41x
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="training-with-poissonsampler">Training with PoissonSampler<a class="anchor-link" href="#training-with-poissonsampler">¶</a></h2><p>Capping with <code>truncated_batch_size</code> bounds batch size (stabler training)
+<h2 id="training-with-poissonsampler">Training with PoissonSampler<a class="anchor-link" href="#training-with-poissonsampler">¶</a></h2><p>Capping with <code>truncated_batch_size</code> bounds batch size (more stable training)
 but worsens privacy versus plain Poisson at the same <code>sample_rate</code> unless
 you recalibrate noise; use <code>dpsgd_acc.poisson(..., truncated_batch_size=, dataset_size=)</code>.</p>
 </div>

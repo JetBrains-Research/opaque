@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#huggingface-integration" class="md-skip">
+        <a href="#hugging-face-integration" class="md-skip">
           Skip to content
         </a>
       
@@ -1112,6 +1112,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2666,20 +2689,20 @@
   
 
 
-<h1 id="huggingface-integration">HuggingFace Integration<a class="headerlink" href="#huggingface-integration" title="Permanent link">&para;</a></h1>
-<p>Opaque ships a HuggingFace-shaped trainer (<code>opaque.transformers.DPTrainer</code>)
+<h1 id="hugging-face-integration">Hugging Face Integration<a class="headerlink" href="#hugging-face-integration" title="Permanent link">&para;</a></h1>
+<p>Opaque ships a Hugging Face–style trainer (<code>opaque.transformers.DPTrainer</code>)
 plus a per-model patch surface (<code>opaque.patches</code>) so existing
 <code>transformers</code> models can be trained under DP-SGD with the familiar
 <code>Trainer.train()</code> / <code>evaluate()</code> / <code>predict()</code> interface.</p>
-<p>This section is the routing guide.  Pick the page that matches what
+<p>This section is the routing guide. Pick the page that matches what
 you're trying to do.</p>
 <h2 id="whats-covered">What's covered<a class="headerlink" href="#whats-covered" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="dptrainer/">DPTrainer</a></strong> — common training / eval / predict
-  usage.  Start here if you have a model and a dataset and want to
+  usage. Start here if you have a model and a dataset and want to
   train.</li>
 <li><strong><a href="training-arguments/">TrainingArguments</a></strong> — the most-used DP
-  knobs, the batch-size contract, and the save / resume claims.  The
+  knobs, the batch-size contract, and the save / resume claims. The
   exhaustive field listing lives in the API reference.</li>
 <li><strong><a href="model-patches/">Model patches</a></strong> — what <code>apply_runtime_patches</code>
   and <code>apply_model_patches</code> do, why vmap needs them, the model
@@ -2704,7 +2727,7 @@ the only Opaque-specific piece is
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          └─ Need exact field types / defaults → reference/transformers.md
 </code></pre></div>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<p>A minimal DPTrainer run looks like a HuggingFace <code>Trainer</code> run with a
+<p>A minimal DPTrainer run looks like a Hugging Face <code>Trainer</code> run with a
 few DP-specific fields on <code>TrainingArguments</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">DPTrainer</span><span class="p">,</span> <span class="n">TrainingArguments</span>
@@ -2734,7 +2757,7 @@ optional Triton kernels) and calibrates the noise multiplier from
 <code>privacy_target_epsilon</code>.  Every detail lives in the topic pages
 linked above.</p>
 <h2 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h2>
-<p>The HF integration prioritises <strong>decoder-only text models</strong>
+<p>The HF integration prioritizes <strong>decoder-only text models</strong>
 (<code>*ForCausalLM</code> and shared text modules) tested against
 <code>transformers==4.57.1</code>.  Vision-language stacks (e.g.
 <code>*ForConditionalGeneration</code>) are not in the default patch set; see

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1263,6 +1263,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2972,8 +2995,8 @@
 
 <h1 id="random-number-generation">Random Number Generation<a class="headerlink" href="#random-number-generation" title="Permanent link">&para;</a></h1>
 <p>Opaque uses explicit RNG keys instead of global random state. Every
-function that involves randomness -- noise injection, sampling, adaptive
-clipping, auditing -- takes a <code>key</code> parameter. This follows the JAX PRNG
+function that involves randomness — noise injection, sampling, adaptive
+clipping, and auditing — takes a <code>key</code> parameter. This follows the JAX PRNG
 model: no hidden state, fully deterministic, and safe in distributed
 settings.</p>
 <h2 id="why-explicit-keys">Why explicit keys<a class="headerlink" href="#why-explicit-keys" title="Permanent link">&para;</a></h2>
@@ -3069,7 +3092,7 @@ first.</p>
 </code></pre></div>
 <p><code>fold_in(k, a, b)</code> is equivalent to <code>fold_in(fold_in(k, a), b)</code>.</p>
 <p><code>fold_in</code> uses BLAKE2b hashing internally. Different data values produce
-different keys, and int vs str are distinguished:</p>
+different keys, and <code>int</code> versus <code>str</code> values are distinguished:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span> <span class="o">!=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">42</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span> <span class="o">!=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="s2">&quot;42&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span>  <span class="c1"># int vs str distinguished</span>
 </code></pre></div>
@@ -3161,7 +3184,7 @@ explicit control over the derivation chain:
 <h3 id="distributed-training">Distributed training<a class="headerlink" href="#distributed-training" title="Permanent link">&para;</a></h3>
 <p>In centralized DP-SGD, all ranks must add the <strong>same</strong> noise so that
 models stay in sync. Pass the same <code>key(seed)</code> on every rank:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Same key on all ranks -&gt; same noise -&gt; models stay in sync</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Same key on all ranks → same noise → models stay in sync</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 </code></pre></div>
 <p>For per-rank key control, use <code>fold_in()</code>:</p>

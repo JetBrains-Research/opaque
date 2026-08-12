@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -4490,7 +4513,7 @@ Higher score = smaller gradient norm = more likely a training member.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OneRunEstimate</span>
 </code></pre></div>
 <p>Build a one-run privacy estimate from canary scores. Splits scores by
-the coin-flip partition, precomputes the Pareto-optimal ROC frontier,
+the coin-flip partition, precomputes the empirical ROC,
 and returns a frozen estimate.</p>
 <table>
 <thead>
@@ -4570,7 +4593,7 @@ is independently included or excluded with probability 0.5.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">OneRunEstimate</span>  <span class="c1"># frozen dataclass</span>
 </code></pre></div>
 <p>Precomputed one-run audit estimate, returned by <code>auditing.one_run()</code>.
-Holds the Pareto-optimal threshold structure and exposes:</p>
+Holds the empirical ROC counts and exposes:</p>
 <ul>
 <li>a <strong>default audit-method surface</strong> (<code>epsilon_at</code>, <code>delta_at</code>, <code>beta_at</code>,
   <code>advantage</code>) that dispatches to μ-GDP — the paper-recommended default
@@ -4644,7 +4667,7 @@ provided. Independent of the audit method.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
 </code></pre></div>
 <p>Empirical attack β at given FPR: <code>1 − TPR</code> interpolated from the
-Pareto-optimal ROC frontier. Distinct from
+empirical ROC. Distinct from
 <a href="#beta_at"><code>beta_at</code></a> which is the theoretical f-DP β at the
 inferred μ̂-GDP.</p>
 <hr />

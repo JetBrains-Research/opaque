@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1038,6 +1038,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/huggingface/training-arguments/" class="md-nav__link">
         
   
@@ -1740,9 +1763,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-reward-metric-eval" class="md-nav__link">
+  <a href="#5-reward-metric-evaluation" class="md-nav__link">
     <span class="md-ellipsis">
-      5. Reward-metric eval
+      5. Reward-metric evaluation
     </span>
   </a>
   
@@ -2733,9 +2756,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-reward-metric-eval" class="md-nav__link">
+  <a href="#5-reward-metric-evaluation" class="md-nav__link">
     <span class="md-ellipsis">
-      5. Reward-metric eval
+      5. Reward-metric evaluation
     </span>
   </a>
   
@@ -2816,7 +2839,7 @@ and sampling imports for <code>opaque.dpftrl</code> to run
 EMA-updated reference policy variant exposed on the trainer surface.</p>
 <h2 id="1-reference-log-probabilities">1. Reference log-probabilities<a class="headerlink" href="#1-reference-log-probabilities" title="Permanent link">&para;</a></h2>
 <p>Run the frozen reference once over the dataset, <em>before</em> training, and cache
-the per-example chosen/rejected logps when reuse is useful.
+the per-example chosen/rejected logps when reuse is needed.
 <code>opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset</code> takes a
 <code>ref(batch) -&gt; {col: (B,) tensor}</code> callable (wrap your model into one),
 runs a single <code>torch.no_grad()</code> pass, gathers across ranks, and caches to
@@ -2853,16 +2876,18 @@ has no bf16 column type.</p>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
 </code></pre></div>
 <p>For the example above, the stored metadata contract is:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">dataset_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">&quot;_fingerprint&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">if</span> <span class="n">dataset_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">dataset_id</span> <span class="o">=</span> <span class="nb">repr</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">hasher</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">()</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">dataset_id</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">((</span><span class="s2">&quot;dpo&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">((</span><span class="s2">&quot;ref_chosen_logps&quot;</span><span class="p">,</span> <span class="s2">&quot;ref_rejected_logps&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">cache_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&lt;cache_dir&gt;/</span><span class="si">{</span><span class="n">hasher</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span><span class="si">}</span><span class="s2">.safetensors&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">dataset_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="s2">&quot;_fingerprint&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">if</span> <span class="n">dataset_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">dataset_id</span> <span class="o">=</span> <span class="nb">repr</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">hasher</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">()</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">dataset_id</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">((</span><span class="s2">&quot;dpo&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">hasher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">repr</span><span class="p">((</span><span class="s2">&quot;ref_chosen_logps&quot;</span><span class="p">,</span> <span class="s2">&quot;ref_rejected_logps&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">cache_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&lt;cache_dir&gt;/</span><span class="si">{</span><span class="n">hasher</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span><span class="si">}</span><span class="s2">.safetensors&quot;</span>
 </code></pre></div>
 <p>When the policy is a PEFT/LoRA adapter, the <em>base</em> model is the reference:
 enter <code>null_ref_context(model)</code> (or <code>with_disabled_adapter(model)</code>) around
@@ -2973,7 +2998,7 @@ log-probs, not log-ratios); SimPO is the length-normalized sigmoid plus a margin
 and CPO is pure composition of existing heads.</p>
 <h2 id="4-dp-sgd-loop">4. DP-SGD loop<a class="headerlink" href="#4-dp-sgd-loop" title="Permanent link">&para;</a></h2>
 <p>The clip/noise/optimizer/sampler glue is identical to
-<a href="../sft/#3-vmapgrad-clip-noise-optimizer">SFT</a>; only <code>batch_argnums</code> grows
+<a href="../sft/#3-vmapgrad-clipping-noise-and-optimization">SFT</a>; only <code>batch_argnums</code> grows
 to cover all eight per-example arguments:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
@@ -2995,7 +3020,7 @@ to cover all eight per-example arguments:</p>
 <a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">trainable</span><span class="p">)</span>
 <a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="n">trainable</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">trainable</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
 </code></pre></div>
-<h2 id="5-reward-metric-eval">5. Reward-metric eval<a class="headerlink" href="#5-reward-metric-eval" title="Permanent link">&para;</a></h2>
+<h2 id="5-reward-metric-evaluation">5. Reward-metric evaluation<a class="headerlink" href="#5-reward-metric-evaluation" title="Permanent link">&para;</a></h2>
 <p>DPO has no token-level CE eval objective, so evaluate with reward metrics
 on held-out pairs. <code>opaque.alignment.dpo.metric.reward_metrics</code> takes the
 same per-example log-ratios and returns detached <code>rewards/chosen</code>,

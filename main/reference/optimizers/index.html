@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2559,9 +2582,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#serialisation" class="md-nav__link">
+  <a href="#serialization" class="md-nav__link">
     <span class="md-ellipsis">
-      Serialisation
+      Serialization
     </span>
   </a>
   
@@ -2799,9 +2822,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#serialisation" class="md-nav__link">
+  <a href="#serialization" class="md-nav__link">
     <span class="md-ellipsis">
-      Serialisation
+      Serialization
     </span>
   </a>
   
@@ -2849,7 +2872,7 @@
 <code>opaque.optimizers</code>: Opaque-built factories with
 DP-aware paths, plus a curated set of <code>torchopt</code> re-exports for the
 stateless primitives where vanilla behaviour is acceptable under DP
-noise.  All factories return
+noise. All factories return
 <a href="https://torchopt.readthedocs.io/">TorchOpt</a> <code>GradientTransformation</code>s
 and route DP metadata from <code>NoisedPytree</code> or <code>SecondMomentNoiseOutput</code> updates.</p>
 <hr />
@@ -2920,8 +2943,8 @@ an alternative answer to the same v-update bias.</p>
 </tr>
 <tr>
 <td><strong><code>lion</code></strong></td>
-<td>(planned: sign gating)</td>
-<td>Smaller state than Adam; vanilla works under noise but the gated mode is the real DP variant</td>
+<td>No second-moment correction</td>
+<td>Smaller state than Adam; vanilla works under noise</td>
 </tr>
 <tr>
 <td><strong><code>rmsprop</code></strong></td>
@@ -3001,7 +3024,7 @@ whatever noise-aware machinery it has when <code>noise_bias_correction=True</cod
 </tr>
 <tr>
 <td><code>lion</code></td>
-<td>(planned) sign gating when per-coordinate SNR is below threshold</td>
+<td>No second-moment correction</td>
 </tr>
 <tr>
 <td><code>schedule_free</code></td>
@@ -3015,7 +3038,7 @@ whatever noise-aware machinery it has when <code>noise_bias_correction=True</cod
 <p>Raw pytree updates use standard optimizer math.</p>
 <h3 id="noisy_squared_grads"><code>noisy_squared_grads</code><a class="headerlink" href="#noisy_squared_grads" title="Permanent link">&para;</a></h3>
 <p>Substitutes a privately-estimated <code>g²</code> stream in place of squaring the
-(already noised) gradient.  <code>mf_gaussian_noise(..., second_moment_strategy=...)</code> returns
+(already noised) gradient. <code>mf_gaussian_noise(..., second_moment_strategy=...)</code> returns
 a paired output that Opaque optimizers route automatically:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span><span class="p">,</span> <span class="n">mf_gaussian_noise</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
@@ -3071,8 +3094,8 @@ at any single <code>update()</code> call; passing both routes raises <code>Value
 <hr />
 <h2 id="schedule-free-wrapper">Schedule-free wrapper<a class="headerlink" href="#schedule-free-wrapper" title="Permanent link">&para;</a></h2>
 <p><code>schedule_free</code> wraps any base <code>GradientTransformation</code> (Opaque-built
-or torchopt) with Defazio's schedule-free averaging
-(<a href="https://arxiv.org/abs/2405.15682">arXiv:2405.15682</a>).  Three weight
+or TorchOpt) with Defazio's schedule-free averaging
+(<a href="https://arxiv.org/abs/2405.15682">arXiv:2405.15682</a>). Three weight
 sequences internally: <code>z</code> (raw iterate), <code>x</code> (Polyak-Ruppert average,
 the published params), <code>y = (1-β)z + βx</code> (forward-pass weights).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span><span class="p">,</span> <span class="n">schedule_free</span>
@@ -3089,16 +3112,16 @@ the published params), <code>y = (1-β)z + βx</code> (forward-pass weights).</p
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">eval_params</span> <span class="o">=</span> <span class="n">opt_state</span><span class="o">.</span><span class="n">x</span>
 </code></pre></div>
 <p><strong>DP-utility note</strong>: under DP, <code>x_t = (1/n) Σ z_s</code> is a Polyak-Ruppert
-average of noised iterates.  When per-step iterate noise is approximately
+average of noised iterates. When per-step iterate noise is approximately
 independent, <code>Var[x_n] ≈ Var[z]/n</code> — the published checkpoint has
 significantly lower noise than the final iterate at the same privacy
 budget.  This is a real DP-utility win specific to averaging-based
 methods.</p>
 <hr />
-<h2 id="serialisation">Serialisation<a class="headerlink" href="#serialisation" title="Permanent link">&para;</a></h2>
-<p><code>state_dict</code> / <code>from_state_dict</code> live in :mod:<code>opaque.serialization</code>.  They
-walk chain state, encoding every tensor leaf and Python primitive into a flat
-<code>{path: value}</code> dict ready for <code>torch.save</code>.  Restore returns a <strong>new</strong>
+<h2 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h2>
+<p><code>state_dict</code> / <code>from_state_dict</code> live in <code>opaque.serialization</code>. They walk
+chain state, encoding every tensor leaf and Python primitive into a flat
+<code>{path: value}</code> dict ready for <code>torch.save</code>. Restore returns a <strong>new</strong>
 object and never mutates the template.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
@@ -3120,10 +3143,10 @@ releases load cleanly from older checkpoints.</p>
 <hr />
 <h2 id="ddp-compatibility">DDP compatibility<a class="headerlink" href="#ddp-compatibility" title="Permanent link">&para;</a></h2>
 <p>When using <code>torch.nn.parallel.DistributedDataParallel</code>, Opaque's
-functional gradient pipeline runs <em>inside</em> each rank.  DDP handles the
+functional gradient pipeline runs <em>inside</em> each rank. DDP handles the
 all-reduce of noisy gradients across ranks; the optimizer state stays
 synchronised because <code>optimizer.update</code> is a pure function and all
-ranks receive identical noisy gradients after <code>sum_gradients</code> + noise
+ranks receive identical noisy gradients after <code>sum_gradients</code> and noise
 addition with the same key on all ranks.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
 per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>

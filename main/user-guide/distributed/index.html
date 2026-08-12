@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1188,6 +1188,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2827,11 +2850,11 @@
 <p>Each device runs the same training loop on a different data shard. Three
 operations happen in sequence:</p>
 <ol>
-<li><strong>Clip</strong> -- each device computes per-example clipped gradients on its
+<li><strong>Clip</strong> — each device computes per-example clipped gradients on its
    local batch.</li>
-<li><strong>Aggregate</strong> -- an AllReduce SUM collects the clipped gradient sums
+<li><strong>Aggregate</strong> — an AllReduce SUM collects the clipped gradient sums
    from every device.</li>
-<li><strong>Noise</strong> -- every device independently adds the <em>same</em> Gaussian noise.
+<li><strong>Noise</strong> — every device independently adds the <em>same</em> Gaussian noise.
    Because the noise key is identical on all ranks, the noise is identical,
    and models stay in sync.</li>
 </ol>
@@ -2882,7 +2905,7 @@ operations happen in sequence:</p>
 <a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="p">)</span>
 <a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>  <span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="p">)</span>
 <a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>
 <a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="c1"># Poisson sampler (shard dataset)</span>
@@ -2931,7 +2954,7 @@ to get independent per-rank noise streams when needed:</p>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Independent noise — different key per rank</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  <span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">)</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">)</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">)</span>
 </code></pre></div>
 <p>In the common centralized DP-SGD pattern, pass the same <code>key(seed)</code> on
@@ -2957,7 +2980,7 @@ call, every rank holds the same total clipped gradient sum in <code>grads</code>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients_</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="adaptive-clipping">Adaptive clipping<a class="headerlink" href="#adaptive-clipping" title="Permanent link">&para;</a></h2>
-<p><code>adaptive_clipped_grad</code> is local-only -- it does not communicate or
+<p><code>adaptive_clipped_grad</code> is local-only — it does not communicate or
 auto-detect DDP. Each rank clips its own local batch and records local
 clipping statistics in <code>AdaptiveClipState</code>. To keep the adaptive threshold
 consistent across ranks, explicitly synchronize that state after each step:</p>
@@ -3065,7 +3088,7 @@ process group and raise <code>RuntimeError</code>.</p>
 </tr>
 <tr>
 <td><code>sum_gradients(grads)</code></td>
-<td>Return a summed-copy of a gradient PyTree</td>
+<td>Return a summed copy of a gradient PyTree</td>
 </tr>
 <tr>
 <td><code>sum_gradients_(grads)</code></td>

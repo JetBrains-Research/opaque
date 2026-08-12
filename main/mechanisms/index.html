@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2691,7 +2714,7 @@ Opaque implements two families:</p>
 <li><strong><a href="dp-sgd/">DP-SGD mechanisms</a></strong> — independent (per-step)
   noise. Simple, broadly applicable, composes step-by-step.</li>
 <li><strong><a href="dp-ftrl/">DP-FTRL mechanisms</a></strong> — correlated noise across
-  the whole training run via matrix factorisation. Reduces effective
+  the whole training run via matrix factorization. Reduces effective
   noise on cumulative updates at the cost of fixing the training
   length in advance.</li>
 </ul>
@@ -2757,7 +2780,7 @@ second-moment caveats), see the <a href="../user-guide/dp-ftrl/">DP-FTRL user gu
 <td><a href="dp-ftrl/bisr/">BISR</a></td>
 <td>Banded inverse square root</td>
 <td><span class="arithmatex">\(O(p)\)</span></td>
-<td>Asymptotically optimal, generalises λCGD</td>
+<td>Asymptotically optimal; generalizes λCGD</td>
 </tr>
 <tr>
 <td><a href="dp-ftrl/bsr/">BSR</a></td>
@@ -2782,7 +2805,7 @@ second-moment caveats), see the <a href="../user-guide/dp-ftrl/">DP-FTRL user gu
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└─ Yes ── Constraints?
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├─ Zero extra memory → DP-λCGD (PRNG replay)
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├─ Asymptotically optimal → BISR (generalises λCGD)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├─ Asymptotically optimal → BISR (generalizes λCGD)
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          ├─ Closed-form workload (α&gt;β) → BSR (NeurIPS 2024)
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>          ├─ n &lt; 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>          └─ n &gt; 5000, multi-epoch → BLT (memory-efficient)
@@ -2806,62 +2829,6 @@ mechanisms support all amplification types:</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>BandMF</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">No</td>
-</tr>
-<tr>
-<td>BLT</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes</td>
-</tr>
-<tr>
-<td>λCGD</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes</td>
-</tr>
-<tr>
-<td>BSR</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes</td>
-</tr>
-<tr>
-<td>BISR</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">Yes</td>
-</tr>
-<tr>
-<td>Identity</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">Yes</td>
-</tr>
-<tr>
-<td>-----------</td>
-<td style="text-align: center;">:-----------:</td>
-<td style="text-align: center;">:---------------------:</td>
-<td style="text-align: center;">:-------------------:</td>
-<td style="text-align: center;">:-------------------:</td>
-<td style="text-align: center;">:-----------------:</td>
-</tr>
 <tr>
 <td>Gaussian</td>
 <td style="text-align: center;">Yes</td>
@@ -2888,7 +2855,7 @@ mechanisms support all amplification types:</p>
 </tr>
 <tr>
 <td>BLT</td>
-<td style="text-align: center;"><em>internal</em></td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>

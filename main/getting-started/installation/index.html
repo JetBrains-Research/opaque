@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -567,13 +567,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-gcp-artifact-registry" class="md-nav__link">
+  <a href="#from-jetbrains-packages" class="md-nav__link">
     <span class="md-ellipsis">
-      From GCP Artifact Registry
+      From JetBrains Packages
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="From GCP Artifact Registry">
+    <nav class="md-nav" aria-label="From JetBrains Packages">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1161,6 +1161,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2670,13 +2693,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-gcp-artifact-registry" class="md-nav__link">
+  <a href="#from-jetbrains-packages" class="md-nav__link">
     <span class="md-ellipsis">
-      From GCP Artifact Registry
+      From JetBrains Packages
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="From GCP Artifact Registry">
+    <nav class="md-nav" aria-label="From JetBrains Packages">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2773,19 +2796,26 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>Work in progress:</strong> Opaque is research software under active development.
+Its differential-privacy mechanisms, accounting, and privacy guarantees are
+still being validated and may change. Do not rely on it for production or
+compliance-sensitive privacy guarantees without independent validation for
+your use case.</p>
+</blockquote>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Python 3.11 or 3.12</li>
 <li>PyTorch 2.9 or later</li>
 </ul>
-<h2 id="from-gcp-artifact-registry">From GCP Artifact Registry<a class="headerlink" href="#from-gcp-artifact-registry" title="Permanent link">&para;</a></h2>
-<p>Install <code>opaque</code> as the single public package entrypoint:</p>
+<h2 id="from-jetbrains-packages">From JetBrains Packages<a class="headerlink" href="#from-jetbrains-packages" title="Permanent link">&para;</a></h2>
+<p>Install <code>opaque</code> as the single public package entry point:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>opaque<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--index-url<span class="w"> </span>https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--index-url<span class="w"> </span>https://packages.jetbrains.team/pypi/p/fed/python/simple/
 </code></pre></div>
-<p>Or with uv:</p>
+<p>Or with <code>uv</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>add<span class="w"> </span>opaque<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--index<span class="w"> </span>https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--index<span class="w"> </span>https://packages.jetbrains.team/pypi/p/fed/python/simple/
 </code></pre></div>
 <h3 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[auditing]&quot;</span><span class="w">      </span><span class="c1"># + opaque-auditing (empirical privacy auditing)</span>
@@ -2794,6 +2824,8 @@
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[all]&quot;</span><span class="w">           </span><span class="c1"># everything above</span>
 </code></pre></div>
 <h2 id="from-source">From Source<a class="headerlink" href="#from-source" title="Permanent link">&para;</a></h2>
+<p>Clone the repository when developing Opaque, inspecting its implementation, or
+running its test suite. For ordinary use, prefer the published package above.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Clone the repository</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetBrains-Research/opaque.git
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">cd</span><span class="w"> </span>opaque
@@ -2826,7 +2858,7 @@
 query the installed distributions individually.</p>
 <h2 id="pycharm">PyCharm<a class="headerlink" href="#pycharm" title="Permanent link">&para;</a></h2>
 <p>In PyCharm, select the <code>uv</code> interpreter for the project where you ran
-<code>uv add</code>. Completion and Quick Documentation follow Opaque's public façade
+<code>uv add</code>. Code completion and Quick Documentation follow Opaque's public façade
 imports, such as <code>opaque.dpsgd.clipping</code>, <code>opaque.dpsgd.noise</code>, and
 <code>opaque.accounting</code>; avoid copying <code>opaque.api.*</code> paths from implementation
 tracebacks into application code. Clone Opaque and use an editable workspace

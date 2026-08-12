@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1152,6 +1152,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2763,16 +2786,16 @@ standalone install targets in user-facing workflows.</p>
 <p>Pick the track that matches your problem:</p>
 <ul>
 <li><strong><a href="dp-sgd/">DP-SGD end-to-end</a></strong> — independent Gaussian noise at
-  every step, per-step privacy composition. The standard DP training
-  recipe. Imports from <code>opaque.dpsgd.*</code>.</li>
+  every step, with per-step privacy composition. This is the standard DP
+  training recipe. Imports from <code>opaque.dpsgd.*</code>.</li>
 <li><strong><a href="dp-ftrl/">DP-FTRL end-to-end</a></strong> — correlated noise across the
   whole training run via matrix factorization. Imports from
   <code>opaque.dpftrl.*</code>.</li>
 </ul>
 <p>Both pipelines share the same primitives (clipping, noise, sampling,
 optimizer, accounting). The topic pages below are stack-agnostic
-concept reference; each end-to-end guide picks the right pieces and
-stitches them.</p>
+concept references; each end-to-end guide picks the right pieces and
+combines them.</p>
 <h2 id="topics">Topics<a class="headerlink" href="#topics" title="Permanent link">&para;</a></h2>
 <h3 id="foundations">Foundations<a class="headerlink" href="#foundations" title="Permanent link">&para;</a></h3>
 <ul>

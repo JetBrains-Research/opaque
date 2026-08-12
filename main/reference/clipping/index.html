@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2285,7 +2308,7 @@
           <li class="md-nav__item">
   <a href="#clipping-functions" class="md-nav__link">
     <span class="md-ellipsis">
-      Clipping Functions
+      Clipping functions
     </span>
   </a>
   
@@ -2294,7 +2317,7 @@
           <li class="md-nav__item">
   <a href="#state-types" class="md-nav__link">
     <span class="md-ellipsis">
-      State Types
+      State types
     </span>
   </a>
   
@@ -2303,7 +2326,7 @@
           <li class="md-nav__item">
   <a href="#auxiliary-output-types" class="md-nav__link">
     <span class="md-ellipsis">
-      Auxiliary Output Types
+      Auxiliary output types
     </span>
   </a>
   
@@ -2312,7 +2335,7 @@
           <li class="md-nav__item">
   <a href="#pytree-wrappers" class="md-nav__link">
     <span class="md-ellipsis">
-      Pytree Wrappers
+      PyTree wrappers
     </span>
   </a>
   
@@ -2321,7 +2344,7 @@
           <li class="md-nav__item">
   <a href="#distributed-sync-helpers" class="md-nav__link">
     <span class="md-ellipsis">
-      Distributed Sync Helpers
+      Distributed sync helpers
     </span>
   </a>
   
@@ -3042,7 +3065,7 @@
           <li class="md-nav__item">
   <a href="#clipping-functions" class="md-nav__link">
     <span class="md-ellipsis">
-      Clipping Functions
+      Clipping functions
     </span>
   </a>
   
@@ -3051,7 +3074,7 @@
           <li class="md-nav__item">
   <a href="#state-types" class="md-nav__link">
     <span class="md-ellipsis">
-      State Types
+      State types
     </span>
   </a>
   
@@ -3060,7 +3083,7 @@
           <li class="md-nav__item">
   <a href="#auxiliary-output-types" class="md-nav__link">
     <span class="md-ellipsis">
-      Auxiliary Output Types
+      Auxiliary output types
     </span>
   </a>
   
@@ -3069,7 +3092,7 @@
           <li class="md-nav__item">
   <a href="#pytree-wrappers" class="md-nav__link">
     <span class="md-ellipsis">
-      Pytree Wrappers
+      PyTree wrappers
     </span>
   </a>
   
@@ -3078,7 +3101,7 @@
           <li class="md-nav__item">
   <a href="#distributed-sync-helpers" class="md-nav__link">
     <span class="md-ellipsis">
-      Distributed Sync Helpers
+      Distributed sync helpers
     </span>
   </a>
   
@@ -3516,9 +3539,9 @@
 AUTO-S helpers from <code>opaque.dpftrl.clipping</code>; DP-SGD users use
 <code>opaque.dpsgd.clipping</code> for all three.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Per-sample gradient clipping bounds the influence any single training example can have on the model, enabling
-differential privacy.</p>
-<h3 id="clipping-functions">Clipping Functions<a class="headerlink" href="#clipping-functions" title="Permanent link">&para;</a></h3>
+<p>Per-sample gradient clipping bounds the influence that any single training
+example can have on the model, enabling differential privacy.</p>
+<h3 id="clipping-functions">Clipping functions<a class="headerlink" href="#clipping-functions" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong><a href="../../user-guide/clipping/#clipped_grad-recommended-api"><code>clipped_grad()</code></a></strong> — High-level API: differentiates, clips, and sums gradients.</li>
 <li><strong><a href="../../user-guide/clipping/"><code>clipped_fun()</code></a></strong> — Clip and sum arbitrary function outputs (PyTrees).</li>
@@ -3528,14 +3551,14 @@ differential privacy.</p>
 <li><strong><a href="../../user-guide/clipping/"><code>clip_pytree()</code></a></strong> — Low-level: clip an existing PyTree of gradients.</li>
 <li><strong><a href="../../user-guide/clipping/"><code>auto_scale_pytree()</code></a></strong> — Low-level: AUTO-S scale an existing PyTree.</li>
 </ol>
-<h3 id="state-types">State Types<a class="headerlink" href="#state-types" title="Permanent link">&para;</a></h3>
+<h3 id="state-types">State types<a class="headerlink" href="#state-types" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>ClipState</code></strong> — Base class for clipping state.</li>
 <li><strong><code>FixedClipState</code></strong> — Marker state for fixed <code>clipped_grad</code> / <code>clipped_fun</code>.</li>
 <li><strong><code>AdaptiveClipState</code></strong> — Internal execution state for <code>adaptive_clipped_grad</code>.</li>
 <li><strong><code>AutoClipState</code></strong> — Marker state for <code>auto_clipped_grad</code> / <code>auto_clipped_fun</code>.</li>
 </ul>
-<h3 id="auxiliary-output-types">Auxiliary Output Types<a class="headerlink" href="#auxiliary-output-types" title="Permanent link">&para;</a></h3>
+<h3 id="auxiliary-output-types">Auxiliary output types<a class="headerlink" href="#auxiliary-output-types" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>ClippedGradAux</code></strong> — Per-example <code>loss_values</code>, <code>grad_norms</code>, <code>clipped_grad_norms</code>, <code>loss_aux</code>, plus aggregate <code>clipping_rate</code> and <code>batch_size</code> (from <code>clipped_grad</code>).</li>
 <li><strong><code>ClippedFunAux</code></strong> — Per-example <code>values</code>, <code>norms</code>, <code>clipped_norms</code>, <code>value_aux</code>, plus aggregate <code>clipping_rate</code> and <code>batch_size</code> (from <code>clipped_fun</code>).</li>
@@ -3543,7 +3566,7 @@ differential privacy.</p>
 <li><strong><code>AutoClippedGradAux</code></strong> — Inherits <code>ClippedGradAux</code> fields with AUTO-S semantics: <code>grad_norms</code> (pre-scale), <code>clipped_grad_norms</code> (post-scale, bounded by R), <code>clipping_rate</code> (fraction with ‖g‖ &gt; R), <code>loss_values</code>, <code>loss_aux</code>, <code>group_norms</code>, <code>batch_size</code>.</li>
 <li><strong><code>AutoClippedFunAux</code></strong> — Inherits <code>ClippedFunAux</code> fields with AUTO-S semantics: <code>norms</code> (pre-scale), <code>clipped_norms</code> (post-scale, bounded by R), <code>clipping_rate</code> (fraction with ‖v‖ &gt; R), <code>values</code>, <code>value_aux</code>, <code>group_norms</code>, <code>batch_size</code>.</li>
 </ul>
-<h3 id="pytree-wrappers">Pytree Wrappers<a class="headerlink" href="#pytree-wrappers" title="Permanent link">&para;</a></h3>
+<h3 id="pytree-wrappers">PyTree wrappers<a class="headerlink" href="#pytree-wrappers" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>ClippedPytree</code></strong> — Wraps a pytree of clipped gradients with calibration metadata (<code>max_norm</code>). Carries a <code>max_norm</code> which is either a scalar <code>float</code> or a <code>PerGroup</code> for per-parameter-group clipping.</li>
 </ul>
@@ -3565,7 +3588,7 @@ differential privacy.</p>
 <ul>
 <li><strong><code>NoisedPytree</code></strong> — Subclass of <code>ClippedPytree</code> that also carries a <code>noise_stddev</code> field (scalar or <code>PerGroup</code>). Returned by all noise functions.</li>
 </ul>
-<h3 id="distributed-sync-helpers">Distributed Sync Helpers<a class="headerlink" href="#distributed-sync-helpers" title="Permanent link">&para;</a></h3>
+<h3 id="distributed-sync-helpers">Distributed sync helpers<a class="headerlink" href="#distributed-sync-helpers" title="Permanent link">&para;</a></h3>
 <p>Use <code>sync()</code> from <code>opaque.distributed</code> to synchronize any clipping state or aux
 object. It auto-dispatches to the right function based on type:</p>
 <ul>

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2656,9 +2679,9 @@ whole training run (not per-step composition) so the noise is
 calibrated against <code>n_steps</code> once.</p>
 <h2 id="mechanisms">Mechanisms<a class="headerlink" href="#mechanisms" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="band-mf/">Band-MF</a></strong> — banded matrix factorisation (Choquette-Choo
+<li><strong><a href="band-mf/">Band-MF</a></strong> — banded matrix factorization (Choquette-Choo
   et al. 2023). Standard DP-FTRL baseline.</li>
-<li><strong><a href="blt/">BLT</a></strong> — buffered linear toeplitz (Dvijotham et al. 2024).
+<li><strong><a href="blt/">BLT</a></strong> — buffered linear Toeplitz (Dvijotham et al. 2024).
   Multi-epoch BLT covers iterating over the dataset multiple times.</li>
 <li><strong><a href="bisr/">BiSR</a></strong> — banded inverse square root.</li>
 <li><strong><a href="bsr/">BSR</a></strong> — banded square root.</li>
@@ -2668,7 +2691,7 @@ calibrated against <code>n_steps</code> once.</p>
 <p>The simplest case (sensitivity 1, no correlation) is the
 <strong>identity strategy</strong> — exposed via
 <code>opaque.dpftrl.noise.identity_strategy()</code> paired with
-<code>opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())</code>.  Useful
+<code>opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())</code>. Useful
 as a sanity check or when comparing against vanilla DP-SGD on equal
 footing.</p>
 <h2 id="pairing-with-sampling">Pairing with sampling<a class="headerlink" href="#pairing-with-sampling" title="Permanent link">&para;</a></h2>

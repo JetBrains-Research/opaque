@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1371,6 +1371,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3352,7 +3375,7 @@ sampling produces variable-size batches but has a clean privacy analysis.
 Fixed-size sampling (drawing exactly <span class="arithmatex">\(B\)</span> examples) has a slightly different
 privacy profile. Opaque uses Poisson-style sampling throughout.</p>
 <p>Truncated Poisson keeps Poisson-style randomness but caps realized batch size,
-which stabilises memory and batch norms at the cost of <strong>weaker</strong> privacy than
+which stabilizes memory and batch norms at the cost of <strong>weaker</strong> privacy than
 unconditional Poisson at the same inclusion probability <span class="arithmatex">\(q\)</span> (use the
 truncated-Poisson accountant).</p>
 <p>Opaque's <code>PoissonSampler</code> implements Poisson subsampling. The accounting module
@@ -3489,7 +3512,7 @@ impact on model quality.</p>
 <p>Standard DP-SGD adds independent noise at each training step.
 <code>gaussian_noise(..., bound=...)</code> further confines the per-coordinate output
 to a finite interval (the <em>bounded Gaussian mechanism</em> of Chen and Hale,
-2024).  At training scale the per-coordinate ε-DP analysis does not apply
+2024). At training scale, the per-coordinate ε-DP analysis does not apply
 (gradients live under an ℓ₂-ball constraint, not a product of intervals);
 accounting is the standard (ε, δ)-Gaussian.  See
 <a href="../../mechanisms/">Mechanisms</a> for the mathematical details.</p>

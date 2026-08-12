@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1190,6 +1190,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2866,7 +2889,7 @@ the accountant, and a streaming representation for efficient noise
 generation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">band_mf_strategy</span><span class="p">,</span>    <span class="c1"># numerical Toeplitz optimization</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">blt_strategy</span><span class="p">,</span>        <span class="c1"># buffered linear toeplitz, multi-epoch</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">blt_strategy</span><span class="p">,</span>        <span class="c1"># buffered linear Toeplitz, multi-epoch</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">bisr_strategy</span><span class="p">,</span>       <span class="c1"># banded inverse square root</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">bsr_strategy</span><span class="p">,</span>        <span class="c1"># banded square root, closed-form</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">lambda_cgd_strategy</span><span class="p">,</span> <span class="c1"># PRNG replay, O(1) memory</span>
@@ -2909,7 +2932,7 @@ sensitivity / Gram matrix:</p>
 </ul>
 <p>Each amplification factory wraps a mechanism into a single
 <code>DpProcess</code> describing the full training run. <strong>Always pass the same
-strategy object</strong> into <code>mf_gaussian_noise</code> and the accounting factory — that's
+strategy object</strong> to <code>mf_gaussian_noise</code> and the accounting factory — that is
 how DP correctness is preserved.</p>
 <h3 id="step-by-step-reporting-per_step">Step-by-step ε reporting (<code>per_step</code>)<a class="headerlink" href="#step-by-step-reporting-per_step" title="Permanent link">&para;</a></h3>
 <p>DP-FTRL processes are <em>whole-process</em>: feeding the bare process to
@@ -2932,8 +2955,8 @@ correct K-step bound under MF correlations:</p>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">eps_so_far</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <p>For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-Monte Carlo PLDs are point estimates without that guarantee. <code>K &gt;
-proc.n_steps</code> raises.</p>
+Monte Carlo PLDs are point estimates without that guarantee.
+<code>K &gt; proc.n_steps</code> raises.</p>
 <h2 id="3-clipping">3. Clipping<a class="headerlink" href="#3-clipping" title="Permanent link">&para;</a></h2>
 <p>Same engine clipping primitives as DP-SGD, just imported from
 <code>opaque.dpftrl.clipping</code>. Adaptive clipping is <strong>not</strong> available
@@ -2959,12 +2982,12 @@ the same invariant MF accounting requires of fixed clipping.</p>
 <p><strong>Choosing among the three.</strong> Scalar <code>clipped_grad</code> is the right
 default. Reach for <code>per_group</code> clipping when one or more parameter
 groups have substantially different gradient magnitudes than the
-rest — a freshly initialised head on top of frozen pretrained
+rest — a freshly initialized head on top of frozen pretrained
 layers, or a LoRA target whose gradients sit far below its
 siblings: the non-uniform <code>σᵢ ∝ √Cᵢ</code> noise allocation concentrates
 less noise on small-gradient groups without sacrificing much
 sensitivity on the dominant ones, and on heterogeneous workloads
-this recovers a small eval-loss improvement over scalar clipping
+this recovers a small evaluation-loss improvement over scalar clipping
 at the same joint budget. Setting <code>Cᵢ</code> substantially tighter than
 the per-group typical magnitudes (e.g. half the per-group median)
 regresses below scalar — clipping bias dominates the
@@ -3037,7 +3060,7 @@ it. See <a href="../optimizers/">Optimizers</a> for the full second-moment story
 <p><strong>Stability under the paired release.</strong> The math holds under MF
 (the predicted σ_first inflation matches the formula referenced in
 <a href="../noise/">Noise</a>), but Adam-family optimizer stability is
-workload-dependent. The destabilisation risk comes from the
+workload-dependent. The destabilization risk comes from the
 v update: when per-coordinate gradient signal is small relative to
 the second-stream σ — common when some parameter groups have very
 small gradients — Adam's per-coordinate scaling accumulates bias

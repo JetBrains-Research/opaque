@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1383,6 +1383,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3619,43 +3642,45 @@ evaluated. If the search cannot find a safe endpoint satisfying
 <tr>
 <th>Function</th>
 <th>Target metric</th>
-<th>Direction</th>
+<th>Metric kind</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>acc.epsilon_budget(eps, delta)</code></td>
 <td>epsilon</td>
-<td>decreasing (more noise = lower epsilon)</td>
+<td>privacy loss (safe at-or-below target)</td>
 </tr>
 <tr>
 <td><code>acc.delta_budget(delta, epsilon)</code></td>
 <td>delta</td>
-<td>decreasing</td>
+<td>privacy loss (safe at-or-below)</td>
 </tr>
 <tr>
 <td><code>acc.advantage_budget(adv)</code></td>
 <td>advantage</td>
-<td>decreasing</td>
+<td>privacy loss (safe at-or-below)</td>
 </tr>
 <tr>
 <td><code>acc.beta_budget(beta, alpha)</code></td>
 <td>beta</td>
-<td>increasing (more noise = higher beta)</td>
+<td>privacy gain (safe at-or-above target)</td>
 </tr>
 <tr>
 <td><code>acc.risk_budget(risk, prior)</code></td>
 <td>risk</td>
-<td>increasing</td>
+<td>privacy gain (safe at-or-above)</td>
 </tr>
 </tbody>
 </table>
 <h3 id="search-direction">Search direction<a class="headerlink" href="#search-direction" title="Permanent link">&para;</a></h3>
-<p>The current search contract supports parameters such as noise multiplier whose
-increase improves privacy in the direction declared by the selected budget:
-privacy-loss metrics decrease and privacy-gain metrics increase. The metric
-produced by <code>process(param)</code> must follow that declared direction, with
-<code>param_min</code> as the unsafe endpoint and <code>param_max</code> as the safe endpoint.</p>
+<p>The search direction is derived from the calibrated parameter itself: the
+metric is probed at both endpoints and the privacy-safe endpoint detected
+automatically. Parameters whose increase improves privacy (noise multiplier)
+and parameters whose increase spends privacy (sample rate, step count) are
+both supported, for every budget kind. The metric produced by
+<code>process(param)</code> must be monotone over <code>[param_min, param_max]</code>; flat or
+detectably non-monotone parameterizations raise <code>ValueError</code>.</p>
 <h2 id="accountant">Accountant<a class="headerlink" href="#accountant" title="Permanent link">&para;</a></h2>
 <p>The <code>Accountant</code> class provides step-by-step privacy tracking during training.
 It wraps a <code>DpProcess</code> and provides budget checking.</p>
@@ -3721,8 +3746,8 @@ is analytic and does carry it. <code>K &gt; proc.n_steps</code> raises <code>Val
 <a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="c1"># ... torch.save(flat, path) / flat = torch.load(path) ...</span>
 </code></pre></div>
 <p>The flat mapping may include <code>torch.Tensor</code> and NumPy arrays. Persist it with
-:func:<code>torch.save</code> / :func:<code>torch.load</code> (or another pickle-compatible format),
-not JSON, unless every leaf is JSON-serialisable.</p>
+<code>torch.save</code> / <code>torch.load</code> (or another pickle-compatible format), not JSON,
+unless every leaf is JSON-serializable.</p>
 <p>For a bare <code>DpProcess</code>, use <code>from_state_dict(identity(), flat)</code> (or any
 concrete process as the template).</p>
 <h2 id="discretization">Discretization<a class="headerlink" href="#discretization" title="Permanent link">&para;</a></h2>

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3127,16 +3150,17 @@
 
 
 <h1 id="random-number-generation-api">Random Number Generation API<a class="headerlink" href="#random-number-generation-api" title="Permanent link">&para;</a></h1>
-<p>Opaque provides immutable, JAX-style RNG key semantics with explicit key threading for deterministic and reproducible DP training.</p>
+<p>Opaque provides immutable, JAX-style RNG key semantics with explicit key
+threading for deterministic and reproducible DP training.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>The <code>opaque.random</code> module provides:</p>
 <ul>
-<li><strong>Core primitives</strong>: <code>RngKey</code>, <code>split()</code>, <code>fold_in()</code> - Functional RNG with immutable keys</li>
+<li><strong>Core primitives</strong>: <code>RngKey</code>, <code>split()</code>, <code>fold_in()</code> — Functional RNG with immutable keys</li>
 <li><strong>Convenience helpers</strong>:</li>
-<li><code>key()</code> - Create RngKey from integer seed</li>
-<li><code>random_key()</code> - Non-deterministic key from system entropy</li>
-<li><code>set_reproducible_pytorch_seed()</code> - Configure PyTorch/CUDNN reproducibility</li>
-<li><strong>Bridge function</strong>: <code>generator_from_key()</code> - Create torch.Generator from RngKey</li>
+<li><code>key()</code> — Create an RngKey from an integer seed</li>
+<li><code>random_key()</code> — Nondeterministic key from system entropy</li>
+<li><code>set_reproducible_pytorch_seed()</code> — Configure PyTorch/cuDNN reproducibility</li>
+<li><strong>Bridge function</strong>: <code>generator_from_key()</code> — Create a <code>torch.Generator</code> from an RngKey</li>
 </ul>
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <h3 id="essential-imports">Essential Imports<a class="headerlink" href="#essential-imports" title="Permanent link">&para;</a></h3>
@@ -3151,7 +3175,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># From integer seed (reproducible)</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">k</span> <span class="o">=</span> <span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Non-deterministic (for prototyping)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Nondeterministic (for prototyping)</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">k</span> <span class="o">=</span> <span class="n">random_key</span><span class="p">()</span>  <span class="c1"># Uses system entropy</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># From torch.Generator</span>
@@ -3160,14 +3184,14 @@
 </code></pre></div>
 <h3 id="splitting-keys">Splitting Keys<a class="headerlink" href="#splitting-keys" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Binary split (most common)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">k1</span><span class="p">,</span> <span class="n">k2</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">k1</span><span class="p">,</span> <span class="n">k2</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Multi-way split</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">keys</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>  <span class="c1"># Returns tuple</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">keys</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>  <span class="c1"># Returns tuple</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Loop pattern - split and advance</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Loop pattern — split and advance</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">key</span><span class="p">,</span> <span class="n">step_key</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">k</span><span class="p">,</span> <span class="n">step_key</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">do_something_random</span><span class="p">(</span><span class="n">step_key</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="per-step-derivation">Per-Step Derivation<a class="headerlink" href="#per-step-derivation" title="Permanent link">&para;</a></h3>
@@ -3215,7 +3239,7 @@
 <p><strong>Raises:</strong> TypeError if seed is not an integer</p>
 <hr />
 <h4 id="random_key-rngkey">random_key() → RngKey<a class="headerlink" href="#random_key-rngkey" title="Permanent link">&para;</a></h4>
-<p>Create a non-deterministic RngKey using system entropy.</p>
+<p>Create a nondeterministic RngKey using system entropy.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_key</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">k</span> <span class="o">=</span> <span class="n">random_key</span><span class="p">()</span>  <span class="c1"># Each call returns different key</span>
@@ -3291,7 +3315,7 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 <p><strong>Note:</strong> The Generator is deterministic but independent of Opaque's DP noise. Use for framework-level randomness (e.g., dropout, model initialization) separate from DP operations.</p>
 <hr />
 <h4 id="set_reproducible_pytorch_seedkey_val-rngkey-none">set_reproducible_pytorch_seed(key_val: RngKey) → None<a class="headerlink" href="#set_reproducible_pytorch_seedkey_val-rngkey-none" title="Permanent link">&para;</a></h4>
-<p>Configure PyTorch and CUDNN for reproducible training from a single RngKey.</p>
+<p>Configure PyTorch and cuDNN for reproducible training from a single RngKey.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span><span class="p">,</span> <span class="n">set_reproducible_pytorch_seed</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># At training start</span>

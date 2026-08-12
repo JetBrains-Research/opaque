@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2877,11 +2900,11 @@ minimize workload error (max or mean MSE on prefix sums).</p>
 <p><strong>Min-sep participation</strong> (<span class="arithmatex">\(\text{min\_sep} &gt; 1\)</span>):</p>
 <p>When examples can participate multiple times with at least <code>min_sep</code> steps
 between participations, sensitivity uses the Toeplitz min-sep algorithm
-(Theorem 2, BSR paper). The algorithm:</p>
+(Theorem 2 of the BSR paper). The algorithm:</p>
 <ol>
-<li>Pads coefficients to min-sep blocks</li>
-<li>Computes cumulative sums within blocks</li>
-<li>Uses sliding-window subtraction to find the worst-case participation</li>
+<li>Pads coefficients to min-sep blocks.</li>
+<li>Computes cumulative sums within blocks.</li>
+<li>Uses sliding-window subtraction to find the worst-case participation.</li>
 </ol>
 <p><strong>Fixed-epoch participation</strong> is not natively supported by BLT.</p>
 <h3 id="privacy-analysis">Privacy analysis<a class="headerlink" href="#privacy-analysis" title="Permanent link">&para;</a></h3>
@@ -2893,7 +2916,7 @@ effective noise multiplier:</p>
 <ul>
 <li>BLT targets long runs via a <strong>buffered</strong> Toeplitz parameterization; privacy is for the optimized strategy you instantiate.</li>
 <li>Optional <strong><code>lr_schedule</code></strong> weights the optimizer objective on the training-step axis, matching <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span> while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.</li>
-<li><strong>Subsampling</strong>: BLT does not use <code>dpftrl_acc.poisson</code> the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).</li>
+<li><strong>Subsampling</strong>: BLT does not use <code>dpftrl_acc.poisson</code> as BandMF does; combine it with Balls-in-Bins when using correlated MF with epoch structure (see examples).</li>
 <li>Overview: <a href="../../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
 <h2 id="supported-amplifications">Supported amplifications<a class="headerlink" href="#supported-amplifications" title="Permanent link">&para;</a></h2>
@@ -2926,7 +2949,7 @@ sensitivity computation. There is no external amplification wrapper.</p>
 </tbody>
 </table>
 <p>If you need subsampling amplification with correlated noise, use
-<a href="../band-mf/">BandMF</a> with :func:<code>opaque.dpftrl.accounting.poisson</code> instead.</p>
+<a href="../band-mf/">BandMF</a> with <code>opaque.dpftrl.accounting.poisson</code> instead.</p>
 <div class="admonition note">
 <p class="admonition-title">Multi-epoch vs subsampling</p>
 <p>BLT and Poisson subsampling solve different problems. Poisson subsampling
@@ -2935,7 +2958,7 @@ privacy cost of the same example appearing in multiple steps via its
 multi-participation (min-sep / max-participations) sensitivity computation.
 BLT itself does <strong>not</strong> model subsampling amplification and has no
 <code>sample_rate</code> parameter. If you need subsampling with correlated noise,
-use <a href="../band-mf/">BandMF</a> with :func:<code>opaque.dpftrl.accounting.poisson</code> instead.</p>
+use <a href="../band-mf/">BandMF</a> with <code>opaque.dpftrl.accounting.poisson</code> instead.</p>
 </div>
 <h2 id="code-examples">Code examples<a class="headerlink" href="#code-examples" title="Permanent link">&para;</a></h2>
 <h3 id="noise-injection">Noise injection<a class="headerlink" href="#noise-injection" title="Permanent link">&para;</a></h3>

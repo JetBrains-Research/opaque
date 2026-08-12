@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2715,7 +2738,7 @@
 
 
 <h1 id="bsr-banded-square-root">BSR (Banded Square Root)<a class="headerlink" href="#bsr-banded-square-root" title="Permanent link">&para;</a></h1>
-<p><strong>BSR</strong> (Kalinin &amp; Lampert, NeurIPS 2024) is a matrix factorization mechanism where the <strong>strategy matrix</strong> is a <strong>banded lower-triangular Toeplitz</strong> matrix obtained from the <strong>matrix square root</strong> of the workload :math:<code>A_{\alpha,\beta}</code> in the paper (multiplicative decay :math:<code>\alpha</code>, Polyak momentum :math:<code>\beta</code>).</p>
+<p><strong>BSR</strong> (Kalinin &amp; Lampert, NeurIPS 2024) is a matrix factorization mechanism whose <strong>strategy matrix</strong> is a <strong>banded lower-triangular Toeplitz</strong> matrix obtained from the <strong>matrix square root</strong> of the paper's workload <span class="arithmatex">\(A_{\alpha,\beta}\)</span> (multiplicative decay <span class="arithmatex">\(\alpha\)</span>, Polyak momentum <span class="arithmatex">\(\beta\)</span>).</p>
 <p>Opaque exposes <strong>closed-form coefficients</strong> (Theorem 1 in the paper): no L-BFGS optimization step at initialization.</p>
 <ul>
 <li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2405.13763">Banded Square Root Matrix Factorization for Differentially Private Model Training</a></li>
@@ -2768,7 +2791,7 @@
 </tr>
 <tr>
 <td><code>max_participations</code></td>
-<td>Maximum participations per user (epochs)</td>
+<td>Maximum number of participations per user (epochs)</td>
 </tr>
 <tr>
 <td><code>alpha</code></td>

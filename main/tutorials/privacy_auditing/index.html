@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3291,8 +3314,8 @@ torch.manual_seed(42)</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="dataset-and-model">Dataset and model<a class="anchor-link" href="#dataset-and-model">¶</a></h2><p>Random labels cannot be learned by generalisation — the model
-must memorise. A small MLP has enough capacity to overfit,
+<h2 id="dataset-and-model">Dataset and model<a class="anchor-link" href="#dataset-and-model">¶</a></h2><p>Random labels cannot be learned by generalization — the model
+must memorize. A small MLP has enough capacity to overfit,
 producing a clear gap between in-member and out-member losses.</p>
 </div>
 </div>
@@ -3639,7 +3662,7 @@ Epoch 100  accuracy=68.5%
 using <code>vmap</code>. Passing <code>reference_scores</code> subtracts the untrained
 baseline so the score measures <em>loss reduction</em> from training.</p>
 <p><code>one_run()</code> then builds a <code>OneRunEstimate</code>. The estimate exposes a
-Pld-mirror surface (<code>epsilon_at</code>, <code>delta_at</code>, <code>beta_at</code>, <code>advantage</code>)
+PLD-mirror surface (<code>epsilon_at</code>, <code>delta_at</code>, <code>beta_at</code>, <code>advantage</code>)
 that defaults to the <strong>μ-GDP order-statistics test</strong>
 (Xiang et al. 2025) — the tight choice for Gaussian-DP mechanisms like
 DP-SGD. The mechanism-agnostic (ε, δ)-DP fallback is available via
@@ -3870,7 +3893,7 @@ Attack AUC 95% CI: [0.638, 0.727]
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="score-distributions">Score distributions<a class="anchor-link" href="#score-distributions">¶</a></h2><p>Visualise how in-member and out-member scores overlap.
+<h2 id="score-distributions">Score distributions<a class="anchor-link" href="#score-distributions">¶</a></h2><p>Visualize how in-member and out-member scores overlap.
 More overlap means better privacy.</p>
 </div>
 </div>

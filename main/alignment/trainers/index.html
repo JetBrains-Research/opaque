@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2947,11 +2970,11 @@
 
 
 <h1 id="sft-dpo-trainers-end-to-end">SFT &amp; DPO trainers end-to-end<a class="headerlink" href="#sft-dpo-trainers-end-to-end" title="Permanent link">&para;</a></h1>
-<p>The <a href="../sft/">SFT</a> and <a href="../dpo/">DPO</a> guides build a DP run by hand from
-<code>opaque.alignment</code> primitives. This guide covers the <strong>class trainers</strong> that
+<p>The <a href="../sft/">SFT</a> and <a href="../dpo/">DPO</a> guides build a DP run manually from
+<code>opaque.alignment</code> primitives. This guide covers the <strong>class-based trainers</strong> that
 wrap that pipeline: <code>opaque.transformers.trl.SFTTrainer</code> and <code>DPOTrainer</code>.
 They mirror <code>trl.SFTTrainer</code> / <code>trl.DPOTrainer</code> in structure and method names,
-but route the gradient through opaque's per-example DP
+but route the gradient through Opaque's per-example DP
 <a href="../../user-guide/huggingface/dptrainer/"><code>DPTrainer</code></a> — one Poisson round is
 one clip-noise-step. The alignment collators, losses, and reference helpers are
 the same primitives the by-hand guides use; the trainer is the orchestration
@@ -3112,13 +3135,13 @@ is derived from <code>loss_type</code>, below):</p>
 <thead>
 <tr>
 <th><code>ref_model</code></th>
-<th>Behaviour</th>
+<th>Behavior</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>a module</td>
-<td>Used as-is; left in the device/mode it arrived in.</td>
+<td>Used as-is; left in the device and mode in which it arrived.</td>
 </tr>
 <tr>
 <td>a <strong>string</strong></td>
@@ -3273,7 +3296,7 @@ reward; CPO's sigmoid uses the summed policy log-probs.</p>
 <h3 id="mpo-and-loss_weights">MPO and <code>loss_weights</code><a class="headerlink" href="#mpo-and-loss_weights" title="Permanent link">&para;</a></h3>
 <p>Passing <code>loss_type</code> as a list combines the heads into one per-example loss
 (MPO — Mix of Preference Objectives — via <code>mpo_combine</code>). <code>loss_weights</code> (a
-list of floats, defaulting to all-ones) weights each term and <strong>must match the
+list of floats, defaulting to all ones) weights each term and <strong>must match the
 length of <code>loss_type</code></strong>; duplicate loss names are rejected. A list may freely
 mix length-normalized and summed variants — the reference is always precomputed
 summed and normalized per head at loss time.</p>
@@ -3320,8 +3343,8 @@ channel without leaking gradient; the eval loop aggregates the same dict under
 <p><code>activation_offloading</code> (inherited base field) applies to DPO too.</p>
 <h2 id="converting-from-hf-trl">Converting from HF / TRL<a class="headerlink" href="#converting-from-hf-trl" title="Permanent link">&para;</a></h2>
 <p>Pipelines that already construct an HF <code>TrainingArguments</code> or a
-<code>trl.SFTConfig</code> / <code>trl.DPOConfig</code> can hand the existing config to the
-opaque equivalents through three classmethods:</p>
+<code>trl.SFTConfig</code> / <code>trl.DPOConfig</code> can pass the existing config to the
+Opaque equivalents through three class methods:</p>
 <ul>
 <li><code>TrainingArguments.from_hf(hf_args, ...)</code> — base HF translation.</li>
 <li><code>SFTConfig.from_trl(trl_sft_cfg, ...)</code> — TRL SFT translation.
@@ -3329,7 +3352,7 @@ opaque equivalents through three classmethods:</p>
 <li><code>DPOConfig.from_trl(trl_dpo_cfg, ...)</code> — TRL DPO translation. Same
   extra.</li>
 </ul>
-<p>Each classmethod accepts the same DP-knob kwargs as a regular opaque
+<p>Each class method accepts the same DP-knob kwargs as a regular Opaque
 config — at least one of <code>privacy_noise_multiplier</code> or
 <code>privacy_target_epsilon</code> is required, the rest have sensible defaults.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">trl</span><span class="w"> </span><span class="kn">import</span> <span class="n">SFTConfig</span> <span class="k">as</span> <span class="n">TrlSFTConfig</span>
@@ -3438,7 +3461,7 @@ non-baseline value. Examples: <code>do_train</code>, <code>do_eval</code>, <code
 <code>eval_use_gather_object</code>, <code>hub_strategy</code>, <code>accelerator_config</code>.</p>
 <p>Pass <code>strict=False</code> to suppress the warnings entirely.</p>
 <h3 id="round-trip-is-one-way">Round-trip is one-way<a class="headerlink" href="#round-trip-is-one-way" title="Permanent link">&para;</a></h3>
-<p>The classmethods only translate HF/TRL → opaque. Opaque-only fields
+<p>The class methods only translate HF/TRL → Opaque. Opaque-only fields
 (every DP knob, <code>microbatch_size &gt; per_device_eval_batch_size</code>,
 opaque-specific clipping / sampling / noise-mechanism families) cannot
 be expressed in HF or TRL terms, so the reverse conversion is not

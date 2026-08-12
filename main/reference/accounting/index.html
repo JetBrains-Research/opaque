@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2321,7 +2344,7 @@
         <li class="md-nav__item">
   <a href="#namespace-organization" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespace Organization
+      Namespace organization
     </span>
   </a>
   
@@ -2372,11 +2395,11 @@
         <li class="md-nav__item">
   <a href="#mechanism-functions" class="md-nav__link">
     <span class="md-ellipsis">
-      Mechanism Functions
+      Mechanism functions
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Mechanism Functions">
+    <nav class="md-nav" aria-label="Mechanism functions">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2486,11 +2509,11 @@
         <li class="md-nav__item">
   <a href="#matrix-factorization-mechanisms" class="md-nav__link">
     <span class="md-ellipsis">
-      Matrix Factorization Mechanisms
+      Matrix factorization mechanisms
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Matrix Factorization Mechanisms">
+    <nav class="md-nav" aria-label="Matrix factorization mechanisms">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2948,7 +2971,7 @@
         <li class="md-nav__item">
   <a href="#namespace-organization" class="md-nav__link">
     <span class="md-ellipsis">
-      Namespace Organization
+      Namespace organization
     </span>
   </a>
   
@@ -2999,11 +3022,11 @@
         <li class="md-nav__item">
   <a href="#mechanism-functions" class="md-nav__link">
     <span class="md-ellipsis">
-      Mechanism Functions
+      Mechanism functions
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Mechanism Functions">
+    <nav class="md-nav" aria-label="Mechanism functions">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3113,11 +3136,11 @@
         <li class="md-nav__item">
   <a href="#matrix-factorization-mechanisms" class="md-nav__link">
     <span class="md-ellipsis">
-      Matrix Factorization Mechanisms
+      Matrix factorization mechanisms
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Matrix Factorization Mechanisms">
+    <nav class="md-nav" aria-label="Matrix factorization mechanisms">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3362,7 +3385,7 @@ Windows, macOS <code>x86_64</code>, and <code>musllinux</code> wheels are intent
 published at the moment.</p>
 <p><strong>See also</strong>: <a href="../../user-guide/accounting/">Privacy Accounting User Guide</a></p>
 <hr />
-<h2 id="namespace-organization">Namespace Organization<a class="headerlink" href="#namespace-organization" title="Permanent link">&para;</a></h2>
+<h2 id="namespace-organization">Namespace organization<a class="headerlink" href="#namespace-organization" title="Permanent link">&para;</a></h2>
 <p>The accounting API is split into three namespaces:</p>
 <table>
 <thead>
@@ -3574,11 +3597,11 @@ lower-bound mode.</p>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># Uses 1e-4 default</span>
 </code></pre></div>
 <ul>
-<li><code>acc.set_discretization(discretization=1e-4, ...)</code> -- Set global default</li>
-<li><code>acc.get_discretization()</code> -- Return current <code>DiscretizationConfig</code></li>
+<li><code>acc.set_discretization(discretization=1e-4, ...)</code> — Set the global default</li>
+<li><code>acc.get_discretization()</code> — Return the current <code>DiscretizationConfig</code></li>
 </ul>
 <hr />
-<h2 id="mechanism-functions">Mechanism Functions<a class="headerlink" href="#mechanism-functions" title="Permanent link">&para;</a></h2>
+<h2 id="mechanism-functions">Mechanism functions<a class="headerlink" href="#mechanism-functions" title="Permanent link">&para;</a></h2>
 <p>All mechanism constructors return a <code>DpProcess</code>. Discretization is configured
 at query time via <code>epsilon_at(..., discretization=...)</code> or module-level via
 <code>set_discretization()</code>.</p>
@@ -3715,7 +3738,7 @@ inner transparently (zero privacy cost).</p>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="c1"># training.epsilon_at(1e-5) == inf</span>
 </code></pre></div>
 <hr />
-<h2 id="matrix-factorization-mechanisms">Matrix Factorization Mechanisms<a class="headerlink" href="#matrix-factorization-mechanisms" title="Permanent link">&para;</a></h2>
+<h2 id="matrix-factorization-mechanisms">Matrix factorization mechanisms<a class="headerlink" href="#matrix-factorization-mechanisms" title="Permanent link">&para;</a></h2>
 <p>MF mechanisms take pre-computed <code>sensitivity</code> and <code>gram_matrix</code> values from the
 corresponding noise <strong>strategy</strong> (e.g. <code>band_mf_strategy()</code>, <code>blt_strategy()</code>).
 The strategy is the single source of truth for these quantities — never hardcode
@@ -3869,10 +3892,10 @@ barrier: the composition optimizer will not look through a cached node.</p>
 <hr />
 <h2 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h2>
 <p>Processes checkpoint as a <strong>flat</strong> <code>dict[str, Any]</code> (string keys with dotted
-prefixes for nested composition). Use :func:<code>opaque.serialization.state_dict</code>
-and :func:<code>opaque.serialization.from_state_dict</code> — pass any concrete
-<code>DpProcess</code> instance as the template (for example <code>identity()</code>); the
-registered handler rebuilds from the dict's root <code>type</code> field.</p>
+prefixes for nested composition). Use <code>opaque.serialization.state_dict</code>
+and <code>opaque.serialization.from_state_dict</code> — pass any concrete <code>DpProcess</code>
+instance as the template (for example, <code>identity()</code>); the registered handler
+rebuilds from the dict's root <code>type</code> field.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
@@ -4003,11 +4026,12 @@ the accountant was constructed with a budget.</p>
 </tbody>
 </table>
 <p>The <code>process</code> callable takes a single float parameter and returns a <code>DpProcess</code>.
-Its metric must be monotone in the direction declared by the budget. The
-current direction contract supports parameters such as <code>noise_multiplier</code>,
-whose increase improves privacy: epsilon, delta, and advantage decrease, while
-beta and risk increase. <code>param_min</code> must be the unsafe endpoint and <code>param_max</code>
-the privacy-safe endpoint under that contract.</p>
+Its metric must be monotone in the parameter over <code>[param_min, param_max]</code>;
+the search direction is derived automatically by probing both endpoints, so
+noise-multiplier-like parameters (increase improves privacy) and
+sample-rate/step-like parameters (increase spends privacy) are both
+supported. Exactly one endpoint must be privacy-safe; which one is detected,
+not positional.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
 <a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>
@@ -4131,9 +4155,10 @@ optimize and what value to achieve.</p>
 </tr>
 </tbody>
 </table>
-<p>"Decreasing with noise" indicates whether the metric decreases as the
-calibrated parameter (typically noise_multiplier) increases. The binary search
-adapts direction automatically based on the budget's <code>decreasing</code> property.</p>
+<p>"Decreasing with noise" indicates the metric kind: privacy-loss metrics
+(epsilon/delta/advantage) are safe at-or-below the target, privacy-gain
+metrics (beta/risk) at-or-above. The binary search derives the parameter
+direction automatically by probing both bracket endpoints.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="c1"># (epsilon, delta)-DP</span>
 <a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
 <a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>

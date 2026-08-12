@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1038,6 +1038,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/huggingface/training-arguments/" class="md-nav__link">
         
   
@@ -1705,9 +1728,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-vmapgrad-clip-noise-optimizer" class="md-nav__link">
+  <a href="#3-vmapgrad-clipping-noise-and-optimization" class="md-nav__link">
     <span class="md-ellipsis">
-      3. vmap(grad), clip, noise, optimizer
+      3. vmap(grad), clipping, noise, and optimization
     </span>
   </a>
   
@@ -2718,9 +2741,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-vmapgrad-clip-noise-optimizer" class="md-nav__link">
+  <a href="#3-vmapgrad-clipping-noise-and-optimization" class="md-nav__link">
     <span class="md-ellipsis">
-      3. vmap(grad), clip, noise, optimizer
+      3. vmap(grad), clipping, noise, and optimization
     </span>
   </a>
   
@@ -2807,7 +2830,7 @@ tokenized rows into a batch.</p>
 <code>input_ids</code>/<code>attention_mask</code>/<code>labels</code> of shape <code>(B, L)</code>. Padding and
 (when <code>completion_only_loss=True</code>) prompt tokens are set to <code>-100</code> in
 <code>labels</code> so the loss ignores them; an optional <code>completion_mask</code> is
-emitted too. Sequences longer than <code>max_length</code> are truncated keep-start
+emitted too. Sequences longer than <code>max_length</code> are truncated with keep-start
 (matching TRL's <code>SFTTrainer</code>); no example is dropped. Pass
 <code>pad_to_multiple_of=</code> to round the padded length up.</p>
 <h3 id="completion-only-loss-from-chat-data">Completion-only loss from chat data<a class="headerlink" href="#completion-only-loss-from-chat-data" title="Permanent link">&para;</a></h3>
@@ -2871,15 +2894,15 @@ exposes the direct functions, not a registry.</p>
 the <code>(T, V)</code> logits dominate memory. The fused twins <code>fused_nll_loss</code> /
 <code>fused_dft_loss</code> take <code>hidden_states</code> <code>(T, H)</code> and the <code>lm_head</code> weight
 <code>(V, H)</code> instead, and never materialize logits — on CUDA + half precision
-with <code>opaque-alignment[patches]</code> installed they call a fused linear-CE
+with <code>opaque-alignment[patches]</code> installed, they call a fused linear-CE
 kernel and recompute the LSE in the backward; otherwise they fall back to
 the eager projection. They are numerically equivalent to the eager form.
 Unlike the eager losses, the fused ones are strictly per-example (one
 <code>(T, H)</code> sequence, batched only by the outer <code>vmap</code>); do not call them on
 a batch axis directly. Use the fused path when activation memory is the
-bottleneck and you are on a CUDA half-precision setup, the eager path
-otherwise.</p>
-<h2 id="3-vmapgrad-clip-noise-optimizer">3. vmap(grad), clip, noise, optimizer<a class="headerlink" href="#3-vmapgrad-clip-noise-optimizer" title="Permanent link">&para;</a></h2>
+bottleneck and you are on a CUDA half-precision setup; otherwise, use the
+eager path.</p>
+<h2 id="3-vmapgrad-clipping-noise-and-optimization">3. <code>vmap(grad)</code>, clipping, noise, and optimization<a class="headerlink" href="#3-vmapgrad-clipping-noise-and-optimization" title="Permanent link">&para;</a></h2>
 <p><code>opaque.dpsgd.clipping.clipped_grad</code> wraps the per-example loss in
 <code>vmap(grad(...))</code>, clips each per-example gradient to <code>clipping_norm</code>, and
 sums. The remaining steps are exactly the DP-SGD pipeline:</p>

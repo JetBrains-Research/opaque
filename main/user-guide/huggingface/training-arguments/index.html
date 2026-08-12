@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/huggingface/training-arguments/">
       
       
-        <link rel="prev" href="../dptrainer/">
+        <link rel="prev" href="../../distributed-trainer/">
       
       
         <link rel="next" href="../model-patches/">
@@ -1034,6 +1034,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2872,20 +2895,20 @@
 
 <h1 id="trainingarguments">TrainingArguments<a class="headerlink" href="#trainingarguments" title="Permanent link">&para;</a></h1>
 <p><code>opaque.transformers.TrainingArguments</code> mirrors the subset of
-HuggingFace <code>TrainingArguments</code> DPTrainer honours, plus DPTrainer's
-own privacy / clipping / sampling / patching fields.  Unsupported HF
+Hugging Face <code>TrainingArguments</code> DPTrainer honors, plus DPTrainer's
+own privacy / clipping / sampling / patching fields. Unsupported HF
 knobs are intentionally omitted from the surface.</p>
 <p>This page covers the fields you'll touch most often, with the
-non-obvious semantics called out.  For the complete field inventory
+non-obvious semantics called out. For the complete field inventory
 with every type / default / coercion rule, see
 <a href="../../../reference/transformers/#trainingarguments">API reference — transformers</a>.</p>
 <h2 id="batch-size-contract">Batch-size contract<a class="headerlink" href="#batch-size-contract" title="Permanent link">&para;</a></h2>
-<p>DPTrainer interprets batch-size args differently from stock HF.  Read
+<p>DPTrainer interprets batch-size args differently from stock HF. Read
 this once before tuning:</p>
 <ul>
 <li><code>per_device_train_batch_size</code> is the <strong>per-rank logical Poisson
   batch</strong> — the expected sample size drawn on each rank for one DP-SGD
-  step.  (This matches the HF interpretation when gradient accumulation
+  step. (This matches the HF interpretation when gradient accumulation
   is one step — DPTrainer is permanently in that regime; see below.)</li>
 <li>Cluster-wide logical batch is <code>per_device_train_batch_size *
   world_size</code> (exposed as the HF property <code>train_batch_size</code>).  The
@@ -2916,8 +2939,8 @@ smallest noise multiplier that achieves it under the configured
 sampler + composition.  Set <code>privacy_noise_multiplier</code> directly to
 skip calibration.</p>
 <p><strong>At least one of <code>privacy_noise_multiplier</code> / <code>privacy_target_epsilon</code>
-must be set.</strong>  Neither has a silent default — construction raises if
-both are <code>None</code>.  The two valid shapes are:</p>
+must be set.</strong> Neither has a silent default — construction raises if
+both are <code>None</code>. The two valid shapes are:</p>
 <ul>
 <li><code>privacy_target_epsilon=ε</code> (NM left as <code>None</code>) — calibrate the noise
   multiplier from the budget at <code>train()</code> start.</li>
@@ -2932,9 +2955,9 @@ configuration mistake.</p>
 <p>When <code>privacy_target_epsilon</code> is set alongside a non-zero
 <code>privacy_noise_multiplier</code>, training halts at the first logging
 boundary where the accumulated ε from the privacy accountant meets or
-exceeds the target.  The halt records <code>state.privacy_target_epsilon_reached
+exceeds the target. The halt records <code>state.privacy_target_epsilon_reached
 = True</code> and surfaces as a normal early-stop control flow (callbacks see
-the final eval / save / log pass).  The check runs every
+the final eval / save / log pass). The check runs every
 <code>logging_steps</code> (so setting <code>logging_steps=0</code> disables it
 silently — explicit logging is the contract for stop-at-ε visibility).
 A resume against a checkpoint where the budget is already spent
@@ -2960,7 +2983,7 @@ baseline for measuring the utility cost of the DP machinery:</p>
   <code>noise_multiplier × clip = 0</code>, so gradients pass through unchanged.</li>
 <li><strong>ε = ∞</strong> — the accountant composes a non-private step, so
   <code>metrics["privacy_epsilon"]</code> is reported as <code>inf</code> (a faithful "no
-  guarantee" output, not an error).  Calibration is skipped and the
+  guarantee" output, not an error). Calibration is skipped and the
   resolved multiplier is recorded as <code>0.0</code> (source <code>"fixed"</code>).</li>
 <li><strong>Clipping is independent.</strong> It stays on by default (the configured
   <code>clipping_norm</code> / <code>clipping_mode</code>); keep it for a "clipping-only"
@@ -2990,7 +3013,7 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 </tr>
 <tr>
 <td><code>clipping_mode</code></td>
-<td><code>"fixed"</code> (default), <code>"adaptive"</code>, or <code>"auto"</code>.  <code>adaptive</code> is rejected under any <code>mf_*</code> mechanism (MF noise requires constant per-step sensitivity).</td>
+<td><code>"fixed"</code> (default), <code>"adaptive"</code>, or <code>"auto"</code>. <code>adaptive</code> is rejected under any <code>mf_*</code> mechanism (MF noise requires constant per-step sensitivity).</td>
 </tr>
 <tr>
 <td><code>clipping_kwargs</code></td>
@@ -3002,7 +3025,7 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 </tr>
 <tr>
 <td><code>privacy_noise_mechanism_kwargs</code></td>
-<td>Mechanism extras.  For <code>"gaussian"</code>: e.g. <code>bound=...</code> for the bounded Gaussian variant.  For <code>mf_*</code>: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below).</td>
+<td>Mechanism extras. For <code>"gaussian"</code>: for example, <code>bound=...</code> for the bounded Gaussian variant. For <code>mf_*</code>: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below).</td>
 </tr>
 <tr>
 <td><code>noise_calibration_kwargs</code></td>
@@ -3069,7 +3092,7 @@ are adapted to the trainer's step-wise accountant through
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># privacy_noise_mechanism_kwargs resolves to {&quot;bands&quot;: 16}</span>
 </code></pre></div>
 <p>Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;
-they're a sensible starting point, not universally optimal.  Override
+they're a sensible starting point, not universally optimal. Override
 any kwarg explicitly via <code>privacy_noise_mechanism_kwargs={...}</code>; user
 keys win on collision with the defaults table.</p>
 <p>Mechanism constraints (validated at construction):</p>
@@ -3109,7 +3132,7 @@ keys win on collision with the defaults table.</p>
 <tr>
 <td><code>torch_compile</code></td>
 <td><code>False</code></td>
-<td>Compiles the per-example loss closure (not the model).  Tries <code>fullgraph=True</code> first; falls back with a warning.</td>
+<td>Compiles the per-example loss closure (not the model). Tries <code>fullgraph=True</code> first; falls back with a warning.</td>
 </tr>
 </tbody>
 </table>
@@ -3156,7 +3179,7 @@ keys win on collision with the defaults table.</p>
 <tr>
 <td><code>save_strategy</code></td>
 <td><code>"steps"</code></td>
-<td>One of <code>{"no", "steps", "epoch", "best"}</code>.  <code>"best"</code> auto-injects <code>BestModelSaveCallback</code>.</td>
+<td>One of <code>{"no", "steps", "epoch", "best"}</code>. <code>"best"</code> auto-injects <code>BestModelSaveCallback</code>.</td>
 </tr>
 <tr>
 <td><code>save_steps</code> / <code>save_total_limit</code> / <code>save_safetensors</code></td>
@@ -3176,7 +3199,7 @@ keys win on collision with the defaults table.</p>
 <tr>
 <td><code>load_best_model_at_end</code></td>
 <td><code>False</code></td>
-<td>Restore the best-eval checkpoint after <code>train()</code>.  Raises if no improving step was recorded.</td>
+<td>Restore the best-eval checkpoint after <code>train()</code>. Raises if no improving step was recorded.</td>
 </tr>
 </tbody>
 </table>
@@ -3186,7 +3209,7 @@ keys win on collision with the defaults table.</p>
   optimizer / clip / noise state, sampler cursor, RNG snapshots, and
   the privacy accountant in one call.</li>
 <li>The saved accountant is the <strong>prefix</strong>: heterogeneous composition
-  with the remaining steps is DP-valid.  Calibration runs over the
+  with the remaining steps is DP-valid. Calibration runs over the
   remaining steps to hit the original <code>privacy_target_epsilon</code>
   against that prefix.</li>
 <li><code>resume_from_checkpoint</code> requires a <strong>complete DP checkpoint</strong>

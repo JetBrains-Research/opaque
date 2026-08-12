@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3523,8 +3546,9 @@
 
 
 <h1 id="sampling">Sampling<a class="headerlink" href="#sampling" title="Permanent link">&para;</a></h1>
-<p>Sampling primitives live in <code>opaque.dpsgd.sampling</code> (Poisson, random allocation) and
-<code>opaque.dpftrl.sampling</code> (cyclic Poisson with optional <code>bands</code>, b-min-sep, balls-in-bins, sequential).
+<p>Sampling primitives live in <code>opaque.dpsgd.sampling</code> (Poisson, random allocation)
+and <code>opaque.dpftrl.sampling</code> (cyclic Poisson with optional <code>bands</code>, b-min-sep,
+balls-in-bins, sequential).
 Distributed shard helpers live in <code>opaque.distributed</code>. They provide
 privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
@@ -3550,7 +3574,7 @@ full dataset.</p>
 <li>
 <p><strong>Cyclic Poisson (DP-FTRL)</strong> (<code>opaque.dpftrl.sampling.CyclicPoissonSampler</code>):
    <code>bands</code> disjoint groups; step <code>i</code> samples only group <code>i % bands</code>, with
-   independent inclusion at <code>sample_rate</code>.  Use <code>bands=1</code> for identity MF
+   independent inclusion at <code>sample_rate</code>. Use <code>bands=1</code> for identity MF
    (full dataset each step); for BandMF, match <code>bands</code> to the MF strategy.</p>
 </li>
 <li>
@@ -3770,8 +3794,8 @@ are emitted as empty batches so every accounted bin slot executes.</p>
 <h2 id="cyclicpoissonsampler-dp-ftrl">CyclicPoissonSampler (DP-FTRL)<a class="headerlink" href="#cyclicpoissonsampler-dp-ftrl" title="Permanent link">&para;</a></h2>
 <p>Partitions the dataset into <code>bands</code> groups and, at step <code>i</code>, draws only
 from group <code>i % bands</code>, with each eligible example included independently at
-<code>sample_rate</code> (Binomial batch size within the group).  Identity MF uses
-<code>bands=1</code>; BandMF uses <code>bands</code> equal to the mechanism’s band count—both
+<code>sample_rate</code> (Binomial batch size within the group). Identity MF uses
+<code>bands=1</code>; BandMF uses <code>bands</code> equal to the mechanism’s band count — both
 pair with <code>dpftrl_acc.poisson</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -3836,7 +3860,7 @@ pair with <code>dpftrl_acc.poisson</code>.</p>
 <p>In distributed training, shard the dataset with <code>local_shard()</code> and pass
 a per-rank key via <code>fold_in(key, rank)</code>. Best used with <code>mf_gaussian_noise</code>
 for correlated noise (DP-FTRL); account with
-<code>dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)</code>.  There is no
+<code>dpftrl_acc.poisson(mechanism, sample_rate, n_steps=...)</code>. There is no
 batch-size cap on this sampler; <code>dpftrl_acc.poisson</code> matches uncapped
 Poisson draws only.</p>
 <h2 id="distributed-helpers">Distributed Helpers<a class="headerlink" href="#distributed-helpers" title="Permanent link">&para;</a></h2>

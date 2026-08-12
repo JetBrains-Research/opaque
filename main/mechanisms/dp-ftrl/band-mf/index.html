@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2976,7 +2999,7 @@ then optionally composed with subsampling amplification.</p>
 into <span class="arithmatex">\(k = \lceil n / b \rceil\)</span> independent <strong>groups</strong> of <span class="arithmatex">\(b\)</span> consecutive
 steps. Within each group, <strong>cyclic Poisson</strong> participation means each example
 in the active group is included independently with probability <span class="arithmatex">\(q\)</span> (this is
-what :func:<code>opaque.dpftrl.accounting.poisson</code> composes over; there is no
+what <code>opaque.dpftrl.accounting.poisson</code> composes over; there is no
 separate <code>cyclic_poisson</code> factory).</p>
 <p><strong>What this means</strong>: instead of analyzing the full <span class="arithmatex">\(n\)</span>-step run as one
 mechanism, we analyze <span class="arithmatex">\(k\)</span> independent Poisson-subsampled Gaussian mechanisms
@@ -3069,7 +3092,7 @@ use <code>0</code> to disable transcript reuse and fall back to one-shot MC per 
 <div class="admonition note">
 <p class="admonition-title">Without amplification</p>
 <p>You can also use BandMF without subsampling by omitting the
-:func:<code>opaque.dpftrl.accounting.poisson</code> wrapper (compose the Gaussian
+<code>opaque.dpftrl.accounting.poisson</code> wrapper (compose the Gaussian
 mechanism directly if your accounting path supports it). Useful for
 comparison when subsampling is not applicable.</p>
 </div>
@@ -3130,7 +3153,7 @@ coefficients.</p>
 </div>
 <h3 id="end-to-end-bandmf-example">End-to-end BandMF example<a class="headerlink" href="#end-to-end-bandmf-example" title="Permanent link">&para;</a></h3>
 <p>BandMF uses <code>opaque.dpftrl.sampling.CyclicPoissonSampler</code> with <code>bands</code> matching the
-strategy so participation lines up with the noise.  The same class with
+strategy so participation lines up with the noise. The same class with
 <code>bands=1</code> gives plain Poisson on the full dataset each step for an identity MF
 baseline (<code>identity_mf</code> / <code>identity_strategy</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>

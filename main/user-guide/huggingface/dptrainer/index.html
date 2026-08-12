@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -18,7 +18,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../training-arguments/">
+        <link rel="next" href="../../distributed-trainer/">
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
@@ -1162,6 +1162,29 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -2757,13 +2780,13 @@
 
 
 <h1 id="dptrainer">DPTrainer<a class="headerlink" href="#dptrainer" title="Permanent link">&para;</a></h1>
-<p><code>DPTrainer</code> mirrors HuggingFace's <code>Trainer</code> interface: construct with
+<p><code>DPTrainer</code> mirrors Hugging Face's <code>Trainer</code> interface: construct with
 <code>(model, args, datasets, …)</code>, call <code>train()</code> / <code>evaluate()</code> /
-<code>predict()</code>, query the result.  Under the surface the loop runs DP-SGD
+<code>predict()</code>, and query the result. Under the surface, the loop runs DP-SGD
 with <code>vmap(grad(...))</code> over per-example losses; the public API is
 designed so a user familiar with <code>Trainer</code> doesn't have to think about
 that.</p>
-<p>This page covers the common usage patterns.  For the full constructor
+<p>This page covers the common usage patterns. For the full constructor
 signature, every method's parameters / return type, and the public
 state objects (<code>EvaluationResult</code>, <code>DPTrainerState</code>, <code>TrainOutput</code>),
 see <a href="../../../reference/transformers/">API reference — transformers</a>.</p>
@@ -2799,7 +2822,7 @@ see <a href="../../../reference/transformers/">API reference — transformers</a
 auto-patches it (vmap-safety + optional Triton kernels).  The noise
 multiplier is calibrated from <code>privacy_target_epsilon</code> at the start of
 <code>train()</code> (once the dataset size and step count are known), not at
-construction.  No extra setup calls are needed before <code>train()</code>.</p>
+construction. No extra setup calls are needed before <code>train()</code>.</p>
 <p>At least one of <code>privacy_noise_multiplier</code> / <code>privacy_target_epsilon</code>
 must be set — neither has a silent default; see the
 <a href="../training-arguments/#privacy-targets">Privacy targets</a> section of
@@ -2813,7 +2836,7 @@ stop-at-ε contract that fires when both are set.</p>
 </code></pre></div>
 <p>End-of-train metrics always include <code>privacy_epsilon</code>,
 <code>privacy_delta</code>, and <code>privacy_noise_multiplier</code> alongside the usual
-loss / step / runtime fields.  Evaluation and prediction route through
+loss / step / runtime fields. Evaluation and prediction route through
 the same loop; <code>predict()</code> returns the full <code>EvaluationResult</code>
 (predictions + labels + metrics) while <code>evaluate()</code> returns only the
 metrics dict.</p>
@@ -2822,7 +2845,7 @@ the latest <code>checkpoint-*/</code> under <code>output_dir</code>, or <code>No
 run.</p>
 <h2 id="per-example-eval-losses">Per-example eval losses<a class="headerlink" href="#per-example-eval-losses" title="Permanent link">&para;</a></h2>
 <p>Setting <code>args.include_for_metrics=["loss"]</code> switches the eval path to
-the vmap'd per-example closure: <code>EvalPrediction.losses</code> carries real
+the <code>vmap</code>-based per-example closure: <code>EvalPrediction.losses</code> carries real
 per-example losses instead of the batch-mean repeated.  Useful for
 threshold calibration, percentile metrics, or member / non-member
 analyses driven by <code>compute_metrics</code>.</p>
@@ -2855,7 +2878,7 @@ as hierarchical paths in backends that support metric trees.</p>
 <p><code>on_substep_end</code> is <strong>not</strong> fired — each DP-SGD step is one atomic
 clip-noise-step over one Poisson sample.</p>
 <h2 id="custom-losses">Custom losses<a class="headerlink" href="#custom-losses" title="Permanent link">&para;</a></h2>
-<p><code>compute_loss_func=</code> on the constructor accepts a callable
+<p><code>compute_loss_func</code> on the constructor accepts a callable
 <code>(outputs, labels) -&gt; scalar</code> for one-off losses without subclassing.
 The callable is invoked <strong>per example under vmap</strong> (one example's
 outputs, one example's labels), not once per batch — there's no

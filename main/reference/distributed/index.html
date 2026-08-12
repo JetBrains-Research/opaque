@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3555,7 +3578,7 @@ unsynchronized.</p>
 
 </div><p>The <code>sync()</code> machinery is type-dispatched: clipping and noise states
 register themselves with <code>opaque.distributed._state.register_sync_type</code>
-and ship the right per-state aggregation rule.  Lower-level scalar
+and provide the right per-state aggregation rule. Lower-level scalar
 reductions, tensor gathers, and object syncs live in <code>_state.py</code>;
 they're internal plumbing for the registered DP runtime objects rather
 than headline API.</p>

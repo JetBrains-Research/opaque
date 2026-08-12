@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1317,6 +1317,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3162,14 +3185,14 @@ bounded. Good debugging baseline:</p>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">sgd</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>RMSprop</strong> (<code>rmsprop</code>) is adaptive but cheaper
-than Adam (no first moment).  <code>noise_bias_correction=True</code> enables
-the same flavour of φ-EMA subtraction as AdamW; off by default,
-flip on to ablate:</p>
+than Adam (no first moment). <code>noise_bias_correction=True</code> enables
+the same flavor of φ-EMA subtraction as AdamW; it is off by default.
+Enable it to ablate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">rmsprop</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">rmsprop</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">noise_bias_correction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Adagrad</strong> (<code>adagrad</code>) is for sparse-gradient
-settings.  Its accumulator does not decay, so under DP noise <code>v_acc</code>
+settings. Its accumulator does not decay, so under DP noise <code>v_acc</code>
 absorbs <code>t·σ²</code> over training; <code>noise_bias_correction=True</code>
 subtracts a matching cumulative term:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adagrad</span>
@@ -3191,7 +3214,7 @@ variance.  Gaussian noise with variance <span class="arithmatex">\(\sigma^2\)</s
 bias of <span class="arithmatex">\(\sigma^2\)</span> to every component of <span class="arithmatex">\(\hat{v}_t\)</span>.</p>
 <p>Opaque provides two independent corrections, both selected at
 <code>update()</code> time.  They address the same problem from different
-angles and <strong>must not be combined</strong> at the same call — using both
+angles and <strong>must not be combined</strong> in the same call — using both
 would double-correct the second moment.</p>
 <h3 id="noisedpytree-bias-correction-by-variance-subtraction"><code>NoisedPytree</code>: bias correction by variance subtraction<a class="headerlink" href="#noisedpytree-bias-correction-by-variance-subtraction" title="Permanent link">&para;</a></h3>
 <p><strong>Idea:</strong> the noise variance <span class="arithmatex">\(\Phi_t = \sigma_t^2\)</span> is <em>known</em> (we
@@ -3289,7 +3312,7 @@ above.</p>
 <tr>
 <td>DP-FTRL with Adam, private second moments</td>
 <td><code>adamw(...) + SecondMomentNoiseOutput</code></td>
-<td>Substitutes a privatised <code>g²</code> stream in place of squaring noised grads</td>
+<td>Substitutes a privatized <code>g²</code> stream for squaring noised gradients</td>
 </tr>
 <tr>
 <td>DP-FTRL with Adam, no extra budget</td>
@@ -3390,7 +3413,7 @@ the rectification threshold (<code>ρ_t ≤ 5</code>, roughly the first
 not consumed at all.  This makes the warmup phase naturally DP-robust:
 the noise in <code>v</code> cannot affect the update because it isn't read.</p>
 <p>Once <code>ρ_t &gt; 5</code>, the standard Adam DP-BC story applies — subtract a
-β₂-EMA of <code>σ²</code> from <code>v̂</code> before the sqrt.  <code>radam</code>
+β₂-EMA of <code>σ²</code> from <code>v̂</code> before the sqrt. <code>radam</code>
 advances the φ-EMA every step (warmup included) so that at the first
 rectified step the correction reflects all prior noise contributions to
 <code>v</code>, not just the current step.</p>
@@ -3470,7 +3493,7 @@ noisy gradient signal.</p>
 the wrapper's averaging is the implicit schedule.</p>
 <h2 id="checkpoint-round-tripping">Checkpoint round-tripping<a class="headerlink" href="#checkpoint-round-tripping" title="Permanent link">&para;</a></h2>
 <p>The optimizer state is a <code>torchopt</code> chain tuple of dataclasses; flatten
-it to a serialisable dict via :mod:<code>opaque.serialization</code>:</p>
+it to a serializable dict via <code>opaque.serialization</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.optimizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">adamw</span>
 <a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>

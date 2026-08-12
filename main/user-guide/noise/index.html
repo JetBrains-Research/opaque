@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1320,6 +1320,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3617,10 +3640,10 @@ inspect it by calling the <code>sensitivity()</code> method with the participati
 <h3 id="mf-noise-with-poisson-sampling">MF noise with Poisson sampling<a class="headerlink" href="#mf-noise-with-poisson-sampling" title="Permanent link">&para;</a></h3>
 <p><code>CyclicPoissonSampler</code> splits the data into <code>bands</code> groups and, at step
 <code>i</code>, samples only group <code>i % bands</code> with per-example probability
-<code>sample_rate</code>.  Use <code>bands=1</code> with <code>identity_strategy</code> / <code>identity_mf</code>
+<code>sample_rate</code>. Use <code>bands=1</code> with <code>identity_strategy</code> / <code>identity_mf</code>
 so each step is plain Poisson on the full dataset; for BandMF, match <code>bands</code>
-to <code>band_mf_strategy</code>.  That keeps the data schedule aligned with <code>mf_gaussian_noise</code>
-and <code>dpftrl_acc.poisson</code>:</p>
+to <code>band_mf_strategy</code>. That keeps the data schedule aligned with
+<code>mf_gaussian_noise</code> and <code>dpftrl_acc.poisson</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
@@ -3635,7 +3658,7 @@ and <code>dpftrl_acc.poisson</code>:</p>
 <h2 id="distributed-noise-synchronization">Distributed noise synchronization<a class="headerlink" href="#distributed-noise-synchronization" title="Permanent link">&para;</a></h2>
 <p>In distributed training, all devices must add the same noise to maintain model
 consistency. Pass the <strong>same key</strong> on every rank:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Same key on all ranks -&gt; identical noise -&gt; models stay in sync</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Same key on all ranks → identical noise → models stay in sync</span>
 <a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 </code></pre></div>
 <p>For independent per-rank noise (not typical for centralized DP-SGD), derive
@@ -3654,13 +3677,13 @@ step counter match across ranks. The <code>sync()</code> dispatcher auto-detects
 noise state type. See <a href="../distributed/">Distributed Training</a> for details.</p>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="https://arxiv.org/abs/2306.08153">Choquette-Choo et al., 2023</a> -- BandMF</li>
-<li><a href="https://arxiv.org/abs/2404.16706">Dvijotham et al., 2024</a> -- BLT</li>
-<li><a href="https://arxiv.org/abs/2408.08868">McMahan et al., 2024</a> -- Multi-epoch BLT</li>
-<li><a href="https://arxiv.org/abs/2601.22334">Kalinin et al., 2026</a> -- DP-λCGD</li>
-<li><a href="https://arxiv.org/abs/2505.12128">Kalinin et al., 2026</a> -- BISR</li>
-<li><a href="https://arxiv.org/abs/2504.21413">McMahan et al., 2025</a> -- Inversion theorem</li>
-<li><a href="https://arxiv.org/abs/2103.00039">Kairouz et al., 2021</a> -- DP-FTRL</li>
+<li><a href="https://arxiv.org/abs/2306.08153">Choquette-Choo et al., 2023</a> — BandMF</li>
+<li><a href="https://arxiv.org/abs/2404.16706">Dvijotham et al., 2024</a> — BLT</li>
+<li><a href="https://arxiv.org/abs/2408.08868">McMahan et al., 2024</a> — Multi-epoch BLT</li>
+<li><a href="https://arxiv.org/abs/2601.22334">Kalinin et al., 2026</a> — DP-λCGD</li>
+<li><a href="https://arxiv.org/abs/2505.12128">Kalinin et al., 2026</a> — BISR</li>
+<li><a href="https://arxiv.org/abs/2504.21413">McMahan et al., 2025</a> — Inversion theorem</li>
+<li><a href="https://arxiv.org/abs/2103.00039">Kairouz et al., 2021</a> — DP-FTRL</li>
 </ul>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../reference/noise/">Noise API Reference</a> for complete function signatures

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1299,6 +1299,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3148,11 +3171,10 @@ sample rate, the stronger the amplification:</p>
 <p>Batch sizes follow a Binomial distribution. For large datasets and small
 sample rates, the standard deviation is roughly <code>sqrt(expected_batch_size)</code>.</p>
 <h3 id="truncated-poisson-batch-cap">Truncated Poisson (batch cap)<a class="headerlink" href="#truncated-poisson-batch-cap" title="Permanent link">&para;</a></h3>
-<p>Use :class:<code>~opaque.dpsgd.sampling.PoissonSampler</code> with
-<code>truncated_batch_size</code> set. When a Poisson draw exceeds that cap, a
+<p>Use <code>PoissonSampler</code> with <code>truncated_batch_size</code> set. When a Poisson draw exceeds that cap, a
 uniform random subset of the selected indices is kept. That caps batch
 size (more stable training and memory) but <strong>weakens</strong> privacy relative to
-plain Poisson at the same <code>sample_rate</code>—account with
+plain Poisson at the same <code>sample_rate</code> — account with
 <code>dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)</code> so the
 PLD matches the cap.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
@@ -3195,15 +3217,15 @@ PLD matches the cap.</p>
 </code></pre></div>
 <h3 id="cyclicpoissonsampler-dp-ftrl"><code>CyclicPoissonSampler</code> (DP-FTRL)<a class="headerlink" href="#cyclicpoissonsampler-dp-ftrl" title="Permanent link">&para;</a></h3>
 <p>The dataset is split into <code>bands</code> disjoint groups (<code>partition_type</code> fixes
-how, when <code>bands &gt; 1</code>).  Step <code>i</code> draws only from group <code>i % bands</code>: each
+how, when <code>bands &gt; 1</code>). Step <code>i</code> draws only from group <code>i % bands</code>: each
 example in that group is kept independently with probability <code>sample_rate</code>,
-so the within-step batch size is Binomial.  Training steps therefore advance a
+so the within-step batch size is Binomial. Training steps therefore advance a
 fixed rotation over which group is active, while inclusion inside the active
 group stays Poisson-style.</p>
 <p>For an identity MF baseline (<code>identity_strategy()</code>), use <code>bands=1</code> so the
 lone group is the full dataset and every step is plain Poisson on all
 examples, matching whole-process <code>dpftrl_acc.poisson</code> over
-<code>dpftrl_acc.mf_gaussian(nm, identity_strategy())</code>.  For BandMF, set
+<code>dpftrl_acc.mf_gaussian(nm, identity_strategy())</code>. For BandMF, set
 <code>bands</code> to the same count as in <code>band_mf_strategy(bands=...)</code> so
 participation matches correlated <code>mf_gaussian_noise</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
@@ -3271,9 +3293,9 @@ participation matches correlated <code>mf_gaussian_noise</code>.</p>
 </table>
 <p><strong>Partition types:</strong></p>
 <ul>
-<li><code>PartitionType.EQUAL_SPLIT</code> -- shuffle the dataset, then split into groups
+<li><code>PartitionType.EQUAL_SPLIT</code> — shuffle the dataset, then split into groups
   of equal size. Deterministic group sizes.</li>
-<li><code>PartitionType.INDEPENDENT</code> -- assign each example to a random group
+<li><code>PartitionType.INDEPENDENT</code> — assign each example to a random group
   (multinomial). Group sizes vary.</li>
 </ul>
 <p>See <a href="../noise/#matrix-factorization-noise-dp-ftrl">Noise Addition</a> for how this
@@ -3372,11 +3394,11 @@ amplification</a>).</p>
 </code></pre></div>
 <p><code>acc.balls_in_bins(mechanism, num_bins, num_epochs)</code> returns the
 <strong>total</strong> multi-epoch privacy cost — do not compose further with
-<code>* num_epochs</code>.  In a training loop, book the cost once before training
+<code>* num_epochs</code>. In a training loop, book the cost once before training
 begins; the per-step accumulator does not compose for BnB.</p>
 <p><code>BallsInBinsSampler</code> is incompatible with parallel-Poisson DDP
 (<code>--no-shard</code>): each rank must work a disjoint shard so every example
-participates exactly once per epoch globally.  Pass <code>--shard</code> (or its
+participates exactly once per epoch globally. Pass <code>--shard</code> (or its
 DDP equivalent) when using BnB across multiple ranks.</p>
 <h2 id="sequential-batch-sampling">Sequential batch sampling<a class="headerlink" href="#sequential-batch-sampling" title="Permanent link">&para;</a></h2>
 <h3 id="sequentialbatchsampler"><code>SequentialBatchSampler</code><a class="headerlink" href="#sequentialbatchsampler" title="Permanent link">&para;</a></h3>
@@ -3445,7 +3467,7 @@ indices (i.e., they are batch samplers). Pass them to <code>DataLoader</code> vi
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
 <p>Do not pass <code>batch_size</code>, <code>shuffle</code>, or <code>sampler</code> when using
-<code>batch_sampler</code> -- PyTorch does not allow combining these parameters.</p>
+<code>batch_sampler</code> — PyTorch does not allow combining these parameters.</p>
 <p>Because Poisson sampling produces variable-size batches, your training code
 should handle batches of different sizes. In practice this is rarely a
 problem since <code>clipped_grad</code> and <code>gaussian_noise</code> work with any batch size.</p>
@@ -3458,7 +3480,7 @@ and derive a per-rank key via <code>fold_in(key, rank)</code>:</p>
    any remainder.</li>
 <li>The RNG key is diversified per rank via <code>fold_in(key, rank)</code>, so
    different ranks sample different subsets of their shard.</li>
-<li>No communication is needed -- each rank samples independently from its
+<li>No communication is needed — each rank samples independently from its
    own partition.</li>
 </ol>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1034,6 +1034,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2985,10 +3008,10 @@
 
 
 <h1 id="model-patches-and-kernels">Model Patches and Kernels<a class="headerlink" href="#model-patches-and-kernels" title="Permanent link">&para;</a></h1>
-<p><code>opaque.patches</code> is a standalone library that makes HuggingFace
+<p><code>opaque.patches</code> is a standalone library that makes Hugging Face
 Transformers models work under <code>torch.func.vmap(grad(...))</code> and
 provides fused Triton kernels for the hot ops on the forward /
-backward path.  It predates and operates independently of
+backward path. It predates and operates independently of
 <code>DPTrainer</code> — any code that drives DP-SGD over HF models (the
 trainer, a hand-rolled training loop, a custom orchestration layer)
 can use the same APIs.</p>
@@ -3002,12 +3025,12 @@ SwiGLU / GeGLU activations used by patched model families.</p>
 <ul>
 <li><strong>Compat patches</strong> — vmap-safety rewrites for attention, causal
   masks, KV-cache, batchify wrappers, gradient checkpointing, and
-  collator behaviour under Poisson sampling.  Required so
+  collator behavior under Poisson sampling. Required so
   <code>vmap(grad(...))</code> over a per-example loss closure doesn't trip on
   hardcoded batch-dim indexing or data-dependent control flow.</li>
 <li><strong>Performance kernels</strong> — fused Triton kernels for RoPE, RMSNorm,
   activations (SwiGLU / GeGLU), cross-entropy, optional fused linear
-  CE, and fused LoRA.  Drop-in numerically-equivalent replacements;
+  CE, and fused LoRA. Drop-in, numerically equivalent replacements;
   significant memory savings on long-sequence models.</li>
 </ul>
 <h2 id="api-surface">API surface<a class="headerlink" href="#api-surface" title="Permanent link">&para;</a></h2>
@@ -3084,7 +3107,7 @@ group:</p>
 <p><code>torch.func.vmap</code> removes the batch dimension: a function that
 normally receives input of shape <code>(batch, seq_len, hidden)</code> instead
 receives <code>(seq_len, hidden)</code>, with <code>vmap</code> handling batching
-externally.  HuggingFace models use hardcoded dimension indices
+externally. Hugging Face models use hardcoded dimension indices
 (e.g. <code>x.shape[0]</code> for batch size) and data-dependent control flow
 that break under vmap.</p>
 <p>The patches replace these with:</p>
@@ -3586,7 +3609,7 @@ benchmarks live in <a href="../../memory-optimizations/#kernel-benchmarks">Memor
 fused backward that reads 3 tensors and writes 2–3 in a single pass.</p>
 <h3 id="rotary-position-embeddings-rope">Rotary position embeddings (RoPE)<a class="headerlink" href="#rotary-position-embeddings-rope" title="Permanent link">&para;</a></h3>
 <p>Fused RoPE applies rotary embeddings to Q and K tensors
-simultaneously.  Supports grouped-query attention (GQA) where Q and
+simultaneously. Supports grouped-query attention (GQA) where Q and
 K have different head counts. The underlying position encoding follows
 <a href="https://arxiv.org/abs/2104.09864"><em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em></a>.</p>
 <p>Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi-3, Gemma, Gemma2,
@@ -3602,7 +3625,7 @@ Available standalone as <code>opaque.patches.kernels.opaque_cross_entropy_loss</
 <h3 id="fused-linear-cross-entropy">Fused linear cross-entropy<a class="headerlink" href="#fused-linear-cross-entropy" title="Permanent link">&para;</a></h3>
 <p>Computes the loss directly from hidden states and the <code>lm_head</code>
 weight matrix using tiled matrix multiplication inside the Triton
-kernel, never materialising the full logits tensor.  For Mellum-4b
+kernel, never materializing the full logits tensor. For Mellum-4b
 with 128K vocab, this avoids the ~2 GB <code>logits = hidden_states @
 lm_head.T</code> allocation that the non-fused path produces per forward
 pass.</p>
@@ -3688,7 +3711,7 @@ arguments that <code>vmap</code> unbatches:</p>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
 </code></pre></div>
 <p><code>batch_argnums</code> specifies which positional arguments get
-<code>unsqueeze(0)</code>.  Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; the
+<code>unsqueeze(0)</code>. Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; the
 wrapper makes it <code>(1, seq)</code> before the model sees it.</p>
 <h3 id="wrapping-the-model-forward">Wrapping the model forward<a class="headerlink" href="#wrapping-the-model-forward" title="Permanent link">&para;</a></h3>
 <p>Alternatively, patch the model's forward method once.  This is what

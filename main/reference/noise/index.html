@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -3106,7 +3129,8 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 <li><strong><code>bisr_strategy()</code></strong> — BISR (Banded Inverse Square Root) correlated noise</li>
 <li><strong><code>identity_strategy()</code></strong> — Identity (DP-SGD via MF API, easy to swap)</li>
 </ul>
-<p>All noise functions return <code>(noise_fn, state)</code> where <code>noise_fn(grads, state) -&gt; (noisy_grads, new_state)</code>.
+<p>All noise functions return <code>(noise_fn, state)</code>, where
+<code>noise_fn(grads, state) -&gt; (noisy_grads, new_state)</code>.
 When private second moments are enabled, the noisy value is a
 <code>SecondMomentNoiseOutput</code> carrying both <code>noisy_grads</code> and
 <code>noisy_squared_grads</code>.</p>
@@ -3159,7 +3183,7 @@ underlying <code>mf_gaussian(nm, …)</code> for DP-FTRL; there is no separate
 transformation wrapper and no <code>ρ</code> knob.</p>
 <p><code>mf_gaussian_noise</code> accepts scalar or <code>PerGroup</code> <code>max_norm</code> on <code>ClippedPytree</code>
 inputs. Single-stream IID stddevs for <code>PerGroup</code> bounds match the
-MSE-optimal allocation from :meth:<code>ClippedPytree.noise_stddev_for</code> (same
+MSE-optimal allocation from <code>ClippedPytree.noise_stddev_for</code> (the same
 Mahalanobis allocation as <code>gaussian_noise</code>). Leaf→group keys are optree
 <code>ParamPath</code> tuples (build them with <code>per_group(params, …)</code>); nested
 parameter trees are supported. Trainer/examples keep flat
@@ -3167,7 +3191,7 @@ parameter trees are supported. Trainer/examples keep flat
 <h2 id="gaussian-optionally-bounded">Gaussian (optionally bounded)<a class="headerlink" href="#gaussian-optionally-bounded" title="Permanent link">&para;</a></h2>
 <p><code>gaussian_noise</code> accepts an optional <code>bound</code> argument: <code>bound=B</code> for the
 symmetric interval <code>[-B, B]</code> or <code>bound=(low, high)</code> for an asymmetric
-one (with <code>low &lt;= 0 &lt;= high</code>).  The per-coordinate sample is then drawn
+one (with <code>low &lt;= 0 &lt;= high</code>). The per-coordinate sample is then drawn
 from a Gaussian renormalized over the interval (Chen and Hale, 2024).
 Bounds are absolute, in the same units as the gradient / clip norm.</p>
 

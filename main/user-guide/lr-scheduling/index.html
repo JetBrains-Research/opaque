@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1092,7 +1092,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -1212,6 +1212,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2843,7 +2866,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -2871,7 +2894,7 @@
 <h1 id="learning-rate-scheduling">Learning-rate Scheduling<a class="headerlink" href="#learning-rate-scheduling" title="Permanent link">&para;</a></h1>
 <p>Standard ML LR schedules — linear / cosine decay with warmup — work
 without modification under DP-SGD: they scale the already-clipped,
-already-noised update direction.  The privacy guarantee is
+already-noised update direction. The privacy guarantee is
 unchanged.</p>
 <p>This page explains the schedules and warmup composition Opaque
 provides via <a href="../../reference/schedules/"><code>opaque.scheduling</code></a>, and the
@@ -2880,11 +2903,11 @@ pattern for using them with TorchOpt functional optimizers.</p>
 <p>The first few hundred steps of DP-SGD update parameters using a
 gradient direction that's heavily contaminated by Gaussian noise — at
 typical noise multipliers, the signal-to-noise ratio per step is
-small even when the average over many steps is informative.  A high
-LR early in training amplifies that noise into the parameters.  A
+small even when the average over many steps is informative. A high
+LR early in training amplifies that noise into the parameters. A
 short linear ramp from <code>0</code> to <code>base_lr</code> over the first few percent of
 total steps gives the optimizer's moment estimators time to average
-the noise out before they're scaled by the full step size.  The same
+the noise out before they're scaled by the full step size. The same
 schedule that's a nice-to-have for non-private fine-tuning becomes
 load-bearing under DP.</p>
 <p>Empirically, anywhere from <strong>3% to 10% of total steps</strong> as warmup is
@@ -2901,7 +2924,7 @@ needed.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">linear_schedule</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Linear decay 1e-3 -&gt; 0 over 10 000 steps.</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Linear decay from 1e-3 to 0 over 10,000 steps.</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">linear_schedule</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">10_000</span><span class="p">)</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">schedule</span><span class="p">)</span>
 </code></pre></div>
@@ -2946,7 +2969,7 @@ factor in <code>[0, 1]</code> selects a different shape:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">ramp</span><span class="o">=</span><span class="s2">&quot;cosine&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="non-zero-warmup-floor">Non-zero warmup floor<a class="headerlink" href="#non-zero-warmup-floor" title="Permanent link">&para;</a></h3>
-<p>The default warmup ramps from <code>0</code>.  Some optimizers (StableAdamW, for
+<p>The default warmup ramps from <code>0</code>. Some optimizers (StableAdamW, for
 example) prefer a non-trivial first step; pass <code>init_value</code> to start
 the ramp at a fraction of the inner schedule's value instead of zero:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Ramp factor goes 0.1 → 1.0 over W steps, so the first step&#39;s LR</span>
@@ -2993,7 +3016,7 @@ schedule <code>num_cycles</code> times over a window. Combined with cosine you g
 <a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_restarts</span><span class="p">(</span><span class="n">inner</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">num_cycles</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
 </code></pre></div>
 <p>Each cycle the schedule snaps back to <code>inner(0)</code> and runs the curve
-over its own <code>cycle_length</code>.  Composes with <code>with_warmup</code> the same
+over its own <code>cycle_length</code>. It composes with <code>with_warmup</code> the same
 way as any other decay.</p>
 <h2 id="warmup-stable-decay-wsd">Warmup-Stable-Decay (WSD)<a class="headerlink" href="#warmup-stable-decay-wsd" title="Permanent link">&para;</a></h2>
 <p><a href="../../reference/schedules/#warmup_stable_decay"><code>warmup_stable_decay</code></a>
@@ -3022,7 +3045,7 @@ schedule:</p>
 </code></pre></div>
 <p>The stable middle plateau enables <strong>decay-only fine-tuning</strong>: resume
 from any checkpoint inside the stable region and run only the decay
-tail without re-training the warmup.  That makes WSD a natural fit
+tail without re-training the warmup. That makes WSD a natural fit
 for "anytime" training where the final compute budget isn't fixed up
 front.</p>
 <p><code>decay_shape</code> accepts <code>"1-sqrt"</code> (default — concave-down, fast initial
@@ -3031,12 +3054,12 @@ to <code>end</code>), or a callable <code>f(progress) -&gt; factor in [0, 1]</co
 progress to the factor applied to <code>(init_value - end_value)</code>.</p>
 <h2 id="mapping-from-transformers-schedule-names">Mapping from <code>transformers</code> schedule names<a class="headerlink" href="#mapping-from-transformers-schedule-names" title="Permanent link">&para;</a></h2>
 <p><code>transformers</code> exposes a number of named cosine variants for
-historical reasons.  Opaque's <code>cosine_schedule</code> and the composition
+historical reasons. Opaque's <code>cosine_schedule</code> and the composition
 primitives subsume all of them; the table below shows the recipe for
-each.  No engine-side alias is needed — pass the equivalent
+each. No engine-side alias is needed — pass the equivalent
 construction directly.</p>
 <p>The HF schedules all include a <code>0 → base_lr</code> warmup over the first
-<code>W</code> steps.  Each Opaque recipe configures the inner cosine with
+<code>W</code> steps. Each Opaque recipe configures the inner cosine with
 <code>transition_begin=W</code> (so the cosine returns <code>init_value</code> during the
 warmup window) and wraps it with <code>with_warmup(..., transition_steps=W)</code>
 so that leading plateau is rescaled into the ramp.</p>
@@ -3083,7 +3106,7 @@ any step:</p>
 <p>The optimizer maintains its own counter inside <code>opt_state</code> (via
 <code>scale_by_neg_lr</code>), so calling <code>schedule(step)</code> for logging does
 not interfere with how the optimizer applies the schedule.</p>
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../reference/schedules/">Schedules API</a> — full signatures and behavior.</li>
 <li><a href="../optimizers/">Optimizers User Guide</a> — bias correction, weight decay, AdamW-BC.</li>

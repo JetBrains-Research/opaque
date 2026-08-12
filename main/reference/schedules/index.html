@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2581,7 +2604,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -2777,7 +2800,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -2803,7 +2826,7 @@
 
 
 <h1 id="schedules">Schedules<a class="headerlink" href="#schedules" title="Permanent link">&para;</a></h1>
-<p>Pure-Python step-indexed scalar schedules.  Each public function
+<p>Pure-Python step-indexed scalar schedules. Each public function
 returns a plain <code>Callable[[int], float]</code> that plugs straight into
 <code>torchopt.adamw(lr=...)</code> or Opaque factories such as
 <a href="../optimizers/"><code>adamw</code></a>, <code>adam</code>, and
@@ -2823,7 +2846,7 @@ optimizer-state step counter — no manual <code>.step()</code> call.</p>
 <p>A decay curve is configured by <code>transition_begin</code> (when decay starts)
 and <code>transition_steps</code> (how long it takes); it returns its
 <code>init_value</code> during <code>[0, transition_begin)</code> and decays during
-<code>[transition_begin, transition_begin + transition_steps]</code>.  Wrap the
+<code>[transition_begin, transition_begin + transition_steps]</code>. Wrap the
 decay with <code>with_warmup</code> to multiply it by a <code>0 → 1</code> ramp during the
 first <code>transition_steps</code> steps — turning the leading plateau into a
 warmup ramp.</p>
@@ -2838,7 +2861,7 @@ warmup ramp.</p>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">transition_steps</span><span class="o">=</span><span class="n">N</span> <span class="o">-</span> <span class="n">W</span><span class="p">,</span> <span class="n">transition_begin</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># Replace the plateau with a 0 -&gt; base_lr ramp.</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># Replace the plateau with a 0 → base_lr ramp.</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">schedule</span><span class="p">)</span>
@@ -2847,7 +2870,7 @@ warmup ramp.</p>
 <h2 id="constant_schedule"><code>constant_schedule</code><a class="headerlink" href="#constant_schedule" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">constant_schedule</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
-<p>Returns <code>value</code> at every step.  Equivalent to passing a float
+<p>Returns <code>value</code> at every step. Equivalent to passing a float
 directly to TorchOpt's <code>lr</code> argument; <code>with_warmup</code> accepts a float
 as the same shorthand.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">constant_schedule</span><span class="p">,</span> <span class="n">with_warmup</span>
@@ -2867,12 +2890,12 @@ as the same shorthand.</p>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
 <p>Linear interpolation from <code>init_value</code> to <code>end_value</code> over
-<code>transition_steps</code>, starting at <code>transition_begin</code>.  Steps before
+<code>transition_steps</code>, starting at <code>transition_begin</code>. Steps before
 <code>transition_begin</code> hold at <code>init_value</code>; steps after the transition
 hold at <code>end_value</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">linear_schedule</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># 1e-3 -&gt; 0 over 1000 steps.</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># 1e-3 → 0 over 1000 steps.</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">linear_schedule</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
 </code></pre></div>
 <hr />
@@ -2886,7 +2909,7 @@ hold at <code>end_value</code>.</p>
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
 <p>Polynomial transition from <code>init_value</code> to <code>end_value</code>:
-<code>end + (init - end) * (1 - count/T)^power</code>.  <code>power=1</code> reduces to
+<code>end + (init - end) * (1 - count/T)^power</code>. <code>power=1</code> reduces to
 <a href="#linear_schedule"><code>linear_schedule</code></a>; larger <code>power</code> produces a
 flatter early phase and steeper late drop.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">polynomial_schedule</span>
@@ -2907,9 +2930,9 @@ flatter early phase and steeper late drop.</p>
 </code></pre></div>
 <p>Geometric schedule: <code>init * decay_rate^((step - transition_begin) / transition_steps)</code>.
 The shape is exponential; the direction depends on <code>decay_rate</code> —
-<code>&lt; 1</code> decays, <code>&gt; 1</code> grows, <code>== 1</code> stays constant.  With
+<code>&lt; 1</code> decays, <code>&gt; 1</code> grows, <code>== 1</code> stays constant. With
 <code>staircase=True</code> the exponent is floored, so the value moves in
-discrete jumps every <code>transition_steps</code>.  <code>end_value</code>, when set,
+discrete jumps every <code>transition_steps</code>. <code>end_value</code>, when set,
 clamps the result (lower bound for <code>decay_rate &lt; 1</code>, upper bound for
 <code>decay_rate &gt; 1</code>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">exponential_schedule</span>
@@ -2943,7 +2966,7 @@ that bottoms out at <code>end_value</code> exactly when <code>progress == 1</cod
 greater than <code>0.5</code> produce additional oscillations clamped at zero.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.scheduling</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_schedule</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Single half-cosine 1e-3 -&gt; 0 over 1000 steps.</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Single half-cosine from 1e-3 to 0 over 1,000 steps.</span>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">sched</span> <span class="o">=</span> <span class="n">cosine_schedule</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="c1"># 1.5 oscillations over 1000 steps.</span>
@@ -3143,7 +3166,7 @@ tail without re-running the warmup.</p>
 <code>num_decay_steps &lt;= 0</code>, or if <code>warmup_ramp</code> / <code>decay_shape</code> is an
 unknown string.</p>
 <hr />
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../optimizers/">Optimizers API</a> — pass any of these schedules to TorchOpt's <code>lr</code> argument.</li>
 <li><a href="../../user-guide/lr-scheduling/">LR Scheduling User Guide</a> — patterns and DP-specific guidance.</li>

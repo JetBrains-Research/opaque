@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2734,13 +2757,13 @@
 
 <h1 id="dp-cgd">DP-λCGD<a class="headerlink" href="#dp-cgd" title="Permanent link">&para;</a></h1>
 <p><strong>DP-λCGD</strong> (Kalinin et al., 2026) is a correlated noise mechanism that uses a
-single parameter λ ∈ [0, 1) to control noise correlation across training steps.
+single parameter <span class="arithmatex">\(\lambda \in [0, 1)\)</span> to control noise correlation across training steps.
 Its key advantage is <strong>zero extra memory</strong> — noise correlation is achieved via
 PRNG seed replay instead of storing previous noise vectors.</p>
 <ul>
 <li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2601.22334">DP-λCGD: Efficient Noise Correlation for Differentially Private Model Training</a></li>
-<li><strong>Strategy matrix</strong>: Lower-triangular Toeplitz with entries C[i,j] = λ^{i-j}</li>
-<li><strong>Inverse</strong>: Bidiagonal — 1 on diagonal, -λ on subdiagonal (bandwidth 2)</li>
+<li><strong>Strategy matrix</strong>: Lower-triangular Toeplitz with entries <span class="arithmatex">\(C_{i,j} = \lambda^{i-j}\)</span></li>
+<li><strong>Inverse</strong>: Bidiagonal — 1 on the diagonal, <span class="arithmatex">\(-\lambda\)</span> on the subdiagonal (bandwidth 2)</li>
 <li><strong>Memory</strong>: Zero extra (PRNG replay regenerates previous noise from its seed)</li>
 <li><strong>Amplification</strong>: Balls-in-Bins (BnB) with MC dominating pair accounting</li>
 </ul>
@@ -2784,7 +2807,7 @@ mechanism parameters in two places.</p>
 <tbody>
 <tr>
 <td><code>lambda_</code></td>
-<td>Correlation coefficient in [0, 1). λ=0 is DP-SGD.</td>
+<td>Correlation coefficient in <span class="arithmatex">\([0, 1)\)</span>. <span class="arithmatex">\(\lambda = 0\)</span> is DP-SGD.</td>
 </tr>
 <tr>
 <td><code>n_steps</code></td>
@@ -2866,7 +2889,7 @@ expression in terms of λ, min_sep, and max_participations.</p>
 4. Optionally applies column-norm scaling: n_t *= d_t</p>
 <h2 id="relationship-to-bisr">Relationship to BISR<a class="headerlink" href="#relationship-to-bisr" title="Permanent link">&para;</a></h2>
 <p>DP-λCGD is the bandwidth-2 special case of <a href="../bisr/">BISR</a>. For bandwidth &gt; 2,
-use <code>bisr_strategy(...)</code> which generalises the correlation structure.</p>
+use <code>bisr_strategy(...)</code>, which generalizes the correlation structure.</p>
 
 
 

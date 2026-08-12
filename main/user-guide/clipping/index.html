@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -825,11 +825,11 @@
         <li class="md-nav__item">
   <a href="#clipped_grad-recommended-api" class="md-nav__link">
     <span class="md-ellipsis">
-      clipped_grad -- recommended API
+      clipped_grad — recommended API
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="clipped_grad -- recommended API">
+    <nav class="md-nav" aria-label="clipped_grad — recommended API">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1398,6 +1398,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2900,11 +2923,11 @@
         <li class="md-nav__item">
   <a href="#clipped_grad-recommended-api" class="md-nav__link">
     <span class="md-ellipsis">
-      clipped_grad -- recommended API
+      clipped_grad — recommended API
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="clipped_grad -- recommended API">
+    <nav class="md-nav" aria-label="clipped_grad — recommended API">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3252,10 +3275,10 @@ needed for a given privacy guarantee.</p>
 <li><strong><code>adaptive_clipped_grad</code></strong> (<a href="../../reference/clipping/"><code>opaque.dpsgd.clipping</code></a>) — Auto-tuned threshold via quantile tracking (Andrew et al. 2021); DP-SGD-only because the threshold drifts across steps.</li>
 </ul>
 <p>For DP-FTRL, import <code>clipped_grad</code>, <code>auto_clipped_grad</code>, and <code>per_group</code>
-from :mod:<code>opaque.dpftrl.clipping</code>.</p>
+from <code>opaque.dpftrl.clipping</code>.</p>
 <p>Lower-level building blocks (<code>clipped_fun</code>, <code>clip_pytree</code>, <code>auto_scale_pytree</code>)
 are documented in the <a href="../../reference/clipping/">Clipping API Reference</a>.</p>
-<h2 id="clipped_grad-recommended-api"><code>clipped_grad</code> -- recommended API<a class="headerlink" href="#clipped_grad-recommended-api" title="Permanent link">&para;</a></h2>
+<h2 id="clipped_grad-recommended-api"><code>clipped_grad</code> — recommended API<a class="headerlink" href="#clipped_grad-recommended-api" title="Permanent link">&para;</a></h2>
 <p><code>clipped_grad</code> wraps a per-example loss function. It computes per-example
 gradients, clips each to a maximum L2 norm, and sums the result. This is the
 primary API for DP-SGD training.</p>
@@ -3733,7 +3756,7 @@ from the DP-SGD hyperparameter search.</p>
 data-independent, AUTO-S satisfies the constant per-step sensitivity
 assumption that matrix-factorization privacy proofs rely on. The
 returned <code>ClippedPytree.max_norm</code> is the same value (<code>R / normalize_by</code>)
-on every step, so it flows through <code>mf_gaussian_noise</code> exactly like fixed clipping
+on every step, so it flows through <code>mf_gaussian_noise</code> exactly as fixed clipping
 does:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_clipped_grad</span>
 <a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">mf_gaussian_noise</span>

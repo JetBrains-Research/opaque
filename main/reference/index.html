@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1021,6 +1021,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2229,17 +2252,17 @@
         <li class="md-nav__item">
   <a href="#module-organization" class="md-nav__link">
     <span class="md-ellipsis">
-      Module Organization
+      Module organization
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Module Organization">
+    <nav class="md-nav" aria-label="Module organization">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#core-utilities" class="md-nav__link">
     <span class="md-ellipsis">
-      Core Utilities
+      Core utilities
     </span>
   </a>
   
@@ -2248,25 +2271,25 @@
           <li class="md-nav__item">
   <a href="#dp-sgd-components" class="md-nav__link">
     <span class="md-ellipsis">
-      DP-SGD Components
+      DP-SGD components
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#validation-debugging" class="md-nav__link">
+  <a href="#validation-and-debugging" class="md-nav__link">
     <span class="md-ellipsis">
-      Validation &amp; Debugging
+      Validation and debugging
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#huggingface-integration" class="md-nav__link">
+  <a href="#hugging-face-integration" class="md-nav__link">
     <span class="md-ellipsis">
-      HuggingFace Integration
+      Hugging Face integration
     </span>
   </a>
   
@@ -2304,11 +2327,11 @@
         <li class="md-nav__item">
   <a href="#function-index" class="md-nav__link">
     <span class="md-ellipsis">
-      Function Index
+      Function index
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Function Index">
+    <nav class="md-nav" aria-label="Function index">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2409,7 +2432,7 @@
         <li class="md-nav__item">
   <a href="#type-hints" class="md-nav__link">
     <span class="md-ellipsis">
-      Type Hints
+      Type hints
     </span>
   </a>
   
@@ -2418,7 +2441,7 @@
         <li class="md-nav__item">
   <a href="#design-philosophy" class="md-nav__link">
     <span class="md-ellipsis">
-      Design Philosophy
+      Design philosophy
     </span>
   </a>
   
@@ -2427,7 +2450,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -2777,17 +2800,17 @@
         <li class="md-nav__item">
   <a href="#module-organization" class="md-nav__link">
     <span class="md-ellipsis">
-      Module Organization
+      Module organization
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Module Organization">
+    <nav class="md-nav" aria-label="Module organization">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#core-utilities" class="md-nav__link">
     <span class="md-ellipsis">
-      Core Utilities
+      Core utilities
     </span>
   </a>
   
@@ -2796,25 +2819,25 @@
           <li class="md-nav__item">
   <a href="#dp-sgd-components" class="md-nav__link">
     <span class="md-ellipsis">
-      DP-SGD Components
+      DP-SGD components
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#validation-debugging" class="md-nav__link">
+  <a href="#validation-and-debugging" class="md-nav__link">
     <span class="md-ellipsis">
-      Validation &amp; Debugging
+      Validation and debugging
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#huggingface-integration" class="md-nav__link">
+  <a href="#hugging-face-integration" class="md-nav__link">
     <span class="md-ellipsis">
-      HuggingFace Integration
+      Hugging Face integration
     </span>
   </a>
   
@@ -2852,11 +2875,11 @@
         <li class="md-nav__item">
   <a href="#function-index" class="md-nav__link">
     <span class="md-ellipsis">
-      Function Index
+      Function index
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Function Index">
+    <nav class="md-nav" aria-label="Function index">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2957,7 +2980,7 @@
         <li class="md-nav__item">
   <a href="#type-hints" class="md-nav__link">
     <span class="md-ellipsis">
-      Type Hints
+      Type hints
     </span>
   </a>
   
@@ -2966,7 +2989,7 @@
         <li class="md-nav__item">
   <a href="#design-philosophy" class="md-nav__link">
     <span class="md-ellipsis">
-      Design Philosophy
+      Design philosophy
     </span>
   </a>
   
@@ -2975,7 +2998,7 @@
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      See also
     </span>
   </a>
   
@@ -3001,56 +3024,56 @@
 
 
 <h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
-<p>Opaque provides a functional API for differential privacy in PyTorch. This reference documents all public functions and
-classes.</p>
+<p>Opaque provides a functional API for differential privacy in PyTorch. This
+reference documents all public functions and classes.</p>
 <p>Install via <code>opaque</code> (and <code>opaque[...]</code> extras) when using this API. Module
 paths remain under <code>opaque.*</code>, but the root package is the supported
 user-facing installation target.</p>
-<h2 id="module-organization">Module Organization<a class="headerlink" href="#module-organization" title="Permanent link">&para;</a></h2>
+<h2 id="module-organization">Module organization<a class="headerlink" href="#module-organization" title="Permanent link">&para;</a></h2>
 <p>Opaque is organized into several modules, each focused on a specific aspect of DP training:</p>
-<h3 id="core-utilities">Core Utilities<a class="headerlink" href="#core-utilities" title="Permanent link">&para;</a></h3>
+<h3 id="core-utilities">Core utilities<a class="headerlink" href="#core-utilities" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
-<p><strong><a href="serialization/">Serialization</a></strong>: Flat <code>state_dict</code> / <code>from_state_dict</code> for
+<p><strong><a href="serialization/">Serialization</a></strong> — Flat <code>state_dict</code> / <code>from_state_dict</code> for
   explicit state trees (optimizers, accounting, clip/noise state, …);
   template-driven restore; optional <code>register_serializer</code> for custom types</p>
 </li>
 <li>
-<p><strong><a href="rng/">Random Number Generation</a></strong>: Immutable RNG keys for deterministic DP</p>
+<p><strong><a href="rng/">Random Number Generation</a></strong> — Immutable RNG keys for deterministic DP</p>
 </li>
-<li><code>RngKey</code> - Immutable key type</li>
-<li><code>key()</code>, <code>random_key()</code> - Create keys</li>
-<li><code>split()</code>, <code>fold_in()</code> - Manipulate keys</li>
-<li><code>set_reproducible_pytorch_seed()</code> - PyTorch/CUDNN reproducibility</li>
+<li><code>RngKey</code> — Immutable key type</li>
+<li><code>key()</code>, <code>random_key()</code> — Create keys</li>
+<li><code>split()</code>, <code>fold_in()</code> — Manipulate keys</li>
+<li><code>set_reproducible_pytorch_seed()</code> — PyTorch/cuDNN reproducibility</li>
 <li>
-<p><code>generator_from_key()</code> - PyTorch generator bridge</p>
+<p><code>generator_from_key()</code> — PyTorch generator bridge</p>
 </li>
 <li>
-<p><strong><a href="utilities/">Utilities</a></strong>: Functional and PyTree utilities</p>
+<p><strong><a href="utilities/">Utilities</a></strong> — Functional and PyTree utilities</p>
 </li>
-<li><code>make_functional()</code> - Convert nn.Module to functional form</li>
+<li><code>make_functional()</code> — Convert <code>nn.Module</code> to functional form</li>
 <li><code>tree_map()</code>, <code>tree_map_with_path()</code>, <code>partition()</code>, <code>merge()</code>, <code>global_norm()</code>, <code>tree_leaves()</code></li>
 </ul>
-<h3 id="dp-sgd-components">DP-SGD Components<a class="headerlink" href="#dp-sgd-components" title="Permanent link">&para;</a></h3>
+<h3 id="dp-sgd-components">DP-SGD components<a class="headerlink" href="#dp-sgd-components" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="clipping/">Clipping</a></strong>: Per-sample gradient clipping</li>
-<li><code>clipped_grad()</code> - High-level gradient clipping</li>
-<li><code>clipped_fun()</code> - Clip and sum function outputs</li>
-<li><code>clip_pytree()</code> - Low-level PyTree clipping</li>
-<li><code>adaptive_clipped_grad()</code> - Clipped gradients with auto-tuned clip norm</li>
+<li><strong><a href="clipping/">Clipping</a></strong> — Per-sample gradient clipping</li>
+<li><code>clipped_grad()</code> — High-level gradient clipping</li>
+<li><code>clipped_fun()</code> — Clip and sum function outputs</li>
+<li><code>clip_pytree()</code> — Low-level PyTree clipping</li>
+<li><code>adaptive_clipped_grad()</code> — Clipped gradients with an auto-tuned clip norm</li>
 <li>
-<p><code>auto_clipped_grad()</code> - AUTO-S automatic per-example gradient scaling (Bu et al. 2023)</p>
+<p><code>auto_clipped_grad()</code> — AUTO-S automatic per-example gradient scaling (Bu et al. 2023)</p>
 </li>
 <li>
-<p><strong><a href="noise/">Noise</a></strong>: Noise injection for DP</p>
+<p><strong><a href="noise/">Noise</a></strong> — Noise injection for DP</p>
 </li>
-<li><code>gaussian_noise()</code> - Gaussian noise (pass <code>bound=...</code> for the bounded Gaussian mechanism)</li>
-<li><code>mf_gaussian_noise()</code> - Correlated noise dispatcher (DP-FTRL)</li>
+<li><code>gaussian_noise()</code> — Gaussian noise (pass <code>bound=...</code> for the bounded Gaussian mechanism)</li>
+<li><code>mf_gaussian_noise()</code> — Correlated noise dispatcher (DP-FTRL)</li>
 <li>
 <p>Strategy factories: <code>band_mf_strategy()</code>, <code>blt_strategy()</code>, <code>lambda_cgd_strategy()</code>, <code>bisr_strategy()</code>, <code>identity_strategy()</code></p>
 </li>
 <li>
-<p><strong><a href="accounting/">Accounting</a></strong>: Privacy budget tracking</p>
+<p><strong><a href="accounting/">Accounting</a></strong> — Privacy budget tracking</p>
 </li>
 <li><code>gaussian()</code>, <code>adaclip()</code> — DP-SGD mechanisms (also via <code>opaque.dpsgd.accounting</code>)</li>
 <li><code>poisson()</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson()</code> — Poisson-family amplification</li>
@@ -3061,47 +3084,47 @@ user-facing installation target.</p>
 <p><code>calibrate()</code> — Binary-search noise multiplier for target privacy</p>
 </li>
 <li>
-<p><strong><a href="sampling/">Sampling</a></strong>: Privacy-amplifying sampling</p>
+<p><strong><a href="sampling/">Sampling</a></strong> — Privacy-amplifying sampling</p>
 </li>
-<li><code>PoissonSampler</code> - Standard Poisson sampling</li>
-<li><code>PoissonSampler</code> + <code>truncated_batch_size</code> - Bounded Poisson sampling</li>
-<li><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>) - cyclic Poisson over <code>bands</code> groups; <code>bands=1</code> = identity (full-data Poisson each step)</li>
-<li><code>BallsInBinsSampler</code> - Random-partition sampling (λCGD, BISR, BLT)</li>
+<li><code>PoissonSampler</code> — Standard Poisson sampling</li>
+<li><code>PoissonSampler</code> + <code>truncated_batch_size</code> — Bounded Poisson sampling</li>
+<li><code>CyclicPoissonSampler</code> (<code>opaque.dpftrl</code>) — Cyclic Poisson over <code>bands</code> groups; <code>bands=1</code> = identity (full-data Poisson each step)</li>
+<li><code>BallsInBinsSampler</code> — Random-partition sampling (λCGD, BISR, BLT)</li>
 <li>
-<p><code>SequentialBatchSampler</code> - Deterministic sequential batching (BLT)</p>
+<p><code>SequentialBatchSampler</code> — Deterministic sequential batching (BLT)</p>
 </li>
 <li>
-<p><strong><a href="schedules/">Schedules</a></strong>: LR schedules for TorchOpt functional optimizers</p>
+<p><strong><a href="schedules/">Schedules</a></strong> — LR schedules for TorchOpt functional optimizers</p>
 </li>
-<li><code>constant_schedule()</code> - Constant LR</li>
-<li><code>cosine_schedule()</code> - Cosine annealing</li>
-<li><code>inverse_sqrt_schedule()</code> - Inverse-square-root decay</li>
-<li><code>one_minus_sqrt_schedule()</code> - <code>1 - sqrt(progress)</code> decay (concave)</li>
-<li><code>with_warmup()</code> - Compose warmup ramp with any decay schedule</li>
-<li><code>with_restarts()</code> - Replay a schedule N times</li>
+<li><code>constant_schedule()</code> — Constant LR</li>
+<li><code>cosine_schedule()</code> — Cosine annealing</li>
+<li><code>inverse_sqrt_schedule()</code> — Inverse-square-root decay</li>
+<li><code>one_minus_sqrt_schedule()</code> — <code>1 - sqrt(progress)</code> decay (concave)</li>
+<li><code>with_warmup()</code> — Compose a warmup ramp with any decay schedule</li>
+<li><code>with_restarts()</code> — Replay a schedule N times</li>
 </ul>
-<h3 id="validation-debugging">Validation &amp; Debugging<a class="headerlink" href="#validation-debugging" title="Permanent link">&para;</a></h3>
+<h3 id="validation-and-debugging">Validation and debugging<a class="headerlink" href="#validation-and-debugging" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="auditing/">Auditing</a></strong>: Empirical privacy validation</li>
-<li><code>auditing.coin_flip()</code>, <code>auditing.loss_scores()</code>, <code>auditing.one_run()</code> - Three-step workflow</li>
-<li><code>OneRunEstimate.epsilon_at()</code>, <code>.delta_at()</code>, <code>.beta_at()</code>, <code>.advantage()</code> - μ-GDP-default Pld-mirror surface</li>
-<li><code>OneRunEstimate.eps_delta()</code> - Mechanism-agnostic (ε, δ)-DP override</li>
+<li><strong><a href="auditing/">Auditing</a></strong> — Empirical privacy validation</li>
+<li><code>auditing.coin_flip()</code>, <code>auditing.loss_scores()</code>, <code>auditing.one_run()</code> — Three-step workflow</li>
+<li><code>OneRunEstimate.epsilon_at()</code>, <code>.delta_at()</code>, <code>.beta_at()</code>, <code>.advantage()</code> — μ-GDP-default PLD-mirroring surface</li>
+<li><code>OneRunEstimate.eps_delta()</code> — Mechanism-agnostic (ε, δ)-DP override</li>
 <li>
-<p><code>attack_auc()</code>, <code>attack_beta_at()</code> - Attack-side empirical metrics</p>
+<p><code>attack_auc()</code>, <code>attack_beta_at()</code> — Attack-side empirical metrics</p>
 </li>
 <li>
-<p><strong><a href="distributed/">Distributed</a></strong>: Multi-GPU training with DDP</p>
+<p><strong><a href="distributed/">Distributed</a></strong> — Multi-GPU training with DDP</p>
 </li>
-<li><code>sum_gradients()</code> / <code>sum_gradients_()</code> - Copy-returning and in-place DP gradient summation</li>
-<li><code>all_reduce()</code> - Generic tensor all-reduce (sum, mean, max, min)</li>
-<li><code>reduce_pytree()</code> / <code>reduce_pytree_()</code> - Copy-returning and in-place generic PyTree reduction</li>
-<li><code>sync()</code> - Auto-dispatch sync for any state/aux type</li>
-<li><code>local_shard()</code> - Partition dataset for DDP training</li>
-<li><code>is_distributed()</code>, <code>get_rank()</code>, <code>get_world_size()</code> - Distributed utilities</li>
+<li><code>sum_gradients()</code> / <code>sum_gradients_()</code> — Copy-returning and in-place DP gradient summation</li>
+<li><code>all_reduce()</code> — Generic tensor all-reduce (sum, mean, max, min)</li>
+<li><code>reduce_pytree()</code> / <code>reduce_pytree_()</code> — Copy-returning and in-place generic PyTree reduction</li>
+<li><code>sync()</code> — Auto-dispatch sync for any state/aux type</li>
+<li><code>local_shard()</code> — Partition a dataset for DDP training</li>
+<li><code>is_distributed()</code>, <code>get_rank()</code>, <code>get_world_size()</code> — Distributed utilities</li>
 </ul>
-<h3 id="huggingface-integration">HuggingFace Integration<a class="headerlink" href="#huggingface-integration" title="Permanent link">&para;</a></h3>
+<h3 id="hugging-face-integration">Hugging Face integration<a class="headerlink" href="#hugging-face-integration" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="transformers/">Transformers</a></strong>: <code>opaque.transformers</code> — DP-SGD for HuggingFace models</li>
+<li><strong><a href="transformers/">Transformers</a></strong> — <code>opaque.transformers</code> — DP-SGD for Hugging Face models</li>
 <li><code>DPTrainer</code> — full constructor, methods, callback wiring, overridable hooks</li>
 <li><code>TrainingArguments</code> — every field grouped by concern (privacy, compute, patches, save, eval, …)</li>
 <li><code>opaque.transformers.trainer.types</code> — <code>EvaluationResult</code>, <code>TrainOutput</code> return types</li>
@@ -3128,7 +3151,7 @@ user-facing installation target.</p>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="p">)</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
 <a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="c1"># Training loop</span>
@@ -3138,7 +3161,7 @@ user-facing installation target.</p>
 <a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">update</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="../getting-started/quickstart/">Quick Start</a> for a complete working example.</p>
-<h2 id="function-index">Function Index<a class="headerlink" href="#function-index" title="Permanent link">&para;</a></h2>
+<h2 id="function-index">Function index<a class="headerlink" href="#function-index" title="Permanent link">&para;</a></h2>
 <h3 id="clipping">Clipping<a class="headerlink" href="#clipping" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3599,7 +3622,7 @@ user-facing installation target.</p>
 </tr>
 </tbody>
 </table>
-<h2 id="type-hints">Type Hints<a class="headerlink" href="#type-hints" title="Permanent link">&para;</a></h2>
+<h2 id="type-hints">Type hints<a class="headerlink" href="#type-hints" title="Permanent link">&para;</a></h2>
 <p>Opaque uses type hints throughout. Key types:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
@@ -3612,7 +3635,7 @@ user-facing installation target.</p>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># Generator for reproducible noise</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">Generator</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span>
 </code></pre></div>
-<h2 id="design-philosophy">Design Philosophy<a class="headerlink" href="#design-philosophy" title="Permanent link">&para;</a></h2>
+<h2 id="design-philosophy">Design philosophy<a class="headerlink" href="#design-philosophy" title="Permanent link">&para;</a></h2>
 <p>Opaque's API follows these principles:</p>
 <ol>
 <li><strong>Functional-first</strong>: Immutable state, pure functions</li>
@@ -3621,14 +3644,14 @@ user-facing installation target.</p>
 <li><strong>PyTorch-native</strong>: Built on <code>torch.func</code>, works with standard PyTorch</li>
 <li><strong>JAX-inspired</strong>: API closely mirrors JAX-Privacy for familiarity</li>
 </ol>
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="../user-guide/">User Guides</a></strong>: Conceptual explanations and examples</li>
 <li><strong><a href="../tutorials/">Tutorials</a></strong>: Interactive Jupyter notebooks</li>
 <li><strong><a href="../getting-started/quickstart/">Quick Start</a></strong>: End-to-end DP-SGD example</li>
 </ul>
 <hr />
-<p><strong>Browse by module</strong>: Use the navigation on the left to explore detailed API documentation</p>
+<p><strong>Browse by module:</strong> Use the navigation on the left to explore detailed API documentation.</p>
 
 
 

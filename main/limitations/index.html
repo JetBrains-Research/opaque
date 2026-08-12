@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Functional DP-SGD for PyTorch">
+        <meta name="description" content="Functional DP-SGD and DP-FTRL for PyTorch">
       
       
         <meta name="author" content="Opaque Contributors">
@@ -1032,6 +1032,29 @@
   
   <span class="md-ellipsis">
     DPTrainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/distributed-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Distributed DPTrainer
     
   </span>
   
@@ -2779,8 +2802,8 @@ Keep them private or disable external logging. Hub uploads exclude the default
 for usage and limitations.</p>
 <h2 id="flash-attention-2-incompatibility">Flash Attention 2 incompatibility<a class="headerlink" href="#flash-attention-2-incompatibility" title="Permanent link">&para;</a></h2>
 <p>Flash Attention 2 uses <code>torch.nonzero</code> internally for sequence unpadding,
-which produces dynamic output shapes incompatible with vmap.</p>
-<p><strong>Solution:</strong> Use SDPA or eager attention when loading HuggingFace models:</p>
+which produces dynamic output shapes that are incompatible with vmap.</p>
+<p><strong>Solution:</strong> Use SDPA or eager attention when loading Hugging Face models:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">,</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">attn_implementation</span><span class="o">=</span><span class="s2">&quot;sdpa&quot;</span><span class="p">,</span>
@@ -2795,15 +2818,15 @@ should work but is not extensively tested. First-class distributed backends are
 NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
 and are not covered by default CI.</p>
 <h2 id="kernel-patching-lives-in-opaquepatches">Kernel patching lives in <code>opaque.patches</code><a class="headerlink" href="#kernel-patching-lives-in-opaquepatches" title="Permanent link">&para;</a></h2>
-<p>Kernel optimization and patching for HuggingFace models is part of
-<code>opaque.patches</code> and is CUDA+Triton only.</p>
+<p>Kernel optimization and patching for Hugging Face models are part of
+<code>opaque.patches</code> and are available only with CUDA and Triton.</p>
 <p>Low-level Triton-backed autograd primitives are internal
 implementation details and should not be imported directly in user
 code.</p>
 <p>On CPU/MPS (or without Triton), the kernel group is auto-disabled —
-the router forces <code>kernels=False</code> when CUDA + Triton can't be
+the router forces <code>kernels=False</code> when CUDA + Triton cannot be
 imported, so <code>performance=True</code> keeps the pure-Python <code>kv_cache</code>
-patch on those hosts.  Configure the patch surface via the explicit
+patch on those hosts. Configure the patch surface via the explicit
 flags (see
 <a href="../user-guide/huggingface/model-patches/#dptrainer-integration">Model Patches — DPTrainer integration</a>);
 opaque-patches has no environment-variable kill switches.</p>
@@ -2812,7 +2835,7 @@ opaque-patches has no environment-variable kill switches.</p>
 from <code>opaque.patches.kernels</code>.</p>
 <h2 id="in-place-operations-under-vmap">In-place operations under vmap<a class="headerlink" href="#in-place-operations-under-vmap" title="Permanent link">&para;</a></h2>
 <p><code>torch.func.vmap</code> does not support in-place tensor operations. Models that
-use in-place operations (e.g., <code>x.add_()</code>, <code>x[:, 0] = 0</code>) in their
+use in-place operations (for example, <code>x.add_()</code>, <code>x[:, 0] = 0</code>) in their
 forward pass will fail. Replace them with out-of-place equivalents
 (<code>x = x + y</code>, <code>x = torch.cat([zeros, x[:, 1:]], dim=1)</code>).</p>
 <h2 id="data-dependent-control-flow-under-vmap">Data-dependent control flow under vmap<a class="headerlink" href="#data-dependent-control-flow-under-vmap" title="Permanent link">&para;</a></h2>
