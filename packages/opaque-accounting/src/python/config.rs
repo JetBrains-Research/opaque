@@ -14,7 +14,7 @@ use crate::discretization::DiscretizationConfig;
 ///
 ///     config = dp.DiscretizationConfig(discretization=0.001)
 ///     pld = dp.gaussian_pld(1.1, config=config)
-#[pyclass(name = "DiscretizationConfig", skip_from_py_object)]
+#[pyclass(name = "DiscretizationConfig", from_py_object)]
 #[derive(Clone)]
 pub struct PyDiscretizationConfig {
     pub(super) inner: DiscretizationConfig,
