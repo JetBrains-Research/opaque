@@ -323,7 +323,6 @@ Skills for individual contributors / experiment work:
 
 | Skill | What it does |
 | --- | --- |
-| `cadence-experiments` | Submit and monitor GPU training runs on Cadence (JetTrain). Default workspace: `JbrFed`. |
 | `wandb-metrics` | Query experiment tracking on `jetbrains.wandb.io`. Default entity: `federated-compute`. |
 | `zenml-experiments` | Manage ML pipelines on `zenml.labs.jb.gg`. Default workspace: `prod`. |
 
@@ -335,15 +334,6 @@ Skills for team-level coordination:
 | --- | --- |
 | `youtrack-issues` | Track issues in YouTrack (project `JBRes`, subsystem `Federated Compute`). |
 | `meta-issue-updates` | Post weekly status updates to YouTrack meta issues from meeting notes. |
-
-### Feature-validation agent
-
-An autonomous multi-hour Claude Code agent at
-`.claude/agents/feature-validation.md` that validates code changes by
-running GPU experiments (Cadence) and analyzing results (W&B). It
-designs baseline-vs-variant experiments, gets user approval once, then
-runs fully autonomously using `/loop` for multi-hour monitoring. See
-the agent file for the full protocol.
 
 ## Experiment tracking (W&B)
 
@@ -366,21 +356,6 @@ Baseline without kernel patches:
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
   uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
 ```
-
-## Cadence presets
-
-GPU training configs in `.cadence/configs/`:
-
-| Preset file | Entry point | Notes |
-| --- | --- | --- |
-| `train_dpsgd (mellum_kstack).yaml` | `train_dpsgd.py --preset mellum-kstack` | Single H200, DP-SGD |
-| `train_dpftrl (mellum_kstack).yaml` | `train_dpftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
-| `train_dpsgd (qwen_7b_kstack).yaml` | `train_dpsgd.py` | 7B model, single H200 |
-| `train_dpsgd (mellum_kstack_distributed).yaml` | `train_dpsgd.py --preset mellum-kstack` | Multi-GPU DDP |
-| `train_dpftrl (mellum_kstack_distributed).yaml` | `train_dpftrl.py --preset mellum-kstack` | Multi-GPU DDP |
-
-Override args via `-e EXTRA_ARGS="--max-steps 200"` and run name via
-`-e RUN_NAME="my-experiment"`.
 
 ## Documentation
 

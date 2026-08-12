@@ -59,9 +59,8 @@ tiny synthetic example (``completion_only_loss=True`` over a hand-built
 
 A documented fallback exists in ``_run_smoke`` for environments where
 ``vmap(grad(...))`` over the patched model fails on CPU: a single non-vmap
-forward + ``SFT_LOSSES["nll"]`` to validate the loss wiring, with a clear note
-that the full per-example DP-SGD run is validated via the Cadence GPU preset.
-The script never exits non-zero in smoke mode.
+forward + ``SFT_LOSSES["nll"]`` validates the loss wiring. The script never
+exits non-zero in smoke mode.
 
 The mechanism is the caller's choice: swap the ``opaque.dpsgd`` imports below
 for ``opaque.dpftrl`` to run DP-FTRL instead. The loss closure does not change.
@@ -1213,8 +1212,7 @@ def _run_smoke(args):
         print(f"\nNote: full vmap DP-SGD path raised: {type(exc).__name__}: {exc}")
         print(
             "Falling back to a single non-vmap forward + SFT loss to validate "
-            "the loss wiring. The full per-example DP-SGD run is validated via "
-            "the Cadence GPU preset."
+            "the loss wiring."
         )
         batch = collate_to_device(synthetic[:batch_size])
         input_ids, attention_mask, labels = batch

@@ -51,10 +51,9 @@ from peft import LoraConfig
 def _configure_reporting(no_wandb: bool) -> list[str]:
     """Set W&B env defaults and return TrainingArguments.report_to.
 
-    Enables ``"wandb"`` reporting so Cadence presets that plumb ``WANDB_NAME`` /
-    ``WANDB_PROJECT`` / ``WANDB_ENTITY`` / ``WANDB_TAGS`` surface on the
-    dashboard; the DPOConfig default of ``[]`` would otherwise keep runs
-    stdout-only.
+    Enables ``"wandb"`` reporting when ``WANDB_NAME`` / ``WANDB_PROJECT`` /
+    ``WANDB_ENTITY`` / ``WANDB_TAGS`` are configured, since the DPOConfig
+    default of ``[]`` would otherwise keep runs stdout-only.
     """
     if no_wandb:
         return []
@@ -334,7 +333,7 @@ def parse_args() -> argparse.Namespace:
         "--no-wandb",
         action="store_true",
         help="Disable W&B logging; defaults to enabled when WANDB_PROJECT / "
-        "WANDB_API_KEY env vars are set (the Cadence presets plumb these).",
+        "WANDB_API_KEY env vars are set.",
     )
     args = p.parse_args()
     _require_configured(p, args)
