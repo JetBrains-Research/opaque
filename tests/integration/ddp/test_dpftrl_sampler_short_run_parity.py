@@ -12,8 +12,8 @@ drift.  A 2% bound on the final eval loss gives ~4× headroom over the
 observed drift while still catching real bugs (missing gradient
 reduction, wrong MF noise wiring, mis-keyed sampler, etc.).
 
-This is the test that mirrors what the Cadence single-vs-multi-GPU
-``train_dpftrl`` W&B comparison checks at production scale.
+This test validates the same single-vs-multi-GPU training behavior at a
+small scale.
 """
 
 from __future__ import annotations

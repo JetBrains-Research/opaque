@@ -1578,8 +1578,7 @@ def _run_smoke(args):
         print(f"\nNote: full vmap DP-SGD path raised: {type(exc).__name__}: {exc}")
         print(
             "Falling back to a single non-vmap chosen+rejected forward + DPO "
-            "loss to validate the loss wiring. The full per-example DP-SGD run "
-            "is validated via the Cadence GPU preset."
+            "loss to validate the loss wiring."
         )
         batch = _collate_to_device(
             collate, rows[:batch_size], device, reference_free=reference_free
