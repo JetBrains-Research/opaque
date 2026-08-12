@@ -1,54 +1,104 @@
 # Backend providers and primitives
 
-Opaque extensions own their operations as named primitives. A primitive is a
-canonical operation whose implementation is selected by the active backend's
-stable `name`; it is not selected from the type of an input array. This keeps
-mechanisms portable without requiring changes to Opaque's backend interface.
+Opaque extensions own their operations as decorated primitives. On the first
+backend-bearing call, Opaque recognizes Torch, JAX, or MLX arguments, lazily
+loads the corresponding provider wheel, and selects its implementation. The
+selection remains active in the current context for later calls.
 
 ## Declare an extension primitive
 
-Declare a qualified name once, in the package that owns the operation. A
-provider can register an eager callable or a lazy `"module:attribute"` target.
-Lazy targets are imported when first called and are then cached.
+Declare a primitive once, in the package that owns the operation. The
+decorator preserves the declaration's name, signature, and docstring while
+turning it into the canonical object providers register against.
 
 ```python
-from opaque.primitive import Primitive, lazy_implementation
+from opaque.primitive import PrimitiveTier, primitive
 
-selective_log_softmax = Primitive("example.alignment.selective_log_softmax")
-selective_log_softmax.register_many({
-    "torch": lazy_implementation("example._torch:selective_log_softmax"),
-    "jax": lazy_implementation("example._jax:selective_log_softmax"),
-    "mlx": lazy_implementation("example._mlx:selective_log_softmax"),
-})
+@primitive(tier=PrimitiveTier.CORE)
+def selective_log_softmax(logits: object, indices: object) -> object:
+    """Select indexed log probabilities."""
+    raise NotImplementedError
 ```
 
-Primitive names are globally canonical. Registering a second implementation
-for the same name and backend raises `DuplicatePrimitiveRegistrationError`;
-use `replace=True` only for a deliberate override, such as an isolated test.
-`primitive.supports("jax")`, `primitive.registered_backends()`, and the
-module-level `supports()` / `registered_backends()` helpers provide diagnostics
-without resolving lazy targets.
+Use `PrimitiveTier.OPTIONAL` for capabilities that are not required for every
+provider. Primitive names are derived from the declaration by default; pass
+`name="package.operation"` when an explicit identity is useful.
+
+## Implement a provider
+
+Create one `BackendProvider` identity and bind implementations with its
+decorator during provider import:
+
+```python
+from opaque.primitive import BackendProvider
+
+_PROVIDER = BackendProvider("example")
+
+@_PROVIDER.implements(selective_log_softmax)
+def selective_log_softmax_impl(logits, indices):
+    ...
+```
+
+Registration uses primitive objects rather than repeated string names.
+Registering a second implementation for the same primitive and backend raises
+`DuplicatePrimitiveRegistrationError`; use `replace=True` only for a
+deliberate override, such as an isolated test.
+`selective_log_softmax.supports("jax")`,
+`selective_log_softmax.registered_backends()`, and the module-level
+`supports()` / `registered_backends()` helpers provide diagnostics without
+resolving lazy targets.
 
 When a backend has no registration, calling the primitive raises
 `UnsupportedPrimitiveError`. Its `primitive_name` and `backend_name`
 attributes identify the missing contract.
 
-## Activate a provider
+## Automatic selection
 
-A provider is any object with a stable `name` attribute. Register its core
-primitive implementations before activating it:
+No backend is selected at import time. A primitive or executable transform
+inspects its invocation arguments recursively, including common containers,
+dataclasses, arrays, and model type hierarchies. The first recognized Torch,
+JAX, or MLX value loads `opaque-torch`, `opaque-jax`, or `opaque-mlx` and makes
+that backend sticky:
 
 ```python
-from opaque.backend import use_backend
+import torch
+from opaque.backend import active_backend
+from opaque.ops import square
+
+result = square(torch.tensor([2.0]))
+assert active_backend().name == "torch"
+```
+
+Arguments from multiple recognized frameworks raise `MixedBackendError`.
+Arguments that conflict with the sticky backend raise `BackendMismatchError`;
+call `clear_backend()` before changing the sticky selection. A call containing
+only neutral values requires an already active or explicitly selected backend.
+If a recognized provider wheel is absent, the error names the package to
+install.
+
+## Explicit lifecycle
+
+Applications normally rely on inference. Tests and uncommon multi-backend
+applications can select or switch providers explicitly:
+
+```python
+from opaque.backend import clear_backend, set_backend, use_backend
+from opaque.jax import jax_backend
+from opaque.torch import torch_backend
+
+set_backend(torch_backend())
 
 with use_backend(jax_backend()):
-    result = selective_log_softmax(logits, indices)
+    result = selective_log_softmax(jax_logits, jax_indices)
+
+# The previous Torch selection is restored here.
+clear_backend()
 ```
 
 `use_backend()` is nested, exception-safe, and context-local. `set_backend()`
-selects a backend for the current context until replaced. The bundled Torch
-provider is active by default, so applications that do not choose a provider
-continue to use Torch.
+persists in the current context, while `clear_backend()` returns it to the
+unselected state. Third-party providers are explicitly selectable; automatic
+loading is deterministic and limited to the first-party providers.
 
 ## Implement the portable core
 
@@ -67,11 +117,11 @@ must support `randomness="error"`; it must either implement `"same"` and
 derive its result from the immutable key without mutating hidden generator
 state.
 
-`set_backend()` and `use_backend()` validate the versioned portable core
-profile. `core_profile()` exposes the version and required primitives, and
-`validate_core_primitives()` is available to provider tests. A missing core
-registration raises `IncompleteBackendError` before the backend becomes
-active.
+Automatic activation, `set_backend()`, and `use_backend()` validate the
+versioned portable core profile. `core_profile()` exposes the version and
+required primitives, and `validate_core_primitives()` is available to provider
+tests. A missing core registration raises `IncompleteBackendError` before the
+backend becomes active.
 
 ## Optional capabilities
 
@@ -87,8 +137,9 @@ portable core can therefore be activated and can run portable algorithms.
 
 ## Provider registration checklist
 
-1. Give the provider a unique, stable `name`.
-2. Register every primitive in `core_profile().primitives` under that name.
+1. Give the provider a unique, stable `BackendProvider` identity.
+2. Register every primitive in `core_profile().primitives` with
+   `@provider.implements(...)`.
 3. Keep registration idempotent when a provider factory can be called more
    than once.
 4. Add optional capability registrations only for behavior the provider

@@ -8,10 +8,10 @@ import pytest
 import torch
 
 from opaque.api.engine import runtime
-from opaque.api.engine.backend import Backend, use_backend
-from opaque.api.engine.backend.torch._runtime import profiling_trace_scope
+from opaque.api.engine.backend import Backend, ensure_backend, use_backend
 from opaque.api.engine.clipping._clipped_grad import clipped_grad
 from opaque.api.engine.primitive import CORE_PRIMITIVES, UnsupportedPrimitiveError
+from opaque.api.torch.backend._runtime import profiling_trace_scope
 from opaque.device import device_capabilities
 from opaque.distributed import is_distributed, local_shard
 from opaque.functional import make_functional
@@ -86,6 +86,7 @@ def test_torch_trace_scope_uses_record_function(monkeypatch) -> None:
 @pytest.mark.parametrize("return_aux", [False, True])
 def test_clipped_grad_routes_through_trace_scope(monkeypatch, return_aux) -> None:
     events = []
+    ensure_backend(torch.tensor(0.0))
 
     @contextmanager
     def trace_scope(label: str):

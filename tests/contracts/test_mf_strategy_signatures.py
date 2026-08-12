@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import torch
 
+from opaque.backend import ensure_backend
 from opaque.dpftrl.noise import (
     band_mf_strategy,
-    blt_strategy,
     bisr_strategy,
+    blt_strategy,
     bsr_strategy,
-    lambda_cgd_strategy,
     identity_strategy,
+    lambda_cgd_strategy,
     mf_gaussian_noise,
 )
 from opaque.random import key
@@ -95,6 +96,7 @@ class TestMfGaussianNoiseOutput:
         """Noise function produces finite values with correct shapes."""
         strategy = band_mf_strategy(bands=4)
         grad_template = (torch.randn(10), torch.randn(5))
+        ensure_backend(grad_template)
 
         noise_fn, state = mf_gaussian_noise(
             grad_template,

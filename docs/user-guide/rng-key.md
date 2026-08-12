@@ -32,7 +32,7 @@ of what other code has run.
 | `key(seed)` | Create a key from an integer seed |
 | `split(k, num=2)` | Derive `num` independent child keys |
 | `fold_in(k, *data)` | Mix a key with one or more int/str values |
-| `generator_from_key(k)` | Convert to `torch.Generator` |
+| `opaque.torch.random.generator_from_key(k)` | Convert to `torch.Generator` |
 | `random_key()` | Non-deterministic key (uses system entropy) |
 
 ### `key(seed)`
@@ -111,7 +111,8 @@ Convert an `RngKey` to a `torch.Generator` for use with PyTorch operations
 that require one.
 
 ```python
-from opaque.random import key, generator_from_key
+from opaque.random import key
+from opaque.torch.random import generator_from_key
 
 gen = generator_from_key(key(42))
 tensor = torch.randn(10, generator=gen)
@@ -274,11 +275,12 @@ assert torch.equal(noisy1["w"], noisy2["w"])
 
 Opaque controls only its own randomness. PyTorch operations like
 `torch.randn` or `torch.nn.Dropout` use PyTorch's global state and may
-vary across platforms. Use `set_reproducible_pytorch_seed` to configure
-framework-level determinism:
+vary across platforms. The `opaque-torch` provider exposes
+`set_reproducible_pytorch_seed` for framework-level determinism:
 
 ```python
-from opaque.random import set_reproducible_pytorch_seed, key
+from opaque.random import key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))
 # Sets torch.manual_seed, torch.cuda.manual_seed_all

@@ -24,7 +24,7 @@ import torch
 
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
+from opaque.torch.random import generator_from_key
 from opaque.types import NoiseState, PerGroup
 
 from . import _streaming_matrix as streaming_matrix

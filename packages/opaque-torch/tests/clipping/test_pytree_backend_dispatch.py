@@ -1,9 +1,9 @@
 """Seam tests: clip pytree/array math dispatches through ``active_backend()``.
 
-Step 3 routes ``global_norm`` / ``clip_pytree`` / ``auto_scale_pytree`` (and their
+``global_norm`` / ``clip_pytree`` / ``auto_scale_pytree`` (and their
 per-group helpers) through the backend abstraction for their pytree ops and
-elementwise / reduction / dtype math.  A recording backend that delegates to
-:class:`TorchBackend` proves the clip math is dispatched through the seam and
+elementwise / reduction / dtype math. A recording provider proves the clip math
+is dispatched through the seam and
 that the numeric results stay identical to the default (direct) path.
 """
 
@@ -12,10 +12,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.api.engine.backend import TorchBackend, set_backend, use_backend
+from opaque.api.engine.backend import clear_backend, use_backend
 from opaque.api.engine.clipping._pytree import auto_scale_pytree, clip_pytree
 from opaque.api.engine.primitive import CORE_PRIMITIVES
 from opaque.pytree import global_norm
+from opaque.torch import torch_backend
 from opaque.types import PerGroup
 
 
@@ -24,8 +25,7 @@ class _RecordingBackend:
 
     name = "recording"
 
-    def __init__(self, inner: TorchBackend) -> None:
-        self._inner = inner
+    def __init__(self) -> None:
         self.calls: list[str] = []
         for primitive in CORE_PRIMITIVES:
             implementation = primitive.resolve("torch")
@@ -40,13 +40,14 @@ class _RecordingBackend:
 
 @pytest.fixture(autouse=True)
 def _reset_backend():
-    """Restore a fresh ``TorchBackend`` default after every test."""
+    torch_backend()
+    clear_backend()
     yield
-    set_backend(TorchBackend())
+    clear_backend()
 
 
 def test_global_norm_dispatches_reduction_math_through_seam():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     tree = {"w": torch.tensor([3.0, 4.0])}
 
     with use_backend(recording):
@@ -68,7 +69,7 @@ def test_global_norm_dispatches_reduction_math_through_seam():
 def test_global_norm_dispatches_dtype_vocabulary_through_seam(tree):
     baseline = global_norm(tree)
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         norm = global_norm(tree)
 
@@ -78,7 +79,7 @@ def test_global_norm_dispatches_dtype_vocabulary_through_seam(tree):
 
 
 def test_clip_pytree_dispatches_clip_math_through_seam():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     tree = {"w": torch.tensor([3.0, 4.0]), "b": torch.tensor([0.0, 12.0])}
 
     with use_backend(recording):
@@ -102,7 +103,7 @@ def test_clip_pytree_dispatches_clip_math_through_seam():
 
 
 def test_auto_scale_pytree_dispatches_clip_math_through_seam():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     tree = {"w": torch.tensor([3.0, 4.0]), "b": torch.tensor([0.0, 12.0])}
 
     with use_backend(recording):
@@ -122,7 +123,7 @@ def test_auto_scale_pytree_dispatches_clip_math_through_seam():
 
 
 def test_clip_pytree_per_group_dispatches_through_seam():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     tree = {"a": torch.tensor([3.0, 4.0]), "b": torch.tensor([6.0, 8.0])}
     pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 1.0, "g2": 2.0})
 
@@ -155,7 +156,7 @@ def test_clip_pytree_per_group_dispatches_low_precision_dtype_vocabulary():
 
     baseline, aux0 = clip_pytree(tree, pg)
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         through, aux1 = clip_pytree(tree, pg)
 
@@ -170,7 +171,7 @@ def test_clip_pytree_per_group_dispatches_low_precision_dtype_vocabulary():
 
 
 def test_auto_scale_pytree_per_group_dispatches_through_seam():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     tree = {"a": torch.tensor([3.0, 4.0]), "b": torch.tensor([6.0, 8.0])}
     pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 1.0, "g2": 2.0})
 
@@ -197,7 +198,7 @@ def test_recording_backend_matches_default_numerics_global():
 
     baseline, aux0 = clip_pytree(tree, 5.0)
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         through, aux1 = clip_pytree(tree, 5.0)
 
@@ -212,7 +213,7 @@ def test_recording_backend_matches_default_numerics_per_group():
 
     baseline, aux0 = clip_pytree(tree, pg)
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         through, aux1 = clip_pytree(tree, pg)
 
@@ -231,7 +232,7 @@ def test_clip_pytree_nan_inf_sanitized_through_seam():
         "b": torch.tensor([float("inf"), -float("inf")]),
     }
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         clipped, _ = clip_pytree(tree, 1.0)
 

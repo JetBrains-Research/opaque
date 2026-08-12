@@ -7,22 +7,29 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-
 from opaque.api.engine import runtime
+from opaque.api.engine.backend import KnownBackend
+from opaque.api.engine.primitive import BackendProvider
+
+_TORCH = BackendProvider(KnownBackend.TORCH)
 
 
+@_TORCH.implements(runtime.distributed_is_initialized)
 def distributed_is_initialized() -> bool:
     return dist.is_available() and dist.is_initialized()
 
 
+@_TORCH.implements(runtime.distributed_rank)
 def distributed_rank() -> int:
     return dist.get_rank() if distributed_is_initialized() else 0
 
 
+@_TORCH.implements(runtime.distributed_world_size)
 def distributed_world_size() -> int:
     return dist.get_world_size() if distributed_is_initialized() else 1
 
 
+@_TORCH.implements(runtime.distributed_all_reduce_)
 def distributed_all_reduce_(value: torch.Tensor, op: str = "sum") -> None:
     operations = {
         "sum": dist.ReduceOp.SUM,
@@ -45,6 +52,7 @@ def distributed_all_reduce_(value: torch.Tensor, op: str = "sum") -> None:
     dist.all_reduce(value, op=reduce_op)
 
 
+@_TORCH.implements(runtime.distributed_all_gather_object)
 def distributed_all_gather_object(value: Any) -> list[Any]:
     if not distributed_is_initialized():
         return [value]
@@ -53,6 +61,7 @@ def distributed_all_gather_object(value: Any) -> list[Any]:
     return gathered
 
 
+@_TORCH.implements(runtime.distributed_reduce_scalar)
 def distributed_reduce_scalar(
     value: float | int,
     op: str = "mean",
@@ -97,11 +106,13 @@ def distributed_reduce_scalar(
     return tensor.item()
 
 
+@_TORCH.implements(runtime.distributed_barrier)
 def distributed_barrier() -> None:
     if distributed_is_initialized():
         dist.barrier()
 
 
+@_TORCH.implements(runtime.distributed_gather_for_metrics)
 def distributed_gather_for_metrics(value: torch.Tensor) -> torch.Tensor:
     if not distributed_is_initialized():
         return value
@@ -111,6 +122,7 @@ def distributed_gather_for_metrics(value: torch.Tensor) -> torch.Tensor:
     return torch.cat(gathered, dim=0)
 
 
+@_TORCH.implements(runtime.distributed_dataset_subset)
 def distributed_dataset_subset(dataset: Any, start: int, end: int) -> Any:
     from torch.utils.data import Subset
 
@@ -143,10 +155,12 @@ def _probe_bf16(device_type: str) -> bool:
     return False
 
 
+@_TORCH.implements(runtime.device_fused_kernels_available)
 def device_fused_kernels_available() -> bool:
     return torch.cuda.is_available() and _triton_importable()
 
 
+@_TORCH.implements(runtime.device_sdpa_autocast_under_vmap_broken)
 @functools.cache
 def device_sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
     if device_type != "mps" or not torch.backends.mps.is_available():
@@ -168,6 +182,7 @@ def device_sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
     return False
 
 
+@_TORCH.implements(runtime.device_capabilities)
 def device_capabilities(device: Any) -> Any:
     from opaque.api.engine.device._capabilities import DeviceCapabilities
 
@@ -186,6 +201,7 @@ def device_capabilities(device: Any) -> Any:
     )
 
 
+@_TORCH.implements(runtime.profiling_memory_stats)
 def profiling_memory_stats(device: Any) -> Any:
     from opaque.api.engine.profiling._memory import MemoryStats
 
@@ -224,6 +240,7 @@ def profiling_memory_stats(device: Any) -> Any:
     return MemoryStats()
 
 
+@_TORCH.implements(runtime.profiling_reset_peak_memory)
 def profiling_reset_peak_memory(device: Any) -> None:
     device = torch.device(device)
     if device.type == "cuda":
@@ -232,6 +249,7 @@ def profiling_reset_peak_memory(device: Any) -> None:
         torch.mps.empty_cache()
 
 
+@_TORCH.implements(runtime.profiling_empty_cache)
 def profiling_empty_cache(device: Any) -> None:
     device = torch.device(device)
     if device.type == "cuda":
@@ -240,6 +258,7 @@ def profiling_empty_cache(device: Any) -> None:
         torch.mps.empty_cache()
 
 
+@_TORCH.implements(runtime.profiling_synchronize)
 def profiling_synchronize(device: Any) -> None:
     device = torch.device(device)
     if device.type == "cuda":
@@ -248,14 +267,17 @@ def profiling_synchronize(device: Any) -> None:
         torch.mps.synchronize()
 
 
+@_TORCH.implements(runtime.profiling_normalize_device)
 def profiling_normalize_device(device: Any) -> torch.device:
     return torch.device(device)
 
 
+@_TORCH.implements(runtime.profiling_trace_scope)
 def profiling_trace_scope(label: str) -> Any:
     return torch.autograd.profiler.record_function(label)
 
 
+@_TORCH.implements(runtime.functional_make_functional)
 def functional_make_functional(
     mod: torch.nn.Module,
     disable_autograd_tracking: bool = False,
@@ -296,38 +318,4 @@ def functional_make_functional(
     return fmodel_tuple, params_values
 
 
-def _register(primitive: Any, implementation: Any) -> None:
-    if not primitive.supports("torch"):
-        primitive.register("torch", implementation)
-
-
-def register_runtime_primitives() -> None:
-    """Idempotently register Torch optional runtime integrations."""
-    for primitive, implementation in (
-        (runtime.distributed_is_initialized, distributed_is_initialized),
-        (runtime.distributed_rank, distributed_rank),
-        (runtime.distributed_world_size, distributed_world_size),
-        (runtime.distributed_all_reduce_, distributed_all_reduce_),
-        (runtime.distributed_all_gather_object, distributed_all_gather_object),
-        (runtime.distributed_reduce_scalar, distributed_reduce_scalar),
-        (runtime.distributed_barrier, distributed_barrier),
-        (runtime.distributed_gather_for_metrics, distributed_gather_for_metrics),
-        (runtime.distributed_dataset_subset, distributed_dataset_subset),
-        (runtime.device_capabilities, device_capabilities),
-        (runtime.device_fused_kernels_available, device_fused_kernels_available),
-        (
-            runtime.device_sdpa_autocast_under_vmap_broken,
-            device_sdpa_autocast_under_vmap_broken,
-        ),
-        (runtime.profiling_memory_stats, profiling_memory_stats),
-        (runtime.profiling_reset_peak_memory, profiling_reset_peak_memory),
-        (runtime.profiling_empty_cache, profiling_empty_cache),
-        (runtime.profiling_synchronize, profiling_synchronize),
-        (runtime.profiling_normalize_device, profiling_normalize_device),
-        (runtime.profiling_trace_scope, profiling_trace_scope),
-        (runtime.functional_make_functional, functional_make_functional),
-    ):
-        _register(primitive, implementation)
-
-
-__all__ = ["register_runtime_primitives"]
+__all__: list[str] = []

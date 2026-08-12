@@ -17,8 +17,9 @@ from opaque.api.engine.clipping._helpers import (
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.random import fold_in, generator_from_key
+from opaque.random import fold_in
 from opaque.random.types import RngKey
+from opaque.torch.random import generator_from_key
 from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
 
 if TYPE_CHECKING:

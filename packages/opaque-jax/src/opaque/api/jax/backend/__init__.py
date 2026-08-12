@@ -27,7 +27,6 @@ def jax_backend() -> Backend:
             "install the Opaque bundle with `pip install 'opaque[jax]'`."
         ) from exc
 
-    from opaque.api.jax.backend._jax import JaxBackend, register_core_primitives
+    from opaque.api.jax.backend._jax import JaxBackend
 
-    register_core_primitives()
     return JaxBackend()

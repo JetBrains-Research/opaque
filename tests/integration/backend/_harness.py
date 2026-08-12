@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from opaque import autodiff, ops, pytree
 from opaque.api.engine.backend import use_backend
 from opaque.api.engine.clipping._pytree import auto_scale_pytree, clip_pytree
 from opaque.pytree import global_norm
@@ -47,7 +48,7 @@ def run_clipping(
     bound: float,
     gamma: float = 0.05,
 ) -> ClippingRun:
-    """Differentiate, clip each example, and sum using only ``Backend`` primitives.
+    """Differentiate, clip each example, and sum using portable primitives.
 
     MLX's ``vmap`` requires all output leaves to be arrays.  The clipping
     auxiliary includes a ``None`` group-norm field in scalar mode, so the
@@ -55,8 +56,8 @@ def run_clipping(
     Per-example norms are computed separately through the same backend seam.
     """
     with use_backend(backend):
-        grad_and_value = backend.value_and_grad(loss_fn, has_aux=True)
-        per_example_grads, (values, value_aux) = backend.vmap(
+        grad_and_value = autodiff.grad_and_value(loss_fn, has_aux=True)
+        per_example_grads, (values, value_aux) = autodiff.vmap(
             grad_and_value, in_axes=(None, 0, 0)
         )(params, batch_x, batch_y)
 
@@ -70,10 +71,10 @@ def run_clipping(
             def transform(grad: Any) -> Any:
                 return auto_scale_pytree(grad, R=bound, gamma=gamma)[0]
 
-        clipped_grads = backend.vmap(transform)(per_example_grads)
-        clipped_norms = backend.vmap(global_norm)(clipped_grads)
-        summed_grads = backend.tree_map(
-            lambda leaf: backend.sum(leaf, axis=0), clipped_grads
+        clipped_grads = autodiff.vmap(transform)(per_example_grads)
+        clipped_norms = autodiff.vmap(global_norm)(clipped_grads)
+        summed_grads = pytree.tree_map(
+            lambda leaf: ops.sum(leaf, axis=0), clipped_grads
         )
 
     return ClippingRun(

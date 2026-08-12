@@ -48,8 +48,8 @@ from opaque.api.engine.noise_allocation import (
 )
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
 from opaque.random.types import RngKey
+from opaque.torch.random import generator_from_key
 from opaque.types import (
     ClippedPytree,
     NoisedPytree,

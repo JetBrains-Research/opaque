@@ -12,6 +12,7 @@ from opaque.api.engine import primitive as api_primitive
 
 def test_primitive_facade_has_an_explicit_complete_export_contract() -> None:
     assert set(primitive.__all__) == {
+        "BackendProvider",
         "CORE_PROFILE_VERSION",
         "CORE_PRIMITIVES",
         "CoreProfile",
@@ -26,6 +27,7 @@ def test_primitive_facade_has_an_explicit_complete_export_contract() -> None:
         "core_profile",
         "declare_core_primitives",
         "lazy_implementation",
+        "primitive",
         "registered_backends",
         "registered_primitives",
         "supports",

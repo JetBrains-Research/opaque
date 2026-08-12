@@ -51,7 +51,10 @@ README.md                # top-level description
 
 packages/
 ├── opaque-base/         # Pure-Python serialization registry
-├── opaque-engine/       # Torch substrate: pytree, clipping, scheduling, distributed support
+├── opaque-engine/       # Backend-neutral primitives, transforms, and algorithms
+├── opaque-torch/        # PyTorch primitive and runtime provider
+├── opaque-jax/          # JAX primitive provider
+├── opaque-mlx/          # MLX primitive provider
 ├── opaque-optimizers/   # Functional optimizer chain
 ├── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
 ├── opaque-dpsgd/        # DP-SGD noise, adaptive clipping, and sampling
@@ -142,7 +145,7 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test file
-uv run pytest packages/opaque-engine/tests/clipping/test_clipped_fun.py -v
+uv run pytest packages/opaque-torch/tests/clipping/test_clipped_fun.py -v
 ```
 
 ### Test Markers and Filtering
@@ -370,8 +373,9 @@ rm -rf dist
 uv build --wheel --out-dir dist
 
 # Build every sub-package wheel
-for pkg in opaque-base opaque-engine opaque-optimizers opaque-dpsgd opaque-dpftrl \
-                opaque-auditing opaque-patches opaque-transformers opaque-alignment; do
+for pkg in opaque-base opaque-engine opaque-torch opaque-jax opaque-mlx \
+                opaque-optimizers opaque-dpsgd opaque-dpftrl opaque-auditing \
+                opaque-patches opaque-transformers opaque-alignment; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done
 

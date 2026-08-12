@@ -26,7 +26,7 @@ from collections.abc import Callable
 from typing import Any
 
 from opaque.api.engine import ops
-from opaque.api.engine.primitive import Primitive
+from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 ParamPath = tuple[str | int, ...]
 """Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
@@ -38,15 +38,6 @@ Flat ``named_parameters`` dicts use a one-segment path, e.g.
 A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
 matching :func:`optree.tree_flatten_with_path`.
 """
-
-_tree_map = Primitive("opaque.pytree.tree_map", tier="core")
-_tree_flatten = Primitive("opaque.pytree.tree_flatten", tier="core")
-_tree_flatten_with_paths = Primitive(
-    "opaque.pytree.tree_flatten_with_paths", tier="core"
-)
-_tree_unflatten = Primitive("opaque.pytree.tree_unflatten", tier="core")
-_tree_leaves = Primitive("opaque.pytree.tree_leaves", tier="core")
-_tree_structure = Primitive("opaque.pytree.tree_structure", tier="core")
 
 
 def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
@@ -73,6 +64,7 @@ def param_path_display(path: ParamPath) -> str:
     return ".".join(str(p) for p in path)
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_flatten_with_paths(
     tree: Any,
 ) -> tuple[list[ParamPath], list[Any], Any]:
@@ -80,34 +72,38 @@ def tree_flatten_with_paths(
 
     Providers normalize their native path representation to :data:`ParamPath`.
     """
-    return _tree_flatten_with_paths(tree)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
     """Flatten ``tree`` to ``(leaves, treedef)``.
 
     Prefer :func:`tree_flatten_with_paths` when callers need leaf identities.
     """
-    return _tree_flatten(tree)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
     """Rebuild a PyTree from ``treedef`` and ``leaves``.
 
     Dispatches to the provider that created ``treedef``.
     """
-    return _tree_unflatten(treedef, leaves)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_structure(tree: Any) -> Any:
     """Return the optree structure of ``tree`` (no leaves).
 
     Useful for asserting that independently gathered payloads share a layout
     before unflattening.
     """
-    return _tree_structure(tree)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_leaves(tree: Any) -> list[Any]:
     """Extract all leaf tensors from a PyTree.
 
@@ -123,9 +119,10 @@ def tree_leaves(tree: Any) -> list[Any]:
         >>> len(leaves)
         2
     """
-    return _tree_leaves(tree)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
     """Apply function to all leaves of one or more PyTrees.
 
@@ -142,7 +139,7 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
         >>> doubled['a']
         tensor([2., 4.])
     """
-    return _tree_map(fn, *trees)
+    raise NotImplementedError
 
 
 def tree_map_with_path(

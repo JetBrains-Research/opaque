@@ -29,7 +29,7 @@ import torch
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
+from opaque.torch.random import generator_from_key
 
 from ._engine import (
     MFNoiseState,

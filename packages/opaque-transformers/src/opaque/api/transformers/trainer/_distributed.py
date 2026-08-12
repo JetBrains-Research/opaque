@@ -20,6 +20,7 @@ from typing import Any
 
 import torch
 
+from opaque.backend import ensure_backend
 from opaque.distributed import get_rank, get_world_size, is_distributed
 from opaque.distributed.collectives import barrier as _opaque_barrier
 from transformers.utils import logging as _hf_logging
@@ -89,6 +90,7 @@ def resolve_ddp_state(device: torch.device, args: Any | None = None) -> DDPState
     - Otherwise (single-process), fall back to env vars so a 1-rank
       ``torchrun`` smoke test still reports ``world_size==1``.
     """
+    ensure_backend(device)
     if not is_distributed() and args is not None:
         env_world = int(os.environ.get("WORLD_SIZE", "1"))
         if env_world > 1:

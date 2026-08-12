@@ -28,6 +28,8 @@ def _find_free_port() -> int:
 
 
 def _setup_ddp(rank: int, world_size: int, port: int) -> None:
+    from opaque.api.engine.backend import ensure_backend
+
     if not _is_ddp_available():
         raise RuntimeError("DDP requires CUDA and torch.distributed support")
     os.environ["MASTER_ADDR"] = "127.0.0.1"
@@ -36,6 +38,7 @@ def _setup_ddp(rank: int, world_size: int, port: int) -> None:
     os.environ["WORLD_SIZE"] = str(world_size)
     torch.cuda.set_device(rank)
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    ensure_backend(torch.empty(0, device=f"cuda:{rank}"))
 
 
 def _cleanup_ddp() -> None:
@@ -195,11 +198,14 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
 
 def _setup_gloo(rank: int, world_size: int, port: int) -> None:
     """CPU process-group init for empty-batch collective-parity tests."""
+    from opaque.api.engine.backend import ensure_backend
+
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
     dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    ensure_backend(torch.empty(0))
 
 
 def _worker_second_moment_clip_gloo(rank: int, world_size: int, port: int) -> None:

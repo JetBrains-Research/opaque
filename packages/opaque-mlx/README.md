@@ -1,6 +1,6 @@
 # opaque-mlx
 
-MLX backend support for Opaque's backend-neutral DP clipping primitives.
+MLX provider for Opaque's backend-neutral engine primitives.
 
 ## Install
 
@@ -18,12 +18,5 @@ pip install "opaque[mlx]"
 
 ## Usage
 
-```python
-from opaque.backend import set_backend
-from opaque.mlx import mlx_backend
-
-set_backend(mlx_backend())
-```
-
-Importing `opaque.mlx` does not load MLX. The backend is loaded only when
-`mlx_backend()` is called.
+MLX arrays select this provider automatically. Explicit selection is available
+through `opaque.mlx.mlx_backend()`.

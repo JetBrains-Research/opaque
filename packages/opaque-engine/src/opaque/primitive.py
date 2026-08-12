@@ -3,6 +3,7 @@
 from opaque.api.engine.primitive import (
     CORE_PRIMITIVES,
     CORE_PROFILE_VERSION,
+    BackendProvider,
     CoreProfile,
     DuplicatePrimitiveRegistrationError,
     IncompleteBackendError,
@@ -15,6 +16,7 @@ from opaque.api.engine.primitive import (
     core_profile,
     declare_core_primitives,
     lazy_implementation,
+    primitive,
     registered_backends,
     registered_primitives,
     supports,
@@ -22,6 +24,7 @@ from opaque.api.engine.primitive import (
 )
 
 __all__ = [
+    "BackendProvider",
     "CORE_PROFILE_VERSION",
     "CORE_PRIMITIVES",
     "CoreProfile",
@@ -36,6 +39,7 @@ __all__ = [
     "core_profile",
     "declare_core_primitives",
     "lazy_implementation",
+    "primitive",
     "registered_backends",
     "registered_primitives",
     "supports",

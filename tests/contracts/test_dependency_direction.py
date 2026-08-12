@@ -27,6 +27,9 @@ PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[2] / "packages"
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     "opaque-base": (
         "opaque.api.engine",
+        "opaque.api.torch",
+        "opaque.api.jax",
+        "opaque.api.mlx",
         "opaque.api.optimizers",
         "opaque.api.accounting",
         "opaque.api.dpsgd",
@@ -37,6 +40,9 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
     ),
     "opaque-accounting": (
         "opaque.api.engine",
+        "opaque.api.torch",
+        "opaque.api.jax",
+        "opaque.api.mlx",
         "opaque.api.optimizers",
         "opaque.api.dpsgd",
         "opaque.api.dpftrl",
@@ -45,6 +51,9 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "opaque.api.transformers",
     ),
     "opaque-engine": (
+        "opaque.api.torch",
+        "opaque.api.jax",
+        "opaque.api.mlx",
         "opaque.api.optimizers",
         "opaque.api.accounting",
         "opaque.api.dpsgd",
@@ -52,6 +61,18 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "opaque.api.auditing",
         "opaque.api.patches",
         "opaque.api.transformers",
+    ),
+    "opaque-torch": (
+        "opaque.api.jax",
+        "opaque.api.mlx",
+        "opaque.api.optimizers",
+        "opaque.api.accounting",
+        "opaque.api.dpsgd",
+        "opaque.api.dpftrl",
+        "opaque.api.auditing",
+        "opaque.api.patches",
+        "opaque.api.transformers",
+        "opaque.api.alignment",
     ),
     "opaque-optimizers": (
         "opaque.api.accounting",
@@ -107,8 +128,9 @@ def test_dependency_direction() -> None:
                 )
                 if bad:
                     rel = path.relative_to(PACKAGES_DIR.parent)
-                    for b in bad:
-                        violations.append(f"{rel}: imports {b} (forbidden)")
+                    violations.extend(
+                        f"{rel}: imports {forbidden} (forbidden)" for forbidden in bad
+                    )
 
     assert not violations, "Dependency direction violations:\n" + "\n".join(
         f"  - {v}" for v in violations

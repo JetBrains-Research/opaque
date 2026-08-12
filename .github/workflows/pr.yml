@@ -288,7 +288,22 @@ jobs:
 
       - name: Import all public namespaces
         run: |
-          uv run python -c "import opaque.api.engine.clipping, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.serialization, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.alignment, opaque.accounting; print('OK')"
+          uv run python -c "import opaque.api.engine.clipping, opaque.backend, opaque.torch, opaque.torch.random, opaque.dpsgd.clipping, opaque.dpftrl.clipping, opaque.random, opaque.pytree, opaque.types, opaque.functional, opaque.optimizers, opaque.scheduling, opaque.profiling, opaque.distributed, opaque.serialization, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.patches, opaque.patches.kernels, opaque.patches.torch, opaque.patches.transformers, opaque.transformers, opaque.alignment, opaque.accounting; print('OK')"
+
+      - name: Import backend-neutral engine without Torch
+        run: |
+          uv run --isolated --no-project \
+            --with-editable packages/opaque-base \
+            --with-editable packages/opaque-engine \
+            python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; import opaque.backend, opaque.ops, opaque.random; print('OK')"
+
+      - name: Import isolated Torch provider and infer backend
+        run: |
+          uv run --isolated --no-project \
+            --with-editable packages/opaque-base \
+            --with-editable packages/opaque-engine \
+            --with-editable packages/opaque-torch \
+            python -c "import torch; from opaque.backend import active_backend, clear_backend; from opaque.ops import square; clear_backend(); result = square(torch.tensor([2.0])); assert torch.equal(result, torch.tensor([4.0])); assert active_backend().name == 'torch'; import opaque.torch.random; print('OK')"
 
   docs:
     name: Build documentation

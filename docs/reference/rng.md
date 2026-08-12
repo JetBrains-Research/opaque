@@ -5,7 +5,7 @@ threading for deterministic and reproducible DP training.
 
 ## Overview
 
-The `opaque.random` module provides:
+The backend-neutral `opaque.random` module provides:
 
 - **Core primitives**: `RngKey`, `split()`, `fold_in()` — Functional RNG with immutable keys
 - **Sampling**: `normal(rng_key, shape, *, dtype=None, like=None)` — Backend-native
@@ -13,9 +13,12 @@ The `opaque.random` module provides:
 - **Convenience helpers**:
   - `key()` — Create an RngKey from an integer seed
   - `random_key()` — Nondeterministic key from system entropy
-  - `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
-- **Bridge function**: `generator_from_key()` — Create a `torch.Generator` from an RngKey
-  for Torch compatibility APIs
+
+The `opaque-torch` provider adds `opaque.torch.random` helpers:
+
+- `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
+- `generator_from_key()` — Create a `torch.Generator` from an RngKey for
+  Torch compatibility APIs
 
 ## Quick Reference
 
@@ -23,11 +26,11 @@ The `opaque.random` module provides:
 
 ```python
 # Core primitives
-from opaque.random import split, fold_in, key, generator_from_key
+from opaque.random import fold_in, key, random_key, split
 from opaque.random.types import RngKey
 
-# Convenience helpers
-from opaque.random import random_key, set_reproducible_pytorch_seed
+# Torch-specific helpers (provided by opaque-torch)
+from opaque.torch.random import generator_from_key, set_reproducible_pytorch_seed
 ```
 
 ### Creating Keys
@@ -74,7 +77,8 @@ step_rank_key = fold_in(base_key, step, rank)
 
 ```python
 # Set all PyTorch/CUDNN seeds from RngKey
-from opaque.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))
 
@@ -216,8 +220,9 @@ key_v2 = fold_in(base_key, "v2")
 Create a deterministic `torch.Generator` from an RngKey.
 
 ```python
-from opaque.random import generator_from_key, key
 import torch
+from opaque.random import key
+from opaque.torch.random import generator_from_key
 
 k = key(42)
 gen = generator_from_key(k)
@@ -240,7 +245,8 @@ tensor = torch.randn(10, generator=gen)
 Configure PyTorch and cuDNN for reproducible training from a single RngKey.
 
 ```python
-from opaque.random import key, fold_in, set_reproducible_pytorch_seed
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 # At training start
 set_reproducible_pytorch_seed(key(42))
@@ -271,9 +277,10 @@ your workload.
 **Example:**
 
 ```python
-from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
+from opaque.random import fold_in, key, split
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 # Setup framework reproducibility once
 set_reproducible_pytorch_seed(key(42))
@@ -368,7 +375,8 @@ Ensure all randomness uses RngKey:
 
 ```python
 # Correct: Use RngKey throughout
-from opaque.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))  # Framework
 base = key(42)

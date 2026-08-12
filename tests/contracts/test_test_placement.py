@@ -59,6 +59,10 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.precision",
         "opaque.device",
     ),
+    "opaque-torch": (
+        "opaque.api.torch",
+        "opaque.torch",
+    ),
     "opaque-optimizers": (
         "opaque.api.optimizers",
         "opaque.optimizers",
@@ -209,6 +213,20 @@ def _root_match(import_path: str, roots: set[str]) -> bool:
 KNOWN_CROSS_CONE_IMPORTS: frozenset[tuple[str, str]] = frozenset()
 
 
+def test_every_test_wheel_declares_import_roots() -> None:
+    missing = sorted(
+        wheel_dir.name
+        for wheel_dir in PACKAGES_DIR.iterdir()
+        if wheel_dir.is_dir()
+        and (wheel_dir / "tests").exists()
+        and wheel_dir.name not in WHEEL_IMPORT_ROOTS
+    )
+    assert not missing, (
+        "Wheels with tests must declare their public import roots:\n"
+        + "\n".join(f"  - {wheel}" for wheel in missing)
+    )
+
+
 def test_each_wheels_tests_respect_dep_cone() -> None:
     new_violations: list[str] = []
     repo_root = PACKAGES_DIR.parent
@@ -220,8 +238,6 @@ def test_each_wheels_tests_respect_dep_cone() -> None:
         if not tests.exists():
             continue
         roots = _allowed_roots(wheel)
-        if not roots:
-            roots = set(WHEEL_IMPORT_ROOTS.get(wheel, ()))
         for path in tests.rglob("*.py"):
             for imp in _opaque_imports(path):
                 if _root_match(imp, roots):

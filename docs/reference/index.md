@@ -1,9 +1,9 @@
 # API Reference
 
-Opaque provides a functional API for differential privacy. The bundled Torch
-provider is active by default; portable array, autodiff, pytree, and random
-operations also dispatch through the active backend. This reference documents
-all public functions and classes.
+Opaque provides a functional API for differential privacy. Portable array,
+autodiff, pytree, and random operations infer Torch, JAX, or MLX from the first
+backend-bearing execution call and keep that provider active. This reference
+documents all public functions and classes.
 
 Install via `opaque` (and `opaque[...]` extras) when using this API. Module
 paths remain under `opaque.*`, but the root package is the supported
@@ -17,7 +17,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Backend providers and primitives](../development/backend-providers.md)** —
   authoring contracts for `opaque.primitive`, `opaque.ops`, `opaque.autodiff`,
-  active-backend selection, and optional capabilities
+  automatic inference, sticky lifecycle, explicit switching, and optional
+  capabilities
 
 - **[Serialization](serialization.md)** — Flat `state_dict` / `from_state_dict` for
   explicit state trees (optimizers, accounting, clip/noise state, …);
@@ -27,8 +28,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `RngKey` — Immutable key type
   - `key()`, `random_key()` — Create keys
   - `split()`, `fold_in()` — Manipulate keys
-  - `set_reproducible_pytorch_seed()` — PyTorch/cuDNN reproducibility
-  - `generator_from_key()` — PyTorch generator bridge
+  - `opaque.torch.random.set_reproducible_pytorch_seed()` — PyTorch/cuDNN reproducibility
+  - `opaque.torch.random.generator_from_key()` — PyTorch generator bridge
 
 - **[Utilities](utilities.md)** — Functional and PyTree utilities
   - `make_functional()` — Convert `nn.Module` to functional form

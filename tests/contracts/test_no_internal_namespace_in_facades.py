@@ -90,6 +90,12 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/patches/transformers/runtime/__init__.py",
     ),
     "opaque-transformers": ("opaque/transformers/__init__.py",),
+    "opaque-torch": (
+        "opaque/torch/__init__.py",
+        "opaque/torch/random/__init__.py",
+    ),
+    "opaque-jax": ("opaque/jax/__init__.py",),
+    "opaque-mlx": ("opaque/mlx/__init__.py",),
 }
 
 

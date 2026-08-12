@@ -26,6 +26,9 @@ from pathlib import Path
 import pytest
 import torch
 
+from opaque.api.transformers.trainer._distributed import resolve_ddp_state
+from opaque.backend import active_backend, clear_backend
+
 RUNNER = str(Path(__file__).resolve().parent / "_ddp_runner.py")
 
 
@@ -100,6 +103,17 @@ def _run_ddp(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+def test_resolve_ddp_state_infers_torch_before_collectives() -> None:
+    clear_backend()
+
+    state = resolve_ddp_state(torch.device("cpu"))
+
+    assert not state.is_distributed
+    assert active_backend() is not None
+    assert active_backend().name == "torch"
+    clear_backend()
 
 
 def _skip_if_no_multi_gpu() -> None:

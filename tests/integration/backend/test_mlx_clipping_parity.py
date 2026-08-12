@@ -9,9 +9,11 @@ import pytest
 import torch
 from tests.integration.backend._harness import HostBridge, run_clipping
 
-from opaque.api.engine.backend import TorchBackend
+from opaque import pytree
+from opaque.api.engine.backend import use_backend
 from opaque.api.engine.clipping import clipped_grad
 from opaque.mlx import mlx_backend
+from opaque.torch import torch_backend
 
 mx = pytest.importorskip("mlx.core")
 
@@ -70,9 +72,13 @@ def _make_mlx_inputs() -> tuple[dict[str, Any], Any, Any]:
 def _assert_tree_close(
     torch_tree: Any,
     mlx_tree: Any,
+    *,
+    comparison_backend: Any | None = None,
 ) -> None:
-    torch_paths, torch_leaves, _ = TorchBackend().tree_flatten_with_paths(torch_tree)
-    mlx_paths, mlx_leaves, _ = mlx_backend().tree_flatten_with_paths(mlx_tree)
+    with use_backend(torch_backend()):
+        torch_paths, torch_leaves, _ = pytree.tree_flatten_with_paths(torch_tree)
+    with use_backend(comparison_backend or mlx_backend()):
+        mlx_paths, mlx_leaves, _ = pytree.tree_flatten_with_paths(mlx_tree)
     assert mlx_paths == torch_paths
     for torch_leaf, mlx_leaf in zip(torch_leaves, mlx_leaves, strict=True):
         np.testing.assert_allclose(
@@ -95,7 +101,7 @@ def test_neutral_clipping_matches_torch_in_fp32(kind: str) -> None:
     mlx_params, mlx_x, mlx_y = _make_mlx_inputs()
 
     torch_run = run_clipping(
-        TorchBackend(),
+        torch_backend(),
         _torch_logistic_loss,
         torch_params,
         torch_x,
@@ -127,7 +133,7 @@ def test_neutral_clipping_matches_torch_in_fp32(kind: str) -> None:
 def test_fixed_neutral_path_agrees_with_torch_clipped_grad_oracle() -> None:
     params, batch_x, batch_y = _make_torch_inputs()
     neutral_run = run_clipping(
-        TorchBackend(),
+        torch_backend(),
         _torch_logistic_loss,
         params,
         batch_x,
@@ -143,7 +149,11 @@ def test_fixed_neutral_path_agrees_with_torch_clipped_grad_oracle() -> None:
     )
     oracle_grads, _ = oracle(params, batch_x, batch_y, state=state)
 
-    _assert_tree_close(neutral_run.summed_grads, oracle_grads.pytree)
+    _assert_tree_close(
+        neutral_run.summed_grads,
+        oracle_grads.pytree,
+        comparison_backend=torch_backend(),
+    )
 
 
 @pytest.mark.parametrize("kind", ["fixed", "auto"])
@@ -164,7 +174,7 @@ def test_neutral_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -
         return (prediction - y) ** 2, {"prediction": prediction}
 
     torch_run = run_clipping(
-        TorchBackend(),
+        torch_backend(),
         torch_loss,
         torch_params,
         torch.tensor(nonfinite_x),

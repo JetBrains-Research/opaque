@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-
 from opaque.api.base.serialization import register_serializer
 
 

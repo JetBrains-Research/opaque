@@ -6,8 +6,7 @@ This module provides explicit, immutable RNG state transitions inspired by JAX:
 - ``split(key, n)`` derives independent child keys
 - ``fold_in(key, data)`` domain-separates by deterministic metadata
 
-The engine is backend-agnostic and can be bridged to PyTorch via
-``generator_from_key`` when APIs require ``torch.Generator``.
+Provider wheels may bridge keys to framework-native generator objects.
 """
 
 from __future__ import annotations
@@ -15,12 +14,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 
-import torch
-
-from opaque.api.engine.primitive import Primitive
-
-_MAX_TORCH_SEED = 2**63 - 1
-_normal = Primitive("opaque.random.normal", tier="core")
+from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 
 def _to_uint64(value: int) -> int:
@@ -98,6 +92,7 @@ def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
     return tuple(fold_in(rng_key, i) for i in range(num))
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def normal(
     rng_key: RngKey,
     shape: tuple[int, ...] | list[int],
@@ -111,13 +106,7 @@ def normal(
     return the same backend-native sample and do not mutate hidden generator
     state.  ``like`` selects a backend's placement and default dtype.
     """
-    return _normal(rng_key, shape, dtype=dtype, like=like)
+    raise NotImplementedError
 
 
-def generator_from_key(rng_key: RngKey) -> torch.Generator:
-    """Create a deterministic ``torch.Generator`` from a key."""
-    seed = rng_key.seed % _MAX_TORCH_SEED
-    return torch.Generator().manual_seed(seed)
-
-
-__all__ = ["RngKey", "fold_in", "generator_from_key", "key", "normal", "split"]
+__all__ = ["RngKey", "fold_in", "key", "normal", "split"]

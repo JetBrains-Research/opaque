@@ -1,8 +1,8 @@
 """Seam tests: DP gradient transforms dispatch through ``active_backend()``.
 
-Step 2 routes ``clipped_grad`` / ``auto_clipped_grad`` differentiation and
-vectorization through the backend abstraction.  A recording backend that wraps
-:class:`TorchBackend` proves the two primitives (``value_and_grad`` + ``vmap``)
+``clipped_grad`` / ``auto_clipped_grad`` route differentiation and
+vectorization through the backend abstraction. A recording provider proves the
+two primitives (``value_and_grad`` + ``vmap``)
 are dispatched through the seam and that the results are numerically identical
 to the default (delegating) path.
 """
@@ -12,9 +12,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.api.engine.backend import TorchBackend, set_backend, use_backend
+from opaque.api.engine.backend import clear_backend, use_backend
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.api.engine.primitive import CORE_PRIMITIVES
+from opaque.torch import torch_backend
 from opaque.types import ClippedPytree
 
 
@@ -23,8 +24,7 @@ class _RecordingBackend:
 
     name = "recording"
 
-    def __init__(self, inner: TorchBackend) -> None:
-        self._inner = inner
+    def __init__(self) -> None:
         self.calls: list[str] = []
         for primitive in CORE_PRIMITIVES:
             implementation = primitive.resolve("torch")
@@ -39,9 +39,10 @@ class _RecordingBackend:
 
 @pytest.fixture(autouse=True)
 def _reset_backend():
-    """Restore a fresh ``TorchBackend`` default after every test."""
+    torch_backend()
+    clear_backend()
     yield
-    set_backend(TorchBackend())
+    clear_backend()
 
 
 def _loss(param, data):
@@ -53,7 +54,7 @@ def _unwrap(value):
 
 
 def test_clipped_grad_dispatches_value_and_grad_and_vmap():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     param = torch.tensor(3.0)
     data = torch.tensor([0.0, 7.0, -2.0])
 
@@ -69,7 +70,7 @@ def test_clipped_grad_dispatches_value_and_grad_and_vmap():
 
 
 def test_auto_clipped_grad_dispatches_value_and_grad_and_vmap():
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     param = torch.tensor(3.0)
     data = torch.tensor([0.0, 7.0, -2.0])
 
@@ -84,7 +85,7 @@ def test_auto_clipped_grad_dispatches_value_and_grad_and_vmap():
 
 def test_clipped_grad_microbatch_dispatches_vmap():
     """The microbatch-accumulation path also vectorizes through the seam."""
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     param = torch.tensor(3.0)
     data = torch.tensor([0.0, 7.0, -2.0, 4.0])
 
@@ -107,7 +108,7 @@ def test_recording_backend_matches_default_numerics():
     grad_fn, state = clipped_grad(_loss, argnums=0, batch_argnums=1, clipping_norm=1.0)
     baseline, _ = grad_fn(param, data, state=state)
 
-    recording = _RecordingBackend(TorchBackend())
+    recording = _RecordingBackend()
     with use_backend(recording):
         grad_fn2, state2 = clipped_grad(
             _loss, argnums=0, batch_argnums=1, clipping_norm=1.0

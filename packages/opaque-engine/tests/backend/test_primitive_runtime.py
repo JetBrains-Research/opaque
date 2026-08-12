@@ -3,21 +3,31 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 
 import pytest
 
 import opaque.primitive as facade
 from opaque.api.engine import primitive as primitive_module
-from opaque.api.engine.backend import active_backend, set_backend, use_backend
+from opaque.api.engine.backend import (
+    BackendNotSelectedError,
+    active_backend,
+    clear_backend,
+    set_backend,
+    use_backend,
+)
 from opaque.api.engine.primitive import (
     CORE_PRIMITIVES,
     CORE_PROFILE_VERSION,
+    BackendProvider,
     DuplicatePrimitiveRegistrationError,
     IncompleteBackendError,
     Primitive,
+    PrimitiveTier,
     UnsupportedPrimitiveError,
     lazy_implementation,
+    primitive,
     supports,
 )
 
@@ -29,7 +39,7 @@ class _Backend:
 
 def _complete_backend(name: str) -> _Backend:
     backend = _Backend(name)
-    for primitive in CORE_PRIMITIVES:
+    for primitive in CORE_PRIMITIVES:  # noqa: F402
         if not primitive.supports(name):
             primitive.register(name, lambda *args, **kwargs: None)
     return backend
@@ -62,6 +72,50 @@ def test_registration_is_canonical_and_replacement_is_explicit() -> None:
     primitive.register("test", lambda: "replacement", replace=True)
     assert primitive.resolve("test")() == "replacement"
     assert primitive.registered_backends() == ("test",)
+
+
+def test_primitive_decorator_preserves_function_metadata_and_signature() -> None:
+    def declaration(value: object, *, scale: int = 1) -> object:
+        """Scale a backend-native value."""
+
+        raise NotImplementedError
+
+    operation = primitive(tier=PrimitiveTier.OPTIONAL)(declaration)
+
+    assert isinstance(operation, Primitive)
+    assert operation.__name__ == declaration.__name__
+    assert operation.__qualname__ == declaration.__qualname__
+    assert operation.__doc__ == declaration.__doc__
+    assert operation.__wrapped__ is declaration
+    assert inspect.signature(operation) == inspect.signature(declaration)
+    assert operation.name.endswith(".declaration")
+
+
+def test_provider_implementation_decorator_registers_by_primitive_object() -> None:
+    operation = Primitive("test.runtime.provider-decorator")
+    provider = BackendProvider("decorated-provider")
+
+    @provider.implements(operation)
+    def implementation(value: str) -> str:
+        return f"decorated:{value}"
+
+    assert operation.resolve(provider) is implementation
+    assert operation.resolve("decorated-provider")("value") == "decorated:value"
+    assert provider.name == "decorated-provider"
+
+    with pytest.raises(DuplicatePrimitiveRegistrationError):
+
+        @provider.implements(operation)
+        def duplicate(value: str) -> str:
+            return value
+
+
+def test_primitive_call_requires_or_infers_a_backend_before_resolution() -> None:
+    operation = Primitive("test.runtime.ensure-before-resolution")
+    clear_backend()
+
+    with pytest.raises(BackendNotSelectedError):
+        operation(object())
 
 
 def test_lazy_implementation_is_cached_and_support_does_not_import() -> None:

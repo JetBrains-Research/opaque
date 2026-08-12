@@ -20,7 +20,8 @@ from opaque.api.engine.distributed._state import (
     sync_object,
 )
 from opaque.distributed import is_distributed
-from opaque.random import fold_in, generator_from_key
+from opaque.random import fold_in
+from opaque.torch.random import generator_from_key
 from opaque.types import PerGroup
 
 from ._adaptive import (

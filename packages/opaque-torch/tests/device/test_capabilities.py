@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+from opaque.api.engine import runtime
 from opaque.device import (
     DeviceCapabilities,
     device_capabilities,
@@ -68,6 +69,17 @@ class TestDeviceCapabilities:
 
 
 class TestSdpaAutocastUnderVmapBroken:
+    def test_registered_implementation_is_cached(self):
+        implementation = runtime.device_sdpa_autocast_under_vmap_broken.resolve("torch")
+        before = implementation.cache_info()
+
+        assert implementation("cpu") is False
+        assert implementation("cpu") is False
+
+        after = implementation.cache_info()
+        assert after.misses == before.misses + 1
+        assert after.hits == before.hits + 1
+
     def test_false_off_mps(self):
         # The bug (and its eager-attention workaround) is MPS-only; CPU/CUDA
         # always cast SDPA correctly under vmap(grad).

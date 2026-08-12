@@ -1,22 +1,31 @@
-"""Backend identity and context-local active-backend resolver.
-
-``Backend`` provides the stable name used by primitive dispatch. The bundled
-``TorchBackend`` remains the zero-configuration default and retains its
-compatibility methods while primitive registrations become the extension seam.
-"""
+"""Backend identity, argument inference, and context-local lifecycle."""
 
 from opaque.api.engine.backend._protocol import Backend
 from opaque.api.engine.backend._registry import (
+    BackendError,
+    BackendMismatchError,
+    BackendNotSelectedError,
+    BackendProviderError,
+    KnownBackend,
+    MixedBackendError,
     active_backend,
+    clear_backend,
+    ensure_backend,
     set_backend,
     use_backend,
 )
-from opaque.api.engine.backend._torch import TorchBackend
 
 __all__ = [
     "Backend",
-    "TorchBackend",
+    "BackendError",
+    "BackendMismatchError",
+    "BackendNotSelectedError",
+    "BackendProviderError",
+    "KnownBackend",
+    "MixedBackendError",
     "active_backend",
+    "clear_backend",
+    "ensure_backend",
     "set_backend",
     "use_backend",
 ]

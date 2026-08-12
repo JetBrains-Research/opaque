@@ -8,8 +8,9 @@ opaque-engine has no dependency on opaque-dpsgd.
 import pytest
 import torch
 
-from opaque.random import key, random_key, set_reproducible_pytorch_seed
+from opaque.random import key, random_key
 from opaque.random.types import RngKey
+from opaque.torch.random import generator_from_key, set_reproducible_pytorch_seed
 
 
 class TestRandomKey:
@@ -28,8 +29,6 @@ class TestRandomKey:
 
     def test_produces_working_generators(self):
         """Generated keys should work with generator_from_key."""
-        from opaque.random import generator_from_key
-
         k = random_key()
         gen = generator_from_key(k)
         assert isinstance(gen, torch.Generator)

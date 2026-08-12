@@ -29,7 +29,8 @@ Install and depend on `opaque` only. The repository is implemented as
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
-| `opaque-engine` | `opaque.{types,pytree,random,distributed,functional,scheduling,profiling}` | Torch substrate: pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler |
+| `opaque-engine` | `opaque.{backend,primitive,ops,autodiff,types,pytree,random,distributed,functional,scheduling,profiling}` | Backend-neutral primitives, transforms, algorithms, pytrees, RNG keys, schedules, and optional runtime seams |
+| `opaque-torch` | `opaque.torch` | PyTorch primitive/runtime implementations, serialization handlers, functionalization, and Torch RNG bridges |
 | `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
@@ -45,9 +46,10 @@ Install and depend on `opaque` only. The repository is implemented as
 
 ```
 opaque.serialization                                       <- opaque-base
-opaque.{types,pytree}                                      <- opaque-engine
-opaque.{random,distributed}                                <- opaque-engine
+opaque.{backend,primitive,ops,autodiff}                    <- opaque-engine
+opaque.{types,pytree,random,distributed}                   <- opaque-engine
 opaque.{functional,scheduling,profiling}                   <- opaque-engine
+opaque.torch{,.random}                                     <- opaque-torch
 opaque.optimizers                                          <- opaque-optimizers
 opaque.dpsgd.{clipping,noise,sampling,accounting}          <- opaque-dpsgd
 opaque.dpftrl.{clipping,noise,sampling,accounting}         <- opaque-dpftrl
@@ -78,6 +80,13 @@ pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
 pip install "opaque[transformers]"  # Hugging Face + patching components
 pip install "opaque[all]"           # all optional components
 ```
+
+The default `opaque` bundle installs `opaque-torch`. Backend-neutral users can
+instead install `opaque-engine` with `opaque-torch`, `opaque-jax`, or
+`opaque-mlx` as needed. The first Torch tensor or module, JAX array, or MLX
+array passed to an Opaque execution API selects the matching provider; that
+selection remains active until `opaque.backend.clear_backend()` is called.
+Use `opaque.backend.use_backend(...)` for a temporary, context-local switch.
 
 ### Patching
 

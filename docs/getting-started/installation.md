@@ -9,7 +9,7 @@
 ## Requirements
 
 - Python 3.11 or 3.12
-- PyTorch 2.9 or later
+- PyTorch 2.9 or later for the default Torch bundle
 
 ## From JetBrains Packages
 
@@ -26,6 +26,27 @@ Or with `uv`:
 uv add opaque \
   --index https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
+
+The default `opaque` bundle includes `opaque-torch`. Torch tensors and
+`torch.nn.Module` instances therefore select the Torch provider automatically
+on the first backend-bearing execution call.
+
+### Backend-specific installations
+
+`opaque-engine` contains backend-neutral primitives and can be installed and
+imported without PyTorch. Install it with only the providers an application
+uses:
+
+```bash
+pip install opaque-engine opaque-torch  # PyTorch
+pip install opaque-engine opaque-jax    # JAX
+pip install opaque-engine opaque-mlx    # MLX
+```
+
+Provider selection is inferred from execution arguments and remains active
+until `opaque.backend.clear_backend()` is called. See [Backend providers and
+primitives](../development/backend-providers.md) for explicit and temporary
+selection.
 
 ### Extras
 
@@ -80,6 +101,7 @@ from importlib.metadata import version
 
 print("opaque-base version:", version("opaque-base"))
 print("opaque-engine version:", version("opaque-engine"))
+print("opaque-torch version:", version("opaque-torch"))
 print("opaque-dpsgd version:", version("opaque-dpsgd"))
 ```
 

@@ -6,8 +6,16 @@ import pytest
 import torch
 
 from opaque import autodiff, ops, pytree, random
-from opaque.api.engine.backend import active_backend
+from opaque.api.engine.backend import active_backend, clear_backend, ensure_backend
 from opaque.api.engine.primitive import CORE_PRIMITIVES, supports
+
+
+@pytest.fixture(autouse=True)
+def _activate_torch_backend():
+    clear_backend()
+    ensure_backend(torch.tensor(0.0))
+    yield
+    clear_backend()
 
 
 def test_torch_satisfies_complete_portable_profile() -> None:

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-mlx"
 dynamic = ["version"]
-description = "MLX backend adapter for Opaque DP clipping primitives"
+description = "MLX provider for Opaque's backend-neutral engine"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]

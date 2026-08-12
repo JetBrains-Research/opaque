@@ -7,12 +7,14 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from functools import update_wrapper
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 if TYPE_CHECKING:
     from opaque.api.engine.backend._protocol import Backend
 
 Implementation = Callable[..., Any]
+Declaration = TypeVar("Declaration", bound=Callable[..., Any])
 
 
 class PrimitiveError(RuntimeError):
@@ -110,7 +112,12 @@ _PRIMITIVES_LOCK = threading.RLock()
 
 
 class Primitive:
-    """A canonical operation resolved from the active backend's stable name."""
+    """A canonical operation resolved from the active backend's stable name.
+
+    Primitive declarations are callable descriptor objects. When created with
+    :func:`primitive`, they retain the wrapped function's metadata and
+    signature while dispatching to a provider implementation at runtime.
+    """
 
     def __new__(
         cls,
@@ -145,6 +152,7 @@ class Primitive:
             self.name = name
             self.tier = _normalize_tier(tier)
             self._implementations: dict[str, Implementation | LazyImplementation] = {}
+            self._declaration: Implementation | None = None
             self._lock = threading.RLock()
             self._initialized = True
         if self.tier is PrimitiveTier.CORE:
@@ -152,6 +160,17 @@ class Primitive:
 
     def __repr__(self) -> str:
         return f"Primitive({self.name!r}, tier={self.tier.value!r})"
+
+    def bind(self, declaration: Declaration) -> Primitive:
+        """Attach a real function declaration and preserve its metadata."""
+        if not callable(declaration):
+            raise InvalidPrimitiveRegistrationError(
+                f"Declaration for primitive {self.name!r} must be callable."
+            )
+        with self._lock:
+            self._declaration = declaration
+            update_wrapper(self, declaration)
+        return self
 
     def register(
         self,
@@ -209,8 +228,74 @@ class Primitive:
         return implementation
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        """Dispatch this primitive through the current active backend."""
-        return self.resolve()(*args, **kwargs)
+        """Infer or validate a backend, then dispatch its implementation."""
+        from opaque.api.engine.backend._registry import ensure_backend
+
+        backend = ensure_backend(args, kwargs)
+        return self.resolve(backend)(*args, **kwargs)
+
+
+class BackendProvider:
+    """Stable backend identity with primitive-bound registration decorators."""
+
+    def __init__(self, backend: Backend | str) -> None:
+        self.name = _backend_name(backend)
+
+    def __repr__(self) -> str:
+        return f"BackendProvider({self.name!r})"
+
+    def implements(
+        self,
+        operation: Primitive,
+        *,
+        replace: bool = False,
+    ) -> Callable[[Declaration], Declaration]:
+        """Decorate and register an implementation for ``operation``."""
+        if not isinstance(operation, Primitive):
+            raise InvalidPrimitiveRegistrationError(
+                "BackendProvider.implements() requires a Primitive object."
+            )
+
+        def register(implementation: Declaration) -> Declaration:
+            operation.register(self.name, implementation, replace=replace)
+            return implementation
+
+        return register
+
+
+@overload
+def primitive(
+    declaration: Declaration,
+    *,
+    tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
+    name: str | None = None,
+) -> Primitive: ...
+
+
+@overload
+def primitive(
+    declaration: None = None,
+    *,
+    tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
+    name: str | None = None,
+) -> Callable[[Declaration], Primitive]: ...
+
+
+def primitive(
+    declaration: Declaration | None = None,
+    *,
+    tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
+    name: str | None = None,
+) -> Primitive | Callable[[Declaration], Primitive]:
+    """Declare a backend-dispatched primitive from a real function."""
+
+    def decorate(function: Declaration) -> Primitive:
+        operation = Primitive(name or _declaration_name(function), tier=tier)
+        return operation.bind(function)
+
+    if declaration is None:
+        return decorate
+    return decorate(declaration)
 
 
 @dataclass(frozen=True)
@@ -296,6 +381,16 @@ def _validate_primitive_name(name: str) -> None:
         )
 
 
+def _declaration_name(declaration: Implementation) -> str:
+    module = declaration.__module__
+    engine_prefix = "opaque.api.engine."
+    if module.startswith(engine_prefix):
+        module = f"opaque.{module.removeprefix(engine_prefix)}"
+    if module.endswith("._engine"):
+        module = module.removesuffix("._engine")
+    return f"{module}.{declaration.__name__}"
+
+
 def _normalize_tier(tier: PrimitiveTier | str) -> PrimitiveTier:
     try:
         return PrimitiveTier(tier)
@@ -329,6 +424,7 @@ def _backend_name(backend: Backend | str | None) -> str:
 
 
 __all__ = [
+    "BackendProvider",
     "CORE_PROFILE_VERSION",
     "CORE_PRIMITIVES",
     "CoreProfile",
@@ -343,6 +439,7 @@ __all__ = [
     "core_profile",
     "declare_core_primitives",
     "lazy_implementation",
+    "primitive",
     "registered_backends",
     "registered_primitives",
     "supports",

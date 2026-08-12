@@ -34,6 +34,7 @@ dependencies = [
     "peft>=0.13.0",
     "datasets>=2.0.0",
     "opaque-engine>=0.0.0.dev0",
+    "opaque-torch>=0.0.0.dev0",
     "opaque-patches>=0.0.0.dev0",
     "opaque-dpsgd>=0.0.0.dev0",
     "opaque-dpftrl>=0.0.0.dev0",
@@ -73,6 +74,7 @@ package = true
 
 [tool.uv.sources]
 opaque-engine = { workspace = true }
+opaque-torch = { workspace = true }
 opaque-patches = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }

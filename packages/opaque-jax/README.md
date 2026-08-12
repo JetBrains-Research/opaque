@@ -1,6 +1,6 @@
 # opaque-jax
 
-JAX backend support for Opaque's backend-neutral DP clipping primitives.
+JAX provider for Opaque's backend-neutral engine primitives.
 
 ## Install
 
@@ -18,12 +18,5 @@ pip install "opaque[jax]"
 
 ## Usage
 
-```python
-from opaque.backend import set_backend
-from opaque.jax import jax_backend
-
-set_backend(jax_backend())
-```
-
-Importing `opaque.jax` does not load JAX. The backend is loaded only when
-`jax_backend()` is called.
+JAX arrays select this provider automatically. Explicit selection is available
+through `opaque.jax.jax_backend()`.
