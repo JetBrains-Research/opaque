@@ -18,8 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       test_shards: ${{ steps.discover.outputs.test_shards }}
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -32,94 +30,23 @@ jobs:
   # GPU lane. Test failures block publishing.
   # ---------------------------------------------------------------------------
   rust-tests:
-    name: Rust tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: "."
-
-      # No `--lib`: also run the crate's doc-tests so documented API examples
-      # can't rot. (No Rust integration tests — the crate's tests/ dir is Python.)
-      - name: cargo test
-        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+    uses: ./.github/workflows/reusable-rust-tests.yml
 
   # Same platform matrix as the PR gate (see pr.yml for the full rationale),
   # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
   # marker. The GPU platform is a single unsharded, serial leg.
   python-tests:
-    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     needs: [discover-packages]
-    runs-on: ${{ matrix.device.os }}
-    timeout-minutes: 40  # safety net; slow tests make these jobs longer than the PR gate
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.discover-packages.outputs.test_shards) }}
-        device:
-          - name: cpu
-            label: CPU
-            os: ubuntu-latest
-            marker: "not cuda and not mps"
-            xdist: "-n auto --dist loadscope"
-          - name: mps
-            label: MPS
-            os: macos-latest
-            marker: "not cuda"
-            xdist: "-n auto --dist loadscope"
-        include:
-          - shard:
-              name: all
-              paths: packages tests
-            device:
-              name: gpu
-              label: CUDA
-              os: GPU-runner-001
-              marker: "cuda"
-              # No xdist (single GPU); `-rs` surfaces skip reasons.
-              xdist: "-rs"
-
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: true
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      - name: Assert CUDA available
-        if: matrix.device.name == 'gpu'
-        run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
-
-      - name: pytest
-        run: |
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            ${{ matrix.device.xdist }} \
-            --cov=opaque \
-            --cov-report=xml:coverage.xml \
-            --durations=25 \
-            -q
-
-      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
-        with:
-          files: ./coverage.xml
-          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
-          fail_ci_if_error: false
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      assert-cuda: true
+      devices: >-
+        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
+      included-combinations: >-
+        [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
+      report-durations: true
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
 
   # Aggregating gate for Python tests. This is an independent required check
   # (alongside rust-tests-gate) that gates wheel builds and publishing.
@@ -154,155 +81,17 @@ jobs:
   # script that writes the opaque dep pins + Cargo workspace version.
   # Release builds live in release.yml (triggered on `v*` tag push).
   # ---------------------------------------------------------------------------
-  build-python-wheels:
-    name: Build ${{ matrix.package.dist }}
-    needs: [discover-packages, python-tests-gate, rust-tests-gate]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
-
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — set build versions from git
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: wheels-${{ matrix.package.dist }}
-          path: dist/*.whl
-          retention-days: 30
-
-  build-opaque-wheel:
-    name: Build opaque
+  build-distributions:
+    name: Build distribution artifacts
     needs: [python-tests-gate, rust-tests-gate]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — set build versions from git
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: wheels-opaque
-          path: dist/opaque-*.whl
-          retention-days: 30
-
-  build-native-wheels:
-    name: Build ${{ matrix.package.dist }} — ${{ matrix.target.platform }}/${{ matrix.target.arch }}
-    needs: [discover-packages, python-tests-gate, rust-tests-gate]
-    runs-on: ${{ matrix.target.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
-        target:
-          - platform: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: linux
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: macos
-            arch: arm64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            manylinux: off
-
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — set build versions from git
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
-        with:
-          command: build
-          working-directory: ${{ matrix.package.path }}
-          target: ${{ matrix.target.target }}
-          manylinux: ${{ matrix.target.manylinux }}
-          args: >-
-            --release
-            --interpreter python3.11
-            --out ../../dist
-            --compatibility pypi
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: dist/*.whl
-          retention-days: 30
-
-  build-accounting-sdist:
-    name: Build opaque-accounting sdist
-    needs: [python-tests-gate, rust-tests-gate]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — set build versions from git
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build sdist
-        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: wheels-opaque-accounting-sdist
-          path: dist/*.tar.gz
-          retention-days: 30
+    uses: ./.github/workflows/reusable-build-distributions.yml
+    with:
+      artifact-prefix: wheels
+      retention-days: 30
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheels, build-opaque-wheel, build-native-wheels, build-accounting-sdist]
+    needs: [build-distributions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -333,7 +122,7 @@ jobs:
       - name: List artifacts
         run: ls -lh dist/*.whl dist/*.tar.gz
 
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: ./.github/actions/setup-python
 
       - name: Publish to JetBrains Packages
         env:
