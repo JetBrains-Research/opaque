@@ -8,11 +8,11 @@ Opaque supports multi-GPU training via PyTorch DistributedDataParallel
 Each device runs the same training loop on a different data shard. Three
 operations happen in sequence:
 
-1. **Clip** -- each device computes per-example clipped gradients on its
+1. **Clip** — each device computes per-example clipped gradients on its
    local batch.
-2. **Aggregate** -- an AllReduce SUM collects the clipped gradient sums
+2. **Aggregate** — an AllReduce SUM collects the clipped gradient sums
    from every device.
-3. **Noise** -- every device independently adds the *same* Gaussian noise.
+3. **Noise** — every device independently adds the *same* Gaussian noise.
    Because the noise key is identical on all ranks, the noise is identical,
    and models stay in sync.
 
@@ -67,7 +67,7 @@ grad_fn, clip_state = clipped_grad(
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=1.1, key=key(42),
+    noise_multiplier=1.1, key=key(42),
 )
 
 # Poisson sampler (shard dataset)
@@ -123,7 +123,7 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 
 # Independent noise — different key per rank
 noise_fn, noise_state = gaussian_noise(
-  noise_multiplier=1.1, key=fold_in(key(42), rank)
+    noise_multiplier=1.1, key=fold_in(key(42), rank)
 )
 ```
 
@@ -159,7 +159,7 @@ dist_utils.sum_gradients_(grads)
 
 ## Adaptive clipping
 
-`adaptive_clipped_grad` is local-only -- it does not communicate or
+`adaptive_clipped_grad` is local-only — it does not communicate or
 auto-detect DDP. Each rank clips its own local batch and records local
 clipping statistics in `AdaptiveClipState`. To keep the adaptive threshold
 consistent across ranks, explicitly synchronize that state after each step:
@@ -271,11 +271,11 @@ process group and raise `RuntimeError`.
 | `is_distributed()` | `True` if `torch.distributed` is initialized |
 | `get_rank()` | Current rank (0 if not distributed) |
 | `get_world_size()` | Number of devices (1 if not distributed) |
-| `sum_gradients(grads)` | Return a summed-copy of a gradient PyTree |
+| `sum_gradients(grads)` | Return a summed copy of a gradient PyTree |
 | `sum_gradients_(grads)` | In-place AllReduce SUM on a gradient PyTree |
 | `reduce_pytree(pytree, op)` | Return a reduced copy of a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_pytree_(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
-| `reduce_scalar(value, op)` | Reduce a Python float across ranks |
+| `reduce_scalar(value, op, device, *, compute_dtype)` | Reduce a Python float or integer across ranks; floats default to fp32 and can request fp64, while integers use an exact int64 path |
 | `all_reduce(tensor, op)` | Return an all-reduced tensor copy |
 | `all_reduce_(tensor, op)` | In-place AllReduce on a single tensor |
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |

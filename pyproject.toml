@@ -90,9 +90,15 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep workspace resolution inside the supported PyTorch range. The shared lock
-# is intentionally resolved at 2.9 so existing CI jobs exercise the minimum.
-constraint-dependencies = ["torch>=2.9,<2.13"]
+# Keep the shared workspace lock within the integration versions exercised by
+# CI. Published packages retain their broader runtime requirements.
+constraint-dependencies = [
+    "torch>=2.9,<2.13",
+    "transformers<5.12",
+    "trl<1.7",
+    "peft<0.19",
+    "scipy<1.18",
+]
 
 [tool.uv.sources]
 opaque-base = { workspace = true }
@@ -143,8 +149,6 @@ examples = [
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
   "torchvision>=0.24.0",       # Vision example datasets
-  "jetbrains-cadence",        # Internal experiment registry
-  "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
 ]
 
 # Documentation building
@@ -224,7 +228,7 @@ src = [
 #   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
 #   TRY003  — requires bespoke exception classes for every message; low fit
 #   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
-#   ANN/D   — full annotation/docstring coverage is a separate initiative
+#   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
 select = [
   "E", "F", "W",
@@ -247,6 +251,9 @@ select = [
   "TC",   # move typing-only imports under TYPE_CHECKING
   "PTH",  # prefer pathlib over os.path
   "INP",  # flag missing __init__.py (tests + PEP 420 façades ignored below)
+  # Public API documentation. Keep the source-facing contract covered without
+  # requiring prose for private implementation details or test helpers.
+  "D100", "D101", "D103", "D104", "D417",
 ]
 ignore = [
   "E501",   # formatter owns line length
@@ -262,13 +269,18 @@ known-first-party = ["opaque"]
 # Keep force-single-line off; section comments in import blocks are rare —
 # side-effect imports use an adjacent comment above the import line.
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
 # Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
 "packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
 # INP001: pytest trees intentionally omit __init__.py.
-"**/tests/**" = ["INP001"]
-"tests/**" = ["INP001"]
+"**/tests/**" = ["INP001", "D"]
+"tests/**" = ["INP001", "D"]
+# Internal implementation methods are deliberately not selected by the
+# public-surface rules above; test helpers remain outside this docstring scope.
 # PEP 420: `opaque/` has no __init__.py (multi-wheel namespace); façade
 # modules live directly under src/opaque/ (see tests/contracts/test_pep420_no_init.py).
 "packages/*/src/opaque/*.py" = ["INP001"]

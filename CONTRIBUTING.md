@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to Opaque!
 
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating. It
+explains the standards that keep the community welcoming and how to confidentially
+report concerns.
+
 ## Quick Start
 
 ### Setup
@@ -29,7 +33,7 @@ We welcome all kinds of contributions:
 - **Documentation**: Clarifications, examples, tutorial notebooks
 - **DP validation**: Cross-validation against JAX-Privacy, numerical comparisons
 - **Performance**: Profiling, optimization, memory efficiency improvements
-- **Examples**: Real-world training pipelines (HuggingFace LLMs, vision classification, etc.)
+- **Examples**: Real-world training pipelines (Hugging Face LLMs, vision classification, etc.)
 
 No contribution is too small!
 
@@ -101,10 +105,10 @@ only re-exports; user-facing examples should import through those façades.
 Opaque follows a Test-Driven Development workflow:
 
 1. **Test First**: Write failing test defining the API
-2. **Implement**: Make test pass (minimal code to pass)
+2. **Implement**: Make the test pass (minimal code to pass)
 3. **Document**: Add docstrings with usage examples
 4. **Refactor**: Improve code quality and structure
-5. **Verify**: Run full test suite with coverage
+5. **Verify**: Run the full test suite with coverage
 
 ---
 
@@ -121,7 +125,7 @@ uv sync --group examples --all-packages --extra all  # Training examples: datase
 uv sync --group docs --all-packages                  # MkDocs stack and documented package sources
 
 # Package extras (compose with --extra):
-#   opaque[transformers]             — HuggingFace + patching stack
+#   opaque[transformers]             — Hugging Face + patching stack
 #   opaque[dpftrl]                   — DP-FTRL mechanisms
 #   opaque[auditing]                 — empirical privacy auditing
 #   opaque-accounting[cross-validation] — dp-accounting, riskcal
@@ -164,16 +168,16 @@ uv run pytest -m mps
 uv run pytest -m slow
 ```
 
-Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
+Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[transformers]`)
-- Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
+- Hugging Face tests: Skip if `transformers` is not installed (install via `opaque[transformers]`)
+- Cross-validation: Skip if `dp-accounting` is not installed (install via `opaque-accounting[cross-validation]`)
 
-No manual marker exclusion needed - tests skip automatically when dependencies are missing.
+No manual marker exclusion is needed—tests skip automatically when dependencies are missing.
 
 ### GPU and Multi-GPU Tests
 
@@ -318,8 +322,8 @@ page. There is no `CHANGELOG.md` to maintain.
 | State | Version | Where |
 |---|---|---|
 | PR push | `0.X.Y.devN+pr.<num>.g<sha>` | workflow artifacts on the PR's Actions run (14-day retention) |
-| Push to `main` | `0.X.Y.devN+g<sha>` | GCP Artifact Registry (dev channel) |
-| Published Release `vX.Y.Z` | `X.Y.Z` | GCP + GitHub Release assets |
+| Push to `main` | `0.X.Y.devN+g<sha>` | JetBrains Packages (dev channel) |
+| Published Release `vX.Y.Z` | `X.Y.Z` | JetBrains Packages + GitHub Release assets |
 
 ### Releasing
 
@@ -337,7 +341,7 @@ page. There is no `CHANGELOG.md` to maintain.
    - `tag-guard` verifies the tag's commit is reachable from `origin/main`.
    - Matrix builds: 7 Python wheels + `opaque-accounting` for
      linux-{amd64, arm64} and macos-arm64.
-   - Wheels publish to GCP Artifact Registry at the clean version.
+   - Wheels publish to JetBrains Packages at the clean version.
    - Wheels attach to the Release as assets.
 
 ### Release-note conventions
@@ -392,7 +396,7 @@ If a release is broken, delete the tag + GitHub Release, then recut:
 git tag -d v0.2.0
 git push --delete origin v0.2.0
 # Delete the GitHub Release via gh CLI or UI; delete the wheel from
-# GCP Artifact Registry (`gcloud artifacts versions delete`).
+# JetBrains Packages (delete the published version from the package registry).
 ```
 
 Then prep a fresh draft for `v0.2.1` with the fix.

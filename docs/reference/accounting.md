@@ -27,7 +27,7 @@ published at the moment.
 
 ---
 
-## Namespace Organization
+## Namespace organization
 
 The accounting API is split into three namespaces:
 
@@ -174,12 +174,12 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
-- `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
-- `acc.get_discretization()` -- Return current `DiscretizationConfig`
+- `acc.set_discretization(discretization=1e-4, ...)` — Set the global default
+- `acc.get_discretization()` — Return the current `DiscretizationConfig`
 
 ---
 
-## Mechanism Functions
+## Mechanism functions
 
 All mechanism constructors return a `DpProcess`. Discretization is configured
 at query time via `epsilon_at(..., discretization=...)` or module-level via
@@ -284,7 +284,7 @@ fraction query. Returns an `AdaClip` process composable with `poisson()`
 
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
-- `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
+- `expected_batch_size` (float): Expected batch size (`sample_rate × dataset_size`), used to compute the absolute noise std for the quantile query.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
@@ -353,7 +353,7 @@ training = step * 1000
 
 ---
 
-## Matrix Factorization Mechanisms
+## Matrix factorization mechanisms
 
 MF mechanisms take pre-computed `sensitivity` and `gram_matrix` values from the
 corresponding noise **strategy** (e.g. `band_mf_strategy()`, `blt_strategy()`).
@@ -546,11 +546,11 @@ eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 
 ## Serialization
 
-Processes checkpoint as a **flat** ``dict[str, Any]`` (string keys with dotted
-prefixes for nested composition). Use :func:`opaque.serialization.state_dict`
-and :func:`opaque.serialization.from_state_dict` — pass any concrete
-``DpProcess`` instance as the template (for example ``identity()``); the
-registered handler rebuilds from the dict's root ``type`` field.
+Processes checkpoint as a **flat** `dict[str, Any]` (string keys with dotted
+prefixes for nested composition). Use `opaque.serialization.state_dict`
+and `opaque.serialization.from_state_dict` — pass any concrete `DpProcess`
+instance as the template (for example, `identity()`); the registered handler
+rebuilds from the dict's root `type` field.
 
 ```python
 import opaque.accounting as acc
@@ -645,7 +645,7 @@ flat = state_dict(acct)
 acct2 = from_state_dict(Accountant(), flat)
 ```
 
-``process.*`` keys hold the composed tree; ``budget.*`` keys are present when
+`process.*` keys hold the composed tree; `budget.*` keys are present when
 the accountant was constructed with a budget.
 
 ---
@@ -676,11 +676,12 @@ Binary search for a parameter value such that `process(param)` produces a
 | `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
-Its metric must be monotone in the direction declared by the budget. The
-current direction contract supports parameters such as `noise_multiplier`,
-whose increase improves privacy: epsilon, delta, and advantage decrease, while
-beta and risk increase. `param_min` must be the unsafe endpoint and `param_max`
-the privacy-safe endpoint under that contract.
+Its metric must be monotone in the parameter over `[param_min, param_max]`;
+the search direction is derived automatically by probing both endpoints, so
+noise-multiplier-like parameters (increase improves privacy) and
+sample-rate/step-like parameters (increase spends privacy) are both
+supported. Exactly one endpoint must be privacy-safe; which one is detected,
+not positional.
 
 ```python
 import opaque.accounting as acc
@@ -762,9 +763,10 @@ optimize and what value to achieve.
 | `cal.beta_budget(beta, alpha)`      | Type-II error at given Type-I error     | No                    |
 | `cal.risk_budget(risk, prior)`      | Bayes risk under optimal adversary      | No                    |
 
-"Decreasing with noise" indicates whether the metric decreases as the
-calibrated parameter (typically noise_multiplier) increases. The binary search
-adapts direction automatically based on the budget's `decreasing` property.
+"Decreasing with noise" indicates the metric kind: privacy-loss metrics
+(epsilon/delta/advantage) are safe at-or-below the target, privacy-gain
+metrics (beta/risk) at-or-above. The binary search derives the parameter
+direction automatically by probing both bracket endpoints.
 
 ```python
 # (epsilon, delta)-DP

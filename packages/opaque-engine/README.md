@@ -1,6 +1,6 @@
 # opaque-engine
 
-Torch substrate for the Opaque library. Ships everything torch-using
+Torch substrate for the Opaque library. Ships everything that uses PyTorch
 that downstream stacks (`opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-auditing`, `opaque-patches`, `opaque-transformers`) need:
 
@@ -10,12 +10,12 @@ that downstream stacks (`opaque-dpsgd`, `opaque-dpftrl`,
   `partition`, `merge`, `global_norm`, …).
 - `opaque.api.engine.random` — `RngKey` (uint32 tensor), `key`,
   `split`, `fold_in`, `torch.Generator` helpers.
-- `opaque.api.engine.serialization` — torch.Tensor / numpy.ndarray
+- `opaque.api.engine.serialization` — `torch.Tensor` / `numpy.ndarray`
   handler registration with the base-side serialization registry.
 - `opaque.api.engine.distributed` — DDP collectives, sync registry,
   detection helpers.
 - `opaque.api.engine.noise_allocation` — per-group / paired-stream
-  noise stddev math, shared between dpsgd and dpftrl.
+  noise stddev math, shared between DP-SGD and DP-FTRL.
 - `opaque.api.engine.clipping` — fixed + AUTO-S clipping primitives
   (constant-sensitivity; usable by both DP-SGD and DP-FTRL).
 - `opaque.api.engine.functional` — `make_functional`,

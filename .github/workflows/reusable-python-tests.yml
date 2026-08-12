@@ -1,0 +1,88 @@
+name: Reusable / Python tests
+
+on:
+  workflow_call:
+    inputs:
+      assert-cuda:
+        description: Assert CUDA availability before GPU test legs.
+        required: false
+        default: false
+        type: boolean
+      checkout-ref:
+        description: Ref to test. Leave empty to test the triggering SHA.
+        required: false
+        default: ""
+        type: string
+      devices:
+        description: JSON array of device matrix entries.
+        required: true
+        type: string
+      included-combinations:
+        description: JSON array of additional shard/device matrix entries.
+        required: false
+        default: "[]"
+        type: string
+      report-durations:
+        description: Report the 25 slowest tests.
+        required: false
+        default: false
+        type: boolean
+      test-shards:
+        description: JSON array of shard matrix entries.
+        required: true
+        type: string
+      timeout-minutes:
+        description: Maximum runtime for each matrix leg.
+        required: false
+        default: 360
+        type: number
+
+jobs:
+  test:
+    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
+    runs-on: ${{ matrix.device.os }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.test-shards) }}
+        device: ${{ fromJSON(inputs.devices) }}
+        include: ${{ fromJSON(inputs.included-combinations) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: Assert CUDA available
+        if: inputs.assert-cuda && matrix.device.name == 'gpu'
+        run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
+
+      - name: pytest
+        run: |
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ matrix.device.marker }}" \
+            ${{ matrix.device.xdist }} \
+            --cov=opaque \
+            --cov-report=xml:coverage.xml \
+            ${{ inputs.report-durations && '--durations=25' || '' }} \
+            -q
+
+      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+        with:
+          files: ./coverage.xml
+          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
+          fail_ci_if_error: false

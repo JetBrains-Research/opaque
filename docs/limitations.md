@@ -34,9 +34,9 @@ for usage and limitations.
 ## Flash Attention 2 incompatibility
 
 Flash Attention 2 uses `torch.nonzero` internally for sequence unpadding,
-which produces dynamic output shapes incompatible with vmap.
+which produces dynamic output shapes that are incompatible with vmap.
 
-**Solution:** Use SDPA or eager attention when loading HuggingFace models:
+**Solution:** Use SDPA or eager attention when loading Hugging Face models:
 
 ```python
 model = AutoModelForCausalLM.from_pretrained(
@@ -58,17 +58,17 @@ and are not covered by default CI.
 
 ## Kernel patching lives in `opaque.patches`
 
-Kernel optimization and patching for HuggingFace models is part of
-`opaque.patches` and is CUDA+Triton only.
+Kernel optimization and patching for Hugging Face models are part of
+`opaque.patches` and are available only with CUDA and Triton.
 
 Low-level Triton-backed autograd primitives are internal
 implementation details and should not be imported directly in user
 code.
 
 On CPU/MPS (or without Triton), the kernel group is auto-disabled —
-the router forces `kernels=False` when CUDA + Triton can't be
+the router forces `kernels=False` when CUDA + Triton cannot be
 imported, so `performance=True` keeps the pure-Python `kv_cache`
-patch on those hosts.  Configure the patch surface via the explicit
+patch on those hosts. Configure the patch surface via the explicit
 flags (see
 [Model Patches — DPTrainer integration](user-guide/huggingface/model-patches.md#dptrainer-integration));
 opaque-patches has no environment-variable kill switches.
@@ -80,7 +80,7 @@ from `opaque.patches.kernels`.
 ## In-place operations under vmap
 
 `torch.func.vmap` does not support in-place tensor operations. Models that
-use in-place operations (e.g., `x.add_()`, `x[:, 0] = 0`) in their
+use in-place operations (for example, `x.add_()`, `x[:, 0] = 0`) in their
 forward pass will fail. Replace them with out-of-place equivalents
 (`x = x + y`, `x = torch.cat([zeros, x[:, 1:]], dim=1)`).
 

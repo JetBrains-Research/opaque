@@ -432,10 +432,6 @@ class TestScheduleFree:
             torch.testing.assert_close(restored.z[k], state.z[k])
         assert restored.step == state.step
         assert restored.beta == state.beta
-        # get_eval_params still returns x.
-        ep = restored.x
-        for k in ep:
-            torch.testing.assert_close(ep[k], state.x[k])
 
 
 class TestRobustness:

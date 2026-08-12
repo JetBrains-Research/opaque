@@ -8,9 +8,9 @@ calibrated against `n_steps` once.
 
 ## Mechanisms
 
-- **[Band-MF](band-mf.md)** — banded matrix factorisation (Choquette-Choo
+- **[Band-MF](band-mf.md)** — banded matrix factorization (Choquette-Choo
   et al. 2023). Standard DP-FTRL baseline.
-- **[BLT](blt.md)** — buffered linear toeplitz (Dvijotham et al. 2024).
+- **[BLT](blt.md)** — buffered linear Toeplitz (Dvijotham et al. 2024).
   Multi-epoch BLT covers iterating over the dataset multiple times.
 - **[BiSR](bisr.md)** — banded inverse square root.
 - **[BSR](bsr.md)** — banded square root.
@@ -20,7 +20,7 @@ calibrated against `n_steps` once.
 The simplest case (sensitivity 1, no correlation) is the
 **identity strategy** — exposed via
 `opaque.dpftrl.noise.identity_strategy()` paired with
-`opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())`.  Useful
+`opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())`. Useful
 as a sanity check or when comparing against vanilla DP-SGD on equal
 footing.
 

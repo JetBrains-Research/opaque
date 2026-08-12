@@ -2,46 +2,46 @@
 
 Opaque keeps training state in explicit values (clip state, noise state,
 optimizer state, schedules, [`Accountant`](accounting.md) / [`DpProcess`](accounting.md),
-…). Use :mod:`opaque.serialization` for a single **flat**
-``dict[str, Any]`` suitable for :func:`torch.save` / :func:`torch.load`.
+…). Use `opaque.serialization` for a single **flat**
+`dict[str, Any]` suitable for `torch.save` / `torch.load`.
 
 Restore is **template-driven**: pass a freshly constructed object of the same
 shape as at save time; keys present in the checkpoint overwrite leaves, and
 missing keys keep template values (forward compatibility when new fields appear).
 
-Dispatch resolves a leaf by exact type and then by ``__mro__``, so a subclass
-of a registered type — a custom ``torch.Tensor`` subclass, for example — is
+Dispatch resolves a leaf by exact type and then by `__mro__`, so a subclass
+of a registered type — a custom `torch.Tensor` subclass, for example — is
 serialized by the nearest base-class handler rather than dropped.
-(``torch.nn.Parameter`` is common enough to get its own exact-type handler that
-preserves the subclass and its ``requires_grad`` flag on restore, so it does
-not rely on the ``__mro__`` fallback.) A leaf that is neither registered nor a
+(`torch.nn.Parameter` is common enough to get its own exact-type handler that
+preserves the subclass and its `requires_grad` flag on restore, so it does
+not rely on the `__mro__` fallback.) A leaf that is neither registered nor a
 generic container (dataclass / NamedTuple / tuple / list / mapping) nor a
-primitive raises ``TypeError`` on both save and restore instead of being
+primitive raises `TypeError` on both save and restore instead of being
 silently skipped.
 Genuinely inert leaves that the template reproduces (vendor structure handles
-such as ``optree.PyTreeSpec``) are declared with
-:func:`opaque.serialization.register_template_restored`; nothing is written for
+such as `optree.PyTreeSpec`) are declared with
+`opaque.serialization.register_template_restored`; nothing is written for
 them and the template supplies them on load.
 
-:class:`~opaque.types.PerGroup` checkpoints through the same API. Path keys
-serialize as their ``str()`` form under the structural walker — e.g.
-``groups.('a',)`` for a flat leaf, or ``groups.('layer', 'weight')`` for a
-nested path — alongside ``values.<group_name>``.  When DP bias correction is
-enabled on Adam-family optimizers, ``phi`` is a path-keyed dict from
-``opt.init`` so ``from_state_dict`` round-trips without resetting φ.  NumPy
-``ndarray`` leaves are supported alongside ``torch.Tensor``.
+`PerGroup` checkpoints through the same API. Path keys serialize as their
+`str()` form under the structural walker — for example, `groups.('a',)` for a
+flat leaf, or `groups.('layer', 'weight')` for a nested path — alongside
+`values.<group_name>`. When DP bias correction is enabled on Adam-family
+optimizers, `phi` is a path-keyed dict from `opt.init` so `from_state_dict`
+round-trips without resetting φ. NumPy `ndarray` leaves are supported alongside
+`torch.Tensor`.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
 ## API surface (no per-type `state_dict()`)
 
-Opaque centralises (de)serialisation in :func:`opaque.serialization.state_dict`
-and :func:`opaque.serialization.from_state_dict`.  Registered types (including
-:class:`~opaque.accounting.Accountant`) are written and restored **only**
+Opaque centralizes (de)serialization in `opaque.serialization.state_dict`
+and `opaque.serialization.from_state_dict`. Registered types (including
+`Accountant`) are written and restored **only**
 through these module-level functions — there are no instance methods named
-``state_dict`` / ``from_state_dict`` on those classes.
+`state_dict` / `from_state_dict` on those classes.
 
-Minimal round-trip for an :class:`~opaque.accounting.Accountant`:
+Minimal round trip for an `Accountant`:
 
 ```python
 from opaque.accounting import Accountant, identity
@@ -54,9 +54,9 @@ acct2 = from_state_dict(Accountant(), flat)
 
 The same pattern applies to clip state, noise state, functional optimizer
 state, and any other value that flows through the DP training loop.  Custom
-types may register handlers with :func:`opaque.serialization.register_serializer`,
+types may register handlers with `opaque.serialization.register_serializer`,
 or — when a leaf carries no run state and the template reproduces it —
-declare it inert with :func:`opaque.serialization.register_template_restored`.
+declare it inert with `opaque.serialization.register_template_restored`.
 
 ::: opaque.serialization
     options:

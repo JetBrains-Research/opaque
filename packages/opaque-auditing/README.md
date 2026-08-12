@@ -6,12 +6,11 @@ loss-based membership-inference attacks.
 
 ## Install
 
-```bash
-pip install opaque-auditing
-```
+Install the root package as described in the [repository installation guide](https://github.com/JetBrains-Research/opaque#installation).
+Use its `auditing` extra to include this component.
 
-`opaque-auditing` depends on `opaque-core` and ``scipy``; both
-install automatically.
+`opaque-auditing` depends on `opaque-engine` and `scipy`; both install
+automatically with the extra.
 
 ## Quick start
 

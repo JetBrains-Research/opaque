@@ -79,8 +79,8 @@ The primary amplification method for BandMF. The training run is decomposed
 into $k = \lceil n / b \rceil$ independent **groups** of $b$ consecutive
 steps. Within each group, **cyclic Poisson** participation means each example
 in the active group is included independently with probability $q$ (this is
-what :func:`opaque.dpftrl.accounting.poisson` composes over; there is no
-separate ``cyclic_poisson`` factory).
+what `opaque.dpftrl.accounting.poisson` composes over; there is no
+separate `cyclic_poisson` factory).
 
 **What this means**: instead of analyzing the full $n$-step run as one
 mechanism, we analyze $k$ independent Poisson-subsampled Gaussian mechanisms
@@ -114,7 +114,7 @@ print(f"Epsilon (δ=1e-5): {eps:.2f}")
 |---------------|:---------:|-------|
 | `opaque.dpsgd.accounting.poisson` | No | DP-SGD per-step factory; different object |
 | `opaque.dpsgd.accounting.poisson` (truncated) | No | DP-SGD only |
-| `opaque.dpftrl.accounting.poisson` | Yes | Whole-process MF Poisson; $\lceil n/b \rceil$ groups for ``BandMf`` |
+| `opaque.dpftrl.accounting.poisson` | Yes | Whole-process MF Poisson; $\lceil n/b \rceil$ groups for `BandMf` |
 
 ### b-min-sep subsampling (`b_min_sep`)
 
@@ -148,7 +148,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
-    :func:`opaque.dpftrl.accounting.poisson` wrapper (compose the Gaussian
+    `opaque.dpftrl.accounting.poisson` wrapper (compose the Gaussian
     mechanism directly if your accounting path supports it). Useful for
     comparison when subsampling is not applicable.
 
@@ -215,10 +215,10 @@ assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 ### End-to-end BandMF example
 
-BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with ``bands`` matching the
-strategy so participation lines up with the noise.  The same class with
-``bands=1`` gives plain Poisson on the full dataset each step for an identity MF
-baseline (``identity_mf`` / ``identity_strategy``):
+BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with `bands` matching the
+strategy so participation lines up with the noise. The same class with
+`bands=1` gives plain Poisson on the full dataset each step for an identity MF
+baseline (`identity_mf` / `identity_strategy`):
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -233,7 +233,7 @@ sampler = CyclicPoissonSampler(
 )
 ```
 
-BandMF training (``bands`` matches ``band_mf_strategy``):
+BandMF training (`bands` matches `band_mf_strategy`):
 
 ```python
 import torch

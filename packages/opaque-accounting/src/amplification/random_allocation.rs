@@ -448,7 +448,7 @@ pub fn random_allocation_gaussian_pld(
 
     // k > 1 reduces to a composition of single allocations: split t into
     // m_f rounds of ⌊t/k⌋ steps and m_c rounds of ⌈t/k⌉.
-    let (t_floor, t_ceil) = (t / k, (t + k - 1) / k);
+    let (t_floor, t_ceil) = (t / k, t.div_ceil(k));
     let (m_f, m_c) = if t_floor == t_ceil {
         (k, 0)
     } else {

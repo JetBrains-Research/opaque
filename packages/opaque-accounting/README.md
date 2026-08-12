@@ -1,24 +1,29 @@
 # opaque-accounting
 
-PLD computation engine for differential privacy accounting, implemented in Rust with Python bindings via PyO3.
+PLD computation engine for differential privacy accounting, implemented in Rust
+with Python bindings via PyO3.
 
 ## Overview
 
-`opaque-accounting` ships a PyO3 extension mounted at
-Python facade at `opaque.accounting`.
+`opaque-accounting` ships a PyO3 extension mounted at the
+`opaque.accounting` Python façade.
 The native module exposes flat functions that take scalar parameters
 and return opaque `Pld` handles; the Python side owns composition,
 repetition, caching, and calibration.
 
+Install the root package as described in the [repository installation guide](https://github.com/JetBrains-Research/opaque#installation).
+It provides the synchronized `opaque-accounting` distribution:
+
 ```bash
-pip install opaque-accounting
+pip install opaque-accounting \
+  --index-url https://packages.jetbrains.team/pypi/p/fed/python/simple/
 python -c "from opaque.accounting import identity; print(identity().epsilon_at(1e-5))"
 ```
 
-Algorithm factories such as ``gaussian`` / ``poisson`` live in
-``opaque-dpsgd`` / ``opaque-dpftrl``; install those packages to use them.
-The accounting wheel pulls in ``opaque-base`` for shared checkpoint helpers
-(:mod:`opaque.serialization`).
+Algorithm factories such as `gaussian` / `poisson` live in
+`opaque-dpsgd` / `opaque-dpftrl`; install those packages to use them.
+The accounting wheel pulls in `opaque-base` for shared checkpoint helpers
+(`opaque.serialization`).
 
 The engine uses the Privacy Loss Distribution (PLD) framework with
 Connect-the-Dots discretization ([Doroshenko et al., 2022](https://arxiv.org/abs/2207.04380)).
@@ -191,5 +196,5 @@ Apache-2.0
 
 ## Related links
 
-- [Main opaque library](../opaque/) - PyTorch differential privacy library
+- [Main Opaque library](../opaque/) — PyTorch differential privacy library
 - [maturin documentation](https://www.maturin.rs/)

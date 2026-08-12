@@ -8,15 +8,22 @@ injection, privacy accounting, and Poisson sampling. Built on `torch.func`,
 it uses a functional API with explicit state — no hooks, no subclassing, no
 hidden mutation.
 
+> **Work in progress:** Opaque is research software under active development.
+> Its differential-privacy mechanisms, accounting, and privacy guarantees are
+> still being validated and may change. Do not rely on it for production or
+> compliance-sensitive privacy guarantees without independent validation for
+> your use case.
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.9+](https://img.shields.io/badge/pytorch-2.9+-red.svg)](https://pytorch.org/)
+[![JetBrains Research](https://jb.gg/badges/research.svg)](https://confluence.jetbrains.com/display/ALL/JetBrains+on+GitHub)
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
 
 ## Packages
 
 Install and depend on `opaque` only. The repository is implemented as
-[PEP 420] namespace sub-packages under the shared `opaque.*` namespace:
+[PEP 420] namespace packages under the shared `opaque.*` namespace:
 
 | Distribution | Import roots | Purpose |
 |---|---|---|
@@ -54,13 +61,13 @@ opaque.accounting                                          <- opaque-accounting
 ## Installation
 
 ```bash
-# From the JetBrains Artifact Registry
+# From JetBrains Packages
 pip install opaque \
-  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index-url https://packages.jetbrains.team/pypi/p/fed/python/simple/
 
 # Or with uv
 uv add opaque \
-  --index https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --index https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
 
 Extras:
@@ -149,7 +156,7 @@ for batch_x, batch_y in dataloader:
 - **Privacy auditing**: empirical privacy validation via membership inference.
 - **Distributed training**: DDP-compatible with synchronized noise and
   gradient aggregation via `opaque.distributed`.
-- **HuggingFace compatibility**: automatic `vmap` patching for LLaMA, Mistral,
+- **Hugging Face compatibility**: automatic `vmap` patching for LLaMA, Mistral,
   Qwen2/3, Phi-3, Gemma/Gemma2, Granite, Cohere/Cohere2, plus fused Triton
   kernels via `opaque.patches`.
 

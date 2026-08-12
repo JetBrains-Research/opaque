@@ -10,15 +10,14 @@ on:
     types: [published]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   tag-guard:
     name: Verify tag is on main
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - name: Fetch main
@@ -31,267 +30,46 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME is on main — proceeding."
 
-  discover-packages:
-    name: Discover package matrices
+  release-python-tests:
+    name: Release Python tests
     needs: [tag-guard]
-    runs-on: ubuntu-latest
-    outputs:
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      devices: >-
+        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
 
-      - name: Discover packages
-        id: discover
-        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
-
-  release-tests:
-    name: Release tests
+  release-rust-tests:
+    name: Release Rust tests
     needs: [tag-guard]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
+    uses: ./.github/workflows/reusable-rust-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      - name: Rust tests
-        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
-
-      - name: Python tests
-        run: >-
-          uv run pytest -m "not cuda and not mps"
-          -n auto --dist loadscope
-
-  build-python-wheel:
-    name: Build ${{ matrix.package.dist }} @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard, discover-packages]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — rewrite opaque pins + accounting version from tag
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        run: |
-          cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
-
-      - name: Upload wheel to artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: wheels-${{ matrix.package.dist }}
-          path: dist/*.whl
-          retention-days: 90
-
-  build-opaque-wheel:
-    name: Build opaque @ ${{ github.event.release.tag_name }}
+  build-distributions:
+    name: Build distribution artifacts @ ${{ github.event.release.tag_name }}
     needs: [tag-guard]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
+    uses: ./.github/workflows/reusable-build-distributions.yml
+    with:
+      artifact-prefix: wheels
+      checkout-ref: ${{ github.event.release.tag_name }}
+      retention-days: 90
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — rewrite opaque pins + accounting version from tag
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-
-      - name: Upload wheel to artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: wheels-opaque
-          path: dist/opaque-*.whl
-          retention-days: 90
-
-  build-native-wheels:
-    name: Build ${{ matrix.package.dist }} - ${{ matrix.target.platform }}/${{ matrix.target.arch }} @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard, discover-packages]
-    runs-on: ${{ matrix.target.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
-        target:
-          - platform: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: linux
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: macos
-            arch: arm64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            manylinux: off
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — sync accounting version from tag
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          working-directory: ${{ matrix.package.path }}
-          target: ${{ matrix.target.target }}
-          manylinux: ${{ matrix.target.manylinux }}
-          args: >-
-            --release
-            --interpreter python3.11
-            --out ../../dist
-            --compatibility pypi
-
-      - name: Upload wheel to artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: dist/*.whl
-          retention-days: 90
-
-  build-accounting-sdist:
-    name: Build opaque-accounting sdist @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight — rewrite opaque pins + accounting version from tag
-        run: bash .github/scripts/set_build_versions.sh
-
-      - name: Build sdist
-        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
-
-      - name: Upload sdist to artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: wheels-opaque-accounting-sdist
-          path: dist/*.tar.gz
-          retention-days: 90
-
-  validate-release-wheels:
-    name: Validate release wheel metadata
-    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Download release wheels
-        uses: actions/download-artifact@v6
-        with:
-          pattern: wheels-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Validate internal opaque pins
-        run: >-
-          uv run --isolated --no-project --with packaging==25.0
-          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
-
-  validate-accounting-artifacts:
-    name: Validate accounting artifact policy
-    needs: [build-native-wheels, build-accounting-sdist]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Download accounting artifacts
-        uses: actions/download-artifact@v6
-        with:
-          pattern: wheels-opaque-accounting-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Validate accounting artifact policy
-        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+  validate-release-distributions:
+    name: Validate release distribution artifacts
+    needs: [build-distributions]
+    uses: ./.github/workflows/reusable-validate-distributions.yml
+    with:
+      artifact-prefix: wheels
+      checkout-ref: ${{ github.event.release.tag_name }}
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-wheel, build-native-wheels, build-accounting-sdist, validate-release-wheels, validate-accounting-artifacts]
+    needs: [build-distributions, validate-release-distributions]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/upload-artifact/merge@v6
+      - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-wheels
           pattern: wheels-*
@@ -299,19 +77,18 @@ jobs:
           retention-days: 90
 
   publish:
-    name: Publish to GCP + attach Release assets
-    needs: [merge-wheels, release-tests, validate-release-wheels]
+    name: Publish to JetBrains Packages + attach Release assets
+    needs: [merge-wheels, release-python-tests, release-rust-tests, validate-release-distributions]
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
-      id-token: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Download all wheels
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: release-wheels
           path: dist/
@@ -321,24 +98,16 @@ jobs:
           echo "Releasing ${{ github.event.release.tag_name }}. Artifacts:"
           ls -lh dist/*.whl dist/*.tar.gz
 
-      - name: Authenticate to GCP
-        id: gcp-auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
-          token_format: access_token
-          access_token_lifetime: 3600s
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - name: Publish release wheels to GCP
+      - name: Publish release wheels to JetBrains Packages
         env:
-          UV_PUBLISH_USERNAME: oauth2accesstoken
-          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
+          TWINE_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
-          uv publish \
-            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
+          uv run --isolated --no-project --with twine==6.2.0 \
+            python .github/scripts/twine_upload.py upload \
+            --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
 
       - name: Attach wheels to Release

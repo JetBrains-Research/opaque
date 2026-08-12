@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 concurrency:
   group: autoformat-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -12,20 +15,11 @@ jobs:
   format-python:
     name: Format Python
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+      - uses: ./.github/actions/setup-python
 
       # Use the lockfile ruff (not unpinned `uvx ruff`) so CI and local
       # `uv run ruff` stay on the same version. Rule selection lives in
@@ -33,52 +27,78 @@ jobs:
       - name: Install locked ruff
         run: uv sync --group dev --no-install-workspace --frozen
 
-      - name: Format Python code
-        run: uv run --no-sync ruff format packages/
-
-      - name: Auto-fix linting issues
-        run: uv run --no-sync ruff check --fix packages/
-
-      - name: Commit formatting changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "ci: auto-format Python with ruff"
-          file_pattern: "packages/**/*.py"
-
-      - name: Verify no remaining issues
+      - name: Check Python formatting and linting
         run: |
           uv run --no-sync ruff format --check packages/
           uv run --no-sync ruff check packages/
 
-  format-rust:
-    name: Format Rust
+  format-python-fix:
+    name: Auto-fix Python formatting
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-python
+
+      - name: Install locked ruff
+        run: uv sync --group dev --no-install-workspace --frozen
+
+      - name: Auto-fix Python formatting and linting
+        run: |
+          uv run --no-sync ruff format packages/
+          uv run --no-sync ruff check --fix packages/
+
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5
+        with:
+          commit_message: "ci: auto-format Python with ruff"
+          file_pattern: "packages/**/*.py"
+
+  format-rust:
+    name: Format Rust
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy, rustfmt
 
-      - name: Format Rust code
-        run: cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml
-
-      - name: Auto-fix clippy issues
-        run: cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml --fix --allow-dirty --allow-staged
-
-      - name: Commit formatting changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "ci: auto-format Rust with fmt + clippy"
-          file_pattern: "packages/opaque-accounting/**/*.rs"
-
-      - name: Verify no remaining issues
+      - name: Check Rust formatting and linting
         run: |
           cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml -- --check
           cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml -- -D warnings
+
+  format-rust-fix:
+    name: Auto-fix Rust formatting
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+
+      - name: Auto-fix Rust formatting and linting
+        run: |
+          cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml
+          cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml --fix --allow-dirty --allow-staged
+
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5
+        with:
+          commit_message: "ci: auto-format Rust with fmt + clippy"
+          file_pattern: "packages/opaque-accounting/**/*.rs"

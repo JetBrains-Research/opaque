@@ -16,6 +16,7 @@ from __future__ import annotations
 
 
 def apply() -> None:
+    """Install the first-order checkpoint backward patch."""
     import torch._functorch.eager_transforms as eager
 
     orig = eager._autograd_grad

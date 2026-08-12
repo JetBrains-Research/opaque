@@ -1,23 +1,23 @@
 # TrainingArguments
 
 `opaque.transformers.TrainingArguments` mirrors the subset of
-HuggingFace `TrainingArguments` DPTrainer honours, plus DPTrainer's
-own privacy / clipping / sampling / patching fields.  Unsupported HF
+Hugging Face `TrainingArguments` DPTrainer honors, plus DPTrainer's
+own privacy / clipping / sampling / patching fields. Unsupported HF
 knobs are intentionally omitted from the surface.
 
 This page covers the fields you'll touch most often, with the
-non-obvious semantics called out.  For the complete field inventory
+non-obvious semantics called out. For the complete field inventory
 with every type / default / coercion rule, see
 [API reference — transformers](../../reference/transformers.md#trainingarguments).
 
 ## Batch-size contract
 
-DPTrainer interprets batch-size args differently from stock HF.  Read
+DPTrainer interprets batch-size args differently from stock HF. Read
 this once before tuning:
 
 - `per_device_train_batch_size` is the **per-rank logical Poisson
   batch** — the expected sample size drawn on each rank for one DP-SGD
-  step.  (This matches the HF interpretation when gradient accumulation
+  step. (This matches the HF interpretation when gradient accumulation
   is one step — DPTrainer is permanently in that regime; see below.)
 - Cluster-wide logical batch is `per_device_train_batch_size *
   world_size` (exposed as the HF property `train_batch_size`).  The
@@ -54,8 +54,8 @@ sampler + composition.  Set `privacy_noise_multiplier` directly to
 skip calibration.
 
 **At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
-must be set.**  Neither has a silent default — construction raises if
-both are `None`.  The two valid shapes are:
+must be set.** Neither has a silent default — construction raises if
+both are `None`. The two valid shapes are:
 
 - `privacy_target_epsilon=ε` (NM left as `None`) — calibrate the noise
   multiplier from the budget at `train()` start.
@@ -72,9 +72,9 @@ configuration mistake.
 When `privacy_target_epsilon` is set alongside a non-zero
 `privacy_noise_multiplier`, training halts at the first logging
 boundary where the accumulated ε from the privacy accountant meets or
-exceeds the target.  The halt records `state.privacy_target_epsilon_reached
+exceeds the target. The halt records `state.privacy_target_epsilon_reached
 = True` and surfaces as a normal early-stop control flow (callbacks see
-the final eval / save / log pass).  The check runs every
+the final eval / save / log pass). The check runs every
 `logging_steps` (so setting `logging_steps=0` disables it
 silently — explicit logging is the contract for stop-at-ε visibility).
 A resume against a checkpoint where the budget is already spent
@@ -105,7 +105,7 @@ args = TrainingArguments(
   `noise_multiplier × clip = 0`, so gradients pass through unchanged.
 - **ε = ∞** — the accountant composes a non-private step, so
   `metrics["privacy_epsilon"]` is reported as `inf` (a faithful "no
-  guarantee" output, not an error).  Calibration is skipped and the
+  guarantee" output, not an error). Calibration is skipped and the
   resolved multiplier is recorded as `0.0` (source `"fixed"`).
 - **Clipping is independent.** It stays on by default (the configured
   `clipping_norm` / `clipping_mode`); keep it for a "clipping-only"
@@ -123,10 +123,10 @@ noise would yield infinite noise and `NaN` gradients.
 |---|---|
 | `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "random_allocation", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
 | `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for random allocation. |
-| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`.  `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
+| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
-| `privacy_noise_mechanism_kwargs` | Mechanism extras.  For `"gaussian"`: e.g. `bound=...` for the bounded Gaussian variant.  For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
+| `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: for example, `bound=...` for the bounded Gaussian variant. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
 | `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
 
 All dict-shaped fields accept a `Mapping`, a JSON object string, or
@@ -163,7 +163,7 @@ args = TrainingArguments(privacy_noise_mechanism="mf_band")
 ```
 
 Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;
-they're a sensible starting point, not universally optimal.  Override
+they're a sensible starting point, not universally optimal. Override
 any kwarg explicitly via `privacy_noise_mechanism_kwargs={...}`; user
 keys win on collision with the defaults table.
 
@@ -183,7 +183,7 @@ Mechanism constraints (validated at construction):
 | `bf16` | `False` | bf16 autocast on the per-example loss closure. |
 | `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
 | `gradient_checkpointing` | `False` | Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` — reentrant checkpointing doesn't compose with vmap. |
-| `torch_compile` | `False` | Compiles the per-example loss closure (not the model).  Tries `fullgraph=True` first; falls back with a warning. |
+| `torch_compile` | `False` | Compiles the per-example loss closure (not the model). Tries `fullgraph=True` first; falls back with a warning. |
 
 ## Patches and kernels
 
@@ -203,11 +203,11 @@ Standard HF save fields work as expected:
 
 | Field | Default | Effect |
 |---|---|---|
-| `save_strategy` | `"steps"` | One of `{"no", "steps", "epoch", "best"}`.  `"best"` auto-injects `BestModelSaveCallback`. |
+| `save_strategy` | `"steps"` | One of `{"no", "steps", "epoch", "best"}`. `"best"` auto-injects `BestModelSaveCallback`. |
 | `save_steps` / `save_total_limit` / `save_safetensors` | — | Standard HF semantics. |
 | `save_on_each_node` | `False` | Every node's rank-0 writes a copy (for node-local storage). |
 | `save_only_model` | `False` | Skip the DP runtime bundle (optimizer / sampler / RNG); ships weights + `accountant.json` only. |
-| `load_best_model_at_end` | `False` | Restore the best-eval checkpoint after `train()`.  Raises if no improving step was recorded. |
+| `load_best_model_at_end` | `False` | Restore the best-eval checkpoint after `train()`. Raises if no improving step was recorded. |
 
 Resume claims:
 
@@ -215,7 +215,7 @@ Resume claims:
   optimizer / clip / noise state, sampler cursor, RNG snapshots, and
   the privacy accountant in one call.
 - The saved accountant is the **prefix**: heterogeneous composition
-  with the remaining steps is DP-valid.  Calibration runs over the
+  with the remaining steps is DP-valid. Calibration runs over the
   remaining steps to hit the original `privacy_target_epsilon`
   against that prefix.
 - `resume_from_checkpoint` requires a **complete DP checkpoint**

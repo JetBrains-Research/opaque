@@ -399,11 +399,41 @@ class TestKPrefixInvariants:
         assert _eps_via_step(proc, 0, _DELTA) == 0.0
 
     @pytest.mark.usefixtures("_seed_mc")
-    def test_full_horizon_matches_proc(self, amp: str, mech: str):
+    def test_prefix_invariants(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        e_full_via_step = _eps_via_step(proc, proc.n_steps, _DELTA)
+        n, M = proc.n_steps, proc.atomic_unit
         e_full = _eps_full(proc, _DELTA)
-        assert math.isclose(e_full_via_step, e_full, rel_tol=1e-9)
+        checked_steps = {
+            1,
+            M,
+            n // 2,
+            n - 1,
+            *range(M, n + 1, M),
+            n,
+        }
+        epsilons = {K: _eps_via_step(proc, K, _DELTA) for K in checked_steps}
+
+        assert math.isclose(epsilons[n], e_full, rel_tol=1e-9)
+
+        # MC paths have transcript noise: 10% slack at the test budget.
+        bound_slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
+        for K in (1, M, n // 2, n - 1):
+            assert epsilons[K] <= e_full + bound_slack
+
+        assert epsilons[M] < e_full
+
+        # MC paths regenerate independent transcripts at each n_steps, so
+        # the per-K ε curve has MC noise; the monotone bound holds in
+        # expectation, with seed-dependent per-step gaps.  15% slack is
+        # empirically robust at the test's sample budget.
+        monotone_slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
+        prev = 0.0
+        steps = list(range(M, n + 1, M))
+        if steps[-1] != n:
+            steps.append(n)
+        for K in steps:
+            assert epsilons[K] >= prev - monotone_slack
+            prev = epsilons[K]
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_overshoot_step_raises(self, amp: str, mech: str):
@@ -411,41 +441,6 @@ class TestKPrefixInvariants:
         step = acc.per_step(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
-
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_bounded_by_full(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        e_full = _eps_full(proc, _DELTA)
-        # MC paths have transcript noise: 10% slack at the test budget.
-        slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
-        for K in (1, proc.atomic_unit, proc.n_steps // 2, proc.n_steps - 1):
-            assert _eps_via_step(proc, K, _DELTA) <= e_full + slack
-
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_trend_increases(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        e_small = _eps_via_step(proc, proc.atomic_unit, _DELTA)
-        e_full = _eps_full(proc, _DELTA)
-        assert e_small < e_full
-
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        n, M = proc.n_steps, proc.atomic_unit
-        e_full = _eps_full(proc, _DELTA)
-        # MC paths regenerate independent transcripts at each n_steps, so
-        # the per-K ε curve has MC noise; the monotone bound holds in
-        # expectation, with seed-dependent per-step gaps.  15% slack is
-        # empirically robust at the test's sample budget.
-        slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
-        prev = 0.0
-        steps = list(range(M, n + 1, M))
-        if steps[-1] != n:
-            steps.append(n)
-        for K in steps:
-            e_K = _eps_via_step(proc, K, _DELTA)
-            assert e_K >= prev - slack
-            prev = e_K
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_sandwich_at_intermediate_K(self, amp: str, mech: str):

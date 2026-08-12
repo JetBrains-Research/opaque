@@ -175,7 +175,7 @@ Fixed-size sampling (drawing exactly $B$ examples) has a slightly different
 privacy profile. Opaque uses Poisson-style sampling throughout.
 
 Truncated Poisson keeps Poisson-style randomness but caps realized batch size,
-which stabilises memory and batch norms at the cost of **weaker** privacy than
+which stabilizes memory and batch norms at the cost of **weaker** privacy than
 unconditional Poisson at the same inclusion probability $q$ (use the
 truncated-Poisson accountant).
 
@@ -336,7 +336,7 @@ impact on model quality.
 Standard DP-SGD adds independent noise at each training step.
 `gaussian_noise(..., bound=...)` further confines the per-coordinate output
 to a finite interval (the *bounded Gaussian mechanism* of Chen and Hale,
-2024).  At training scale the per-coordinate ε-DP analysis does not apply
+2024). At training scale, the per-coordinate ε-DP analysis does not apply
 (gradients live under an ℓ₂-ball constraint, not a product of intervals);
 accounting is the standard (ε, δ)-Gaussian.  See
 [Mechanisms](../mechanisms/index.md) for the mathematical details.

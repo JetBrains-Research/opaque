@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -21,7 +24,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@v6
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -49,35 +52,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       test_shards: ${{ steps.discover.outputs.test_shards }}
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Discover packages
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
+  rust-test-run:
+    uses: ./.github/workflows/reusable-rust-tests.yml
+
+  # Stable aggregate check required by the main branch ruleset. Reusable
+  # workflow jobs expose compound check names, so keep this caller-owned gate.
   rust-tests:
     name: Rust tests
+    if: always()
+    needs: [rust-test-run]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      # Cache the optimized dependency build (statrs/rustfft/nalgebra at
-      # opt-level 3 — see the test profile in Cargo.toml). The one-time cold
-      # compile is paid only when Cargo.lock changes; warm runs reuse it.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-
-      # No `--lib`: also run the crate's doc-tests (~the `///` examples across
-      # src/), so documented API examples can't rot. (The crate has no Rust
-      # integration tests — its tests/ dir is Python.)
-      - name: cargo test
-        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+      - name: Check Rust test result
+        run: |
+          result="${{ needs.rust-test-run.result }}"
+          echo "rust-test-run result: $result"
+          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
   # One matrix over CPU/MPS platforms × shards. Parallelism is
   # two-level: the matrix fans shards across runners, and `pytest -n auto`
@@ -85,106 +82,27 @@ jobs:
   # each class/module on one worker so fixtures/order are preserved).
   # The self-hosted GPU lane is a separate fork-guarded job below.
   python-tests:
-    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
     needs: [discover-packages]
-    runs-on: ${{ matrix.device.os }}
-    timeout-minutes: 30  # safety net: a hung/preempted runner fails fast
-    strategy:
-      fail-fast: false
-      matrix:
-        # PR gate excludes `slow` (full main CI in ci.yml runs slow too).
-        # Discover one shard per package from packages/*/pyproject.toml so the
-        # matrix expands automatically when wheels are added or removed. The
-        # repo-level tests/ tree stays on its own explicit "repo-tests" shard.
-        shard: ${{ fromJSON(needs.discover-packages.outputs.test_shards) }}
-        device:
-          - name: cpu
-            label: CPU
-            os: ubuntu-latest
-            marker: "not cuda and not mps and not slow"
-            xdist: "-n auto --dist loadscope"
-          - name: mps
-            label: MPS
-            os: macos-latest
-            marker: "not cuda and not slow"
-            xdist: "-n auto --dist loadscope"
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0  # setuptools-scm needs tag history for editable installs
-
-      - uses: dtolnay/rust-toolchain@stable  # needed to build opaque-accounting during uv sync
-
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true  # cache the resolved env across runs to cut per-shard sync cost
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      - name: pytest
-        run: |
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            ${{ matrix.device.xdist }} \
-            --cov=opaque \
-            --cov-report=xml:coverage.xml \
-            -q
-
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
-          fail_ci_if_error: false
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      devices: >-
+        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
   # the job-level guard can prevent runner allocation entirely.
   python-tests-gpu:
-    name: opaque-all (CUDA)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: GPU-runner-001
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
-
-      - name: pytest
-        if: ${{ success() }}
-        run: >-
-          uv run pytest packages tests
-          -m "cuda and not slow"
-          -rs
-          --cov=opaque
-          --cov-report=xml:coverage.xml
-          -q
-
-      - uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: gpu-all
-          fail_ci_if_error: false
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      devices: >-
+        [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 30
 
   # Single aggregating status check for Python tests — ensures all test legs pass.
   # This is the check required in branch protection (alongside rust-tests).
@@ -218,17 +136,13 @@ jobs:
     name: Cross-package import smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+      - uses: ./.github/actions/setup-python
 
       - name: uv sync
         run: uv sync --group dev --all-packages --extra all
@@ -291,15 +205,11 @@ jobs:
     name: Build documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+      - uses: ./.github/actions/setup-python
 
       - name: uv sync
         run: uv sync --group docs --all-packages
@@ -319,7 +229,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
@@ -344,198 +254,25 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Preview version: $VERSION"
 
-  build-preview-python:
-    name: Build preview ${{ matrix.package.dist }}
-    needs: [compute-preview-version, discover-packages]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight
-        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
-
-      - name: Build wheel
-        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: preview-wheels-${{ matrix.package.dist }}
-          path: dist/*.whl
-          retention-days: 14
-
-  build-preview-opaque:
-    name: Build preview opaque
+  build-preview-distributions:
+    name: Build preview distribution artifacts
     needs: [compute-preview-version]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+    uses: ./.github/workflows/reusable-build-distributions.yml
+    with:
+      artifact-prefix: preview-wheels
+      retention-days: 14
+      version: ${{ needs.compute-preview-version.outputs.version }}
 
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight
-        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
-
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: preview-wheels-opaque
-          path: dist/opaque-*.whl
-          retention-days: 14
-
-  build-preview-native:
-    name: Build preview ${{ matrix.package.dist }} — ${{ matrix.target.platform }}/${{ matrix.target.arch }}
-    needs: [compute-preview-version, discover-packages]
-    runs-on: ${{ matrix.target.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
-        target:
-          - platform: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: linux
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            manylinux: 2_28
-          - platform: macos
-            arch: arm64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            manylinux: off
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight
-        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          working-directory: ${{ matrix.package.path }}
-          target: ${{ matrix.target.target }}
-          manylinux: ${{ matrix.target.manylinux }}
-          args: >-
-            --release
-            --interpreter python3.11
-            --out ../../dist
-            --compatibility pypi
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: preview-wheels-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: dist/*.whl
-          retention-days: 14
-
-  build-preview-accounting-sdist:
-    name: Build preview opaque-accounting sdist
-    needs: [compute-preview-version]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Preflight
-        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
-
-      - name: Build sdist
-        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v6
-        with:
-          name: preview-wheels-opaque-accounting-sdist
-          path: dist/*.tar.gz
-          retention-days: 14
-
-  validate-preview-wheels:
-    name: Validate preview wheel metadata
-    needs: [build-preview-python, build-preview-opaque, build-preview-native]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install validator dependency
-        run: python3 -m pip install --disable-pip-version-check packaging
-
-      - name: Download preview wheels
-        uses: actions/download-artifact@v6
-        with:
-          pattern: preview-wheels-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Validate internal opaque pins
-        run: python3 .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
-
-  validate-accounting-artifacts:
-    name: Validate accounting artifact policy
-    needs: [build-preview-native, build-preview-accounting-sdist]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Download accounting artifacts
-        uses: actions/download-artifact@v6
-        with:
-          pattern: preview-wheels-opaque-accounting-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Validate accounting artifact policy
-        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+  validate-preview-distributions:
+    name: Validate preview distribution artifacts
+    needs: [build-preview-distributions]
+    uses: ./.github/workflows/reusable-validate-distributions.yml
+    with:
+      artifact-prefix: preview-wheels
 
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-opaque, build-preview-native, build-preview-accounting-sdist, validate-preview-wheels, validate-accounting-artifacts]
+    needs: [build-preview-distributions, validate-preview-distributions]
     runs-on: ubuntu-latest
     steps:
       # Best-effort: merge the per-package wheels into one artifact and delete
@@ -544,7 +281,7 @@ jobs:
       # (cancel-in-progress on rapid pushes) already removed a source artifact —
       # a flake unrelated to the build. This job is a leaf (nothing depends on
       # the merged artifact), so not gating on it is safe.
-      - uses: actions/upload-artifact/merge@v6
+      - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         continue-on-error: true
         with:
           name: preview-wheels
