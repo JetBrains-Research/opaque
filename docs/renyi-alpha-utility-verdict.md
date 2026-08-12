@@ -86,3 +86,67 @@ matched-depth control: **4%**.
   R, not the momentum).
 - The **two measurement traps**: out-of-domain pass@1 measures forgetting; `alpha/r` scaling
   silently perturbs per-layer effective LR by up to 4× in any variable-rank method.
+
+---
+
+## 6. RESOLVED (non-DP): α cannot produce a detectable utility effect — with a bound
+
+Experiment (2026-08-12, 7 runs, non-DP, seed 42, r=16, 1 epoch, image `7e97389`):
+`r_e` fixed uniformly at {1,5,9,13} with adaptive depth OFF, plus adaptive depth ON
+at α ∈ {0.25, 0.5, ∞}. α enters training only through the integer `r_e`, so
+measuring `L(r_e)` + composing with the measured α→`r_e` map answers the α question
+for all α without an α sweep.
+
+### 6.1 The mediator curve — depth matters, and saturates
+
+| `r_e` | eval/loss | marginal slope |
+|---|---|---|
+| 1 | 0.34700 | — |
+| 5 | 0.34429 | −6.8e-4 /slot |
+| 9 | 0.34368 | −1.5e-4 /slot |
+| 13 | 0.34354 | −3.5e-5 /slot |
+
+Total 1→13 = **−0.00346**; slope falls **19×** across the range. Exploration depth
+is the dominant mechanism and it saturates by `r_e`≈13.
+
+### 6.2 Measured noise floor (free internal control)
+
+α=∞ yields `r_e_dyn` = **13.00 uniformly** — i.e. it *is* the fixed-13 configuration.
+Run separately, the two scored 0.34344 vs 0.34354 ⇒ **run-to-run floor = 1.0e-4.**
+(Supersedes the earlier 3.7e-4 estimate.)
+
+### 6.3 Heterogeneity contributes nothing
+
+| adaptive arm | depth | loss | uniform curve @ depth | Δ |
+|---|---|---|---|---|
+| α=0.25 | 11.49 | 0.34346 | 0.34359 | −1.3e-4 |
+| α=0.5 | 12.68 | 0.34357 | 0.34355 | +0.2e-4 |
+| α=∞ | 13.00 | 0.34344 | 0.34354 | −1.0e-4 |
+
+|Δ| ≤ 1.3e-4 with **inconsistent sign** ⇒ no evidence that per-layer tailoring beats
+a matched uniform depth. Any effect is bounded by ~1.3e-4 (n=1/arm; a real claim
+either way needs seeds).
+
+### 6.4 The bound
+
+α's reachable depth range in non-DP is **11.49–13.00 (1.51 slots)**; the tail slope
+there is **3.5e-5/slot**; hence
+
+> **max possible α effect = 5.3e-5 = 0.53× the measured noise floor.**
+
+So α is not merely "flat" in non-DP — it is *provably undetectable*, because its
+whole operating range lies in the saturated tail of the depth curve. Reaching the
+steep region (`r_e` ≲ 9) would require α ≲ 0.1; α=0.25 only reaches 11.49.
+
+### 6.5 What this means for the paper
+
+- **Keep:** exploration depth is a real, large mechanism (−0.00346, ~35× the floor),
+  and rotation itself remains the headline (−0.0151 vs frozen-basis LoRA-XS).
+- **Reframe α:** it is the *derivation* of a depth rule that works and needs no
+  tuning, not a performance lever. The insensitivity is now quantified, not assumed.
+- **Retire:** per-layer heterogeneity as a claimed benefit (non-DP).
+- **Caveat:** `eval/loss_min` is a min over ~50 checkpoints and three configs report
+  exactly 0.34346 — evidence of plateau clustering. Final-loss/BPB is the better
+  metric for any follow-up.
+- **Open:** ε=1 (high noise) is untested; there α's reachable depth range is much
+  wider (7.8–12.5 at ε=3), so the same bound argument would give a larger ceiling.
