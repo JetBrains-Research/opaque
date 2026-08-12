@@ -12,10 +12,17 @@ from twine.package import PackageFile
 _metadata_dictionary = PackageFile.metadata_dictionary
 
 
+def md5_digest(path: Path) -> str:
+    digest = hashlib.md5()
+    with path.open("rb") as distribution:
+        for chunk in iter(lambda: distribution.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def metadata_dictionary_with_md5(self: PackageFile) -> dict[str, Any]:
     metadata = _metadata_dictionary(self)
-    with Path(self.filename).open("rb") as distribution:
-        metadata["md5_digest"] = hashlib.file_digest(distribution, "md5").hexdigest()
+    metadata["md5_digest"] = md5_digest(Path(self.filename))
     return metadata
 
 
