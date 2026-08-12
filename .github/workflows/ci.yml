@@ -339,7 +339,8 @@ jobs:
           TWINE_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
-          uvx --from twine==5.1.1 twine upload \
+          uv run --isolated --no-project --with twine==6.2.0 \
+            python .github/scripts/twine_upload.py upload \
             --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
 
