@@ -5,7 +5,7 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 
 ## Project snapshot
 
-- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.70)
+- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.83)
 - **Package manager**: `uv`
 - **Hardware**: GPU for training runs; CPU/MPS for most tests
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
@@ -346,7 +346,7 @@ is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
 ### Environment prerequisites
 
 - **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
-- **Rust stable** (≥ 1.70) is pre-installed for the `opaque-accounting` PyO3 build.
+- **Rust stable** (≥ 1.83) is pre-installed for the `opaque-accounting` PyO3 build.
 - **uv** must be on `PATH` (`$HOME/.local/bin`). Install via
   `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.
 

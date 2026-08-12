@@ -26,7 +26,13 @@ members = [
     "opaque-patches",
     "opaque-transformers",
 ]
-constraints = [{ name = "torch", specifier = ">=2.9,<2.13" }]
+constraints = [
+    { name = "peft", specifier = "<0.19" },
+    { name = "scipy", specifier = "<1.18" },
+    { name = "torch", specifier = ">=2.9,<2.13" },
+    { name = "transformers", specifier = "<5.12" },
+    { name = "trl", specifier = "<1.7" },
+]
 
 [[package]]
 name = "absl-py"

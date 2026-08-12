@@ -30,7 +30,7 @@ pub fn minsep_true_max_participations(
     min_sep: usize,
     max_participations: Option<usize>,
 ) -> usize {
-    let max_part_ub = (n + min_sep - 1) / min_sep; // ceil division
+    let max_part_ub = n.div_ceil(min_sep);
     match max_participations {
         Some(max_p) => max_part_ub.min(max_p),
         None => max_part_ub,
