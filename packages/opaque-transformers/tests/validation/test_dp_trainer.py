@@ -2381,6 +2381,26 @@ class TestDPTrainerEvalParity:
         assert isinstance(post_metrics["eval_acc"], float)
 
 
+class TestDeepJsonRecursionGuard:
+    """#334: deep accountant wire dicts survive stdlib json round-trips."""
+
+    def test_deep_nested_dict_round_trips_under_guard(self):
+        import json
+
+        from opaque.api.transformers.trainer._dp_trainer import (
+            _deep_json_recursion,
+        )
+
+        d: dict = {"leaf": 1}
+        for _ in range(5000):
+            d = {"inner": d}
+        with pytest.raises(RecursionError):
+            json.dumps(d)  # the pre-guard failure mode at default limits
+        with _deep_json_recursion():
+            back = json.loads(json.dumps(d))
+            assert back == d  # dict __eq__ recurses too; compare under the guard
+
+
 class TestPredictStopStep:
     """Pure-accounting unit tests for the predicted stop-at-ε step (#392)."""
 
