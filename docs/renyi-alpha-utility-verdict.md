@@ -199,3 +199,57 @@ Paper framing: state both numbers — the plateau width (1.3× floor, hence no t
 needed) and the penalty for leaving it (19× floor at α=0.05, hence the rule is not
 vacuous). The derived rule (any α ≥ 0.2, e.g. Shannon or the stable rank) is
 *correct by construction* rather than tuned.
+
+---
+
+## 8. eps=1 RESOLVED: the heterogeneity effect does NOT replicate
+
+### 8.1 The decisive paired test
+
+adaptive(α=1, r_e≈9.3) − fixed(r_e=9.00), eps=1, matched depth, `last5_avg`:
+
+| seed | adaptive | fixed | delta |
+|---|---|---|---|
+| 42 | 0.34805 | 0.34869 | −6.4e-4 |
+| 43 | 0.34905 | 0.34864 | **+4.1e-4** |
+| 44 | 0.34970 | 0.34974 | −0.4e-4 |
+
+**mean −9.1e-5, sd 5.3e-4, 2/3 negative, paired t = −0.30** (need |t|>4.30 at n=3).
+**No effect.**
+
+### 8.2 Why the n=1 result looked so convincing — a trap to avoid
+
+The earlier "3/3 adaptive arms below the curve (mean −6.0e-4)" used α ∈ {0.5,1,∞}
+**all at seed 42**. Those are not three independent confirmations; they are ONE seed's
+draw measured at three depths. A shared-seed fan-out mimics replication. Only the
+paired multi-seed test is diagnostic, and it returns zero.
+
+### 8.3 Noise floors, measured
+
+| regime | paired-difference noise |
+|---|---|
+| non-DP | ~1.0e-4 (identical-config control) |
+| **eps=1** | **sd 5.3e-4** (paired, n=3) |
+
+At eps=1 any single-seed effect below ~1e-3 is uninterpretable. This retroactively
+explains several earlier "signals" in DP runs.
+
+### 8.4 Final cross-regime verdict on per-matrix adaptivity
+
+| regime | residual vs matched-depth control | verdict |
+|---|---|---|
+| non-DP (7 arms) | mean −0.5e-4, 4/7 negative | no effect |
+| eps=1 (paired, 3 seeds) | mean −0.9e-4, sd 5.3e-4, t=−0.30 | **no effect** |
+
+**Per-matrix adaptive depth provides no measurable utility benefit over a matched
+uniform depth, in either regime.** Combined with §7: α acts only through average
+depth, and is a floor constraint rather than a tuning knob.
+
+### 8.5 What still stands
+
+- **Rotation:** −0.0151 vs frozen-basis LoRA-XS (~150× the non-DP floor). Unaffected.
+- **Depth matters in non-DP** (−0.0035, saturating); at eps=1 the uniform depth curve
+  is flat/non-monotone (0.34839 / 0.34869 / 0.34844 at r_e=5/9/13), i.e. under heavy
+  noise refreshing more stops helping too.
+- **DP rank inflation** (~3.8× at eps=3; r_eff 1.35→3.61 at eps=1, matched depth) —
+  a measurement result, independent of utility.
