@@ -90,9 +90,14 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep workspace resolution inside the supported PyTorch range. The shared lock
-# is intentionally resolved at 2.9 so existing CI jobs exercise the minimum.
-constraint-dependencies = ["torch>=2.9,<2.13"]
+# Keep the shared workspace lock within the integration versions exercised by
+# CI. Published packages retain their broader runtime requirements.
+constraint-dependencies = [
+    "torch>=2.9,<2.13",
+    "transformers<5.12",
+    "trl<1.7",
+    "scipy<1.18",
+]
 
 [tool.uv.sources]
 opaque-base = { workspace = true }

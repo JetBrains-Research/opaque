@@ -17,7 +17,7 @@ use crate::pld::PrivacyLossDistribution;
 ///     print(pld.epsilon_at(1e-5))
 ///     composed = pld.self_compose(1000)
 ///     print(composed.epsilon_at(1e-5))
-#[pyclass(name = "Pld")]
+#[pyclass(name = "Pld", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyPld {
     pub(super) inner: PrivacyLossDistribution,
