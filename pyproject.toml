@@ -149,8 +149,6 @@ examples = [
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
   "torchvision>=0.24.0",       # Vision example datasets
-  "jetbrains-cadence",        # Internal experiment registry
-  "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
 ]
 
 # Documentation building
