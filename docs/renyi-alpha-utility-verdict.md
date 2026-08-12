@@ -202,7 +202,14 @@ vacuous). The derived rule (any α ≥ 0.2, e.g. Shannon or the stable rank) is
 
 ---
 
-## 8. eps=1 RESOLVED: the heterogeneity effect does NOT replicate
+## 8. eps=1 — RETRACTED (analysis used unfinished runs); see §9
+
+> **RETRACTION (2026-08-13).** The paired analysis below was computed while 3 of the
+> 4 seed runs were STILL TRAINING (26 of 27 eval points). Their values moved by
+> ~1e-3 afterwards — larger than the ~6e-4 effect under test — so every number and
+> the "no effect" conclusion in this section are INVALID. The methodological point
+> in §8.2 (shared-seed fan-out is not replication) still stands on its own.
+> Corrected analysis in §9 once all runs finish.
 
 ### 8.1 The decisive paired test
 
