@@ -78,6 +78,10 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.auditing",
         "opaque.api.auditing",
     ),
+    "opaque-jax": (
+        "opaque.jax",
+        "opaque.api.jax",
+    ),
     "opaque-mlx": (
         "opaque.mlx",
         "opaque.api.mlx",
