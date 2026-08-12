@@ -277,6 +277,16 @@ def slice_array(value: Any, slices: Any) -> Any:
     return value[slices]
 
 
+@_JAX.implements(ops.expand_dims)
+def expand_dims(value: Any, axis: int) -> Any:
+    return jnp.expand_dims(value, axis=axis)
+
+
+@_JAX.implements(ops.squeeze)
+def squeeze(value: Any, axis: int | None = None) -> Any:
+    return jnp.squeeze(value, axis=axis)
+
+
 @_JAX.implements(ops.promote_dtype)
 def promote_dtype(left: Any, right: Any) -> Any:
     return jnp.promote_types(left, right)

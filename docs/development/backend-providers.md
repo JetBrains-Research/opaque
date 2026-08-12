@@ -5,6 +5,10 @@ backend-bearing call, Opaque recognizes Torch, JAX, or MLX arguments, lazily
 loads the corresponding provider wheel, and selects its implementation. The
 selection remains active in the current context for later calls.
 
+Install `opaque-engine` together with the provider wheel an application uses,
+or install `opaque` for the default Torch bundle and `opaque[jax]` or
+`opaque[mlx]` for the additional first-party providers.
+
 ## Declare an extension primitive
 
 Declare a primitive once, in the package that owns the operation. The
@@ -13,6 +17,7 @@ turning it into the canonical object providers register against.
 
 ```python
 from opaque.primitive import PrimitiveTier, primitive
+
 
 @primitive(tier=PrimitiveTier.CORE)
 def selective_log_softmax(logits: object, indices: object) -> object:
@@ -34,9 +39,9 @@ from opaque.primitive import BackendProvider
 
 _PROVIDER = BackendProvider("example")
 
+
 @_PROVIDER.implements(selective_log_softmax)
-def selective_log_softmax_impl(logits, indices):
-    ...
+def selective_log_softmax_impl(logits, indices): ...
 ```
 
 Registration uses primitive objects rather than repeated string names.
@@ -125,15 +130,58 @@ backend becomes active.
 
 ## Optional capabilities
 
-Distributed execution, device probing, profiling, model functionalization,
-and provider-specific serialization are optional capabilities. Register such
-operations as ordinary optional primitives, for example under a package-owned
-`example.runtime.*` name. Do not add them to the portable-core profile.
+Runtime integration uses two named profiles. `RuntimeProfile.DISTRIBUTED`
+covers eager process-level rank, size, barriers, return-based reductions,
+native-array gathering, and object gathering. `RuntimeProfile.OBSERVABILITY`
+covers synchronization and normalized memory observations. Use
+`RuntimeProfile.DISTRIBUTED.supports(backend)` or
+`RuntimeProfile.OBSERVABILITY.supports(backend)` to discover complete profile
+support; use each primitive's `.supports(backend)` method for finer-grained
+capabilities.
+
+The first-party capability matrix is:
+
+| Integration | Torch | JAX | MLX |
+|---|---:|---:|---:|
+| Portable core | yes | yes | yes |
+| Distributed profile | yes | yes | yes |
+| Observability profile | yes | yes | yes |
+| Native array serialization | `Tensor` + `Parameter` | `jax.Array` | `mlx.core.array` |
+| Allocator cache clear | yes | no | yes |
+| Peak-memory reset | yes | no | yes |
+| Trace annotation | yes | yes | no |
+
+Memory fields remain `None` when the selected device cannot expose them. In
+particular, JAX reports only fields supplied by `Device.memory_stats()`, and
+MLX does not currently expose device capacity. Provider-level support for an
+allocator operation does not imply that every device type implements it.
 
 An optional capability is checked at the call site. If it is unavailable,
 allow `UnsupportedPrimitiveError` to reach the caller rather than silently
 falling back or ignoring an option. A provider that implements only the
 portable core can therefore be activated and can run portable algorithms.
+
+## Organize provider integrations
+
+First-party providers keep registrations in three modules under their backend
+package: `_core.py` for the portable compute profile, `_runtime.py` for
+distributed and observability operations, and `_serialization.py` for native
+array handlers. The public provider factory imports all three areas and
+registers serialization handlers idempotently.
+
+Provider loading is also the registration boundary for native serialization.
+If serialization is the first Opaque operation, activate the provider first:
+
+```python
+from opaque.jax import jax_backend
+from opaque.serialization import state_dict
+
+jax_backend()
+checkpoint = state_dict(params)
+```
+
+An earlier backend-bearing primitive call performs the same activation
+automatically. `opaque-base` deliberately does not import provider wheels.
 
 ## Provider registration checklist
 

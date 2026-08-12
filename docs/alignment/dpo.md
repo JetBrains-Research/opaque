@@ -130,7 +130,7 @@ reference logps to form per-example log-ratios, and feed those to a
 per-pair head:
 
 ```python
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.alignment.dpo.loss import sequence_logp, sigmoid_loss
 
 fmodel, trainable, frozen = make_functional(

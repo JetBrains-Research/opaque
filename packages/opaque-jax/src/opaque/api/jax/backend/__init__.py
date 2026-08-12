@@ -12,7 +12,7 @@ __all__ = ["jax_backend"]
 
 
 def jax_backend() -> Backend:
-    """Construct the JAX backend.
+    """Construct the JAX backend and register its integrations.
 
     Raises:
         ImportError: If JAX is unavailable in the current environment.
@@ -27,6 +27,9 @@ def jax_backend() -> Backend:
             "install the Opaque bundle with `pip install 'opaque[jax]'`."
         ) from exc
 
-    from opaque.api.jax.backend._jax import JaxBackend
+    from opaque.api.jax.backend import _runtime  # noqa: F401
+    from opaque.api.jax.backend._core import JaxBackend
+    from opaque.api.jax.backend._serialization import register_jax_serialization
 
+    register_jax_serialization()
     return JaxBackend()

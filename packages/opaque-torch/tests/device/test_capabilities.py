@@ -3,8 +3,7 @@
 import pytest
 import torch
 
-from opaque.api.engine import runtime
-from opaque.device import (
+from opaque.torch.device import (
     DeviceCapabilities,
     device_capabilities,
     fused_kernels_available,
@@ -70,13 +69,12 @@ class TestDeviceCapabilities:
 
 class TestSdpaAutocastUnderVmapBroken:
     def test_registered_implementation_is_cached(self):
-        implementation = runtime.device_sdpa_autocast_under_vmap_broken.resolve("torch")
-        before = implementation.cache_info()
+        before = sdpa_autocast_under_vmap_broken.cache_info()
 
-        assert implementation("cpu") is False
-        assert implementation("cpu") is False
+        assert sdpa_autocast_under_vmap_broken("cpu") is False
+        assert sdpa_autocast_under_vmap_broken("cpu") is False
 
-        after = implementation.cache_info()
+        after = sdpa_autocast_under_vmap_broken.cache_info()
         assert after.misses == before.misses + 1
         assert after.hits == before.hits + 1
 

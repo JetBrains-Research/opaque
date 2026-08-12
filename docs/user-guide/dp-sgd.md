@@ -141,7 +141,7 @@ gradients.
 
 ```python
 import torch
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.serialization import state_dict
 
 fmodel, params = make_functional(model)

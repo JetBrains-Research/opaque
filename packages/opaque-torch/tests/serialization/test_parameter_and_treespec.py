@@ -12,8 +12,8 @@ import optree
 import torch
 import torch.nn as nn
 
-from opaque.functional import make_functional
 from opaque.serialization import from_state_dict, state_dict
+from opaque.torch.functional import make_functional
 
 
 def test_named_parameters_roundtrip() -> None:

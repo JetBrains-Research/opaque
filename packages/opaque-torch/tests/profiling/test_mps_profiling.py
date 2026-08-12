@@ -7,7 +7,7 @@ benchmarking depends on:
 - ``peak_gb`` is the driver's reserved high-water, so it *captures transients*
   freed before the read — the property that makes per-step peak meaningful on a
   backend with no peak counter;
-- ``reset_peak_memory`` actually lowers that high-water on MPS;
+- ``reset_peak_memory`` reports that MPS has no native peak-counter reset;
 - ``step_perf`` does NOT pay an ``empty_cache`` per step (it would tank a
   training loop), so MPS peak accumulates as the run high-water instead;
 - ``.mark()`` is device-synchronized, so sub-step timings reflect real GPU
@@ -60,7 +60,6 @@ class TestMpsPeakTracking:
         high-water keeps the 1 GiB, which is the number Track-B benchmarking
         needs ("how much did this kernel actually need").
         """
-        reset_peak_memory("mps")  # clean high-water baseline
         with step_perf("mps", batch_size=1) as sp:
             t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")  # 1 GiB
             torch.mps.synchronize()
@@ -71,14 +70,9 @@ class TestMpsPeakTracking:
         # ... and is well above the (near-zero) end-of-step allocation.
         assert perf.memory_peak_gb > perf.memory_allocated_gb + 0.5
 
-    def test_reset_peak_memory_lowers_high_water(self):
-        t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")
-        del t  # grows then frees → driver retains the high-water
-        torch.mps.synchronize()
-        high = get_memory_stats("mps").peak_gb
-        reset_peak_memory("mps")  # empty_cache → re-baseline
-        low = get_memory_stats("mps").peak_gb
-        assert low < high
+    def test_reset_peak_memory_is_explicitly_unsupported(self):
+        with pytest.raises(NotImplementedError, match="unavailable"):
+            reset_peak_memory("mps")
 
     def test_step_perf_does_not_empty_cache_per_step(self, monkeypatch):
         """empty_cache every step would cripple a training loop — guard it."""

@@ -17,7 +17,7 @@ from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward_gemma2,
     vmap_sdpa_attention_forward_gemma2,
 )
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 from ..._helpers import prepare_lora_model, run_clipped_grad_test
 

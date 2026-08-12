@@ -62,7 +62,7 @@ from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
-from opaque.device import sdpa_autocast_under_vmap_broken
+from opaque.torch.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -81,7 +81,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
-from opaque.distributed.gradients import sum_gradients_
+from opaque.distributed.gradients import sum_gradients
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.profiling import (
     perf_tracker,
@@ -91,7 +91,8 @@ from opaque.profiling import (
 from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler, RandomAllocationSampler
 from opaque.distributed import local_shard
-from opaque.functional import make_functional, empty_collate
+from opaque.functional import empty_collate
+from opaque.torch.functional import make_functional
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -1905,7 +1906,7 @@ def main():
                     )
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    sum_gradients_(grads_tuple)
+                    grads_tuple = sum_gradients(grads_tuple)
                 sp.mark("clip")
 
                 step_clip_norm = _step_clip_norm(grads_tuple)

@@ -53,7 +53,7 @@ def test_satisfies_protocol_and_array_primitives() -> None:
 
 
 def test_factory_returns_identity_with_decorator_registered_implementations() -> None:
-    from opaque.api.mlx.backend import _mlx as provider
+    from opaque.api.mlx.backend import _core as provider
 
     backend = mlx_backend()
 

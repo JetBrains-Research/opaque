@@ -46,14 +46,9 @@ import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
-from opaque.api.engine.device import (
-    device_capabilities,
-    sdpa_autocast_under_vmap_broken,
-)
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
@@ -62,6 +57,11 @@ from opaque.serialization import (
 from opaque.serialization import (
     state_dict as opaque_state_dict,
 )
+from opaque.torch.device import (
+    device_capabilities,
+    sdpa_autocast_under_vmap_broken,
+)
+from opaque.torch.functional import make_functional
 from transformers import (
     DataCollatorWithPadding,
     PreTrainedModel,
@@ -740,7 +740,7 @@ class DPTrainer:
         under functorch ``vmap(grad)`` (it does on CPU/CUDA), so the bf16 DP step
         crashes in attention.  Eager attention sidesteps it **losslessly** —
         under ``vmap`` SDPA already decomposes to the same matmuls.  Probe-gated
-        (:func:`opaque.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
+        (:func:`opaque.torch.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
         on a torch that fixes the upstream bug.  See the minimal repro in that probe.
         """
         if (
@@ -898,7 +898,7 @@ class DPTrainer:
         # non-deterministic physical step, so if ranks halved the microbatch
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
-        # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
+        # DP-SGD's per-step collectives (``sum_gradients`` AllReduce + the
         # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
         # mismatched logical steps and raise ``max_norm mismatch across ranks``.
         # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
@@ -1887,7 +1887,7 @@ class DPTrainer:
             # Clipped gradients (with optional CPU offload).  Under DDP an OOM
             # here must become a *collective* event: if it propagated as a
             # plain per-rank exception, the OOM'ing rank would skip the
-            # ``sum_gradients_`` AllReduce below while its siblings issued it,
+            # ``sum_gradients`` AllReduce below while its siblings issued it,
             # deadlocking the process group (or, worse, meeting a later
             # mismatched collective). So we catch a retryable OOM, all-reduce a
             # MAX flag across ranks, and if ANY rank OOM'd raise a uniform
@@ -1931,8 +1931,8 @@ class DPTrainer:
                     )
 
             # DDP collectives between clipping and noise.
-            # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
-            #    after this every rank holds the cluster-wide gradient sum.
+            # 1. ``sum_gradients`` — return the AllReduce SUM of the clipped
+            #    per-example sum on every rank.
             # 2. ``sync(clip_state, aux)`` — under fixed clipping ``clip_state``
             #    sync asserts ``clipping_norm`` matches across ranks; under
             #    adaptive clipping it aggregates the clipped-count and
@@ -1944,10 +1944,10 @@ class DPTrainer:
             # ⇒ identical noise) and the optimizer update is a pure function of
             # an identical input on every rank, so parameters stay in lockstep.
             if self._ddp.is_distributed:
-                from opaque.distributed import sum_gradients_
+                from opaque.distributed import sum_gradients
                 from opaque.distributed import sync as _opaque_sync
 
-                sum_gradients_(grads)
+                grads = sum_gradients(grads)
                 ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
             sp.mark("clip")
 
@@ -2127,7 +2127,7 @@ class DPTrainer:
 
         Args:
             fmodel: Functional model from
-                :func:`opaque.functional.make_functional` (called as
+                :func:`opaque.torch.functional.make_functional` (called as
                 ``fmodel(params, **inputs)``).
             params: All model parameters merged
                 (``frozen | trainable``).  Under vmap, ``trainable`` is
@@ -2671,13 +2671,9 @@ class DPTrainer:
         if self._ddp.is_distributed:
             from opaque.api.engine.distributed._state import reduce_scalar
 
-            total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
-            loss_samples = int(
-                reduce_scalar(loss_samples, op="sum", device=self._device)
-            )
-            total_samples = int(
-                reduce_scalar(total_samples, op="sum", device=self._device)
-            )
+            total_loss = reduce_scalar(float(total_loss), op="sum")
+            loss_samples = int(reduce_scalar(loss_samples, op="sum"))
+            total_samples = int(reduce_scalar(total_samples, op="sum"))
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
@@ -3304,7 +3300,7 @@ class DPTrainer:
 
         Args:
             fmodel: Functional model from
-                :func:`opaque.functional.make_functional`.
+                :func:`opaque.torch.functional.make_functional`.
             frozen_params: Non-trainable parameters merged with
                 ``trainable_params`` at every forward.
             batch_keys: Ordered tuple of tensor keys the collator emits
@@ -3385,7 +3381,7 @@ class DPTrainer:
             frozen_params = ctx.frozen_params
             batch_keys = ctx.batch_keys
         else:
-            from opaque.functional import make_functional
+            from opaque.torch.functional import make_functional
 
             fmodel, _trainable, frozen_params = make_functional(
                 self._model, partition_trainable=True

@@ -34,7 +34,7 @@ from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import local_shard, sum_gradients
 from opaque.dpftrl.noise import identity_strategy, mf_gaussian_noise
 from opaque.dpftrl.sampling import CyclicPoissonSampler
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.random import fold_in, key
 
 pytestmark = [pytest.mark.slow, pytest.mark.cuda]

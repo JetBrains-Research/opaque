@@ -120,7 +120,7 @@ from transformers import (
 )
 
 from opaque.patches import apply_model_patches, apply_runtime_patches
-from opaque.device import sdpa_autocast_under_vmap_broken
+from opaque.torch.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -131,7 +131,7 @@ import opaque.auditing as auditing
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import Accountant, calibration as cal
 from opaque.distributed import local_shard, sync
-from opaque.distributed.gradients import sum_gradients_
+from opaque.distributed.gradients import sum_gradients
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.types import (
     PerGroup,
@@ -167,7 +167,7 @@ from opaque.dpftrl.sampling import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 try:
     import wandb
@@ -1138,7 +1138,7 @@ def main():
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
     # Sharded DDP: trim to a multiple of ``world_size`` so every shard has
-    # equal length (keeps ``sync()`` / ``sum_gradients_()`` in lockstep).
+    # equal length (keeps ``sync()`` / ``sum_gradients()`` in lockstep).
     if is_ddp:
         trimmed_size = (len(train_dataset) // world_size) * world_size
         if trimmed_size < len(train_dataset):
@@ -2068,11 +2068,7 @@ def main():
                 # otherwise — the noise function dispatches polymorphically.
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    if isinstance(grads, SecondMomentClippingOutput):
-                        sum_gradients_(grads.grads)
-                        sum_gradients_(grads.squared_grads)
-                    else:
-                        sum_gradients_(grads)
+                    grads = sum_gradients(grads)
                 sp.mark("clip")
 
                 noisy_grads, noise_state = noise_fn(grads, noise_state)

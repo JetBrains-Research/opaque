@@ -29,7 +29,7 @@ class TestStepPerf:
         perf = StepPerf()
         assert perf.step_time_sec == 0.0
         assert perf.samples_per_second == 0.0
-        assert perf.memory_peak_gb == 0.0
+        assert perf.memory_peak_gb is None
         assert perf.batch_size == 0
         assert perf.marks == {}
 
@@ -116,8 +116,8 @@ class TestStepPerfContextManager:
         with step_perf("cpu", track_memory=False) as sp:
             pass
         result = sp.perf
-        assert result.memory_peak_gb == 0.0
-        assert result.memory_allocated_gb == 0.0
+        assert result.memory_peak_gb is None
+        assert result.memory_allocated_gb is None
 
     def test_string_device(self):
         with step_perf("cpu", batch_size=16) as sp:
@@ -151,7 +151,7 @@ class TestPerfState:
         assert state.num_steps == 0
         assert state.total_time == 0.0
         assert state.total_samples == 0
-        assert state.max_peak_memory_gb == 0.0
+        assert state.max_peak_memory_gb is None
         assert state.last_step is None
 
     def test_add_single_step(self):
@@ -259,7 +259,7 @@ class TestPerfStage:
         assert stage.num_steps == 0
         assert stage.total_time == 0.0
         assert stage.total_samples == 0
-        assert stage.max_peak_memory_gb == 0.0
+        assert stage.max_peak_memory_gb is None
         assert stage.last is None
         assert stage.samples_per_second == 0.0
         assert stage.steps_per_second == 0.0
@@ -342,7 +342,7 @@ class TestPerfTracker:
     def test_factory_function(self):
         tracker = perf_tracker("cpu")
         assert isinstance(tracker, PerfTracker)
-        assert tracker.device == torch.device("cpu")
+        assert tracker.device == "cpu"
 
     def test_getattr_train(self):
         tracker = perf_tracker("cpu")

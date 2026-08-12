@@ -9,7 +9,8 @@
 ## Requirements
 
 - Python 3.11 or 3.12
-- PyTorch 2.9 or later for the default Torch bundle
+- PyTorch 2.9 or later for the default Torch bundle; install JAX or MLX when
+  selecting those provider wheels
 
 ## From JetBrains Packages
 
@@ -54,6 +55,8 @@ selection.
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
 pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
 pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
+pip install "opaque[jax]"           # + opaque-jax (JAX provider)
+pip install "opaque[mlx]"           # + opaque-mlx (MLX provider)
 pip install "opaque[all]"           # everything above
 ```
 

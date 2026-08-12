@@ -12,10 +12,6 @@ from opaque.api.engine.backend import Backend, ensure_backend, use_backend
 from opaque.api.engine.clipping._clipped_grad import clipped_grad
 from opaque.api.engine.primitive import CORE_PRIMITIVES, UnsupportedPrimitiveError
 from opaque.api.torch.backend._runtime import profiling_trace_scope
-from opaque.device import device_capabilities
-from opaque.distributed import is_distributed, local_shard
-from opaque.functional import make_functional
-from opaque.profiling import get_memory_stats
 
 
 class _CoreOnlyBackend:
@@ -35,14 +31,13 @@ class _CoreOnlyBackend:
 @pytest.mark.parametrize(
     ("call", "primitive_name"),
     [
-        (lambda: is_distributed(), "opaque.runtime.distributed.is_initialized"),
-        (lambda: local_shard([]), "opaque.runtime.distributed.dataset_subset"),
-        (lambda: device_capabilities("cpu"), "opaque.runtime.device.capabilities"),
-        (lambda: get_memory_stats("cpu"), "opaque.runtime.profiling.memory_stats"),
+        (lambda: runtime.distributed_rank(), "opaque.runtime.distributed.rank"),
         (
-            lambda: make_functional(object()),
-            "opaque.runtime.functional.make_functional",
+            lambda: runtime.distributed_all_gather_object(None),
+            "opaque.runtime.distributed.all_gather_object",
         ),
+        (lambda: runtime.synchronize(), "opaque.runtime.observability.synchronize"),
+        (lambda: runtime.memory_stats(), "opaque.runtime.observability.memory_stats"),
     ],
 )
 def test_optional_runtime_capabilities_fail_at_the_public_call_site(
@@ -62,10 +57,26 @@ def test_trace_scope_fails_when_requested_by_unsupported_backend() -> None:
     backend = _CoreOnlyBackend()
 
     with use_backend(backend), pytest.raises(UnsupportedPrimitiveError) as error:
-        runtime.profiling_trace_scope("opaque::clipped_grad")
+        runtime.trace_scope("opaque::clipped_grad")
 
-    assert error.value.primitive_name == "opaque.runtime.profiling.trace_scope"
+    assert error.value.primitive_name == "opaque.runtime.observability.trace_scope"
     assert error.value.backend_name == backend.name
+
+
+def test_torch_supports_both_named_runtime_profiles() -> None:
+    ensure_backend(torch.empty(0))
+
+    assert runtime.supports_profile(runtime.RuntimeProfile.DISTRIBUTED)
+    assert runtime.supports_profile(runtime.RuntimeProfile.OBSERVABILITY)
+
+
+def test_torch_singleton_reduction_is_functional() -> None:
+    value = torch.tensor([1.0, 2.0])
+
+    reduced = runtime.distributed_all_reduce(value, runtime.ReduceOp.SUM)
+
+    assert torch.equal(reduced, value)
+    assert reduced is not value
 
 
 def test_torch_trace_scope_uses_record_function(monkeypatch) -> None:
@@ -78,7 +89,7 @@ def test_torch_trace_scope_uses_record_function(monkeypatch) -> None:
 
     monkeypatch.setattr(torch.autograd.profiler, "record_function", record_function)
 
-    assert runtime.profiling_trace_scope.supports("torch")
+    assert runtime.trace_scope.supports("torch")
     assert profiling_trace_scope("opaque::clipped_grad") is marker
     assert labels == ["opaque::clipped_grad"]
 
@@ -95,7 +106,7 @@ def test_clipped_grad_routes_through_trace_scope(monkeypatch, return_aux) -> Non
         events.append(("exit", label))
 
     monkeypatch.setattr(
-        runtime.profiling_trace_scope,
+        runtime.trace_scope,
         "resolve",
         lambda backend=None: trace_scope,
     )

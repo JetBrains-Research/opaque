@@ -4,12 +4,9 @@ Imported on engine load via ``opaque.api.engine.__init__`` for its
 import-time side effect: registers ``numpy.ndarray`` and ``optree.PyTreeSpec``
 with the ``opaque.api.base.serialization`` registry. The base wheel
 itself ships only the generic Python container walker (dataclass,
-NamedTuple, tuple, list, dict, primitives) and stays torch-free; this
-module is where the torch substrate plugs torch leaves into the
-unified serialization surface.
-
-Torch handlers live with the Torch provider and are registered explicitly by
-the engine bootstrap for compatibility.
+NamedTuple, tuple, list, dict, primitives) and stays framework-free. Native
+array handlers live with their Torch, JAX, or MLX provider and register when
+that provider loads.
 """
 
 from __future__ import annotations

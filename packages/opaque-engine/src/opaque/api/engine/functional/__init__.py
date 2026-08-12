@@ -4,173 +4,21 @@ import functools
 from collections.abc import Callable
 from typing import Any
 
-from opaque.api.engine import ops, runtime
-
-
-def make_functional(
-    mod: Any,
-    disable_autograd_tracking: bool = False,
-    partition_trainable: bool = False,
-) -> tuple[Callable, tuple[Any, ...]] | tuple[Callable, dict, dict]:
-    """Convert a PyTorch module to functional form.
-
-    This helper mimics the behavior of the deprecated `functorch.make_functional()`.
-    It creates a stateless version of the module that can be called with external
-    parameters, enabling use with `torch.func` transformations like `vmap` and `grad`.
-
-    The returned functional model can be used with per-example gradient computation,
-    which is essential for differential privacy.
-
-    Args:
-        mod: PyTorch module to convert to functional form.
-        disable_autograd_tracking: If True, detach parameters from autograd graph.
-            Useful when you only need to compute gradients via torch.func.grad,
-            not through standard .backward(). Default: False.
-        partition_trainable: If True, return (fmodel, trainable_params, frozen_params)
-            as dicts instead of (fmodel, params) as tuple. Partitioning is based on
-            the `requires_grad` attribute of the original module's parameters.
-            This is ideal for LoRA-style fine-tuning. Default: False.
-
-    Returns:
-        If partition_trainable=False:
-            A tuple containing:
-            - fmodel: Functional version of the module. Takes parameters as first argument,
-              followed by the module's normal forward arguments.
-            - params: Tuple of the module's parameter tensors.
-
-        If partition_trainable=True:
-            A tuple containing:
-            - fmodel: Functional version of the module. Takes parameters dict as first argument.
-            - trainable_params: Dict of parameters where requires_grad=True.
-            - frozen_params: Dict of parameters where requires_grad=False.
-
-    Example:
-        >>> import torch
-        >>> import torch.nn as nn
-        >>> from opaque.api.engine.functional_utils import make_functional
-        >>>
-        >>> # Create a simple model
-        >>> model = nn.Linear(10, 1)
-        >>>
-        >>> # Convert to functional form
-        >>> fmodel, params = make_functional(model)
-        >>>
-        >>> # Use with new parameters
-        >>> x = torch.randn(5, 10)
-        >>> output = fmodel(params, x)
-        >>> print(output.shape)
-        torch.Size([5, 1])
-        >>>
-        >>> # Works with torch.func transformations
-        >>> from torch.func import grad, vmap
-        >>>
-        >>> def loss_fn(params, x, y):
-        ...     pred = fmodel(params, x)
-        ...     return ((pred - y) ** 2).mean()
-        >>>
-        >>> # Compute gradient w.r.t. parameters
-        >>> x_batch = torch.randn(3, 10)
-        >>> y_batch = torch.randn(3, 1)
-        >>> grads = grad(loss_fn)(params, x_batch, y_batch)
-
-    Example with per-example gradients:
-        >>> # Per-example loss function
-        >>> def loss_single(params, x, y):
-        ...     pred = fmodel(params, x.unsqueeze(0))
-        ...     return ((pred - y) ** 2).mean()
-        >>>
-        >>> # Compute per-example gradients with vmap
-        >>> per_example_grads = vmap(grad(loss_single), in_dims=(None, 0, 0))(
-        ...     params, x_batch, y_batch
-        ... )
-        >>> # per_example_grads is a tuple with shape (batch_size, *param_shape) for each param
-
-    Example with LoRA partitioning:
-        >>> import torch.nn as nn
-        >>> from opaque.dpsgd.clipping import clipped_grad
-        >>> from opaque.dpsgd.noise import gaussian_noise
-        >>> from opaque.api.engine.random import key
-        >>> from opaque.api.engine.functional import make_functional, merge
-        >>>
-        >>> # Create model and freeze backbone
-        >>> model = nn.Sequential(
-        ...     nn.Linear(10, 5, bias=False),  # Pretrained backbone
-        ...     nn.Linear(5, 1, bias=False),   # Pretrained backbone
-        ... )
-        >>>
-        >>> # Freeze first layer, keep second trainable
-        >>> model[0].weight.requires_grad = False  # Frozen
-        >>> model[1].weight.requires_grad = True   # Trainable
-        >>>
-        >>> # Convert with automatic partitioning
-        >>> fmodel, trainable, frozen = make_functional(
-        ...     model, partition_trainable=True
-        ... )
-        >>>
-        >>> # Training loop
-        >>> def loss_fn(train_params, x, y):
-        ...     all_params = merge(frozen, train_params)
-        ...     pred = fmodel(all_params, x)
-        ...     return ((pred - y) ** 2).mean()
-        >>>
-        >>> grad_fn, clip_state = clipped_grad(
-        ...     loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
-        ... )
-        >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
-        >>> optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)
-        >>>
-        >>> for x_batch, y_batch in dataloader:
-        ...     grads, clip_state = grad_fn(trainable, x_batch, y_batch, state=clip_state)
-        ...     noisy_grads, noise_state = noise_fn(grads, noise_state)
-        ...     # ... assign grads and step optimizer
-
-    Note:
-        Gradient checkpointing compatibility is handled by the
-        ``reparametrize_recompute`` patch in
-        ``opaque.api.patches.torch.checkpoint``, which re-binds the
-        ``functional_call`` parameters during checkpoint recomputation in
-        backward (on a PyTorch with native support the patch is skipped and
-        torch handles this itself).  This wrapper is purely functional — it
-        delegates entirely to ``torch.func.functional_call``.
-
-    See Also:
-        - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html
-    """
-    return runtime.functional_make_functional(
-        mod,
-        disable_autograd_tracking=disable_autograd_tracking,
-        partition_trainable=partition_trainable,
-    )
+from opaque.api.engine import ops
 
 
 def _squeeze_output(output):
-    """Squeeze the leading batch dim from model output tensors.
+    """Return a pytree with leading batch dimensions removed from arrays."""
+    from opaque.api.engine.pytree import tree_map
 
-    Handles torch.Tensor, dict-like (HF ModelOutput), tuple, and namedtuple.
-    Scalars (0-dim tensors) are left untouched.
-    """
-    if ops.is_array(output):
-        return output.squeeze(0) if output.ndim > 0 else output
-
-    # Dict-like (HF ModelOutput): squeeze top-level tensor values in-place
-    if hasattr(output, "__setitem__") and hasattr(output, "items"):
-        for k, v in output.items():
-            if ops.is_array(v) and len(ops.shape(v)) > 0:
-                output[k] = v.squeeze(0)
-        return output
-
-    # Namedtuple / tuple
-    if isinstance(output, tuple):
-        squeezed = tuple(
-            v.squeeze(0) if ops.is_array(v) and len(ops.shape(v)) > 0 else v
-            for v in output
-        )
-        # Preserve namedtuple type
-        if hasattr(output, "_fields"):
-            return type(output)(*squeezed)
-        return squeezed
-
-    return output
+    return tree_map(
+        lambda value: (
+            ops.squeeze(value, axis=0)
+            if ops.is_array(value) and ops.shape(value)
+            else value
+        ),
+        output,
+    )
 
 
 def with_batch_dim(
@@ -291,7 +139,7 @@ def with_batch_dim(
                 nonlocal unsqueezed
                 if ops.is_array(x) and _needs_unsqueeze(x, _threshold):
                     unsqueezed = True
-                    return x.unsqueeze(0)
+                    return ops.expand_dims(x, 0)
                 return x
 
             if i < len(args_list):
@@ -304,7 +152,7 @@ def with_batch_dim(
             val = kwargs[name]
             if ops.is_array(val) and _needs_unsqueeze(val, threshold):
                 unsqueezed = True
-                kwargs[name] = val.unsqueeze(0)
+                kwargs[name] = ops.expand_dims(val, 0)
 
         result = fn(*args_list, **kwargs)
 
@@ -319,4 +167,4 @@ def with_batch_dim(
 
 from opaque.api.engine.functional._collate import empty_collate  # noqa: E402
 
-__all__ = ["empty_collate", "make_functional", "with_batch_dim"]
+__all__ = ["empty_collate", "with_batch_dim"]

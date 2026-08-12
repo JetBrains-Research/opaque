@@ -2,7 +2,7 @@
 
 These wrap ``torch.distributed`` but must degrade gracefully when no
 process group is initialized: rank 0, world size 1, no-op barrier, and
-``gather_for_metrics`` returning its input unchanged. Multi-rank collective behavior is exercised here with Gloo and by the CUDA
+``gather_for_metrics`` returning an equivalent native value. Multi-rank collective behavior is exercised here with Gloo and by the CUDA
 tests in ``test_collectives.py``.
 """
 
@@ -42,10 +42,10 @@ def test_wait_for_everyone_is_noop_non_distributed() -> None:
     assert wait_for_everyone() is None
 
 
-def test_gather_for_metrics_returns_input_non_distributed() -> None:
+def test_gather_for_metrics_returns_equivalent_value_non_distributed() -> None:
     x = torch.arange(6, dtype=torch.float32).reshape(3, 2)
     out = gather_for_metrics(x)
-    assert out is x
+    assert out is not x
     assert torch.equal(out, x)
 
 
@@ -56,7 +56,7 @@ def test_gather_for_metrics_scalar_non_distributed() -> None:
     # 0-dim tensor (exercised by the CUDA collective tests).
     s = torch.tensor(3.5)
     out = gather_for_metrics(s)
-    assert out is s
+    assert out is not s
     assert out.dim() == 0
 
 

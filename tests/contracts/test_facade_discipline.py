@@ -112,6 +112,8 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     # provider-specific helpers from their implementation packages.
     "opaque-torch": (
         "opaque/torch/__init__.py",
+        "opaque/torch/device/__init__.py",
+        "opaque/torch/functional/__init__.py",
         "opaque/torch/random/__init__.py",
     ),
     "opaque-jax": ("opaque/jax/__init__.py",),

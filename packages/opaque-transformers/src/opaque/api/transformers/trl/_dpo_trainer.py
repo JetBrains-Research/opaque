@@ -1272,7 +1272,7 @@ class DPOTrainer(DPTrainer):
         Returns ``(per_example_loss, None, None)`` — no predictions/labels.
         """
         del model, prediction_loss_only, ignore_keys
-        from opaque.functional import make_functional
+        from opaque.torch.functional import make_functional
 
         ctx = self._ctx
         if ctx is not None:

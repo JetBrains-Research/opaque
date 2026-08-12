@@ -23,9 +23,9 @@ def torch_backend() -> Backend:
             "with `pip install opaque-torch`."
         ) from exc
 
-    from opaque.api.torch.backend import _core, _runtime  # noqa: F401
+    from opaque.api.torch.backend import _runtime  # noqa: F401
+    from opaque.api.torch.backend._core import TorchBackend
     from opaque.api.torch.backend._serialization import register_torch_serialization
-    from opaque.api.torch.backend._torch import TorchBackend
 
     register_torch_serialization()
     return TorchBackend()

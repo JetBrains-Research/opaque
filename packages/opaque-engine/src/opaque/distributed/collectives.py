@@ -2,7 +2,6 @@
 
 from opaque.api.engine.distributed.collectives import (
     all_reduce,
-    all_reduce_,
     barrier,
     get_rank,
     get_world_size,
@@ -11,7 +10,6 @@ from opaque.api.engine.distributed.collectives import (
 
 __all__ = [
     "all_reduce",
-    "all_reduce_",
     "barrier",
     "get_rank",
     "get_world_size",

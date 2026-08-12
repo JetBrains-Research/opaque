@@ -56,9 +56,8 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
     _setup_ddp(rank, world_size, port)
     try:
-        device = torch.device(f"cuda:{rank}")
         value = float(rank + 1)
-        synced = reduce_scalar(value, op="mean", device=device)
+        synced = reduce_scalar(value, op="mean")
         expected_avg = sum(range(1, world_size + 1)) / world_size
         assert abs(synced - expected_avg) < 1e-5
     finally:
@@ -66,7 +65,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed.collectives import all_reduce, all_reduce_
+    from opaque.distributed.collectives import all_reduce
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -75,13 +74,12 @@ def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
 
         result = all_reduce(base, op="sum")
         assert torch.allclose(
-            base, torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device)
+            base,
+            torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device),
         )
         assert torch.allclose(result, torch.tensor([3.0, 6.0], device=device))
 
-        averaged = base.clone()
-        inplace_result = all_reduce_(averaged, op="mean")
-        assert inplace_result is None
+        averaged = all_reduce(base, op="mean")
         assert torch.allclose(averaged, torch.tensor([1.5, 3.0], device=device))
 
         maximum = all_reduce(base, op="max")
@@ -97,7 +95,7 @@ def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed.gradients import reduce_pytree, reduce_pytree_
+    from opaque.distributed.gradients import reduce_pytree
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -117,11 +115,6 @@ def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
         assert torch.allclose(grads["b"], local_grads["b"])
         assert torch.allclose(result["w"], torch.tensor([2.0, 4.0], device=device))
         assert torch.allclose(result["b"], torch.tensor([1.0], device=device))
-
-        inplace_result = reduce_pytree_(grads, op="sum")
-        assert inplace_result is None
-        assert torch.allclose(grads["w"], torch.tensor([2.0, 4.0], device=device))
-        assert torch.allclose(grads["b"], torch.tensor([1.0], device=device))
     finally:
         _cleanup_ddp()
 
@@ -189,8 +182,8 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
         assert synced_state.last_step.step_time_sec >= 0.0
 
         local_peak = float(synced_state.max_peak_memory_gb)
-        peak_min = reduce_scalar(local_peak, op="min", device=device)
-        peak_max = reduce_scalar(local_peak, op="max", device=device)
+        peak_min = reduce_scalar(local_peak, op="min")
+        peak_max = reduce_scalar(local_peak, op="max")
         assert abs(peak_max - peak_min) < 1e-6
     finally:
         _cleanup_ddp()
@@ -403,25 +396,17 @@ def _worker_scalar_exactness_gloo(rank: int, world_size: int, port: int) -> None
         assert reduce_scalar(integer_value, op="max") == 2**24 + 1
         assert reduce_scalar(integer_value, op="sum") == 2 * 2**24 + 1
 
-        float_value = 1.0 + rank * 2**-30
-        assert (
-            reduce_scalar(
-                float_value,
-                op="max",
-                compute_dtype=torch.float64,
-            )
-            == 1.0 + 2**-30
-        )
+        float_value = float(rank)
+        assert reduce_scalar(float_value, op="max") == 1.0
 
         with pytest.raises(RuntimeError, match="integer"):
             assert_scalar_equal(integer_value, name="integer")
-        with pytest.raises(RuntimeError, match="float64"):
+        with pytest.raises(RuntimeError, match="float"):
             assert_scalar_equal(
                 float_value,
-                name="float64",
+                name="float",
                 atol=0.0,
                 rtol=0.0,
-                compute_dtype=torch.float64,
             )
         with pytest.raises(RuntimeError, match=r"_ScalarExactnessState\.value"):
             sync_object(

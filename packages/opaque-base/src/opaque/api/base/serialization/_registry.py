@@ -2,16 +2,17 @@
 
 Each opaque wheel registers handlers for the concrete types it owns:
 
-- ``opaque-engine`` registers ``torch.Tensor``, ``numpy.ndarray``.
+- ``opaque-engine`` registers ``numpy.ndarray`` and inert tree structures.
+- ``opaque-torch``, ``opaque-jax``, and ``opaque-mlx`` register native arrays
+  when their provider is activated.
 - ``opaque-accounting`` registers ``Accountant`` and every
   ``DpProcess`` subclass via ``__init_subclass__``.
 - ``opaque-dpsgd`` / ``opaque-dpftrl`` register stack-specific state
   classes (e.g. clipping / noise state objects).
 
-The registry holds an exact-type mapping; subclass dispatch is handled
-by :func:`resolve_serializer`, which walks ``__mro__`` so a subclass
-(``nn.Parameter`` against a registered ``torch.Tensor``) reaches its
-base class handler instead of falling through to the generic walker.
+The registry holds an exact-type mapping; subclass dispatch is handled by
+:func:`resolve_serializer`, which walks ``__mro__`` so a subclass reaches its
+registered base-class handler instead of falling through to the generic walker.
 """
 
 from __future__ import annotations

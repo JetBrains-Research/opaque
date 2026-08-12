@@ -12,7 +12,7 @@ __all__ = ["mlx_backend"]
 
 
 def mlx_backend() -> Backend:
-    """Construct the MLX backend.
+    """Construct the MLX backend and register its integrations.
 
     Raises:
         ImportError: If MLX is unavailable in the current environment.
@@ -28,6 +28,9 @@ def mlx_backend() -> Backend:
             "'opaque[mlx]'`."
         ) from exc
 
-    from opaque.api.mlx.backend._mlx import MlxBackend
+    from opaque.api.mlx.backend import _runtime  # noqa: F401
+    from opaque.api.mlx.backend._core import MlxBackend
+    from opaque.api.mlx.backend._serialization import register_mlx_serialization
 
+    register_mlx_serialization()
     return MlxBackend()

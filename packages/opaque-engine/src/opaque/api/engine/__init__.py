@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-import opaque.api.engine.serialization  # noqa: F401  (registers tensor/ndarray handlers)
+import opaque.api.engine.serialization  # noqa: F401  (registers neutral structural handlers)

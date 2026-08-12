@@ -37,7 +37,7 @@ class TestFusedLoRAParallelResidual:
         the per-sample LoRA weight gradients for attention projections are
         computed against corrupted data (dX values instead of activations).
         """
-        from opaque.functional import make_functional
+        from opaque.torch.functional import make_functional
 
         # Disable TF32 so fp32 matmuls are deterministic across bmm/mm paths.
         tf32_prev = torch.backends.cuda.matmul.allow_tf32
@@ -118,7 +118,7 @@ class TestFusedLoRAParallelResidual:
         we specifically target the bug where MLP backward overwrites the shared
         X buffer before QKV backward reads it for _per_sample_lora_grads().
         """
-        from opaque.functional import make_functional
+        from opaque.torch.functional import make_functional
 
         tf32_prev = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False

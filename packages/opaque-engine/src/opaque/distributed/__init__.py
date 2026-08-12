@@ -22,11 +22,10 @@ from opaque.api.engine.distributed import (
     num_processes,
     process_index,
     sum_gradients,
-    sum_gradients_,
     sync,
     wait_for_everyone,
 )
-from opaque.api.engine.distributed.gradients import reduce_pytree, reduce_pytree_
+from opaque.api.engine.distributed.gradients import reduce_pytree
 
 __all__ = [
     "all_reduce",
@@ -40,9 +39,7 @@ __all__ = [
     "num_processes",
     "process_index",
     "reduce_pytree",
-    "reduce_pytree_",
     "sum_gradients",
-    "sum_gradients_",
     "sync",
     "wait_for_everyone",
 ]

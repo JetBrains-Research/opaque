@@ -82,7 +82,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from opaque.api.engine.device import device_capabilities
+from opaque.torch.device import device_capabilities
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode

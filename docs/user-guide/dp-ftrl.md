@@ -273,7 +273,7 @@ the v signal there.
 ```python
 import torch
 from opaque.serialization import state_dict
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 fmodel, params = make_functional(model)
 for step, batch in enumerate(sampler):

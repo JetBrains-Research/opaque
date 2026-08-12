@@ -78,8 +78,8 @@ def _resolve_compute_dtype(
 
     If compute_dtype is explicitly requested, use it. Otherwise, promote
     low-precision floating reductions (fp16/bf16) to float32 for numerical
-    stability.  Returns ``None`` to mean "no promotion needed" — the caller
-    can pass that directly to ``torch.sum(dtype=None)`` (default behavior).
+    stability. Returns ``None`` to mean "no promotion needed" so the provider
+    can use its default reduction behavior.
     """
     if compute_dtype is not None:
         return compute_dtype
@@ -468,14 +468,10 @@ def clipped_fun(
     summed values without metadata.
 
     Example Usage:
-        >>> from opaque.api.engine.clipping._clipped_fun import clipped_fun
-        >>> data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-        >>> clipped_mean, clip_state = clipped_fun(torch.mean, clipping_norm=1.0)
-        >>> result, clip_state = clipped_mean(data, state=clip_state)
-        >>> result.pytree
-        tensor(5.)
-        >>> result.max_norm
-        1.0
+        After selecting a provider, pass a callable over native arrays to
+        ``clipped_fun`` and invoke the returned function with native batched
+        values and threaded state. Its ``ClippedPytree.pytree`` holds the
+        aggregate, while ``ClippedPytree.max_norm`` holds the normalized bound.
 
     Formal Guarantees:
         For the first function output:

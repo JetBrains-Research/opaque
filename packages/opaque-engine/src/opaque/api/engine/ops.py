@@ -221,6 +221,18 @@ def slice_array(value: object, slices: Any) -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def expand_dims(value: object, axis: int) -> object:
+    """Insert a size-one dimension at ``axis``."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def squeeze(value: object, axis: int | None = None) -> object:
+    """Remove size-one dimensions, optionally only at ``axis``."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def promote_dtype(first: object, second: object) -> object:
     """Return the dtype produced by promoting two dtypes."""
     raise NotImplementedError
@@ -237,6 +249,7 @@ __all__ = [
     "detach",
     "divide",
     "dtype",
+    "expand_dims",
     "float32",
     "greater",
     "is_array",
@@ -257,6 +270,7 @@ __all__ = [
     "slice_array",
     "sqrt",
     "square",
+    "squeeze",
     "subtract",
     "sum",
     "transfer",

@@ -21,6 +21,12 @@ if TYPE_CHECKING:
 _TORCH = BackendProvider(KnownBackend.TORCH)
 
 
+class TorchBackend:
+    """Stable identity for the Torch provider."""
+
+    name = KnownBackend.TORCH.value
+
+
 @_TORCH.implements(ops.is_array)
 def is_array(value: Any) -> bool:
     return isinstance(value, torch.Tensor)
@@ -204,6 +210,16 @@ def slice_array(value: Any, slices: Any) -> torch.Tensor:
     return value[slices]
 
 
+@_TORCH.implements(ops.expand_dims)
+def expand_dims(value: Any, axis: int) -> torch.Tensor:
+    return torch.unsqueeze(value, dim=axis)
+
+
+@_TORCH.implements(ops.squeeze)
+def squeeze(value: Any, axis: int | None = None) -> torch.Tensor:
+    return torch.squeeze(value) if axis is None else torch.squeeze(value, dim=axis)
+
+
 @_TORCH.implements(ops.promote_dtype)
 def promote_dtype(first: Any, second: Any) -> torch.dtype:
     return torch.promote_types(first, second)
@@ -270,4 +286,4 @@ def normal(
     )
 
 
-__all__: list[str] = []
+__all__ = ["TorchBackend"]

@@ -275,18 +275,11 @@ def auto_clipped_grad(
         gradient release.
 
     Example:
-        >>> import torch
-        >>> from opaque.api.engine.clipping import auto_clipped_grad
-        >>> def loss_fn(params, x, y):
-        ...     return ((x @ params - y) ** 2).mean()
-        >>> grad_fn, state = auto_clipped_grad(
-        ...     loss_fn, argnums=0, batch_argnums=(1, 2),
-        ...     R=1.0, normalize_by=32,
-        ... )
-        >>> params = torch.randn(10)
-        >>> batch_x = torch.randn(32, 10)
-        >>> batch_y = torch.randn(32)
-        >>> grads, state = grad_fn(params, batch_x, batch_y, state=state)
+        After selecting a provider, define ``loss_fn`` with its native-array
+        operations and construct the transform as
+        ``auto_clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
+        R=1.0, normalize_by=32)``. Call the returned function with native
+        ``params``, ``batch_x``, and ``batch_y`` values plus the threaded state.
 
     The returned ``ClippedPytree`` carries ``max_norm = R / normalize_by``
     (constant across steps), so it composes with ``mf_gaussian_noise`` (DP-FTRL)

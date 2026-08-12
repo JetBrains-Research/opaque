@@ -748,7 +748,7 @@ Single-node multi-GPU DDP is wired end-to-end. Validated on 4× H100 via
 scenarios, all passing): runtime foundation, per-rank shard partition,
 global-mode independent streams, eval gather, RNG-per-rank checkpointing.
 Uses Opaque's own distributed primitives (`opaque.distributed.sync`,
-`sum_gradients_`, `local_shard`, `gather_pytree`, `reduce_scalar`) and the
+`sum_gradients`, `local_shard`, `gather_pytree`, `reduce_scalar`) and the
 `opaque.accounting.parallel_poisson` accounting mechanism. **Accelerate, FSDP,
 DeepSpeed, SageMaker MP, and TPU/XLA stay rejected** — see
 `DP_INCOMPATIBLE_PARAMETERS` ([_config.py:65–130](../../src/opaque/transformers/trainer/_config.py)).
@@ -780,7 +780,7 @@ User-facing doc: [docs/user-guide/distributed-trainer.md](../../../../docs/user-
    `acc.parallel_poisson(...)`. Phase 6 host-side parallelism (worker
    prefetch, collation) is unchanged — workers still do not own the sampler.
 5. **Functional optimizer stays synchronised by construction.** After
-   `sum_gradients_`, every rank holds the same clipped-grad sum; identical
+   `sum_gradients`, every rank holds the same clipped-grad sum; identical
    noise via shared key + identical pure-function torchopt update keeps
    parameter trees bit-identical (see
    [docs/user-guide/distributed.md:237–250](../../../../docs/user-guide/distributed.md)).
@@ -806,8 +806,8 @@ which self-registers `FixedClipState`, `ClippedFunAux`, `ClippedGradAux` via
 
 **Why we still need handlers when state stays in sync by construction.**
 Functional optimizers and schedules are *pure*: given identical input gradient
-+ identical state, every rank produces identical state. After
-`sum_gradients_(grads)` everyone shares the gradient, and `init_fn(params)`
++ identical state, every rank produces identical state. After assigning
+`grads = sum_gradients(grads)`, everyone shares the gradient, and `init_fn(params)`
 gives every rank the same initial state (deterministic from the same params).
 So in steady state, optimizer state cannot drift. The reason to register sync
 handlers anyway:
@@ -1002,12 +1002,12 @@ noise). Specifically, between [line 1757 and line 1759](../../src/opaque/transfo
 
 ```python
 if self._ddp.is_distributed:
-    from opaque.distributed import sum_gradients_, sync, gather_pytree
+    from opaque.distributed import sum_gradients, sync, gather_pytree
 
     # (a) sync clip state and per-example aux for adaptive clip — local-only otherwise
     ctx.clip_state, aux = sync(ctx.clip_state, aux)
     # (b) sum clipped grads across ranks
-    sum_gradients_(grads)
+    grads = sum_gradients(grads)
     # (c) gather aux fields callbacks need (grad_norms etc.); only cheap fields
     aux = _gather_aux_for_metrics(aux)  # helper in _distributed.py
     # (d) fp16 finite-check must run on the post-allreduce gradient
@@ -1412,7 +1412,7 @@ available.
 | **10 (prereq): opaque-core sync registrations** | optimizer/schedule state types missing from `register_sync_type` registry | Cross-package surface | new `opaque/optimizers/distributed.py` (+ extend `_ensure_builtin_sync_types_loaded`), tests in `opaque-core/tests/distributed/` — **implemented** |
 | **10a: DDP foundation** | local_rank, ddp_backend, ddp_timeout, log_on_each_node, save_on_each_node, log_level_replica, process gates | Runtime surface | new `_distributed.py`, `__init__.py` (process helpers + save/log/hub gates + per-rank RNG paths), `_config.py` (NCCL-only validation, `LOCAL_RANK`-aware device pick) — **implemented** |
 | **10b: Distributed sampling/accounting** | `local_shard` of the dataset, shared per-epoch sampler key on every rank, regular `acc.poisson` at the global rate, per-rank RNG snapshots | Mechanism surface | `__init__.py` (sampler construction, accountant), `_dataloader.py`, `_config.py` — **implemented** (the `ddp_shard='global'` / `parallel_poisson` opt-in originally landed here was later removed) |
-| **10c: Distributed step/eval** | step-level `sum_gradients_(grads)` + `sync(clip_state, aux)` + post-AllReduce fp16 finite-check, eval-shard + `gather_pytree` inside `finalize`, cluster-wide `total_loss` / `total_samples` reduction, promote `eval_use_gather_object` + `average_tokens_across_devices` out of rejection table | 6 | `__init__.py` (training_step, evaluation_loop, get_eval_dataloader, token counter), `_eval.py` (gather inside finalize), `_config.py` (table edits) — **implemented** |
+| **10c: Distributed step/eval** | step-level `grads = sum_gradients(grads)` + `sync(clip_state, aux)` + post-AllReduce fp16 finite-check, eval-shard + `gather_pytree` inside `finalize`, cluster-wide `total_loss` / `total_samples` reduction, promote `eval_use_gather_object` + `average_tokens_across_devices` out of rejection table | 6 | `__init__.py` (training_step, evaluation_loop, get_eval_dataloader, token counter), `_eval.py` (gather inside finalize), `_config.py` (table edits) — **implemented** |
 | **10d: Tests, examples, docs** | `tests/distributed/` (5 scenarios via subprocess runner), `docs/user-guide/distributed-trainer.md` | Coverage surface | new test runner + 5 pytest scenarios + new user-guide page — **implemented** (CI smoke-test on 4× H100) |
 | **11a: Compile/kernels** | torch_compile, torch_compile_backend, torch_compile_mode, use_liger_kernel, liger_kernel_config, jit_mode_eval | 6 | `__init__.py`, optional `_compile.py` — **planned** |
 | **11b: Mixed precision** | fp16, fp16_full_eval, bf16/bf16_full_eval validation, tf32, half_precision_backend, fp16_opt_level | Precision surface | `__init__.py`, optional `_precision.py` — **planned** |

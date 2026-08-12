@@ -96,8 +96,8 @@ def _collate(batch: list[dict]) -> dict[str, torch.Tensor]:
     # Poisson rounds occasionally produce empty batches at low sample
     # rates / per-rank shards.  Return zero-row tensors so downstream
     # code (clipped_grad, DDP collectives) takes its empty-batch path:
-    # ``clipped_grad`` short-circuits internally, ``sum_gradients_``
-    # all-reduces zero gradients, and ``training_step`` reports
+    # ``clipped_grad`` short-circuits internally, ``sum_gradients``
+    # returns all-reduced zero gradients, and ``training_step`` reports
     # ``batch_size=0`` based on the synced ``aux.batch_size``.
     if len(batch) == 0:
         return {

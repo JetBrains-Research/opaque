@@ -58,9 +58,8 @@ def batch_size_from_args(args: tuple, batch_argnums: tuple[int, ...]) -> int:
 def zero_grads_like(args: tuple, argnums: tuple[int, ...]):
     """Create zero gradients matching the parameter shapes at *argnums*.
 
-    Returns a single pytree when ``len(argnums) == 1`` (matching the
-    convention of ``torch.func.grad`` with a scalar argnum), or a tuple
-    of pytrees otherwise.
+    Returns a single pytree when ``len(argnums) == 1``, or a tuple of pytrees
+    otherwise.
     """
     zeros = tuple(
         tree_map(

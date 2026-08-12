@@ -17,7 +17,7 @@ import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.random import key
 
 # Synthetic data

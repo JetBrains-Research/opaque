@@ -32,7 +32,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `opaque.torch.random.generator_from_key()` — PyTorch generator bridge
 
 - **[Utilities](utilities.md)** — Functional and PyTree utilities
-  - `make_functional()` — Convert `nn.Module` to functional form
+  - `opaque.torch.functional.make_functional()` — Convert a PyTorch
+    `nn.Module` to functional form
   - `tree_map()`, `tree_map_with_path()`, `partition()`, `merge()`, `global_norm()`, `tree_leaves()`
 
 ### DP-SGD components
@@ -81,9 +82,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `attack_auc()`, `attack_beta_at()` — Attack-side empirical metrics
 
 - **[Distributed](distributed.md)** — Multi-GPU training with DDP
-  - `sum_gradients()` / `sum_gradients_()` — Copy-returning and in-place DP gradient summation
+  - `sum_gradients()` — Return-based DP gradient summation
   - `all_reduce()` — Generic tensor all-reduce (sum, mean, max, min)
-  - `reduce_pytree()` / `reduce_pytree_()` — Copy-returning and in-place generic PyTree reduction
+  - `reduce_pytree()` — Return-based generic PyTree reduction
   - `sync()` — Auto-dispatch sync for any state/aux type
   - `local_shard()` — Partition a dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` — Distributed utilities
@@ -111,16 +112,20 @@ from opaque.random import key
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1, param_max=5.0,
+    param_min=0.1,
+    param_max=5.0,
 )
 
 # Set up DP components
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, batch_argnums=1,
+    loss_fn,
+    clipping_norm=1.0,
+    batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param,
+    key=key(42),
 )
 
 # Training loop
@@ -243,9 +248,9 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function               | Purpose                     | User Guide                                 |
 |------------------------|-----------------------------|--------------------------------------------|
-| `sum_gradients()` / `sum_gradients_()` | DP gradient summation (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `sum_gradients()` | Return-based DP gradient summation | [Guide](../user-guide/distributed.md) |
 | `all_reduce()`         | Generic tensor all-reduce (sum, mean, max, min) | [Guide](../user-guide/distributed.md) |
-| `reduce_pytree()` / `reduce_pytree_()` | Generic PyTree reduction (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `reduce_pytree()` | Return-based generic PyTree reduction | [Guide](../user-guide/distributed.md) |
 | `sync()`               | Auto-dispatch sync for any state/aux type | [Guide](../user-guide/distributed.md) |
 | `local_shard()`        | Partition dataset for DDP training | [Guide](../user-guide/distributed.md) |
 | `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |

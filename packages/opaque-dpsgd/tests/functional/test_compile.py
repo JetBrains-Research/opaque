@@ -26,8 +26,8 @@ import torchopt
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.random import key
+from opaque.torch.functional import make_functional
 
 
 def _cpu_inductor_available() -> bool:

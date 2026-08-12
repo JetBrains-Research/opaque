@@ -89,7 +89,7 @@ clipper sums). Pick `nll_loss` (standard cross-entropy) or `dft_loss`
 each target token):
 
 ```python
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.alignment.sft.loss import nll_loss  # or dft_loss
 
 fmodel, trainable, frozen = make_functional(

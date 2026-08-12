@@ -15,7 +15,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 # NOTE: GPU auto-skip is handled by the top-level conftest.py pytest_runtest_setup hook.
 

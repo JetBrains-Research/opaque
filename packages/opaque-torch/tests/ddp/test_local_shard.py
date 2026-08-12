@@ -29,12 +29,11 @@ class TestLocalShard:
         sizes = [len(local_shard(dataset, rank=r, world_size=4)) for r in range(4)]
         assert sizes == [25, 25, 25, 28]
 
-    def test_returns_subset(self) -> None:
-        from torch.utils.data import Subset
-
+    def test_returns_engine_owned_index_view(self) -> None:
         dataset = TensorDataset(torch.randn(100, 10))
         shard = local_shard(dataset, rank=0, world_size=4)
-        assert isinstance(shard, Subset)
+        assert type(shard).__module__ == "opaque.api.engine.distributed._shard"
+        assert torch.equal(shard[0][0], dataset[0][0])
 
     def test_invalid_rank_raises(self) -> None:
         dataset = TensorDataset(torch.randn(100, 10))

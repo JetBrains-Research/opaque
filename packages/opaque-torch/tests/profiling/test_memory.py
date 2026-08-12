@@ -22,16 +22,16 @@ class TestMemoryStats:
     """Tests for MemoryStats dataclass."""
 
     def test_default_values(self):
-        """Should have zero default values."""
+        """Should preserve unavailable values."""
         stats = MemoryStats()
-        assert stats.allocated_gb == 0.0
-        assert stats.reserved_gb == 0.0
-        assert stats.peak_gb == 0.0
+        assert stats.allocated_gb is None
+        assert stats.reserved_gb is None
+        assert stats.peak_gb is None
 
     def test_utilization_with_zero_total(self):
-        """Should return 0 utilization when total is 0."""
+        """Should preserve unknown utilization when total is 0."""
         stats = MemoryStats(peak_gb=1.0, total_gb=0.0)
-        assert stats.utilization == 0.0
+        assert stats.utilization is None
 
     def test_utilization_calculation(self):
         """Should calculate utilization correctly."""
@@ -61,11 +61,11 @@ class TestGetMemoryStats:
         stats = get_memory_stats(device)
         assert isinstance(stats, MemoryStats)
 
-    def test_cpu_returns_zeros(self):
-        """CPU should return all zeros."""
+    def test_cpu_returns_unknown_values(self):
+        """CPU should report unavailable telemetry explicitly."""
         stats = get_memory_stats("cpu")
-        assert stats.allocated_gb == 0.0
-        assert stats.peak_gb == 0.0
+        assert stats.allocated_gb is None
+        assert stats.peak_gb is None
         assert stats.exact_peak is False
         assert stats.known_total is False
 

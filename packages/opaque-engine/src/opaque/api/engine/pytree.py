@@ -105,19 +105,18 @@ def tree_structure(tree: Any) -> Any:
 
 @primitive(tier=PrimitiveTier.CORE)
 def tree_leaves(tree: Any) -> list[Any]:
-    """Extract all leaf tensors from a PyTree.
+    """Extract all native-array leaves from a PyTree.
 
     Args:
-        tree: Nested structure (dict/list/tuple/…) containing tensors as leaves.
+        tree: Nested structure (dict/list/tuple/…) containing native arrays as leaves.
 
     Returns:
-        List of all tensor leaves in the tree (non-tensor leaves are ignored).
+        List of all native-array leaves in the tree (non-array leaves are ignored).
 
     Example:
-        >>> tree = {'a': torch.tensor([1, 2]), 'b': {'c': torch.tensor([3])}}
-        >>> leaves = tree_leaves(tree)
-        >>> len(leaves)
-        2
+        After selecting a provider, construct a nested tree with two
+        provider-native array leaves. ``tree_leaves(tree)`` returns those two
+        leaves in traversal order.
     """
     raise NotImplementedError
 
@@ -134,10 +133,9 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
         PyTree with same structure as inputs, with `fn` applied to leaves.
 
     Example:
-        >>> tree = {'a': torch.tensor([1.0, 2.0]), 'b': torch.tensor([3.0])}
-        >>> doubled = tree_map(lambda x: x * 2, tree)
-        >>> doubled['a']
-        tensor([2., 4.])
+        After selecting a provider, construct a tree of native arrays and
+        apply ``tree_map(lambda x: x * 2, tree)``. The returned tree has the
+        same structure with every native-array leaf doubled.
     """
     raise NotImplementedError
 
@@ -161,13 +159,10 @@ def tree_map_with_path(
         PyTree with same structure, with fn applied to (path, leaf)
 
     Example:
-        >>> tree = {'layer1': {'weight': torch.ones(2)}, 'layer2': {'bias': torch.zeros(3)}}
-        >>> def print_shapes(path, leaf):
-        ...     print(f"{path}: {leaf.shape}")
-        ...     return leaf
-        >>> tree_map_with_path(print_shapes, tree)
-        ('layer1', 'weight'): torch.Size([2])
-        ('layer2', 'bias'): torch.Size([3])
+        After selecting a provider, pass a tree of native arrays and use a
+        callback that inspects ``path`` and ``leaf.shape``. The callback sees
+        provider-native shape values together with paths such as
+        ``('layer1', 'weight')`` and ``('layer2', 'bias')``.
     """
     paths, leaves, treedef = tree_flatten_with_paths(tree)
     out = [fn(path, leaf) for path, leaf in zip(paths, leaves, strict=True)]
@@ -192,19 +187,11 @@ def partition(
         Branches where all leaves are filtered out are omitted.
 
     Example:
-        >>> params = {
-        ...     'encoder': {
-        ...         'weight': torch.randn(10, 5),
-        ...         'lora_a': torch.randn(10, 2),
-        ...         'lora_b': torch.randn(2, 5),
-        ...     }
-        ... }
-        >>> def is_lora(path, value):
-        ...     return 'lora' in str(path)
-        >>> trainable, frozen = partition(is_lora, params)
-        >>> 'lora_a' in trainable['encoder']  # True
-        >>> 'weight' in frozen['encoder']      # True
-        >>> 'weight' in trainable['encoder']   # False
+        After selecting a provider, pass a parameter tree whose leaves are
+        native arrays and define ``is_lora(path, value)`` to identify adapter
+        paths. ``partition(is_lora, params)`` returns matching and
+        non-matching trees, preserving the nested structure where leaves are
+        present.
 
     References:
         Inspired by Haiku's hk.data_structures.partition():
@@ -267,11 +254,10 @@ def merge(*trees: Any) -> Any:
         Merged PyTree
 
     Example:
-        >>> trainable = {'encoder': {'lora_a': torch.ones(2)}}
-        >>> frozen = {'encoder': {'weight': torch.zeros(3)}}
-        >>> merged = merge(frozen, trainable)
-        >>> merged
-        {'encoder': {'weight': ..., 'lora_a': ...}}
+        After selecting a provider, pass trees containing native arrays to
+        ``merge``. For example, merging a frozen tree with a trainable tree
+        combines their ``'weight'`` and ``'lora_a'`` entries, with later trees
+        overriding earlier values at overlapping paths.
 
     References:
         Inspired by Haiku's hk.data_structures.merge():
@@ -338,31 +324,29 @@ def global_norm(
     *,
     compute_dtype: Any | None = None,
 ) -> Any:
-    """Compute global L2 norm across all tensors in a PyTree.
+    """Compute global L2 norm across all native arrays in a PyTree.
 
     The global norm is the square root of the sum of squared norms of all
-    leaf tensors:
+    native-array leaves:
         global_norm = sqrt(sum(||leaf||^2 for leaf in tree))
 
     Args:
-        tree: PyTree of tensors (e.g., parameters or gradients)
+        tree: PyTree of native arrays (e.g., parameters or gradients)
         compute_dtype: Internal accumulation dtype.  ``None`` (default)
             promotes low-precision floats (fp16/bf16) to float32 for
             numerical stability and otherwise uses the input float dtype
-            promoted to at least float32.  Pass an explicit dtype (e.g.
-            ``torch.float64``) to force a specific accumulation precision.
+            promoted to at least float32. Pass an explicit provider dtype to
+            force a specific accumulation precision.
 
     Returns:
-        Scalar tensor containing the global L2 norm on the device of the first
-        tensor leaf (or CPU if the tree is empty).  Output dtype matches
+        Scalar native array containing the global L2 norm on the device of the
+        first leaf (or the provider default if the tree is empty). Output dtype matches
         the resolved compute dtype.
 
     Example:
-        >>> tree = {'w': torch.tensor([3.0, 4.0]), 'b': torch.tensor([0.0, 12.0])}
-        >>> norm = global_norm(tree)
-        >>> # norm = sqrt(3^2 + 4^2 + 0^2 + 12^2) = sqrt(169) = 13
-        >>> torch.isclose(norm, torch.tensor(13.0))
-        True
+        After selecting a provider, pass native arrays containing
+        ``[3.0, 4.0]`` and ``[0.0, 12.0]`` to ``global_norm``. The result is
+        the provider-native scalar value ``13``.
 
     References:
         This function is commonly used in gradient clipping for deep learning.

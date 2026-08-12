@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import torch
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 
 def get_tiny_config_kwargs():

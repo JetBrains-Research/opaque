@@ -55,7 +55,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.device import device_capabilities
+from opaque.torch.device import device_capabilities
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 log = logging.getLogger(__name__)

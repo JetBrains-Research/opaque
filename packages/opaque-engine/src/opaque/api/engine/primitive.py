@@ -306,7 +306,7 @@ class CoreProfile:
     primitives: tuple[Primitive, ...]
 
 
-CORE_PROFILE_VERSION = 1
+CORE_PROFILE_VERSION = 2
 """Version of the portable core contract declared by this engine release."""
 
 CORE_PRIMITIVES: list[Primitive] = []

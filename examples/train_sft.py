@@ -122,7 +122,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
-from opaque.distributed.gradients import sum_gradients_
+from opaque.distributed.gradients import sum_gradients
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.profiling import (
     perf_tracker,
@@ -132,7 +132,7 @@ from opaque.profiling import (
 from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -2119,7 +2119,7 @@ def main():
                     )
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    sum_gradients_(grads_tuple)
+                    grads_tuple = sum_gradients(grads_tuple)
                 sp.mark("clip")
 
                 step_clip_norm = _step_clip_norm(grads_tuple)

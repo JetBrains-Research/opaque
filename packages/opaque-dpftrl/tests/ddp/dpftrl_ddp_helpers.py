@@ -13,9 +13,9 @@ import torch.nn as nn
 from opaque.distributed import sum_gradients, sync
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy, mf_gaussian_noise
-from opaque.functional import make_functional
 from opaque.pytree import tree_map
 from opaque.random import key
+from opaque.torch.functional import make_functional
 from opaque.types import clipped
 
 

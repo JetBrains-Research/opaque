@@ -2,7 +2,7 @@
 
 Functional optimizer state stays bit-identical across ranks by construction:
 ``init_fn(params)`` is deterministic from params, the gradient is
-``sum_gradients_``-reduced before ``update_fn`` runs, and ``update_fn`` is a
+``sum_gradients``-reduced before ``update_fn`` runs, and ``update_fn`` is a
 pure function of ``(grad, state)``. So a registered sync handler does not need
 to all-reduce — it only needs to *audit* that this invariant still holds.
 
@@ -166,7 +166,7 @@ def _audit_value(value: Any, *, name: str) -> None:
 def sync_optimizer_state(state: Any) -> Any:
     """Validate optimizer state matches across ranks; return ``state``.
 
-    Pure-functional optimizers cannot drift after ``sum_gradients_``, so the
+    Pure-functional optimizers cannot drift after ``sum_gradients``, so the
     handler is an audit, not a reduction. In single-process mode it's a no-op
     and the input object is returned unchanged.
 

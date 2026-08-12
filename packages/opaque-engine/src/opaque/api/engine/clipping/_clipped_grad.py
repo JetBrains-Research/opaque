@@ -73,9 +73,9 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
 
 def _run_with_trace_scope(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Run ``fn`` in the optional profiling scope when the backend provides it."""
-    if not runtime.profiling_trace_scope.supports():
+    if not runtime.trace_scope.supports():
         return fn(*args, **kwargs)
-    with runtime.profiling_trace_scope("opaque::clipped_grad"):
+    with runtime.trace_scope("opaque::clipped_grad"):
         return fn(*args, **kwargs)
 
 
@@ -99,7 +99,7 @@ def clipped_grad(
 ) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
-    This function acts as a transformation similar to `torch.func.grad`, but with added
+    This function is a provider-dispatched gradient transformation with added
     functionality for gradient clipping applied on a per-example (or per-group)
     basis before summation. It computes the gradient of `loss_fn` with respect to
     `argnums`, calculates the L2 norm of the gradient for each example slice
@@ -112,21 +112,12 @@ def clipped_grad(
     a batch axis. It is up to the caller to handle these as necessary.
 
     Example Usage:
-        >>> import torch
-        >>> from opaque.dpsgd.clipping import clipped_grad
-        >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
-        >>> g, clip_state = clipped_grad(f, clipping_norm=float('inf'))
-        >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
-        >>> result
-        tensor(1.3333)
-
-    Example Usage (with Auxiliary Output):
-        >>> g, clip_state = clipped_grad(
-        ...     f, clipping_norm=float('inf'), return_aux=True
-        ... )
-        >>> (_, aux), clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
-        >>> aux.loss_values
-        tensor([4.5000, 8.0000, 12.5000])
+        After selecting a provider, define a scalar ``loss_fn`` over native
+        arrays and call ``clipped_grad(loss_fn, clipping_norm=...,\
+        batch_argnums=...)``. The returned function accepts native parameter
+        and batch values and returns a ``ClippedPytree`` plus threaded state.
+        Pass ``return_aux=True`` to receive per-example values and norms with
+        the clipped gradients.
         >>> aux.grad_norms
         tensor([3., 4., 5.])
 
@@ -247,7 +238,8 @@ def clipped_grad(
         if return_aux or _force_grad_norms:
             # Return dict aux from per-example grad_fn; clipping-related norms are
             # produced by clipped_fun to avoid duplicating norm computation logic.
-            # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
+            # Some vmap implementations cannot handle namedtuples with None values
+            # when out_dims != None.
             aux_dict = {}
             if return_aux:
                 aux_dict["values"] = value_and_aux[0]

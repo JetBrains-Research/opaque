@@ -22,8 +22,10 @@ hidden mutation.
 
 ## Packages
 
-Install and depend on `opaque` only. The repository is implemented as
-[PEP 420] namespace packages under the shared `opaque.*` namespace:
+Install `opaque` for the curated default bundle. Libraries can instead depend
+on `opaque-engine` and the provider wheel they use. The repository is
+implemented as [PEP 420] namespace packages under the shared `opaque.*`
+namespace:
 
 | Distribution | Import roots | Purpose |
 |---|---|---|
@@ -31,6 +33,8 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
 | `opaque-engine` | `opaque.{backend,primitive,ops,autodiff,types,pytree,random,distributed,functional,scheduling,profiling}` | Backend-neutral primitives, transforms, algorithms, pytrees, RNG keys, schedules, and optional runtime seams |
 | `opaque-torch` | `opaque.torch` | PyTorch primitive/runtime implementations, serialization handlers, functionalization, and Torch RNG bridges |
+| `opaque-jax` | `opaque.jax` | JAX primitive/runtime implementations and native-array serialization |
+| `opaque-mlx` | `opaque.mlx` | MLX primitive/runtime implementations and native-array serialization |
 | `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
@@ -50,6 +54,8 @@ opaque.{backend,primitive,ops,autodiff}                    <- opaque-engine
 opaque.{types,pytree,random,distributed}                   <- opaque-engine
 opaque.{functional,scheduling,profiling}                   <- opaque-engine
 opaque.torch{,.random}                                     <- opaque-torch
+opaque.jax                                                  <- opaque-jax
+opaque.mlx                                                  <- opaque-mlx
 opaque.optimizers                                          <- opaque-optimizers
 opaque.dpsgd.{clipping,noise,sampling,accounting}          <- opaque-dpsgd
 opaque.dpftrl.{clipping,noise,sampling,accounting}         <- opaque-dpftrl
@@ -78,6 +84,8 @@ Extras:
 pip install "opaque[auditing]"      # empirical privacy auditing
 pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
 pip install "opaque[transformers]"  # Hugging Face + patching components
+pip install "opaque[jax]"           # JAX backend provider
+pip install "opaque[mlx]"           # MLX backend provider
 pip install "opaque[all]"           # all optional components
 ```
 
@@ -115,30 +123,36 @@ A minimal DP-SGD training loop:
 
 ```python
 import torch
-import opaque.accounting as acc                # cross-cutting (calibrate, budget)
-import opaque.dpsgd.accounting as dpsgd_acc    # DP-SGD per-step factories
+import opaque.accounting as acc  # cross-cutting (calibrate, budget)
+import opaque.dpsgd.accounting as dpsgd_acc  # DP-SGD per-step factories
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
+
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
+
 
 # Calibrate noise for target privacy budget
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1, param_max=10.0,
+    param_min=0.1,
+    param_max=10.0,
 )
 batch_size = 64  # expected batch size for Poisson sampling
 
 # DP-SGD components
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, batch_argnums=(1, 2),
+    loss_fn,
+    clipping_norm=1.0,
+    batch_argnums=(1, 2),
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param,
+    key=key(42),
 )
 
 # Training loop

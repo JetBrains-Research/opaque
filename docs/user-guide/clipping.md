@@ -294,7 +294,7 @@ convert to functional form:
 
 ```python
 from opaque.dpsgd.clipping import clipped_grad
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 fmodel, params = make_functional(model)
 

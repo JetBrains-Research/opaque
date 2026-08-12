@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import pathlib
 import re
+import subprocess
+import sys
 import tomllib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -78,3 +80,52 @@ def test_engine_metadata_does_not_depend_on_torch() -> None:
         "opaque-engine must not depend on Torch; declare it in opaque-torch instead: "
         + ", ".join(torch_requirements)
     )
+
+
+def test_importing_engine_does_not_load_a_framework() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import opaque.api.engine, sys; "
+            "leaked = sorted({'torch', 'jax', 'jaxlib', 'mlx'} & sys.modules.keys()); "
+            "assert not leaked, leaked",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_engine_does_not_ship_torch_specific_public_surfaces() -> None:
+    assert not (ENGINE_SOURCE / "opaque" / "device").exists()
+    assert not (ENGINE_SOURCE / "opaque" / "api" / "engine" / "device").exists()
+
+    functional = (
+        ENGINE_SOURCE / "opaque" / "api" / "engine" / "functional" / "__init__.py"
+    ).read_text(encoding="utf-8")
+    exported = next(
+        node
+        for node in ast.parse(functional).body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        )
+    )
+    names = ast.literal_eval(exported.value)
+    assert "make_functional" not in names
+
+
+def test_torch_wheel_owns_provider_specific_conveniences() -> None:
+    torch_source = REPO_ROOT / "packages" / "opaque-torch" / "src"
+    expected = (
+        "opaque/api/torch/device/__init__.py",
+        "opaque/api/torch/functional/__init__.py",
+        "opaque/torch/device/__init__.py",
+        "opaque/torch/functional/__init__.py",
+    )
+    assert all((torch_source / path).is_file() for path in expected)

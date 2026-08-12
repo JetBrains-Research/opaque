@@ -60,7 +60,7 @@ def test_satisfies_protocol_and_array_primitives() -> None:
 
 
 def test_factory_returns_identity_with_decorator_registered_implementations() -> None:
-    from opaque.api.jax.backend import _jax as provider
+    from opaque.api.jax.backend import _core as provider
 
     backend = jax_backend()
 

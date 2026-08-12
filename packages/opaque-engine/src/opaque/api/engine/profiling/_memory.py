@@ -33,13 +33,12 @@ from __future__ import annotations
 
 import time
 import warnings
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine import runtime
-from opaque.api.engine.device import device_capabilities
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -67,24 +66,24 @@ class MemoryStats:
             ``recommended_max_memory`` on MPS).
     """
 
-    allocated_gb: float = 0.0
-    reserved_gb: float = 0.0
-    peak_gb: float = 0.0
-    free_gb: float = 0.0
-    total_gb: float = 0.0
+    allocated_gb: float | None = None
+    reserved_gb: float | None = None
+    peak_gb: float | None = None
+    free_gb: float | None = None
+    total_gb: float | None = None
     exact_peak: bool = False
     exact_reserved: bool = False
     known_free: bool = False
     known_total: bool = False
 
     @property
-    def utilization(self) -> float:
-        """Memory utilization as fraction (0.0-1.0)."""
-        if self.total_gb > 0:
+    def utilization(self) -> float | None:
+        """Memory utilization as a fraction, or ``None`` when unavailable."""
+        if self.total_gb is not None and self.total_gb > 0 and self.peak_gb is not None:
             return self.peak_gb / self.total_gb
-        return 0.0
+        return None
 
-    def to_dict(self, prefix: str = "memory/") -> dict[str, float | bool]:
+    def to_dict(self, prefix: str = "memory/") -> dict[str, float | bool | None]:
         """Convert to dict for logging.
 
         Args:
@@ -107,11 +106,15 @@ class MemoryStats:
         }
 
     def __str__(self) -> str:
+        def display(value: float | None) -> str:
+            return "unknown" if value is None else f"{value:.2f}GB"
+
+        utilization = self.utilization
+        used = "unknown" if utilization is None else f"{utilization:.1%}"
         return (
-            f"Memory: alloc={self.allocated_gb:.2f}GB, "
-            f"peak={self.peak_gb:.2f}GB, "
-            f"free={self.free_gb:.2f}GB "
-            f"({self.utilization:.1%} used)"
+            f"Memory: alloc={display(self.allocated_gb)}, "
+            f"peak={display(self.peak_gb)}, "
+            f"free={display(self.free_gb)} ({used} used)"
         )
 
 
@@ -122,13 +125,39 @@ def get_memory_stats(device: object) -> MemoryStats:
         device: PyTorch device (cuda, mps, or cpu)
 
     Returns:
-        MemoryStats with current memory usage. All zeros for CPU.
+        MemoryStats with current memory usage. Unavailable fields are ``None``.
 
     Example:
         >>> stats = get_memory_stats("cuda")
         >>> print(f"Peak memory: {stats.peak_gb:.2f} GB")
     """
-    return runtime.profiling_memory_stats(device)
+    observed = runtime.memory_stats(device)
+    gib = float(1024**3)
+
+    def as_gb(value: int | None) -> float | None:
+        return None if value is None else value / gib
+
+    reserved_bytes = (
+        observed.active_bytes + observed.cached_bytes
+        if observed.active_bytes is not None and observed.cached_bytes is not None
+        else None
+    )
+    free_bytes = (
+        max(observed.capacity_bytes - reserved_bytes, 0)
+        if observed.capacity_bytes is not None and reserved_bytes is not None
+        else None
+    )
+    return MemoryStats(
+        allocated_gb=as_gb(observed.active_bytes),
+        reserved_gb=as_gb(reserved_bytes),
+        peak_gb=as_gb(observed.peak_active_bytes),
+        free_gb=as_gb(free_bytes),
+        total_gb=as_gb(observed.capacity_bytes),
+        exact_peak=observed.peak_active_bytes is not None,
+        exact_reserved=reserved_bytes is not None,
+        known_free=free_bytes is not None,
+        known_total=observed.capacity_bytes is not None,
+    )
 
 
 def reset_peak_memory(device: object) -> None:
@@ -152,7 +181,7 @@ def reset_peak_memory(device: object) -> None:
         >>> stats = get_memory_stats(device)
         >>> print(f"Step peak: {stats.peak_gb:.2f} GB")
     """
-    runtime.profiling_reset_peak_memory(device)
+    runtime.reset_peak_memory(device)
 
 
 def print_memory(device: object, label: str = "") -> MemoryStats:
@@ -181,12 +210,12 @@ def empty_cache(device: object) -> None:
     Args:
         device: PyTorch device
     """
-    runtime.profiling_empty_cache(device)
+    runtime.clear_memory_cache(device)
 
 
 def _sync_device(device: object) -> None:
     """Synchronize device for accurate timing."""
-    runtime.profiling_synchronize(device)
+    runtime.synchronize(device)
 
 
 @dataclass(frozen=True)
@@ -210,13 +239,13 @@ class StepPerf:
 
     step_time_sec: float = 0.0
     samples_per_second: float = 0.0
-    memory_peak_gb: float = 0.0
-    memory_allocated_gb: float = 0.0
-    memory_reserved_gb: float = 0.0
+    memory_peak_gb: float | None = None
+    memory_allocated_gb: float | None = None
+    memory_reserved_gb: float | None = None
     batch_size: int = 0
     marks: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
         """Convert to flat dict for logging.
 
         Returns bare keys by default — caller adds the prefix to control
@@ -228,7 +257,7 @@ class StepPerf:
         Returns:
             Dict with performance metrics.
         """
-        d: dict[str, float] = {
+        d: dict[str, float | None] = {
             f"{prefix}step_time_sec": self.step_time_sec,
             f"{prefix}samples_per_second": self.samples_per_second,
             f"{prefix}memory_peak_gb": self.memory_peak_gb,
@@ -331,15 +360,14 @@ def step_perf(
         ...     sp.mark("update")
         >>> wandb.log(sp.perf.to_dict(prefix="train/"))
     """
-    device = runtime.profiling_normalize_device(device)
     builder = _StepPerfBuilder(device, batch_size)
 
-    # Reset the peak counter only on devices that expose a cheap one (CUDA).
-    # On MPS the reset is ``empty_cache`` (see reset_peak_memory), too costly to
-    # run every step — there peak_gb accumulates as the run's reserved
-    # high-water, and max_peak_memory_gb across steps gives the run peak.
-    if track_memory and device_capabilities(device).peak_memory_trackable:
-        reset_peak_memory(device)
+    # Reset the peak counter on devices with a native counter. Providers report
+    # unsupported device-specific cases explicitly even when another device in
+    # the same provider supports this capability.
+    if track_memory and runtime.reset_peak_memory.supports():
+        with suppress(NotImplementedError):
+            reset_peak_memory(device)
 
     _sync_device(device)
     t0 = time.perf_counter()
@@ -393,7 +421,7 @@ class PerfState:
     num_steps_stable: int = 0
     total_time_stable: float = 0.0
     total_samples_stable: int = 0
-    max_peak_memory_gb: float = 0.0
+    max_peak_memory_gb: float | None = None
     last_step: StepPerf | None = None
 
     def add(self, perf: StepPerf) -> PerfState:
@@ -411,7 +439,12 @@ class PerfState:
         num_steps = self.num_steps + 1
         total_time = self.total_time + perf.step_time_sec
         total_samples = self.total_samples + perf.batch_size
-        max_peak = max(self.max_peak_memory_gb, perf.memory_peak_gb)
+        known_peaks = [
+            value
+            for value in (self.max_peak_memory_gb, perf.memory_peak_gb)
+            if value is not None
+        ]
+        max_peak = max(known_peaks) if known_peaks else None
 
         num_steps_stable = self.num_steps_stable
         total_time_stable = self.total_time_stable
@@ -461,7 +494,7 @@ class PerfState:
             return self.total_samples_stable / self.total_time_stable
         return self.avg_samples_per_second
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
         """Accumulated metrics as flat dict for logging.
 
         Args:
@@ -506,7 +539,7 @@ class PerfStage:
         self.num_steps: int = 0
         self.total_time: float = 0.0
         self.total_samples: int = 0
-        self.max_peak_memory_gb: float = 0.0
+        self.max_peak_memory_gb: float | None = None
         self.last: StepPerf | None = None
         self._device = device
         self._warmup_steps = warmup_steps
@@ -526,7 +559,12 @@ class PerfStage:
 
     def _absorb(self, perf: StepPerf) -> None:
         self.num_steps += 1
-        self.max_peak_memory_gb = max(self.max_peak_memory_gb, perf.memory_peak_gb)
+        known_peaks = [
+            value
+            for value in (self.max_peak_memory_gb, perf.memory_peak_gb)
+            if value is not None
+        ]
+        self.max_peak_memory_gb = max(known_peaks) if known_peaks else None
         self.last = perf
         if self.num_steps > self._warmup_steps:
             self.total_time += perf.step_time_sec
@@ -554,7 +592,7 @@ class PerfStage:
 
         return _ctx()
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
         return {
             f"{prefix}num_steps": self.num_steps,
             f"{prefix}total_time_sec": self.total_time,
@@ -633,7 +671,7 @@ def perf_tracker(
         ...     train_step(batch)
         >>> print(tracker.train.samples_per_second)
     """
-    return PerfTracker(runtime.profiling_normalize_device(device), warmup_steps)
+    return PerfTracker(device, warmup_steps)
 
 
 __all__ = [

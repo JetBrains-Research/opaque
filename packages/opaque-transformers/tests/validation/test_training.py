@@ -27,8 +27,8 @@ from _hf_shared import (
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.random import key
+from opaque.torch.functional import make_functional
 from opaque.types import ClippedPytree, NoisedPytree
 
 # Skip all tests if transformers not available

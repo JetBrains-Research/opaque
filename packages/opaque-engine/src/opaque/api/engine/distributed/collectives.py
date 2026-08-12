@@ -1,7 +1,7 @@
 """Thin wrappers around optional provider collectives.
 
-Provides ``is_distributed``, ``get_rank``, ``get_world_size``, ``all_reduce``
-and its in-place variant, and ``barrier``. All are safe to call outside a
+Provides ``is_distributed``, ``get_rank``, ``get_world_size``, ``all_reduce``,
+and ``barrier``. All are safe to call outside a
 process group; non-distributed contexts fall through to sensible defaults
 (rank 0, world_size 1, no-op barrier).
 """
@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from opaque.api.engine import ops, runtime
+from opaque.api.engine import runtime
 
 
 def is_distributed() -> bool:
-    """Return whether the active provider has initialized collectives."""
-    return runtime.distributed_is_initialized()
+    """Return whether more than one process participates in collectives."""
+    return get_world_size() > 1
 
 
 def get_rank() -> int:
@@ -28,21 +28,9 @@ def get_world_size() -> int:
     return runtime.distributed_world_size()
 
 
-def all_reduce_(tensor: Any, op: str = "sum") -> None:
-    """All-reduce ``tensor`` across ranks in place.
-
-    Raises:
-        RuntimeError: If ``torch.distributed`` is not initialized.
-        ValueError: If ``op`` is not a recognized reduction.
-    """
-    runtime.distributed_all_reduce_(tensor, op=op)
-
-
 def all_reduce(tensor: Any, op: str = "sum") -> Any:
-    """Return a reduced clone of ``tensor``; input is unchanged."""
-    reduced = ops.clone(tensor)
-    all_reduce_(reduced, op=op)
-    return reduced
+    """Return a reduced value; input is unchanged."""
+    return runtime.distributed_all_reduce(tensor, op=runtime.ReduceOp(op))
 
 
 def barrier() -> None:
@@ -83,14 +71,14 @@ def gather_for_metrics(tensor: Any) -> Any:
     concern. This is **not** a gradient primitive — do not use it inside the
     clipped/noised per-example gradient path.
 
-    All ranks must pass tensors of identical shape and dtype.
+    All ranks must pass arrays with the same dtype, rank, and trailing shape;
+    the leading dimension may vary by rank.
     """
-    return runtime.distributed_gather_for_metrics(tensor)
+    return runtime.distributed_all_gather(tensor, axis=0)
 
 
 __all__ = [
     "all_reduce",
-    "all_reduce_",
     "barrier",
     "gather_for_metrics",
     "get_rank",

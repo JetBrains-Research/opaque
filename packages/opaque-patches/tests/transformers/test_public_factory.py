@@ -262,9 +262,7 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
     # The non-fused CE loss_function kernel is Triton-only; its default install
     # gates on the kernel runtime. Simulate it so the opt-in semantics are tested
     # device-independently.
-    monkeypatch.setattr(
-        "opaque.api.engine.device.fused_kernels_available", lambda: True
-    )
+    monkeypatch.setattr("opaque.torch.device.fused_kernels_available", lambda: True)
 
     def _fresh_module(suffix):
         module_name = f"public_api_fake_fused_ce_module_{suffix}"
@@ -409,9 +407,7 @@ def test_family_factory_tracks_idempotency_per_enabled_concern(monkeypatch):
     _reset_patched_families()
     # rope only installs where the Triton runtime exists; simulate it so this
     # concern-tracking test is device-independent.
-    monkeypatch.setattr(
-        "opaque.api.engine.device.fused_kernels_available", lambda: True
-    )
+    monkeypatch.setattr("opaque.torch.device.fused_kernels_available", lambda: True)
     module_name = "public_api_fake_family_module"
     mod = types.ModuleType(module_name)
 

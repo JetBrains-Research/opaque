@@ -7,7 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.func import grad, vmap
 
-from opaque.functional import make_functional, with_batch_dim
+from opaque.functional import with_batch_dim
+from opaque.torch.functional import make_functional
 
 
 def test_make_functional_basic():
@@ -183,6 +184,59 @@ def test_make_functional_with_kwargs():
     # Test with custom kwargs
     output2 = fmodel(params, x, scale=2.0)
     assert torch.allclose(output2, output1 * 2.0, atol=1e-6)
+
+
+def test_make_functional_adapts_batchless_framework_mapping_output():
+    class FrameworkOutput(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError as error:
+                raise AttributeError(name) from error
+
+    class TokenModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = nn.Embedding(11, 4)
+
+        def forward(self, input_ids=None, attention_mask=None):
+            assert input_ids.ndim == 2
+            assert attention_mask.ndim == 2
+            return FrameworkOutput(logits=self.embedding(input_ids))
+
+    fmodel, params = make_functional(TokenModel())
+
+    output = fmodel(
+        params,
+        input_ids=torch.tensor([1, 2, 3]),
+        attention_mask=torch.ones(3),
+    )
+
+    assert isinstance(output, FrameworkOutput)
+    assert output.logits.shape == (3, 4)
+
+
+def test_make_functional_batchifies_declared_main_input_with_labels():
+    class FeatureModel(nn.Module):
+        main_input_name = "features"
+
+        def __init__(self):
+            super().__init__()
+            self.projection = nn.Linear(3, 2)
+
+        def forward(self, features, labels=None):
+            assert features.ndim == 2
+            assert labels is None or labels.ndim == 1
+            logits = self.projection(features)
+            loss = F.cross_entropy(logits, labels) if labels is not None else None
+            return {"loss": loss, "logits": logits}
+
+    fmodel, params = make_functional(FeatureModel())
+
+    output = fmodel(params, features=torch.ones(3), labels=torch.tensor(1))
+
+    assert output["loss"].shape == ()
+    assert output["logits"].shape == (2,)
 
 
 def test_make_functional_parameter_independence():

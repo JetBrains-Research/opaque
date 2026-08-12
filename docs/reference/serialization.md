@@ -2,16 +2,16 @@
 
 Opaque keeps training state in explicit values (clip state, noise state,
 optimizer state, schedules, [`Accountant`](accounting.md) / [`DpProcess`](accounting.md),
-…). Use `opaque.serialization` for a single **flat**
-`dict[str, Any]` suitable for `torch.save` / `torch.load`.
+…). Use `opaque.serialization` for a single **flat** `dict[str, Any]` suitable
+for a framework-native checkpoint writer.
 
 Restore is **template-driven**: pass a freshly constructed object of the same
 shape as at save time; keys present in the checkpoint overwrite leaves, and
 missing keys keep template values (forward compatibility when new fields appear).
 
 Dispatch resolves a leaf by exact type and then by `__mro__`, so a subclass
-of a registered type — a custom `torch.Tensor` subclass, for example — is
-serialized by the nearest base-class handler rather than dropped.
+of a registered type is serialized by the nearest base-class handler rather
+than dropped.
 (`torch.nn.Parameter` is common enough to get its own exact-type handler that
 preserves the subclass and its `requires_grad` flag on restore, so it does
 not rely on the `__mro__` fallback.) A leaf that is neither registered nor a
@@ -28,8 +28,29 @@ them and the template supplies them on load.
 flat leaf, or `groups.('layer', 'weight')` for a nested path — alongside
 `values.<group_name>`. When DP bias correction is enabled on Adam-family
 optimizers, `phi` is a path-keyed dict from `opt.init` so `from_state_dict`
-round-trips without resetting φ. NumPy `ndarray` leaves are supported alongside
-`torch.Tensor`.
+round-trips without resetting φ. NumPy `ndarray`, Torch `Tensor` and
+`Parameter`, JAX `Array`, and MLX `array` leaves preserve their provider type,
+shape, dtype, and value when restored against a matching template.
+
+## Provider activation
+
+Native framework handlers register when their backend provider loads. A prior
+backend-bearing Opaque operation activates the provider automatically. When
+serialization is the first Opaque operation, activate it explicitly before
+calling `state_dict` or `from_state_dict`:
+
+```python
+from opaque.jax import jax_backend
+from opaque.serialization import from_state_dict, state_dict
+
+jax_backend()
+flat = state_dict(params)
+restored = from_state_dict(parameter_template, flat)
+```
+
+Use `torch_backend()` or `mlx_backend()` for the corresponding provider. The
+pure-Python `opaque-base` registry does not import frameworks or provider
+wheels on its own. Repeated provider activation is safe.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 

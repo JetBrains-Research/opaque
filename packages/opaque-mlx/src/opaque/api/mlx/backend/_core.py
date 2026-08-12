@@ -256,6 +256,16 @@ def slice_array(value: Any, slices: Any) -> Any:
     return value[slices]
 
 
+@_MLX.implements(ops.expand_dims)
+def expand_dims(value: Any, axis: int) -> Any:
+    return mx.expand_dims(value, axis=axis)
+
+
+@_MLX.implements(ops.squeeze)
+def squeeze(value: Any, axis: int | None = None) -> Any:
+    return mx.squeeze(value, axis=axis)
+
+
 @_MLX.implements(ops.promote_dtype)
 def promote_dtype(left: Any, right: Any) -> Any:
     return mx.result_type(left, right)

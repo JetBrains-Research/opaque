@@ -26,12 +26,8 @@ from opaque.api.engine.distributed.gradients import (
     _reduced_metadata as _reduced_metadata,
 )
 from opaque.distributed import get_rank, get_world_size, is_distributed, sum_gradients
-from opaque.distributed.collectives import all_reduce, all_reduce_, barrier
-from opaque.distributed.gradients import (  # noqa: F401
-    reduce_pytree,
-    reduce_pytree_,
-    sum_gradients_,
-)
+from opaque.distributed.collectives import all_reduce, barrier
+from opaque.distributed.gradients import reduce_pytree
 from opaque.types import (
     ClippedPytree,
     NoisedPytree,
@@ -65,26 +61,17 @@ class TestNonDistributed:
         assert isinstance(result, int)
         assert result >= 1
 
-    def test_all_reduce_raises_without_init(self):
-        """all_reduce() raises RuntimeError when not initialized."""
+    def test_all_reduce_returns_copy_without_init(self):
         tensor = torch.tensor([1.0, 2.0, 3.0])
 
         # Skip if distributed is initialized (e.g., in multi-GPU CI)
         if is_distributed():
             pytest.skip("Distributed already initialized")
 
-        with pytest.raises(RuntimeError, match="not initialized"):
-            all_reduce(tensor)
+        result = all_reduce(tensor)
 
-    def test_all_reduce_inplace_raises_without_init(self):
-        """all_reduce_() raises RuntimeError when not initialized."""
-        tensor = torch.tensor([1.0, 2.0, 3.0])
-
-        if is_distributed():
-            pytest.skip("Distributed already initialized")
-
-        with pytest.raises(RuntimeError, match="not initialized"):
-            all_reduce_(tensor)
+        assert result is not tensor
+        torch.testing.assert_close(result, tensor)
 
     def test_barrier_no_op_without_init(self):
         """barrier() is no-op when not initialized."""
@@ -109,30 +96,19 @@ class TestNonDistributed:
         assert isinstance(result, float)
         assert result == float(2**24 + 1)
 
-    @pytest.mark.parametrize("bad_dtype", [torch.int64, torch.bool, torch.complex64])
-    def test_reduce_scalar_rejects_nonfloating_compute_dtype(self, bad_dtype):
-        with pytest.raises(TypeError, match="real floating-point"):
-            reduce_scalar(1.0, compute_dtype=bad_dtype)
-
-    def test_reduce_scalar_rejects_compute_dtype_for_integer_values(self):
-        with pytest.raises(TypeError, match="only supported for floating-point"):
-            reduce_scalar(1, compute_dtype=torch.float64)
-
 
 class TestAllReduceValidation:
-    """Tests for all_reduce/all_reduce_ parameter validation."""
+    """Tests for all_reduce parameter validation."""
 
     def test_invalid_op_raises(self):
-        """all_reduce() and all_reduce_() raise ValueError for invalid op."""
+        """all_reduce() raises ValueError for an invalid operation."""
         tensor = torch.tensor([1.0])
 
-        with pytest.raises(ValueError, match="Invalid reduction operation"):
+        with pytest.raises(ValueError, match="valid ReduceOp"):
             all_reduce(tensor, op="invalid_op")
-        with pytest.raises(ValueError, match="Invalid reduction operation"):
-            all_reduce_(tensor, op="invalid_op")
 
     def test_valid_operations(self):
-        """all_reduce() and all_reduce_() accept all valid operations."""
+        """all_reduce() accepts all valid operations."""
         valid_ops = ["sum", "mean", "max", "min", "product"]
 
         # Just test that these don't raise ValueError during validation
@@ -140,17 +116,8 @@ class TestAllReduceValidation:
         for op in valid_ops:
             tensor = torch.tensor([1.0])
 
-            if is_distributed():
-                # Actually execute if initialized
-                all_reduce(tensor, op=op)
-                all_reduce_(tensor, op=op)
-                continue
-
-            # Just check it gets past parameter validation
-            with pytest.raises(RuntimeError, match="not initialized"):
-                all_reduce(tensor, op=op)
-            with pytest.raises(RuntimeError, match="not initialized"):
-                all_reduce_(tensor, op=op)
+            result = all_reduce(tensor, op=op)
+            assert result is not tensor
 
 
 class TestSyncObjectSchema:
@@ -195,15 +162,6 @@ class TestBoundedGradientAggregation:
         assert reduced.max_norm == gradients.max_norm
         assert reduced.pytree is not gradients.pytree
         torch.testing.assert_close(reduced.pytree["w"], gradients.pytree["w"])
-
-    def test_sum_gradients_inplace_preserves_clipped_pytree(self):
-        gradients = ClippedPytree({"w": torch.tensor([1.0, 2.0])}, max_norm=0.5)
-
-        result = sum_gradients_(gradients)
-
-        assert result is None
-        assert gradients.max_norm == 0.5
-        torch.testing.assert_close(gradients.pytree["w"], torch.tensor([1.0, 2.0]))
 
     def test_mean_gradients_preserves_clipped_pytree_outside_distributed(self):
         gradients = ClippedPytree({"w": torch.tensor([1.0])}, max_norm=0.5)
@@ -272,16 +230,6 @@ class TestBoundedGradientAggregation:
         torch.testing.assert_close(
             reduced.squared_grads.pytree["w"], out.squared_grads.pytree["w"]
         )
-
-    def test_sum_gradients_inplace_second_moment_clipping_output(self):
-        out = SecondMomentClippingOutput(
-            grads=ClippedPytree({"w": torch.tensor([1.0])}, max_norm=0.5),
-            squared_grads=ClippedPytree({"w": torch.tensor([2.0])}, max_norm=1.0),
-        )
-        result = sum_gradients_(out)
-        assert result is None
-        torch.testing.assert_close(out.grads.pytree["w"], torch.tensor([1.0]))
-        torch.testing.assert_close(out.squared_grads.pytree["w"], torch.tensor([2.0]))
 
     def test_sum_gradients_preserves_second_moment_noise_output(self):
         out = SecondMomentNoiseOutput(
