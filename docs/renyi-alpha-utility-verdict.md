@@ -154,3 +154,48 @@ steep region (`r_e` ≲ 9) would require α ≲ 0.1; α=0.25 only reaches 11.49.
   `renyi-story-and-evaluation.md` Part VI.
 - **Open:** ε=1 (high noise) is untested; there α's reachable depth range is much
   wider (7.8–12.5 at ε=3), so the same bound argument would give a larger ceiling.
+
+---
+
+## 7. non-DP COMPLETE (11 runs): α is a floor constraint, not a tuning knob
+
+Low-α sweep (α ∈ {0.05,0.1,0.15,0.2}, non-DP, m=2, seed 42) added to §6, giving
+7 adaptive arms spanning realized depth 3.1 → 13.0.
+
+### 7.1 α → loss (the practical question)
+
+| α | realized `r_e` | loss | vs best |
+|---|---|---|---|
+| 0.05 | 3.13 | 0.34537 | +0.00193 |
+| 0.1 | 7.01 | 0.34405 | +0.00061 |
+| 0.15 | 9.38 | 0.34372 | +0.00028 |
+| 0.2 | 10.78 | 0.34353 | +0.00009 |
+| 0.25 | 11.49 | 0.34346 | +0.00002 |
+| 0.5 | 12.68 | 0.34357 | +0.00013 |
+| ∞ | 13.00 | 0.34344 | — |
+
+- **Full span 0.00193 = 19× the noise floor** ⇒ α is NOT globally inert.
+- **Plateau α ≥ 0.2: range 0.00013 = 1.3× floor** ⇒ Shannon, α=2, α=∞ interchangeable.
+- Monotone: lower α ⇒ shallower ⇒ worse. **No interior optimum.**
+
+**CORRECTION to §6.4.** The "max α effect = 0.53× floor" bound was computed over
+α ≥ 0.25 only (reachable depth 11.5–13.0). It holds *on the plateau*; it does not
+hold once α < 0.2, where the reachable depth extends to 3.1 and the span reaches 19×.
+
+### 7.2 Heterogeneity: still nothing (now n=7 arms)
+
+Adaptive arms vs the fixed-depth curve at their realized depth:
+residual **mean −5.3e-5, |max| 1.87e-4, 4/7 better** — scatter at the noise floor
+with no consistent sign. **Per-matrix tailoring adds nothing beyond the average
+depth it selects.**
+
+### 7.3 The complete non-DP mechanism
+
+> α → average exploration depth → loss, and nothing else. The depth curve is
+> monotone-saturating, so any α ≥ 0.2 is equivalent, and below that α monotonically
+> destroys quality. **α is a constraint to respect, not a parameter to tune.**
+
+Paper framing: state both numbers — the plateau width (1.3× floor, hence no tuning
+needed) and the penalty for leaving it (19× floor at α=0.05, hence the rule is not
+vacuous). The derived rule (any α ≥ 0.2, e.g. Shannon or the stable rank) is
+*correct by construction* rather than tuned.
