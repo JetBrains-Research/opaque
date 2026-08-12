@@ -7,7 +7,7 @@ license.workspace = true
 description = "High-performance differential privacy accounting using Privacy Loss Distributions"
 repository.workspace = true
 keywords.workspace = true
-rust-version = "1.70"
+rust-version = "1.83"
 exclude = [
     "**/__pycache__/**",
     "**/*.pyc",
@@ -26,7 +26,7 @@ rayon = "1.10"
 rand = "0.8"
 rand_distr = "0.4"
 serde = { version = "1", features = ["derive"], optional = true }
-pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"], optional = true }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py311"], optional = true }
 
 [dev-dependencies]
 approx = "0.5"
