@@ -49,8 +49,12 @@ class MlxBackend:
         out_axes: Any = 0,
         randomness: str = "error",
     ) -> Callable[..., Any]:
-        """Vectorize with MLX; its API has no separate randomness policy."""
-        del randomness
+        """Vectorize with MLX, rejecting policies it cannot implement."""
+        if randomness != "error":
+            raise ValueError(
+                "MLX vmap supports only Opaque's randomness='error' mode; "
+                f"got {randomness!r}."
+            )
         return mx.vmap(fn, in_axes=in_axes, out_axes=out_axes)
 
     # --- pytree ---
@@ -72,9 +76,7 @@ class MlxBackend:
         return optree.tree_unflatten(treedef, leaves)
 
     def tree_leaves(self, tree: Any) -> list[Any]:
-        return [
-            leaf for _, leaf in mx_utils.tree_flatten(tree) if self.is_array(leaf)
-        ]
+        return [leaf for _, leaf in mx_utils.tree_flatten(tree) if self.is_array(leaf)]
 
     # --- array math (elementwise + reduction + dtype helpers) ---
     def is_array(self, x: Any) -> bool:
@@ -89,8 +91,9 @@ class MlxBackend:
         return dtype in (mx.float16, mx.bfloat16)
 
     def is_complex(self, x: Any) -> bool:
-        del x
-        return False
+        dtype = x if isinstance(x, mx.Dtype) else x.dtype
+        complex128 = getattr(mx, "complex128", mx.complex64)
+        return dtype == mx.complex64 or dtype == complex128
 
     def sqrt(self, x: Any) -> Any:
         return mx.sqrt(x)
@@ -131,6 +134,9 @@ class MlxBackend:
     def concatenate(self, xs: Any, axis: int = 0) -> Any:
         return mx.concatenate(tuple(xs), axis=axis)
 
+    def slice_array(self, value: Any, slices: Any) -> Any:
+        return value[slices]
+
     def astype(self, x: Any, dtype: Any) -> Any:
         return x.astype(dtype)
 
@@ -149,4 +155,128 @@ class MlxBackend:
         return mx.random.normal(shape, dtype=dtype, key=generator)
 
 
-__all__ = ["MlxBackend"]
+def _normal(rng_key: RngKey, shape: Any, *, dtype: Any = None, like: Any = None) -> Any:
+    resolved_dtype = dtype or (like.dtype if like is not None else mx.float32)
+    return mx.random.normal(
+        shape, dtype=resolved_dtype, key=mx.random.key(rng_key.seed)
+    )
+
+
+def register_core_primitives() -> None:
+    """Idempotently register MLX implementations for the portable core."""
+    from opaque.api.engine import autodiff, ops, pytree
+    from opaque.api.engine.random import _engine as random_engine
+
+    backend = MlxBackend()
+
+    def dtype(value: Any) -> Any:
+        return value.dtype
+
+    def shape(value: Any) -> tuple[int, ...]:
+        return tuple(value.shape)
+
+    def real_dtype(value: Any) -> Any:
+        value_dtype = value.dtype if backend.is_array(value) else value
+        return mx.real(mx.zeros((), dtype=value_dtype)).dtype
+
+    def zeros(value_shape: Any, *, dtype: Any = None, like: Any = None) -> Any:
+        del like
+        return mx.zeros(value_shape, dtype=dtype)
+
+    def ones_like(value: Any) -> Any:
+        return mx.ones_like(value)
+
+    def clone(value: Any) -> Any:
+        return mx.array(value)
+
+    def detach(value: Any) -> Any:
+        return value
+
+    def transfer(value: Any, *args: Any, **kwargs: Any) -> Any:
+        dtype = kwargs.get("dtype")
+        if dtype is not None:
+            return value.astype(dtype)
+        if args and isinstance(args[0], mx.Dtype):
+            return value.astype(args[0])
+        return value
+
+    def scalar_item(value: Any) -> Any:
+        return value.item()
+
+    def abs(value: Any) -> Any:
+        return mx.abs(value)
+
+    def add(left: Any, right: Any) -> Any:
+        return mx.add(left, right)
+
+    def subtract(left: Any, right: Any) -> Any:
+        return mx.subtract(left, right)
+
+    def multiply(left: Any, right: Any) -> Any:
+        return mx.multiply(left, right)
+
+    def divide(left: Any, right: Any) -> Any:
+        return mx.divide(left, right)
+
+    def all(value: Any, axis: Any = None) -> Any:
+        return mx.all(value, axis=axis)
+
+    def greater(left: Any, right: Any) -> Any:
+        return mx.greater(left, right)
+
+    def tree_structure(tree: Any) -> Any:
+        return optree.tree_structure(tree)
+
+    registrations = (
+        (ops.is_array, backend.is_array),
+        (ops.dtype, dtype),
+        (ops.shape, shape),
+        (ops.is_floating, backend.is_floating),
+        (ops.is_low_precision, backend.is_low_precision),
+        (ops.is_complex, backend.is_complex),
+        (ops.float32, lambda: mx.float32),
+        (ops.real_dtype, real_dtype),
+        (ops.scalar, backend.scalar),
+        (ops.zeros, zeros),
+        (ops.zeros_like, backend.zeros_like),
+        (ops.ones_like, ones_like),
+        (ops.astype, backend.astype),
+        (ops.clone, clone),
+        (ops.detach, detach),
+        (ops.transfer, transfer),
+        (ops.scalar_item, scalar_item),
+        (ops.sqrt, backend.sqrt),
+        (ops.square, backend.square),
+        (ops.abs, abs),
+        (ops.add, add),
+        (ops.subtract, subtract),
+        (ops.multiply, multiply),
+        (ops.divide, divide),
+        (ops.sum, backend.sum),
+        (ops.greater, greater),
+        (ops.minimum, backend.minimum),
+        (ops.maximum, backend.maximum),
+        (ops.where, backend.where),
+        (ops.isfinite, backend.isfinite),
+        (ops.all, all),
+        (ops.nan_to_num, backend.nan_to_num),
+        (ops.clamp, backend.clamp),
+        (ops.concatenate, backend.concatenate),
+        (ops.slice_array, backend.slice_array),
+        (ops.promote_dtype, backend.promote_dtype),
+        (autodiff.grad_and_value, backend.value_and_grad),
+        (autodiff.vmap, backend.vmap),
+        (pytree._tree_map, backend.tree_map),
+        (pytree._tree_flatten, backend.tree_flatten),
+        (pytree._tree_flatten_with_paths, backend.tree_flatten_with_paths),
+        (pytree._tree_unflatten, backend.tree_unflatten),
+        (pytree._tree_leaves, backend.tree_leaves),
+        (pytree._tree_structure, tree_structure),
+        (random_engine._normal, _normal),
+    )
+    for primitive, implementation in registrations:
+        if not primitive.supports("mlx"):
+            primitive.register("mlx", implementation)
+
+
+__all__ = ["MlxBackend", "register_core_primitives"]

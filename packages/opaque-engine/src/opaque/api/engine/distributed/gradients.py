@@ -20,9 +20,7 @@ import math
 from dataclasses import replace
 from typing import Any
 
-import torch
-import torch.distributed as dist
-
+from opaque.api.engine import ops, runtime
 from opaque.api.engine.pytree import tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
@@ -45,8 +43,7 @@ _WRAPPER_REDUCTION_OPS = {"sum", "mean"}
 def _assert_object_equal(value: Any, *, name: str) -> None:
     if not is_distributed():
         return
-    gathered = [None] * get_world_size()
-    dist.all_gather_object(gathered, value)
+    gathered = runtime.distributed_all_gather_object(value)
     mismatched = [idx for idx, other in enumerate(gathered) if other != value]
     if mismatched:
         raise RuntimeError(
@@ -160,7 +157,7 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
         return
 
     def _reduce(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
+        if ops.is_array(leaf):
             all_reduce_(leaf, op=op)
             return leaf
         raise TypeError(
@@ -204,8 +201,8 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
         return _reduced_metadata(reduced, op, _metadata_world_size())
 
     def _clone(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
-            return leaf.clone()
+        if ops.is_array(leaf):
+            return ops.clone(leaf)
         raise TypeError(
             f"reduce_pytree expects tensor leaves after wrapper dispatch; "
             f"got {type(leaf).__name__}. Unwrap paired/custom containers "

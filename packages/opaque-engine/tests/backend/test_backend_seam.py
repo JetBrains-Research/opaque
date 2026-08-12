@@ -22,6 +22,7 @@ from opaque.api.engine.backend import (
     use_backend,
 )
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.engine.primitive import CORE_PRIMITIVES
 from opaque.random import generator_from_key, key
 from opaque.types import ClippedPytree
 
@@ -37,6 +38,20 @@ class _RecordingBackend:
     """Minimal stand-in backend used to prove the resolver actually swaps."""
 
     name = "recording"
+
+    def __init__(self) -> None:
+        _register_test_core(self.name)
+
+
+def _register_test_core(backend_name: str) -> None:
+    for primitive in CORE_PRIMITIVES:
+        if not primitive.supports(backend_name):
+            primitive.register(
+                backend_name,
+                lambda *args, _primitive=primitive, **kwargs: _primitive.resolve(
+                    "torch"
+                )(*args, **kwargs),
+            )
 
 
 def test_default_backend_is_torch():
@@ -240,17 +255,15 @@ class _DelegatingBackend:
     def __init__(self, inner: TorchBackend) -> None:
         self._inner = inner
         self.calls: list[str] = []
+        for primitive in CORE_PRIMITIVES:
+            implementation = primitive.resolve("torch")
+            operation_name = primitive.name.rsplit(".", 1)[-1]
 
-    def __getattr__(self, name):
-        attr = getattr(self._inner, name)
-        if not callable(attr):
-            return attr
+            def wrapped(*args, _name=operation_name, _impl=implementation, **kwargs):
+                self.calls.append(_name)
+                return _impl(*args, **kwargs)
 
-        def _wrapper(*args, **kwargs):
-            self.calls.append(name)
-            return attr(*args, **kwargs)
-
-        return _wrapper
+            primitive.register(self.name, wrapped, replace=True)
 
 
 def _loss(param, data):
@@ -284,7 +297,7 @@ def test_clipped_grad_identical_through_alternate_backend():
     assert torch.equal(_unwrap(baseline), _unwrap(through_seam))
 
     # The full seam was exercised: autodiff + vectorization + clip math.
-    assert "value_and_grad" in recording.calls
+    assert "grad_and_value" in recording.calls
     assert "vmap" in recording.calls
     for prim in ("square", "sum", "sqrt"):
         assert prim in recording.calls, prim

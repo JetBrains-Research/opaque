@@ -46,8 +46,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import tree_flatten
 from opaque.api.engine.types import (
     ClippedPytree,
@@ -94,7 +93,7 @@ class LossScaler(NamedTuple):
     is mutated in place.
     """
 
-    scale_loss: Callable[[torch.Tensor, LossScalerState], torch.Tensor]
+    scale_loss: Callable[[Any, LossScalerState], Any]
     """Multiply ``loss`` by the current scale. Call inside the loss
     closure (after the autocast forward) so the scaled loss propagates
     to per-example gradients through ``vmap(grad(...))``."""
@@ -150,10 +149,10 @@ def loss_scaler(
     if growth_interval <= 0:
         raise ValueError(f"growth_interval must be > 0, got {growth_interval}")
 
-    def scale_loss(loss: torch.Tensor, state: LossScalerState) -> torch.Tensor:
+    def scale_loss(loss: Any, state: LossScalerState) -> Any:
         if not enabled:
             return loss
-        return loss * state.scale
+        return ops.multiply(loss, state.scale)
 
     def unscale_grads(updates: Any, state: LossScalerState) -> Any:
         if not enabled:
@@ -161,8 +160,8 @@ def loss_scaler(
         s = state.scale
 
         def _unscale(t: Any) -> Any:
-            if isinstance(t, torch.Tensor) and t.is_floating_point():
-                return t / s
+            if ops.is_array(t) and ops.is_floating(t):
+                return ops.divide(t, s)
             return t
 
         return tree_map(_unscale, updates)
@@ -199,7 +198,7 @@ def all_finite(updates: Any) -> bool:
     """
 
     def _iter_tensor_containers(value: Any):
-        if isinstance(value, torch.Tensor):
+        if ops.is_array(value):
             yield value
             return
         if isinstance(value, (ClippedPytree, NoisedPytree)):
@@ -217,9 +216,9 @@ def all_finite(updates: Any) -> bool:
 
     for leaf in _iter_tensor_containers(updates):
         if (
-            isinstance(leaf, torch.Tensor)
-            and leaf.is_floating_point()
-            and not torch.isfinite(leaf).all()
+            ops.is_array(leaf)
+            and ops.is_floating(leaf)
+            and not ops.scalar_item(ops.all(ops.isfinite(leaf)))
         ):
             return False
     return True

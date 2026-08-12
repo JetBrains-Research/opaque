@@ -14,6 +14,7 @@ import torch
 
 from opaque.api.engine.backend import TorchBackend, set_backend, use_backend
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
+from opaque.api.engine.primitive import CORE_PRIMITIVES
 from opaque.types import ClippedPytree
 
 
@@ -25,18 +26,15 @@ class _RecordingBackend:
     def __init__(self, inner: TorchBackend) -> None:
         self._inner = inner
         self.calls: list[str] = []
+        for primitive in CORE_PRIMITIVES:
+            implementation = primitive.resolve("torch")
+            operation_name = primitive.name.rsplit(".", 1)[-1]
 
-    def value_and_grad(self, *args, **kwargs):
-        self.calls.append("value_and_grad")
-        return self._inner.value_and_grad(*args, **kwargs)
+            def wrapped(*args, _name=operation_name, _impl=implementation, **kwargs):
+                self.calls.append(_name)
+                return _impl(*args, **kwargs)
 
-    def vmap(self, *args, **kwargs):
-        self.calls.append("vmap")
-        return self._inner.vmap(*args, **kwargs)
-
-    def __getattr__(self, name):
-        # Everything else (pytree ops, array math, RNG) delegates to torch.
-        return getattr(self._inner, name)
+            primitive.register(self.name, wrapped, replace=True)
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +63,7 @@ def test_clipped_grad_dispatches_value_and_grad_and_vmap():
         )
         grad, _ = grad_fn(param, data, state=state)
 
-    assert "value_and_grad" in recording.calls
+    assert "grad_and_value" in recording.calls
     assert "vmap" in recording.calls
     assert isinstance(_unwrap(grad), torch.Tensor)
 
@@ -79,7 +77,7 @@ def test_auto_clipped_grad_dispatches_value_and_grad_and_vmap():
         grad_fn, state = auto_clipped_grad(_loss, argnums=0, batch_argnums=1, R=1.0)
         grad, _ = grad_fn(param, data, state=state)
 
-    assert "value_and_grad" in recording.calls
+    assert "grad_and_value" in recording.calls
     assert "vmap" in recording.calls
     assert isinstance(_unwrap(grad), torch.Tensor)
 
@@ -96,7 +94,7 @@ def test_clipped_grad_microbatch_dispatches_vmap():
         )
         grad_fn(param, data, state=state)
 
-    assert "value_and_grad" in recording.calls
+    assert "grad_and_value" in recording.calls
     # microbatch_size=2 over a batch of 4 → two vmapped microbatches.
     assert recording.calls.count("vmap") >= 2
 

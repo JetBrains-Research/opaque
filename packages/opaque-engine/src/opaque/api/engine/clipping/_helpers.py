@@ -2,9 +2,8 @@
 
 from collections.abc import Callable
 
-import torch
-
-from opaque.api.engine.pytree import tree_map
+from opaque.api.engine import ops
+from opaque.api.engine.pytree import tree_leaves, tree_map
 
 
 def normalize_to_tuple(value: int | tuple[int, ...]) -> tuple[int, ...]:
@@ -43,34 +42,17 @@ def batch_size_from_args(args: tuple, batch_argnums: tuple[int, ...]) -> int:
     Handles both plain tensors and PyTree (dict/list/tuple) batch args.
     """
     first_batch_arg = args[batch_argnums[0]]
-    if isinstance(first_batch_arg, torch.Tensor):
-        return first_batch_arg.shape[0]
-
-    def _first_tensor(pytree):
-        if isinstance(pytree, torch.Tensor):
-            return pytree
-        if isinstance(pytree, dict):
-            for v in pytree.values():
-                t = _first_tensor(v)
-                if t is not None:
-                    return t
-        elif isinstance(pytree, (list, tuple)):
-            for v in pytree:
-                t = _first_tensor(v)
-                if t is not None:
-                    return t
-        return None
-
-    tensor = _first_tensor(first_batch_arg)
-    if tensor is None:
+    leaves = tree_leaves(first_batch_arg)
+    if not leaves:
         raise ValueError(
             f"Could not determine batch size: no tensor in batch arg at index {batch_argnums[0]}"
         )
-    if tensor.ndim < 1:
+    value_shape = ops.shape(leaves[0])
+    if not value_shape:
         raise ValueError(
             f"Expected batch tensor with ndim >= 1, got 0-d tensor in batch arg at index {batch_argnums[0]}"
         )
-    return tensor.shape[0]
+    return value_shape[0]
 
 
 def zero_grads_like(args: tuple, argnums: tuple[int, ...]):
@@ -80,7 +62,12 @@ def zero_grads_like(args: tuple, argnums: tuple[int, ...]):
     convention of ``torch.func.grad`` with a scalar argnum), or a tuple
     of pytrees otherwise.
     """
-    zeros = tuple(tree_map(torch.zeros_like, args[i]) for i in argnums)
+    zeros = tuple(
+        tree_map(
+            lambda leaf: ops.zeros_like(leaf) if ops.is_array(leaf) else leaf, args[i]
+        )
+        for i in argnums
+    )
     if len(zeros) == 1:
         return zeros[0]
     return zeros

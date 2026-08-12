@@ -1,9 +1,7 @@
-"""``TorchBackend`` — the PyTorch implementation of the :class:`Backend` surface.
+"""``TorchBackend`` compatibility implementation and default runtime handle.
 
-Every method is a thin pass-through over ``torch`` / ``torch.func`` and the
-existing ``opaque.api.engine`` pytree + RNG wrappers, so the compute stays
-traceable under :func:`torch.func.vmap` / :func:`torch.func.grad` and the
-refactor is numerically identical to the direct-torch call sites it replaces.
+Its operation methods remain available during the transition to primitive
+dispatch. The stable ``name`` is the only required :class:`Backend` member.
 """
 
 from __future__ import annotations
@@ -30,10 +28,19 @@ if TYPE_CHECKING:
 
 
 class TorchBackend:
-    """PyTorch-backed implementation of the five-primitive backend surface."""
+    """PyTorch-backed default runtime handle with compatibility operations."""
 
     name = "torch"
     float32 = torch.float32
+
+    def __init__(self) -> None:
+        from opaque.api.engine.backend.torch import (
+            register_core_primitives,
+            register_runtime_primitives,
+        )
+
+        register_core_primitives()
+        register_runtime_primitives()
 
     # --- autodiff ---
     def value_and_grad(

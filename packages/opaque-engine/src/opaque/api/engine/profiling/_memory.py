@@ -36,10 +36,9 @@ import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import torch
-
+from opaque.api.engine import runtime
 from opaque.api.engine.device import device_capabilities
 
 if TYPE_CHECKING:
@@ -116,7 +115,7 @@ class MemoryStats:
         )
 
 
-def get_memory_stats(device: torch.device | str) -> MemoryStats:
+def get_memory_stats(device: object) -> MemoryStats:
     """Get current GPU memory statistics.
 
     Args:
@@ -129,62 +128,10 @@ def get_memory_stats(device: torch.device | str) -> MemoryStats:
         >>> stats = get_memory_stats("cuda")
         >>> print(f"Peak memory: {stats.peak_gb:.2f} GB")
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        allocated = torch.cuda.memory_allocated(device) / (1024**3)
-        reserved = torch.cuda.memory_reserved(device) / (1024**3)
-        peak = torch.cuda.max_memory_allocated(device) / (1024**3)
-        total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
-        free = total - reserved
-        return MemoryStats(
-            allocated_gb=allocated,
-            reserved_gb=reserved,
-            peak_gb=peak,
-            free_gb=free,
-            total_gb=total,
-            exact_peak=True,
-            exact_reserved=True,
-            known_free=True,
-            known_total=True,
-        )
-    elif device.type == "mps":
-        # MPS exposes no allocated-peak counter, but the driver's reserved
-        # bytes are a monotonic high-water mark: the caching allocator grows
-        # them to meet peak demand and doesn't shrink on free (verified
-        # empirically).  So reserved doubles as an upper-bound 'peak' that
-        # *captures transients*, unlike the current allocation which misses any
-        # tensor freed before the read.  recommended_max_memory() is the
-        # working-set budget (total).  All three APIs ship in torch >= 2.9.
-        allocated = torch.mps.current_allocated_memory() / (1024**3)
-        reserved = torch.mps.driver_allocated_memory() / (1024**3)
-        total = torch.mps.recommended_max_memory() / (1024**3)
-        return MemoryStats(
-            allocated_gb=allocated,
-            reserved_gb=reserved,
-            # The driver reserved high-water is a precise, transient-capturing
-            # measurement (exact_peak=True) — it differs from CUDA's peak only
-            # in *quantity* (reserved high-water vs allocated peak), not in
-            # precision.  It equals reserved_gb and upper-bounds allocated peak.
-            peak_gb=reserved,
-            free_gb=max(total - reserved, 0.0),
-            total_gb=total,
-            exact_peak=True,
-            exact_reserved=True,
-            known_free=True,
-            known_total=True,
-        )
-    else:
-        return MemoryStats(
-            exact_peak=False,
-            exact_reserved=False,
-            known_free=False,
-            known_total=False,
-        )
+    return runtime.profiling_memory_stats(device)
 
 
-def reset_peak_memory(device: torch.device | str) -> None:
+def reset_peak_memory(device: object) -> None:
     """Reset the peak-memory high-water mark for accurate per-phase tracking.
 
     - **CUDA**: resets the exact peak-allocated counter (cheap).
@@ -205,18 +152,10 @@ def reset_peak_memory(device: torch.device | str) -> None:
         >>> stats = get_memory_stats(device)
         >>> print(f"Step peak: {stats.peak_gb:.2f} GB")
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
-    elif device.type == "mps":
-        # No peak counter to zero; drop cached blocks so the driver high-water
-        # re-baselines to the live working set (see get_memory_stats/MPS).
-        torch.mps.empty_cache()
+    runtime.profiling_reset_peak_memory(device)
 
 
-def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
+def print_memory(device: object, label: str = "") -> MemoryStats:
     """Print memory stats with optional label. Returns stats for further use.
 
     Args:
@@ -236,27 +175,18 @@ def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
     return stats
 
 
-def empty_cache(device: torch.device | str) -> None:
+def empty_cache(device: object) -> None:
     """Clear GPU cache to free reserved memory.
 
     Args:
         device: PyTorch device
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-    elif device.type == "mps":
-        torch.mps.empty_cache()
+    runtime.profiling_empty_cache(device)
 
 
-def _sync_device(device: torch.device) -> None:
+def _sync_device(device: object) -> None:
     """Synchronize device for accurate timing."""
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    elif device.type == "mps" and torch.backends.mps.is_available():
-        torch.mps.synchronize()
+    runtime.profiling_synchronize(device)
 
 
 @dataclass(frozen=True)
@@ -317,7 +247,7 @@ class _StepPerfBuilder:
     immutable :class:`StepPerf` when the context exits.
     """
 
-    def __init__(self, device: torch.device, batch_size: int) -> None:
+    def __init__(self, device: Any, batch_size: int) -> None:
         self._device = device
         self._batch_size = batch_size
         self._marks: dict[str, float] = {}
@@ -372,7 +302,7 @@ class _StepPerfBuilder:
 
 @contextmanager
 def step_perf(
-    device: torch.device | str,
+    device: Any,
     *,
     batch_size: int = 0,
     track_memory: bool = True,
@@ -401,9 +331,7 @@ def step_perf(
         ...     sp.mark("update")
         >>> wandb.log(sp.perf.to_dict(prefix="train/"))
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
+    device = runtime.profiling_normalize_device(device)
     builder = _StepPerfBuilder(device, batch_size)
 
     # Reset the peak counter only on devices that expose a cheap one (CUDA).
@@ -458,7 +386,7 @@ class PerfState:
         last_step: Most recent :class:`StepPerf` record.
     """
 
-    device: torch.device
+    device: Any
     num_steps: int = 0
     total_time: float = 0.0
     total_samples: int = 0
@@ -571,7 +499,7 @@ class PerfStage:
     def __init__(
         self,
         name: str,
-        device: torch.device,
+        device: Any,
         warmup_steps: int = 1,
     ) -> None:
         self.name = name
@@ -653,7 +581,7 @@ class PerfTracker:
         >>> wandb.log(tracker.train.last.to_dict("train/"))
     """
 
-    def __init__(self, device: torch.device, warmup_steps: int = 1) -> None:
+    def __init__(self, device: Any, warmup_steps: int = 1) -> None:
         object.__setattr__(self, "device", device)
         object.__setattr__(self, "_warmup_steps", warmup_steps)
         object.__setattr__(self, "_stages", {})
@@ -686,7 +614,7 @@ class PerfTracker:
 
 
 def perf_tracker(
-    device: torch.device | str,
+    device: Any,
     warmup_steps: int = 1,
 ) -> PerfTracker:
     """Create a multi-stage performance tracker.
@@ -705,9 +633,7 @@ def perf_tracker(
         ...     train_step(batch)
         >>> print(tracker.train.samples_per_second)
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-    return PerfTracker(device, warmup_steps)
+    return PerfTracker(runtime.profiling_normalize_device(device), warmup_steps)
 
 
 __all__ = [

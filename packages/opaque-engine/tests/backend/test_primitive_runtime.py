@@ -1,0 +1,156 @@
+"""Tests for backend-name primitive dispatch and context-local activation."""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+
+import pytest
+
+import opaque.primitive as facade
+from opaque.api.engine import primitive as primitive_module
+from opaque.api.engine.backend import active_backend, set_backend, use_backend
+from opaque.api.engine.primitive import (
+    CORE_PRIMITIVES,
+    CORE_PROFILE_VERSION,
+    DuplicatePrimitiveRegistrationError,
+    IncompleteBackendError,
+    Primitive,
+    UnsupportedPrimitiveError,
+    lazy_implementation,
+    supports,
+)
+
+
+class _Backend:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def _complete_backend(name: str) -> _Backend:
+    backend = _Backend(name)
+    for primitive in CORE_PRIMITIVES:
+        if not primitive.supports(name):
+            primitive.register(name, lambda *args, **kwargs: None)
+    return backend
+
+
+def test_primitive_resolves_by_active_backend_name_and_reports_missing() -> None:
+    primitive = Primitive("test.runtime.dispatch")
+    primitive.register("first", lambda value: f"first:{value}")
+    primitive.register("second", lambda value: f"second:{value}")
+
+    with use_backend(_complete_backend("first")):
+        assert primitive("value") == "first:value"
+        assert supports(primitive)
+
+    with pytest.raises(
+        UnsupportedPrimitiveError, match=r"test\.runtime\.dispatch.*missing"
+    ):
+        primitive.resolve("missing")
+    assert not supports(primitive, "missing")
+
+
+def test_registration_is_canonical_and_replacement_is_explicit() -> None:
+    primitive = Primitive("test.runtime.registration")
+    assert Primitive("test.runtime.registration") is primitive
+
+    primitive.register("test", lambda: "original")
+    with pytest.raises(DuplicatePrimitiveRegistrationError):
+        primitive.register("test", lambda: "replacement")
+
+    primitive.register("test", lambda: "replacement", replace=True)
+    assert primitive.resolve("test")() == "replacement"
+    assert primitive.registered_backends() == ("test",)
+
+
+def test_lazy_implementation_is_cached_and_support_does_not_import() -> None:
+    primitive = Primitive("test.runtime.lazy")
+    target = lazy_implementation("operator:neg")
+    primitive.register("test", target)
+
+    assert primitive.supports("test")
+    assert not target.is_resolved
+    assert primitive.resolve("test")(3) == -3
+    assert target.is_resolved
+    assert primitive.resolve("test") is target.resolve()
+
+
+def test_core_tier_adds_a_primitive_to_the_versioned_profile(monkeypatch) -> None:
+    monkeypatch.setattr(primitive_module, "CORE_PRIMITIVES", [])
+    primitive = Primitive("test.runtime.core-tier", tier="core")
+
+    profile = primitive_module.core_profile()
+    assert profile.version == CORE_PROFILE_VERSION
+    assert profile.primitives == (primitive,)
+
+
+def test_activation_validates_the_current_portable_core_profile(monkeypatch) -> None:
+    core_primitive = Primitive("test.runtime.required")
+    target = lazy_implementation("operator:neg")
+    core_primitive.register("complete", target)
+    monkeypatch.setattr(primitive_module, "CORE_PRIMITIVES", (core_primitive,))
+
+    with pytest.raises(
+        IncompleteBackendError, match=r"incomplete.*test\.runtime\.required"
+    ):
+        set_backend(_Backend("incomplete"))
+
+    complete = _Backend("complete")
+    with use_backend(complete):
+        assert active_backend() is complete
+    assert not target.is_resolved
+
+
+def test_use_backend_is_nested_exception_safe_and_context_local() -> None:
+    outer = _complete_backend("outer")
+    inner = _complete_backend("inner")
+    previous = active_backend()
+
+    with use_backend(outer):
+        assert active_backend() is outer
+
+        def raise_inside_inner_context() -> None:
+            with use_backend(inner):
+                assert active_backend() is inner
+                raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            raise_inside_inner_context()
+        assert active_backend() is outer
+    assert active_backend() is previous
+
+    seen: list[object] = []
+
+    def worker() -> None:
+        seen.append(active_backend())
+        with use_backend(inner):
+            seen.append(active_backend())
+
+    with use_backend(outer):
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+        assert active_backend() is outer
+
+    assert seen[1] is inner
+    assert seen[0] is not outer
+
+
+def test_async_contexts_do_not_overwrite_each_other() -> None:
+    async def resolve(name: str) -> str:
+        backend = _complete_backend(name)
+        with use_backend(backend):
+            await asyncio.sleep(0)
+            return active_backend().name
+
+    async def run() -> list[str]:
+        return await asyncio.gather(resolve("one"), resolve("two"))
+
+    assert asyncio.run(run()) == ["one", "two"]
+
+
+def test_primitive_facade_is_reexport_only() -> None:
+    assert facade.Primitive is Primitive
+    assert facade.CORE_PROFILE_VERSION == CORE_PROFILE_VERSION
+    assert facade.CORE_PRIMITIVES is CORE_PRIMITIVES

@@ -29,6 +29,9 @@ PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[2] / "packages"
 FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     "opaque-base": ("opaque/serialization/__init__.py",),
     "opaque-engine": (
+        "opaque/autodiff.py",
+        "opaque/ops.py",
+        "opaque/primitive.py",
         "opaque/types.py",
         "opaque/pytree.py",
         "opaque/backend/__init__.py",

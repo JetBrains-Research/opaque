@@ -28,6 +28,7 @@ def mlx_backend() -> Backend:
             "'opaque[mlx]'`."
         ) from exc
 
-    from opaque.api.mlx.backend._mlx import MlxBackend
+    from opaque.api.mlx.backend._mlx import MlxBackend, register_core_primitives
 
+    register_core_primitives()
     return MlxBackend()

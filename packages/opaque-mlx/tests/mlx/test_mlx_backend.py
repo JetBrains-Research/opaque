@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from opaque import autodiff, ops, pytree, random
 from opaque.api.engine.backend import (
     Backend,
     TorchBackend,
@@ -71,6 +72,14 @@ def test_dtype_predicates_for_arrays_and_dtypes(dtype, low_precision, floating) 
     assert backend.is_complex(array) is False
 
 
+def test_complex_dtype_predicate() -> None:
+    backend = mlx_backend()
+    complex_value = mx.array([1 + 2j], dtype=mx.complex64)
+
+    assert backend.is_complex(mx.complex64)
+    assert backend.is_complex(complex_value)
+
+
 def test_value_and_grad_normalizes_value_and_aux_order() -> None:
     backend = mlx_backend()
     x = mx.array([2.0, 3.0])
@@ -108,6 +117,9 @@ def test_vmap_composes_with_value_and_grad() -> None:
     assert _values(grads) == [[1.0, 4.0], [5.0, 6.0]]
     assert _values(values) == [14.0, 28.0]
     assert _values(aux) == [5.0, 11.0]
+
+    with pytest.raises(ValueError, match="randomness='error'"):
+        backend.vmap(grad_and_value, in_axes=(None, 0), randomness="different")
 
 
 def test_pytree_paths_preserve_flat_dotted_keys_for_per_group_clipping() -> None:
@@ -150,12 +162,44 @@ def test_empty_tree_and_nonfinite_sanitization() -> None:
 
 def test_keyed_normal_sampling_is_repeatable() -> None:
     backend = mlx_backend()
-    first = backend.normal((2, 3), dtype=mx.float32, generator=backend.generator(key(7)))
-    second = backend.normal((2, 3), dtype=mx.float32, generator=backend.generator(key(7)))
-    different = backend.normal((2, 3), dtype=mx.float32, generator=backend.generator(key(8)))
+    first = backend.normal(
+        (2, 3), dtype=mx.float32, generator=backend.generator(key(7))
+    )
+    second = backend.normal(
+        (2, 3), dtype=mx.float32, generator=backend.generator(key(7))
+    )
+    different = backend.normal(
+        (2, 3), dtype=mx.float32, generator=backend.generator(key(8))
+    )
 
     assert _values(first) == _values(second)
     assert _values(first) != _values(different)
+
+
+def test_public_core_contract_uses_mlx_registration() -> None:
+    backend = mlx_backend()
+    tree = {"flat.key": mx.array([2.0]), "nested": [mx.array([3.0])]}
+
+    with use_backend(backend):
+        grads, value = autodiff.grad_and_value(lambda x: ops.sum(ops.square(x)))(
+            mx.array([2.0])
+        )
+        assert _values(grads) == [4.0]
+        assert value.item() == pytest.approx(4.0)
+        assert _values(autodiff.vmap(lambda x: x * 2)(mx.array([1.0, 2.0]))) == [
+            2.0,
+            4.0,
+        ]
+        with pytest.raises(ValueError, match="randomness='error'"):
+            autodiff.vmap(lambda x: x, randomness="same")
+
+        paths, leaves, treedef = pytree.tree_flatten_with_paths(tree)
+        assert set(paths) == {("flat.key",), ("nested", 0)}
+        assert pytree.tree_unflatten(treedef, leaves).keys() == tree.keys()
+
+        first = random.normal(random.key(13), (2,), dtype=mx.float32)
+        second = random.normal(random.key(13), (2,), dtype=mx.float32)
+        assert _values(first) == _values(second)
 
 
 def test_registry_swap_and_restore() -> None:
@@ -172,7 +216,11 @@ def test_registry_swap_and_restore() -> None:
 
 def test_tree_leaves_filters_out_non_array_leaves() -> None:
     backend = mlx_backend()
-    tree = {"w": mx.array([1.0, 2.0]), "meta": 5, "nested": {"b": mx.array([3.0]), "c": "foo"}}
+    tree = {
+        "w": mx.array([1.0, 2.0]),
+        "meta": 5,
+        "nested": {"b": mx.array([3.0]), "c": "foo"},
+    }
     leaves = backend.tree_leaves(tree)
 
     assert len(leaves) == 2

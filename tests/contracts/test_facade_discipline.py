@@ -74,6 +74,9 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     "opaque-base": ("opaque/serialization/__init__.py",),
     # Phase 2 — opaque-engine.
     "opaque-engine": (
+        "opaque/autodiff.py",
+        "opaque/ops.py",
+        "opaque/primitive.py",
         "opaque/types.py",
         "opaque/pytree.py",
         "opaque/backend/__init__.py",
@@ -191,13 +194,12 @@ def test_facade_modules_contain_only_reexports() -> None:
             except SyntaxError as e:
                 violations.append(f"{path}: SyntaxError: {e}")
                 continue
-            for node in tree.body:
-                if not _is_allowed_node(node):
-                    violations.append(
-                        f"{path.relative_to(PACKAGES_DIR.parent)}:"
-                        f"{node.lineno}: disallowed node "
-                        f"{type(node).__name__}"
-                    )
+            violations.extend(
+                f"{path.relative_to(PACKAGES_DIR.parent)}:{node.lineno}: "
+                f"disallowed node {type(node).__name__}"
+                for node in tree.body
+                if not _is_allowed_node(node)
+            )
 
     assert not violations, "Façade discipline violations:\n" + "\n".join(
         f"  - {v}" for v in violations

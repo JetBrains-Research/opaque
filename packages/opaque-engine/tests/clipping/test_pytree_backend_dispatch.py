@@ -14,6 +14,7 @@ import torch
 
 from opaque.api.engine.backend import TorchBackend, set_backend, use_backend
 from opaque.api.engine.clipping._pytree import auto_scale_pytree, clip_pytree
+from opaque.api.engine.primitive import CORE_PRIMITIVES
 from opaque.pytree import global_norm
 from opaque.types import PerGroup
 
@@ -26,17 +27,15 @@ class _RecordingBackend:
     def __init__(self, inner: TorchBackend) -> None:
         self._inner = inner
         self.calls: list[str] = []
+        for primitive in CORE_PRIMITIVES:
+            implementation = primitive.resolve("torch")
+            operation_name = primitive.name.rsplit(".", 1)[-1]
 
-    def __getattr__(self, name):
-        attr = getattr(self._inner, name)
-        if not callable(attr):
-            return attr
+            def wrapped(*args, _name=operation_name, _impl=implementation, **kwargs):
+                self.calls.append(_name)
+                return _impl(*args, **kwargs)
 
-        def _wrapper(*args, **kwargs):
-            self.calls.append(name)
-            return attr(*args, **kwargs)
-
-        return _wrapper
+            primitive.register(self.name, wrapped, replace=True)
 
 
 @pytest.fixture(autouse=True)

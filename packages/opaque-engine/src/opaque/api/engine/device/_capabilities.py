@@ -20,10 +20,10 @@ lightweight record each call.
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
+from typing import Any
 
-import torch
+from opaque.api.engine import runtime
 
 __all__ = [
     "DeviceCapabilities",
@@ -31,41 +31,6 @@ __all__ = [
     "fused_kernels_available",
     "sdpa_autocast_under_vmap_broken",
 ]
-
-
-@functools.cache
-def _triton_importable() -> bool:
-    try:
-        import triton  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
-@functools.cache
-def _probe_bf16(device_type: str) -> bool:
-    """Empirically determine whether ``device_type`` can run a bf16 op.
-
-    A probe (rather than a version table) keeps this honest across the matrix
-    of PyTorch versions and Apple Silicon generations: recent torch on an
-    M-series GPU runs bf16, older stacks reject it, and this returns whatever
-    is actually true on the host.
-    """
-    try:
-        if device_type == "cuda":
-            return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-        if device_type == "mps":
-            if not torch.backends.mps.is_available():
-                return False
-            probe = torch.ones(2, dtype=torch.bfloat16, device="mps")
-            return (probe + probe).sum().item() == 4.0
-        if device_type == "cpu":
-            # bf16 on CPU is functional (used for full-cast / autocast), just
-            # slow; opaque's trainer gates it behind ``use_cpu=True``.
-            return True
-    except Exception:
-        return False
-    return False
 
 
 def fused_kernels_available() -> bool:
@@ -76,10 +41,9 @@ def fused_kernels_available() -> bool:
     without Triton) it returns ``False`` and callers fall back to the
     pure-PyTorch eager implementations.
     """
-    return torch.cuda.is_available() and _triton_importable()
+    return runtime.device_fused_kernels_available()
 
 
-@functools.cache
 def sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
     """Whether ``torch.autocast`` fails to cast SDPA under ``vmap(grad)`` here.
 
@@ -94,39 +58,7 @@ def sdpa_autocast_under_vmap_broken(device_type: str) -> bool:
     the eager-attention workaround auto-drops the moment a release fixes it.
     Returns ``False`` on non-MPS devices and when the op runs cleanly.
     """
-    if device_type != "mps" or not torch.backends.mps.is_available():
-        return False
-
-    def _loss(scale, q, k, v):
-        out = torch.nn.functional.scaled_dot_product_attention(q * scale, k, v)
-        return out.float().sum()
-
-    q = torch.randn(2, 1, 4, 8, device="mps")
-    k = torch.randn(2, 1, 4, 8, device="mps")
-    v = torch.randn(2, 1, 4, 8, device="mps", dtype=torch.bfloat16)
-    scale = torch.tensor(1.0, device="mps")
-    try:
-        with torch.autocast(device_type="mps", dtype=torch.bfloat16):
-            torch.vmap(torch.func.grad(_loss), in_dims=(None, 0, 0, 0))(scale, q, k, v)
-    except RuntimeError:
-        return True  # dtype-mismatch crash → bug present, workaround needed
-    return False  # ran cleanly → a torch that fixed it
-
-
-def _recommended_compile_backend(device_type: str) -> str | None:
-    # inductor generates Triton on CUDA, Metal on MPS (PyTorch 2.5+), and
-    # C++/OpenMP on CPU — the right default on every device opaque targets.
-    if device_type in ("cuda", "mps", "cpu"):
-        return "inductor"
-    return None
-
-
-def _peak_memory_trackable(device_type: str) -> bool:
-    # True only where a cheap, resettable peak counter exists for per-step
-    # reset.  CUDA has one; MPS's reserved high-water is exact but resets only
-    # via the costlier empty_cache (so step_perf doesn't reset it per step);
-    # CPU has no peak counter.
-    return device_type == "cuda"
+    return runtime.device_sdpa_autocast_under_vmap_broken(device_type)
 
 
 @dataclass(frozen=True)
@@ -164,7 +96,7 @@ class DeviceCapabilities:
         return self.device_type in ("cuda", "mps")
 
 
-def device_capabilities(device: torch.device | str) -> DeviceCapabilities:
+def device_capabilities(device: Any) -> DeviceCapabilities:
     """Resolve the :class:`DeviceCapabilities` for ``device``.
 
     Args:
@@ -178,15 +110,4 @@ def device_capabilities(device: torch.device | str) -> DeviceCapabilities:
         >>> caps = device_capabilities("mps")
         >>> dtype = torch.bfloat16 if caps.supports_bf16 else torch.float32
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-    dt = device.type
-    return DeviceCapabilities(
-        device_type=dt,
-        supports_bf16=_probe_bf16(dt),
-        supports_compile=_recommended_compile_backend(dt) is not None,
-        recommended_compile_backend=_recommended_compile_backend(dt),
-        supports_fused_kernels=(dt == "cuda" and fused_kernels_available()),
-        peak_memory_trackable=_peak_memory_trackable(dt),
-        supports_pin_memory=(dt == "cuda"),
-    )
+    return runtime.device_capabilities(device)

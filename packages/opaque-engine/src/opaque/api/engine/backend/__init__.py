@@ -1,12 +1,8 @@
-"""Backend seam for the DP clipping compute.
+"""Backend identity and context-local active-backend resolver.
 
-Declares the five-primitive :class:`Backend` protocol (autodiff,
-vectorization, pytree ops, array math, RNG), ships a :class:`TorchBackend`
-implementation, and exposes the process-wide resolver
-(:func:`active_backend` / :func:`set_backend` / :func:`use_backend`).
-
-Importing this package registers :class:`TorchBackend` as the import-time
-default active backend, so :func:`active_backend` works with no setup.
+``Backend`` provides the stable name used by primitive dispatch. The bundled
+``TorchBackend`` remains the zero-configuration default and retains its
+compatibility methods while primitive registrations become the extension seam.
 """
 
 from opaque.api.engine.backend._protocol import Backend

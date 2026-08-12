@@ -7,15 +7,15 @@ resulting ``Subset`` to the sampler.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from torch.utils.data import Subset
+from opaque.api.engine import runtime
 
 if TYPE_CHECKING:
     from collections.abc import Sized
 
 
-def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Subset:
+def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Any:
     """Return the shard of ``dataset`` that belongs to ``rank``.
 
     Each rank gets a contiguous, non-overlapping slice; the last rank receives
@@ -30,7 +30,7 @@ def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Subset
         A ``torch.utils.data.Subset`` view into ``dataset``.
     """
     start, end = _local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-    return Subset(dataset, range(start, end))
+    return runtime.distributed_dataset_subset(dataset, start, end)
 
 
 def _local_shard_bounds(

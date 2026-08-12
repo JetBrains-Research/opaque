@@ -1,7 +1,9 @@
 # API Reference
 
-Opaque provides a functional API for differential privacy in PyTorch. This
-reference documents all public functions and classes.
+Opaque provides a functional API for differential privacy. The bundled Torch
+provider is active by default; portable array, autodiff, pytree, and random
+operations also dispatch through the active backend. This reference documents
+all public functions and classes.
 
 Install via `opaque` (and `opaque[...]` extras) when using this API. Module
 paths remain under `opaque.*`, but the root package is the supported
@@ -12,6 +14,10 @@ user-facing installation target.
 Opaque is organized into several modules, each focused on a specific aspect of DP training:
 
 ### Core utilities
+
+- **[Backend providers and primitives](../development/backend-providers.md)** —
+  authoring contracts for `opaque.primitive`, `opaque.ops`, `opaque.autodiff`,
+  active-backend selection, and optional capabilities
 
 - **[Serialization](serialization.md)** — Flat `state_dict` / `from_state_dict` for
   explicit state trees (optimizers, accounting, clip/noise state, …);

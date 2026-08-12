@@ -34,6 +34,9 @@ dependencies = [
 # ``find_packages`` only discovers sub-packages (directories with
 # ``__init__``).
 py-modules = [
+    "opaque.autodiff",
+    "opaque.ops",
+    "opaque.primitive",
     "opaque.types",
     "opaque.pytree",
 ]

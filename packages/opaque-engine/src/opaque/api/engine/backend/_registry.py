@@ -1,53 +1,44 @@
-"""Process-wide active-backend resolver.
-
-A single module-global singleton (:data:`_ACTIVE`) holds the backend that the
-DP clipping compute resolves through.  :class:`~opaque.api.engine.backend._torch.TorchBackend`
-is registered as the import-time default, so :func:`active_backend` works with
-zero configuration and every call site stays parameter-free.
-
-:func:`set_backend` swaps the active backend permanently; :func:`use_backend`
-is a context manager that swaps it for the duration of a block and restores the
-previous backend on exit (mainly for tests and future backends).
-"""
+"""Context-local active-backend resolver."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from opaque.api.engine.backend._torch import TorchBackend
+from opaque.api.engine.primitive import validate_core_primitives
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from opaque.api.engine.backend._protocol import Backend
 
-# Module-global singleton, resolved once and cached.  ``TorchBackend`` is the
-# import-time default so ``active_backend()`` needs no configuration.
-_ACTIVE: Backend = TorchBackend()
+_DEFAULT_BACKEND: Backend = TorchBackend()
+validate_core_primitives(_DEFAULT_BACKEND)
+_ACTIVE: ContextVar[Backend | None] = ContextVar("opaque_active_backend", default=None)
 
 
 def active_backend() -> Backend:
-    """Return the process-wide active backend (a cheap cached global read)."""
-    return _ACTIVE
+    """Return the backend active in the current execution context."""
+    return _ACTIVE.get() or _DEFAULT_BACKEND
 
 
 def set_backend(backend: Backend) -> None:
-    """Set the process-wide active backend, replacing the current one."""
-    global _ACTIVE
-    _ACTIVE = backend
+    """Activate ``backend`` in the current execution context."""
+    validate_core_primitives(backend)
+    _ACTIVE.set(backend)
 
 
 @contextmanager
 def use_backend(backend: Backend) -> Iterator[Backend]:
-    """Temporarily activate ``backend``, restoring the previous one on exit."""
-    global _ACTIVE
-    previous = _ACTIVE
-    _ACTIVE = backend
+    """Temporarily activate ``backend`` and restore the context token on exit."""
+    validate_core_primitives(backend)
+    token = _ACTIVE.set(backend)
     try:
         yield backend
     finally:
-        _ACTIVE = previous
+        _ACTIVE.reset(token)
 
 
 __all__ = ["active_backend", "set_backend", "use_backend"]

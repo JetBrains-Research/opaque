@@ -1,0 +1,43 @@
+"""Public primitive-dispatch authoring surface."""
+
+from opaque.api.engine.primitive import (
+    CORE_PRIMITIVES,
+    CORE_PROFILE_VERSION,
+    CoreProfile,
+    DuplicatePrimitiveRegistrationError,
+    IncompleteBackendError,
+    InvalidPrimitiveRegistrationError,
+    LazyImplementation,
+    Primitive,
+    PrimitiveError,
+    PrimitiveTier,
+    UnsupportedPrimitiveError,
+    core_profile,
+    declare_core_primitives,
+    lazy_implementation,
+    registered_backends,
+    registered_primitives,
+    supports,
+    validate_core_primitives,
+)
+
+__all__ = [
+    "CORE_PROFILE_VERSION",
+    "CORE_PRIMITIVES",
+    "CoreProfile",
+    "DuplicatePrimitiveRegistrationError",
+    "IncompleteBackendError",
+    "InvalidPrimitiveRegistrationError",
+    "LazyImplementation",
+    "Primitive",
+    "PrimitiveError",
+    "PrimitiveTier",
+    "UnsupportedPrimitiveError",
+    "core_profile",
+    "declare_core_primitives",
+    "lazy_implementation",
+    "registered_backends",
+    "registered_primitives",
+    "supports",
+    "validate_core_primitives",
+]

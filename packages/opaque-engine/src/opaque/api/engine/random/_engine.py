@@ -17,7 +17,10 @@ import hashlib
 
 import torch
 
+from opaque.api.engine.primitive import Primitive
+
 _MAX_TORCH_SEED = 2**63 - 1
+_normal = Primitive("opaque.random.normal", tier="core")
 
 
 def _to_uint64(value: int) -> int:
@@ -95,10 +98,26 @@ def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
     return tuple(fold_in(rng_key, i) for i in range(num))
 
 
+def normal(
+    rng_key: RngKey,
+    shape: tuple[int, ...] | list[int],
+    *,
+    dtype: object | None = None,
+    like: object | None = None,
+) -> object:
+    """Draw a normal sample determined solely by immutable ``rng_key``.
+
+    The key is input-only: repeated calls with the same key and arguments
+    return the same backend-native sample and do not mutate hidden generator
+    state.  ``like`` selects a backend's placement and default dtype.
+    """
+    return _normal(rng_key, shape, dtype=dtype, like=like)
+
+
 def generator_from_key(rng_key: RngKey) -> torch.Generator:
     """Create a deterministic ``torch.Generator`` from a key."""
     seed = rng_key.seed % _MAX_TORCH_SEED
     return torch.Generator().manual_seed(seed)
 
 
-__all__ = ["RngKey", "fold_in", "generator_from_key", "key", "split"]
+__all__ = ["RngKey", "fold_in", "generator_from_key", "key", "normal", "split"]

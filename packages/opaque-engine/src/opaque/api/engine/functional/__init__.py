@@ -1,22 +1,17 @@
-"""Functional utilities for PyTorch models.
-
-This module provides helpers for working with PyTorch's functional API,
-particularly for converting stateful nn.Module objects to functional form
-compatible with torch.func transformations.
-"""
+"""Functional utilities for model and batch-oriented callables."""
 
 import functools
 from collections.abc import Callable
+from typing import Any
 
-import torch
-import torch.nn as nn
+from opaque.api.engine import ops, runtime
 
 
 def make_functional(
-    mod: nn.Module,
+    mod: Any,
     disable_autograd_tracking: bool = False,
     partition_trainable: bool = False,
-) -> tuple[Callable, tuple[torch.Tensor, ...]] | tuple[Callable, dict, dict]:
+) -> tuple[Callable, tuple[Any, ...]] | tuple[Callable, dict, dict]:
     """Convert a PyTorch module to functional form.
 
     This helper mimics the behavior of the deprecated `functorch.make_functional()`.
@@ -141,49 +136,11 @@ def make_functional(
     See Also:
         - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html
     """
-    # Extract parameters with their requires_grad status
-    params_dict = dict(mod.named_parameters())
-
-    stateless_mod = mod
-
-    # Optionally detach parameters from autograd graph
-    if disable_autograd_tracking:
-        params_dict = {name: param.detach() for name, param in params_dict.items()}
-
-    if partition_trainable:
-        # Partition based on requires_grad (BEFORE detaching!)
-        # We need to check the original parameters
-        original_params = dict(mod.named_parameters())
-        trainable_params = {
-            name: params_dict[name]
-            for name, param in original_params.items()
-            if param.requires_grad
-        }
-        frozen_params = {
-            name: params_dict[name]
-            for name, param in original_params.items()
-            if not param.requires_grad
-        }
-
-        def fmodel_dict(params_dict_input, *args, **kwargs):
-            return torch.func.functional_call(
-                stateless_mod, params_dict_input, args, kwargs
-            )
-
-        return fmodel_dict, trainable_params, frozen_params
-
-    else:
-        # Original behavior: return tuple
-        params_names = list(params_dict.keys())
-        params_values = tuple(params_dict.values())
-
-        def fmodel_tuple(new_params_values, *args, **kwargs):
-            new_params_dict = dict(zip(params_names, new_params_values, strict=True))
-            return torch.func.functional_call(
-                stateless_mod, new_params_dict, args, kwargs
-            )
-
-        return fmodel_tuple, params_values
+    return runtime.functional_make_functional(
+        mod,
+        disable_autograd_tracking=disable_autograd_tracking,
+        partition_trainable=partition_trainable,
+    )
 
 
 def _squeeze_output(output):
@@ -192,20 +149,20 @@ def _squeeze_output(output):
     Handles torch.Tensor, dict-like (HF ModelOutput), tuple, and namedtuple.
     Scalars (0-dim tensors) are left untouched.
     """
-    if isinstance(output, torch.Tensor):
+    if ops.is_array(output):
         return output.squeeze(0) if output.ndim > 0 else output
 
     # Dict-like (HF ModelOutput): squeeze top-level tensor values in-place
     if hasattr(output, "__setitem__") and hasattr(output, "items"):
         for k, v in output.items():
-            if isinstance(v, torch.Tensor) and v.ndim > 0:
+            if ops.is_array(v) and len(ops.shape(v)) > 0:
                 output[k] = v.squeeze(0)
         return output
 
     # Namedtuple / tuple
     if isinstance(output, tuple):
         squeezed = tuple(
-            v.squeeze(0) if isinstance(v, torch.Tensor) and v.ndim > 0 else v
+            v.squeeze(0) if ops.is_array(v) and len(ops.shape(v)) > 0 else v
             for v in output
         )
         # Preserve namedtuple type
@@ -301,10 +258,10 @@ def with_batch_dim(
         except (ValueError, TypeError):
             pass
 
-    def _needs_unsqueeze(tensor: torch.Tensor, threshold: int | None) -> bool:
+    def _needs_unsqueeze(tensor: Any, threshold: int | None) -> bool:
         if threshold is None:
             return True
-        return tensor.ndim < threshold
+        return len(ops.shape(tensor)) < threshold
 
     # ``functools.wraps`` propagates ``fn.__wrapped__`` (and sets it to
     # ``fn`` itself) so callers can walk the chain back to the original
@@ -332,7 +289,7 @@ def with_batch_dim(
 
             def _unsqueeze_arg(x, _threshold=min_ndim):
                 nonlocal unsqueezed
-                if isinstance(x, torch.Tensor) and _needs_unsqueeze(x, _threshold):
+                if ops.is_array(x) and _needs_unsqueeze(x, _threshold):
                     unsqueezed = True
                     return x.unsqueeze(0)
                 return x
@@ -345,7 +302,7 @@ def with_batch_dim(
             if name not in kwargs or kwargs[name] is None:
                 continue
             val = kwargs[name]
-            if isinstance(val, torch.Tensor) and _needs_unsqueeze(val, threshold):
+            if ops.is_array(val) and _needs_unsqueeze(val, threshold):
                 unsqueezed = True
                 kwargs[name] = val.unsqueeze(0)
 

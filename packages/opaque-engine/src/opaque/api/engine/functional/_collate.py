@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping
 from typing import TypeVar
 
-import torch
+from opaque.api.engine import ops
 
 T = TypeVar("T")
 
@@ -36,7 +36,7 @@ def _empty_like(template: T) -> T:
         Structure identical to *template* but with every tensor having
         ``shape[0] == 0``.
     """
-    if isinstance(template, torch.Tensor):
+    if ops.is_array(template):
         return template[:0]
     if isinstance(template, Mapping):
         return {k: _empty_like(v) for k, v in template.items()}

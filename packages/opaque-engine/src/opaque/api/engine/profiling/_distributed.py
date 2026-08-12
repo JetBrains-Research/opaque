@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from types import MappingProxyType
+from typing import Any
 
-import torch
-import torch.distributed as dist
-
-from opaque.api.engine.distributed import get_world_size, is_distributed
+from opaque.api.engine import runtime
+from opaque.api.engine.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
     reduce_scalar,
@@ -24,7 +23,7 @@ from ._memory import (
 __all__ = ["sync_perf_state", "sync_perf_tracker"]
 
 
-def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | None:
+def _sync_step_perf(last: StepPerf | None, device: Any) -> StepPerf | None:
     """Synchronize an optional step record with a fixed presence schedule."""
     local_presence = int(last is not None)
     min_presence = reduce_scalar(local_presence, op="min", device=device)
@@ -52,8 +51,7 @@ def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | N
 def _synchronized_stage_names(tracker: PerfTracker) -> tuple[str, ...]:
     """Return the shared stage schema or raise before stage reductions begin."""
     local_names = tuple(sorted(tracker._stages))
-    gathered: list[tuple[str, ...] | None] = [None] * get_world_size()
-    dist.all_gather_object(gathered, local_names)
+    gathered = runtime.distributed_all_gather_object(local_names)
     mismatched = [rank for rank, names in enumerate(gathered) if names != local_names]
     if mismatched:
         raise RuntimeError(
@@ -76,11 +74,7 @@ def sync_perf_state(state: PerfState) -> PerfState:
     if not is_distributed():
         return state
 
-    device = (
-        state.device
-        if isinstance(state.device, torch.device)
-        else torch.device(state.device)
-    )
+    device = state.device
 
     assert_scalar_equal(
         state.num_steps,

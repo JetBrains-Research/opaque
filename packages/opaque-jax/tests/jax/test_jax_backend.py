@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from opaque import autodiff, ops, pytree, random
 from opaque.api.engine.backend import (
     Backend,
     TorchBackend,
@@ -107,9 +108,7 @@ def test_vmap_composes_with_value_and_grad() -> None:
     examples = jnp.array([[1.0, 4.0], [5.0, 6.0]])
 
     grad_and_value = backend.value_and_grad(lambda w, x: jnp.sum(w * x))
-    grads, values = backend.vmap(
-        grad_and_value, in_axes=(None, 0), randomness="different"
-    )(weights, examples)
+    grads, values = backend.vmap(grad_and_value, in_axes=(None, 0))(weights, examples)
 
     assert _values(grads) == [[1.0, 4.0], [5.0, 6.0]]
     assert _values(values) == [14.0, 28.0]
@@ -123,6 +122,9 @@ def test_vmap_composes_with_value_and_grad() -> None:
     assert _values(grads) == [[1.0, 4.0], [5.0, 6.0]]
     assert _values(values) == [14.0, 28.0]
     assert _values(aux) == [5.0, 11.0]
+
+    with pytest.raises(ValueError, match="randomness='error'"):
+        backend.vmap(grad_and_value, in_axes=(None, 0), randomness="different")
 
 
 def test_pytree_paths_support_flat_and_nested_per_group_clipping() -> None:
@@ -185,6 +187,32 @@ def test_keyed_normal_sampling_is_repeatable() -> None:
 
     np.testing.assert_array_equal(first, second)
     assert not np.array_equal(first, different)
+
+
+def test_public_core_contract_uses_jax_registration() -> None:
+    backend = jax_backend()
+    tree = {"flat.key": jnp.array([2.0]), "nested": [jnp.array([3.0])]}
+
+    with use_backend(backend):
+        grads, value = autodiff.grad_and_value(lambda x: ops.sum(ops.square(x)))(
+            jnp.array([2.0])
+        )
+        assert _values(grads) == [4.0]
+        assert float(value) == pytest.approx(4.0)
+        assert _values(autodiff.vmap(lambda x: x * 2)(jnp.array([1.0, 2.0]))) == [
+            2.0,
+            4.0,
+        ]
+        with pytest.raises(ValueError, match="randomness='error'"):
+            autodiff.vmap(lambda x: x, randomness="same")
+
+        paths, leaves, treedef = pytree.tree_flatten_with_paths(tree)
+        assert set(paths) == {("flat.key",), ("nested", 0)}
+        assert pytree.tree_unflatten(treedef, leaves).keys() == tree.keys()
+
+        first = random.normal(random.key(13), (2,), dtype=jnp.float32)
+        second = random.normal(random.key(13), (2,), dtype=jnp.float32)
+        np.testing.assert_array_equal(first, second)
 
 
 def test_registry_swap_and_restore() -> None:

@@ -145,6 +145,7 @@ nav:
       - Distributed Training: tutorials/distributed_training.ipynb
   - Development:
     - Overview: development/index.md
+    - Backend providers and primitives: development/backend-providers.md
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md

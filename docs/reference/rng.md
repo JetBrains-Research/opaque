@@ -8,11 +8,14 @@ threading for deterministic and reproducible DP training.
 The `opaque.random` module provides:
 
 - **Core primitives**: `RngKey`, `split()`, `fold_in()` — Functional RNG with immutable keys
+- **Sampling**: `normal(rng_key, shape, *, dtype=None, like=None)` — Backend-native
+  normal sampling determined solely by an immutable key
 - **Convenience helpers**:
   - `key()` — Create an RngKey from an integer seed
   - `random_key()` — Nondeterministic key from system entropy
   - `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
 - **Bridge function**: `generator_from_key()` — Create a `torch.Generator` from an RngKey
+  for Torch compatibility APIs
 
 ## Quick Reference
 

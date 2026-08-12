@@ -2,8 +2,10 @@
 
 ## Functional Utilities
 
-The `opaque.functional` module provides the `torch.func` bridges that turn
-standard `nn.Module` models into the pure-function form DP-SGD needs.
+The `opaque.functional` module provides model-functionalization helpers that
+turn supported models into the pure-function form DP-SGD needs. The bundled
+Torch provider supports standard `nn.Module` models; other providers report an
+`UnsupportedPrimitiveError` when this optional capability is requested.
 `opaque.dpsgd.clipping.clipped_grad` and friends assume their `loss_fn`
 argument is functional in this sense.
 
@@ -59,7 +61,9 @@ functional API usage.
 ## PyTree Utilities
 
 The `opaque.pytree` module provides helpers for working with PyTrees —
-nested structures of tensors used throughout Opaque.
+nested structures of backend-native arrays used throughout Opaque. Tree
+operations dispatch through the active backend, while `partition()` and
+`merge()` are structural helpers.
 
 **PyTrees** are nested dictionaries or tuples of tensors, commonly used to
 represent model parameters:

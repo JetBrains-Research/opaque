@@ -192,9 +192,8 @@ class TestGatherAuxFieldDevice:
             "mlp": torch.tensor([2.0]),
         }
 
-        monkeypatch.setattr(dist_mod, "get_world_size", lambda: 2)
-
-        def _fake_all_gather(payloads, local):
+        def _fake_all_gather(local):
+            payloads = [None] * 2
             payloads[0] = local
             if local is None:
                 payloads[1] = remote_group_norms
@@ -202,8 +201,11 @@ class TestGatherAuxFieldDevice:
                 payloads[1] = local.detach().cpu().clone()
             else:
                 payloads[1] = local
+            return payloads
 
-        monkeypatch.setattr(dist_mod.dist, "all_gather_object", _fake_all_gather)
+        monkeypatch.setattr(
+            dist_mod.runtime, "distributed_all_gather_object", _fake_all_gather
+        )
 
         fields = {
             "grad_norms": torch.tensor([0.5], device=cuda),

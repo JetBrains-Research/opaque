@@ -14,3 +14,6 @@ engine handlers into the foundation registries:
 from __future__ import annotations
 
 import opaque.api.engine.serialization  # noqa: F401  (registers tensor/ndarray handlers)
+from opaque.api.engine.backend.torch._serialization import register_torch_serialization
+
+register_torch_serialization()

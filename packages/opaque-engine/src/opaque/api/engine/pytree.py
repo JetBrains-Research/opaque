@@ -25,8 +25,8 @@ Notes
 from collections.abc import Callable
 from typing import Any
 
-import optree as _ot
-import torch
+from opaque.api.engine import ops
+from opaque.api.engine.primitive import Primitive
 
 ParamPath = tuple[str | int, ...]
 """Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
@@ -38,6 +38,15 @@ Flat ``named_parameters`` dicts use a one-segment path, e.g.
 A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
 matching :func:`optree.tree_flatten_with_path`.
 """
+
+_tree_map = Primitive("opaque.pytree.tree_map", tier="core")
+_tree_flatten = Primitive("opaque.pytree.tree_flatten", tier="core")
+_tree_flatten_with_paths = Primitive(
+    "opaque.pytree.tree_flatten_with_paths", tier="core"
+)
+_tree_unflatten = Primitive("opaque.pytree.tree_unflatten", tier="core")
+_tree_leaves = Primitive("opaque.pytree.tree_leaves", tier="core")
+_tree_structure = Primitive("opaque.pytree.tree_structure", tier="core")
 
 
 def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
@@ -69,42 +78,37 @@ def tree_flatten_with_paths(
 ) -> tuple[list[ParamPath], list[Any], Any]:
     """Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.
 
-    Wraps :func:`optree.tree_flatten_with_path` so PerGroup consumers share one
-    path convention.
+    Providers normalize their native path representation to :data:`ParamPath`.
     """
-    raw_paths, leaves, treedef = _ot.tree_flatten_with_path(tree)
-    paths = [param_path(p) for p in raw_paths]
-    return paths, list(leaves), treedef
+    return _tree_flatten_with_paths(tree)
 
 
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
     """Flatten ``tree`` to ``(leaves, treedef)``.
 
-    Thin wrapper around :func:`optree.tree_flatten`.  Prefer
-    :func:`tree_flatten_with_paths` when callers need leaf identities.
+    Prefer :func:`tree_flatten_with_paths` when callers need leaf identities.
     """
-    leaves, treedef = _ot.tree_flatten(tree)
-    return list(leaves), treedef
+    return _tree_flatten(tree)
 
 
 def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
     """Rebuild a PyTree from ``treedef`` and ``leaves``.
 
-    Thin wrapper around :func:`optree.tree_unflatten`.
+    Dispatches to the provider that created ``treedef``.
     """
-    return _ot.tree_unflatten(treedef, leaves)
+    return _tree_unflatten(treedef, leaves)
 
 
 def tree_structure(tree: Any) -> Any:
     """Return the optree structure of ``tree`` (no leaves).
 
-    Thin wrapper around :func:`optree.tree_structure`.  Useful for asserting
-    that independently gathered payloads share a layout before unflattening.
+    Useful for asserting that independently gathered payloads share a layout
+    before unflattening.
     """
-    return _ot.tree_structure(tree)
+    return _tree_structure(tree)
 
 
-def tree_leaves(tree: Any) -> list[torch.Tensor]:
+def tree_leaves(tree: Any) -> list[Any]:
     """Extract all leaf tensors from a PyTree.
 
     Args:
@@ -119,8 +123,7 @@ def tree_leaves(tree: Any) -> list[torch.Tensor]:
         >>> len(leaves)
         2
     """
-    flat, _ = _ot.tree_flatten(tree)
-    return [x for x in flat if isinstance(x, torch.Tensor)]
+    return _tree_leaves(tree)
 
 
 def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
@@ -139,7 +142,7 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
         >>> doubled['a']
         tensor([2., 4.])
     """
-    return _ot.tree_map(fn, *trees)
+    return _tree_map(fn, *trees)
 
 
 def tree_map_with_path(
@@ -171,7 +174,7 @@ def tree_map_with_path(
     """
     paths, leaves, treedef = tree_flatten_with_paths(tree)
     out = [fn(path, leaf) for path, leaf in zip(paths, leaves, strict=True)]
-    return _ot.tree_unflatten(treedef, out)
+    return tree_unflatten(treedef, out)
 
 
 def partition(
@@ -336,8 +339,8 @@ def _merge_two(tree1: Any, tree2: Any) -> Any:
 def global_norm(
     tree: Any,
     *,
-    compute_dtype: torch.dtype | None = None,
-) -> torch.Tensor:
+    compute_dtype: Any | None = None,
+) -> Any:
     """Compute global L2 norm across all tensors in a PyTree.
 
     The global norm is the square root of the sum of squared norms of all
@@ -368,13 +371,9 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
-    # Resolved lazily (once per call): a top-level import would create a cycle
-    # because the backend package imports this module's pytree wrappers.
-    from opaque.api.engine.backend import active_backend
-
-    backend = active_backend()
-
-    if compute_dtype is not None and not backend.is_floating(compute_dtype):
+    if compute_dtype is not None and (
+        not ops.is_floating(compute_dtype) or ops.is_complex(compute_dtype)
+    ):
         raise TypeError(
             f"compute_dtype must be a real floating-point dtype, got "
             f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
@@ -383,52 +382,33 @@ def global_norm(
             f"accumulator)."
         )
 
-    leaves = backend.tree_leaves(tree)
+    leaves = tree_leaves(tree)
     if not leaves:
-        return backend.scalar(0.0, dtype=compute_dtype or backend.float32)
+        return ops.scalar(0.0, dtype=compute_dtype or ops.float32())
 
     if compute_dtype is not None:
         real_acc_dtype = compute_dtype
     else:
         # Auto-promote: at least float32, but match user's intent if they
         # supplied higher-precision inputs.
-        dtypes = [t.dtype for t in leaves]
-        float_dtypes = [dt for dt in dtypes if backend.is_floating(dt)]
-        complex_dtypes = [dt for dt in dtypes if backend.is_complex(dt)]
+        real_acc_dtype = ops.float32()
+        for leaf in leaves:
+            leaf_dtype = ops.dtype(leaf)
+            if ops.is_complex(leaf_dtype):
+                leaf_dtype = ops.real_dtype(leaf_dtype)
+            elif not ops.is_floating(leaf_dtype):
+                continue
+            if not ops.is_low_precision(leaf_dtype):
+                real_acc_dtype = ops.promote_dtype(real_acc_dtype, leaf_dtype)
 
-        if complex_dtypes:
-            acc_dtype = torch.complex64
-            for dt in complex_dtypes:
-                acc_dtype = backend.promote_dtype(acc_dtype, dt)
-            # For complex, accumulate real magnitudes in the corresponding real dtype
-            real_acc_dtype = backend.promote_dtype(
-                torch.float32, torch.tensor(0, dtype=acc_dtype).real.dtype
-            )
-        elif float_dtypes:
-            real_acc_dtype = backend.float32
-            for dt in float_dtypes:
-                real_acc_dtype = backend.promote_dtype(real_acc_dtype, dt)
-        else:
-            # All integer/bool → accumulate in float32
-            real_acc_dtype = backend.float32
-
-    total = backend.scalar(0.0, dtype=real_acc_dtype, like=leaves[0])
+    total = ops.scalar(0.0, dtype=real_acc_dtype, like=leaves[0])
 
     for leaf in leaves:
-        if backend.is_complex(leaf):
-            # ||z||^2 = (real^2 + imag^2)
-            real = backend.astype(leaf.real, real_acc_dtype)
-            imag = backend.astype(leaf.imag, real_acc_dtype)
-            total = (
-                total
-                + backend.sum(backend.square(real), dtype=real_acc_dtype)
-                + backend.sum(backend.square(imag), dtype=real_acc_dtype)
-            )
-        else:
-            x = backend.astype(leaf, real_acc_dtype)
-            total = total + backend.sum(backend.square(x), dtype=real_acc_dtype)
+        magnitude = ops.abs(leaf) if ops.is_complex(leaf) else leaf
+        x = ops.astype(magnitude, real_acc_dtype)
+        total = ops.add(total, ops.sum(ops.square(x), dtype=real_acc_dtype))
 
-    return backend.sqrt(total)
+    return ops.sqrt(total)
 
 
 __all__ = [

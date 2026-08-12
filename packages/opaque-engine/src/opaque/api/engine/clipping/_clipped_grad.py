@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import torch
-from torch.autograd.profiler import record_function
-
-from opaque.api.engine.backend import active_backend
+from opaque.api.engine import autodiff, ops, runtime
 from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
@@ -51,7 +48,7 @@ class ClippedGradAux:
     loss_aux: Any | None = None
     clipping_rate: float | None = None
     batch_size: int = 0
-    group_norms: dict[str, torch.Tensor] | None = None
+    group_norms: dict[str, Any] | None = None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -74,6 +71,14 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
         )
 
 
+def _run_with_trace_scope(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run ``fn`` in the optional profiling scope when the backend provides it."""
+    if not runtime.profiling_trace_scope.supports():
+        return fn(*args, **kwargs)
+    with runtime.profiling_trace_scope("opaque::clipped_grad"):
+        return fn(*args, **kwargs)
+
+
 def clipped_grad(
     loss_fn: Callable,
     argnums: int | tuple[int, ...] = 0,
@@ -86,8 +91,8 @@ def clipped_grad(
     second_moment: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
-    dtype: torch.dtype | None = None,
-    compute_dtype: torch.dtype | None = None,
+    dtype: Any | None = None,
+    compute_dtype: Any | None = None,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
     _return_stats: bool = False,
@@ -220,7 +225,7 @@ def clipped_grad(
         else:
             grads = clipped(zeros, max_norm=output_max_norm)
         if return_aux or _force_grad_norms:
-            empty = torch.empty(0)
+            empty = ops.zeros((0,))
             grad_aux = ClippedGradAux(
                 loss_values=empty if return_aux else None,
                 grad_norms=empty,
@@ -232,11 +237,9 @@ def clipped_grad(
             return (grads, grad_aux), state
         return grads, state
 
-    # Route differentiation through the active backend.  ``value_and_grad``
+    # Route differentiation through the active backend.  ``grad_and_value``
     # preserves torch's ``(grad, value)`` / ``(grad, (value, aux))`` ordering.
-    grad_and_value_fn = active_backend().value_and_grad(
-        loss_fn, argnums=argnums, has_aux=True
-    )
+    grad_and_value_fn = autodiff.grad_and_value(loss_fn, argnums=argnums, has_aux=True)
 
     def grad_fn(*args, **kwargs):
         grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
@@ -276,8 +279,9 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            with record_function("opaque::clipped_grad"):
-                (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
+            result, returned_state = _run_with_trace_scope(
+                clipped_grad_fn, *args, state=state, **kwargs
+            )
             if _force_grad_norms:
                 if isinstance(result, tuple):
                     if _return_stats:
@@ -322,10 +326,9 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            with record_function("opaque::clipped_grad"):
-                (clipped_grads, aux), returned_state = clipped_grad_fn(
-                    *args, state=state, **kwargs
-                )
+            (clipped_grads, aux), returned_state = _run_with_trace_scope(
+                clipped_grad_fn, *args, state=state, **kwargs
+            )
             grad_aux = ClippedGradAux(
                 loss_values=aux.values,
                 grad_norms=aux.norms,

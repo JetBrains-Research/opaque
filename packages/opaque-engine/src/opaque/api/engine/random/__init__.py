@@ -8,13 +8,20 @@ like :func:`random_key` for prototyping and
 The :class:`RngKey` data class is reachable via :mod:`opaque.random.types`.
 """
 
-from opaque.api.engine.random._engine import fold_in, generator_from_key, key, split
+from opaque.api.engine.random._engine import (
+    fold_in,
+    generator_from_key,
+    key,
+    normal,
+    split,
+)
 from opaque.api.engine.random._helpers import random_key, set_reproducible_pytorch_seed
 
 __all__ = [
     "fold_in",
     "generator_from_key",
     "key",
+    "normal",
     "random_key",
     "set_reproducible_pytorch_seed",
     "split",
