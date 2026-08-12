@@ -138,7 +138,7 @@ Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
-| `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000` |
+| `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000`, override per query via `epsilon_at(delta, num_mc_samples=..., seed=...)` |
 
 For large `n_steps × num_mc_samples`, the implementation keeps **one copy** of
 the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them

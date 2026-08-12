@@ -155,6 +155,8 @@ class DiscretizationConfig:
             computations. Default: 100,000.
         seed: RNG seed for reproducible Monte Carlo PLD computation.
             Default: 42.
+        max_conv_grid: Maximum convolution grid size for the
+            random-allocation PLD transform. Default: 32,768.
 
     Example::
 
@@ -170,6 +172,7 @@ class DiscretizationConfig:
         tail_mass_truncation: float = 1e-15,
         num_mc_samples: int = 100_000,
         seed: int = 42,
+        max_conv_grid: int = 32_768,
     ) -> None: ...
     @property
     def discretization(self) -> float:
@@ -194,6 +197,10 @@ class DiscretizationConfig:
     @property
     def seed(self) -> int:
         """RNG seed for Monte Carlo."""
+
+    @property
+    def max_conv_grid(self) -> int:
+        """Maximum convolution grid size for random-allocation PLD."""
 
     def __repr__(self) -> str: ...
     def __eq__(self, other: object) -> bool: ...
@@ -851,6 +858,7 @@ def bisr_strategy_coefficients(
 def adaclip_sensitivity(
     noise_multiplier: float,
     quantile_noise_std: float,
+    num_groups: int = 1,
 ) -> float:
     """Combined sensitivity for adaptive clipping (Andrew et al. 2021).
 
@@ -859,6 +867,7 @@ def adaclip_sensitivity(
     Args:
         noise_multiplier: Gradient noise multiplier z.
         quantile_noise_std: Std of quantile estimator noise σ_b.
+        num_groups: Number of independent quantile queries (default 1).
 
     Returns:
         Combined sensitivity z̃.
