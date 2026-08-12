@@ -145,8 +145,12 @@ steep region (`r_e` ≲ 9) would require α ≲ 0.1; α=0.25 only reaches 11.49.
 - **Reframe α:** it is the *derivation* of a depth rule that works and needs no
   tuning, not a performance lever. The insensitivity is now quantified, not assumed.
 - **Retire:** per-layer heterogeneity as a claimed benefit (non-DP).
-- **Caveat:** `eval/loss_min` is a min over ~50 checkpoints and three configs report
-  exactly 0.34346 — evidence of plateau clustering. Final-loss/BPB is the better
-  metric for any follow-up.
+- **Caveat (corrected):** the earlier claim that three configs reported *identical*
+  loss was a ROUNDING ARTIFACT of our own reporting — full precision gives
+  0.3434580 / 0.3434635 / 0.3434576, all distinct. Also `loss_min == loss_final` in
+  4 of 5 runs, so order-statistic bias was minor here. The real limitation is
+  statistical power: one scalar per run cannot resolve 1e-5–1e-4 effects against a
+  1.0e-4 nondeterminism floor. Fix = per-example BPB + paired bootstrap/TOST; see
+  `renyi-story-and-evaluation.md` Part VI.
 - **Open:** ε=1 (high noise) is untested; there α's reachable depth range is much
   wider (7.8–12.5 at ε=3), so the same bound argument would give a larger ceiling.
