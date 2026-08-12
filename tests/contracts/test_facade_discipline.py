@@ -105,6 +105,9 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
         "opaque/patches/transformers/runtime/__init__.py",
     ),
     "opaque-transformers": ("opaque/transformers/__init__.py",),
+    # Phase 2 backend adapters — the public surface only re-exports the
+    # lazy factory from its implementation package.
+    "opaque-mlx": ("opaque/mlx/__init__.py",),
     # opaque-alignment — every façade file under opaque/alignment/ is a pure
     # re-export of the opaque.api.alignment.* impl tree.
     "opaque-alignment": (

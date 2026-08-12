@@ -45,6 +45,7 @@ dependencies = [
 auditing = ["opaque-auditing>=0.0.0.dev0"]
 dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
 alignment = ["opaque-alignment>=0.0.0.dev0"]
+mlx = ["opaque-mlx>=0.0.0.dev0"]
 transformers = [
     "opaque-transformers>=0.0.0.dev0",
     "opaque-patches[transformers]>=0.0.0.dev0",
@@ -54,6 +55,7 @@ all = [
     "opaque[auditing]",
     "opaque[dpftrl]",
     "opaque[alignment]",
+    "opaque[mlx]",
     "opaque[transformers]",
     "opaque[trl]",
 ]
@@ -85,6 +87,7 @@ workspace.members = [
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
     "packages/opaque-auditing",
+    "packages/opaque-mlx",
     "packages/opaque-transformers",
     "packages/opaque-accounting",
     "packages/opaque-patches",
@@ -101,6 +104,7 @@ opaque-optimizers = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
+opaque-mlx = { workspace = true }
 opaque-transformers = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
@@ -211,6 +215,7 @@ src = [
   "packages/opaque-dpftrl/src",
   "packages/opaque-dpsgd/src",
   "packages/opaque-engine/src",
+  "packages/opaque-mlx/src",
   "packages/opaque-optimizers/src",
   "packages/opaque-patches/src",
   "packages/opaque-transformers/src",
