@@ -3,7 +3,7 @@ description: Set up Rust stable and, when requested, cache Cargo dependencies.
 
 inputs:
   components:
-    description: Space-separated Rust components to install.
+    description: Comma-separated Rust components to install.
     required: false
     default: ""
   enable-cache:
