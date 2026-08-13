@@ -53,13 +53,7 @@ def vmap(
     fn: Callable[..., Any],
     in_axes: Any = 0,
     out_axes: Any = 0,
-    randomness: str = "error",
 ) -> Callable[..., Any]:
-    if randomness != "error":
-        raise ValueError(
-            "MLX vmap supports only Opaque's randomness='error' mode; "
-            f"got {randomness!r}."
-        )
     return mx.vmap(fn, in_axes=in_axes, out_axes=out_axes)
 
 

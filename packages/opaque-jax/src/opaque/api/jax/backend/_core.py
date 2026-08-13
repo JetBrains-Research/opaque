@@ -47,14 +47,6 @@ class JaxBackend:
     name = KnownBackend.JAX.value
 
 
-def _unsupported_randomness(randomness: str) -> None:
-    if randomness != "error":
-        raise ValueError(
-            "JAX vmap supports only Opaque's randomness='error' mode; "
-            f"got {randomness!r}."
-        )
-
-
 @_JAX.implements(autodiff._grad_and_value_transform)
 def grad_and_value(
     fn: Callable[..., Any],
@@ -75,10 +67,7 @@ def grad_and_value(
 
 
 @_JAX.implements(autodiff._vmap_transform)
-def vmap(
-    fn: Any, in_axes: Any = 0, out_axes: Any = 0, randomness: str = "error"
-) -> Any:
-    _unsupported_randomness(randomness)
+def vmap(fn: Any, in_axes: Any = 0, out_axes: Any = 0) -> Any:
     return jax.vmap(fn, in_axes=in_axes, out_axes=out_axes)
 
 

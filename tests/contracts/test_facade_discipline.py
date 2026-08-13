@@ -210,3 +210,31 @@ def test_facade_modules_contain_only_reexports() -> None:
     assert not violations, "Façade discipline violations:\n" + "\n".join(
         f"  - {v}" for v in violations
     )
+
+
+def test_stack_clipping_facades_keep_engine_aliases() -> None:
+    import opaque.api.engine.clipping as clipping
+    import opaque.api.engine.clipping.fun as clipping_fun
+    import opaque.api.engine.clipping.types as clipping_types
+    import opaque.dpftrl.clipping as dpftrl_clipping
+    import opaque.dpftrl.clipping.fun as dpftrl_clipping_fun
+    import opaque.dpftrl.clipping.types as dpftrl_clipping_types
+    import opaque.dpsgd.clipping as dpsgd_clipping
+    import opaque.dpsgd.clipping.fun as dpsgd_clipping_fun
+    import opaque.dpsgd.clipping.types as dpsgd_clipping_types
+
+    for stack_clipping in (dpsgd_clipping, dpftrl_clipping):
+        for name in clipping.__all__:
+            assert getattr(stack_clipping, name) is getattr(clipping, name)
+
+    for stack_fun in (dpsgd_clipping_fun, dpftrl_clipping_fun):
+        for name in clipping_fun.__all__:
+            assert getattr(stack_fun, name) is getattr(clipping_fun, name)
+
+    for stack_types in (dpsgd_clipping_types, dpftrl_clipping_types):
+        for name in set(clipping_types.__all__) & set(stack_types.__all__):
+            assert getattr(stack_types, name) is getattr(clipping_types, name)
+
+    assert "adaptive_clipped_grad" in dpsgd_clipping.__all__
+    assert not hasattr(clipping, "adaptive_clipped_grad")
+    assert not hasattr(dpftrl_clipping, "adaptive_clipped_grad")

@@ -93,7 +93,7 @@ enforced in CI under `tests/contracts/`):
    (`ClippedPytree`, `PerGroup`, `MaxNorm`) live in `opaque.types`.
 9. **Prefer factory functions returning callables (or callable
    dataclasses) over user-instantiated classes.** Match the
-   `opaque.optimizers.adamw(...)`, `opaque.clipping.clipped_grad(...)`
+   `opaque.optimizers.adamw(...)`, `opaque.dpsgd.clipping.clipped_grad(...)`
    pattern. New API surfaces should expose `<verb>(...)` (e.g.
    `language_modeling_collator(...)` returning a callable) rather
    than `<Noun>Class(...)`. Class constructors are acceptable for

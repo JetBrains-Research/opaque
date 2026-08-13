@@ -231,10 +231,8 @@ def grad_and_value(*args: Any, **kwargs: Any) -> Any:
 
 
 @_TORCH.implements(autodiff._vmap_transform)
-def vmap(
-    fn: Any, in_axes: Any = 0, out_axes: Any = 0, randomness: str = "error"
-) -> Any:
-    return _vmap(fn, in_dims=in_axes, out_dims=out_axes, randomness=randomness)
+def vmap(fn: Any, in_axes: Any = 0, out_axes: Any = 0) -> Any:
+    return _vmap(fn, in_dims=in_axes, out_dims=out_axes)
 
 
 @_TORCH.implements(pytree.tree_map)

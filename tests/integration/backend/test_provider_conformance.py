@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from tests.integration.backend._providers import provider_case
 
-from opaque import ops
+from opaque import autodiff, ops
 from opaque.api.engine import runtime
 from opaque.api.engine.backend import (
     active_backend,
@@ -60,8 +58,21 @@ def test_nested_native_value_activates_matching_provider(provider_name: str) -> 
     assert backend.name == provider_name
     assert active_backend() is backend
     result = ops.square(case.value)
+    case.evaluate(result)
     assert isinstance(result, case.array_type)
-    assert _tolist(result) == [1.0, 4.0]
+    assert case.to_numpy(result).tolist() == [1.0, 4.0]
+
+
+@pytest.mark.parametrize("provider_name", ["torch", "jax", "mlx"])
+def test_deterministic_vmap_is_consistent_across_providers(provider_name: str) -> None:
+    case = provider_case(provider_name)
+
+    with use_backend(case.backend):
+        result = autodiff.vmap(lambda value: ops.square(value) + 1)(case.value)
+
+    case.evaluate(result)
+    assert isinstance(result, case.array_type)
+    assert case.to_numpy(result).tolist() == [2.0, 5.0]
 
 
 @pytest.mark.parametrize("provider_name", ["torch", "jax", "mlx"])
@@ -76,8 +87,4 @@ def test_first_party_native_arrays_round_trip_nested_state(provider_name: str) -
     assert isinstance(restored, case.array_type)
     assert restored.dtype == case.value.dtype
     assert restored.shape == case.value.shape
-    assert _tolist(restored) == _tolist(case.value)
-
-
-def _tolist(value: Any) -> Any:
-    return value.tolist()
+    assert case.to_numpy(restored).tolist() == case.to_numpy(case.value).tolist()

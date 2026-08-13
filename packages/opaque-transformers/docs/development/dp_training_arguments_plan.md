@@ -848,8 +848,8 @@ handlers anyway:
   module docstring is enough — no code).
 - Add an export in `opaque-core` so importing `opaque.optimizers` triggers
   registration as a side-effect (current pattern: clipping registers when
-  `opaque.clipping.distributed` is imported, which is itself triggered by
-  `_ensure_builtin_sync_types_loaded()` at first dispatch miss in
+  `opaque.api.dpsgd.clipping._distributed` is imported, which is itself
+  triggered by `_ensure_builtin_sync_types_loaded()` at first dispatch miss in
   [state.py:230–242](../../../../packages/opaque-core/src/opaque/distributed/state.py)).
   Extend `_ensure_builtin_sync_types_loaded()` to also import
   `opaque.optimizers.distributed`.

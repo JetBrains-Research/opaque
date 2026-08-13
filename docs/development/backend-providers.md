@@ -117,10 +117,12 @@ The public authoring modules define the portable core:
 
 Implementations receive and return native arrays, dtypes, and device values;
 Opaque does not wrap them. `grad_and_value` returns `(grads, value)`. `vmap`
-must support `randomness="error"`; it must either implement `"same"` and
-`"different"` explicitly or reject them. `normal(rng_key, shape, ...)` must
-derive its result from the immutable key without mutating hidden generator
-state.
+accepts only `fn`, `in_axes`, and `out_axes`; providers own any framework-specific
+hidden-RNG policy. Torch uses its native default and rejects hidden random
+operations, while JAX and MLX use their native transforms. Deterministic
+functions are the portable conformance surface; Opaque does not define cross-provider semantics
+for hidden model RNG. `normal(rng_key, shape, ...)` must derive its result from
+the immutable key without mutating hidden generator state.
 
 Automatic activation, `set_backend()`, and `use_backend()` validate the
 versioned portable core profile. `core_profile()` exposes the version and
@@ -193,4 +195,4 @@ automatically. `opaque-base` deliberately does not import provider wheels.
 4. Add optional capability registrations only for behavior the provider
    actually supports.
 5. Exercise activation, unsupported optional calls, keyed randomness, and
-   `vmap(randomness="error")` in the provider's conformance tests.
+   deterministic `vmap` behavior in the provider's conformance tests.

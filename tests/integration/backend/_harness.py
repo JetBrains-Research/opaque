@@ -1,90 +1,91 @@
-"""Reusable neutral-backend clipping harness for cross-framework tests."""
+"""Engine clipping harness shared by first-party provider tests."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from opaque import autodiff, ops, pytree
-from opaque.api.engine.backend import use_backend
-from opaque.api.engine.clipping._pytree import auto_scale_pytree, clip_pytree
-from opaque.pytree import global_norm
+from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
+from opaque.backend import use_backend
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import numpy as np
+    from tests.integration.backend._providers import ProviderCase
 
-    from opaque.api.engine.backend._protocol import Backend
-
-
-@dataclass(frozen=True)
-class HostBridge:
-    """Evaluate a framework array and expose it through NumPy."""
-
-    to_numpy: Callable[[Any], np.ndarray]
+    from opaque.api.engine.clipping.types import AutoClippedGradAux, ClippedGradAux
+    from opaque.types import ClippedPytree, ClipState, SecondMomentClippingOutput
 
 
 @dataclass(frozen=True)
 class ClippingRun:
-    """Outputs from a per-example neutral clipping composition."""
+    """Output and explicitly threaded state from an engine clipping factory."""
 
-    per_example_grads: Any
-    clipped_grads: Any
-    clipped_norms: Any
-    summed_grads: Any
-    values: Any
-    value_aux: Any
+    grads: ClippedPytree | SecondMomentClippingOutput
+    initial_state: ClipState
+    state: ClipState
+    aux: ClippedGradAux | AutoClippedGradAux | None
 
 
 def run_clipping(
-    backend: Backend,
+    provider: ProviderCase,
     loss_fn: Callable[..., Any],
-    params: Any,
-    batch_x: Any,
-    batch_y: Any,
-    *,
+    *args: Any,
     kind: Literal["fixed", "auto"],
-    bound: float,
+    bound: Any,
     gamma: float = 0.05,
+    argnums: int | tuple[int, ...] = 0,
+    batch_argnums: int | tuple[int, ...] = (1, 2),
+    has_aux: bool = False,
+    return_aux: bool = False,
+    normalize_by: float = 1.0,
+    microbatch_size: int | None = None,
+    second_moment: bool = False,
+    dtype: Any | None = None,
+    compute_dtype: Any | None = None,
 ) -> ClippingRun:
-    """Differentiate, clip each example, and sum using portable primitives.
-
-    MLX's ``vmap`` requires all output leaves to be arrays.  The clipping
-    auxiliary includes a ``None`` group-norm field in scalar mode, so the
-    vmap callback deliberately returns only the transformed gradient tree.
-    Per-example norms are computed separately through the same backend seam.
-    """
-    with use_backend(backend):
-        grad_and_value = autodiff.grad_and_value(loss_fn, has_aux=True)
-        per_example_grads, (values, value_aux) = autodiff.vmap(
-            grad_and_value, in_axes=(None, 0, 0)
-        )(params, batch_x, batch_y)
-
+    """Construct and execute an engine fixed or AUTO-S clipping transform."""
+    common = {
+        "argnums": argnums,
+        "has_aux": has_aux,
+        "batch_argnums": batch_argnums,
+        "return_aux": return_aux,
+        "normalize_by": normalize_by,
+        "microbatch_size": microbatch_size,
+        "second_moment": second_moment,
+        "dtype": dtype,
+    }
+    with use_backend(provider.backend):
         if kind == "fixed":
-
-            def transform(grad: Any) -> Any:
-                return clip_pytree(grad, bound)[0]
-
+            transform, initial_state = clipped_grad(
+                loss_fn,
+                clipping_norm=bound,
+                compute_dtype=compute_dtype,
+                **common,
+            )
         else:
+            if compute_dtype is not None:
+                raise ValueError("AUTO-S does not expose an explicit compute_dtype")
+            transform, initial_state = auto_clipped_grad(
+                loss_fn,
+                R=bound,
+                gamma=gamma,
+                **common,
+            )
 
-            def transform(grad: Any) -> Any:
-                return auto_scale_pytree(grad, R=bound, gamma=gamma)[0]
+        result, state = transform(*args, state=initial_state)
 
-        clipped_grads = autodiff.vmap(transform)(per_example_grads)
-        clipped_norms = autodiff.vmap(global_norm)(clipped_grads)
-        summed_grads = pytree.tree_map(
-            lambda leaf: ops.sum(leaf, axis=0), clipped_grads
-        )
+    if return_aux:
+        grads, aux = result
+    else:
+        grads, aux = result, None
 
     return ClippingRun(
-        per_example_grads=per_example_grads,
-        clipped_grads=clipped_grads,
-        clipped_norms=clipped_norms,
-        summed_grads=summed_grads,
-        values=values,
-        value_aux=value_aux,
+        grads=grads,
+        initial_state=initial_state,
+        state=state,
+        aux=aux,
     )
 
 
-__all__ = ["ClippingRun", "HostBridge", "run_clipping"]
+__all__ = ["ClippingRun", "run_clipping"]

@@ -57,6 +57,7 @@ def test_engine_metadata_and_exports_are_framework_neutral() -> None:
     assert not (engine_path / "src" / "opaque" / "api" / "engine" / "device").exists()
 
     exported_packages = set(engine["tool"]["setuptools"]["packages"]["find"]["include"])
+    assert "opaque.clipping*" not in exported_packages
     assert "opaque.device*" not in exported_packages
     assert "opaque.torch*" not in exported_packages
 

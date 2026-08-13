@@ -141,11 +141,6 @@ def test_vmap_composes_with_value_and_grad() -> None:
             grad_and_value_with_aux, in_axes=(None, 0)
         )(weights, examples)
 
-        with pytest.raises(ValueError, match="randomness='error'"):
-            autodiff.vmap(grad_and_value, in_axes=(None, 0), randomness="different")(
-                weights, examples
-            )
-
     assert _values(grads) == [[1.0, 4.0], [5.0, 6.0]]
     assert _values(values) == [14.0, 28.0]
     assert _values(aux_grads) == [[1.0, 4.0], [5.0, 6.0]]
@@ -226,8 +221,6 @@ def test_public_core_contract_uses_jax_registration() -> None:
             2.0,
             4.0,
         ]
-        with pytest.raises(ValueError, match="randomness='error'"):
-            autodiff.vmap(lambda x: x, randomness="same")(jnp.array([1.0]))
 
         paths, leaves, treedef = pytree.tree_flatten_with_paths(tree)
         assert set(paths) == {("flat.key",), ("nested", 0)}

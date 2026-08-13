@@ -27,7 +27,6 @@ def _vmap_transform(
     fn: Callable[..., Any],
     in_axes: Any = 0,
     out_axes: Any = 0,
-    randomness: str = "error",
 ) -> Callable[..., Any]:
     raise NotImplementedError
 
@@ -76,7 +75,6 @@ def vmap(
     fn: Callable[..., Any],
     in_axes: Any = 0,
     out_axes: Any = 0,
-    randomness: str = "error",
 ) -> Callable[..., Any]:
     """Return an executable vectorized with its invocation backend."""
     return _deferred_transform(
@@ -84,7 +82,6 @@ def vmap(
         fn,
         in_axes=in_axes,
         out_axes=out_axes,
-        randomness=randomness,
     )
 
 

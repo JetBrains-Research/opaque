@@ -50,6 +50,10 @@ def test_autodiff_uses_grads_value_order_and_vmap_error_mode() -> None:
         autodiff.vmap(lambda value: value * 2)(torch.tensor([1, 2])),
         torch.tensor([2, 4]),
     )
+    with pytest.raises(TypeError, match="randomness"):
+        autodiff.vmap(lambda value: value, randomness="same")
+    with pytest.raises(RuntimeError, match="randomness error mode"):
+        autodiff.vmap(lambda _: torch.rand(3))(torch.arange(4))
 
 
 def test_dispatched_pytree_paths_and_keyed_normal_are_stable() -> None:

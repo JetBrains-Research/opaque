@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import opaque.autodiff as autodiff
 import opaque.ops as ops
 import opaque.primitive as primitive
@@ -48,3 +50,16 @@ def test_autodiff_facade_has_an_explicit_complete_export_contract() -> None:
     assert autodiff.__all__ == ["grad_and_value", "vmap"]
     assert autodiff.grad_and_value is api_autodiff.grad_and_value
     assert autodiff.vmap is api_autodiff.vmap
+
+
+def test_vmap_exposes_only_portable_vectorization_arguments() -> None:
+    assert tuple(inspect.signature(autodiff.vmap).parameters) == (
+        "fn",
+        "in_axes",
+        "out_axes",
+    )
+    assert tuple(inspect.signature(api_autodiff._vmap_transform).parameters) == (
+        "fn",
+        "in_axes",
+        "out_axes",
+    )

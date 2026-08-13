@@ -1,4 +1,4 @@
-"""FP32 parity of the neutral fixed/AUTO-S clipping path on Torch and MLX."""
+"""Focused FP32 parity for public fixed/AUTO-S clipping on Torch and MLX."""
 
 from __future__ import annotations
 
@@ -7,13 +7,11 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-from tests.integration.backend._harness import HostBridge, run_clipping
+from tests.integration.backend._harness import run_clipping
+from tests.integration.backend._providers import provider_case
 
 from opaque import pytree
 from opaque.api.engine.backend import use_backend
-from opaque.api.engine.clipping import clipped_grad
-from opaque.mlx import mlx_backend
-from opaque.torch import torch_backend
 
 mx = pytest.importorskip("mlx.core")
 
@@ -23,17 +21,8 @@ _RTOL = 2e-5
 _ATOL = 2e-5
 
 
-def _torch_to_numpy(value: torch.Tensor) -> np.ndarray:
-    return value.detach().cpu().numpy()
-
-
-def _mlx_to_numpy(value: Any) -> np.ndarray:
-    mx.eval(value)
-    return np.asarray(value)
-
-
-TORCH = HostBridge(to_numpy=_torch_to_numpy)
-MLX = HostBridge(to_numpy=_mlx_to_numpy)
+TORCH = provider_case("torch")
+MLX = provider_case("mlx")
 
 
 def _torch_logistic_loss(params, x, y):
@@ -72,12 +61,10 @@ def _make_mlx_inputs() -> tuple[dict[str, Any], Any, Any]:
 def _assert_tree_close(
     torch_tree: Any,
     mlx_tree: Any,
-    *,
-    comparison_backend: Any | None = None,
 ) -> None:
-    with use_backend(torch_backend()):
+    with use_backend(TORCH.backend):
         torch_paths, torch_leaves, _ = pytree.tree_flatten_with_paths(torch_tree)
-    with use_backend(comparison_backend or mlx_backend()):
+    with use_backend(MLX.backend):
         mlx_paths, mlx_leaves, _ = pytree.tree_flatten_with_paths(mlx_tree)
     assert mlx_paths == torch_paths
     for torch_leaf, mlx_leaf in zip(torch_leaves, mlx_leaves, strict=True):
@@ -89,8 +76,8 @@ def _assert_tree_close(
         )
 
 
-def _assert_finite_and_bounded(norms: Any, bridge: HostBridge) -> None:
-    host_norms = bridge.to_numpy(norms)
+def _assert_finite_and_bounded(norms: Any, case: Any) -> None:
+    host_norms = case.to_numpy(norms)
     assert np.isfinite(host_norms).all()
     assert (host_norms <= _BOUND + _ATOL).all()
 
@@ -101,7 +88,7 @@ def test_neutral_clipping_matches_torch_in_fp32(kind: str) -> None:
     mlx_params, mlx_x, mlx_y = _make_mlx_inputs()
 
     torch_run = run_clipping(
-        torch_backend(),
+        TORCH,
         _torch_logistic_loss,
         torch_params,
         torch_x,
@@ -109,9 +96,11 @@ def test_neutral_clipping_matches_torch_in_fp32(kind: str) -> None:
         kind=kind,
         bound=_BOUND,
         gamma=_GAMMA,
+        has_aux=True,
+        return_aux=True,
     )
     mlx_run = run_clipping(
-        mlx_backend(),
+        MLX,
         _mlx_logistic_loss,
         mlx_params,
         mlx_x,
@@ -119,45 +108,21 @@ def test_neutral_clipping_matches_torch_in_fp32(kind: str) -> None:
         kind=kind,
         bound=_BOUND,
         gamma=_GAMMA,
-    )
-
-    assert TORCH.to_numpy(torch_run.values).shape == (4,)
-    assert MLX.to_numpy(mlx_run.values).shape == (4,)
-    assert TORCH.to_numpy(torch_run.value_aux["logits"]).shape == (4,)
-    assert MLX.to_numpy(mlx_run.value_aux["logits"]).shape == (4,)
-    _assert_finite_and_bounded(torch_run.clipped_norms, TORCH)
-    _assert_finite_and_bounded(mlx_run.clipped_norms, MLX)
-    _assert_tree_close(torch_run.summed_grads, mlx_run.summed_grads)
-
-
-def test_fixed_neutral_path_agrees_with_torch_clipped_grad_oracle() -> None:
-    params, batch_x, batch_y = _make_torch_inputs()
-    neutral_run = run_clipping(
-        torch_backend(),
-        _torch_logistic_loss,
-        params,
-        batch_x,
-        batch_y,
-        kind="fixed",
-        bound=_BOUND,
-    )
-    oracle, state = clipped_grad(
-        _torch_logistic_loss,
         has_aux=True,
-        clipping_norm=_BOUND,
-        batch_argnums=(1, 2),
+        return_aux=True,
     )
-    oracle_grads, _ = oracle(params, batch_x, batch_y, state=state)
 
-    _assert_tree_close(
-        neutral_run.summed_grads,
-        oracle_grads.pytree,
-        comparison_backend=torch_backend(),
-    )
+    assert TORCH.to_numpy(torch_run.aux.loss_values).shape == (4,)
+    assert MLX.to_numpy(mlx_run.aux.loss_values).shape == (4,)
+    assert TORCH.to_numpy(torch_run.aux.loss_aux["logits"]).shape == (4,)
+    assert MLX.to_numpy(mlx_run.aux.loss_aux["logits"]).shape == (4,)
+    _assert_finite_and_bounded(torch_run.aux.clipped_grad_norms, TORCH)
+    _assert_finite_and_bounded(mlx_run.aux.clipped_grad_norms, MLX)
+    _assert_tree_close(torch_run.grads.pytree, mlx_run.grads.pytree)
 
 
 @pytest.mark.parametrize("kind", ["fixed", "auto"])
-def test_neutral_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -> None:
+def test_public_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -> None:
     torch_params, _, _ = _make_torch_inputs()
     mlx_params, _, _ = _make_mlx_inputs()
     nonfinite_x = np.array(
@@ -174,7 +139,7 @@ def test_neutral_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -
         return (prediction - y) ** 2, {"prediction": prediction}
 
     torch_run = run_clipping(
-        torch_backend(),
+        TORCH,
         torch_loss,
         torch_params,
         torch.tensor(nonfinite_x),
@@ -182,9 +147,11 @@ def test_neutral_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -
         kind=kind,
         bound=_BOUND,
         gamma=_GAMMA,
+        has_aux=True,
+        return_aux=True,
     )
     mlx_run = run_clipping(
-        mlx_backend(),
+        MLX,
         mlx_loss,
         mlx_params,
         mx.array(nonfinite_x),
@@ -192,8 +159,10 @@ def test_neutral_clipping_sanitizes_nonfinite_per_example_gradients(kind: str) -
         kind=kind,
         bound=_BOUND,
         gamma=_GAMMA,
+        has_aux=True,
+        return_aux=True,
     )
 
-    _assert_finite_and_bounded(torch_run.clipped_norms, TORCH)
-    _assert_finite_and_bounded(mlx_run.clipped_norms, MLX)
-    _assert_tree_close(torch_run.clipped_grads, mlx_run.clipped_grads)
+    _assert_finite_and_bounded(torch_run.aux.clipped_grad_norms, TORCH)
+    _assert_finite_and_bounded(mlx_run.aux.clipped_grad_norms, MLX)
+    _assert_tree_close(torch_run.grads.pytree, mlx_run.grads.pytree)

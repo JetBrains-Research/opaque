@@ -199,7 +199,6 @@ def _microbatch_accumulate(
             per_example_fn,
             in_axes=in_dims,
             out_axes=out_dims,
-            randomness="same",
         )
         outputs = vmapped(*microbatch_args)
         if n_outputs == 1:
@@ -311,7 +310,6 @@ def _microbatch_accumulate_stats_only(
             per_example_fn,
             in_axes=in_dims,
             out_axes=out_dims,
-            randomness="same",
         )
         outputs = vmapped(*microbatch_args)
         clipped_values = outputs[0]
@@ -652,7 +650,6 @@ def clipped_fun(
                 per_example_fn,
                 in_axes=in_dims,
                 out_axes=out_dims,
-                randomness="same",
             )
             outputs = vmapped(*args)
             if n_outputs == 1:
