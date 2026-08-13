@@ -320,3 +320,72 @@ This section exists because §8 was published from runs that were still training
 completion from eval count.** Four candidate effects in this project have now died
 under replication (non-DP heterogeneity, α=∞ allocation on MBPP+, the retention
 effect, eps=1 heterogeneity) — plus one that died from being measured too early.
+
+---
+
+## 10. The depth curve, consolidated (margin & m=0 sweeps)
+
+Motivation: in non-DP the rule keeps `⌊N_α⌋ + m` directions, and with `⌊N_α⌋`=1 the
+constant margin supplies **two thirds** of that count. So `m` — held at the library
+default 2 for every earlier experiment — was the dominant term, and α the minority
+one. m=0 had never been tested.
+
+### 10.1 Algebra (verified empirically)
+
+`r_e = r − ⌊N_α⌋ − m` is **additively separable** in α and m, so
+`r_e(α₁,m) − r_e(α₂,m)` is independent of m: the margin shifts every depth by a
+constant and **cannot alter differences between α values**.
+Confirmed: at m=0, α=0.5 and α=2 both realized depth **15.00**, and scored
+0.34364 vs 0.34368 (agreeing to 0.4e-4). Removing the margin does NOT decollapse α.
+
+### 10.2 The consolidated depth→loss curve (non-DP, seed 42, all runs verified finished)
+
+| realized depth | loss | lever |
+|---|---|---|
+| 1.00 | 0.34700 | fixed p_e |
+| 5.00 | 0.34429 | fixed p_e |
+| 8.5 | (pending) | α=1, m=6 |
+| 9.00 | 0.34368 | fixed p_e |
+| 9.56 | 0.34361 | α=0.1, m=0 |
+| 10.6 | (pending) | α=1, m=4 |
+| **12.7–12.9** | **0.34346** | α=0.5/1, m=2 ← minimum |
+| 13.00 | 0.34354 | fixed p_e |
+| 14.0 | 0.34371 | α=1, m=1 |
+| 15.00 | 0.34364 / 0.34368 | α=0.5/2, m=0 |
+
+- **Shallow interior optimum near depth ~12.8 (≈80% of r).**
+- Degradation: **+1.8e-4 at depth 15**, **+1.5e-4 at depth 9** — i.e. everything from
+  9 to 15 lies within 2e-4 (≈2× the noise floor). A **forgiving plateau**.
+- Excluded as a curve point: α=0.25/m=0 (loss 0.34399). Its depth *drifted*
+  12.3→14.4 during training (at m=0 the feedback loop — deeper refresh concentrates
+  R, lowering `N_α`, deepening further — runs away), so it is a time-varying
+  schedule, not a fixed depth.
+
+### 10.3 The three levers are interchangeable
+
+At matched depth, fixed `p_e`, margin, and α give the same loss:
+depth 9.00 → 0.34368 vs 9.56 → 0.34361 (Δ 0.7e-4); depth 15 via α=0.5 vs α=2 →
+0.34364 vs 0.34368 (Δ 0.4e-4). ⇒ state the recommendation as a **kept-count rule**,
+not in terms of any single parameter.
+
+### 10.4 Answer to "why margin = 2 in every experiment?"
+
+It is the library default (documented as a buffer against discarding
+borderline-useful directions), and a July sweep over m ∈ {1,2,3} selected it. m=0 was
+untested — a real gap, now closed:
+
+> **m=2 beats m=0 by ~1.8e-4** because it places depth at ~13 rather than 15.
+> Justified, but modest (≈2× noise floor), and for a mundane reason: the margin is an
+> additive offset that happens to land near the optimum. It has no independent
+> mechanism.
+
+### 10.5 Crash accounting (7 crashed runs, all discarded)
+
+marg-m{0,4,6}, marg2-m{4,6}, m0-ainf and others crashed at **non-deterministic**
+steps (122–166 of 260). Correlated with batch co-location on one node
+(`...-g9bk`) ⇒ likely **node-level memory pressure from packing multiple 200Gi pods**,
+made more likely by over-subscribing the namespace quota (10 runs against ~5 slots).
+Every partial run was discarded unread: at step ~157 they showed 0.34509/0.34555,
+which would have implied "deeper margins are much worse" — a pure artifact of 40%
+less training. **Rule adopted: check `state == "finished"` AND step count before
+reading any number; cap concurrency at ~3 pods.**
