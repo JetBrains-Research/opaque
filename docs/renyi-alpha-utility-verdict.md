@@ -432,3 +432,35 @@ I claimed an interior optimum twice (§10.2, and a "4.5× turnover" before that)
 depth-14 triplet was already in the data and refutes both. Lesson: **measure
 replicate scatter at a fixed setting before interpreting differences between
 settings** — the noise floor must come from the same distribution as the comparison.
+
+---
+
+## 12. §11 IS SUPERSEDED — its noise floor was invalid
+
+§11 declared the depth 9–15 plateau "flat within scatter" using a **3.7e-4 within-depth
+scatter** computed from runs at the same depth but **different α**. That is a contrast
+between configurations, not a replicate scatter — so it silently assumed α has no
+effect in order to conclude α has no effect. Circular.
+
+The correct same-config replicate floor in non-DP is **2.3e-5** (`renyi-nodp-s42/43/44`,
+plus a duplicate `renyi-nodp-s44` pair differing by 3e-5). Against that floor:
+
+- the depth 9→15 plateau spread (5.6e-4) is **~24×** the floor, not noise;
+- three configs at **identical mean depth 14.00** differing only in α span **5.7e-4 ≈ 20×**
+  the floor (α=∞ 0.34362, α=1 0.34408, α=2 0.34419).
+
+So the α question is **re-opened**, not closed. Mechanistically this is consistent with
+the mediation argument, which constrains α to act through the integer **vector**
+`(r_e,ℓ)_ℓ` across 196 matrices — *not* through its mean. Equal means with different
+distributions are permitted.
+
+**Caveat that prevents claiming it:** the whole non-DP depth curve is seed 42, and the
+2.3e-5 floor comes from a *non-adaptive, fixed-p_e, depth-5* family. Adaptive-depth runs
+may be intrinsically noisier (realised depth depends on random rotation draws). Seed
+replicates of an adaptive config at matched depth are required, and are running
+(`seedrep-ad-nodp-{ainf,a2}-m1-s43/44`).
+
+What survives from §11 unchanged: the **shallow-depth penalty** (depth 1 → +3.6e-3,
+≈155× the corrected floor). That was never in doubt.
+
+See `docs/renyi-status-summary.md` for the current consolidated position.
