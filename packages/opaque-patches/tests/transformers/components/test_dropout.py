@@ -18,6 +18,7 @@ class _Block(nn.Module):
         self.lin = nn.Linear(4, 4)
         # float dropout-rate attribute, as model attentions carry for SDPA
         self.attention_dropout = 0.25
+        self.attn_dropout = 0.2
 
 
 def test_disable_dropout_zeros_modules_and_attrs():
@@ -25,6 +26,7 @@ def test_disable_dropout_zeros_modules_and_attrs():
     disable_dropout(m)
     assert m.drop.p == 0.0
     assert m.attention_dropout == 0.0
+    assert m.attn_dropout == 0.0
 
 
 def test_disable_dropout_via_apply_model_patches():
