@@ -389,3 +389,46 @@ Every partial run was discarded unread: at step ~157 they showed 0.34509/0.34555
 which would have implied "deeper margins are much worse" — a pure artifact of 40%
 less training. **Rule adopted: check `state == "finished"` AND step count before
 reading any number; cap concurrency at ~3 pods.**
+
+---
+
+## 11. FINAL non-DP depth curve (29 verified runs) — RETRACTS §10.2/§10.4
+
+Assembled every non-DP run with `state == "finished"` and ≥25 evals (29 runs), keyed
+on realized depth `rotation/r_e_dyn`.
+
+### 11.1 Within-depth scatter is 2–4e-4, not 1e-4
+
+Three runs at **identical depth 14.00**: 0.34362 / 0.34371 / 0.34399 ⇒ spread
+**3.7e-4**. Seven runs at depth 12.67–12.99: 0.34344–0.34362 ⇒ spread 1.8e-4.
+**The true run-to-run scatter at fixed depth is 2–4e-4.** The earlier 1.0e-4 estimate
+(from the α=∞ / fixed-13 pair) was one lucky pair, not the distribution.
+
+### 11.2 What survives
+
+| effect | magnitude | verdict |
+|---|---|---|
+| shallow depth (≤5) penalty vs best | **+3.6e-3** | **ROBUST (~10× scatter)** |
+| plateau spread depth 9→15 (24 runs) | 5.6e-4 | ≈ scatter ⇒ flat |
+| "interior optimum at ~12.8" | 1.8e-4 | **RETRACTED — below scatter** |
+| "m=2 beats m=0 by 1.8e-4" | 1.8e-4 | **RETRACTED — below scatter** |
+
+### 11.3 The honest rule
+
+> **Refresh at least ~55% of the rank (depth ≥ 9 of 16). Above that it does not
+> matter — depth 9 through 15 is one flat plateau within run-to-run noise. Going
+> shallow is the only mistake: depth ≤5 costs ~3.6e-3, roughly 10× scatter and a
+> quarter of the entire rotation benefit.**
+
+So α, the margin, and fixed `p_e` are three interchangeable ways to land somewhere in
+that plateau, and **none of them needs tuning** — the only requirement is not landing
+below ~9. This also answers "why margin=2": any m ∈ {0,1,2,3} puts depth in 12–15,
+all equivalent. m=2 is fine, and so is m=0.
+
+### 11.4 Correction record
+
+I claimed an interior optimum twice (§10.2, and a "4.5× turnover" before that) on
+1.8–4.5e-4 differences, without first measuring the scatter at fixed depth. The
+depth-14 triplet was already in the data and refutes both. Lesson: **measure
+replicate scatter at a fixed setting before interpreting differences between
+settings** — the noise floor must come from the same distribution as the comparison.
