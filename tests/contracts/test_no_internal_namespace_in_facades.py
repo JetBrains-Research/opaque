@@ -30,6 +30,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     "opaque-base": ("opaque/serialization/__init__.py",),
     "opaque-engine": (
         "opaque/autodiff.py",
+        "opaque/execution.py",
         "opaque/ops.py",
         "opaque/primitive.py",
         "opaque/types.py",

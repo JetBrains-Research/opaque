@@ -27,7 +27,10 @@ def jax_backend() -> Backend:
             "install the Opaque bundle with `pip install 'opaque[jax]'`."
         ) from exc
 
-    from opaque.api.jax.backend import _runtime  # noqa: F401
+    from opaque.api.jax.backend import (
+        _execution,  # noqa: F401
+        _runtime,  # noqa: F401
+    )
     from opaque.api.jax.backend._core import JaxBackend
     from opaque.api.jax.backend._serialization import register_jax_serialization
 

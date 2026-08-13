@@ -14,6 +14,7 @@ from opaque.api.engine.backend import (
     use_backend,
 )
 from opaque.api.engine.primitive import core_profile
+from opaque.execution import ExecutionProfile
 from opaque.serialization import from_state_dict, state_dict
 
 _OPTIONAL_CAPABILITIES = {
@@ -43,6 +44,9 @@ def test_first_party_provider_capability_matrix(provider_name: str) -> None:
     assert runtime.clear_memory_cache.supports(case.backend) is clear_cache
     assert runtime.reset_peak_memory.supports(case.backend) is reset_peak
     assert runtime.trace_scope.supports(case.backend) is trace
+    assert ExecutionProfile.COMPILATION.supports(case.backend)
+    assert ExecutionProfile.CHECKPOINTING.supports(case.backend)
+    assert ExecutionProfile.SAVED_ACTIVATIONS.supports(case.backend)
 
     with use_backend(case.backend):
         assert runtime.synchronize() is None

@@ -80,25 +80,32 @@ def try_microbatch(candidate_mb: int) -> float:
 
 ## Gradient checkpointing
 
-PyTorch's `torch.utils.checkpoint.checkpoint` is supported under
-`vmap(grad(...))`. Enable the runtime patch once with
-`opaque.patches.apply_runtime_patches()`.
-
-**With PyTorch directly** (non-reentrant checkpoint only):
+`opaque.execution.checkpoint(fn)` wraps a callable in backend-native
+activation checkpointing. The wrapper is lazy: it resolves to the backend
+of its first call and caches one transformed callable per backend.
 
 ```python
-from opaque.patches import apply_runtime_patches
-from torch.utils.checkpoint import checkpoint
+from opaque.execution import checkpoint
+from opaque.autodiff import grad, vmap
 
-apply_runtime_patches()
-
-def my_model(x):
-    h = checkpoint(block1, x, use_reentrant=False)
-    h = checkpoint(block2, h, use_reentrant=False)
-    return h.sum()
-
-grads = vmap(grad(my_model))(batch_x)
+checkpointed_block = checkpoint(block)
+grads = vmap(grad(checkpointed_block))(batch_x)
 ```
+
+The portable first version of each transform accepts only `fn`;
+backend-specific compile flags, checkpoint policies, buffer donation, or
+static-argument lists are intentionally not part of the portable contract.
+
+**Torch** maps to `torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`.
+Opaque applies the required Torch/functorch compatibility patches once and
+idempotently, so you do not need to call `opaque.patches.apply_runtime_patches()`
+just to use `checkpoint`.
+
+**JAX** maps to `jax.checkpoint(fn)`.
+
+**MLX** maps to `mx.checkpoint(fn)`. Eager checkpointed gradients are
+supported; `vmap(grad(checkpoint(...)))` is not yet supported by MLX's
+checkpoint primitive.
 
 **With Hugging Face models:**
 
@@ -108,41 +115,103 @@ model.gradient_checkpointing_enable()
 # Then proceed with make_functional, clipped_grad, etc.
 ```
 
-Opaque automatically forces `use_reentrant=False` (the only path compatible
-with functorch). No special kwargs needed.
+`model.gradient_checkpointing_enable()` remains a Torch integration
+convenience; Opaque still forces the non-reentrant path under the hood.
+
+**Backend semantics:**
+
+| Provider | What `checkpoint(fn)` does | Recomputation |
+|---|---|---|
+| Torch | `torch.utils.checkpoint.checkpoint(fn, ..., use_reentrant=False)` | Recomputes intermediates in backward |
+| JAX | `jax.checkpoint(fn)` | Rematerializes via JAX's standard checkpoint |
+| MLX | `mx.checkpoint(fn)` | Recomputes intermediates in backward |
+
+**Limitations:**
+
+- Only safe for first-order differentiation (`grad`, `vjp`, `jacrev`).
+  Higher-order transforms (`hessian`, `jacrev(jacrev)`) are not supported.
+  Opaque only uses first-order differentiation.
+- MLX's checkpoint primitive does not currently compose with
+  `vmap(grad(...))`. Use eager checkpointed gradients on MLX, or wrap the
+  checkpointed region outside the `vmap`.
 
 **Memory comparison:**
 
 | Technique | Memory | Compute | Notes |
-|-----------|--------|---------|-------|
+|---|---|---|---|
 | No optimization | O(batch_size) | 1x | |
-| Gradient checkpointing | Workload-dependent | Recomputation overhead | Measure on the target model |
-| Microbatching (size m) | O(m) gradient term | More sequential passes | Measure on the target device |
+| Gradient checkpointing | Workload-dependent | Recomputation overhead | Best for long chains; measure on target model |
+| Microbatching (size m) | O(m) gradient term | More sequential passes | Measure on target device |
 
-**Limitations:**
+### Saved-activation optimization
 
-- Requires `use_reentrant=False` (the non-reentrant checkpoint path).
-  The legacy reentrant path is not supported.
-- Only safe for first-order differentiation (grad, vjp, jacrev). Not
-  compatible with higher-order transforms (hessian, jacrev(jacrev)).
-  Opaque only uses first-order differentiation, so this is not an issue
-  in practice.
-- Opt out at the API layer (no env-var kill switches): pass
-  `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
-  `apply_model_patches(...)`, or `performance_kernels_config={"vmap_checkpointing": False}`
-  to `TrainingArguments`.
-
-### CPU offloading of saved tensors
-
-`torch.autograd.graph.save_on_cpu` moves tensors saved for backward to
-pinned CPU memory during forward and reloads them during backward. When
-combined with gradient checkpointing, it offloads the checkpoint inputs
-(inter-layer hidden states); checkpoint handles intermediates separately.
+`opaque.execution.optimize_saved_activations(fn)` reduces separate
+accelerator-memory pressure according to each backend's memory model.
 
 ```python
-with torch.autograd.graph.save_on_cpu(pin_memory=True):
-    grads, aux = grad_fn(params, batch)
+from opaque.execution import optimize_saved_activations
+
+optimized_block = optimize_saved_activations(block)
 ```
+
+**Torch** enters `torch.autograd.graph.save_on_cpu(pin_memory=True)` for
+each call, moving tensors saved for backward to pinned CPU memory during
+forward and reloading them during backward. Combined with gradient
+checkpointing, this offloads checkpoint inputs while checkpoint handles
+intermediates separately.
+
+**JAX** applies `jax.checkpoint` with a host-offload policy that moves
+non-batched dot-product inputs to pinned host memory. This is a
+transformer-oriented heuristic rather than offloading every residual;
+measure it on your model.
+
+**MLX** returns the original function unchanged and emits a one-time
+process-level warning. MLX uses unified memory, so there is no separate
+host/device placement problem to solve. Total activation storage is not
+reduced by this transform.
+
+**Backend semantics:**
+
+| Provider | What `optimize_saved_activations(fn)` does |
+|---|---|
+| Torch | `torch.autograd.graph.save_on_cpu(pin_memory=True)` around each call |
+| JAX | `jax.checkpoint(fn, policy=offload_dot_with_no_batch_dims(...))` |
+| MLX | Identity; emits one warning about unified memory |
+
+### Recommended transform order
+
+Apply execution transforms in this order:
+
+```
+checkpoint / optimize_saved_activations → grad / vmap / clip → compile
+```
+
+1. **Select a region** and wrap it with `checkpoint` or
+   `optimize_saved_activations`.
+2. **Build autodiff and clipping** around that region with `grad`,
+   `vmap`, and `clipped_grad`.
+3. **Compile the outermost stable transform** with `compile` so the
+   compiler sees fixed shapes and dtypes.
+
+For example:
+
+```python
+from opaque.execution import compile, checkpoint
+from opaque.autodiff import grad_and_value, vmap
+from opaque.dpsgd.clipping import clipped_grad
+
+core = checkpoint(selected_region)
+grad_fn, _ = clipped_grad(
+    lambda p, x, y: loss_fn(core(p, x), y),
+    clipping_norm=1.0,
+    argnums=0,
+    batch_argnums=(1, 2),
+)
+compiled_step = compile(grad_fn)
+```
+
+Compilation is the outermost layer because it specializes on the stable
+shapes and dtypes produced by the already-differentiated transform.
 
 ## Fused Triton kernels
 

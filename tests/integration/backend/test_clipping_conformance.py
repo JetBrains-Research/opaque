@@ -21,7 +21,7 @@ from opaque.types import (
     clipped,
 )
 
-_PROVIDERS = ("torch", "mlx")
+_PROVIDERS = ("torch", "jax", "mlx")
 _KINDS = ("fixed", "auto")
 _BOUND = 0.75
 _GAMMA = 0.05
@@ -438,8 +438,9 @@ def test_low_precision_defaults_preserve_dtype_and_accumulate_to_fp32(
     )
 
 
-def test_mlx_loss_scaler_and_all_finite_are_backend_neutral() -> None:
-    case = provider_case("mlx")
+@pytest.mark.parametrize("provider_name", ["torch", "jax", "mlx"])
+def test_loss_scaler_and_all_finite_are_backend_neutral(provider_name: str) -> None:
+    case = provider_case(provider_name)
     scaler, state = loss_scaler(
         init_scale=8.0,
         growth_factor=2.0,
@@ -483,7 +484,7 @@ def test_mlx_loss_scaler_and_all_finite_are_backend_neutral() -> None:
     np.testing.assert_allclose(
         case.to_numpy(unscaled["nested"][0]), [1.0, -2.0], rtol=0, atol=0
     )
-    assert unscaled["step"].dtype == case.dtype("int64")
+    assert unscaled["step"].dtype == grads["step"].dtype
 
     clean_once = scaler.update(state, grads_were_finite=True)
     grown = scaler.update(clean_once, grads_were_finite=True)

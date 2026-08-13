@@ -89,6 +89,12 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `local_shard()` — Partition a dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` — Distributed utilities
 
+### Execution transforms
+
+- **[Execution](execution.md)** — Backend-neutral `compile`, `checkpoint`,
+  and `optimize_saved_activations` with lazy per-backend binding and
+  `ExecutionProfile` capability discovery
+
 ### Hugging Face integration
 
 - **[Transformers](transformers.md)** — `opaque.transformers` — DP-SGD for Hugging Face models

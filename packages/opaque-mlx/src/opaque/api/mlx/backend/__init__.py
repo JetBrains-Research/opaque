@@ -28,7 +28,10 @@ def mlx_backend() -> Backend:
             "'opaque[mlx]'`."
         ) from exc
 
-    from opaque.api.mlx.backend import _runtime  # noqa: F401
+    from opaque.api.mlx.backend import (
+        _execution,  # noqa: F401
+        _runtime,  # noqa: F401
+    )
     from opaque.api.mlx.backend._core import MlxBackend
     from opaque.api.mlx.backend._serialization import register_mlx_serialization
 

@@ -132,12 +132,17 @@ backend becomes active.
 
 ## Optional capabilities
 
-Runtime integration uses two named profiles. `RuntimeProfile.DISTRIBUTED`
-covers eager process-level rank, size, barriers, return-based reductions,
-native-array gathering, and object gathering. `RuntimeProfile.OBSERVABILITY`
-covers synchronization and normalized memory observations. Use
-`RuntimeProfile.DISTRIBUTED.supports(backend)` or
-`RuntimeProfile.OBSERVABILITY.supports(backend)` to discover complete profile
+Runtime integration uses named profiles to advertise groups of related
+primitives. `RuntimeProfile.DISTRIBUTED` covers eager process-level rank,
+size, barriers, return-based reductions, native-array gathering, and object
+gathering. `RuntimeProfile.OBSERVABILITY` covers synchronization and
+normalized memory observations. `ExecutionProfile` covers optional
+execution transforms: `COMPILATION` (`compile`), `CHECKPOINTING`
+(`checkpoint`), and `SAVED_ACTIVATIONS` (`optimize_saved_activations`).
+
+Use `RuntimeProfile.DISTRIBUTED.supports(backend)`,
+`RuntimeProfile.OBSERVABILITY.supports(backend)`, or
+`ExecutionProfile.COMPILATION.supports(backend)` to discover complete profile
 support; use each primitive's `.supports(backend)` method for finer-grained
 capabilities.
 
@@ -148,10 +153,17 @@ The first-party capability matrix is:
 | Portable core | yes | yes | yes |
 | Distributed profile | yes | yes | yes |
 | Observability profile | yes | yes | yes |
+| Execution profile: compilation | yes | yes | yes |
+| Execution profile: checkpointing | yes | yes | yes |
+| Execution profile: saved activations | yes | yes | yes [^1] |
 | Native array serialization | `Tensor` + `Parameter` | `jax.Array` | `mlx.core.array` |
 | Allocator cache clear | yes | no | yes |
 | Peak-memory reset | yes | no | yes |
 | Trace annotation | yes | yes | no |
+
+[^1]: On MLX `optimize_saved_activations` is an identity transform and emits
+a one-time warning: unified memory removes the separate host/device placement
+problem, but total activation storage is not reduced.
 
 Memory fields remain `None` when the selected device cannot expose them. In
 particular, JAX reports only fields supplied by `Device.memory_stats()`, and
@@ -165,11 +177,13 @@ portable core can therefore be activated and can run portable algorithms.
 
 ## Organize provider integrations
 
-First-party providers keep registrations in three modules under their backend
+First-party providers keep registrations in modules under their backend
 package: `_core.py` for the portable compute profile, `_runtime.py` for
-distributed and observability operations, and `_serialization.py` for native
-array handlers. The public provider factory imports all three areas and
-registers serialization handlers idempotently.
+distributed and observability operations, `_serialization.py` for native
+array handlers, and `_execution.py` for optional execution transforms such as
+`compile`, `checkpoint`, and `optimize_saved_activations`. The public provider
+factory imports all of these areas and registers serialization handlers
+idempotently.
 
 Provider loading is also the registration boundary for native serialization.
 If serialization is the first Opaque operation, activate the provider first:

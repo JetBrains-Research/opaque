@@ -75,6 +75,7 @@ FACADE_GLOBS_BY_WHEEL: dict[str, tuple[str, ...]] = {
     # Phase 2 — opaque-engine.
     "opaque-engine": (
         "opaque/autodiff.py",
+        "opaque/execution.py",
         "opaque/ops.py",
         "opaque/primitive.py",
         "opaque/types.py",

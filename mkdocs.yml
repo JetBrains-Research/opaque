@@ -158,6 +158,7 @@ nav:
     - Sampling: reference/sampling.md
     - Random: reference/rng.md
     - Distributed: reference/distributed.md
+    - Execution: reference/execution.md
     - Auditing: reference/auditing.md
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md
