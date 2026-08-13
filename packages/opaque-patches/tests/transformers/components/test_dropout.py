@@ -18,6 +18,7 @@ class _Block(nn.Module):
         self.lin = nn.Linear(4, 4)
         # float dropout-rate attribute, as model attentions carry for SDPA
         self.attention_dropout = 0.25
+        self.attn_dropout = 0.2
 
 
 def test_disable_dropout_zeros_modules_and_attrs():
@@ -25,6 +26,31 @@ def test_disable_dropout_zeros_modules_and_attrs():
     disable_dropout(m)
     assert m.drop.p == 0.0
     assert m.attention_dropout == 0.0
+    assert m.attn_dropout == 0.0
+
+
+def test_disable_dropout_zeros_config_attrs():
+    """The sweep also zeros rate attributes on ``model.config`` — the copy
+    many HF forwards re-read instead of the module attribute."""
+
+    class _Config:
+        def __init__(self):
+            self.attn_dropout = 0.1
+            self.attention_dropout = 0.25
+            self.vocab_size = 64  # non-dropout config fields stay untouched
+
+    class _Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = _Config()
+            self.block = _Block()
+
+    model = _Model()
+    disable_dropout(model)
+    assert model.config.attn_dropout == 0.0
+    assert model.config.attention_dropout == 0.0
+    assert model.config.vocab_size == 64
+    assert model.block.attn_dropout == 0.0
 
 
 def test_disable_dropout_via_apply_model_patches():

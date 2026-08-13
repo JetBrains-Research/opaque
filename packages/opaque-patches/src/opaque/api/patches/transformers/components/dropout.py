@@ -4,11 +4,12 @@
 
 DP-SGD trains without dropout in practice (per-sample clipping + noise is the
 regulariser), and dropout doesn't play well with the per-sample-gradient path:
-SDPA's *fused* dropout is incompatible with ``vmap`` ("same randomness with a
-batched tensor input"). This compat patch traverses the model once and zeros
-every dropout source — the ``nn.Dropout`` modules and the float dropout-rate
-attributes that forwards read directly (e.g. the ``dropout_p`` SDPA receives
-from ``self.attention_dropout``).
+PyTorch's default ``vmap`` mode rejects hidden random operations, while SDPA's
+*fused* dropout is also incompatible with batched tensor inputs. This compat
+patch traverses the model once and zeros every dropout source — the
+``nn.Dropout`` modules and the float dropout-rate attributes that forwards read
+directly (e.g. the ``dropout_p`` SDPA receives from
+``self.attention_dropout``).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import torch.nn as nn
 # ``nn.Dropout`` module) — notably the value SDPA gets as ``dropout_p``.
 _DROPOUT_ATTRS = (
     "attention_dropout",
+    "attn_dropout",
     "dropout",
     "hidden_dropout",
     "ffn_dropout",
