@@ -103,3 +103,9 @@ review; the job records that limitation and completes without invoking Junie.
 Normal Junie sessions read the current branch's
 `.junie/guidelines.md`; automated reviews use the base branch's trusted policy
 so a pull request cannot weaken its own review instructions.
+
+The review workflow currently uses the organization fork of
+`JetBrains/junie-github-action` because v1.7.4 contains three tag-based
+transitive actions rejected by Opaque's immutable-action policy. The fork changes
+only those references to full commit SHAs; switch back to the upstream action
+after that fix is released.

@@ -104,7 +104,9 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.login != 'dependabot[bot]' &&
           steps.review-guidance.outputs.available == 'true'
-        uses: JetBrains/junie-github-action@c2ae82fc9fbe0eb81942ceb3d9bd3f89a6b17b95 # v1.7.4
+        # Organization fork of v1.7.4 with transitive actions pinned to SHAs.
+        # Switch back to JetBrains/junie-github-action after the upstream fix.
+        uses: JetBrains-Research/junie-github-action@a539a07060c40af31f8efc67e3623012696c97d9
         with:
           junie_api_key: ${{ secrets.JUNIE_API_KEY }}
           junie_guidelines_filename: review-guidelines.md
