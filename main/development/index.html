@@ -18,7 +18,7 @@
         <link rel="prev" href="../tutorials/distributed_training/">
       
       
-        <link rel="next" href="architecture-contracts/">
+        <link rel="next" href="../reference/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -2221,29 +2221,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="architecture-contracts/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Architecture contracts
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2731,10 +2708,6 @@ contribute to the shared <code>opaque</code> and <code>opaque.api</code> PEP 420
 implementations live under <code>packages/opaque-*/src/opaque/api/</code>; the matching
 <code>src/opaque/</code> directories are public façades that re-export the supported user
 API.</p>
-<p>Read the <a href="architecture-contracts/">architecture contracts</a> before changing
-package boundaries, public façades, dependencies, tests, or user-facing import
-paths. That document is the single source of truth for normative contracts,
-advisory API-design guidance, and each rule's enforcement mechanism.</p>
 <p>The accounting package includes the Rust/PyO3 extension. Run its Cargo tests
 from the repository root along with the relevant Python tests when changing the
 native boundary.</p>
