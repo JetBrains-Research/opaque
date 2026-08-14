@@ -9,6 +9,7 @@ import threading
 import pytest
 
 import opaque.primitive as facade
+from opaque.api.engine import ops
 from opaque.api.engine import primitive as primitive_module
 from opaque.api.engine.backend import (
     BackendNotSelectedError,
@@ -29,6 +30,7 @@ from opaque.api.engine.primitive import (
     lazy_implementation,
     primitive,
     supports,
+    validate_core_primitives,
 )
 
 
@@ -154,6 +156,23 @@ def test_activation_validates_the_current_portable_core_profile(monkeypatch) -> 
     with use_backend(complete):
         assert active_backend() is complete
     assert not target.is_resolved
+
+
+def test_dpsgd_math_primitives_are_required_and_report_missing_capabilities() -> None:
+    required = (ops.exp, ops.erf, ops.erfinv, ops.finfo_eps)
+    assert all(operation in CORE_PRIMITIVES for operation in required)
+
+    provider = BackendProvider("missing-dpsgd-math")
+    for operation in CORE_PRIMITIVES:
+        if operation not in required:
+            provider.implements(operation)(lambda *args, **kwargs: None)
+
+    with pytest.raises(IncompleteBackendError) as error:
+        validate_core_primitives(provider)
+
+    assert error.value.missing_primitives == tuple(
+        operation.name for operation in required
+    )
 
 
 def test_use_backend_is_nested_exception_safe_and_context_local() -> None:

@@ -30,8 +30,8 @@ def _assert_rng_key_equal(state: GaussianNoiseState, state_name: str) -> None:
 def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
     """Validate Gaussian noise state consistency across ranks.
 
-    Asserts that all ranks share the same seed and step counter.  No-op
-    outside ``torch.distributed``.
+    Asserts that all ranks share the same seed and step counter. No-op when
+    the active provider has no initialized distributed runtime.
     """
     if not is_distributed():
         return state

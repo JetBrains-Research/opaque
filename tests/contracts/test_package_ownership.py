@@ -15,7 +15,6 @@ TORCH_CONSUMERS = frozenset(
         "opaque-alignment",
         "opaque-auditing",
         "opaque-dpftrl",
-        "opaque-dpsgd",
         "opaque-patches",
         "opaque-transformers",
     }
@@ -75,7 +74,13 @@ def test_provider_metadata_declares_only_its_native_framework() -> None:
 
         assert {"opaque-engine", framework} <= dependencies
         assert not (dependencies & PROVIDERS - {provider})
-        assert sources == {"opaque-engine": {"workspace": True}}
+        expected_sources = {"opaque-engine": {"workspace": True}}
+        if provider in PROVIDERS:
+            assert _requirement_names(project["optional-dependencies"]["dpsgd"]) == {
+                "opaque-dpsgd"
+            }
+            expected_sources["opaque-dpsgd"] = {"workspace": True}
+        assert sources == expected_sources
         assert metadata["tool"]["setuptools"]["packages"]["find"]["include"] == [
             f"opaque.api.{provider.removeprefix('opaque-')}*",
             f"opaque.{provider.removeprefix('opaque-')}*",
@@ -91,6 +96,28 @@ def test_torch_consumers_depend_on_the_torch_provider_directly() -> None:
 
         assert "opaque-torch" in dependencies
         assert metadata["tool"]["uv"]["sources"]["opaque-torch"] == {"workspace": True}
+
+
+def test_dpsgd_metadata_and_source_are_provider_neutral() -> None:
+    dpsgd_path = PACKAGES_DIR / "opaque-dpsgd"
+    metadata = _metadata(dpsgd_path / "pyproject.toml")
+    dependencies = _requirement_names(metadata["project"]["dependencies"])
+
+    assert {"opaque-engine", "opaque-accounting"} <= dependencies
+    assert not dependencies & {"torch", "jax", "jaxlib", "mlx"}
+    assert not dependencies & PROVIDERS
+    assert metadata["tool"]["uv"]["sources"] == {
+        "opaque-engine": {"workspace": True},
+        "opaque-accounting": {"workspace": True},
+        "opaque-optimizers": {"workspace": True},
+    }
+
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in (dpsgd_path / "src").rglob("*.py")
+    )
+    assert not re.search(
+        r"(?m)^\s*(?:from|import)\s+(?:opaque\.)?(?:torch|jax|mlx)\b", source
+    )
 
 
 def test_workspace_and_lockfile_register_every_provider() -> None:

@@ -3,14 +3,23 @@
 This guide walks through the full DP-SGD pipeline: calibrate the noise
 multiplier for a target privacy budget, clip per-example gradients,
 add Gaussian noise, run an explicit-state optimizer step, and checkpoint
-state. Every import on this page comes from the `opaque.dpsgd.*`
-public façade — no engine paths, no internal `opaque.api.*` paths.
+state. DP-SGD mechanism imports use the `opaque.dpsgd.*` public façade — no
+engine paths or internal `opaque.api.*` paths.
 
 For the conceptual deep-dives on each component, see the topic pages
 under [User Guide](index.md): [clipping](clipping.md),
 [noise](noise.md), [sampling](sampling.md), [accounting](accounting.md),
 [optimizers](optimizers.md). For the full DP-FTRL counterpart, see
 [DP-FTRL end-to-end](dp-ftrl.md).
+
+## Backend selection
+
+Install `opaque-dpsgd` together with the provider for your array runtime:
+`opaque-torch`, `opaque-jax`, or `opaque-mlx`. Passing native parameter and
+batch arrays to the clipping or noise function selects that provider
+automatically. To choose a provider before the first array-bearing call, use
+`opaque.backend.set_backend()` with the provider factory, such as
+`opaque.jax.jax_backend()`.
 
 ## Why DP-SGD
 
@@ -140,13 +149,11 @@ gradients.
 ## 6. End-to-end loop
 
 ```python
-import torch
-from opaque.torch.functional import make_functional
 from opaque.serialization import state_dict
 from opaque.optimizers import apply_updates
 
-fmodel, params = make_functional(model)
-for step, batch in enumerate(sampler):
+# ``params`` and ``batches`` contain native arrays from the selected provider.
+for batch in batches:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
     updates, opt_state = optimizer_step(noised, opt_state, params=params)
@@ -159,16 +166,17 @@ ckpt = {
     "clip_state": clip_state,
     "noise_state": noise_state,
 }
-torch.save(state_dict(ckpt), "step.pt")
+checkpoint = state_dict(ckpt)
 ```
 
-Restore from the same flat state dict with
+Persist the resulting flat state dict with the selected provider's checkpoint
+facility (or your application's storage layer), then restore it with
 `opaque.serialization.from_state_dict`.
 
 ## Runnable references
 
 - [`examples/train_dpsgd.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py)
-  — full causal-LM training script.
+  — full Torch causal-LM training script.
 - `tests/integration/test_dpsgd_pipeline.py` — minimal smoke test
   exercising the same flow on a tiny LlamaConfig + LoRA model
   (and the Qwen2 variant for the real-HF case).

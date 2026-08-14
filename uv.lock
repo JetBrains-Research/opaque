@@ -2582,8 +2582,6 @@ source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -2596,8 +2594,6 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 
@@ -2626,11 +2622,18 @@ dependencies = [
     { name = "opaque-engine" },
 ]
 
+[package.optional-dependencies]
+dpsgd = [
+    { name = "opaque-dpsgd" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "jax", specifier = ">=0.4.30" },
+    { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
+provides-extras = ["dpsgd"]
 
 [[package]]
 name = "opaque-mlx"
@@ -2640,11 +2643,18 @@ dependencies = [
     { name = "opaque-engine" },
 ]
 
+[package.optional-dependencies]
+dpsgd = [
+    { name = "opaque-dpsgd" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.22.0" },
+    { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
+provides-extras = ["dpsgd"]
 
 [[package]]
 name = "opaque-optimizers"
@@ -2689,11 +2699,18 @@ dependencies = [
     { name = "torch" },
 ]
 
+[package.optional-dependencies]
+dpsgd = [
+    { name = "opaque-dpsgd" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
+provides-extras = ["dpsgd"]
 
 [[package]]
 name = "opaque-transformers"

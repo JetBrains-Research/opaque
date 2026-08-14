@@ -2,11 +2,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import exp
 from typing import TYPE_CHECKING, Any, cast
 
-import torch
-from torch.autograd.profiler import record_function
-
+from opaque.api.engine import ops, runtime
+from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
     _validate_static_args,
@@ -17,9 +17,9 @@ from opaque.api.engine.clipping._helpers import (
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.random import fold_in
+from opaque.api.engine.pytree import tree_leaves
+from opaque.random import fold_in, normal
 from opaque.random.types import RngKey
-from opaque.torch.random import generator_from_key
 from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
 
 if TYPE_CHECKING:
@@ -90,15 +90,22 @@ class AdaptiveClipState(ClipState):
 
 
 def _compute_clipping_stats(
-    grad_norms: torch.Tensor, clipping_norm: float
+    grad_norms: Any, clipping_norm: float
 ) -> tuple[float, float, float]:
     """Compute local clipping statistics from per-example gradient norms."""
-    total = float(grad_norms.numel())
+    total = float(ops.shape(grad_norms)[0])
     if total == 0:
         return 0.0, 0.0, 0.0
-    num_clipped = float((grad_norms > clipping_norm).sum().item())
+    num_clipped = float(
+        ops.scalar_item(ops.sum(ops.greater(grad_norms, clipping_norm)))
+    )
     clipping_rate = num_clipped / total
     return num_clipped, total, clipping_rate
+
+
+def _normal_scalar(*, key: RngKey, like: Any | None = None) -> float:
+    """Draw a native scalar and materialize it at the state transition boundary."""
+    return float(ops.scalar_item(normal(key, (), like=like)))
 
 
 def _sample_noisy_clipping_rate(
@@ -107,11 +114,10 @@ def _sample_noisy_clipping_rate(
     key: RngKey,
     step: int,
     fraction_noise_std: float,
+    like: Any | None = None,
 ) -> float:
     """Add DP Gaussian noise to clipping rate using step-folded RNG key."""
-    step_key = fold_in(key, step)
-    generator = generator_from_key(step_key)
-    noise = torch.randn(1, generator=generator).item() * fraction_noise_std
+    noise = _normal_scalar(key=fold_in(key, step), like=like) * fraction_noise_std
     return clipping_rate + noise
 
 
@@ -123,11 +129,18 @@ def _adaptive_clipping_norm_update(
     learning_rate: float,
     clipping_norm_min: float,
     clipping_norm_max: float,
+    like: Any | None = None,
 ) -> float:
     """Compute geometric adaptive clipping update: C * exp(η * (ρ̃ - γ))."""
-    update_factor = torch.exp(
-        torch.tensor(learning_rate * (noisy_clipping_rate - target_quantile))
-    ).item()
+    exponent = learning_rate * (noisy_clipping_rate - target_quantile)
+    if like is None:
+        update_factor = exp(exponent)
+    else:
+        update_factor = float(
+            ops.scalar_item(
+                ops.exp(ops.scalar(exponent, dtype=ops.real_dtype(like), like=like))
+            )
+        )
     new_clipping_norm = base_clipping_norm * update_factor
     return float(max(clipping_norm_min, min(clipping_norm_max, new_clipping_norm)))
 
@@ -199,7 +212,6 @@ def adaptive_clipped_grad(
             - initial_state: Initial AdaptiveClipState
 
     Example (single device):
-        >>> import torch
         >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.optimizers import adamw, apply_updates
@@ -220,12 +232,11 @@ def adaptive_clipped_grad(
         ... )
         >>>
         >>> # Training loop with explicit state-passing
-        >>> params = torch.randn(10, requires_grad=False)
+        >>> # ``params`` and each batch are native arrays from the active provider.
         >>> opt_step, opt_state = adamw(params, lr=1e-3)
         >>>
         >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(1))
-        >>> # ``dataloader`` yields (x, y) batches (e.g. a torch DataLoader).
-        >>> dataloader = [(torch.randn(4, 10), torch.randn(4)) for _ in range(3)]
+        >>> # ``dataloader`` yields native-array ``(x, y)`` batches.
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -241,18 +252,15 @@ def adaptive_clipped_grad(
         ...     # The current DP max_norm is attached to the clipped output.
         ...     current_bound = grad.max_norm
 
-    Example with distributed training (DDP with Poisson sampling):
-        >>> import torch.distributed as dist
-        >>> from torch.utils.data import DataLoader
+    Example with distributed training (Poisson sampling):
         >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.dpsgd.sampling import PoissonSampler
         >>> from opaque.distributed import local_shard, sum_gradients, sync
         >>> from opaque.random import fold_in, key
         >>>
-        >>> # Initialize distributed first (typically via torchrun).
-        >>> dist.init_process_group(backend='nccl')
-        >>> rank, world_size = dist.get_rank(), dist.get_world_size()
+        >>> # Initialize the active provider's distributed runtime first.
+        >>> rank, world_size = 0, 1  # supplied by that runtime
         >>>
         >>> # Create adaptive clipping (local-only function).
         >>> # Distributed callers must synchronize the state explicitly.
@@ -268,7 +276,7 @@ def adaptive_clipped_grad(
         >>> sampler = PoissonSampler(
         ...     shard, sample_rate=0.01, key=fold_in(key(42), rank)
         ... )
-        >>> loader = DataLoader(shard, batch_sampler=sampler)
+        >>> loader = make_loader(shard, batch_sampler=sampler)
         >>>
         >>> for batch_x, batch_y in loader:
         ...     # Each device: compute clipped gradients and local adaptive state
@@ -366,6 +374,14 @@ def adaptive_clipped_grad(
             _batch_size=0.0,
         )
 
+    def _reference_array(args: tuple[Any, ...]) -> Any:
+        leaves = tree_leaves(args[argnums_tuple[0]])
+        if not leaves:
+            raise ValueError(
+                "Adaptive clipping requires at least one native parameter array."
+            )
+        return leaves[0]
+
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
         """Compute clipped gradients with adaptive threshold.
 
@@ -380,7 +396,10 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
-        with record_function("opaque::adaptive_clipped_grad"):
+        backend = ensure_backend(args, kwargs)
+        if not runtime.trace_scope.supports(backend):
+            return _grad_fn_impl(*args, state=state, **kwargs)
+        with runtime.trace_scope("opaque::adaptive_clipped_grad"):
             return _grad_fn_impl(*args, state=state, **kwargs)
 
     def _grad_fn_impl(*args, state: AdaptiveClipState, **kwargs):
@@ -390,6 +409,7 @@ def adaptive_clipped_grad(
         # downstream noise + optimizer dispatch stays paired across empty and
         # non-empty steps. The squared-stream sensitivity is C^2/normalize_by, the
         # same bound ``clipped_grad`` would attach on a non-empty step.
+        reference = _reference_array(args)
         if batch_size_from_args(args, batch_argnums_tuple) == 0:
             new_state = _empty_batch_state(state)
             grads = clipped(
@@ -405,7 +425,7 @@ def adaptive_clipped_grad(
                     ),
                 )
             if return_aux:
-                empty = torch.empty(0)
+                empty = ops.zeros((0,), dtype=ops.real_dtype(reference), like=reference)
                 adaptive_aux = AdaptiveClippedGradAux(
                     loss_values=empty,
                     grad_norms=empty,
@@ -474,10 +494,9 @@ def adaptive_clipped_grad(
                     threshold = current_pg.values[gname]
                     rate = per_group_rates.get(gname, 0.0)
 
-                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
-                    generator = generator_from_key(group_key)
+                    group_key = fold_in(state._rng_key, state._step, i)
                     noise = (
-                        torch.randn(1, generator=generator).item()
+                        _normal_scalar(key=group_key, like=reference)
                         * config["fraction_noise_std"]
                     )
                     noisy_rate = rate + noise
@@ -489,6 +508,7 @@ def adaptive_clipped_grad(
                         learning_rate=config["learning_rate"],
                         clipping_norm_min=config["clipping_norm_min"],
                         clipping_norm_max=config["clipping_norm_max"],
+                        like=reference,
                     )
                 new_clipping_norm = PerGroup(
                     groups=current_pg.groups, values=new_values
@@ -500,15 +520,13 @@ def adaptive_clipped_grad(
                 for i, gname in enumerate(sorted(current_pg.values.keys())):
                     threshold = current_pg.values[gname]
                     gnorms = aux.group_norms[gname]
-                    nc = float((gnorms > threshold).sum().item())
+                    nc, _total, rate = _compute_clipping_stats(gnorms, threshold)
                     per_group_num_clipped[gname] = nc
-                    rate = nc / max(1.0, float(batch_size))
 
                     # Independent noise per group: fold in both step and group index
-                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
-                    generator = generator_from_key(group_key)
+                    group_key = fold_in(state._rng_key, state._step, i)
                     noise = (
-                        torch.randn(1, generator=generator).item()
+                        _normal_scalar(key=group_key, like=reference)
                         * config["fraction_noise_std"]
                     )
                     noisy_rate = rate + noise
@@ -520,6 +538,7 @@ def adaptive_clipped_grad(
                         learning_rate=config["learning_rate"],
                         clipping_norm_min=config["clipping_norm_min"],
                         clipping_norm_max=config["clipping_norm_max"],
+                        like=reference,
                     )
 
                 new_clipping_norm = PerGroup(
@@ -539,16 +558,16 @@ def adaptive_clipped_grad(
                     else 0.0
                 )
             else:
-                num_clipped = float(
-                    (grad_norms > state._next_clipping_norm).sum().item()
+                num_clipped, _total, clipping_rate = _compute_clipping_stats(
+                    grad_norms, state._next_clipping_norm
                 )
-                clipping_rate = aux.clipping_rate
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(
                 clipping_rate,
                 key=state._rng_key,
                 step=state._step,
                 fraction_noise_std=config["fraction_noise_std"],
+                like=reference,
             )
 
             new_clipping_norm = _adaptive_clipping_norm_update(
@@ -558,6 +577,7 @@ def adaptive_clipped_grad(
                 learning_rate=config["learning_rate"],
                 clipping_norm_min=config["clipping_norm_min"],
                 clipping_norm_max=config["clipping_norm_max"],
+                like=reference,
             )
         else:
             new_clipping_norm = state._next_clipping_norm

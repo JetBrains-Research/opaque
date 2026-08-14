@@ -6,8 +6,15 @@ import os
 import sys
 from pathlib import Path
 
-_DDP = str(Path(__file__).resolve().parent / "ddp")
-if _DDP not in sys.path:
-    sys.path.insert(0, _DDP)
+_DDP_PATHS = (
+    Path(__file__).resolve().parent / "ddp",
+    Path(__file__).resolve().parent / "dpsgd" / "ddp",
+)
+for _ddp_path in _DDP_PATHS:
+    _ddp = str(_ddp_path)
+    if _ddp not in sys.path:
+        sys.path.insert(0, _ddp)
 _prev_pp = os.environ.get("PYTHONPATH")
-os.environ["PYTHONPATH"] = _DDP + (os.pathsep + _prev_pp if _prev_pp else "")
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    [*(str(path) for path in _DDP_PATHS), *([_prev_pp] if _prev_pp else [])]
+)

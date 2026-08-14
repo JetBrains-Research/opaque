@@ -12,6 +12,11 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 
 Opaque provides several noise mechanisms:
 
+DP-SGD Gaussian mechanisms preserve the active provider's native array type,
+dtype, and device. Torch, JAX, and MLX arrays select their provider on the
+first noise call; use `opaque.backend.set_backend()` only for earlier explicit
+selection.
+
 ### Independent Noise (DP-SGD)
 
 - **`gaussian_noise()`** — Gaussian noise; pass `bound=B` (or

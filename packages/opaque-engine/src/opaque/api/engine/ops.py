@@ -119,6 +119,30 @@ def sqrt(value: object) -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def exp(value: object) -> object:
+    """Compute an elementwise natural exponential."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def erf(value: object) -> object:
+    """Compute the elementwise Gauss error function."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def erfinv(value: object) -> object:
+    """Compute the elementwise inverse Gauss error function."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def finfo_eps(value_dtype: object) -> float:
+    """Return the machine epsilon of a native floating-point dtype."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def rsqrt(value: object) -> object:
     """Compute an elementwise reciprocal square root."""
     raise NotImplementedError
@@ -280,7 +304,11 @@ __all__ = [
     "detach",
     "divide",
     "dtype",
+    "erf",
+    "erfinv",
+    "exp",
     "expand_dims",
+    "finfo_eps",
     "float32",
     "greater",
     "is_array",

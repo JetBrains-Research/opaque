@@ -592,10 +592,10 @@ For independent per-rank noise (not typical for centralized DP-SGD), derive
 a per-rank key via `fold_in`:
 
 ```python
+from opaque.distributed import get_rank
 from opaque.random import key, fold_in
-import torch.distributed as dist
 
-rank = dist.get_rank()
+rank = get_rank()
 noise_fn, noise_state = gaussian_noise(
     noise_multiplier=noise_multiplier,
     key=fold_in(key(42), rank),

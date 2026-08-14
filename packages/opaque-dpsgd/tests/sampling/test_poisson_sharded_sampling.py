@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
-from torch.utils.data import TensorDataset
 
 from opaque.distributed import local_shard
 from opaque.dpsgd.sampling import PoissonSampler
@@ -15,19 +13,19 @@ class TestSingleDeviceMode:
     """Single-device (default) sampling — no sharding."""
 
     def test_single_device_full_dataset(self) -> None:
-        dataset = TensorDataset(torch.randn(100, 10))
+        dataset = list(range(100))
         sampler = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(0))
         batches = list(sampler)
         assert len(batches) == 1
 
     def test_different_keys_produce_different_batches(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         s0 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(42))
         s1 = PoissonSampler(dataset, sample_rate=0.1, n_steps=10, key=key(43))
         assert list(s0) != list(s1)
 
     def test_same_key_reproduces_batches(self) -> None:
-        dataset = TensorDataset(torch.randn(500, 10))
+        dataset = list(range(500))
         s1 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
         s2 = PoissonSampler(dataset, sample_rate=0.2, n_steps=5, key=key(12345))
         assert list(s1) == list(s2)
@@ -37,7 +35,7 @@ class TestShardedSampling:
     """Sharded sampling via ``local_shard`` + ``fold_in``."""
 
     def test_shards_correct_sizes(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         world_size = 4
 
         for rank in range(world_size):
@@ -45,7 +43,7 @@ class TestShardedSampling:
             assert len(shard) == 250
 
     def test_uneven_split_last_rank_larger(self) -> None:
-        dataset = TensorDataset(torch.randn(103, 10))
+        dataset = list(range(103))
         world_size = 4
 
         shard_last = local_shard(dataset, rank=3, world_size=world_size)
@@ -53,7 +51,7 @@ class TestShardedSampling:
         assert len(shard_last) == expected
 
     def test_shards_produce_valid_local_indices(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         world_size = 4
 
         for rank in range(world_size):
@@ -66,7 +64,7 @@ class TestShardedSampling:
             assert all(0 <= idx < shard_size for idx in batch)
 
     def test_statistical_properties_per_shard(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         sample_rate = 0.1
         world_size = 4
 
@@ -84,7 +82,7 @@ class TestShardedSampling:
             assert abs(actual_mean - expected_mean) < expected_mean * 0.5 + 3
 
     def test_different_ranks_independent(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         world_size = 4
 
         shard0 = local_shard(dataset, rank=0, world_size=world_size)
@@ -109,7 +107,7 @@ class TestPoissonTruncatedDistributed:
     """PoissonSampler truncation under external sharding."""
 
     def test_truncated_sharded_respects_max_batch_size(self) -> None:
-        dataset = TensorDataset(torch.randn(1000, 10))
+        dataset = list(range(1000))
         max_batch_size = 50
         world_size = 4
 
@@ -126,7 +124,7 @@ class TestPoissonTruncatedDistributed:
             assert len(batch) <= max_batch_size
 
     def test_truncated_single_device(self) -> None:
-        dataset = TensorDataset(torch.randn(500, 10))
+        dataset = list(range(500))
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.2,
@@ -144,7 +142,7 @@ class TestEdgeCases:
     """Edge cases for distributed sampling with Poisson."""
 
     def test_very_small_shards(self) -> None:
-        dataset = TensorDataset(torch.randn(50, 10))
+        dataset = list(range(50))
         world_size = 10
 
         for rank in range(world_size):

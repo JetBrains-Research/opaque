@@ -11,24 +11,22 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import torch
-
-    assert_scalar_equal,
 from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
 from opaque.api.engine.distributed._state import (
+    assert_scalar_equal,
     reduce_scalar,
     register_sync_type,
     sync_object,
 )
 from opaque.distributed import is_distributed
 from opaque.random import fold_in
-from opaque.torch.random import generator_from_key
 from opaque.types import PerGroup
 
 from ._adaptive import (
     AdaptiveClippedGradAux,
     AdaptiveClipState,
     _adaptive_clipping_norm_update,
+    _normal_scalar,
     _sample_noisy_clipping_rate,
 )
 
@@ -50,19 +48,19 @@ __all__ = [
     "sync_adaptive_clip_state",
     "sync_adaptive_clipped_grad_aux",
 ]
+
+
 def _assert_rng_key_equal(state: AdaptiveClipState) -> None:
     """Assert that all ranks derive adaptive threshold noise from one key."""
     assert_scalar_equal(int(state._rng_key.seed), name="AdaptiveClipState.seed")
 
 
-
-
 def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     """Recompute adaptive clipping state from globally aggregated local counts."""
     if not is_distributed():
-    _assert_rng_key_equal(state)
-
         return state
+
+    _assert_rng_key_equal(state)
 
     is_per_group = isinstance(state._num_clipped, dict)
 
@@ -81,11 +79,8 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         new_values: dict[str, float] = {}
         for i, gname in enumerate(sorted(current_pg.values.keys())):
             global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
-            group_key = fold_in(fold_in(state._rng_key, step_for_noise), i)
-            generator = generator_from_key(group_key)
-            noise = (
-                torch.randn(1, generator=generator).item() * state._fraction_noise_std
-            )
+            group_key = fold_in(state._rng_key, step_for_noise, i)
+            noise = _normal_scalar(key=group_key) * state._fraction_noise_std
             noisy_rate = global_rate + noise
 
             new_values[gname] = _adaptive_clipping_norm_update(

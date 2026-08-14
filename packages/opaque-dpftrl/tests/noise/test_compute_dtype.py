@@ -54,6 +54,19 @@ def test_compute_dtype_default_matches_explicit_float32():
     assert torch.equal(out_default.pytree["w"], out_explicit.pytree["w"])
 
 
+def test_mf_noise_ignores_unrelated_global_torch_rng_draws():
+    grads = clipped({"w": torch.zeros(8, dtype=torch.float32)}, max_norm=1.0)
+    noise_fn, state = _build_noise()
+    expected, _ = noise_fn(grads, state)
+
+    torch.manual_seed(999)
+    torch.randn(1000)
+    noise_fn, state = _build_noise()
+    actual, _ = noise_fn(grads, state)
+
+    assert torch.equal(actual.pytree["w"], expected.pytree["w"])
+
+
 def test_compute_dtype_default_propagates_to_torch_randn(monkeypatch):
     """Direct check that the default reaches the inner ``torch.randn`` as fp32."""
     captured: list[torch.dtype] = []

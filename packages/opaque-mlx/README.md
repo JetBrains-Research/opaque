@@ -36,9 +36,10 @@ The MLX execution provider implements:
 Apple Silicon. Engine fixed and AUTO-S clipping conformance runs eagerly
 through the MLX autodiff and vectorization primitives.
 
-Algorithm-stack features are not part of the provider contract. In particular,
-adaptive clipping, Gaussian mechanisms, accounting-integrated DP-SGD, and
-distributed training remain unsupported on MLX.
+DP-SGD mechanisms dispatch through this provider, so adaptive clipping and
+Gaussian (including bounded Gaussian) noise operate on native MLX arrays.
+Accounting remains array-framework-independent, and distributed behavior uses
+the provider's distributed runtime profile.
 
 | Capability | Support |
 |---|---|
@@ -47,10 +48,10 @@ distributed training remain unsupported on MLX.
 | `loss_scaler` and `all_finite` precision helpers | Yes, eager |
 | `ExecutionProfile` transforms (`compile`, `checkpoint`, `optimize_saved_activations`) | Yes [^1] |
 | Native `mlx.core.array` serialization | Yes |
-| `opaque.dpsgd.noise.gaussian_noise` and bounded Gaussian mechanisms | No |
+| `opaque.dpsgd.clipping.adaptive_clipped_grad` and Gaussian mechanisms | Yes, eager |
 | `opaque.optimizers` | Yes, eager on native MLX arrays |
-| Accounting-integrated DP-SGD | No |
-| Distributed MLX training | No |
+| Accounting-integrated DP-SGD | Yes |
+| Distributed MLX training | Yes, through the distributed profile |
 
 [^1]: `optimize_saved_activations` is an identity transform on MLX and emits
 a one-time warning because unified memory removes the separate host/device
