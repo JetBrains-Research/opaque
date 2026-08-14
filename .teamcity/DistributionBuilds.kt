@@ -3,6 +3,7 @@ import jetbrains.buildServer.configs.kotlin.BuildTypeSettings
 import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
+import jetbrains.buildServer.configs.kotlin.buildSteps.ScriptBuildStep
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 
 object PrepareVersion : BuildType({
@@ -120,7 +121,9 @@ private fun BuildType.bootstrapRustToolchain() {
 
 private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
     val maturinArguments = "--manifest-path packages/opaque-accounting/Cargo.toml --release --target $rustTarget --interpreter python3.11 --out ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} --compatibility pypi"
-    val manylinuxImage = manylinuxContainer ?: return "uv run --isolated --no-project --with maturin maturin build $maturinArguments"
+    if (manylinuxContainer == null) {
+        return "uv run --isolated --no-project --with maturin maturin build $maturinArguments"
+    }
     val maturinArchitecture = when (rustTarget.substringBefore('-')) {
         "x86_64" -> "x86_64"
         "aarch64" -> "aarch64"
@@ -129,20 +132,11 @@ private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
 
     return """
         set -eu
-        docker run --rm \
-          --user "${'$'}(id -u):${'$'}(id -g)" \
-          --env HOME=/tmp \
-          --volume "%teamcity.build.checkoutDir%:/io" \
-          --workdir /io \
-          $manylinuxImage \
-          /bin/bash -lc '
-            set -eu
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-            export PATH="${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
-            rustup target add $rustTarget
-            curl -LsSf https://github.com/PyO3/maturin/releases/latest/download/maturin-$maturinArchitecture-unknown-linux-musl.tar.gz | tar -xz -C "${'$'}HOME/.cargo/bin"
-            maturin build $maturinArguments --manylinux $manylinux
-          '
+        curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+        export PATH="${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
+        rustup target add $rustTarget
+        curl -LsSf https://github.com/PyO3/maturin/releases/latest/download/maturin-$maturinArchitecture-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
+        maturin build $maturinArguments --manylinux $manylinux
     """.trimIndent()
 }
 
@@ -172,6 +166,10 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
         script {
             name = "Build native wheel"
             scriptContent = target.nativeWheelBuildScript()
+            target.manylinuxContainer?.let {
+                dockerImage = it
+                dockerImagePlatform = ScriptBuildStep.ImagePlatform.Linux
+            }
         }
     }
     smokeAccountingWheel()
