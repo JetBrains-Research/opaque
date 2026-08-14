@@ -62,6 +62,20 @@ jobs:
           echo "python-tests matrix result: $result"
           test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
 
+  qodana:
+    name: Qodana
+    needs: [python-tests-gate]
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/qodana_code_quality.yml
+    with:
+      coverage-artifact-pattern: qodana-coverage-*
+      pr-mode: false
+    secrets: inherit
+
   # Aggregating gate for Rust tests. This is an independent required check
   # (alongside python-tests-gate) that gates wheel builds and publishing.
   rust-tests-gate:

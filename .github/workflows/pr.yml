@@ -132,6 +132,22 @@ jobs:
             test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
           fi
 
+  qodana:
+    name: Qodana
+    needs: [python-tests-gate]
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: write
+      security-events: write
+    uses: ./.github/workflows/qodana_code_quality.yml
+    with:
+      checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      coverage-artifact-pattern: qodana-coverage-*
+      pr-mode: true
+    secrets: inherit
+
   docs:
     name: Build documentation
     runs-on: ubuntu-latest
