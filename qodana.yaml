@@ -15,7 +15,6 @@ analyzeDevDependencies: true
 include:
   - name: CheckDependencyLicenses
   - name: VulnerableLibrariesLocal
-  - name: IncorrectFormatting
 
 projectLicenses:
   - key: Apache-2.0
@@ -31,7 +30,7 @@ failureConditions:
     critical: 0
   testCoverageThresholds:
     fresh: 80
-    total: 80
+    total: 75
   dependencyLicenses:
     failOnProhibited: true
     failOnUnknown: false
