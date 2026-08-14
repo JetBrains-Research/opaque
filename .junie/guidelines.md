@@ -3,10 +3,10 @@
 Before planning, implementing, or reviewing a change:
 
 1. Read `AGENTS.md` for repository layout, commands, and workflow.
-2. Read `docs/development/architecture-contracts.md` and apply every normative
+2. Read `.junie/architecture-contracts.md` and apply every normative
    active contract whose scope intersects the change.
 3. For privacy-sensitive or mathematical work, read
-   `docs/development/differential-privacy-review.md`. Trace the claim through
+   `.junie/differential-privacy-review.md`. Trace the claim through
    sensitivity, clipping, noise, sampling, composition, accounting, and auditing
    as applicable.
 4. Treat the advisory rules in the architecture document as design feedback, not

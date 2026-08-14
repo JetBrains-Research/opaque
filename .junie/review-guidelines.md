@@ -9,7 +9,7 @@ Read `AGENTS.md` for repository layout, conventions, and validation context.
 ## Required review areas
 
 1. **Privacy and mathematical correctness**
-   - Read and apply `docs/development/differential-privacy-review.md`.
+   - Read and apply `.junie/differential-privacy-review.md`.
    - Trace the protected unit, neighboring relation, sensitivity, clipping,
      normalization, noise, randomness, sampling, amplification, composition,
      accounting, privacy state, and auditing end to end wherever the change
@@ -27,7 +27,7 @@ Read `AGENTS.md` for repository layout, conventions, and validation context.
 
 2. **Architecture**
    - Read and apply every active contract in
-     `docs/development/architecture-contracts.md` whose scope intersects the
+     `.junie/architecture-contracts.md` whose scope intersects the
      change.
    - Cite the relevant `ARC-*` or `ADV-*` ID and distinguish normative
      violations from advisory suggestions.

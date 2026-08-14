@@ -1,5 +1,5 @@
 # Opaque project context
 
 @AGENTS.md
-@docs/development/architecture-contracts.md
-@docs/development/differential-privacy-review.md
+@.junie/architecture-contracts.md
+@.junie/differential-privacy-review.md
