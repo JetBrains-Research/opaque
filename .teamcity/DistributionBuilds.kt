@@ -33,7 +33,7 @@ private val pythonDistributions = listOf(
 )
 
 private val nativeTargets = listOf(
-    NativeTarget("LinuxX64", "Linux x86_64", "Linux", "x86_64", "x86_64-unknown-linux-gnu", "2_28"),
+    NativeTarget("LinuxX64", "Linux x86_64", "Linux", "amd64", "x86_64-unknown-linux-gnu", "2_28"),
     NativeTarget("LinuxArm64", "Linux ARM64", "Linux", "aarch64", "aarch64-unknown-linux-gnu", "2_28"),
     NativeTarget("MacArm64", "macOS ARM64", "Mac OS X", "aarch64", "aarch64-apple-darwin", null),
 )
