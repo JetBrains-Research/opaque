@@ -9,8 +9,8 @@ Before planning, implementing, or reviewing a change:
    `docs/development/differential-privacy-review.md`. Trace the claim through
    sensitivity, clipping, noise, sampling, composition, accounting, and auditing
    as applicable.
-4. Treat the advisory rules in the architecture document as design feedback, not automatic
-   blockers.
+4. Treat the advisory rules in the architecture document as design feedback, not
+   automatic blockers.
 5. Do not report missing infrastructure for contracts marked planned.
 
 For implementation work, preserve the architecture contracts while making the

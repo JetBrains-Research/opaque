@@ -13,7 +13,7 @@ private reusable components described below.
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
-| `junie-review.yml` | Pull requests to `main` | Runs Junie as a repository reviewer using trusted base-branch guidance and posts review feedback. |
+| `junie-review.yml` | Pull requests to `main` | Runs Junie as a repository reviewer using the branch's Junie guidance and architecture contracts. |
 | `junie.yml` | Trusted `@junie-agent` or `/junie` commands in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
@@ -99,13 +99,12 @@ The active `main` ruleset requires `Build documentation`, `Format Python`,
 and `Junie review`. The review workflow uses the `JUNIE_API_KEY` Actions secret.
 Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
-Normal Junie sessions read the current branch's `.junie/guidelines.md`;
-automated reviews use trusted base-branch copies of `.junie/guidelines.md`,
-`AGENTS.md`, `docs/development/architecture-contracts.md`, and
-`docs/development/differential-privacy-review.md` so a pull request cannot weaken
-its own review instructions. Privacy-sensitive reviews trace the guarantee end
-to end and use Junie's read-only web search and URL fetching to verify primary
-literature before reporting theorem-dependent findings.
+Automated and interactive Junie sessions follow the reviewed branch's
+`.junie/guidelines.md`, which loads `AGENTS.md`, the architecture contracts, and
+the differential privacy review protocol. The reviewer must apply every relevant
+active architecture contract. Privacy-sensitive reviews also trace the guarantee
+end to end and use Junie's read-only web search and URL fetching to verify
+primary literature before reporting theorem-dependent findings.
 
 The automated review and interactive workflows use the same SHA-pinned upstream
 Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
