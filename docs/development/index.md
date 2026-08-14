@@ -39,10 +39,10 @@ implementations live under `packages/opaque-*/src/opaque/api/`; the matching
 `src/opaque/` directories are public façades that re-export the supported user
 API.
 
-Keep the namespace roots implicit: do not add `opaque/__init__.py`,
-`opaque/api/__init__.py`, or `opaque/api/accounting/__init__.py`. Place tests
-in the package that owns every dependency they import, and use public façade
-imports in user-facing documentation and examples.
+Read the [architecture contracts](architecture-contracts.md) before changing
+package boundaries, public façades, dependencies, tests, or user-facing import
+paths. That document is the single source of truth for normative contracts,
+advisory API-design guidance, and each rule's enforcement mechanism.
 
 The accounting package includes the Rust/PyO3 extension. Run its Cargo tests
 from the repository root along with the relevant Python tests when changing the
