@@ -30,6 +30,69 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME is on main — proceeding."
 
+  attach-teamcity-assets:
+    name: Attach validated TeamCity assets
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TEAMCITY_URL: https://jbr-fed.teamcity.com
+      TEAMCITY_BUILD_TYPE: Opaque_Opaque_ValidateDistributions
+      TEAMCITY_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve successful TeamCity validation
+        id: teamcity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          TAG_SHA=$(git rev-parse "${RELEASE_TAG}^{commit}")
+          RESPONSE=$(curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $TEAMCITY_TOKEN" \
+            --header 'Accept: application/json' \
+            --get "$TEAMCITY_URL/app/rest/builds" \
+            --data-urlencode "locator=buildType:$TEAMCITY_BUILD_TYPE,status:SUCCESS,state:finished,revision:$TAG_SHA,branch:$RELEASE_TAG,count:2" \
+            --data-urlencode 'fields=count,build(id,branchName,status,revisions(revision(version)))')
+          COUNT=$(jq -r '.count' <<< "$RESPONSE")
+          if [[ "$COUNT" != 1 ]]; then
+            echo "::error::Expected exactly one successful TeamCity validation for $RELEASE_TAG at $TAG_SHA, found $COUNT."
+            exit 1
+          fi
+          BUILD_ID=$(jq -r '.build[0].id' <<< "$RESPONSE")
+          BUILD_SHA=$(jq -r '.build[0].revisions.revision[0].version' <<< "$RESPONSE")
+          test "$BUILD_SHA" = "$TAG_SHA"
+          echo "build-id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "tag-sha=$TAG_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify validated bundle
+        env:
+          BUILD_ID: ${{ steps.teamcity.outputs.build-id }}
+          TAG_SHA: ${{ steps.teamcity.outputs.tag-sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location \
+            --header "Authorization: Bearer $TEAMCITY_TOKEN" \
+            --output validated-distributions.zip \
+            "$TEAMCITY_URL/repository/download/$TEAMCITY_BUILD_TYPE/$BUILD_ID:id/validated-distributions.zip"
+          mkdir dist
+          unzip -q validated-distributions.zip -d dist
+          test "$(sed -n 's/^commit=//p' dist/teamcity-artifact-identity.txt)" = "$TAG_SHA"
+          test "$(sed -n 's/^version=//p' dist/teamcity-artifact-identity.txt)" = "${RELEASE_TAG#v}"
+          test "$(find dist -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = 13
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+
+      - name: Attach validated assets
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
+
   release-python-tests:
     name: Release Python tests
     needs: [tag-guard]
