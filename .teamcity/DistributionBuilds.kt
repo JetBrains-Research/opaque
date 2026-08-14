@@ -128,7 +128,7 @@ private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
         set -eu
         curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
         curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="${'$'}HOME/.local/bin:${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
+        export PATH="${'$'}HOME/.local/bin:${'$'}CARGO_HOME/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
         uv run --isolated --no-project --with maturin maturin build $maturinArguments --manylinux $manylinux
     """.trimIndent()
 }
