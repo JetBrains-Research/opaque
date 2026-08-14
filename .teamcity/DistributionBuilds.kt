@@ -124,19 +124,12 @@ private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
     if (manylinuxContainer == null) {
         return "uv run --isolated --no-project --with maturin maturin build $maturinArguments"
     }
-    val maturinArchitecture = when (rustTarget.substringBefore('-')) {
-        "x86_64" -> "x86_64"
-        "aarch64" -> "aarch64"
-        else -> error("Unsupported manylinux Rust target: $rustTarget")
-    }
-
     return """
         set -eu
         curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-        export PATH="${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
-        rustup target add $rustTarget
-        curl -LsSf https://github.com/PyO3/maturin/releases/latest/download/maturin-$maturinArchitecture-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin
-        maturin build $maturinArguments --manylinux $manylinux
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="${'$'}HOME/.local/bin:${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
+        uv run --isolated --no-project --with maturin maturin build $maturinArguments --manylinux $manylinux
     """.trimIndent()
 }
 
