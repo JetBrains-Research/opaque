@@ -43,7 +43,7 @@ private val testShards = listOf(
 )
 
 private fun ensureUv() = """
-    set -euo pipefail
+    set -eu
     if ! command -v uv >/dev/null 2>&1; then
       curl -LsSf https://astral.sh/uv/install.sh | sh
       echo "##teamcity[setParameter name='env.PATH' value='${'$'}HOME/.local/bin:${'$'}PATH']"

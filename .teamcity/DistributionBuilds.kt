@@ -45,7 +45,7 @@ private val versionedPyprojects = listOf(
 )
 
 private fun ensureUv() = """
-    set -euo pipefail
+    set -eu
     if ! command -v uv >/dev/null 2>&1; then
       curl -LsSf https://astral.sh/uv/install.sh | sh
       echo "##teamcity[setParameter name='env.PATH' value='${'$'}HOME/.local/bin:${'$'}PATH']"
@@ -56,26 +56,25 @@ private fun ensureUv() = """
 private fun versionPreflight(): String {
     val files = versionedPyprojects.joinToString(" ") { "'$it'" }
     return """
-        set -euo pipefail
+        set -eu
         BRANCH='%teamcity.build.branch%'
-        if [[ "${'$'}BRANCH" =~ ^v([0-9]+\.[0-9]+\.[0-9]+(\.(post|alpha|beta|rc)[0-9]+)?)${'$'} ]]; then
-          VERSION="${'$'}{BASH_REMATCH[1]}"
+        if printf '%s' "${'$'}BRANCH" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+\.(post|alpha|beta|rc)[0-9]+${'$'}|^v[0-9]+\.[0-9]+\.[0-9]+${'$'}'; then
+          VERSION="${'$'}{BRANCH#v}"
         else
           LAST="${'$'}(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+${'$'}' | sort -V -r | head -1 || true)"
           if [[ -z "${'$'}LAST" ]]; then
             BASE=0.0.1
             DISTANCE=0
           else
-            IFS=. read -r MAJOR MINOR PATCH <<< "${'$'}{LAST#v}"
-            BASE="${'$'}MAJOR.${'$'}MINOR.${'$'}((PATCH + 1))"
+            IFS=. set -- ${'$'}{LAST#v}
+            BASE="${'$'}1.${'$'}2.${'$'}(( ${'$'}3 + 1 ))"
             DISTANCE="${'$'}(git rev-list --count "${'$'}LAST..HEAD")"
           fi
           SHA="${'$'}(git rev-parse --short HEAD)"
-          if [[ "${'$'}BRANCH" =~ ^pull/([0-9]+) ]]; then
-            VERSION="${'$'}BASE.dev${'$'}DISTANCE+pr.${'$'}{BASH_REMATCH[1]}.g${'$'}SHA"
-          else
-            VERSION="${'$'}BASE.dev${'$'}DISTANCE+g${'$'}SHA"
-          fi
+          case "${'$'}BRANCH" in
+            pull/[0-9]*) VERSION="${'$'}BASE.dev${'$'}DISTANCE+pr.${'$'}{BRANCH#pull/}.g${'$'}SHA" ;;
+            *) VERSION="${'$'}BASE.dev${'$'}DISTANCE+g${'$'}SHA" ;;
+          esac
         fi
         CARGO_VERSION="${'$'}(printf '%s' "${'$'}VERSION" | sed -E -e 's/\.(alpha|beta|rc|post)([0-9]+)\.(dev)([0-9]+)/-\1.\2.\3.\4/' -e 's/\.(alpha|beta|rc)([0-9]+)/-\1.\2/' -e 's/\.post([0-9]+)\+([0-9A-Za-z.-]+)/+post.\1.\2/' -e 's/\.post([0-9]+)/+post.\1/' -e 's/\.dev([0-9]+)/-dev.\1/')"
         perl -pi -e "s/^version = \"[^\"]+\"/version = \"${'$'}VERSION\"/" packages/opaque-accounting/pyproject.toml
