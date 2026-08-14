@@ -34,12 +34,10 @@ project {
     subProject(Artifacts)
     subProject(Delivery)
 
-    buildType(OpaqueTestsPr)
+    buildType(PrGate)
     buildType(OpaqueCudaTrustedPr)
-    buildType(OpaqueTestsMain)
-    buildType(PreviewDistributions)
-    buildType(DevDistributions)
-    buildType(ReleaseDistributions)
+    buildType(MainCi)
+    buildType(ReleaseCandidate)
     buildType(PublishDevDistributions)
     buildType(PublishReleaseDistributions)
 }

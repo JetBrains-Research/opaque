@@ -3,12 +3,9 @@ import jetbrains.buildServer.configs.kotlin.BuildTypeSettings
 import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
-import jetbrains.buildServer.configs.kotlin.buildFeatures.commitStatusPublisher
 import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
-import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.matrix
-import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType {
     id("Opaque_Python${device.name.lowercase().replaceFirstChar(Char::uppercase)}")
@@ -43,13 +40,7 @@ private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType 
         }
         script {
             name = "Run pytest"
-            scriptContent = """
-                MARKER="%opaque.pytest.marker%"
-                if [ "%teamcity.build.branch%" = "main" ]; then
-                  MARKER="%opaque.pytest.marker.main%"
-                fi
-                uv run pytest %opaque.pytest.path% -m "${'$'}MARKER" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q
-            """.trimIndent()
+            scriptContent = "uv run pytest %opaque.pytest.path% -m \"%opaque.pytest.marker%\" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q"
         }
     }
 }
@@ -124,15 +115,11 @@ private val cudaTest = BuildType {
     }
 }
 
-val verificationBuildTypes = listOf(cpuTests, mpsTests, cudaTest, RustTests, StrictDocs)
-
-private fun aggregateBuild(
+private fun verificationBuild(
     buildType: BuildType,
     buildId: String,
     buildName: String,
     branchKind: CiModel.BranchKind,
-    dependencies: List<BuildType>,
-    cancelRunning: Boolean,
 ) = buildType.apply {
     id(buildId)
     name = buildName
@@ -142,49 +129,43 @@ private fun aggregateBuild(
         root(DslContext.settingsRoot)
         this.branchFilter = branchKind.branchFilter
     }
+    params {
+        param(
+            "override.dep.Opaque_PythonCpu.opaque.pytest.marker",
+            CiModel.TestDevice.CPU.markerFor(branchKind),
+        )
+        param(
+            "override.dep.Opaque_PythonMps.opaque.pytest.marker",
+            CiModel.TestDevice.MPS.markerFor(branchKind),
+        )
+    }
     dependencies {
-        dependencies.forEach {
+        listOf(cpuTests, mpsTests).forEach { matrix ->
+            snapshot(matrix) {
+                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyCancel = FailureAction.CANCEL
+                synchronizeRevisions = true
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
+            }
+        }
+        listOf(RustTests, StrictDocs).forEach {
             snapshot(it) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.NO
-            }
-        }
-    }
-    triggers {
-        vcs {
-            this.branchFilter = branchKind.branchFilter
-            enableQueueOptimization = cancelRunning
-        }
-    }
-    features {
-        commitStatusPublisher {
-            publisher = github {
-                githubUrl = "https://api.github.com"
-                authType = vcsRoot()
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
             }
         }
     }
 }
 
 object OpaqueTestsPr : BuildType({
-    aggregateBuild(
+    verificationBuild(
         this,
         buildId = "Opaque_TestsPr",
-        buildName = "Opaque tests (PR)",
+        buildName = "PR verification",
         branchKind = CiModel.BranchKind.PULL_REQUEST,
-        dependencies = listOf(cpuTests, mpsTests, RustTests, StrictDocs),
-        cancelRunning = true,
     )
-    features {
-        pullRequests {
-            provider = github {
-                authType = vcsRoot()
-                filterTargetBranch = "+:main"
-            }
-        }
-    }
 })
 
 object OpaqueCudaTrustedPr : BuildType({
@@ -207,12 +188,30 @@ object OpaqueCudaTrustedPr : BuildType({
 })
 
 object OpaqueTestsMain : BuildType({
-    aggregateBuild(
+    verificationBuild(
         this,
         buildId = "Opaque_TestsMain",
-        buildName = "Opaque tests (main)",
+        buildName = "Main verification",
         branchKind = CiModel.BranchKind.MAIN,
-        dependencies = listOf(cpuTests, mpsTests, RustTests, StrictDocs),
-        cancelRunning = false,
     )
 })
+
+object OpaqueTestsTag : BuildType({
+    verificationBuild(
+        this,
+        buildId = "Opaque_TestsTag",
+        buildName = "Tag verification",
+        branchKind = CiModel.BranchKind.RELEASE_TAG,
+    )
+})
+
+val verificationBuildTypes = listOf(
+    cpuTests,
+    mpsTests,
+    cudaTest,
+    RustTests,
+    StrictDocs,
+    OpaqueTestsPr,
+    OpaqueTestsMain,
+    OpaqueTestsTag,
+)

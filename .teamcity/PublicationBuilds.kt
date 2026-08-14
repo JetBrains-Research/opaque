@@ -12,6 +12,7 @@ private fun publicationBuild(
     buildId: String,
     buildName: String,
     branchKind: CiModel.BranchKind,
+    verificationBuild: BuildType,
     releaseTagRequired: Boolean = false,
 ) = buildType.apply {
     id(buildId)
@@ -37,15 +38,16 @@ private fun publicationBuild(
     }
     useAgent(CiModel.AgentClass.LINUX_SMALL)
     dependencies {
-        listOf(ValidateDistributions, OpaqueTestsMain).forEach { dependency ->
+        listOf(ValidateDistributions, verificationBuild).forEach { dependency ->
             snapshot(dependency) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.NO
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
             }
         }
         artifacts(ValidateDistributions) {
+            buildRule = sameChain()
             artifactRules = "+:${CiModel.Artifacts.VALIDATED_BUNDLE}!/** => ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
             cleanDestination = true
         }
@@ -79,6 +81,7 @@ object PublishDevArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishDev",
         buildName = "Publish dev artifact bundle",
         branchKind = CiModel.BranchKind.MAIN,
+        verificationBuild = OpaqueTestsMain,
     )
 })
 
@@ -88,6 +91,7 @@ object PublishReleaseArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishRelease",
         buildName = "Publish release artifact bundle",
         branchKind = CiModel.BranchKind.RELEASE_TAG,
+        verificationBuild = OpaqueTestsTag,
         releaseTagRequired = true,
     )
 })
@@ -114,7 +118,7 @@ private fun deploymentEntry(
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.NO
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
     }
 }

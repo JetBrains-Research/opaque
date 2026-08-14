@@ -72,8 +72,7 @@ fun BuildTypeSettings.configurePythonTestReporting() {
     }
 }
 
-fun distributionVersionScript(): String {
-    val files = CiModel.versionedPyprojectPaths.joinToString(" ") { "'$it'" }
+fun prepareVersionScript(): String {
     return """
         set -eu
         BRANCH='%teamcity.build.branch%'
@@ -94,13 +93,21 @@ fun distributionVersionScript(): String {
             *) VERSION="${'$'}BASE.dev${'$'}DISTANCE+g${'$'}SHA" ;;
           esac
         fi
+        echo "##teamcity[setParameter name='env.SETUPTOOLS_SCM_PRETEND_VERSION' value='${'$'}VERSION']"
+        echo "##teamcity[setParameter name='opaque.version' value='${'$'}VERSION']"
+        echo "##teamcity[buildNumber '${'$'}VERSION']"
+    """.trimIndent()
+}
+
+fun applyPreparedVersionScript(): String {
+    val files = CiModel.versionedPyprojectPaths.joinToString(" ") { "'$it'" }
+    return """
+        set -eu
+        VERSION='%opaque.version%'
         CARGO_VERSION="${'$'}(printf '%s' "${'$'}VERSION" | sed -E -e 's/\.(alpha|beta|rc|post)([0-9]+)\.(dev)([0-9]+)/-\1.\2.\3.\4/' -e 's/\.(alpha|beta|rc)([0-9]+)/-\1.\2/' -e 's/\.post([0-9]+)\+([0-9A-Za-z.-]+)/+post.\1.\2/' -e 's/\.post([0-9]+)/+post.\1/' -e 's/\.dev([0-9]+)/-dev.\1/')"
         perl -pi -e "s/^version = \"[^\"]+\"/version = \"${'$'}VERSION\"/" packages/opaque-accounting/pyproject.toml
         perl -pi -e "s/^version = \"[^\"]+\"/version = \"${'$'}CARGO_VERSION\"/" Cargo.toml
         perl -pi -e "s/>=0\.0\.0\.dev0/==${'$'}VERSION/g" $files
-        echo "##teamcity[setParameter name='env.SETUPTOOLS_SCM_PRETEND_VERSION' value='${'$'}VERSION']"
-        echo "##teamcity[setParameter name='opaque.version' value='${'$'}VERSION']"
-        echo "##teamcity[buildNumber '${'$'}VERSION']"
     """.trimIndent()
 }
 
@@ -143,8 +150,8 @@ object DistributionBuildTemplate : Template({
     configurePythonTooling()
     steps {
         script {
-            name = "Prepare immutable distribution version"
-            scriptContent = distributionVersionScript()
+            name = "Apply prepared distribution version"
+            scriptContent = applyPreparedVersionScript()
         }
     }
 })

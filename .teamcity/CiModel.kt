@@ -54,14 +54,22 @@ object CiModel {
             "-n auto --dist loadscope",
         ),
         CUDA("CUDA", "cuda and not slow", "cuda", AgentClass.CUDA, "-rs"),
+        ;
+
+        fun markerFor(branchKind: BranchKind) = when (branchKind) {
+            BranchKind.PULL_REQUEST -> markerForPullRequest
+            BranchKind.MAIN, BranchKind.RELEASE_TAG -> markerForMain
+        }
     }
 
     object Artifacts {
         const val DISTRIBUTION_DIRECTORY = "dist"
+        const val STAGED_INPUT_DIRECTORY = "inputs"
         const val COMPLETE_WHEEL_COUNT = 13
         const val SDIST_COUNT = 1
         const val VALIDATED_BUNDLE = "validated-distributions.zip"
         const val IDENTITY_MANIFEST = "teamcity-artifact-identity.txt"
+        const val VERSION_MANIFEST = "teamcity-version-manifest.txt"
     }
 
     object Status {
