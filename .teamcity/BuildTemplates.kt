@@ -108,6 +108,15 @@ fun BuildTypeSettings.configurePythonTestReporting() {
     }
 }
 
+fun BuildTypeSettings.pruneUvCacheForCi() {
+    steps {
+        script {
+            name = "Prune uv cache for CI"
+            scriptContent = "uv cache prune --ci"
+        }
+    }
+}
+
 fun prepareVersionScript(): String {
     return """
         set -eu

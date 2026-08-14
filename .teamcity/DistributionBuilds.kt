@@ -68,6 +68,7 @@ private fun BuildType.recordArtifactManifest() {
             scriptContent = "printf 'commit=%s\nversion=%s\nsource_build_id=%s\ntarget=%s\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%opaque.artifact.target%' > ${CiModel.Artifacts.VERSION_MANIFEST}"
         }
     }
+    pruneUvCacheForCi()
 }
 
 object PythonWheels : BuildType({
@@ -191,6 +192,7 @@ object ValidateDistributions : BuildType({
             scriptContent = "printf 'commit=%s\\nversion=%s\\nsource_build_id=%s\\nbuild_id=%s\\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%teamcity.build.id%' > ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/${CiModel.Artifacts.IDENTITY_MANIFEST}"
         }
     }
+    pruneUvCacheForCi()
 })
 
 private fun distributionChain(

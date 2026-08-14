@@ -42,6 +42,7 @@ private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType 
             scriptContent = "uv run pytest %opaque.pytest.path% -m \"%opaque.pytest.marker%\" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q"
         }
     }
+    pruneUvCacheForCi()
 }
 
 private object RustTests : BuildType({
@@ -80,6 +81,7 @@ private object StrictDocs : BuildType({
             scriptContent = "uv run mkdocs build --strict"
         }
     }
+    pruneUvCacheForCi()
 })
 
 private val cpuTests = pythonTestMatrix(CiModel.TestDevice.CPU)
@@ -114,6 +116,7 @@ private val cudaTest = BuildType {
             scriptContent = "uv run pytest packages tests -m \"%opaque.pytest.marker%\" -rs --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q"
         }
     }
+    pruneUvCacheForCi()
 }
 
 private fun verificationBuild(
