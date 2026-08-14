@@ -78,27 +78,16 @@ dataset = compute_ref_logprobs_for_dataset(
     collator=collate,                     # the preference collator (below)
     output_columns=("ref_chosen_logps", "ref_rejected_logps"),
     batch_size=8,
-    cache_key=("dpo", model_name),
+    cache_identity={"kind": "dpo", "model": model_name},
     cache_dir=cache_dir,
 )
 ```
 
-For the example above, the stored metadata contract is:
-
-```python
-import hashlib
-
-dataset_id = getattr(dataset, "_fingerprint", None)
-if dataset_id is None:
-    dataset_id = repr(dataset)
-
-hasher = hashlib.sha256()
-hasher.update(repr(dataset_id).encode("utf-8"))
-hasher.update(repr(("dpo", model_name)).encode("utf-8"))
-hasher.update(repr(("ref_chosen_logps", "ref_rejected_logps")).encode("utf-8"))
-
-cache_file = f"<cache_dir>/{hasher.hexdigest()}.safetensors"
-```
+`cache_identity` must be JSON-like — scalars, string-keyed mappings, and
+sequences. Mapping order does not affect the digest, and unsupported or
+non-deterministic values raise `TypeError` rather than falling back to `repr`.
+A dataset without a deterministic `_fingerprint` is rejected for the same
+reason. The `DPOTrainer` supplies the effective reference-model state here.
 
 When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
 enter `null_ref_context(model)` (or `with_disabled_adapter(model)`) around
