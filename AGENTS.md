@@ -49,6 +49,12 @@ guarantees, and advisory API-design rules. Read it before planning, implementing
 or reviewing a change that affects those areas. Do not reproduce its full rule
 set in agent instructions or source-tree inventory tests.
 
+`docs/development/differential-privacy-review.md` is the review protocol for
+privacy-sensitive and mathematical changes. Read it when work affects privacy
+mechanisms, sensitivity, clipping, noise, randomness, sampling, amplification,
+composition, accounting, matrix strategies, distributed equivalence,
+serialization of privacy state, auditing, or a mathematical privacy claim. Use
+its literature map to verify theorem-dependent claims against primary sources.
 
 ## Pull requests
 

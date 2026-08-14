@@ -34,7 +34,9 @@ of truth:
 | Copilot and other AGENTS-compatible agents | `AGENTS.md` |
 
 Agent-specific files contain only loading and workflow instructions; they do not
-duplicate the contracts.
+duplicate the contracts. Each entry point also loads
+`docs/development/differential-privacy-review.md` for mathematical and
+privacy-sensitive changes.
 
 Contracts marked **active** apply to current changes. Contracts marked
 **planned** are accepted designs whose supporting metadata or post-build
