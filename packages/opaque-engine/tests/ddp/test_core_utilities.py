@@ -5,17 +5,12 @@ For actual multi-device distributed tests, see ``test_collectives.py`` and
 ``test_profiler_sync.py`` in the ``ddp/`` folder.
 """
 
-import importlib
 from dataclasses import dataclass
 
 import pytest
 import torch
 
-from opaque.api.engine.distributed._state import (  # noqa: F401  (used in TestModuleExports)
-    assert_pytree_equal,
-    assert_scalar_equal,
-    gather_pytree,
-    gather_tensors,
+from opaque.api.engine.distributed._state import (
     reduce_scalar,
     sync_object,
 )
@@ -303,23 +298,3 @@ class TestBoundedGradientAggregation:
     def test_reduce_pytree_rejects_non_tensor_leaves(self):
         with pytest.raises(TypeError, match="tensor leaves"):
             reduce_pytree({"w": 1.0})
-
-
-class TestModuleExports:
-    """Every declared public distributed export resolves to a callable."""
-
-    @pytest.mark.parametrize(
-        "module_name",
-        [
-            "opaque.distributed",
-            "opaque.distributed.collectives",
-            "opaque.distributed.gradients",
-        ],
-    )
-    def test_declared_exports_are_callable(self, module_name):
-        module = importlib.import_module(module_name)
-
-        exports = getattr(module, "__all__", None)
-        assert exports, f"{module_name} must declare __all__"
-        for name in exports:
-            assert callable(getattr(module, name)), f"{module_name}.{name}"

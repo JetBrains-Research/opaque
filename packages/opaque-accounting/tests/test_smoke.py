@@ -12,14 +12,6 @@ from pathlib import Path
 import pytest
 
 
-def test_import_root_accounting_surface():
-    import opaque.accounting as acc
-
-    assert hasattr(acc, "nonprivate")
-    assert hasattr(acc, "compose")
-    assert hasattr(acc, "calibrate")
-
-
 def test_invalid_generic_mechanism_parameter_raises_value_error():
     import opaque.accounting as acc
 

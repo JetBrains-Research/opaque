@@ -173,10 +173,6 @@ addopts = "--import-mode=importlib"
 # skipped by pytest's `test_*.py` convention. Identical behavior locally
 # (`pytest` from repo root) and in CI.
 #
-# The repo-level ``tests/contracts/`` directory holds structural-invariant
-# checks (PEP 420 namespace, façade discipline, dependency direction,
-# accounting torch-free, test placement) that operate on the source tree
-# rather than installed wheels.
 testpaths = ["packages", "tests"]
 
 markers = [
@@ -282,5 +278,5 @@ convention = "google"
 # Internal implementation methods are deliberately not selected by the
 # public-surface rules above; test helpers remain outside this docstring scope.
 # PEP 420: `opaque/` has no __init__.py (multi-wheel namespace); façade
-# modules live directly under src/opaque/ (see tests/contracts/test_pep420_no_init.py).
+# modules live directly under src/opaque/.
 "packages/*/src/opaque/*.py" = ["INP001"]

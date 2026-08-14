@@ -68,7 +68,9 @@ examples/                # Example scripts and notebooks
 **For Python changes**: edit the relevant implementation under
 `packages/opaque-<name>/src/opaque/api/` and add tests under the matching
 `packages/opaque-<name>/tests/`. Public façades under `src/opaque/` contain
-only re-exports; user-facing examples should import through those façades.
+only re-exports; user-facing examples should import through those façades. See
+the [architecture contracts](docs/development/architecture-contracts.md) for
+the normative package/API rules and how each one is enforced.
 
 **For accounting changes**: Python façade and wrapper code lives under
 `packages/opaque-accounting/src/opaque/`; the Rust crate is in

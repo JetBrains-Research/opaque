@@ -25,10 +25,9 @@ tests/integration/
 
 ## What lives here vs. in a wheel's `tests/`
 
-A test belongs in `packages/<wheel>/tests/` when every package it
-imports is in `<wheel>`'s transitive dep cone — see
-`tests/contracts/test_test_placement.py`. That covers the vast majority
-of tests.
+A test belongs in `packages/<wheel>/tests/` when every package it imports is
+in `<wheel>`'s transitive dependency cone. That covers the vast majority of
+tests.
 
 A test belongs here when it imports across two or more wheels with
 **mutual non-dependency**, or when it exercises the end-to-end DP
