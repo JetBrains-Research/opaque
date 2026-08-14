@@ -97,6 +97,27 @@ private fun BuildType.smokeAccountingWheel() {
     }
 }
 
+private fun BuildType.bootstrapRustToolchain() {
+    steps {
+        script {
+            name = "Bootstrap Rust"
+            scriptContent = """
+                set -eu
+                if ! command -v cargo >/dev/null 2>&1 && [ -x "${'$'}HOME/.cargo/bin/cargo" ]; then
+                  export PATH="${'$'}HOME/.cargo/bin:${'$'}PATH"
+                fi
+                if ! command -v cargo >/dev/null 2>&1; then
+                  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | env CARGO_HOME="${'$'}HOME/.cargo" RUSTUP_HOME="${'$'}HOME/.rustup" sh -s -- -y --profile minimal --default-toolchain stable
+                  export PATH="${'$'}HOME/.cargo/bin:${'$'}PATH"
+                fi
+                echo "##teamcity[setParameter name='env.PATH' value='${'$'}PATH']"
+                cargo --version
+                rustc --version
+            """.trimIndent()
+        }
+    }
+}
+
 object PythonWheels : BuildType({
     distributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels", "pure-python")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
@@ -116,6 +137,7 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
     distributionBuild(this, "Opaque_BuildAccounting${target.id}", "Build opaque-accounting (${target.label})", "accounting-${target.id}")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
     useAgent(target.agentClass)
+    bootstrapRustToolchain()
     steps {
         script {
             name = "Build native wheel"
