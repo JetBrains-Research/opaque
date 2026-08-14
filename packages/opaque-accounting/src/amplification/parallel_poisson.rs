@@ -469,11 +469,19 @@ mod tests {
     }
 
     #[test]
-    fn test_mixture_sensitivity_bounds_are_data_driven() {
-        let mixture = make_test_constants(1.0, &[0.0, 3.0, 0.5, 2.0], &[0.1, 0.2, 0.3, 0.4]);
+    fn test_mixture_delta_matches_quadrature_for_unsorted_nonunit_sensitivities() {
+        let mixture = make_test_constants(1.0, &[2.0, 0.0, 3.0, 0.5], &[0.4, 0.1, 0.2, 0.3]);
+
         assert_eq!(mixture.min_positive_sensitivity(), 0.5);
         assert_eq!(mixture.max_sensitivity(), 3.0);
         assert_relative_eq!(mixture.sampling_prob, 0.9, epsilon = 1e-12);
+
+        // Direct integration of max(mu_upper - exp(epsilon) * mu_lower, 0) over R.
+        let delta_add = mixture_gaussian_get_delta(1.0, Adjacency::Add, &mixture).unwrap();
+        assert_relative_eq!(delta_add, 0.09379446981341562, epsilon = 1e-10);
+
+        let delta_remove = mixture_gaussian_get_delta(1.0, Adjacency::Remove, &mixture).unwrap();
+        assert_relative_eq!(delta_remove, 0.3456419720394463, epsilon = 1e-10);
     }
 
     /// Helper: construct MixtureConstants from arbitrary sensitivities and probs.
