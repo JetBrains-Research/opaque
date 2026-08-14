@@ -23,14 +23,14 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 from ._helpers import _plain_poisson_step_indices
 
 
-class PoissonSampler(Sampler):
+class PoissonSampler(Sampler[list[int]]):
     """Poisson sampler for privacy amplification (DP-SGD).
 
     Each example is independently included with probability
@@ -84,8 +84,6 @@ class PoissonSampler(Sampler):
         *,
         key: RngKey,
     ):
-        super().__init__()
-
         if not 0 < sample_rate <= 1:
             raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
         if n_steps is not None and n_steps < 1:

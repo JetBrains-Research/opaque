@@ -15,15 +15,15 @@ from collections import deque
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 
-class BMinSepSampler(Sampler):
+class BMinSepSampler(Sampler[list[int]]):
     """Warm-start b-min-sep sampler for BandMF privacy amplification.
 
     Each iteration draws a batch by including each *eligible* example

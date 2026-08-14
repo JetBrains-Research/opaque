@@ -38,6 +38,7 @@ py-modules = [
     "opaque.primitive",
     "opaque.types",
     "opaque.pytree",
+    "opaque.sampling",
 ]
 
 [tool.setuptools.packages.find]

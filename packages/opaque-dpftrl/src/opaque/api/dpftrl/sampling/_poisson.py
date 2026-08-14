@@ -30,7 +30,6 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.api.dpftrl.sampling._partitions import (
     PartitionType,
@@ -38,9 +37,10 @@ from opaque.api.dpftrl.sampling._partitions import (
     _independent_partition,
 )
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 
-class CyclicPoissonSampler(Sampler):
+class CyclicPoissonSampler(Sampler[list[int]]):
     """Cyclic Poisson subsampling for DP-FTRL (one active group per step).
 
     Disjoint example groups are fixed at construction (modulo

@@ -5,15 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 
-class KOutOfTSampler(Sampler):
+class KOutOfTSampler(Sampler[list[int]]):
     """Each example chooses exactly ``k`` of ``t`` steps uniformly.
 
     The streaming implementation uses O(dataset-size) state: at each step, a
@@ -29,7 +29,6 @@ class KOutOfTSampler(Sampler):
         n_steps: int,
         key: RngKey,
     ) -> None:
-        super().__init__()
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
         if n_steps < 1:

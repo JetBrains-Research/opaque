@@ -37,16 +37,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.random import fold_in
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 
-class RandomAllocationSampler(Sampler):
+class RandomAllocationSampler(Sampler[list[int]]):
     """1-out-of-``num_bins`` random allocation, redrawn every epoch.
 
     Each epoch yields exactly ``num_bins`` batches whose union is the whole
@@ -80,8 +80,6 @@ class RandomAllocationSampler(Sampler):
         *,
         key: RngKey,
     ):
-        super().__init__()
-
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
         if num_bins < 2:
