@@ -71,6 +71,31 @@ private fun BuildType.recordArtifactManifest() {
     pruneUvCacheForCi()
 }
 
+private fun BuildType.smokeAccountingWheel() {
+    steps {
+        script {
+            name = "Smoke installed native wheel"
+            scriptContent = """
+                set -eu
+                WHEEL="${'$'}(find %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} -maxdepth 1 -name 'opaque_accounting-*.whl' -print -quit)"
+                test -n "${'$'}WHEEL"
+                SMOKE_DIR="${'$'}(mktemp -d)"
+                trap 'rm -rf "${'$'}SMOKE_DIR"' EXIT
+                uv venv --python python3.11 "${'$'}SMOKE_DIR/venv"
+                uv pip install --python "${'$'}SMOKE_DIR/venv/bin/python" packages/opaque-base "${'$'}WHEEL"
+                cd "${'$'}SMOKE_DIR"
+                "${'$'}SMOKE_DIR/venv/bin/python" - <<'PY'
+                import opaque.accounting as acc
+                from opaque.api.accounting.core import opaque_accounting as native
+
+                assert native is not None
+                assert acc.eps_delta(1.0, 1e-5).pld() is not None
+                PY
+            """.trimIndent()
+        }
+    }
+}
+
 object PythonWheels : BuildType({
     distributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels", "pure-python")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
@@ -97,6 +122,7 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
             scriptContent = "uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target ${target.rustTarget} $manylinux --interpreter python3.11 --out ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} --compatibility pypi"
         }
     }
+    smokeAccountingWheel()
     recordArtifactManifest()
 }
 
