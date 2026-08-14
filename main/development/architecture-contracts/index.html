@@ -12,28 +12,28 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/alignment/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/development/architecture-contracts/">
       
       
-        <link rel="prev" href="../mechanisms/dp-ftrl/lambda-cgd/">
+        <link rel="prev" href="../">
       
       
-        <link rel="next" href="sft/">
+        <link rel="next" href="../../reference/">
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
-        <title>Overview - Opaque</title>
+        <title>Architecture contracts - Opaque</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.84d31ad4.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -52,9 +52,9 @@
       
     
     
-      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#alignment-opaquealignment" class="md-skip">
+        <a href="#architecture-contracts" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overview
+              Architecture contracts
             
           </span>
         </div>
@@ -231,7 +231,7 @@
   
   
     <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -252,7 +252,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -272,7 +272,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../user-guide/" class="md-tabs__link">
+        <a href="../../user-guide/" class="md-tabs__link">
           
   
   
@@ -292,7 +292,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../mechanisms/" class="md-tabs__link">
+        <a href="../../mechanisms/" class="md-tabs__link">
           
   
   
@@ -308,13 +308,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../alignment/" class="md-tabs__link">
           
   
   
@@ -334,7 +332,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../tutorials/" class="md-tabs__link">
+        <a href="../../tutorials/" class="md-tabs__link">
           
   
   
@@ -350,11 +348,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../development/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -374,7 +374,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../reference/" class="md-tabs__link">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
@@ -408,7 +408,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -438,7 +438,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -503,7 +503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -526,7 +526,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -599,7 +599,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/" class="md-nav__link">
+      <a href="../../user-guide/" class="md-nav__link">
         
   
   
@@ -622,7 +622,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/dp-concepts/" class="md-nav__link">
+      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
         
   
   
@@ -645,7 +645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/rng-key/" class="md-nav__link">
+      <a href="../../user-guide/rng-key/" class="md-nav__link">
         
   
   
@@ -711,7 +711,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/dp-sgd/" class="md-nav__link">
+      <a href="../../user-guide/dp-sgd/" class="md-nav__link">
         
   
   
@@ -734,7 +734,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/dp-ftrl/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -765,7 +765,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/clipping/" class="md-nav__link">
+      <a href="../../user-guide/clipping/" class="md-nav__link">
         
   
   
@@ -788,7 +788,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/noise/" class="md-nav__link">
+      <a href="../../user-guide/noise/" class="md-nav__link">
         
   
   
@@ -811,7 +811,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/precision/" class="md-nav__link">
+      <a href="../../user-guide/precision/" class="md-nav__link">
         
   
   
@@ -834,7 +834,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/accounting/" class="md-nav__link">
+      <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
   
@@ -857,7 +857,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/sampling/" class="md-nav__link">
+      <a href="../../user-guide/sampling/" class="md-nav__link">
         
   
   
@@ -880,7 +880,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/optimizers/" class="md-nav__link">
+      <a href="../../user-guide/optimizers/" class="md-nav__link">
         
   
   
@@ -903,7 +903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/lr-scheduling/" class="md-nav__link">
+      <a href="../../user-guide/lr-scheduling/" class="md-nav__link">
         
   
   
@@ -926,7 +926,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/distributed/" class="md-nav__link">
+      <a href="../../user-guide/distributed/" class="md-nav__link">
         
   
   
@@ -992,7 +992,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/huggingface/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/" class="md-nav__link">
         
   
   
@@ -1015,7 +1015,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/huggingface/dptrainer/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/dptrainer/" class="md-nav__link">
         
   
   
@@ -1038,7 +1038,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/distributed-trainer/" class="md-nav__link">
+      <a href="../../user-guide/distributed-trainer/" class="md-nav__link">
         
   
   
@@ -1061,7 +1061,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/huggingface/training-arguments/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/training-arguments/" class="md-nav__link">
         
   
   
@@ -1084,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/huggingface/model-patches/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/model-patches/" class="md-nav__link">
         
   
   
@@ -1115,7 +1115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/memory-optimizations/" class="md-nav__link">
+      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
         
   
   
@@ -1138,7 +1138,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/auditing/" class="md-nav__link">
+      <a href="../../user-guide/auditing/" class="md-nav__link">
         
   
   
@@ -1161,7 +1161,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../limitations/" class="md-nav__link">
+      <a href="../../limitations/" class="md-nav__link">
         
   
   
@@ -1234,7 +1234,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/" class="md-nav__link">
+      <a href="../../mechanisms/" class="md-nav__link">
         
   
   
@@ -1300,7 +1300,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-sgd/" class="md-nav__link">
+      <a href="../../mechanisms/dp-sgd/" class="md-nav__link">
         
   
   
@@ -1323,7 +1323,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
+      <a href="../../mechanisms/dp-sgd/gaussian/" class="md-nav__link">
         
   
   
@@ -1397,7 +1397,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -1420,7 +1420,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/band-mf/" class="md-nav__link">
         
   
   
@@ -1443,7 +1443,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/blt/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/blt/" class="md-nav__link">
         
   
   
@@ -1466,7 +1466,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/bsr/" class="md-nav__link">
         
   
   
@@ -1489,7 +1489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/bisr/" class="md-nav__link">
         
   
   
@@ -1512,7 +1512,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
+      <a href="../../mechanisms/dp-ftrl/lambda-cgd/" class="md-nav__link">
         
   
   
@@ -1547,31 +1547,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
             
   
   
@@ -1584,7 +1579,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             Alignment
@@ -1595,32 +1590,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../alignment/" class="md-nav__link">
         
   
   
@@ -1631,53 +1604,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#design" class="md-nav__link">
-    <span class="md-ellipsis">
-      Design
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#module-map" class="md-nav__link">
-    <span class="md-ellipsis">
-      Module map
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      See also
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1690,7 +1616,7 @@
   
   
     <li class="md-nav__item">
-      <a href="sft/" class="md-nav__link">
+      <a href="../../alignment/sft/" class="md-nav__link">
         
   
   
@@ -1713,7 +1639,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dpo/" class="md-nav__link">
+      <a href="../../alignment/dpo/" class="md-nav__link">
         
   
   
@@ -1736,7 +1662,7 @@
   
   
     <li class="md-nav__item">
-      <a href="trainers/" class="md-nav__link">
+      <a href="../../alignment/trainers/" class="md-nav__link">
         
   
   
@@ -1809,7 +1735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/" class="md-nav__link">
+      <a href="../../tutorials/" class="md-nav__link">
         
   
   
@@ -1875,7 +1801,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/dp_sgd_training/" class="md-nav__link">
+      <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
         
   
   
@@ -1898,7 +1824,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/accounting_and_calibration/" class="md-nav__link">
+      <a href="../../tutorials/accounting_and_calibration/" class="md-nav__link">
         
   
   
@@ -1921,7 +1847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/sampling_and_microbatching/" class="md-nav__link">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
         
   
   
@@ -1944,7 +1870,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/llm_finetuning/" class="md-nav__link">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
         
   
   
@@ -2018,7 +1944,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/dp_ftrl_training/" class="md-nav__link">
+      <a href="../../tutorials/dp_ftrl_training/" class="md-nav__link">
         
   
   
@@ -2092,7 +2018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/privacy_auditing/" class="md-nav__link">
+      <a href="../../tutorials/privacy_auditing/" class="md-nav__link">
         
   
   
@@ -2115,7 +2041,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/distributed_training/" class="md-nav__link">
+      <a href="../../tutorials/distributed_training/" class="md-nav__link">
         
   
   
@@ -2150,26 +2076,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
             
   
   
@@ -2182,7 +2113,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             Development
@@ -2196,7 +2127,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../development/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -2216,10 +2147,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../development/architecture-contracts/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Architecture contracts
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -2230,6 +2183,218 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enforcement-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enforcement model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      Agent entry points
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normative-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Normative contracts
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normative contracts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arc-001-shared-namespaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-001: Shared namespaces
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-002-public-facade-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-002: Public façade separation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-003-public-documentation-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-003: Public documentation paths
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-004-backend-neutral-distributions" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-004: Backend-neutral distributions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-005-capability-dependency-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-005: Capability dependency graph
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-006-test-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-006: Test placement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-007-deliberate-public-exports" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-007: Deliberate public exports
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-008-accounting-api-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-008: Accounting API ownership
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-009-legal-artifacts-and-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-009: Legal artifacts and provenance
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-010-import-time-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-010: Import-time behavior
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-011-supported-installation-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-011: Supported installation options
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-012-callable-strategy-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-012: Callable strategy behavior
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advisory-design-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advisory design rules
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advisory design rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adv-001-concern-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-001: Concern naming
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adv-002-type-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-002: Type placement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adv-003-factory-oriented-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-003: Factory-oriented APIs
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#junie-review-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      Junie review protocol
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2292,7 +2457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/" class="md-nav__link">
+      <a href="../../reference/" class="md-nav__link">
         
   
   
@@ -2315,7 +2480,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/serialization/" class="md-nav__link">
+      <a href="../../reference/serialization/" class="md-nav__link">
         
   
   
@@ -2338,7 +2503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/clipping/" class="md-nav__link">
+      <a href="../../reference/clipping/" class="md-nav__link">
         
   
   
@@ -2361,7 +2526,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/noise/" class="md-nav__link">
+      <a href="../../reference/noise/" class="md-nav__link">
         
   
   
@@ -2384,7 +2549,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/accounting/" class="md-nav__link">
+      <a href="../../reference/accounting/" class="md-nav__link">
         
   
   
@@ -2407,7 +2572,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/sampling/" class="md-nav__link">
+      <a href="../../reference/sampling/" class="md-nav__link">
         
   
   
@@ -2430,7 +2595,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/rng/" class="md-nav__link">
+      <a href="../../reference/rng/" class="md-nav__link">
         
   
   
@@ -2453,7 +2618,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/distributed/" class="md-nav__link">
+      <a href="../../reference/distributed/" class="md-nav__link">
         
   
   
@@ -2476,7 +2641,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/auditing/" class="md-nav__link">
+      <a href="../../reference/auditing/" class="md-nav__link">
         
   
   
@@ -2499,7 +2664,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/utilities/" class="md-nav__link">
+      <a href="../../reference/utilities/" class="md-nav__link">
         
   
   
@@ -2522,7 +2687,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/optimizers/" class="md-nav__link">
+      <a href="../../reference/optimizers/" class="md-nav__link">
         
   
   
@@ -2545,7 +2710,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/schedules/" class="md-nav__link">
+      <a href="../../reference/schedules/" class="md-nav__link">
         
   
   
@@ -2568,7 +2733,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/transformers/" class="md-nav__link">
+      <a href="../../reference/transformers/" class="md-nav__link">
         
   
   
@@ -2591,7 +2756,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/alignment/" class="md-nav__link">
+      <a href="../../reference/alignment/" class="md-nav__link">
         
   
   
@@ -2641,27 +2806,192 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#design" class="md-nav__link">
+  <a href="#enforcement-model" class="md-nav__link">
     <span class="md-ellipsis">
-      Design
+      Enforcement model
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#module-map" class="md-nav__link">
+  <a href="#agent-entry-points" class="md-nav__link">
     <span class="md-ellipsis">
-      Module map
+      Agent entry points
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
+  <a href="#normative-contracts" class="md-nav__link">
     <span class="md-ellipsis">
-      See also
+      Normative contracts
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normative contracts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arc-001-shared-namespaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-001: Shared namespaces
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-002-public-facade-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-002: Public façade separation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-003-public-documentation-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-003: Public documentation paths
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-004-backend-neutral-distributions" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-004: Backend-neutral distributions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-005-capability-dependency-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-005: Capability dependency graph
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-006-test-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-006: Test placement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-007-deliberate-public-exports" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-007: Deliberate public exports
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-008-accounting-api-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-008: Accounting API ownership
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-009-legal-artifacts-and-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-009: Legal artifacts and provenance
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-010-import-time-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-010: Import-time behavior
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-011-supported-installation-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-011: Supported installation options
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arc-012-callable-strategy-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      ARC-012: Callable strategy behavior
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advisory-design-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advisory design rules
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advisory design rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adv-001-concern-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-001: Concern naming
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adv-002-type-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-002: Type placement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adv-003-factory-oriented-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      ADV-003: Factory-oriented APIs
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#junie-review-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      Junie review protocol
     </span>
   </a>
   
@@ -2686,94 +3016,235 @@
   
 
 
-<h1 id="alignment-opaquealignment">Alignment (<code>opaque.alignment</code>)<a class="headerlink" href="#alignment-opaquealignment" title="Permanent link">&para;</a></h1>
-<p><code>opaque-alignment</code> ships <strong>functional, mechanism-agnostic primitives for
-DP-safe preference learning and supervised fine-tuning</strong>: per-example loss
-functions (SFT and DPO), per-sequence log-probability helpers, batch
-collators, dataset transforms, reference-model helpers, and reward metrics.
-Every public symbol is a pure function or a factory returning a callable, so
-each composes cleanly under <code>vmap(grad(...))</code> — the per-example differentiation
-that DP-SGD and DP-FTRL clipping is built on.</p>
-<p>The package builds only on the engine (clipping, functional conversion,
-distributed) and base (serialization) layers. It does <strong>not</strong> depend on a DP
-mechanism or an optimizer: the noise mechanism and optimizer are chosen at the
-call site, so a researcher can assemble a DP-SGD or DP-FTRL alignment run from
-<code>opaque.alignment</code> primitives plus a mechanism plus an optimizer — no trainer
-subclass required. The same loss closure runs under either mechanism; only the
-two noise/sampling imports change.</p>
-<h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
+<h1 id="architecture-contracts">Architecture contracts<a class="headerlink" href="#architecture-contracts" title="Permanent link">&para;</a></h1>
+<p>This document is the source of truth for Opaque's package and API architecture.
+The rules distinguish mechanically verifiable distribution properties from
+decisions that require semantic review. Do not introduce source-tree inventories
+of packages, modules, imports, or exports as proxies for these contracts.</p>
+<h2 id="enforcement-model">Enforcement model<a class="headerlink" href="#enforcement-model" title="Permanent link">&para;</a></h2>
+<p>Each contract has one primary enforcement mode:</p>
 <ul>
-<li><strong>Functional, no hidden state.</strong> Losses are pure functions of per-example
-  tensors; collators and reference helpers are factories returning callables.
-  The DP-SGD/DP-FTRL pipeline supplies its own clip and noise state.</li>
-<li><strong>Per-example by construction.</strong> Each loss output for example <code>i</code> depends
-  only on example <code>i</code>'s data, so per-example sensitivity stays <code>O(C)</code> after
-  clipping. SFT divisors are per-example token counts (not a batch aggregate),
-  and the DPO collator keeps chosen/rejected as separate <code>(B, ...)</code> tensors so
-  one preference pair maps to one clipped gradient.</li>
-<li><strong>Mechanism-agnostic.</strong> No mechanism or optimizer is imported in the
-  package source; the mechanism is a call-site choice.</li>
-<li><strong>Direct functions, no registries.</strong> Losses are exposed by name as plain
-  functions. Mapping a config string to one of them is the caller's concern —
-  the example scripts keep that tiny <code>name -&gt; fn</code> map at the CLI boundary.</li>
+<li><strong>Artifact</strong> checks inspect generated wheels, sdists, and their metadata after
+  CI/CD builds them.</li>
+<li><strong>Behavior</strong> tests exercise a concrete supported operation in the owning
+  package or against generated distributions.</li>
+<li><strong>Junie review</strong> evaluates the pull-request diff semantically. Junie reports
+  findings as code-review comments; humans decide how to resolve them.</li>
+<li><strong>Advisory</strong> rules are design preferences. Junie may raise them as
+  non-blocking feedback when a change introduces a relevant public surface.</li>
 </ul>
-<h2 id="module-map">Module map<a class="headerlink" href="#module-map" title="Permanent link">&para;</a></h2>
+<p>Deterministic checks must operate on artifacts, declared metadata, or concrete
+behavior. They must not rely on hand-maintained maps from distributions to
+Python modules.</p>
+<h2 id="agent-entry-points">Agent entry points<a class="headerlink" href="#agent-entry-points" title="Permanent link">&para;</a></h2>
+<p>All supported development agents use this document as the architecture source
+of truth:</p>
 <table>
 <thead>
 <tr>
-<th>Module</th>
-<th>Contents</th>
+<th>Agent</th>
+<th>Repository entry point</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>opaque.alignment.sft.loss</code></td>
-<td><code>nll_loss</code>, <code>dft_loss</code>, and the fused twins <code>fused_nll_loss</code>, <code>fused_dft_loss</code></td>
+<td>Junie</td>
+<td><code>.junie/guidelines.md</code></td>
 </tr>
 <tr>
-<td><code>opaque.alignment.sft.collator</code></td>
-<td><code>language_modeling_collator</code> (output schema <code>LMBatch</code> in <code>…collator.types</code>)</td>
+<td>Claude Code</td>
+<td><code>CLAUDE.md</code></td>
 </tr>
 <tr>
-<td><code>opaque.alignment.dpo.loss</code></td>
-<td>per-sequence logp (<code>sequence_logp</code>, <code>fused_sequence_logp</code>), 15 exported loss heads (13 per-pair + 2 reference-free, <code>simpo_loss</code> / <code>odds_ratio_loss</code>), and the 5 log-ratio combinators</td>
-</tr>
-<tr>
-<td><code>opaque.alignment.dpo.collator</code></td>
-<td><code>preference_collator</code></td>
-</tr>
-<tr>
-<td><code>opaque.alignment.dpo.reference</code></td>
-<td><code>compute_ref_logprobs_for_dataset</code>, <code>null_ref_context</code>, <code>with_disabled_adapter</code>, <code>ema_update_reference</code></td>
-</tr>
-<tr>
-<td><code>opaque.alignment.dpo.metric</code></td>
-<td><code>reward_metrics</code></td>
-</tr>
-<tr>
-<td><code>opaque.alignment.dpo.data</code></td>
-<td><code>extract_prompt</code></td>
+<td>Copilot and other AGENTS-compatible agents</td>
+<td><code>AGENTS.md</code></td>
 </tr>
 </tbody>
 </table>
-<p>The <code>DPOTrainer</code> dispatcher (<code>opaque.transformers.trl</code>) maps <strong>15</strong>
-<code>loss_type</code> names to these exported heads — the 13 per-pair heads, plus <code>simpo</code>
-(added to the dispatcher) and <code>chosen_nll</code> (opaque's name for TRL's <code>sft</code>,
-reusing <code>chosen_nll_loss</code>). The
-reference-free composites <code>cpo</code> / <code>orpo</code> are assembled in the trainer from
-existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
-they are <strong>not</strong> separate exported heads.</p>
-<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="sft/">SFT end-to-end</a> — build a DP-SGD supervised fine-tuning run from
-  the language-modeling collator and the per-example NLL/DFT losses.</li>
-<li><a href="dpo/">DPO end-to-end</a> — reference-logp precompute, the preference
-  collator, choosing a per-pair head, and reward-metric eval.</li>
-<li><a href="../reference/alignment/">Alignment API reference</a> — every public
-  function with its import path and a one-line description.</li>
-<li><a href="../user-guide/dp-sgd/">DP-SGD end-to-end</a> — the clipping/noise/optimizer
-  pipeline these losses plug into.</li>
-</ul>
+<p>Agent-specific files contain only loading and workflow instructions; they do not
+duplicate the contracts.</p>
+<p>Contracts marked <strong>active</strong> apply to current changes. Contracts marked
+<strong>planned</strong> are accepted designs whose supporting metadata or post-build
+infrastructure has not landed yet. Junie must not report the absence of planned
+infrastructure as a violation.</p>
+<table>
+<thead>
+<tr>
+<th>Contract</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARC-001: Shared namespaces</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>ARC-002: Public façade separation</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-003: Public documentation paths</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-004: Backend-neutral distributions</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>ARC-005: Capability dependency graph</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>ARC-006: Test placement</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-007: Deliberate public exports</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-008: Accounting API ownership</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-009: Legal artifacts and provenance</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>ARC-010: Import-time behavior</td>
+<td>Active</td>
+</tr>
+<tr>
+<td>ARC-011: Supported installation options</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>ARC-012: Callable strategy behavior</td>
+<td>Active</td>
+</tr>
+</tbody>
+</table>
+<h2 id="normative-contracts">Normative contracts<a class="headerlink" href="#normative-contracts" title="Permanent link">&para;</a></h2>
+<h3 id="arc-001-shared-namespaces">ARC-001: Shared namespaces<a class="headerlink" href="#arc-001-shared-namespaces" title="Permanent link">&para;</a></h3>
+<p>Every published wheel must coexist with the other Opaque wheels while
+contributing to the shared <code>opaque</code>, <code>opaque.api</code>, and
+<code>opaque.api.accounting</code> PEP 420 namespaces.</p>
+<p><strong>Enforcement:</strong> Artifact validation inspects every generated wheel for regular
+package initializers at those namespace roots, then installs the generated
+artifacts together and runs a representative cross-wheel scenario. Installation
+validation belongs to the post-build pipeline, not the repository pytest suite.</p>
+<h3 id="arc-002-public-facade-separation">ARC-002: Public façade separation<a class="headerlink" href="#arc-002-public-facade-separation" title="Permanent link">&para;</a></h3>
+<p>Public <code>opaque.*</code> façade code adapts or re-exports supported APIs. Algorithm
+implementation belongs under the owning <code>opaque.api.*</code> tree. Façades may
+contain re-exports, public type aliases, version metadata, deprecation adapters,
+and justified lazy-loading infrastructure.</p>
+<p><strong>Enforcement:</strong> Junie reviews changed façade files for newly introduced
+implementation behavior. Concrete runtime behavior may have focused tests; no
+AST node allowlist enforces this rule.</p>
+<h3 id="arc-003-public-documentation-paths">ARC-003: Public documentation paths<a class="headerlink" href="#arc-003-public-documentation-paths" title="Permanent link">&para;</a></h3>
+<p>User-facing documentation and examples use supported public façades.
+Contributor documentation, implementation documentation, tests, and traceback
+discussion may reference <code>opaque.api.*</code> when the internal path is relevant.
+Stack walkthroughs use their corresponding public stack façade.</p>
+<p><strong>Enforcement:</strong> Junie reviews changed documentation and examples in context.
+There is no fixed-directory regular-expression scan.</p>
+<h3 id="arc-004-backend-neutral-distributions">ARC-004: Backend-neutral distributions<a class="headerlink" href="#arc-004-backend-neutral-distributions" title="Permanent link">&para;</a></h3>
+<p>A distribution explicitly marked as backend-neutral must install and execute
+its declared neutral scenario without any backend runtime.</p>
+<p><strong>Enforcement:</strong> Each distribution will declare provided and required
+capabilities in its <code>pyproject.toml</code>. Post-build validation will discover
+backend-neutral generated artifacts, verify that their dependency metadata has
+no backend-runtime edge, install them without backend packages, and execute
+their declared neutral scenario. Source import scans are not a substitute.</p>
+<h3 id="arc-005-capability-dependency-graph">ARC-005: Capability dependency graph<a class="headerlink" href="#arc-005-capability-dependency-graph" title="Permanent link">&para;</a></h3>
+<p>Each distribution declares the capabilities it provides and requires. A
+distribution must not introduce a dependency edge forbidden by the capability
+policy. Foundation and backend-neutral capabilities cannot acquire dependencies
+on higher-level mechanisms, patches, optimizers, alignment integrations, or
+trainers.</p>
+<p><strong>Enforcement:</strong> Repository CI validates per-package capability declarations and
+dependency edges. Post-build validation confirms that generated dependency
+metadata matches the declared distribution dependencies. Junie reviews semantic
+coupling that metadata cannot represent. The capability vocabulary and
+constraints belong in this document; distribution declarations belong in their
+own <code>pyproject.toml</code>.</p>
+<h3 id="arc-006-test-placement">ARC-006: Test placement<a class="headerlink" href="#arc-006-test-placement" title="Permanent link">&para;</a></h3>
+<p>A wheel-local test must be runnable with that wheel, its declared
+dependencies/extras, its backend requirements, and shared test tooling. Tests
+that intentionally combine independent capabilities belong under
+<code>tests/integration</code>.</p>
+<p><strong>Enforcement:</strong> Junie reviews added or moved tests against the owning
+distribution metadata. Isolated per-wheel test environments may replace this
+review only if they can be generated without a duplicate dependency manifest
+and have acceptable CI cost.</p>
+<h3 id="arc-007-deliberate-public-exports">ARC-007: Deliberate public exports<a class="headerlink" href="#arc-007-deliberate-public-exports" title="Permanent link">&para;</a></h3>
+<p>Stable public façade package initializers declare a deliberate <code>__all__</code>.
+Internal <code>opaque.api.*</code> packages and ordinary modules are not universally
+required to declare <code>__all__</code>.</p>
+<p><strong>Enforcement:</strong> Junie reviews changed public façade <code>__init__.py</code> files. There
+is no recursive import or runtime-name parity test.</p>
+<h3 id="arc-008-accounting-api-ownership">ARC-008: Accounting API ownership<a class="headerlink" href="#arc-008-accounting-api-ownership" title="Permanent link">&para;</a></h3>
+<p><code>opaque.accounting</code> exposes backend- and stack-independent accounting algebra
+and generic mechanisms. Stack- or mechanism-specific factories are exposed from
+their owning public accounting façade.</p>
+<p><strong>Enforcement:</strong> Junie reviews changed accounting exports and documentation.
+Focused package-local behavior tests exercise documented factories through
+their owning façade. There is no global negative export inventory.</p>
+<h3 id="arc-009-legal-artifacts-and-provenance">ARC-009: Legal artifacts and provenance<a class="headerlink" href="#arc-009-legal-artifacts-and-provenance" title="Permanent link">&para;</a></h3>
+<p>Every published distribution contains the required license and notice material.
+Repository provenance references resolve to real attributed sources.</p>
+<p><strong>Enforcement:</strong> Post-build validation dynamically inspects every generated
+wheel and sdist. A machine-readable provenance manifest will become the
+repository source of truth and will generate or validate NOTICE content; NOTICE
+prose is not the primary data model.</p>
+<h3 id="arc-010-import-time-behavior">ARC-010: Import-time behavior<a class="headerlink" href="#arc-010-import-time-behavior" title="Permanent link">&para;</a></h3>
+<p>Importing a public Opaque package must not automatically patch third-party
+globals. Optional integrations must fail or no-op as their public API
+documents. Lazy loading is an implementation detail unless a separate,
+measurable startup or optional-dependency budget is adopted.</p>
+<p><strong>Enforcement:</strong> Junie reviews changes to package initializers and
+patch/bootstrap paths. This policy is not enforced with generic import smoke
+tests or import subprocess tests.</p>
+<h3 id="arc-011-supported-installation-options">ARC-011: Supported installation options<a class="headerlink" href="#arc-011-supported-installation-options" title="Permanent link">&para;</a></h3>
+<p>Every documented installation option has one meaningful post-build usage
+scenario using generated artifacts. A scenario performs a minimal supported
+operation rather than importing every module.</p>
+<p><strong>Enforcement:</strong> Tagged executable scenarios in the installation documentation
+are the source of truth. Post-build validation extracts each scenario, installs
+the generated artifacts for that option, and runs it.</p>
+<h3 id="arc-012-callable-strategy-behavior">ARC-012: Callable strategy behavior<a class="headerlink" href="#arc-012-callable-strategy-behavior" title="Permanent link">&para;</a></h3>
+<p>Public strategy factories accept their documented arguments and return
+callable/state objects that satisfy their documented numerical contract.</p>
+<p><strong>Enforcement:</strong> Ordinary behavior tests live in the package that owns the
+strategy. They test real calls and numerical properties, not package structure.</p>
+<h2 id="advisory-design-rules">Advisory design rules<a class="headerlink" href="#advisory-design-rules" title="Permanent link">&para;</a></h2>
+<p>The following preferences have legitimate exceptions. Junie may comment on
+them when reviewing a newly introduced public API, but they are not blocking
+contracts.</p>
+<h3 id="adv-001-concern-naming">ADV-001: Concern naming<a class="headerlink" href="#adv-001-concern-naming" title="Permanent link">&para;</a></h3>
+<p>New concern namespaces generally use singular names. A plural name is
+appropriate when a collection is itself the public API.</p>
+<h3 id="adv-002-type-placement">ADV-002: Type placement<a class="headerlink" href="#adv-002-type-placement" title="Permanent link">&para;</a></h3>
+<p>Concern-specific public types generally live beside their concern. Genuinely
+cross-cutting public types belong in <code>opaque.types</code>.</p>
+<h3 id="adv-003-factory-oriented-apis">ADV-003: Factory-oriented APIs<a class="headerlink" href="#adv-003-factory-oriented-apis" title="Permanent link">&para;</a></h3>
+<p>APIs that build behavior generally prefer factory functions returning
+callables. Classes remain appropriate for inert state/configuration and when
+identity or lifecycle is itself the abstraction.</p>
+<h2 id="junie-review-protocol">Junie review protocol<a class="headerlink" href="#junie-review-protocol" title="Permanent link">&para;</a></h2>
+<p>Junie reviews only active contracts whose scope intersects the pull-request
+diff. Each finding must:</p>
+<ol>
+<li>cite the contract ID;</li>
+<li>identify the affected changed lines;</li>
+<li>explain the architectural consequence rather than only matching syntax; and</li>
+<li>suggest a concrete remediation or request an explicit design decision.</li>
+</ol>
+<p>Normative findings and advisory suggestions must be clearly distinguished.
+Adding a package or module is never a violation by itself. Junie posts a code
+review; successful completion of the review job does not mean that its findings
+are automatically accepted or rejected.</p>
 
 
 
@@ -2844,10 +3315,10 @@ they are <strong>not</strong> separate exported heads.</p>
     
     
       
-      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
