@@ -2386,6 +2386,7 @@ class TestDeepJsonRecursionGuard:
 
     def test_deep_nested_dict_round_trips_under_guard(self):
         import json
+        import sys
 
         from opaque.api.transformers.trainer._dp_trainer import (
             _deep_json_recursion,
@@ -2394,11 +2395,16 @@ class TestDeepJsonRecursionGuard:
         d: dict = {"leaf": 1}
         for _ in range(5000):
             d = {"inner": d}
-        with pytest.raises(RecursionError):
-            json.dumps(d)  # the pre-guard failure mode at default limits
-        with _deep_json_recursion():
-            back = json.loads(json.dumps(d))
-            assert back == d  # dict __eq__ recurses too; compare under the guard
+        original_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(1_000)
+        try:
+            with _deep_json_recursion():
+                assert sys.getrecursionlimit() == 30_000
+                back = json.loads(json.dumps(d))
+                assert back == d
+            assert sys.getrecursionlimit() == 1_000
+        finally:
+            sys.setrecursionlimit(original_limit)
 
 
 class TestPredictStopStep:
