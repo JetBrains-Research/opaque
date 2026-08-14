@@ -1,0 +1,73 @@
+name: Junie
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+jobs:
+  junie:
+    if: >-
+      !endsWith(github.actor, '[bot]') &&
+      (
+        (
+          github.event_name == 'issue_comment' &&
+          contains(github.event.comment.body, '@junie-agent') &&
+          contains(
+            fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+            github.event.comment.author_association
+          )
+        ) ||
+        (
+          github.event_name == 'pull_request_review_comment' &&
+          contains(github.event.comment.body, '@junie-agent') &&
+          contains(
+            fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+            github.event.comment.author_association
+          )
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '@junie-agent') &&
+          contains(
+            fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+            github.event.review.author_association
+          )
+        ) ||
+        (
+          github.event_name == 'issues' &&
+          (
+            contains(github.event.issue.body, '@junie-agent') ||
+            contains(github.event.issue.title, '@junie-agent')
+          ) &&
+          contains(
+            fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+            github.event.issue.author_association
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+
+      - name: Run Junie
+        # Organization fork of v1.7.4 with transitive actions pinned to SHAs.
+        uses: JetBrains-Research/junie-github-action@a539a07060c40af31f8efc67e3623012696c97d9
+        with:
+          junie_api_key: ${{ secrets.JUNIE_API_KEY }}
+          use_single_comment: "true"

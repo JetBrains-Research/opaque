@@ -14,6 +14,7 @@ private reusable components described below.
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
 | `junie-review.yml` | Pull requests to `main` | Runs Junie code review using the repository architecture contracts and posts review feedback. |
+| `junie.yml` | Trusted `@junie-agent` mentions in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
 ## Reusable components
@@ -113,3 +114,19 @@ The review workflow currently uses the organization fork of
 transitive actions rejected by Opaque's immutable-action policy. The fork changes
 only those references to full commit SHAs; switch back to the upstream action
 after that fix is released.
+
+The interactive `junie.yml` workflow uses the same pinned action fork and
+`JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
+`COLLABORATOR` association reach the action, which then verifies that the actor
+has repository write or admin access. The job grants `contents`, pull-request,
+and issue write access explicitly; repository-wide workflow permissions remain
+read-only. Repository Settings > Actions > General must also allow GitHub
+Actions to create and approve pull requests.
+
+Interactive Junie tasks use the default `GITHUB_TOKEN`, so comments and commits
+are attributed to `github-actions[bot]`. GitHub does not start new `push` or
+`pull_request` workflow runs for changes made with that token. After Junie
+changes a branch, a maintainer must trigger CI for the new head, for example by
+closing and reopening the pull request or by pushing a maintainer-authored
+commit. The automated architecture review remains unchanged and uses the same
+identity.
