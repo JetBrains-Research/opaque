@@ -42,6 +42,15 @@ private val testShards = listOf(
     TestShard("repository", "tests"),
 )
 
+private fun ensureUv() = """
+    set -euo pipefail
+    if ! command -v uv >/dev/null 2>&1; then
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      echo "##teamcity[setParameter name='env.PATH' value='${'$'}HOME/.local/bin:${'$'}PATH']"
+    fi
+    uv --version
+""".trimIndent()
+
 object PythonTestTemplate : Template({
     id("Opaque_PythonTestTemplate")
     name = "Python test template"
@@ -53,6 +62,13 @@ object PythonTestTemplate : Template({
     requirements {
         exists("teamcity.agent.jvm.os.name")
         exists("teamcity.agent.jvm.os.arch")
+        noLessThan("teamcity.agent.hardware.memorySizeMb", "8192")
+    }
+    steps {
+        script {
+            name = "Ensure uv is available"
+            scriptContent = ensureUv()
+        }
     }
     features {
         perfmon { }
@@ -121,7 +137,10 @@ private object RustTests : BuildType({
     id("Opaque_RustTests")
     name = "Rust tests"
     vcs { root(DslContext.settingsRoot) }
-    requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
+    requirements {
+        equals("teamcity.agent.jvm.os.name", "Linux")
+        noLessThan("teamcity.agent.hardware.memorySizeMb", "8192")
+    }
     steps {
         script {
             name = "Run Rust tests and doctests"
@@ -135,8 +154,15 @@ private object StrictDocs : BuildType({
     name = "Strict documentation build"
     vcs { root(DslContext.settingsRoot) }
     artifactRules = "site/** => site.zip"
-    requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
+    requirements {
+        equals("teamcity.agent.jvm.os.name", "Linux")
+        noLessThan("teamcity.agent.hardware.memorySizeMb", "8192")
+    }
     steps {
+        script {
+            name = "Ensure uv is available"
+            scriptContent = ensureUv()
+        }
         script {
             name = "Sync documentation environment"
             scriptContent = "uv sync --group docs --all-packages"

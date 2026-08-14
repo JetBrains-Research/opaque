@@ -44,6 +44,15 @@ private val versionedPyprojects = listOf(
     *pythonDistributions.filter { it.path != "." }.map { "${it.path}/pyproject.toml" }.toTypedArray(),
 )
 
+private fun ensureUv() = """
+    set -euo pipefail
+    if ! command -v uv >/dev/null 2>&1; then
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      echo "##teamcity[setParameter name='env.PATH' value='${'$'}HOME/.local/bin:${'$'}PATH']"
+    fi
+    uv --version
+""".trimIndent()
+
 private fun versionPreflight(): String {
     val files = versionedPyprojects.joinToString(" ") { "'$it'" }
     return """
@@ -96,6 +105,10 @@ private fun baseDistributionBuild(buildType: BuildType, buildId: String, buildNa
         cleanCheckout = true
     }
     steps {
+        script {
+            name = "Ensure uv is available"
+            scriptContent = ensureUv()
+        }
         script {
             name = "Set synchronized distribution version"
             scriptContent = versionPreflight()
