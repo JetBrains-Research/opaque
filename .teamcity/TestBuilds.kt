@@ -50,7 +50,8 @@ private object RustTests : BuildType({
     name = "Rust tests"
     configureCheckout()
     configureCleanup()
-    configureEphemeralCachePolicy()
+    configureHostedCachePolicy()
+    configureAgentDiagnostics()
     useAgent(CiModel.AgentClass.LINUX_LARGE)
     failureConditions {
         executionTimeoutMin = CiModel.TEST_TIMEOUT_MINUTES

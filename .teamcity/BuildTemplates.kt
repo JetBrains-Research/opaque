@@ -1,6 +1,7 @@
 import jetbrains.buildServer.configs.kotlin.BuildTypeSettings
 import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.Template
+import jetbrains.buildServer.configs.kotlin.buildFeatures.buildCache
 import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
 import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
@@ -34,10 +35,26 @@ fun BuildTypeSettings.configureCleanup() {
     }
 }
 
-fun BuildTypeSettings.configureEphemeralCachePolicy() {
+fun BuildTypeSettings.configureHostedCachePolicy() {
     params {
-        param("env.UV_CACHE_DIR", "%teamcity.build.tempDir%/uv-cache")
-        param("env.CARGO_HOME", "%teamcity.build.tempDir%/cargo-home")
+        param("env.UV_CACHE_DIR", "%teamcity.build.checkoutDir%/.teamcity-cache/uv")
+        param("env.CARGO_HOME", "%teamcity.build.checkoutDir%/.teamcity-cache/cargo")
+    }
+    features {
+        buildCache {
+            name = "opaque-uv-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
+            rules = ".teamcity-cache/uv"
+            use = true
+            publish = true
+            publishOnlyChanged = true
+        }
+        buildCache {
+            name = "opaque-cargo-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
+            rules = ".teamcity-cache/cargo"
+            use = true
+            publish = true
+            publishOnlyChanged = true
+        }
     }
 }
 
@@ -50,16 +67,35 @@ fun ensureUvScript() = """
     uv --version
 """.trimIndent()
 
-fun BuildTypeSettings.configurePythonTooling() {
+fun BuildTypeSettings.configureAgentDiagnostics() {
+    steps {
+        script {
+            name = "Report agent environment"
+            scriptContent = """
+                printf 'agent=%s\nos=%s\narchitecture=%s\nmemory_mb=%s\n' \
+                  '%teamcity.agent.name%' \
+                  '%teamcity.agent.jvm.os.name%' \
+                  '%teamcity.agent.jvm.os.arch%' \
+                  '%teamcity.agent.hardware.memorySizeMb%'
+                uname -a
+            """.trimIndent()
+        }
+    }
+}
+
+fun BuildTypeSettings.configurePythonTooling(useHostedCache: Boolean = true) {
     configureCheckout()
     configureCleanup()
-    configureEphemeralCachePolicy()
+    if (useHostedCache) {
+        configureHostedCachePolicy()
+    }
     steps {
         script {
             name = "Bootstrap uv"
             scriptContent = ensureUvScript()
         }
     }
+    configureAgentDiagnostics()
 }
 
 fun BuildTypeSettings.configurePythonTestReporting() {
@@ -163,5 +199,5 @@ object PublicationTemplate : Template({
     failureConditions {
         executionTimeoutMin = CiModel.BUILD_TIMEOUT_MINUTES
     }
-    configurePythonTooling()
+    configurePythonTooling(useHostedCache = false)
 })

@@ -23,7 +23,9 @@ object PrepareVersion : BuildType({
     }
     configureCheckout()
     configureCleanup()
+    configureAgentDiagnostics()
     artifactRules = "${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     steps {
         script {
             name = "Compute immutable version"
