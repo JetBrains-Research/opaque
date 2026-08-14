@@ -40,7 +40,8 @@ Trace every affected path through the following questions.
 - What is the protected unit: record, example, user, sequence, or another
   contribution?
 - Which neighboring relation is assumed? Opaque uses add-or-remove adjacency by
-  default. Replace-one analyses generally require twice the clipped bound.
+  default. With a fixed clipping threshold, replace-one analyses generally
+  require twice the sensitivity (`2 * max_norm`).
 - Do grouping, repeated participation, distributed execution, or data
   preprocessing change the effective contribution model?
 
