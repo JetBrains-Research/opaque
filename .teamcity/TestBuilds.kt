@@ -14,8 +14,7 @@ private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType 
 
     params {
         param("opaque.pytest.path", "packages")
-        param("opaque.pytest.marker", device.markerForPullRequest)
-        param("opaque.pytest.marker.main", device.markerForMain)
+        param("opaque.pytest.marker", device.markerForMain)
         param("opaque.pytest.xdist", device.xdistArguments)
     }
     features {
@@ -99,8 +98,7 @@ private val cudaTest = BuildType {
     useAgent(CiModel.AgentClass.CUDA)
     configurePythonTestReporting()
     params {
-        param("opaque.pytest.marker", CiModel.TestDevice.CUDA.markerForPullRequest)
-        param("opaque.pytest.marker.main", CiModel.TestDevice.CUDA.markerForMain)
+        param("opaque.pytest.marker", CiModel.TestDevice.CUDA.markerForMain)
     }
     steps {
         script {
@@ -133,14 +131,16 @@ private fun verificationBuild(
         this.branchFilter = branchKind.branchFilter
     }
     params {
-        param(
-            "override.dep.Opaque_PythonCpu.opaque.pytest.marker",
-            CiModel.TestDevice.CPU.markerFor(branchKind),
-        )
-        param(
-            "override.dep.Opaque_PythonCuda.opaque.pytest.marker",
-            CiModel.TestDevice.CUDA.markerFor(branchKind),
-        )
+        if (branchKind == CiModel.BranchKind.PULL_REQUEST) {
+            param(
+                "override.dep.Opaque_PythonCpu.opaque.pytest.marker",
+                CiModel.TestDevice.CPU.markerForPullRequest,
+            )
+            param(
+                "override.dep.Opaque_PythonCuda.opaque.pytest.marker",
+                CiModel.TestDevice.CUDA.markerForPullRequest,
+            )
+        }
     }
     dependencies {
         listOf(cpuTests, cudaTest).forEach { matrix ->

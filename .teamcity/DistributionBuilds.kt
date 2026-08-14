@@ -56,7 +56,7 @@ private fun distributionBuild(
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
+            reuseBuilds = ReuseBuilds.NO
         }
     }
 }
@@ -136,7 +136,7 @@ object ValidateDistributions : BuildType({
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
+            reuseBuilds = ReuseBuilds.NO
         }
         distributionBuilders.forEach { builder ->
             snapshot(builder.buildType) {
