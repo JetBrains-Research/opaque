@@ -10,14 +10,7 @@ import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 private data class PythonDistribution(val label: String, val path: String)
 
-private data class NativeTarget(
-    val id: String,
-    val displayName: String,
-    val osName: String,
-    val arch: String,
-    val rustTarget: String,
-    val manylinux: String?,
-)
+private data class AccountingVariant(val id: String, val label: String)
 
 private val pythonDistributions = listOf(
     PythonDistribution("opaque", "."),
@@ -32,10 +25,11 @@ private val pythonDistributions = listOf(
     PythonDistribution("opaque-transformers", "packages/opaque-transformers"),
 )
 
-private val nativeTargets = listOf(
-    NativeTarget("LinuxX64", "Linux x86_64", "Linux", "amd64", "x86_64-unknown-linux-gnu", "2_28"),
-    NativeTarget("LinuxArm64", "Linux ARM64", "Linux", "aarch64", "aarch64-unknown-linux-gnu", "2_28"),
-    NativeTarget("MacArm64", "macOS ARM64", "Mac OS X", "aarch64", "aarch64-apple-darwin", null),
+private val accountingVariants = listOf(
+    AccountingVariant("native-linux-x64", "native Linux x86_64"),
+    AccountingVariant("native-linux-arm64", "native Linux ARM64"),
+    AccountingVariant("native-macos-arm64", "native macOS ARM64"),
+    AccountingVariant("sdist-linux-x64", "sdist Linux x86_64"),
 )
 
 private val versionedPyprojects = listOf(
@@ -119,53 +113,55 @@ private object PythonWheels : BuildType({
     baseDistributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels")
     artifactRules = "dist/*.whl => distributions"
     requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
-    params { param("opaque.distribution.path", ".") }
+    steps {
+        script {
+            name = "Build platform-agnostic wheels"
+            scriptContent = pythonDistributions.joinToString("\n") {
+                "(cd ${it.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/dist)"
+            }
+        }
+    }
+})
+
+private object AccountingDistributions : BuildType({
+    baseDistributionBuild(this, "Opaque_BuildAccounting", "Build opaque-accounting distributions")
+    artifactRules = "dist/*.whl dist/*.tar.gz => distributions"
+    params { param("opaque.accounting.variant", "native-linux-x64") }
+    requirements {
+        exists("opaque.agent.accounting.%opaque.accounting.variant%")
+    }
     features {
         matrix {
             param(
-                "opaque.distribution.path",
-                pythonDistributions.map { value(it.path, it.label) },
+                "opaque.accounting.variant",
+                accountingVariants.map { value(it.id, it.label) },
             )
         }
     }
     steps {
         script {
-            name = "Build wheel"
-            scriptContent = "cd %opaque.distribution.path% && uv build --wheel --out-dir %teamcity.build.checkoutDir%/dist"
+            name = "Build selected accounting distribution"
+            scriptContent = """
+                case "%opaque.accounting.variant%" in
+                  native-linux-x64)
+                    uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target x86_64-unknown-linux-gnu --manylinux 2_28 --interpreter python3.11 --out dist --compatibility pypi
+                    ;;
+                  native-linux-arm64)
+                    uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target aarch64-unknown-linux-gnu --manylinux 2_28 --interpreter python3.11 --out dist --compatibility pypi
+                    ;;
+                  native-macos-arm64)
+                    uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target aarch64-apple-darwin --interpreter python3.11 --out dist --compatibility pypi
+                    ;;
+                  sdist-linux-x64)
+                    cd packages/opaque-accounting && uv build --sdist --out-dir %teamcity.build.checkoutDir%/dist
+                    ;;
+                esac
+            """.trimIndent()
         }
     }
 })
 
-private fun nativeWheel(target: NativeTarget) = BuildType {
-    baseDistributionBuild(this, "Opaque_BuildAccounting${target.id}", "Build opaque-accounting (${target.displayName})")
-    artifactRules = "dist/*.whl => distributions"
-    requirements {
-        equals("teamcity.agent.jvm.os.name", target.osName)
-        equals("teamcity.agent.jvm.os.arch", target.arch)
-    }
-    steps {
-        script {
-            name = "Build native wheel"
-            val manylinux = target.manylinux?.let { "--manylinux $it" } ?: ""
-            scriptContent = "uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target ${target.rustTarget} $manylinux --interpreter python3.11 --out dist --compatibility pypi"
-        }
-    }
-}
-
-private object AccountingSdist : BuildType({
-    baseDistributionBuild(this, "Opaque_BuildAccountingSdist", "Build opaque-accounting sdist")
-    artifactRules = "dist/*.tar.gz => distributions"
-    requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
-    steps {
-        script {
-            name = "Build sdist"
-            scriptContent = "cd packages/opaque-accounting && uv build --sdist --out-dir %teamcity.build.checkoutDir%/dist"
-        }
-    }
-})
-
-private val nativeWheelBuilds = nativeTargets.map(::nativeWheel)
-private val distributionBuilders = listOf(PythonWheels) + nativeWheelBuilds + AccountingSdist
+private val distributionBuilders = listOf(PythonWheels, AccountingDistributions)
 
 object ValidateDistributions : BuildType({
     id("Opaque_ValidateDistributions")
