@@ -3,6 +3,7 @@ name: PR gate
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -134,7 +135,11 @@ jobs:
 
   qodana:
     name: Qodana
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action == 'opened' ||
+       github.event.action == 'ready_for_review')
     needs: [python-tests-gate]
     permissions:
       actions: read
