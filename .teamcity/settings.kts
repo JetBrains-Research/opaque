@@ -23,6 +23,21 @@ object Delivery : Project({
     id("Opaque_Delivery")
     name = "Delivery"
 
+    params {
+        text(
+            "opaque.packages.username",
+            "37ed2d18-f9be-4e61-9ca1-288f4bde66f8",
+            display = ParameterDisplay.HIDDEN,
+            readOnly = true,
+        )
+        password(
+            "opaque.packages.token",
+            "credentialsJSON:5222e228-5d60-492b-9ddf-889a02e0805e",
+            display = ParameterDisplay.HIDDEN,
+            readOnly = true,
+        )
+    }
+
     template(PublicationTemplate)
     deliveryBuildTypes.forEach(::buildType)
 })
