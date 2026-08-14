@@ -3,7 +3,7 @@ name: Junie review
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, ready_for_review]
 
 permissions:
   contents: read
@@ -15,41 +15,23 @@ concurrency:
 jobs:
   architecture-review:
     name: Junie architecture review
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: write
     steps:
-      - name: Explain unavailable review
-        if: >-
-          github.event.pull_request.draft ||
-          github.event.pull_request.head.repo.full_name != github.repository ||
-          github.event.pull_request.user.login == 'dependabot[bot]'
-        run: |
-          if [[ "${{ github.event.pull_request.draft }}" == "true" ]]; then
-            echo "Junie review starts when the pull request is ready for review."
-          elif [[ "${{ github.event.pull_request.user.login }}" == "dependabot[bot]" ]]; then
-            echo "Junie review is unavailable because GitHub withholds Actions secrets from Dependabot."
-          else
-            echo "Junie review is unavailable for fork pull requests because Actions secrets are not exposed."
-          fi
-
       - name: Checkout pull request
-        if: >-
-          !github.event.pull_request.draft &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.user.login != 'dependabot[bot]'
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Prepare trusted review guidance
-        if: >-
-          !github.event.pull_request.draft &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BOOTSTRAP_POLICY_SHA: 29d21ab1a9b11377b3adbbd280cd40bda623b0fd
@@ -98,10 +80,6 @@ jobs:
           EOF
 
       - name: Run Junie code review
-        if: >-
-          !github.event.pull_request.draft &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.user.login != 'dependabot[bot]'
         # Organization fork of v1.7.4 with transitive actions pinned to SHAs.
         # Switch back to JetBrains/junie-github-action after the upstream fix.
         uses: JetBrains-Research/junie-github-action@a539a07060c40af31f8efc67e3623012696c97d9
