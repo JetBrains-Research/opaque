@@ -50,7 +50,7 @@ object CiModel {
             "not cuda and not slow",
             "not cuda",
             AgentClass.MACOS_ARM64,
-            "-n auto --dist loadscope",
+            "",
         ),
         CUDA("CUDA", "cuda and not slow", "cuda", AgentClass.CUDA, "-rs"),
         ;
@@ -78,6 +78,7 @@ object CiModel {
     }
 
     const val ARTIFACT_RETENTION_DAYS = 90
+    const val PYTHON_VERSION = "3.11"
     const val TEST_TIMEOUT_MINUTES = 40
     const val BUILD_TIMEOUT_MINUTES = 30
 

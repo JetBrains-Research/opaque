@@ -30,7 +30,7 @@ private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType 
     steps {
         script {
             name = "Sync test environment"
-            scriptContent = "uv sync --group dev --all-packages --extra all"
+            scriptContent = "uv sync --python ${CiModel.PYTHON_VERSION} --group dev --all-packages --extra all"
         }
         if (device == CiModel.TestDevice.CUDA) {
             script {
@@ -102,7 +102,7 @@ private val cudaTest = BuildType {
     steps {
         script {
             name = "Sync test environment"
-            scriptContent = "uv sync --group dev --all-packages --extra all"
+            scriptContent = "uv sync --python ${CiModel.PYTHON_VERSION} --group dev --all-packages --extra all"
         }
         script {
             name = "Assert CUDA availability"
