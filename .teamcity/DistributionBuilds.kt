@@ -5,9 +5,10 @@ import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
 import jetbrains.buildServer.configs.kotlin.buildFeatures.commitStatusPublisher
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import jetbrains.buildServer.configs.kotlin.matrix
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
-private data class PythonDistribution(val id: String, val name: String, val path: String)
+private data class PythonDistribution(val label: String, val path: String)
 
 private data class NativeTarget(
     val id: String,
@@ -19,16 +20,16 @@ private data class NativeTarget(
 )
 
 private val pythonDistributions = listOf(
-    PythonDistribution("Opaque", "opaque", "."),
-    PythonDistribution("Alignment", "opaque-alignment", "packages/opaque-alignment"),
-    PythonDistribution("Auditing", "opaque-auditing", "packages/opaque-auditing"),
-    PythonDistribution("Base", "opaque-base", "packages/opaque-base"),
-    PythonDistribution("DpFtrl", "opaque-dpftrl", "packages/opaque-dpftrl"),
-    PythonDistribution("DpSgd", "opaque-dpsgd", "packages/opaque-dpsgd"),
-    PythonDistribution("Engine", "opaque-engine", "packages/opaque-engine"),
-    PythonDistribution("Optimizers", "opaque-optimizers", "packages/opaque-optimizers"),
-    PythonDistribution("Patches", "opaque-patches", "packages/opaque-patches"),
-    PythonDistribution("Transformers", "opaque-transformers", "packages/opaque-transformers"),
+    PythonDistribution("opaque", "."),
+    PythonDistribution("opaque-alignment", "packages/opaque-alignment"),
+    PythonDistribution("opaque-auditing", "packages/opaque-auditing"),
+    PythonDistribution("opaque-base", "packages/opaque-base"),
+    PythonDistribution("opaque-dpftrl", "packages/opaque-dpftrl"),
+    PythonDistribution("opaque-dpsgd", "packages/opaque-dpsgd"),
+    PythonDistribution("opaque-engine", "packages/opaque-engine"),
+    PythonDistribution("opaque-optimizers", "packages/opaque-optimizers"),
+    PythonDistribution("opaque-patches", "packages/opaque-patches"),
+    PythonDistribution("opaque-transformers", "packages/opaque-transformers"),
 )
 
 private val nativeTargets = listOf(
@@ -102,17 +103,26 @@ private fun baseDistributionBuild(buildType: BuildType, buildId: String, buildNa
     }
 }
 
-private fun pythonWheel(distribution: PythonDistribution) = BuildType {
-    baseDistributionBuild(this, "Opaque_Build${distribution.id}", "Build ${distribution.name}")
+private object PythonWheels : BuildType({
+    baseDistributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels")
     artifactRules = "dist/*.whl => distributions"
     requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
+    params { param("opaque.distribution.path", ".") }
+    features {
+        matrix {
+            param(
+                "opaque.distribution.path",
+                pythonDistributions.map { value(it.path, it.label) },
+            )
+        }
+    }
     steps {
         script {
             name = "Build wheel"
-            scriptContent = "cd ${distribution.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/dist"
+            scriptContent = "cd %opaque.distribution.path% && uv build --wheel --out-dir %teamcity.build.checkoutDir%/dist"
         }
     }
-}
+})
 
 private fun nativeWheel(target: NativeTarget) = BuildType {
     baseDistributionBuild(this, "Opaque_BuildAccounting${target.id}", "Build opaque-accounting (${target.displayName})")
@@ -142,9 +152,8 @@ private object AccountingSdist : BuildType({
     }
 })
 
-private val pythonWheelBuilds = pythonDistributions.map(::pythonWheel)
 private val nativeWheelBuilds = nativeTargets.map(::nativeWheel)
-private val distributionBuilders = pythonWheelBuilds + nativeWheelBuilds + AccountingSdist
+private val distributionBuilders = listOf(PythonWheels) + nativeWheelBuilds + AccountingSdist
 
 object ValidateDistributions : BuildType({
     id("Opaque_ValidateDistributions")
@@ -180,7 +189,7 @@ object ValidateDistributions : BuildType({
         }
         script {
             name = "Record artifact identity"
-            scriptContent = "printf 'commit=%s\\nversion=%s\\nbuild_id=%s\\n' '%build.vcs.number%' '%dep.Opaque_BuildOpaque.opaque.version%' '%teamcity.build.id%' > dist/teamcity-artifact-identity.txt"
+            scriptContent = "printf 'commit=%s\\nversion=%s\\nbuild_id=%s\\n' '%build.vcs.number%' '%dep.Opaque_BuildPythonWheels.opaque.version%' '%teamcity.build.id%' > dist/teamcity-artifact-identity.txt"
         }
     }
     cleanup {

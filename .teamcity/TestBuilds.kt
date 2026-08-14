@@ -5,10 +5,13 @@ import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
 import jetbrains.buildServer.configs.kotlin.Template
 import jetbrains.buildServer.configs.kotlin.buildFeatures.PullRequests
+import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.commitStatusPublisher
 import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
 import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
+import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import jetbrains.buildServer.configs.kotlin.matrix
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 private enum class TestDevice(
@@ -23,20 +26,20 @@ private enum class TestDevice(
     CUDA("CUDA", "cuda and not slow", "cuda", "Linux", "-rs"),
 }
 
-private data class TestShard(val id: String, val path: String)
+private data class TestShard(val label: String, val path: String)
 
 private val testShards = listOf(
-    TestShard("Accounting", "packages/opaque-accounting"),
-    TestShard("Alignment", "packages/opaque-alignment"),
-    TestShard("Auditing", "packages/opaque-auditing"),
-    TestShard("Base", "packages/opaque-base"),
-    TestShard("DpFtrl", "packages/opaque-dpftrl"),
-    TestShard("DpSgd", "packages/opaque-dpsgd"),
-    TestShard("Engine", "packages/opaque-engine"),
-    TestShard("Optimizers", "packages/opaque-optimizers"),
-    TestShard("Patches", "packages/opaque-patches"),
-    TestShard("Transformers", "packages/opaque-transformers"),
-    TestShard("Repo", "tests"),
+    TestShard("accounting", "packages/opaque-accounting"),
+    TestShard("alignment", "packages/opaque-alignment"),
+    TestShard("auditing", "packages/opaque-auditing"),
+    TestShard("base", "packages/opaque-base"),
+    TestShard("dpftrl", "packages/opaque-dpftrl"),
+    TestShard("dpsgd", "packages/opaque-dpsgd"),
+    TestShard("engine", "packages/opaque-engine"),
+    TestShard("optimizers", "packages/opaque-optimizers"),
+    TestShard("patches", "packages/opaque-patches"),
+    TestShard("transformers", "packages/opaque-transformers"),
+    TestShard("repository", "tests"),
 )
 
 object PythonTestTemplate : Template({
@@ -53,13 +56,16 @@ object PythonTestTemplate : Template({
     }
     features {
         perfmon { }
+        xmlReport {
+            reportType = XmlReport.XmlReportType.JUNIT
+            rules = "test-results.xml"
+        }
     }
 })
 
-private fun pythonTest(device: TestDevice, shard: TestShard?): BuildType = BuildType {
-    val suffix = shard?.id ?: "All"
-    id("Opaque_Python${device.name.lowercase().replaceFirstChar(Char::uppercase)}$suffix")
-    name = "Python ${device.displayName}: ${shard?.id ?: "all packages"}"
+private fun pythonTestMatrix(device: TestDevice): BuildType = BuildType {
+    id("Opaque_Python${device.name.lowercase().replaceFirstChar(Char::uppercase)}")
+    name = "Python ${device.displayName} tests"
     templates(PythonTestTemplate)
 
     vcs {
@@ -68,10 +74,18 @@ private fun pythonTest(device: TestDevice, shard: TestShard?): BuildType = Build
         showDependenciesChanges = true
     }
     params {
-        param("opaque.pytest.paths", shard?.path ?: "packages tests")
+        param("opaque.pytest.path", "packages")
         param("opaque.pytest.marker", device.markerPr)
         param("opaque.pytest.marker.main", device.markerMain)
         param("opaque.pytest.xdist", device.xdist)
+    }
+    features {
+        matrix {
+            param(
+                "opaque.pytest.path",
+                testShards.map { value(it.path, it.label) },
+            )
+        }
     }
     requirements {
         equals("teamcity.agent.jvm.os.name", device.osName)
@@ -97,7 +111,7 @@ private fun pythonTest(device: TestDevice, shard: TestShard?): BuildType = Build
                 if [ "%teamcity.build.branch%" = "main" ]; then
                   MARKER="%opaque.pytest.marker.main%"
                 fi
-                uv run pytest %opaque.pytest.paths% -m "${'$'}MARKER" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --durations=25 -q
+                uv run pytest %opaque.pytest.path% -m "${'$'}MARKER" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q
             """.trimIndent()
         }
     }
@@ -134,11 +148,39 @@ private object StrictDocs : BuildType({
     }
 })
 
-private val cpuTests = testShards.map { pythonTest(TestDevice.CPU, it) }
-private val mpsTests = testShards.map { pythonTest(TestDevice.MPS, it) }
-private val cudaTest = pythonTest(TestDevice.CUDA, null)
+private val cpuTests = pythonTestMatrix(TestDevice.CPU)
+private val mpsTests = pythonTestMatrix(TestDevice.MPS)
+private val cudaTest = BuildType {
+    id("Opaque_PythonCuda")
+    name = "Python CUDA tests"
+    templates(PythonTestTemplate)
 
-val opaqueTestBuildTypes = cpuTests + mpsTests + cudaTest + RustTests + StrictDocs
+    vcs { root(DslContext.settingsRoot) }
+    params {
+        param("opaque.pytest.marker", TestDevice.CUDA.markerPr)
+        param("opaque.pytest.marker.main", TestDevice.CUDA.markerMain)
+    }
+    requirements {
+        equals("teamcity.agent.jvm.os.name", TestDevice.CUDA.osName)
+        equals("opaque.agent.cuda", "true")
+    }
+    steps {
+        script {
+            name = "Sync test environment"
+            scriptContent = "uv sync --group dev --all-packages --extra all"
+        }
+        script {
+            name = "Assert CUDA availability"
+            scriptContent = "uv run python -c \"import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU agent'\""
+        }
+        script {
+            name = "Run pytest"
+            scriptContent = "uv run pytest packages tests -m \"%opaque.pytest.marker%\" -rs --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q"
+        }
+    }
+}
+
+val opaqueTestBuildTypes = listOf(cpuTests, mpsTests, cudaTest, RustTests, StrictDocs)
 
 private fun aggregateBuild(
     buildType: BuildType,
@@ -188,7 +230,7 @@ object OpaqueTestsPr : BuildType({
         buildId = "Opaque_TestsPr",
         buildName = "Opaque tests (PR)",
         branchFilter = "+:pull/*",
-        dependencies = cpuTests + mpsTests + RustTests + StrictDocs,
+        dependencies = listOf(cpuTests, mpsTests, RustTests, StrictDocs),
         cancelRunning = true,
     )
     features {
@@ -227,7 +269,7 @@ object OpaqueTestsMain : BuildType({
         buildId = "Opaque_TestsMain",
         buildName = "Opaque tests (main)",
         branchFilter = "+:<default>",
-        dependencies = cpuTests + mpsTests + cudaTest + RustTests + StrictDocs,
+        dependencies = listOf(cpuTests, mpsTests, cudaTest, RustTests, StrictDocs),
         cancelRunning = false,
     )
 })
