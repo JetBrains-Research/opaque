@@ -123,6 +123,26 @@ def sqrt(value: Any) -> torch.Tensor:
     return torch.sqrt(value)
 
 
+@_TORCH.implements(ops.exp)
+def exp(value: Any) -> torch.Tensor:
+    return torch.exp(value)
+
+
+@_TORCH.implements(ops.erf)
+def erf(value: Any) -> torch.Tensor:
+    return torch.erf(value)
+
+
+@_TORCH.implements(ops.erfinv)
+def erfinv(value: Any) -> torch.Tensor:
+    return torch.erfinv(value)
+
+
+@_TORCH.implements(ops.finfo_eps)
+def finfo_eps(value_dtype: Any) -> float:
+    return float(torch.finfo(value_dtype).eps)
+
+
 @_TORCH.implements(ops.rsqrt)
 def rsqrt(value: Any) -> torch.Tensor:
     return torch.rsqrt(value)
@@ -308,12 +328,12 @@ def normal(
 ) -> torch.Tensor:
     resolved_dtype = dtype or (like.dtype if like is not None else torch.float32)
     device = like.device if like is not None else None
-    return torch.randn(
+    sample = torch.randn(
         shape,
         dtype=resolved_dtype,
-        device=device,
         generator=generator_from_key(rng_key),
     )
+    return sample.to(device=device) if device is not None else sample
 
 
 __all__ = ["TorchBackend"]

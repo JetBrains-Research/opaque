@@ -14,12 +14,10 @@ from opaque.random import split
 if TYPE_CHECKING:
     from opaque.random.types import RngKey
 
-_MAX_TORCH_SEED = 2**63 - 1
-
 
 def generator_from_key(rng_key: RngKey) -> torch.Generator:
     """Create a deterministic ``torch.Generator`` from an immutable key."""
-    return torch.Generator().manual_seed(rng_key.seed % _MAX_TORCH_SEED)
+    return torch.Generator().manual_seed(rng_key.seed)
 
 
 def set_reproducible_pytorch_seed(key_val: RngKey) -> None:

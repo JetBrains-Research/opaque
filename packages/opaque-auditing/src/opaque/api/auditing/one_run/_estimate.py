@@ -261,7 +261,8 @@ class OneRunEstimate:
             confidence: If provided, return a symmetric CI at this level
                 (e.g. 0.95 for 95% CI). Must be in (0, 1).
             num_samples: Number of resamples for CI. Default: 1000.
-            key: RNG key for reproducible resampling.
+            key: RNG key for reproducible resampling. Required when
+                ``confidence`` is provided.
 
         Returns:
             Float AUC if ``confidence`` is None, otherwise
@@ -274,11 +275,16 @@ class OneRunEstimate:
 
         if not 0 < confidence < 1:
             raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+        if key is None:
+            raise ValueError(
+                "attack_auc(confidence=...) requires an explicit RNG key for "
+                "bootstrap resampling"
+            )
 
         significance = 1 - confidence
         quantiles = (significance / 2, 1 - significance / 2)
 
-        rng = np.random.default_rng(seed=key.seed if key else None)
+        rng = np.random.default_rng(seed=key.seed)
         values = np.empty(num_samples)
         for i in range(num_samples):
             in_sample = rng.choice(self.in_scores, size=self.n_in)

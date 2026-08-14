@@ -1,5 +1,6 @@
 """Tests for BMinSepSampler."""
 
+import numpy as np
 import pytest
 import torch
 from torch.utils.data import TensorDataset
@@ -13,6 +14,21 @@ def test_reproducibility():
     s1 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
     s2 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
     assert list(s1) == list(s2)
+
+
+def test_ignores_unrelated_global_numpy_draws():
+    ds = TensorDataset(torch.zeros(200, 3))
+    expected = list(
+        BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
+    )
+
+    np.random.seed(99)
+    np.random.random(1000)
+    actual = list(
+        BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
+    )
+
+    assert actual == expected
 
 
 def test_different_keys():

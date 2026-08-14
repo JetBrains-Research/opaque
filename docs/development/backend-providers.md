@@ -124,6 +124,29 @@ functions are the portable conformance surface; Opaque does not define cross-pro
 for hidden model RNG. `normal(rng_key, shape, ...)` must derive its result from
 the immutable key without mutating hidden generator state.
 
+## Keyed random sampling
+
+`opaque.random` separates portable key derivation from provider-native samples.
+`RngKey`, `key`, `split`, and `fold_in` are backend-neutral values; a provider
+must treat the full unsigned 64-bit key seed as input to a fresh native PRNG or
+generator for every `normal()` call. It must not draw from, seed, or advance the
+framework's global RNG state.
+
+The contract is semantic portability, not a shared bitstream. The same key,
+shape, dtype, and supported placement must replay within one provider, but
+Torch, JAX, and MLX may return different sample values for the same key. A
+provider should honor explicit dtype and supported `like` placement according
+to its native device policy; unsupported dtype/device combinations must raise
+the provider's normal error rather than silently using another provider or
+fallback algorithm.
+
+Provider conformance tests should cover activation, same-key replay, different
+key divergence, isolation from unrelated framework global draws, seed
+boundaries, shape, dtype, and supported placement. They must not compare sample
+values across providers. Keyed NumPy generators used by samplers and other
+host-side control flow are an engine/mechanism concern, not a reason for a
+provider to add a global-RNG fallback.
+
 Automatic activation, `set_backend()`, and `use_backend()` validate the
 versioned portable core profile. `core_profile()` exposes the version and
 required primitives, and `validate_core_primitives()` is available to provider
@@ -208,5 +231,7 @@ automatically. `opaque-base` deliberately does not import provider wheels.
    than once.
 4. Add optional capability registrations only for behavior the provider
    actually supports.
-5. Exercise activation, unsupported optional calls, keyed randomness, and
-   deterministic `vmap` behavior in the provider's conformance tests.
+5. Exercise activation, unsupported optional calls, keyed randomness
+   (including replay, global-state isolation, seed boundaries, dtype, and
+   supported placement), and deterministic `vmap` behavior in conformance
+   tests. Do not require cross-provider sample equality.

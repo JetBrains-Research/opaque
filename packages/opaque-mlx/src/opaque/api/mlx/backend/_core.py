@@ -159,6 +159,26 @@ def sqrt(value: Any) -> Any:
     return mx.sqrt(value)
 
 
+@_MLX.implements(ops.exp)
+def exp(value: Any) -> Any:
+    return mx.exp(value)
+
+
+@_MLX.implements(ops.erf)
+def erf(value: Any) -> Any:
+    return mx.erf(value)
+
+
+@_MLX.implements(ops.erfinv)
+def erfinv(value: Any) -> Any:
+    return mx.erfinv(value)
+
+
+@_MLX.implements(ops.finfo_eps)
+def finfo_eps(value_dtype: Any) -> float:
+    return float(mx.finfo(value_dtype).eps)
+
+
 @_MLX.implements(ops.rsqrt)
 def rsqrt(value: Any) -> Any:
     return mx.rsqrt(value)

@@ -20,6 +20,8 @@ from opaque.random import key
 
 mx = pytest.importorskip("mlx.core")
 
+_SEED_BOUNDARIES = (0, 1, 2**63 - 1, 2**63, 2**64 - 2, 2**64 - 1)
+
 
 @pytest.fixture(autouse=True)
 def _reset_backend() -> None:
@@ -193,6 +195,74 @@ def test_keyed_normal_sampling_is_repeatable() -> None:
 
     assert _values(first) == _values(second)
     assert _values(first) != _values(different)
+
+
+@pytest.mark.parametrize("seed", _SEED_BOUNDARIES)
+def test_keyed_normal_replays_at_engine_seed_boundaries(seed: int) -> None:
+    backend = mlx_backend()
+    rng_key = key(seed)
+
+    with use_backend(backend):
+        first = random.normal(rng_key, (64,), dtype=mx.float32)
+        second = random.normal(rng_key, (64,), dtype=mx.float32)
+
+    assert _values(first) == _values(second)
+
+
+@pytest.mark.parametrize(
+    ("first_seed", "second_seed"),
+    [(0, 2**63 - 1), (0, 2**64 - 2), (1, 2**64 - 1)],
+)
+def test_keyed_normal_distinguishes_engine_seed_boundaries(
+    first_seed: int, second_seed: int
+) -> None:
+    backend = mlx_backend()
+
+    with use_backend(backend):
+        first = random.normal(key(first_seed), (64,), dtype=mx.float32)
+        second = random.normal(key(second_seed), (64,), dtype=mx.float32)
+
+    assert _values(first) != _values(second)
+
+
+def test_keyed_normal_ignores_global_rng_draws() -> None:
+    backend = mlx_backend()
+    rng_key = key(41)
+
+    with use_backend(backend):
+        expected = random.normal(rng_key, (64,), dtype=mx.float32)
+        mx.random.seed(17)
+        unrelated = mx.random.normal((128,))
+        mx.eval(unrelated)
+        actual = random.normal(rng_key, (64,), dtype=mx.float32)
+
+    assert _values(expected) == _values(actual)
+
+
+@pytest.mark.parametrize("dtype", [mx.float16, mx.float32])
+def test_keyed_normal_honors_shape_and_dtype(dtype: Any) -> None:
+    backend = mlx_backend()
+    like = mx.zeros((0,), dtype=mx.float32)
+
+    with use_backend(backend):
+        sample = random.normal(key(5), (2, 3), dtype=dtype, like=like)
+
+    assert sample.shape == (2, 3)
+    assert sample.dtype == dtype
+
+
+def test_keyed_normal_registration_activates_mlx_provider() -> None:
+    from opaque.api.mlx.backend import _core as provider
+
+    clear_backend()
+    backend = mlx_backend()
+
+    assert random.normal.resolve(backend) is provider.normal
+    with use_backend(backend):
+        assert active_backend() is backend
+        sample = random.normal(key(5), (1,), dtype=mx.float32)
+
+    assert isinstance(sample, mx.array)
 
 
 def test_public_core_contract_uses_mlx_registration() -> None:

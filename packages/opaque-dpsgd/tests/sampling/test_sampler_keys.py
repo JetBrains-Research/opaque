@@ -30,6 +30,18 @@ class TestPoissonSamplerKeys:
 
         assert len(batches1) == len(batches2)
         for b1, b2 in zip(batches1, batches2, strict=False):
+    def test_ignores_unrelated_global_numpy_draws(self):
+        dataset = list(range(1000))
+        expected = list(
+            PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42))
+        )
+
+        np.random.seed(99)
+        np.random.random(1000)
+        actual = list(PoissonSampler(dataset, sample_rate=0.1, n_steps=5, key=key(42)))
+
+        assert actual == expected
+
             assert b1 == b2
 
     def test_different_keys_produce_different_samples(self):

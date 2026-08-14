@@ -136,6 +136,26 @@ def test_runtime_foundation_rank_world_world4(tmp_path) -> None:
     _run_ddp("runtime_foundation", world_size=4, output_dir=str(tmp_path))
 
 
+@pytest.mark.slow
+def test_gloo_runtime_checkpoint_preserves_rank_sampler_states(tmp_path) -> None:
+    _run_ddp(
+        "runtime_foundation",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
+@pytest.mark.slow
+def test_gloo_resume_restores_rank_local_sampler_state(tmp_path) -> None:
+    _run_ddp(
+        "rank_local_sampler_resume",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
 @pytest.mark.cuda
 @pytest.mark.slow
 def test_per_rank_shards_partition_dataset() -> None:

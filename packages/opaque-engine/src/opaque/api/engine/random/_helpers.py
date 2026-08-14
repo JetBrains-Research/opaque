@@ -15,7 +15,8 @@ def random_key() -> RngKey:
 
     Useful for prototyping when reproducibility is not critical. For production
     training, prefer ``key()`` with an explicit seed and ``fold_in()`` for
-    per-step / per-rank derivation.
+    per-step / per-rank derivation. This is an explicit convenience boundary:
+    deterministic engine APIs never call it implicitly.
 
     Returns:
         A randomly initialized RngKey.

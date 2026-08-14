@@ -13,6 +13,7 @@ from dataclasses import replace
 
 import torch
 
+    assert_scalar_equal,
 from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
 from opaque.api.engine.distributed._state import (
     reduce_scalar,
@@ -49,11 +50,18 @@ __all__ = [
     "sync_adaptive_clip_state",
     "sync_adaptive_clipped_grad_aux",
 ]
+def _assert_rng_key_equal(state: AdaptiveClipState) -> None:
+    """Assert that all ranks derive adaptive threshold noise from one key."""
+    assert_scalar_equal(int(state._rng_key.seed), name="AdaptiveClipState.seed")
+
+
 
 
 def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     """Recompute adaptive clipping state from globally aggregated local counts."""
     if not is_distributed():
+    _assert_rng_key_equal(state)
+
         return state
 
     is_per_group = isinstance(state._num_clipped, dict)

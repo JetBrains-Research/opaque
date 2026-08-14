@@ -6,7 +6,11 @@ This module provides explicit, immutable RNG state transitions inspired by JAX:
 - ``split(key, n)`` derives independent child keys
 - ``fold_in(key, data)`` domain-separates by deterministic metadata
 
-Provider wheels may bridge keys to framework-native generator objects.
+Seeds are canonical unsigned 64-bit integers.  ``fold_in`` accepts only
+integers and strings; it preserves the existing derivation encoding for signed
+128-bit integers and supports larger integers without truncation.  Provider
+wheels may bridge keys to framework-native generator objects, but a key's
+derivation is independent of their global RNG state.
 """
 
 from __future__ import annotations
@@ -21,11 +25,20 @@ def _to_uint64(value: int) -> int:
     return value & ((1 << 64) - 1)
 
 
+def _int_to_bytes(value: int) -> bytes:
+    """Encode an integer while retaining the established 128-bit encoding."""
+    try:
+        return value.to_bytes(16, byteorder="little", signed=True)
+    except OverflowError:
+        num_bytes = max(17, (value.bit_length() + 8) // 8)
+        return value.to_bytes(num_bytes, byteorder="little", signed=True)
+
+
 def _stable_hash64(*parts: object) -> int:
     h = hashlib.blake2b(digest_size=8)
     for part in parts:
         if isinstance(part, int):
-            h.update(part.to_bytes(16, byteorder="little", signed=True))
+            h.update(_int_to_bytes(part))
         else:
             h.update(str(part).encode("utf-8"))
         h.update(b"|")
@@ -37,19 +50,22 @@ class RngKey:
     """Immutable RNG key.
 
     Attributes:
-        seed: Canonical seed value used as key material.
+        seed: Canonical unsigned 64-bit seed value used as key material.
         impl: Logical implementation identifier.
     """
 
     seed: int
     impl: str = "opaque_threefry_like"
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise TypeError(f"seed must be int, got {type(self.seed)}")
+        object.__setattr__(self, "seed", _to_uint64(self.seed))
+
 
 def key(seed: int) -> RngKey:
-    """Create a PRNG key from an integer seed."""
-    if not isinstance(seed, int):
-        raise TypeError(f"seed must be int, got {type(seed)}")
-    return RngKey(seed=_to_uint64(seed))
+    """Create a PRNG key from an integer seed normalized modulo ``2**64``."""
+    return RngKey(seed=seed)
 
 
 def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
@@ -66,7 +82,8 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
         A new RngKey derived from the base key and all folded values.
 
     Raises:
-        TypeError: If any value is not int or str.
+        TypeError: If ``rng_key`` is not an :class:`RngKey` or any value is not
+            an int (excluding ``bool``) or str.
         ValueError: If no data values are provided.
 
     Example:
@@ -74,11 +91,13 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
         >>> fold_in(k, 0)           # single value
         >>> fold_in(k, step, rank)  # multiple values (step then rank)
     """
+    if not isinstance(rng_key, RngKey):
+        raise TypeError(f"rng_key must be RngKey, got {type(rng_key)}")
     if not data:
         raise ValueError("fold_in requires at least one data argument")
     result = rng_key
     for d in data:
-        if not isinstance(d, (int, str)):
+        if not isinstance(d, (int, str)) or isinstance(d, bool):
             raise TypeError(f"data must be int or str, got {type(d)}")
         mixed = _stable_hash64(result.seed, d)
         result = RngKey(seed=mixed, impl=result.impl)
@@ -87,6 +106,8 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
 
 def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
     """Split a key into ``num`` independent child keys."""
+    if not isinstance(num, int) or isinstance(num, bool):
+        raise TypeError(f"num must be int, got {type(num)}")
     if num < 1:
         raise ValueError(f"num must be >= 1, got {num}")
     return tuple(fold_in(rng_key, i) for i in range(num))

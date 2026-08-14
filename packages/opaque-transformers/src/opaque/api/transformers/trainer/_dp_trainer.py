@@ -1053,14 +1053,18 @@ class DPTrainer:
                     )
 
         try:
+            saved_sampler_state = (
+                self._read_sampler_state_for_resume(
+                    resume_path,
+                    runtime_payload.sampler_state,
+                )
+                if resume_path is not None and runtime_payload is not None
+                else None
+            )
             return self._inner_training_loop(
                 ctx,
                 resume_path=resume_path,
-                saved_sampler_state=(
-                    runtime_payload.sampler_state
-                    if runtime_payload is not None
-                    else None
-                ),
+                saved_sampler_state=saved_sampler_state,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
         finally:
@@ -3488,12 +3492,6 @@ class DPTrainer:
         # sampler is configured with matches the rate the accountant
         # calibrated against — both bind to the post-trim ``q``.
         #
-        # Resume caveat (multi-GPU only): the sampler snapshot is
-        # self-contained (carries its own key) and is written once on rank
-        # 0, so resuming a DDP run currently restores rank 0's per-rank key
-        # on every rank, re-introducing the cross-rank correlation after the
-        # resume point.  Fully fixing that needs per-rank sampler snapshots;
-        # tracked for the multi-GPU work and validated there.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -4668,6 +4666,7 @@ class DPTrainer:
         # ranks try to write into it.
         _distributed.barrier(self._ddp)
         if not a.save_only_model:
+            self._save_sampler_state(staging_dir, ctx)
             self._save_rng_state(staging_dir)
         # All ranks have finished writing into the staging dir; publish it.
         _distributed.barrier(self._ddp)
@@ -4773,6 +4772,20 @@ class DPTrainer:
                 else None
             ),
         )
+
+    def _save_sampler_state(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
+        """Write this rank's sampler snapshot for exact distributed resume."""
+        if ctx.current_sampler is None:
+            return
+
+        from opaque.serialization import state_dict as opaque_state_dict
+
+        path = ckpt.sampler_state_path(
+            ckpt_dir,
+            rank=self._ddp.rank,
+            world_size=self._ddp.world_size,
+        )
+        torch.save(opaque_state_dict(ctx.current_sampler), path)
 
     def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
         path = Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME
@@ -4966,6 +4979,32 @@ class DPTrainer:
         with (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f:
             accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
+
+    def _read_sampler_state_for_resume(
+        self,
+        ckpt_dir: str,
+        fallback: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Load this rank's sampler snapshot, preserving legacy local resumes."""
+        path = ckpt.sampler_state_path(
+            ckpt_dir,
+            rank=self._ddp.rank,
+            world_size=self._ddp.world_size,
+        )
+        if Path(path).exists():
+            sampler_state = torch.load(path, map_location="cpu", weights_only=False)
+            if not isinstance(sampler_state, dict):
+                raise TypeError(
+                    f"Sampler state at {path} must deserialize to a dict, got "
+                    f"{type(sampler_state).__name__}"
+                )
+            return sampler_state
+        if self._ddp.world_size > 1:
+            raise RuntimeError(
+                f"Cannot resume distributed training from {ckpt_dir}: missing "
+                f"rank-local sampler state for rank {self._ddp.rank} at {path}."
+            )
+        return fallback
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:
         """Read ``trainer_state.json`` from a checkpoint directory."""

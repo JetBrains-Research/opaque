@@ -1,10 +1,9 @@
 # Random Number Generation
 
-Opaque uses explicit RNG keys instead of global random state. Every
-function that involves randomness — noise injection, sampling, adaptive
-clipping, and auditing — takes a `key` parameter. This follows the JAX PRNG
-model: no hidden state, fully deterministic, and safe in distributed
-settings.
+Opaque uses explicit RNG keys instead of global random state. Stochastic
+library APIs receive a `key` directly or state that retains one. This follows
+the JAX PRNG model: no hidden state is consumed, results replay within an
+active backend, and key derivation is explicit in distributed settings.
 
 ## Why explicit keys
 
@@ -32,6 +31,7 @@ of what other code has run.
 | `key(seed)` | Create a key from an integer seed |
 | `split(k, num=2)` | Derive `num` independent child keys |
 | `fold_in(k, *data)` | Mix a key with one or more int/str values |
+| `normal(k, shape, *, dtype=None, like=None)` | Draw backend-native keyed normal samples |
 | `opaque.torch.random.generator_from_key(k)` | Convert to `torch.Generator` |
 | `random_key()` | Non-deterministic key (uses system entropy) |
 
@@ -105,6 +105,22 @@ fold_in(k, 0).seed != fold_in(k, 1).seed
 fold_in(k, 42).seed != fold_in(k, "42").seed  # int vs str distinguished
 ```
 
+### Backend semantics and limits
+
+`key`, `split`, and `fold_in` are backend-neutral: the same inputs derive the
+same `RngKey` regardless of whether Torch, JAX, or MLX is active. Array-valued
+sampling is deliberately different. `normal()` gives the active provider the
+key and uses that provider's native random implementation, so the same key and
+arguments replay within one backend but are **not** promised to produce equal
+values across backends.
+
+`normal()` takes its dtype and placement from `dtype` or `like` when the active
+provider supports the request. Provider and device limitations remain native
+limitations: unsupported dtype/device combinations raise rather than silently
+falling back to a different provider. Keyed Opaque sampling does not consume
+the framework's global random state, but randomness inside user models and
+framework transforms remains the application's responsibility.
+
 ### `generator_from_key(k)`
 
 Convert an `RngKey` to a `torch.Generator` for use with PyTorch operations
@@ -134,7 +150,9 @@ k = random_key()  # different every time
 ```
 
 Use for prototyping and exploration when reproducibility is not needed.
-For production training, always use `key(seed)` with a fixed seed.
+`random_key()` is the explicit system-entropy boundary; deterministic Opaque
+APIs never call it as an implicit fallback. For production training, always
+use `key(seed)` with a fixed seed and record that seed with the checkpoint.
 
 ## Using keys with Opaque components
 
@@ -160,6 +178,13 @@ from opaque.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ```
+
+Samplers and auditing utilities may use a private
+`numpy.random.default_rng` for host-side index selection and control flow. The
+generator is always created from an explicit, domain-separated Opaque key; it
+does not use NumPy's global RNG. These streams replay within the installed
+NumPy implementation, but are not a cross-provider or cross-NumPy-version
+bitstream guarantee. Backend array-valued noise uses `normal()` instead.
 
 ### Adaptive clipping
 
@@ -238,24 +263,40 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 For per-rank key control, use `fold_in()`:
 
 ```python
+from opaque.distributed import get_rank
 from opaque.random import key, fold_in
-import torch.distributed as dist
 
-rank = dist.get_rank()
+rank = get_rank()
 
 # Synchronized noise — same key, no rank folded in
 step_key = fold_in(key(42), step)
 
-# Independent noise per rank — fold in rank
-step_key = fold_in(key(42), step, rank)
+# Independent local component — use a separate named domain and rank
+sample_key = fold_in(key(42), "sampler", rank, step)
 
 # Equivalent explicit chaining
-step_key = fold_in(fold_in(key(42), step), rank)
+sample_key = fold_in(fold_in(key(42), "sampler"), rank, step)
 ```
+
+Use the same noise key on every rank only when the mechanism requires
+synchronized noise, such as centralized DP-SGD. For independent local
+components, derive a component key first and then fold in a named rank domain.
+
+### Pytree and group streams
+
+Gaussian and matrix-factorization noise derive a distinct stream for each
+pytree leaf. To preserve existing streams, leaf domain separation uses the
+leaf's flattening index. Adaptive clipping similarly derives per-group streams
+from the sorted group order. Consequently, reordering or inserting leaves or
+groups can change the substream assigned to an otherwise unchanged leaf or
+group. Treat pytree/group ordering as part of a mechanism's checkpointed
+configuration; split a new component key rather than relying on structural
+edits to preserve a prior stream.
 
 ## Reproducibility
 
-Same key produces identical output across runs, platforms, and devices:
+Within one backend and supported dtype/device configuration, the same key and
+arguments produce identical output across runs:
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
@@ -273,6 +314,11 @@ noisy2, _ = noise_fn(grads, s2)
 assert torch.equal(noisy1["w"], noisy2["w"])
 ```
 
+Torch, JAX, and MLX may produce different samples from the same `RngKey`.
+Opaque promises semantic portability — stable key derivation and keyed native
+sampling — not a shared cross-backend bitstream. Provider-native device
+determinism can also be limited by the framework and hardware.
+
 Opaque controls only its own randomness. PyTorch operations like
 `torch.randn` or `torch.nn.Dropout` use PyTorch's global state and may
 vary across platforms. The `opaque-torch` provider exposes
@@ -288,34 +334,36 @@ set_reproducible_pytorch_seed(key(42))
 # Disables torch.backends.cudnn.benchmark
 ```
 
-This has a 10-30% performance cost due to deterministic algorithm
-selection. Call it once at training startup if you need full reproducibility.
+This has a 10-30% performance cost due to deterministic algorithm selection.
+It is an explicit framework-global setting for model code, not a requirement
+for Opaque's keyed sampling. Call it once at training startup if user-model
+reproducibility needs it.
 
 ## Checkpoint and resume
 
-Because keys are values (not stateful objects), checkpointing is
-straightforward. Save the noise state and restore it:
+Because keys are values, noise state contains the base key and cursor needed
+to continue. Save that state through Opaque's serializer and restore it into a
+fresh state template built with the same mechanism configuration:
 
 ```python
-# Save
-state = {"noise_state": noise_state, "step": step, ...}
-torch.save(state, "checkpoint.pt")
+from opaque.serialization import from_state_dict, state_dict
 
-# Resume
-state = torch.load("checkpoint.pt")
-noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
-# Advance to the saved step by setting the internal counter
-noise_state = state["noise_state"]
+# Save after any number of noise_fn calls.
+checkpoint = state_dict(noise_state)
+torch.save(checkpoint, "checkpoint.pt")
+
+# Resume. The template's key is replaced by the saved key.
+noise_fn, template_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
+noise_state = from_state_dict(template_state, torch.load("checkpoint.pt"))
 ```
 
-Alternatively, reconstruct the key from the step counter using
-`fold_in`:
-
-```python
-# Resume from step 500
-k = fold_in(key(42), 500)
-noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=k)
-```
+The next noise result is the same as an uninterrupted run within that backend.
+Do not construct a new noise function from `fold_in(base_key, step)` as a
+replacement for its saved state: that starts a new mechanism state at step
+zero. For samplers, restore with `from_state_dict(template_sampler, snapshot)`;
+the template supplies the dataset while the snapshot supplies its key and
+cursor. Some host-side NumPy samplers reconstruct their private generator by
+replay, while epoch-derived random-allocation sampling restores directly.
 
 ## API reference
 

@@ -1,10 +1,16 @@
 """Unit tests for generic RNG engine (JAX-style semantics)."""
 
+import numpy as np
 import pytest
 import torch
 
+from opaque import random
+from opaque.api.engine.backend import active_backend, clear_backend, use_backend
 from opaque.random import fold_in, key, split
+from opaque.torch import torch_backend
 from opaque.torch.random import generator_from_key
+
+_SEED_BOUNDARIES = (0, 1, 2**63 - 1, 2**63, 2**64 - 2, 2**64 - 1)
 
 
 def test_key_requires_int_seed():
@@ -64,3 +70,66 @@ def test_fold_in_no_data_raises():
     k = key(42)
     with pytest.raises(ValueError, match="at least one data argument"):
         fold_in(k)
+
+
+@pytest.mark.parametrize("seed", _SEED_BOUNDARIES)
+def test_keyed_normal_replays_at_engine_seed_boundaries(seed: int):
+    rng_key = key(seed)
+
+    first = random.normal(rng_key, (64,), dtype=torch.float32)
+    second = random.normal(rng_key, (64,), dtype=torch.float32)
+
+    assert torch.equal(first, second)
+
+
+@pytest.mark.parametrize(
+    ("first_seed", "second_seed"),
+    [(0, 2**63 - 1), (0, 2**64 - 2), (1, 2**64 - 1)],
+)
+def test_keyed_normal_distinguishes_engine_seed_boundaries(
+    first_seed: int, second_seed: int
+):
+    first = random.normal(key(first_seed), (64,), dtype=torch.float32)
+    second = random.normal(key(second_seed), (64,), dtype=torch.float32)
+
+    assert not torch.equal(first, second)
+
+
+def test_keyed_normal_ignores_global_rng_draws():
+    rng_key = key(41)
+    expected = random.normal(rng_key, (64,), dtype=torch.float32)
+
+    torch.manual_seed(17)
+    torch.randn(128)
+    np.random.seed(17)
+    np.random.normal(size=128)
+    actual = random.normal(rng_key, (64,), dtype=torch.float32)
+
+    assert torch.equal(expected, actual)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_keyed_normal_honors_shape_dtype_and_placement(
+    all_devices: torch.device, dtype: torch.dtype
+):
+    like = torch.empty(0, dtype=torch.float32, device=all_devices)
+
+    sample = random.normal(key(5), (2, 3), dtype=dtype, like=like)
+
+    assert sample.shape == (2, 3)
+    assert sample.dtype is dtype
+    assert sample.device == like.device
+
+
+def test_keyed_normal_registration_activates_torch_provider():
+    from opaque.api.torch.backend import _core as provider
+
+    clear_backend()
+    backend = torch_backend()
+
+    assert random.normal.resolve(backend) is provider.normal
+    with use_backend(backend):
+        assert active_backend() is backend
+        sample = random.normal(key(5), (1,), dtype=torch.float32)
+
+    assert isinstance(sample, torch.Tensor)

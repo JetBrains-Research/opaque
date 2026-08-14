@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 from jax import tree_util
 from opaque.api.engine import autodiff, ops, pytree
 from opaque.api.engine.backend import KnownBackend
@@ -175,6 +178,26 @@ def scalar_item(value: Any) -> Any:
 @_JAX.implements(ops.sqrt)
 def sqrt(value: Any) -> Any:
     return jnp.sqrt(value)
+
+
+@_JAX.implements(ops.exp)
+def exp(value: Any) -> Any:
+    return jnp.exp(value)
+
+
+@_JAX.implements(ops.erf)
+def erf(value: Any) -> Any:
+    return jsp.erf(value)
+
+
+@_JAX.implements(ops.erfinv)
+def erfinv(value: Any) -> Any:
+    return jsp.erfinv(value)
+
+
+@_JAX.implements(ops.finfo_eps)
+def finfo_eps(value_dtype: Any) -> float:
+    return float(jnp.finfo(value_dtype).eps)
 
 
 @_JAX.implements(ops.rsqrt)
@@ -358,7 +381,7 @@ def normal(
 ) -> Any:
     resolved_dtype = dtype or (like.dtype if like is not None else jnp.float32)
     return jax.random.normal(
-        jax.random.key(rng_key.seed), shape=shape, dtype=resolved_dtype
+        jax.random.key(np.uint64(rng_key.seed)), shape=shape, dtype=resolved_dtype
     )
 
 

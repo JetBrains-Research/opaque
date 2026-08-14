@@ -61,6 +61,18 @@ class TestLambdaCgdNoise:
             results.append(torch.cat([noised["w"], noisy2["w"]]))
         torch.testing.assert_close(results[0], results[1])
 
+    def test_keyed_noise_ignores_global_torch_rng_draws(self):
+        template = self._make_template()
+        noise_fn, state = _make_noise(template)
+        expected, _ = _call(noise_fn, {"w": torch.zeros(10)}, state)
+
+        torch.manual_seed(999)
+        torch.randn(1000)
+        noise_fn, state = _make_noise(template)
+        actual, _ = _call(noise_fn, {"w": torch.zeros(10)}, state)
+
+        torch.testing.assert_close(actual["w"], expected["w"])
+
     def test_different_keys_give_different_noise(self):
         """Different keys produce different sequences."""
         template = self._make_template()
