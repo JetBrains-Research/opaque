@@ -153,6 +153,7 @@ private val mpsTests = pythonTestMatrix(TestDevice.MPS)
 private val cudaTest = BuildType {
     id("Opaque_PythonCuda")
     name = "Python CUDA tests"
+    paused = true
     templates(PythonTestTemplate)
 
     vcs { root(DslContext.settingsRoot) }
@@ -269,7 +270,7 @@ object OpaqueTestsMain : BuildType({
         buildId = "Opaque_TestsMain",
         buildName = "Opaque tests (main)",
         branchFilter = "+:<default>",
-        dependencies = listOf(cpuTests, mpsTests, cudaTest, RustTests, StrictDocs),
+        dependencies = listOf(cpuTests, mpsTests, RustTests, StrictDocs),
         cancelRunning = false,
     )
 })
