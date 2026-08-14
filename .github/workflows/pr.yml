@@ -3,6 +3,7 @@ name: PR gate
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -131,6 +132,27 @@ jobs:
             # Repo PRs must have GPU tests pass
             test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
           fi
+
+  qodana:
+    name: Qodana
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action == 'opened' ||
+       github.event.action == 'ready_for_review')
+    needs: [python-tests-gate]
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: write
+      security-events: write
+    uses: ./.github/workflows/reusable-qodana.yml
+    with:
+      checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      coverage-artifact-pattern: qodana-coverage-*
+      pr-mode: true
+    secrets: inherit
 
   docs:
     name: Build documentation

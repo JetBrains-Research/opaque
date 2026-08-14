@@ -77,12 +77,23 @@ jobs:
             -m "${{ matrix.device.marker }}" \
             ${{ matrix.device.xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage.xml \
+            --cov-report=xml:coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml \
             ${{ inputs.report-durations && '--durations=25' || '' }} \
             -q
 
+      # CPU shards collectively cover the full source tree. Reusing only those
+      # reports avoids feeding Qodana duplicate MPS and CUDA measurements.
+      - name: Upload coverage for Qodana
+        if: matrix.device.name == 'cpu'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: qodana-coverage-${{ matrix.shard.name }}
+          path: coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml
+          if-no-files-found: error
+          retention-days: 1
+
       - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
-          files: ./coverage.xml
+          files: ./coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml
           flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false

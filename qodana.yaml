@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://json.schemastore.org/qodana-1.0.json
+
+version: "1.0"
+linter: qodana-python
+withinDocker: false
+
+profile:
+  name: qodana.recommended
+
+# Resolve every workspace package so inspections, vulnerability checks, license
+# audit, and SBOM generation see the same dependency graph as CI.
+bootstrap: uv sync --frozen --group dev --all-packages --extra all
+analyzeDevDependencies: true
+
+include:
+  - name: CheckDependencyLicenses
+  - name: VulnerableLibrariesLocal
+
+projectLicenses:
+  - key: Apache-2.0
+raiseLicenseProblems: true
+
+coverage:
+  reportProblems: true
+  codeCoverageLocations:
+    - .qodana/code-coverage
+
+failureConditions:
+  severityThresholds:
+    critical: 0
+  testCoverageThresholds:
+    fresh: 80
+    total: 75
+  dependencyLicenses:
+    failOnProhibited: true
+    failOnUnknown: false
+
+# Treat broken indexing or analysis as a failed check instead of a successful
+# report with incomplete findings.
+failOnErrorNotification: true
