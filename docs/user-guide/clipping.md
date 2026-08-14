@@ -129,8 +129,9 @@ Per-example gradient computation via `vmap` requires memory proportional to
 `batch_size * model_parameters`. For large models, this may exceed GPU memory.
 
 Microbatching processes the batch in smaller chunks, accumulating clipped
-gradients incrementally. The result is mathematically identical to processing
-the full batch.
+gradients incrementally. The running sum is held in `compute_dtype`, so the
+result matches processing the full batch to the precision of that dtype —
+`float32` by default for `bfloat16` / `float16` inputs.
 
 ```python
 grad_fn, clip_state = clipped_grad(
@@ -141,9 +142,12 @@ grad_fn, clip_state = clipped_grad(
 )
 ```
 
-Each microbatch of 16 examples is vmapped, clipped, and summed. The partial
-sums are accumulated in-place, so peak memory is proportional to
+Each microbatch of 16 examples is vmapped, clipped, and summed into a running
+accumulator, so peak memory is proportional to
 `microbatch_size * model_parameters` instead of `batch_size * model_parameters`.
+The accumulator itself is one model-sized buffer in `compute_dtype` — for a
+`bfloat16` run that is a `float32` copy, which is the price of the accumulation
+precision described in [Precision](precision.md).
 
 ### Choosing microbatch size
 
