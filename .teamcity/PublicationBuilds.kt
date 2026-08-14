@@ -1,4 +1,5 @@
 import jetbrains.buildServer.configs.kotlin.BuildType
+import jetbrains.buildServer.configs.kotlin.BuildTypeSettings
 import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ParameterDisplay
@@ -10,14 +11,15 @@ private fun publicationBuild(
     buildType: BuildType,
     buildId: String,
     buildName: String,
-    branchFilter: String,
+    branchKind: CiModel.BranchKind,
     releaseTagRequired: Boolean = false,
 ) = buildType.apply {
     id(buildId)
     name = buildName
+    templates(PublicationTemplate)
     vcs {
         root(DslContext.settingsRoot)
-        this.branchFilter = branchFilter
+        this.branchFilter = branchKind.branchFilter
     }
     params {
         text(
@@ -33,7 +35,7 @@ private fun publicationBuild(
             readOnly = true,
         )
     }
-    requirements { equals("teamcity.agent.jvm.os.name", "Linux") }
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     dependencies {
         listOf(ValidateDistributions, OpaqueTestsMain).forEach { dependency ->
             snapshot(dependency) {
@@ -44,49 +46,95 @@ private fun publicationBuild(
             }
         }
         artifacts(ValidateDistributions) {
-            artifactRules = "+:validated-distributions.zip!/** => dist"
+            artifactRules = "+:${CiModel.Artifacts.VALIDATED_BUNDLE}!/** => ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
             cleanDestination = true
         }
     }
-    triggers { vcs { this.branchFilter = branchFilter } }
     steps {
         if (releaseTagRequired) {
             script {
                 name = "Verify stable release tag"
-                scriptContent = "[[ '%teamcity.build.branch%' =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.(post|alpha|beta|rc)[0-9]+)?${'$'} ]]"
+                scriptContent = "printf '%s' '%teamcity.build.branch%' | grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.(post|alpha|beta|rc)[0-9]+)?${'$'}'"
             }
         }
         script {
             name = "Verify validated artifact identity"
             scriptContent = """
                 set -euo pipefail
-                test "${'$'}(sed -n 's/^commit=//p' dist/teamcity-artifact-identity.txt)" = "%build.vcs.number%"
-                test "${'$'}(find dist -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = 13
-                test "${'$'}(find dist -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+                test "${'$'}(sed -n 's/^commit=//p' ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/${CiModel.Artifacts.IDENTITY_MANIFEST})" = "%build.vcs.number%"
+                test "${'$'}(find ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = ${CiModel.Artifacts.COMPLETE_WHEEL_COUNT}
+                test "${'$'}(find ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = ${CiModel.Artifacts.SDIST_COUNT}
             """.trimIndent()
         }
         script {
             name = "Publish validated distributions"
-            scriptContent = "uv run --isolated --no-project --with twine==6.2.0 python .github/scripts/twine_upload.py upload --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ dist/*.whl dist/*.tar.gz"
+            scriptContent = "uv run --isolated --no-project --with twine==6.2.0 python .github/scripts/twine_upload.py upload --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.tar.gz"
+        }
+    }
+}
+
+object PublishDevArtifacts : BuildType({
+    publicationBuild(
+        this,
+        buildId = "Opaque_DeliveryPublishDev",
+        buildName = "Publish dev artifact bundle",
+        branchKind = CiModel.BranchKind.MAIN,
+    )
+})
+
+object PublishReleaseArtifacts : BuildType({
+    publicationBuild(
+        this,
+        buildId = "Opaque_DeliveryPublishRelease",
+        buildName = "Publish release artifact bundle",
+        branchKind = CiModel.BranchKind.RELEASE_TAG,
+        releaseTagRequired = true,
+    )
+})
+
+val deliveryBuildTypes = listOf(PublishDevArtifacts, PublishReleaseArtifacts)
+
+private fun deploymentEntry(
+    buildType: BuildType,
+    buildId: String,
+    buildName: String,
+    branchKind: CiModel.BranchKind,
+    deliveryBuild: BuildType,
+) = buildType.apply {
+    id(buildId)
+    name = buildName
+    type = BuildTypeSettings.Type.COMPOSITE
+    paused = true
+    vcs {
+        root(DslContext.settingsRoot)
+        branchFilter = branchKind.branchFilter
+    }
+    dependencies {
+        snapshot(deliveryBuild) {
+            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyCancel = FailureAction.CANCEL
+            synchronizeRevisions = true
+            reuseBuilds = ReuseBuilds.NO
         }
     }
 }
 
 object PublishDevDistributions : BuildType({
-    publicationBuild(
+    deploymentEntry(
         this,
         buildId = "Opaque_PublishDevDistributions",
         buildName = "Publish dev distributions",
-        branchFilter = "+:<default>",
+        branchKind = CiModel.BranchKind.MAIN,
+        deliveryBuild = PublishDevArtifacts,
     )
 })
 
 object PublishReleaseDistributions : BuildType({
-    publicationBuild(
+    deploymentEntry(
         this,
         buildId = "Opaque_PublishReleaseDistributions",
         buildName = "Publish release distributions",
-        branchFilter = "+:v*",
-        releaseTagRequired = true,
+        branchKind = CiModel.BranchKind.RELEASE_TAG,
+        deliveryBuild = PublishReleaseArtifacts,
     )
 })

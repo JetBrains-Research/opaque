@@ -1,0 +1,133 @@
+object CiModel {
+    data class PackageShard(val label: String, val path: String)
+
+    data class PythonDistribution(val label: String, val path: String)
+
+    data class AccountingTarget(
+        val id: String,
+        val label: String,
+        val agentClass: AgentClass,
+        val rustTarget: String,
+        val manylinux: String?,
+    )
+
+    enum class BranchKind(val branchFilter: String) {
+        PULL_REQUEST("+:pull/*"),
+        MAIN("+:<default>"),
+        RELEASE_TAG("+:v*"),
+    }
+
+    enum class AgentClass(
+        val displayName: String,
+        val image: String?,
+        val osName: String,
+        val architecture: String,
+        val minimumMemoryMb: Int,
+        val requiredCapability: Pair<String, String>? = null,
+    ) {
+        LINUX_LARGE("Linux Large", "Ubuntu-24.04-Large", "Linux", "amd64", 16_384),
+        LINUX_SMALL("Linux Small", "Ubuntu-24.04-Small", "Linux", "amd64", 4_096),
+        LINUX_ARM64_SMALL("Linux ARM64 Small", "Ubuntu-24.04-Small-Arm64", "Linux", "aarch64", 4_096),
+        MACOS_ARM64("macOS ARM64", null, "Mac OS X", "aarch64", 8_192),
+        CUDA("CUDA", null, "Linux", "amd64", 16_384, "opaque.agent.cuda" to "true"),
+    }
+
+    enum class TestDevice(
+        val displayName: String,
+        val markerForPullRequest: String,
+        val markerForMain: String,
+        val agentClass: AgentClass,
+        val xdistArguments: String,
+    ) {
+        CPU(
+            "CPU",
+            "not cuda and not mps and not slow",
+            "not cuda and not mps",
+            AgentClass.LINUX_LARGE,
+            "-n auto --dist loadscope",
+        ),
+        MPS(
+            "MPS",
+            "not cuda and not slow",
+            "not cuda",
+            AgentClass.MACOS_ARM64,
+            "-n auto --dist loadscope",
+        ),
+        CUDA("CUDA", "cuda and not slow", "cuda", AgentClass.CUDA, "-rs"),
+    }
+
+    object Artifacts {
+        const val DISTRIBUTION_DIRECTORY = "dist"
+        const val COMPLETE_WHEEL_COUNT = 13
+        const val SDIST_COUNT = 1
+        const val VALIDATED_BUNDLE = "validated-distributions.zip"
+        const val IDENTITY_MANIFEST = "teamcity-artifact-identity.txt"
+    }
+
+    object Status {
+        const val PR_GATE = "PR Gate"
+        const val MAIN_CI = "Main CI"
+        const val RELEASE_CANDIDATE = "Release Candidate"
+    }
+
+    const val ARTIFACT_RETENTION_DAYS = 90
+    const val TEST_TIMEOUT_MINUTES = 40
+    const val BUILD_TIMEOUT_MINUTES = 30
+
+    val testShards = listOf(
+        PackageShard("accounting", "packages/opaque-accounting"),
+        PackageShard("alignment", "packages/opaque-alignment"),
+        PackageShard("auditing", "packages/opaque-auditing"),
+        PackageShard("base", "packages/opaque-base"),
+        PackageShard("dpftrl", "packages/opaque-dpftrl"),
+        PackageShard("dpsgd", "packages/opaque-dpsgd"),
+        PackageShard("engine", "packages/opaque-engine"),
+        PackageShard("optimizers", "packages/opaque-optimizers"),
+        PackageShard("patches", "packages/opaque-patches"),
+        PackageShard("transformers", "packages/opaque-transformers"),
+        PackageShard("repository", "tests"),
+    )
+
+    val pythonDistributions = listOf(
+        PythonDistribution("opaque", "."),
+        PythonDistribution("opaque-alignment", "packages/opaque-alignment"),
+        PythonDistribution("opaque-auditing", "packages/opaque-auditing"),
+        PythonDistribution("opaque-base", "packages/opaque-base"),
+        PythonDistribution("opaque-dpftrl", "packages/opaque-dpftrl"),
+        PythonDistribution("opaque-dpsgd", "packages/opaque-dpsgd"),
+        PythonDistribution("opaque-engine", "packages/opaque-engine"),
+        PythonDistribution("opaque-optimizers", "packages/opaque-optimizers"),
+        PythonDistribution("opaque-patches", "packages/opaque-patches"),
+        PythonDistribution("opaque-transformers", "packages/opaque-transformers"),
+    )
+
+    val accountingTargets = listOf(
+        AccountingTarget(
+            "LinuxX64",
+            "Linux x86_64",
+            AgentClass.LINUX_SMALL,
+            "x86_64-unknown-linux-gnu",
+            "2_28",
+        ),
+        AccountingTarget(
+            "LinuxArm64",
+            "Linux ARM64",
+            AgentClass.LINUX_ARM64_SMALL,
+            "aarch64-unknown-linux-gnu",
+            "2_28",
+        ),
+        AccountingTarget(
+            "MacArm64",
+            "macOS ARM64",
+            AgentClass.MACOS_ARM64,
+            "aarch64-apple-darwin",
+            null,
+        ),
+    )
+
+    val versionedPyprojectPaths = listOf(
+        "pyproject.toml",
+        "packages/opaque-accounting/pyproject.toml",
+        *pythonDistributions.filter { it.path != "." }.map { "${it.path}/pyproject.toml" }.toTypedArray(),
+    )
+}
