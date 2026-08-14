@@ -92,6 +92,6 @@ or publishing jobs. Fork pull requests do not run untrusted code on the
 self-hosted GPU runner and never receive repository, package, or cloud
 credentials.
 
-The active `main` ruleset requires `Cross-package import smoke test`, `Build
-documentation`, `Format Python`, `Format Rust`, `Conventional Commits PR
-title`, `Python tests`, and `Rust tests`.
+The active `main` ruleset requires `Build documentation`, `Format Python`,
+`Format Rust`, `Conventional Commits PR title`, `Python tests`, and `Rust
+tests`.

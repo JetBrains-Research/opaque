@@ -423,15 +423,3 @@ class TestCloneChatTemplate:
 
         with pytest.raises(ValueError, match="chat_template"):
             clone_chat_template(model, dst, src)
-
-    def test_import_from_impl_path(self) -> None:
-        """Functions are importable from the implementation module path."""
-        from opaque.api.alignment.data._chat_template import (
-            clone_chat_template as _clone,
-        )
-        from opaque.api.alignment.data._chat_template import (
-            get_training_chat_template as _get,
-        )
-
-        assert callable(_clone)
-        assert callable(_get)

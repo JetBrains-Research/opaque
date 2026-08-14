@@ -41,8 +41,7 @@ dependencies = [
     # NO opaque-patches: alignment-specific kernels live inside this package
     #   (Opaque_FusedLinearPreference is self-contained pure-PyTorch).
     # NO opaque-dpsgd, NO opaque-dpftrl, NO opaque-optimizers
-    #   — mechanism + optimizer are chosen by the caller. Enforced by
-    #   tests/contracts/test_dependency_direction.py.
+    #   — mechanism + optimizer are chosen by the caller.
 ]
 
 [project.optional-dependencies]

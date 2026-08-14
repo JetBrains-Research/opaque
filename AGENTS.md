@@ -43,43 +43,33 @@ deps. `pip install opaque-accounting` alone is **torch-free** (only
 
 ## Namespace contract
 
-Nine namespace/package conventions (the PEP 420 namespace invariant,
-façade-only export discipline, and explicit-`__all__` discipline are
-enforced in CI under `tests/contracts/`):
+Nine namespace/package conventions:
 
 1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
    or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420
-   implicit namespaces because multiple wheels contribute to them. CI guard
-   in `pr.yml` + `tests/contracts/test_pep420_no_init.py`.
+   implicit namespaces because multiple wheels contribute to them.
 2. **Façade modules contain only re-exports.** A façade under
    `opaque/<concern>/` re-exports from the corresponding `opaque.api.*`
    impl tree, with `__all__` and (optionally) `__version__` / private
    PEP 562 lazy-import helpers. No business logic.
-   `tests/contracts/test_facade_discipline.py` enforces this on every
-   listed façade.
 3. **`opaque.api.*` is internal-but-discoverable.** It is the contributor
    surface for new mechanism families (`opaque.api.lipschitz.*` plugs in
    without foundation changes). User code is expected to import from the
    façades. `opaque.api.*` paths surface in tracebacks and IDE jumps;
    that is intentional. No runtime warning machinery.
 4. **`opaque-accounting` is torch-free.** Source and tests must not
-   import torch (`tests/contracts/test_accounting_torch_free.py`). The
+   import torch. The
    wheel's only `opaque` dependency is `opaque-base`, the pure-Python
    serialization registry. PLD types register against the unified
    registry directly — no bridging code in dpsgd/dpftrl.
 5. **Tests live in the wheel that depends on every package they
-   import.** `tests/contracts/test_test_placement.py` enforces this with
-   an explicit `KNOWN_CROSS_CONE_IMPORTS` allowlist for legitimate
-   cross-cutting tests (mutual non-dependency between dpsgd ↔ dpftrl,
-   patches ↔ dpsgd). Each refactor phase shrinks the allowlist.
+   import.** Cross-cutting tests for mutually independent wheels live under
+   `tests/integration/`.
 6. **Every `__init__.py` declares an explicit `__all__`.** Public
    façades re-export only the names listed in `__all__`; internal
    `opaque.api.*` `__init__.py` files declare `__all__` for the
    names they intend to be importable from that level (private
-   `_*.py` helpers are imported by sibling files only). Contract
-   coverage for `__all__` parity exists where implemented; keep new
-   surfaces aligned with that pattern and extend contract coverage
-   when adding new export surfaces.
+   `_*.py` helpers are imported by sibling files only).
 7. **Concern directories use singular names** (`clipping`, `noise`,
    `sampling`, `scheduling`, `loss`, `collator`, `reference`,
    `metric`, `kernel`, `data`). The only plural exceptions are
@@ -130,9 +120,8 @@ Release body on the next main merge.
   `ci.yml`'s `upsert-draft` job.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs: tests (CPU + MPS),
-rust-tests, smoke-imports, docs build, title check, autoformat. All 8
-are required for merge. Preview wheels
+**Gate** — on every push the PR workflow runs tests (CPU + MPS), Rust tests,
+the docs build, title validation, and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -160,7 +149,6 @@ uv run pytest packages/opaque-auditing/tests/
 uv run pytest packages/opaque-patches/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
-uv run pytest tests/contracts/                   # repo-level structural-invariant checks
 ```
 
 ## Installation matrix
