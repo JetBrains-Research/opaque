@@ -84,7 +84,10 @@ private object StrictDocs : BuildType({
 })
 
 private val cpuTests = pythonTestMatrix(CiModel.TestDevice.CPU)
-private val mpsTests = pythonTestMatrix(CiModel.TestDevice.MPS)
+private val mpsTests = pythonTestMatrix(CiModel.TestDevice.MPS).apply {
+    paused = true
+    description = "Disabled until TeamCity provides a larger compatible macOS hosted-agent type."
+}
 private val cudaTest = BuildType {
     id("Opaque_PythonCuda")
     name = "Python CUDA tests"
@@ -135,16 +138,12 @@ private fun verificationBuild(
             CiModel.TestDevice.CPU.markerFor(branchKind),
         )
         param(
-            "override.dep.Opaque_PythonMps.opaque.pytest.marker",
-            CiModel.TestDevice.MPS.markerFor(branchKind),
-        )
-        param(
             "override.dep.Opaque_PythonCuda.opaque.pytest.marker",
             CiModel.TestDevice.CUDA.markerFor(branchKind),
         )
     }
     dependencies {
-        listOf(cpuTests, mpsTests, cudaTest).forEach { matrix ->
+        listOf(cpuTests, cudaTest).forEach { matrix ->
             snapshot(matrix) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
