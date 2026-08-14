@@ -35,7 +35,6 @@ project {
     subProject(Delivery)
 
     buildType(PrGate)
-    buildType(OpaqueCudaTrustedPr)
     buildType(MainCi)
     buildType(ReleaseCandidate)
     buildType(PublishDevDistributions)

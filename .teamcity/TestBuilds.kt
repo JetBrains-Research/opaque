@@ -88,7 +88,6 @@ private val mpsTests = pythonTestMatrix(CiModel.TestDevice.MPS)
 private val cudaTest = BuildType {
     id("Opaque_PythonCuda")
     name = "Python CUDA tests"
-    paused = true
     configurePythonTooling()
     artifactRules = "coverage.xml => coverage"
     failureConditions {
@@ -139,9 +138,13 @@ private fun verificationBuild(
             "override.dep.Opaque_PythonMps.opaque.pytest.marker",
             CiModel.TestDevice.MPS.markerFor(branchKind),
         )
+        param(
+            "override.dep.Opaque_PythonCuda.opaque.pytest.marker",
+            CiModel.TestDevice.CUDA.markerFor(branchKind),
+        )
     }
     dependencies {
-        listOf(cpuTests, mpsTests).forEach { matrix ->
+        listOf(cpuTests, mpsTests, cudaTest).forEach { matrix ->
             snapshot(matrix) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
@@ -167,25 +170,6 @@ object OpaqueTestsPr : BuildType({
         buildName = "PR verification",
         branchKind = CiModel.BranchKind.PULL_REQUEST,
     )
-})
-
-object OpaqueCudaTrustedPr : BuildType({
-    id("Opaque_CudaTrustedPr")
-    name = "CUDA verification"
-    type = BuildTypeSettings.Type.COMPOSITE
-    paused = true
-    vcs {
-        root(DslContext.settingsRoot)
-        branchFilter = CiModel.BranchKind.PULL_REQUEST.branchFilter
-    }
-    dependencies {
-        snapshot(cudaTest) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
-            onDependencyCancel = FailureAction.CANCEL
-            synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.NO
-        }
-    }
 })
 
 object OpaqueTestsMain : BuildType({
