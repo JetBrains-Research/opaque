@@ -40,6 +40,8 @@ object Delivery : Project({
 
     template(PublicationTemplate)
     deliveryBuildTypes.forEach(::buildType)
+    buildType(PublishDevDistributions)
+    buildType(PublishReleaseDistributions)
 })
 
 project {
@@ -52,6 +54,4 @@ project {
     buildType(PrGate)
     buildType(MainCi)
     buildType(ReleaseCandidate)
-    buildType(PublishDevDistributions)
-    buildType(PublishReleaseDistributions)
 }
