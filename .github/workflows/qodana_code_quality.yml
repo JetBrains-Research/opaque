@@ -13,31 +13,12 @@ on:
         required: false
         default: ""
         type: string
-      fixes:
-        description: Quick-fix strategy for direct manual runs.
-        required: false
-        default: none
-        type: string
       pr-mode:
         description: Analyze only changes introduced by the pull request.
         required: false
         default: false
         type: boolean
-  push:
-    branches:
-      - "releases/*"
-  schedule:
-    - cron: "23 3 * * 1"
   workflow_dispatch:
-    inputs:
-      fixes:
-        description: Quick-fix strategy
-        type: choice
-        options:
-          - none
-          - cleanup
-          - apply
-        default: none
 
 concurrency:
   group: qodana-${{ github.event.pull_request.number || github.ref }}
@@ -46,7 +27,6 @@ concurrency:
 jobs:
   scan:
     name: Qodana
-    if: github.event_name != 'workflow_dispatch' || inputs.fixes == 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -103,39 +83,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@d6317709a54fd87078d323eeb0e48ec331c8e621 # v3
         with:
           sarif_file: ${{ runner.temp }}/qodana/results/qodana.sarif.json
-
-  quick-fixes:
-    name: Qodana quick-fixes
-    if: github.event_name == 'workflow_dispatch' && inputs.fixes != 'none'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      checks: write
-      contents: write
-      pull-requests: write
-
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-
-      - uses: ./.github/actions/setup-python
-        with:
-          enable-uv-cache: "true"
-
-      - name: Qodana scan and quick-fix
-        uses: JetBrains/qodana-action@b588768b6e7e6da579e518bc584f79de0d243692 # v2026.2.0
-        with:
-          args: ${{ inputs.fixes == 'apply' && '--apply-fixes' || '--cleanup' }}
-          artifact-name: qodana-fix-report
-          commit-message: "fix(qodana): apply automated quick-fixes"
-          post-pr-comment: false
-          pr-mode: false
-          push-fixes: pull-request
-          upload-result: true
-          use-annotations: true
-          use-caches: true
-        env:
-          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN_1970838931 }}
