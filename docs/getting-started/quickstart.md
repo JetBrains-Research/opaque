@@ -11,7 +11,6 @@ Install Opaque following the [Installation Guide](installation.md).
 ```python
 import torch
 import torch.nn as nn
-import torchopt
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
@@ -71,10 +70,9 @@ step_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)
 accountant = Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
 
 # Training loop
-from opaque.optimizers import sgd
+from opaque.optimizers import apply_updates, sgd
 
-optimizer = sgd(lr=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = sgd(params, lr=0.01)
 
 for epoch in range(10):
     perm = torch.randperm(n_samples)
@@ -83,8 +81,8 @@ for epoch in range(10):
 
         grads, clip_state = grad_fn(params, batch, state=clip_state)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
-        updates, opt_state = optimizer.update(noisy_grads, opt_state)
-        params = torchopt.apply_updates(params, updates)
+        updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+        params = apply_updates(params, updates)
 
         accountant = accountant | step_proc
 

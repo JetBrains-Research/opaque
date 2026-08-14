@@ -16,7 +16,6 @@ TORCH_CONSUMERS = frozenset(
         "opaque-auditing",
         "opaque-dpftrl",
         "opaque-dpsgd",
-        "opaque-optimizers",
         "opaque-patches",
         "opaque-transformers",
     }

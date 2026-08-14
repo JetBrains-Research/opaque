@@ -305,7 +305,7 @@ def parse_args() -> argparse.Namespace:
             "adadelta",
             "schedule_free",
         ],
-        help="Torchopt-backed optimizer name passed to TrainingArguments.optim.",
+        help="Backend-neutral optimizer name passed to TrainingArguments.optim.",
     )
     train_group.add_argument("--weight-decay", type=float, default=0.01)
     train_group.add_argument(

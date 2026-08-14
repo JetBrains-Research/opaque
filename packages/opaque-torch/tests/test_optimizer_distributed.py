@@ -1,4 +1,4 @@
-"""Tests for ``opaque.api.optimizers.distributed`` sync handlers.
+"""Tests for Torch optimizer distributed-state sync handlers.
 
 The handlers are audit-only (assert cross-rank equality of optimizer state
 structure and leaves), so the multi-rank checks themselves are exercised by
@@ -19,17 +19,18 @@ from typing import Any
 import torch
 
 from opaque.api.engine.distributed._state import _SYNC_REGISTRY
-from opaque.api.optimizers import distributed as _trigger_registration  # noqa: F401
-from opaque.api.optimizers._adadelta import AdadeltaState
-from opaque.api.optimizers._adafactor import AdafactorState
-from opaque.api.optimizers._adagrad import AdagradState
-from opaque.api.optimizers._adam import AdamState
-from opaque.api.optimizers._ademamix import AdEMAMixState
-from opaque.api.optimizers._lion import LionState
-from opaque.api.optimizers._radam import RAdamState
-from opaque.api.optimizers._rmsprop import RMSpropState
-from opaque.api.optimizers._schedule_free import ScheduleFreeState
-from opaque.api.optimizers.distributed import sync_optimizer_state
+from opaque.api.engine.optimizers.types import (
+    AdadeltaState,
+    AdafactorState,
+    AdagradState,
+    AdamState,
+    AdEMAMixState,
+    LionState,
+    RAdamState,
+    RMSpropState,
+    ScheduleFreeState,
+)
+from opaque.api.torch.optimizers.distributed import sync_optimizer_state
 
 _ALL_OPTIMIZER_STATES = (
     AdadeltaState,

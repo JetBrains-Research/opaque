@@ -1,23 +1,25 @@
-"""Tests for :mod:`opaque.serialization` on optimizer chain state.
+"""Tests for :mod:`opaque.serialization` on optimizer state.
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
-``update()`` call must produce the same updates as if we had kept
+``step()`` call must produce the same updates as if we had kept
 the original state.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 import torch
-
-torchopt = pytest.importorskip("torchopt")
 
 from opaque.optimizers import (
     adafactor,
     adagrad,
     adamw,
     ademamix,
+    apply_updates,
     lion,
     radam,
     rmsprop,
@@ -42,36 +44,45 @@ def grads(params):
     return {k: torch.randn_like(v) for k, v in params.items()}
 
 
-def _round_trip(opt, params, grads, steps: int = 5, **update_kwargs):
+def _round_trip(
+    factory: Callable[..., tuple[Callable[..., tuple[Any, Any]], Any]],
+    params,
+    grads,
+    steps: int = 5,
+    **factory_kwargs,
+):
     """Train ``steps`` steps, serialise, restore on a fresh init,
     assert the next update is identical."""
-    state = opt.init(params)
+    step, state = factory(params, **factory_kwargs)
     for _ in range(steps):
-        _, state = opt.update(grads, state, params=params, **update_kwargs)
+        _, state = step(grads, state, params=params)
     sd = state_dict(state)
 
     # Fresh template — same shape, zeroed leaves.
-    template = opt.init(params)
+    _step2, template = factory(params, **factory_kwargs)
     restored = from_state_dict(template, sd)
 
     # Both states should produce the same next update.
-    u_orig, _ = opt.update(grads, state, params=params, **update_kwargs)
-    u_rest, _ = opt.update(grads, restored, params=params, **update_kwargs)
+    u_orig, _ = step(grads, state, params=params)
+    u_rest, _ = step(grads, restored, params=params)
     return u_orig, u_rest
 
 
 class TestAdamW:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(adamw(lr=1e-3, weight_decay=0.01), params, grads)
+        u_orig, u_rest = _round_trip(
+            adamw, params, grads, lr=1e-3, weight_decay=0.01
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
-            opt,
+            adamw,
             params,
             noised(grads, max_norm=1.0, noise_stddev=0.5),
+            lr=1e-3,
+            noise_bias_correction=True,
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
@@ -82,40 +93,44 @@ class TestAdamW:
             noised(grads, max_norm=1.0, noise_stddev=0.1),
             noised(sq, max_norm=1.0, noise_stddev=0.1),
         )
-        opt = adamw(lr=1e-3)
-        u_orig, u_rest = _round_trip(opt, params, output)
+        u_orig, u_rest = _round_trip(adamw, params, output, lr=1e-3)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_l2_wd(self, params, grads):
-        opt = adamw(lr=1e-3, weight_decay=0.5, decoupled_weight_decay=False)
-        u_orig, u_rest = _round_trip(opt, params, grads)
+        u_orig, u_rest = _round_trip(
+            adamw,
+            params,
+            grads,
+            lr=1e-3,
+            weight_decay=0.5,
+            decoupled_weight_decay=False,
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_with_rms_clip(self, params, grads):
-        opt = adamw(lr=1e-3, update_rms_clip=0.5)
-        u_orig, u_rest = _round_trip(opt, params, grads)
+        u_orig, u_rest = _round_trip(
+            adamw, params, grads, lr=1e-3, update_rms_clip=0.5
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_step_and_phi_preserved(self, params, grads):
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = adamw(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        # Adam state is at chain index 0 (decoupled WD).
-        assert restored[0].step == 7
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
     def test_per_group_phi_round_trip_nested(self):
         """Path-keyed φ survives state_dict when BC is enabled from init."""
@@ -143,30 +158,30 @@ class TestAdamW:
             },
             values={"g_a": 0.2, "g_b": 0.7},
         )
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(nested_params)
-        assert isinstance(state[0].phi, dict)
-        assert set(state[0].phi) == {
+        step, state = adamw(nested_params, lr=1e-3, noise_bias_correction=True)
+        assert isinstance(state.phi, dict)
+        assert set(state.phi) == {
             ("layer1", "weight"),
             ("layer1", "bias"),
             ("layer2", "weight"),
         }
         for _ in range(3):
-            _, state = opt.update(
+            _, state = step(
                 noised(nested_grads, max_norm=1.0, noise_stddev=pg),
                 state,
                 params=nested_params,
             )
-        assert state[0].phi[("layer1", "weight")] != pytest.approx(0.0)
+        assert state.phi[("layer1", "weight")] != pytest.approx(0.0)
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(nested_params), sd)
-        assert restored[0].phi == state[0].phi
-        u_orig, _ = opt.update(
+        _s2, template = adamw(nested_params, lr=1e-3, noise_bias_correction=True)
+        restored = from_state_dict(template, sd)
+        assert restored.phi == state.phi
+        u_orig, _ = step(
             noised(nested_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=nested_params,
         )
-        u_rest, _ = opt.update(
+        u_rest, _ = step(
             noised(nested_grads, max_norm=1.0, noise_stddev=pg),
             restored,
             params=nested_params,
@@ -179,71 +194,72 @@ class TestAdamW:
         )
 
     def test_torch_save_load_round_trip(self, params, grads, tmp_path):
-        opt = adamw(lr=1e-3, weight_decay=0.01)
-        state = opt.init(params)
+        step, state = adamw(params, lr=1e-3, weight_decay=0.01)
         for _ in range(3):
-            _, state = opt.update(grads, state, params=params)
+            _, state = step(grads, state, params=params)
         sd = state_dict(state)
         path = tmp_path / "opt.pt"
         torch.save(sd, path)
         sd_loaded = torch.load(path, weights_only=False)
         assert set(sd_loaded.keys()) == set(sd.keys())
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3, weight_decay=0.01)
         restored = from_state_dict(template, sd_loaded)
-        u_orig, _ = opt.update(grads, state, params=params)
-        u_rest, _ = opt.update(grads, restored, params=params)
+        u_orig, _ = step(grads, state, params=params)
+        u_rest, _ = step(grads, restored, params=params)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
 
 class TestLion:
     def test_round_trip(self, params, grads):
-        u_orig, u_rest = _round_trip(lion(lr=1e-4, weight_decay=0.0), params, grads)
+        u_orig, u_rest = _round_trip(
+            lion, params, grads, lr=1e-4, weight_decay=0.0
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_step_preserved(self, params, grads):
-        opt = lion(lr=1e-4)
-        state = opt.init(params)
+        step, state = lion(params, lr=1e-4)
         for _ in range(4):
-            _, state = opt.update(grads, state, params=params)
+            _, state = step(grads, state, params=params)
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(params), sd)
-        assert restored[0].step == 4
+        _s2, template = lion(params, lr=1e-4)
+        restored = from_state_dict(template, sd)
+        assert restored.step == 4
 
 
 class TestAdEMAMix:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(ademamix(lr=1e-3), params, grads)
+        u_orig, u_rest = _round_trip(ademamix, params, grads, lr=1e-3)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = ademamix(lr=1e-3, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
-            opt,
+            ademamix,
             params,
             noised(grads, max_norm=1.0, noise_stddev=0.4),
+            lr=1e-3,
+            noise_bias_correction=True,
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
-        opt = ademamix(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = ademamix(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.4),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = ademamix(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 7
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestAdafactor:
@@ -258,17 +274,17 @@ class TestAdafactor:
         return {k: torch.randn_like(v) for k, v in matrix_params.items()}
 
     def test_round_trip(self, matrix_params, matrix_grads):
-        opt = adafactor(lr=1e-3, beta1=0.9)
-        u_orig, u_rest = _round_trip(opt, matrix_params, matrix_grads, steps=3)
+        u_orig, u_rest = _round_trip(
+            adafactor, matrix_params, matrix_grads, steps=3, lr=1e-3, beta1=0.9
+        )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_factored_v_serialised(self, matrix_params, matrix_grads):
         """v_row / v_col tensors round-trip; the optree treespec is
         skipped from the saved dict (re-derived from the template)."""
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
-        _, state = opt.update(matrix_grads, state, params=matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
+        _, state = step(matrix_grads, state, params=matrix_params)
         sd = state_dict(state)
         # treespec is opaque; should not appear in the saved dict.
         assert not any("treespec" in k for k in sd)
@@ -286,24 +302,28 @@ class TestAdafactor:
             },
             values={"attn": 0.2, "mlp": 0.8},
         )
-        opt = adafactor(lr=1e-3, beta1=0.9, noise_bias_correction=True)
-        state = opt.init(matrix_params)
+        step, state = adafactor(
+            matrix_params, lr=1e-3, beta1=0.9, noise_bias_correction=True
+        )
         for _ in range(3):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
                 state,
                 params=matrix_params,
             )
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(matrix_params), sd)
-        assert restored[0].phi_flat == state[0].phi_flat
-        assert restored[0].paths == state[0].paths
-        u_orig, _ = opt.update(
+        _s2, template = adafactor(
+            matrix_params, lr=1e-3, beta1=0.9, noise_bias_correction=True
+        )
+        restored = from_state_dict(template, sd)
+        assert restored.phi_flat == state.phi_flat
+        assert restored.paths == state.paths
+        u_orig, _ = step(
             noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=matrix_params,
         )
-        u_rest, _ = opt.update(
+        u_rest, _ = step(
             noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             restored,
             params=matrix_params,
@@ -314,125 +334,121 @@ class TestAdafactor:
 
 class TestRAdam:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(radam(lr=1e-3), params, grads)
+        u_orig, u_rest = _round_trip(radam, params, grads, lr=1e-3)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = radam(lr=1e-3, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
-            opt,
+            radam,
             params,
             noised(grads, max_norm=1.0, noise_stddev=0.3),
+            lr=1e-3,
+            noise_bias_correction=True,
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
-        opt = radam(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = radam(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = radam(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        # RAdam default uses L2 WD (decoupled_weight_decay=False), so the
-        # chain is (wd, moment, clip, neg_lr) — moment state is at index 1.
-        assert restored[1].step == 7
-        assert isinstance(state[1].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[1].phi.values())
-        assert restored[1].phi == pytest.approx(state[1].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestRMSprop:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(rmsprop(lr=1e-2), params, grads)
+        u_orig, u_rest = _round_trip(rmsprop, params, grads, lr=1e-2)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
-            opt,
+            rmsprop,
             params,
             noised(grads, max_norm=1.0, noise_stddev=0.3),
+            lr=1e-2,
+            noise_bias_correction=True,
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
-        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = rmsprop(params, lr=1e-2, noise_bias_correction=True)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = rmsprop(params, lr=1e-2, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 5
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 5
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestAdagrad:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(adagrad(lr=1e-2), params, grads)
+        u_orig, u_rest = _round_trip(adagrad, params, grads, lr=1e-2)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_bc(self, params, grads):
-        opt = adagrad(lr=1e-2, noise_bias_correction=True)
         u_orig, u_rest = _round_trip(
-            opt,
+            adagrad,
             params,
             noised(grads, max_norm=1.0, noise_stddev=0.3),
+            lr=1e-2,
+            noise_bias_correction=True,
         )
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_acc_preserved(self, params, grads):
-        opt = adagrad(lr=1e-2, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = adagrad(params, lr=1e-2, noise_bias_correction=True)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = adagrad(params, lr=1e-2, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 5
-        assert isinstance(state[0].phi_acc, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi_acc.values())
-        assert restored[0].phi_acc == pytest.approx(state[0].phi_acc)
+        assert restored.step == 5
+        assert isinstance(state.phi_acc, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi_acc.values())
+        assert restored.phi_acc == pytest.approx(state.phi_acc)
 
 
 class TestScheduleFree:
     def test_round_trip_over_adamw(self, params, grads):
-        opt = schedule_free(adamw(lr=1e-3))
-        state = opt.init(params)
+        step, state = schedule_free(params, adamw, lr=1e-3)
+        p = params
         for _ in range(4):
-            delta, state = opt.update(grads, state, params=params)
-            params = torchopt.apply_updates(params, delta)
+            delta, state = step(grads, state, params=p)
+            p = apply_updates(p, delta)
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = schedule_free(p, adamw, lr=1e-3)
         restored = from_state_dict(template, sd)
-        # x and z should match exactly.
         for k in state.x:
             torch.testing.assert_close(restored.x[k], state.x[k])
             torch.testing.assert_close(restored.z[k], state.z[k])
         assert restored.step == state.step
         assert restored.beta == state.beta
-        # get_eval_params still returns x.
         ep = restored.x
         for k in ep:
             torch.testing.assert_close(ep[k], state.x[k])
@@ -442,22 +458,20 @@ class TestRobustness:
     def test_missing_path_keeps_template(self, params, grads):
         """Forward-compat: a saved dict missing a path keeps the
         template's value at that path."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Drop the step entry from the saved dict.
-        sd_partial = {k: v for k, v in sd.items() if not k.endswith(".step")}
-        template = opt.init(params)
+        sd_partial = {k: v for k, v in sd.items() if k != "step" and not k.endswith(".step")}
+        _s2, template = adamw(params, lr=1e-3)
         restored = from_state_dict(template, sd_partial)
         # ``step`` falls back to template's 0.
-        assert restored[0].step == 0
+        assert restored.step == 0
 
     def test_tensor_dtype_device_preserved(self, params, grads):
         """Saved tensors load back at the template's dtype/device."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Mutate the saved tensors to bf16 to simulate a saved
         # checkpoint at a different precision than the template.
@@ -465,21 +479,20 @@ class TestRobustness:
             k: (v.to(torch.bfloat16) if isinstance(v, torch.Tensor) else v)
             for k, v in sd.items()
         }
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3)
         restored = from_state_dict(template, sd_bf16)
         # Restored tensors should match the template's dtype.
-        assert restored[0].mu["weight"].dtype == template[0].mu["weight"].dtype
+        assert restored.mu["weight"].dtype == template.mu["weight"].dtype
 
     def test_wrong_type_raises(self, params, grads):
         """A path that should hold a tensor but holds a non-tensor in
         the dict raises ``TypeError`` rather than silently corrupting."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Find a tensor key and replace its value with a string.
         tensor_key = next(k for k, v in sd.items() if isinstance(v, torch.Tensor))
         sd[tensor_key] = "not a tensor"
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3)
         with pytest.raises(TypeError, match=r"torch.Tensor"):
             from_state_dict(template, sd)

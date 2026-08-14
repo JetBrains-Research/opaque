@@ -202,8 +202,8 @@ def adaptive_clipped_grad(
         >>> import torch
         >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
         >>> from opaque.dpsgd.noise import gaussian_noise
+        >>> from opaque.optimizers import adamw, apply_updates
         >>> from opaque.random import key
-        >>> import torchopt
         >>>
         >>> def loss_fn(params, x, y):
         ...     pred = x @ params
@@ -221,8 +221,7 @@ def adaptive_clipped_grad(
         >>>
         >>> # Training loop with explicit state-passing
         >>> params = torch.randn(10, requires_grad=False)
-        >>> optimizer = torchopt.adamw(lr=1e-3)
-        >>> opt_state = optimizer.init(params)
+        >>> opt_step, opt_state = adamw(params, lr=1e-3)
         >>>
         >>> noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(1))
         >>> # ``dataloader`` yields (x, y) batches (e.g. a torch DataLoader).
@@ -235,8 +234,8 @@ def adaptive_clipped_grad(
         ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...
         ...     # Optimizer step
-        ...     updates, opt_state = optimizer.update(noisy_grad, opt_state, params=params)
-        ...     params = torchopt.apply_updates(params, updates)
+        ...     updates, opt_state = opt_step(noisy_grad, opt_state, params=params)
+        ...     params = apply_updates(params, updates)
         ...
         ...     # Monitor adaptation
         ...     # The current DP max_norm is attached to the clipped output.

@@ -65,7 +65,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `BallsInBinsSampler` — Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` — Deterministic sequential batching (BLT)
 
-- **[Schedules](schedules.md)** — LR schedules for TorchOpt functional optimizers
+- **[Schedules](schedules.md)** — LR schedules for functional optimizers
   - `constant_schedule()` — Constant LR
   - `cosine_schedule()` — Cosine annealing
   - `inverse_sqrt_schedule()` — Inverse-square-root decay

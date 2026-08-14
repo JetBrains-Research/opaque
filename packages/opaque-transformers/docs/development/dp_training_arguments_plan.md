@@ -45,13 +45,13 @@ fields.
 
 **Parameters**: `lr_scheduler`, `lr_scheduler_kwargs`, `warmup_ratio`, `warmup_steps`.
 
-**Implementation**: A callable `step → learning_rate` is passed directly to torchopt's optimizer factories — torchopt's `scale_by_neg_lr` accepts `Callable[[int], float]` and embeds the step counter inside the optimizer state via `scale_by_schedule`. No `torch.optim.lr_scheduler` machinery and no LR scaling on `updates`.
+**Implementation**: A callable `step → learning_rate` is passed directly to Opaque optimizer factories. The backend-neutral optimizer state owns the counter used to evaluate the schedule, so no `torch.optim.lr_scheduler` machinery or caller-side LR scaling is needed.
 
 **Code**:
-- New `opaque.scheduling` module: the curves torchopt doesn't ship — `cosine_schedule`, `inverse_sqrt_schedule`, `constant_schedule`, `linear_schedule`, `polynomial_schedule`, `one_minus_sqrt_schedule` — plus `with_warmup(decay, num_warmup_steps, base_lr)` and `with_restarts` composition primitives that auto-shift the step counter passed to `decay`.
+- New `opaque.scheduling` module: `cosine_schedule`, `inverse_sqrt_schedule`, `constant_schedule`, `linear_schedule`, `polynomial_schedule`, `one_minus_sqrt_schedule`, plus `with_warmup(decay, num_warmup_steps, base_lr)` and `with_restarts` composition primitives that auto-shift the step counter passed to `decay`.
 - HF shim `opaque.api.transformers.trainer._scheduler` (`build_lr_schedule(args, num_training_steps)`, `get_warmup_steps(...)`, `parse_optim_args(...)`): dispatches **10** of HF's `SchedulerType` strings — `linear`, `cosine`, `constant`, `constant_with_warmup`, `inverse_sqrt`, `polynomial`, `cosine_with_restarts`, `cosine_with_min_lr`, `cosine_warmup_with_min_lr`, `warmup_stable_decay` — to compositions of the primitives above; unknown kwargs raise `ValueError`.  `reduce_lr_on_plateau` is intentionally not supported: it's metric-driven and data-dependent, which doesn't fit the recipe-based static-schedule model the rest of `opaque.scheduling` is built on.
 - `DPTrainer.create_scheduler(num_training_steps)` (subclass override hook); called from `_setup_training` and the resulting callable is passed into `create_optimizer` for every optimizer branch (`adam`, `sgd`, `adamw-bc`, `adamw`).
-- `learning_rate` is logged in `state.log_history` at each `logging_steps` boundary, computed as `lr_schedule(global_step - 1)` — the value just applied to the optimizer update at iteration `global_step` (HF parity: torchopt's `scale_by_schedule` increments the count *after* the update, so the LR consumed by step N is `schedule(N - 1)`).
+- `learning_rate` is logged in `state.log_history` at each `logging_steps` boundary, computed as `lr_schedule(global_step - 1)` — the value just applied to the optimizer update at iteration `global_step`.
 
 **Skip**: none for the dispatch surface (full HF coverage).  `optim_args` is implemented via `parse_optim_args`.
 
@@ -781,7 +781,7 @@ User-facing doc: [docs/user-guide/distributed-trainer.md](../../../../docs/user-
    prefetch, collation) is unchanged — workers still do not own the sampler.
 5. **Functional optimizer stays synchronised by construction.** After
    `sum_gradients`, every rank holds the same clipped-grad sum; identical
-   noise via shared key + identical pure-function torchopt update keeps
+   noise via shared key + identical pure-function optimizer update keeps
    parameter trees bit-identical (see
    [docs/user-guide/distributed.md:237–250](../../../../docs/user-guide/distributed.md)).
 6. **Environment gate.** All implementation and CI validation for Phase 10
@@ -993,8 +993,8 @@ The single-process step today is:
 2. fp16 overflow detection (skip step if non-finite)
 3. noise_std = _noise_stddev(clip_state, noise_multiplier)
 4. noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=noise_std)
-5. updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable_params)
-6. trainable_params = torchopt.apply_updates(trainable_params, updates)
+5. updates, opt_state = optimizer_step(noisy_grads, opt_state, params=trainable_params)
+6. trainable_params = apply_updates(trainable_params, updates)
 ```
 
 The DDP step inserts collectives **between 1 and 3** (after clipping, before
@@ -1016,7 +1016,7 @@ if self._ddp.is_distributed:
 Everything else is unchanged: noise is identical on every rank because the
 shared key + same `noise_state` + same numerics yields identical samples (see
 the existing distributed example at [examples/train_dpsgd.py:1409–1450](../../../../examples/train_dpsgd.py)).
-Optimizer state stays in sync by virtue of pure-functional torchopt.
+Optimizer state stays in sync by virtue of the pure-functional optimizer step.
 
 **Subtleties**
 - The fp16 overflow detect at [line 1766–1776](../../src/opaque/transformers/trainer/__init__.py)
@@ -1189,7 +1189,7 @@ rank/world), `trainer/_hub.py` (rank-0 gates), new
 
 Compilation and precision support must be proven around the functional DP step:
 `make_functional`, `vmap`, per-example loss construction, clipping, noise,
-accounting, and torchopt updates.
+accounting, and backend-neutral optimizer updates.
 
 ### Phase 11a: Compile and kernel validation
 
@@ -1332,7 +1332,7 @@ that extra. Symmetric extras `[optuna-hpo]`, `[wandb-hpo]`, and the
 
 DPTrainer can only support optimizers whose state and update rules fit the
 functional DP pipeline. Ordinary HF optimizer names are not enough: every
-candidate needs a torchopt-compatible transform or an equivalent functional
+candidate needs an Opaque explicit-state factory with a backend-neutral
 implementation.
 
 **Parameters / surfaces**: `optim`, `optim_args`, `optim_target_modules`,
@@ -1340,7 +1340,7 @@ implementation.
 
 **What to implement**:
 - Evaluate candidate optimizers one by one, starting from those that can be
-  represented as functional torchopt transforms with explicit state.
+  represented as backend-neutral explicit-state factories.
 - Keep bitsandbytes 8-bit/paged optimizers, Apex-fused optimizers,
   backend-specific XLA/NPU variants, and arbitrary `torch.optim.Optimizer`
   objects rejected unless they are reimplemented or wrapped with proven

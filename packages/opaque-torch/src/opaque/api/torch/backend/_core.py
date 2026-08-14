@@ -123,6 +123,11 @@ def sqrt(value: Any) -> torch.Tensor:
     return torch.sqrt(value)
 
 
+@_TORCH.implements(ops.rsqrt)
+def rsqrt(value: Any) -> torch.Tensor:
+    return torch.rsqrt(value)
+
+
 @_TORCH.implements(ops.square)
 def square(value: Any) -> torch.Tensor:
     return torch.square(value)
@@ -158,6 +163,33 @@ def sum(value: Any, axis: Any = None, dtype: Any = None) -> torch.Tensor:
     if axis is None:
         return torch.sum(value, dtype=dtype)
     return torch.sum(value, dim=axis, dtype=dtype)
+
+
+@_TORCH.implements(ops.pow)
+def pow(value: Any, exponent: Any) -> torch.Tensor:
+    return torch.pow(value, exponent)
+
+
+@_TORCH.implements(ops.mean)
+def mean(value: Any, axis: Any = None) -> torch.Tensor:
+    if axis is None:
+        return torch.mean(value)
+    return torch.mean(value, dim=axis)
+
+
+@_TORCH.implements(ops.reciprocal)
+def reciprocal(value: Any) -> torch.Tensor:
+    return torch.reciprocal(value)
+
+
+@_TORCH.implements(ops.accumulator_dtype)
+def accumulator_dtype(value: Any, *, kind: str = "sum") -> torch.dtype:
+    del kind
+    if ops.is_low_precision(value):
+        return torch.float32
+    if ops.is_array(value) and value.device.type == "mps":
+        return torch.float32
+    return torch.float64
 
 
 @_TORCH.implements(ops.greater)

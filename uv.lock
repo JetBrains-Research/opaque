@@ -2403,6 +2403,7 @@ dev = [
     { name = "riskcal" },
     { name = "ruff" },
     { name = "scipy" },
+    { name = "torchopt" },
 ]
 docs = [
     { name = "mike" },
@@ -2418,7 +2419,6 @@ examples = [
     { name = "keyrings-alt" },
     { name = "matplotlib" },
     { name = "peft" },
-    { name = "torchopt" },
     { name = "torchvision" },
     { name = "transformers" },
     { name = "wandb" },
@@ -2460,6 +2460,7 @@ dev = [
     { name = "riskcal", specifier = ">=1.2.0" },
     { name = "ruff", specifier = ">=0.16.0,<0.17" },
     { name = "scipy", specifier = ">=1.11.0" },
+    { name = "torchopt", specifier = ">=0.7.3" },
 ]
 docs = [
     { name = "mike", specifier = ">=2.1.3" },
@@ -2475,7 +2476,6 @@ examples = [
     { name = "keyrings-alt", specifier = ">=5.0.0" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "peft", specifier = ">=0.18.0" },
-    { name = "torchopt", specifier = ">=0.7.3" },
     { name = "torchvision", specifier = ">=0.24.0" },
     { name = "transformers", specifier = ">=4.57.0,<6" },
     { name = "wandb", specifier = ">=0.16.0" },
@@ -2651,18 +2651,10 @@ name = "opaque-optimizers"
 source = { editable = "packages/opaque-optimizers" }
 dependencies = [
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
-    { name = "torch" },
-    { name = "torchopt" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "opaque-engine", editable = "packages/opaque-engine" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
-    { name = "torch", specifier = ">=2.9.0" },
-    { name = "torchopt", specifier = ">=0.7.3" },
-]
+requires-dist = [{ name = "opaque-engine", editable = "packages/opaque-engine" }]
 
 [[package]]
 name = "opaque-patches"

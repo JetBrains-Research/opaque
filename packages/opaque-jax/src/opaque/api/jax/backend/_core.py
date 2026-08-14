@@ -177,6 +177,11 @@ def sqrt(value: Any) -> Any:
     return jnp.sqrt(value)
 
 
+@_JAX.implements(ops.rsqrt)
+def rsqrt(value: Any) -> Any:
+    return jnp.power(value, -0.5)
+
+
 @_JAX.implements(ops.square)
 def square(value: Any) -> Any:
     return jnp.square(value)
@@ -210,6 +215,31 @@ def divide(left: Any, right: Any) -> Any:
 @_JAX.implements(ops.sum)
 def sum(value: Any, axis: Any = None, dtype: Any = None) -> Any:
     return jnp.sum(value, axis=axis, dtype=dtype)
+
+
+@_JAX.implements(ops.pow)
+def pow(value: Any, exponent: Any) -> Any:
+    return jnp.power(value, exponent)
+
+
+@_JAX.implements(ops.mean)
+def mean(value: Any, axis: Any = None) -> Any:
+    return jnp.mean(value, axis=axis)
+
+
+@_JAX.implements(ops.reciprocal)
+def reciprocal(value: Any) -> Any:
+    return jnp.reciprocal(value)
+
+
+@_JAX.implements(ops.accumulator_dtype)
+def accumulator_dtype(value: Any, *, kind: str = "sum") -> Any:
+    del kind
+    if ops.is_low_precision(value):
+        return jnp.float32
+    if jax.config.x64_enabled:
+        return jnp.float64
+    return jnp.float32
 
 
 @_JAX.implements(ops.greater)

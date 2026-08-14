@@ -124,8 +124,6 @@ from opaque.torch.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
-import torchopt
-
 import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpftrl.accounting as dpftrl_acc
@@ -161,6 +159,7 @@ from opaque.scheduling import (
 )
 from opaque.scheduling.types import Schedule
 from opaque.functional import empty_collate
+from opaque.optimizers import apply_updates
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -321,8 +320,7 @@ def make_lr_schedule(
 ) -> Schedule:
     """Build an :data:`opaque.scheduling.types.Schedule` callable.
 
-    The same callable is handed both to the torchopt optimizer (via
-    ``scale_by_schedule`` machinery) and to the MF noise strategy's
+    The same callable is handed both to the optimizer factory and to the MF noise strategy's
     ``lr_schedule`` argument (for BandMF / BLT — see
     :func:`opaque.dpftrl.noise._band_mf._momentum_workload_coef`).  Both
     consumers query identical per-step LRs.
@@ -1783,7 +1781,8 @@ def main():
     if args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        optimizer = sgd(
+        optimizer, opt_state = sgd(
+            trainable_params,
             lr=lr_callable,
             momentum=args.momentum,
             weight_decay=args.weight_decay,
@@ -1791,7 +1790,8 @@ def main():
     elif args.optimizer == "adam":
         from opaque.optimizers import adam
 
-        optimizer = adam(
+        optimizer, opt_state = adam(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
@@ -1803,7 +1803,8 @@ def main():
 
         # ``--second-moment`` drives the noise side; the same optimizer
         # consumes ``SecondMomentNoiseOutput`` when the noise output carries it.
-        optimizer = adamw(
+        optimizer, opt_state = adamw(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
@@ -1815,7 +1816,8 @@ def main():
 
         # β₃ and α default to the paper values (0.9999, 5.0).  Expose
         # CLI knobs for them once a real user case appears.
-        optimizer = ademamix(
+        optimizer, opt_state = ademamix(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2, 0.9999),
             alpha=5.0,
@@ -1826,7 +1828,8 @@ def main():
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
 
-        optimizer = lion(
+        optimizer, opt_state = lion(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             weight_decay=args.weight_decay,
@@ -1834,7 +1837,8 @@ def main():
     elif args.optimizer == "adafactor":
         from opaque.optimizers import adafactor
 
-        optimizer = adafactor(
+        optimizer, opt_state = adafactor(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1842,7 +1846,8 @@ def main():
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop
 
-        optimizer = rmsprop(
+        optimizer, opt_state = rmsprop(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1850,15 +1855,14 @@ def main():
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
 
-        optimizer = adagrad(
+        optimizer, opt_state = adagrad(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
-    opt_state = optimizer.init(trainable_params)
-
     # --- Diagnostic: compute what identity baseline σ would be ---
     identity_sigma = None
     if args.mechanism not in ("identity", "none") and args.noise_multiplier is None:
@@ -2086,12 +2090,12 @@ def main():
                     step_noise_stddev = noisy_grads.noise_stddev
                 sp.mark("noise")
 
-                updates, opt_state = optimizer.update(
+                updates, opt_state = optimizer(
                     noisy_grads,
                     opt_state,
                     params=trainable_params,
                 )
-                trainable_params = torchopt.apply_updates(trainable_params, updates)
+                trainable_params = apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
 
             if batch_size == 0:

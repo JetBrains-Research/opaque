@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.api.optimizers._bias_correction import map_leaves_with_path
+from opaque.api.engine.optimizers._bias_correction import map_leaves_with_path
 
 
 def test_map_leaves_with_path_aligned_trees():

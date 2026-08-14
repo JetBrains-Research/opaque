@@ -77,13 +77,16 @@ Each call to `noise_fn` returns a new state with an incremented step counter.
 Always use the returned state for the next call.
 
 ```python
+from opaque.optimizers import adamw, apply_updates
+
 noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
+optimizer_step, opt_state = adamw(params, lr=learning_rate)
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, state = noise_fn(grads, state)  # state advances
-    updates, opt_state = optimizer.update(noisy_grads, opt_state)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 ```
 
 Internally, noise at step t is generated from `fold_in(base_key, t)`, ensuring
@@ -336,7 +339,7 @@ noise_fn, noise_state = mf_gaussian_noise(
 # `grads` is a SecondMomentClippingOutput when clipped_grad was called
 # with second_moment=True; the noise function dispatches polymorphically.
 noise_output, noise_state = noise_fn(grads, noise_state)
-updates, opt_state = optimizer.update(
+updates, opt_state = optimizer_step(
     noise_output,
     opt_state,
     params=params,

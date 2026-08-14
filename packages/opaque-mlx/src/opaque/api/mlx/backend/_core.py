@@ -159,6 +159,11 @@ def sqrt(value: Any) -> Any:
     return mx.sqrt(value)
 
 
+@_MLX.implements(ops.rsqrt)
+def rsqrt(value: Any) -> Any:
+    return mx.rsqrt(value)
+
+
 @_MLX.implements(ops.square)
 def square(value: Any) -> Any:
     return mx.square(value)
@@ -194,6 +199,27 @@ def sum(value: Any, axis: Any = None, dtype: Any = None) -> Any:
     if dtype is not None:
         value = value.astype(dtype)
     return mx.sum(value, axis=axis)
+
+
+@_MLX.implements(ops.pow)
+def pow(value: Any, exponent: Any) -> Any:
+    return mx.power(value, exponent)
+
+
+@_MLX.implements(ops.mean)
+def mean(value: Any, axis: Any = None) -> Any:
+    return mx.mean(value, axis=axis)
+
+
+@_MLX.implements(ops.reciprocal)
+def reciprocal(value: Any) -> Any:
+    return mx.reciprocal(value)
+
+
+@_MLX.implements(ops.accumulator_dtype)
+def accumulator_dtype(value: Any, *, kind: str = "sum") -> Any:
+    del kind
+    return mx.float32
 
 
 @_MLX.implements(ops.greater)

@@ -231,6 +231,7 @@ to cover all eight per-example arguments:
 ```python
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.optimizers import adamw, apply_updates
 
 grad_fn, clip_state = clipped_grad(
     per_example_loss,
@@ -241,13 +242,14 @@ grad_fn, clip_state = clipped_grad(
     return_aux=True,
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=nm, key=key(seed))
+optimizer_step, opt_state = adamw(trainable, lr=1e-4)
 
 for indices in sampler:
     batch = collate_to_device([rows[i] for i in indices])  # 8-tuple
     (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
-    trainable = torchopt.apply_updates(trainable, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=trainable)
+    trainable = apply_updates(trainable, updates)
 ```
 
 ## 5. Reward-metric evaluation

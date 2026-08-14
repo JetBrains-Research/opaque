@@ -1,12 +1,9 @@
 # Schedules
 
 Pure-Python step-indexed scalar schedules. Each public function
-returns a plain `Callable[[int], float]` that plugs straight into
-`torchopt.adamw(lr=...)` or Opaque factories such as
-[`adamw`](optimizers.md), `adam`, and
-`sgd`.
-TorchOpt's `scale_by_neg_lr` advances the schedule via the
-optimizer-state step counter — no manual `.step()` call.
+returns a plain `Callable[[int], float]` that plugs straight into Opaque
+factories such as [`adamw`](optimizers.md), `adam`, and `sgd`. The optimizer
+advances it via its explicit state step counter — no manual `.step()` call.
 
 Public surface:
 
@@ -29,8 +26,8 @@ first `transition_steps` steps — turning the leading plateau into a
 warmup ramp.
 
 ```python
-import torchopt
 from opaque.scheduling import with_warmup, cosine_schedule
+from opaque.optimizers import adamw
 
 W, N, base_lr = 100, 10000, 1e-3
 
@@ -43,7 +40,7 @@ decay = cosine_schedule(
 # Replace the plateau with a 0 → base_lr ramp.
 schedule = with_warmup(decay, transition_steps=W)
 
-opt = torchopt.adamw(lr=schedule)
+optimizer_step, state = adamw(params, lr=schedule)
 ```
 
 ---
@@ -54,8 +51,8 @@ opt = torchopt.adamw(lr=schedule)
 constant_schedule(value: float) -> Callable[[int], float]
 ```
 
-Returns `value` at every step. Equivalent to passing a float
-directly to TorchOpt's `lr` argument; `with_warmup` accepts a float
+Returns `value` at every step. Equivalent to passing a float directly to an
+optimizer's `lr` argument; `with_warmup` accepts a float
 as the same shorthand.
 
 ```python
@@ -409,5 +406,5 @@ unknown string.
 
 ## See also
 
-- [Optimizers API](optimizers.md) — pass any of these schedules to TorchOpt's `lr` argument.
+- [Optimizers API](optimizers.md) — pass any of these schedules to an optimizer factory's `lr` argument.
 - [LR Scheduling User Guide](../user-guide/lr-scheduling.md) — patterns and DP-specific guidance.

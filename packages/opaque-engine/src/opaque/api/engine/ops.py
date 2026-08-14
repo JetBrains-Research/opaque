@@ -119,6 +119,12 @@ def sqrt(value: object) -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def rsqrt(value: object) -> object:
+    """Compute an elementwise reciprocal square root."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def square(value: object) -> object:
     """Compute an elementwise square."""
     raise NotImplementedError
@@ -155,8 +161,32 @@ def divide(left: object, right: object) -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def pow(value: object, exponent: object) -> object:
+    """Raise ``value`` to ``exponent`` elementwise."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def mean(value: object, axis: Any = None) -> object:
+    """Compute the mean of array values along an optional axis."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def reciprocal(value: object) -> object:
+    """Compute an elementwise reciprocal."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def sum(value: object, axis: Any = None, dtype: object = None) -> object:
     """Sum array values along an optional axis."""
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def accumulator_dtype(value: object, *, kind: str = "sum") -> object:
+    """Return a dtype suitable for stable accumulation on the active backend."""
     raise NotImplementedError
 
 
@@ -240,6 +270,7 @@ def promote_dtype(first: object, second: object) -> object:
 
 __all__ = [
     "abs",
+    "accumulator_dtype",
     "add",
     "all",
     "astype",
@@ -258,12 +289,16 @@ __all__ = [
     "is_low_precision",
     "isfinite",
     "maximum",
+    "mean",
     "minimum",
     "multiply",
     "nan_to_num",
     "ones_like",
+    "pow",
     "promote_dtype",
     "real_dtype",
+    "reciprocal",
+    "rsqrt",
     "scalar",
     "scalar_item",
     "shape",

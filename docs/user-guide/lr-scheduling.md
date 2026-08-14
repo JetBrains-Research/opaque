@@ -7,7 +7,7 @@ unchanged.
 
 This page explains the schedules and warmup composition Opaque
 provides via [`opaque.scheduling`](../reference/schedules.md), and the
-pattern for using them with TorchOpt functional optimizers.
+pattern for using them with Opaque functional optimizers.
 
 ## Why warmup matters under DP-SGD
 
@@ -29,23 +29,23 @@ multiplier is large.
 ## Constant LR
 
 ```python
-import torchopt
+from opaque.optimizers import adamw
 
-opt = torchopt.adamw(lr=1e-3)
+optimizer_step, state = adamw(params, lr=1e-3)
 ```
 
-A float passes straight through TorchOpt; no schedule object is
+A float passes straight through an optimizer factory; no schedule object is
 needed.
 
 ## Pure decay
 
 ```python
-import torchopt
 from opaque.scheduling import linear_schedule
+from opaque.optimizers import adamw
 
 # Linear decay from 1e-3 to 0 over 10,000 steps.
 schedule = linear_schedule(1e-3, 0.0, transition_steps=10_000)
-opt = torchopt.adamw(lr=schedule)
+optimizer_step, state = adamw(params, lr=schedule)
 ```
 
 `opaque.scheduling` ships the common decay curves directly:
@@ -69,8 +69,8 @@ with `transition_begin = num_warmup_steps`.  Schedules in
 leading plateau into the warmup ramp.
 
 ```python
-import torchopt
 from opaque.scheduling import linear_schedule, with_warmup
+from opaque.optimizers import adamw
 
 base_lr, W, N = 1e-3, 500, 10_000
 
@@ -80,7 +80,7 @@ decay = linear_schedule(
     transition_begin=W,
 )
 schedule = with_warmup(decay, transition_steps=W)
-opt = torchopt.adamw(lr=schedule)
+optimizer_step, state = adamw(params, lr=schedule)
 ```
 
 `with_warmup` raises `ValueError` for `transition_steps <= 0`, so
@@ -185,8 +185,8 @@ schedule:
    `num_decay_steps` according to `decay_shape`.
 
 ```python
-import torchopt
 from opaque.scheduling import warmup_stable_decay
+from opaque.optimizers import adamw
 
 schedule = warmup_stable_decay(
     init_value=1e-3,                # peak LR
@@ -196,7 +196,7 @@ schedule = warmup_stable_decay(
     num_decay_steps=1_500,
     # decay_shape="1-sqrt" by default — Hägele et al.'s recommendation.
 )
-opt = torchopt.adamw(lr=schedule)
+optimizer_step, state = adamw(params, lr=schedule)
 ```
 
 The stable middle plateau enables **decay-only fine-tuning**: resume
@@ -247,8 +247,7 @@ for step in range(num_steps):
         print(f"step={step}  lr={schedule(step):.6f}")
 ```
 
-The optimizer maintains its own counter inside `opt_state` (via
-`scale_by_neg_lr`), so calling `schedule(step)` for logging does
+The optimizer state tracks its current step, so calling `schedule(step)` for logging does
 not interfere with how the optimizer applies the schedule.
 
 ## See also

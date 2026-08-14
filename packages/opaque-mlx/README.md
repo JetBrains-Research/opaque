@@ -37,9 +37,8 @@ Apple Silicon. Engine fixed and AUTO-S clipping conformance runs eagerly
 through the MLX autodiff and vectorization primitives.
 
 Algorithm-stack features are not part of the provider contract. In particular,
-adaptive clipping, Gaussian mechanisms, Opaque optimizers,
-accounting-integrated DP-SGD, and distributed training remain unsupported on
-MLX.
+adaptive clipping, Gaussian mechanisms, accounting-integrated DP-SGD, and
+distributed training remain unsupported on MLX.
 
 | Capability | Support |
 |---|---|
@@ -49,7 +48,7 @@ MLX.
 | `ExecutionProfile` transforms (`compile`, `checkpoint`, `optimize_saved_activations`) | Yes [^1] |
 | Native `mlx.core.array` serialization | Yes |
 | `opaque.dpsgd.noise.gaussian_noise` and bounded Gaussian mechanisms | No |
-| Opaque optimizers | No; they are TorchOpt-based |
+| `opaque.optimizers` | Yes, eager on native MLX arrays |
 | Accounting-integrated DP-SGD | No |
 | Distributed MLX training | No |
 

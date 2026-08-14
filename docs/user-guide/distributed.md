@@ -40,7 +40,6 @@ There are two valid approaches to noise in distributed DP-SGD:
 ```python
 import torch
 import torch.distributed as dist
-import torchopt
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
@@ -81,10 +80,9 @@ sampler = PoissonSampler(
 loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
 # Optimizer
-from opaque.optimizers import sgd
+from opaque.optimizers import apply_updates, sgd
 
-optimizer = sgd(lr=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = sgd(params, lr=0.01)
 
 # Training loop
 for batch_x, batch_y in loader:
@@ -100,8 +98,8 @@ for batch_x, batch_y in loader:
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # 4. Update
-    updates, opt_state = optimizer.update(noisy_grads, opt_state)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 dist.destroy_process_group()
 ```
@@ -250,11 +248,11 @@ For correlated noise mechanisms (`mf_gaussian_noise` with any MF strategy), each
 device must generate the same correlated noise stream. Pass the same
 `key=key(seed)` on every rank.
 
-Functional optimizers (TorchOpt) stay synchronized automatically because:
+Functional optimizers stay synchronized automatically because:
 
 1. After `sum_gradients`, all ranks hold the same gradient sum.
 2. After adding synchronized noise, all ranks hold the same noisy gradient.
-3. `optimizer.update` is a pure function: same inputs produce same outputs.
+3. `step` is a pure function: same inputs produce same outputs.
 
 So optimizer states evolve identically on all devices without explicit
 synchronization.

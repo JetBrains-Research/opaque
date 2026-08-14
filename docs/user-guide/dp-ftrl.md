@@ -3,7 +3,7 @@
 This guide walks through the full DP-FTRL pipeline: pick a
 matrix-factorization strategy, calibrate the noise multiplier for the
 *whole training run*, clip gradients, add correlated MF noise, run a
-torchopt step, and checkpoint state. Every import on this page comes
+explicit-state optimizer step, and checkpoint state. Every import on this page comes
 from the `opaque.dpftrl.*` public façade.
 
 For DP-FTRL theory and a side-by-side comparison of mechanisms, see
@@ -245,8 +245,7 @@ Same surface as DP-SGD:
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1e-3, noise_bias_correction=True)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = adamw(params, lr=1e-3, noise_bias_correction=True)
 ```
 
 Private second-moment AdamW pairs with `mf_gaussian_noise(...,
@@ -274,13 +273,14 @@ the v signal there.
 import torch
 from opaque.serialization import state_dict
 from opaque.torch.functional import make_functional
+from opaque.optimizers import apply_updates
 
 fmodel, params = make_functional(model)
 for step, batch in enumerate(sampler):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noised, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 # Checkpoint:
 ckpt = {

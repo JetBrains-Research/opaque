@@ -35,7 +35,7 @@ namespace:
 | `opaque-torch` | `opaque.torch` | PyTorch primitive/runtime implementations, serialization handlers, functionalization, and Torch RNG bridges |
 | `opaque-jax` | `opaque.jax` | JAX primitive/runtime implementations and native-array serialization |
 | `opaque-mlx` | `opaque.mlx` | MLX primitive/runtime implementations and native-array serialization |
-| `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
+| `opaque-optimizers` | `opaque.optimizers` | Backend-neutral functional optimizers with DP-aware AdamW-BC and related rules |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
@@ -127,6 +127,7 @@ import opaque.accounting as acc  # cross-cutting (calibrate, budget)
 import opaque.dpsgd.accounting as dpsgd_acc  # DP-SGD per-step factories
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.optimizers import apply_updates, sgd
 from opaque.random import key
 
 
@@ -157,11 +158,12 @@ noise_fn, noise_state = gaussian_noise(
 
 # Training loop
 params = torch.randn(10, requires_grad=False)
-lr = 0.01
+optimizer_step, opt_state = sgd(params, lr=0.01)
 for batch_x, batch_y in dataloader:
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads.pytree  # or wire opaque.optimizers
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 ```
 
 ## Features

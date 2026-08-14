@@ -5,7 +5,7 @@ Two axes are validated here:
 1. **Loss-closure compile under ``vmap(grad(...))``** — the documented
    PyTorch pattern for compiling functional gradients. We compare each
    stage of the DP pipeline (per-example grad → clipped sum → noised →
-   torchopt update) eager vs. compiled and assert pytree-equal-or-
+   optimizer update) eager vs. compiled and assert pytree-equal-or-
    tolerated parity.
 
 2. **Forward-only compile** — what HuggingFace calls ``jit_mode_eval``.
@@ -22,10 +22,10 @@ import shutil
 import pytest
 import torch
 import torch.nn as nn
-import torchopt
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.optimizers import adamw, apply_updates
 from opaque.random import key
 from opaque.torch.functional import make_functional
 
@@ -93,10 +93,9 @@ def _run_dp_step(
     noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(rng_seed))
     noised, _ = noise_fn(grads, ns)
 
-    optimizer = torchopt.adamw(lr=1e-2)
-    opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
-    new_params = torchopt.apply_updates(params, updates, inplace=False)
+    optimizer_step, opt_state = adamw(params, lr=1e-2)
+    updates, _ = optimizer_step(noised, opt_state, params=params)
+    new_params = apply_updates(params, updates)
     return grads.pytree, noised.pytree, new_params
 
 
@@ -134,7 +133,7 @@ def test_compile_loss_closure_noised_grad_parity(backend: str):
 
 @pytest.mark.parametrize("backend", ["aot_eager", "inductor"])
 def test_compile_loss_closure_optimizer_step_parity(backend: str):
-    """torchopt.adamw update on compiled grads ≈ on eager grads."""
+    """AdamW updates on compiled grads ≈ updates on eager grads."""
     model, x, y = _build_model_and_batch()
     _, _, eager_params = _run_dp_step(model, x, y, compile_backend=None)
     _, _, compiled_params = _run_dp_step(model, x, y, compile_backend=backend)

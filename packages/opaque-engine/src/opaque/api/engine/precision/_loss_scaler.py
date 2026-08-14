@@ -84,10 +84,9 @@ class LossScalerState:
 class LossScaler(NamedTuple):
     """A bundle of pure functions implementing dynamic fp16 loss scaling.
 
-    Mirrors :class:`torchopt.base.GradientTransformation` (a ``NamedTuple``
-    of pure functions, frozen-dataclass state, hyperparameters captured
-    in the factory closure) but exposes the pre-backward ``scale_loss``
-    slot that a strict gradient transformation cannot carry.
+    The bundle captures hyperparameters in a factory closure and keeps state
+    in a frozen dataclass, while exposing the pre-backward ``scale_loss``
+    slot alongside gradient transforms.
 
     All members are pure: state is threaded by the caller, no instance
     is mutated in place.

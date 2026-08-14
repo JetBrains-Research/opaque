@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
-
-pytest.importorskip("torchopt")
 
 from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping.fun import clip_pytree
@@ -45,13 +42,12 @@ def test_nested_clip_noise_adamw_bc_e2e():
     noised, _ = noise_fn(ClippedPytree(pytree=clipped_tree, max_norm=pg), noise_state)
     assert set(noised.pytree.keys()) == {"layer1", "layer2"}
 
-    opt = adamw(lr=1e-3, noise_bias_correction=True)
-    state = opt.init(params)
+    optimizer_step, state = adamw(params, lr=1e-3, noise_bias_correction=True)
     paths, _, _ = tree_flatten_with_paths(params)
-    assert set(state[0].phi) == set(paths)
+    assert set(state.phi) == set(paths)
 
-    updates, new_state = opt.update(noised, state, params=params)
+    updates, new_state = optimizer_step(noised, state, params=params)
     assert updates["layer1"]["attn"].shape == (4, 3)
     assert updates["layer2"]["mlp"].shape == (2,)
-    assert set(new_state[0].phi) == set(paths)
-    assert any(v > 0 for v in new_state[0].phi.values())
+    assert set(new_state.phi) == set(paths)
+    assert any(v > 0 for v in new_state.phi.values())

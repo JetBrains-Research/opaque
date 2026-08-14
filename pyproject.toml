@@ -119,8 +119,8 @@ opaque-alignment = { workspace = true }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation
-# against reference DP libs). Package runtime dependencies (torchopt,
-# transformers, peft) live in each package's [dependencies] or
+# against reference DP libs). Package runtime dependencies (transformers,
+# peft) live in each package's [dependencies] or
 # [project.optional-dependencies] and compose via `--extra`. Triton is not
 # explicitly declared — it is a platform-gated transitive dependency of
 # `opaque-patches` kernels (only resolved on Linux x86_64) and auto-disabled
@@ -137,6 +137,9 @@ dev = [
   # runtime dependency of opaque.
   "dp-accounting>=0.4.4",
   "riskcal>=1.2.0",
+  # Reference oracle for numerical parity of the backend-neutral optimizer
+  # rules. This is a test-only dependency, not part of any Opaque wheel.
+  "torchopt>=0.7.3",
   # Reference implementation published with Feldman & Shenfeld. Imported by
   # test_cross_validation_allocation.py as a one-sided oracle: our PLD bound
   # must sit at or below its analytic bounds.
@@ -146,7 +149,6 @@ dev = [
 # Everything the scripts under examples/ and docs/tutorials/ need.
 # Install with: `uv sync --group examples`
 examples = [
-  "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
   "transformers>=4.57.0,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
   "peft>=0.18.0",             # LoRA adapters (needed by all training examples)
@@ -198,10 +200,6 @@ filterwarnings = [
   # design on CPU test runners; on CUDA the batching rule kicks in and no
   # warning fires.
   "ignore:There is a performance drop because we have not yet implemented the batching rule.*:UserWarning",
-  # torchopt depends on torch.jit internals that upstream has deprecated in
-  # favor of torch.compile / torch.export. Fires on import of torchopt; not
-  # our code to change.
-  "ignore:.*torch.jit.script_method. is deprecated.*:DeprecationWarning",
 ]
 
 [tool.ruff]
@@ -282,7 +280,7 @@ known-first-party = ["opaque"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
+# Optimizer tests import after pytest.importorskip("torch").
 "packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
 # INP001: pytest trees intentionally omit __init__.py.

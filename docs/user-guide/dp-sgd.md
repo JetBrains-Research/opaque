@@ -2,7 +2,7 @@
 
 This guide walks through the full DP-SGD pipeline: calibrate the noise
 multiplier for a target privacy budget, clip per-example gradients,
-add Gaussian noise, run a torchopt optimizer step, and checkpoint
+add Gaussian noise, run an explicit-state optimizer step, and checkpoint
 state. Every import on this page comes from the `opaque.dpsgd.*`
 public façade — no engine paths, no internal `opaque.api.*` paths.
 
@@ -123,17 +123,17 @@ to match.
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(
+optimizer_step, opt_state = adamw(
+    params,
     lr=1e-3,
     weight_decay=0.0,
     noise_bias_correction=True,  # DP-aware second-moment correction
 )
-opt_state = optimizer.init(params)
 ```
 
 `opaque.optimizers` ships `adamw`, `adam`, `sgd`, `radam`,
-`adafactor`, `lion`, `ademamix`, `schedule_free`, plus a few torchopt
-re-exports. The `noise_bias_correction=True` flag corrects the
+`adafactor`, `lion`, `ademamix`, and `schedule_free`. The
+`noise_bias_correction=True` flag corrects the
 biased second moment that arises when the optimizer sees noised
 gradients.
 
@@ -143,13 +143,14 @@ gradients.
 import torch
 from opaque.torch.functional import make_functional
 from opaque.serialization import state_dict
+from opaque.optimizers import apply_updates
 
 fmodel, params = make_functional(model)
 for step, batch in enumerate(sampler):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noised, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 # Checkpoint at the end (or any step):
 ckpt = {

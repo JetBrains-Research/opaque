@@ -51,7 +51,7 @@ DP-correct invariants worth flagging:
   ``per_device_train_batch_size * world_size`` (the ``train_batch_size``
   HF property). Internal microbatch chunking under OOM retry never
   changes the logical batch — privacy accounting is unaffected.
-- ``optim`` accepts the torchopt-backed names DPTrainer wires
+- ``optim`` accepts the backend-neutral optimizer names DPTrainer wires
   (``adam``, ``adamw``, ``adamw-bc`` = DP bias-corrected AdamW, ``sgd``,
   ``lion``, ``ademamix``, ``adafactor``, ``rmsprop``, ``adagrad``,
   ``radam``, ``adadelta``, ``schedule_free``) plus HF aliases that map

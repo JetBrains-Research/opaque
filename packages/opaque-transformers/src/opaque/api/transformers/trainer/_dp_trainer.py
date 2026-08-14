@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-import torchopt
 from datasets import Dataset
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -49,6 +48,7 @@ from opaque.api.engine.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.optimizers import apply_updates
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
@@ -266,7 +266,7 @@ class DPTrainer:
       shared pipeline via ``_run_evaluation_loop``
     - ``compute_per_example_loss()`` — DP-correct override hook; the
       single extension point for SFT / DPO / KTO subclasses
-    - ``create_optimizer()`` — functional optimizer (torchopt)
+    - ``create_optimizer()`` — explicit-state functional optimizer
     - ``get_train_dataloader()`` — PoissonSampler
     - ``get_eval_dataloader()`` — standard DataLoader
     - ``log()`` — append to state + fire callbacks
@@ -322,7 +322,7 @@ class DPTrainer:
         if any(item is not None for item in optimizers):
             raise RuntimeError(
                 "Passing `optimizers` is not supported by DPTrainer: the DP path "
-                "uses a functional torchopt optimizer built after per-example "
+                "uses an explicit-state optimizer built after per-example "
                 "gradient clipping/noising is configured."
             )
         if optimizer_cls_and_kwargs is not None:
@@ -1984,12 +1984,12 @@ class DPTrainer:
             # Optimizer step — DP-aware optimizers read σ directly off the
             # ``NoisedPytree`` when ``noise_bias_correction=True`` was set at
             # construction (via ``optim_args``); no per-step kwargs are accepted.
-            updates, ctx.opt_state = ctx.opt.update(
+            updates, ctx.opt_state = ctx.opt(
                 noisy_grads,
                 ctx.opt_state,
                 params=ctx.trainable_params,
             )
-            ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
+            ctx.trainable_params = apply_updates(ctx.trainable_params, updates)
             sp.mark("optimizer")
 
             # Post-optimizer hook: surface the post-update parameters so
@@ -3717,10 +3717,8 @@ class DPTrainer:
             factory, init_kw = fac
             merged = {**dict(init_kw), **extra}
             merged.pop("lr", None)
-            opt = factory(lr=lr_schedule, **merged)
-            return opt, opt.init(trainable_params)
-        opt = build_optimizer(a, lr_schedule, extra_kwargs=extra)
-        return opt, opt.init(trainable_params)
+            return factory(trainable_params, lr=lr_schedule, **merged)
+        return build_optimizer(trainable_params, a, lr_schedule, extra_kwargs=extra)
 
     def create_scheduler(self, num_training_steps: int) -> Callable[[int], float]:
         """Build the LR schedule for the run.
@@ -3816,8 +3814,8 @@ class DPTrainer:
             self._tr_loss -= self._tr_loss  # zero in place
             self._globalstep_last_logged = global_step
             # HF parity: log the LR that was just applied to the optimizer
-            # update we performed for ``global_step``.  Inside torchopt the
-            # schedule's step counter is incremented on every ``update`` so
+            # update we performed for ``global_step``. Inside the optimizer
+            # the schedule's step counter is incremented on every step so
             # the LR consumed by the update at iteration N was
             # ``schedule(N - 1)``; ``global_step`` has already been bumped
             # to N by the time we log here.

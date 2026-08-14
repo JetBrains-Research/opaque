@@ -100,7 +100,6 @@ import time
 
 import torch
 import torch.distributed as dist
-import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
@@ -132,6 +131,7 @@ from opaque.profiling import (
 from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.distributed import local_shard
+from opaque.optimizers import apply_updates
 from opaque.torch.functional import make_functional
 from opaque.scheduling import (
     cosine_schedule,
@@ -633,9 +633,7 @@ def parse_args():
             "adagrad",
         ],
         help=(
-            "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
-            "primitives (no DP-aware paths); the others are Opaque-built "
-            "(see opaque.optimizers).  Pair with "
+            "Backend-neutral Opaque optimizer. Pair with "
             "``--noise-bias-correction`` to enable DP-aware bias "
             "correction where applicable."
         ),
@@ -1166,8 +1164,7 @@ def _run_smoke(args):
         noise_fn, noise_state = gaussian_noise(
             noise_multiplier=args.noise_multiplier or 1.0, key=key(args.seed)
         )
-        base_opt = adamw(lr=args.learning_rate)
-        opt_state = base_opt.init(trainable)
+        opt_step, opt_state = adamw(trainable, lr=args.learning_rate)
 
         # Two DP-SGD steps over Poisson-sampled batches.  Draw extra steps so
         # an empty Poisson draw (possible with this tiny dataset) still leaves
@@ -1189,10 +1186,10 @@ def _run_smoke(args):
             batch = collate_to_device(rows)
             (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
             noisy_grads, noise_state = noise_fn(grads, noise_state)
-            updates, opt_state = base_opt.update(
+            updates, opt_state = opt_step(
                 noisy_grads, opt_state, params=trainable
             )
-            trainable = torchopt.apply_updates(trainable, updates)
+            trainable = apply_updates(trainable, updates)
             step += 1
             print(
                 f"  step {step}/2 | bs={batch[0].shape[0]} | "
@@ -1904,8 +1901,8 @@ def main():
 
     # Build LR schedule using opaque.scheduling primitives.  Each curve
     # returns a ``Callable[[int], float]`` and ``with_warmup`` composes a
-    # 0→1 linear ramp during the warmup window; torchopt's
-    # ``scale_by_neg_lr`` accepts either a callable or a scalar.  We
+    # 0→1 linear ramp during the warmup window; optimizer factories accept
+    # either a callable or a scalar. We
     # share ``total_steps`` with the privacy calibration above so the
     # schedule and accounting agree on the run length.  ``--max-steps``
     # (when set) only truncates training — the schedule is laid out over
@@ -1966,7 +1963,8 @@ def main():
     if args.optimizer == "adam":
         from opaque.optimizers import adam
 
-        base_opt = adam(
+        opt_step, opt_state = adam(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1974,11 +1972,14 @@ def main():
     elif args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+        opt_step, opt_state = sgd(
+            trainable_params, lr=lr_for_opt, weight_decay=args.weight_decay
+        )
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
-        base_opt = adamw(
+        opt_step, opt_state = adamw(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1986,7 +1987,8 @@ def main():
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
 
-        base_opt = ademamix(
+        opt_step, opt_state = ademamix(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1994,14 +1996,16 @@ def main():
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
 
-        base_opt = lion(
+        opt_step, opt_state = lion(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
         )
     elif args.optimizer == "adafactor":
         from opaque.optimizers import adafactor
 
-        base_opt = adafactor(
+        opt_step, opt_state = adafactor(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -2009,7 +2013,8 @@ def main():
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop
 
-        base_opt = rmsprop(
+        opt_step, opt_state = rmsprop(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -2017,7 +2022,8 @@ def main():
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
 
-        base_opt = adagrad(
+        opt_step, opt_state = adagrad(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -2025,7 +2031,6 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
 
     # Noise functions consume ClippedPytree metadata directly and return
@@ -2129,10 +2134,10 @@ def main():
                     noise_state = sync(noise_state)
                 sp.mark("noise")
 
-                updates, opt_state = base_opt.update(
+                updates, opt_state = opt_step(
                     noisy_grads, opt_state, params=trainable_params
                 )
-                trainable_params = torchopt.apply_updates(trainable_params, updates)
+                trainable_params = apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
 
             # Empty batch (rare but possible with Poisson): skip metrics.

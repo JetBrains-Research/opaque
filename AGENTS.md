@@ -28,7 +28,7 @@ ships an `__init__.py`.
 | `opaque` | — | umbrella pin for the default bundle | sub-wheels |
 | `opaque-base` | `opaque.api.base.serialization`; façade `opaque.serialization` | Pure-Python serialization registry + dispatcher (the seam for `state_dict` / `from_state_dict`); no torch / numpy / optree | stdlib only |
 | `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling,precision}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling`, `opaque.precision` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, mixed-precision loss scaling, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
-| `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) | `opaque-engine`, torchopt |
+| `opaque-optimizers` | `opaque.api.engine.optimizers`; façade `opaque.optimizers` | Backend-neutral functional optimizers (DP-aware AdamW-BC and friends) | `opaque-engine` |
 | `opaque-accounting` | `opaque.api.accounting.core` (+ Rust ext); façade `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.api.accounting.core.opaque_accounting`, aliased as `_native`); torch-free | `opaque-base` |
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-dpftrl` | `opaque.api.dpftrl.*`, `opaque.api.accounting.dpftrl.*`; façade `opaque.dpftrl` | MF mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers, DP-FTRL-specific accounting factories | `opaque-engine`, `opaque-accounting` |
@@ -140,7 +140,7 @@ downloadable workflow artifacts on the run page (14-day retention).
 
 ```bash
 uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
-uv sync --group examples --all-packages --extra all  # examples/: torchopt, datasets, wandb + all package extras
+uv sync --group examples --all-packages --extra all  # examples/: datasets, wandb + all package extras
 uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
 uv run pytest -m "slow"                           # slow tests (run on push to main)
 uv run ruff check packages/                      # lint
@@ -168,7 +168,7 @@ uv run pytest tests/contracts/                   # repo-level structural-invaria
 ```bash
 pip install opaque-base                  # serialization registry only (stdlib-only, torch-free)
 pip install opaque-engine                # torch substrate (types, pytree, clipping, distributed, ...)
-pip install opaque-optimizers            # torchopt-based functional optimizers
+pip install opaque-optimizers            # backend-neutral functional optimizers
 pip install opaque-accounting            # PLD accounting (torch-free standalone)
 pip install opaque-dpsgd                 # DP-SGD mechanisms
 pip install opaque-dpsgd[optimizers]     # DP-SGD + opaque-optimizers
@@ -184,7 +184,7 @@ pip install "opaque[all]"                # everything
 The root `pyproject.toml` keeps three dev-facing dependency groups:
 
 - `dev` — pytest, pytest-cov, ruff, scipy (statistical tests).
-- `examples` — torchopt, datasets, wandb, and everything `examples/` scripts need.
+- `examples` — datasets, wandb, and everything `examples/` scripts need.
 - `docs` — mkdocs stack.
 
 Everything else lives in the relevant package's
@@ -193,7 +193,7 @@ Everything else lives in the relevant package's
 | Extra | Pulls in |
 | --- | --- |
 | `opaque-patches[transformers]` | `transformers`, `peft` |
-| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (torchopt-based functional optimizers) |
+| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (backend-neutral functional optimizers) |
 | `opaque-dpftrl[optimizers]` | `opaque-optimizers` |
 | `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
 | `opaque[all]` | everything |
