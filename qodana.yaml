@@ -23,8 +23,8 @@ raiseLicenseProblems: true
 
 coverage:
   reportProblems: true
-codeCoverageLocations:
-  - .qodana/code-coverage
+  codeCoverageLocations:
+    - .qodana/code-coverage
 
 failureConditions:
   severityThresholds:
