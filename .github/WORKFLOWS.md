@@ -101,8 +101,11 @@ Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
 Normal Junie sessions read the current branch's `.junie/guidelines.md`;
 automated reviews use trusted base-branch copies of `.junie/guidelines.md`,
-`AGENTS.md`, and `docs/development/architecture-contracts.md` so a pull request
-cannot weaken its own review instructions.
+`AGENTS.md`, `docs/development/architecture-contracts.md`, and
+`docs/development/differential-privacy-review.md` so a pull request cannot weaken
+its own review instructions. Privacy-sensitive reviews trace the guarantee end
+to end and use Junie's read-only web search and URL fetching to verify primary
+literature before reporting theorem-dependent findings.
 
 The automated review and interactive workflows use the same SHA-pinned upstream
 Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
