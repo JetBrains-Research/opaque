@@ -60,7 +60,7 @@ jobs:
 
       - name: Locate SARIF report
         id: sarif
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           report="${RUNNER_TEMP}/qodana/results/qodana.sarif.json"
           if [[ -f "$report" ]]; then
@@ -68,7 +68,7 @@ jobs:
           fi
 
       - name: Upload SARIF to GitHub code scanning
-        if: always() && steps.sarif.outputs.available == 'true'
+        if: ${{ !cancelled() && steps.sarif.outputs.available == 'true' }}
         uses: github/codeql-action/upload-sarif@d6317709a54fd87078d323eeb0e48ec331c8e621 # v3
         with:
           sarif_file: ${{ runner.temp }}/qodana/results/qodana.sarif.json
