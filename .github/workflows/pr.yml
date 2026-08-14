@@ -141,7 +141,7 @@ jobs:
       contents: read
       pull-requests: write
       security-events: write
-    uses: ./.github/workflows/qodana_code_quality.yml
+    uses: ./.github/workflows/reusable-qodana.yml
     with:
       checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
       coverage-artifact-pattern: qodana-coverage-*

@@ -70,7 +70,7 @@ jobs:
       checks: write
       contents: read
       security-events: write
-    uses: ./.github/workflows/qodana_code_quality.yml
+    uses: ./.github/workflows/reusable-qodana.yml
     with:
       coverage-artifact-pattern: qodana-coverage-*
       pr-mode: false
