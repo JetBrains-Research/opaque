@@ -13,7 +13,7 @@ private reusable components described below.
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
-| `junie-review.yml` | Pull requests to `main` | Runs Junie code review using the repository architecture contracts and posts review feedback. |
+| `junie-review.yml` | Pull requests to `main` | Runs Junie as a repository reviewer using trusted base-branch guidance and posts review feedback. |
 | `junie.yml` | Trusted `@junie-agent` or `/junie` commands in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
@@ -95,19 +95,14 @@ self-hosted GPU runner and never receive repository, package, or cloud
 credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
-`Format Rust`, `Conventional Commits PR title`, `Python tests`, and `Rust
-tests`. Once this workflow change is on `main` and its first review has run,
-replace the retired `Cross-package import smoke test` ruleset requirement with
-`Junie architecture review`. The workflow uses the `JUNIE_API_KEY` Actions
-secret. Fork and Dependabot pull requests cannot receive the secret-backed Junie
-review; the job records that limitation and completes without invoking Junie.
-Normal Junie sessions read the current branch's
-`.junie/guidelines.md`; automated reviews use the base branch's trusted policy
-so a pull request cannot weaken its own review instructions.
-
-The policy-introduction pull request bootstraps review from the immutable commit
-that added the policy. Once the policy is on `main`, reviews always load it from
-the pull request's base commit.
+`Format Rust`, `Conventional Commits PR title`, `Python tests`, `Rust tests`,
+and `Junie review`. The review workflow uses the `JUNIE_API_KEY` Actions secret.
+Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
+the job records that limitation and completes without invoking Junie.
+Normal Junie sessions read the current branch's `.junie/guidelines.md`;
+automated reviews use trusted base-branch copies of `.junie/guidelines.md`,
+`AGENTS.md`, and `docs/development/architecture-contracts.md` so a pull request
+cannot weaken its own review instructions.
 
 The automated review and interactive workflows use the same SHA-pinned upstream
 Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
@@ -122,5 +117,4 @@ are attributed to `github-actions[bot]`. GitHub does not start new `push` or
 `pull_request` workflow runs for changes made with that token. After Junie
 changes a branch, a maintainer must trigger CI for the new head, for example by
 closing and reopening the pull request or by pushing a maintainer-authored
-commit. The automated architecture review remains unchanged and uses the same
-identity.
+commit. The automated repository review uses the same identity.
