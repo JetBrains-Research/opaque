@@ -129,7 +129,7 @@ private fun nativeWheel(target: NativeTarget) = BuildType {
     artifactRules = "dist/*.whl => distributions"
     requirements {
         equals("teamcity.agent.jvm.os.name", target.osName)
-        equals("teamcity.agent.os.arch", target.arch)
+        equals("teamcity.agent.jvm.os.arch", target.arch)
     }
     steps {
         script {
