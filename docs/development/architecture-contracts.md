@@ -22,6 +22,21 @@ Deterministic checks must operate on artifacts, declared metadata, or concrete
 behavior. They must not rely on hand-maintained maps from distributions to
 Python modules.
 
+## Agent entry points
+
+All supported development agents use this document as the architecture source
+of truth:
+
+| Agent | Repository entry point |
+| --- | --- |
+| Junie | `.junie/guidelines.md` |
+| Claude Code | `CLAUDE.md` |
+| Gemini CLI | `GEMINI.md` |
+| Copilot and other AGENTS-compatible agents | `AGENTS.md` |
+
+Agent-specific files contain only loading and workflow instructions; they do not
+duplicate the contracts.
+
 Contracts marked **active** apply to current changes. Contracts marked
 **planned** are accepted designs whose supporting metadata or post-build
 infrastructure has not landed yet. Junie must not report the absence of planned
