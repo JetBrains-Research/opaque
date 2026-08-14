@@ -302,3 +302,47 @@ realised as same-allocation-with-naive-score instead.
 That claim is supported, the ablation is two lines of config, and the privacy argument
 is a one-line appeal to post-processing. The α-order question is a secondary analysis
 we should report honestly, including the parts that came out flat.
+
+---
+
+## 9. RESOLUTION of §5 (both experiments landed)
+
+### 9.1 ε=3 baseline filled — main claim holds at both ε
+
+`cmp-basexs-eps3-s{42,43,44}` finished: 0.35203 / 0.35184 / 0.35201 (mean 0.35196,
+sd 1.0e-4). Paired against `cmp-xse-eps3`:
+
+**XSe − LoRA-XS = −6.69e-3** (per-seed −6.39, −6.69, −6.98 e-3; all same sign).
+
+Together with ε=1 (−8.72e-3), the advantage **grows as ε shrinks** — the predicted
+√d-noise mechanism, and a clean monotonicity to report.
+
+### 9.2 α at matched depth — REFUTED
+
+Replicating the two extremes at depth 14.00 at seed 43:
+
+| seed | α=∞ | α=2 | gap |
+|---|---|---|---|
+| 42 | 0.34362 | 0.34419 | +5.7e-4 |
+| 43 | 0.34353 | 0.34348 | −5e-5 |
+
+Gap **flips sign and collapses 11×**. α=2 moved 7.1e-4 between seeds — its seed-42
+value was a high draw. **α does not affect utility at matched depth.**
+
+### 9.3 The floor that settles it: adaptive runs are ~20× noisier
+
+Same-config seed sd: non-adaptive fixed-`p_e` **2.3e-5** vs **adaptive depth 5.0e-4**.
+Against 5.0e-4 the plateau spread (5.6e-4) and the α spread (5.7e-4) are both ~1.1× —
+noise. The shallow-depth penalty (3.56e-3, 7.1×) remains real.
+
+So §11's *conclusion* (flat plateau) was right and §12's reopening was wrong — but §11's
+*derivation* was still invalid. Correct floor, correct reasoning, same answer. The
+alternative hypothesis flagged in §5 ("adaptive runs may just be noisier") was correct.
+
+### 9.4 New negative worth reporting
+
+At matched depth 13, **fixed** `r_e=13` = 0.34354 vs **adaptive** α=∞ = 0.34344 → 1.0e-4
+= 0.2× floor. **No evidence adaptive depth improves the mean, and it raises variance
+~20×.** The paper's contribution is the *rotation*; adaptive depth and α are negatives.
+
+See `docs/HANDOFF.md` for the full resume guide.
