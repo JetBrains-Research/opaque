@@ -14,7 +14,7 @@ private reusable components described below.
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
 | `junie-review.yml` | Pull requests to `main` | Runs Junie code review using the repository architecture contracts and posts review feedback. |
-| `junie.yml` | Trusted `@junie-agent` mentions in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
+| `junie.yml` | Trusted `@junie-agent` or `/junie` commands in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
 ## Reusable components
