@@ -69,7 +69,7 @@ examples/                # Example scripts and notebooks
 `packages/opaque-<name>/src/opaque/api/` and add tests under the matching
 `packages/opaque-<name>/tests/`. Public façades under `src/opaque/` contain
 only re-exports; user-facing examples should import through those façades. See
-the [architecture contracts](docs/development/architecture-contracts.md) for
+the [architecture contracts](.junie/architecture-contracts.md) for
 the normative package/API rules and how each one is enforced.
 
 **For accounting changes**: Python façade and wrapper code lives under
