@@ -45,6 +45,7 @@ private fun distributionBuild(
 ) = buildType.apply {
     id(buildId)
     name = buildName
+    buildNumberPattern = "%opaque.version%"
     templates(DistributionBuildTemplate)
     params {
         param("opaque.version", "%dep.Opaque_PrepareVersion.opaque.version%")
@@ -151,6 +152,7 @@ private val distributionBuilders = listOf(DistributionBuilder("pure-python", Pyt
 object ValidateDistributions : BuildType({
     id("Opaque_ValidateDistributions")
     name = "Validate exact distribution bundle"
+    buildNumberPattern = "%opaque.version%"
     configurePythonTooling()
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/** => ${CiModel.Artifacts.VALIDATED_BUNDLE}"
     useAgent(CiModel.AgentClass.LINUX_SMALL)
