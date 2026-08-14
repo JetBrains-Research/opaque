@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 import optree
 
 import mlx.core as mx
-import mlx.utils as mx_utils
 from opaque.api.engine import autodiff, ops, pytree
 from opaque.api.engine.backend import KnownBackend
 from opaque.api.engine.primitive import BackendProvider
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
 
 
 _MLX = BackendProvider(KnownBackend.MLX)
+_PYTREE_NAMESPACE = "opaque.mlx"
 
 
 class MlxBackend:
@@ -313,20 +313,22 @@ def promote_dtype(left: Any, right: Any) -> Any:
 
 @_MLX.implements(pytree.tree_map)
 def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
-    return mx_utils.tree_map(fn, *trees)
+    return optree.tree_map(fn, *trees, namespace=_PYTREE_NAMESPACE)
 
 
 @_MLX.implements(pytree.tree_flatten)
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
     # MLX's dotted flattening loses the distinction between a flat dotted key
     # and nested dictionaries, while optree preserves the structural treedef.
-    leaves, treedef = optree.tree_flatten(tree)
+    leaves, treedef = optree.tree_flatten(tree, namespace=_PYTREE_NAMESPACE)
     return list(leaves), treedef
 
 
 @_MLX.implements(pytree.tree_flatten_with_paths)
 def tree_flatten_with_paths(tree: Any) -> tuple[list[Any], list[Any], Any]:
-    paths, leaves, treedef = optree.tree_flatten_with_path(tree)
+    paths, leaves, treedef = optree.tree_flatten_with_path(
+        tree, namespace=_PYTREE_NAMESPACE
+    )
     return [param_path(path) for path in paths], list(leaves), treedef
 
 
@@ -337,12 +339,39 @@ def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
 
 @_MLX.implements(pytree.tree_leaves)
 def tree_leaves(tree: Any) -> list[Any]:
-    return [leaf for _, leaf in mx_utils.tree_flatten(tree) if is_array(leaf)]
+    leaves, _ = optree.tree_flatten(tree, namespace=_PYTREE_NAMESPACE)
+    return [leaf for leaf in leaves if is_array(leaf)]
 
 
 @_MLX.implements(pytree.tree_structure)
 def tree_structure(tree: Any) -> Any:
-    return optree.tree_structure(tree)
+    return optree.tree_structure(tree, namespace=_PYTREE_NAMESPACE)
+
+
+@_MLX.implements(pytree._squared_l2_norms)
+def squared_l2_norms(
+    leaves: list[Any],
+    groups: list[str] | None,
+    *,
+    dtype: Any,
+) -> tuple[Any, dict[str, Any]]:
+    terms = [
+        mx.sum(mx.square(mx.abs(leaf).astype(dtype)))
+        if is_complex(leaf)
+        else mx.sum(mx.square(leaf.astype(dtype)))
+        for leaf in leaves
+    ]
+    total = mx.sum(mx.stack(terms).astype(dtype))
+    grouped: dict[str, Any] = {}
+    if groups is not None:
+        grouped_terms: dict[str, list[Any]] = {}
+        for group, term in zip(groups, terms, strict=True):
+            grouped_terms.setdefault(group, []).append(term)
+        grouped = {
+            group: mx.sum(mx.stack(values).astype(dtype))
+            for group, values in grouped_terms.items()
+        }
+    return total, grouped
 
 
 @_MLX.implements(random_engine.normal)

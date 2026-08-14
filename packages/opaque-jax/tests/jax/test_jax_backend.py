@@ -25,6 +25,19 @@ jnp = pytest.importorskip("jax.numpy")
 _SEED_BOUNDARIES = (0, 1, 2**63 - 1, 2**63, 2**64 - 2, 2**64 - 1)
 
 
+class _Pair:
+    def __init__(self, left: Any, right: Any) -> None:
+        self.left = left
+        self.right = right
+
+
+jax.tree_util.register_pytree_node(
+    _Pair,
+    lambda pair: ((pair.left, pair.right), None),
+    lambda _, children: _Pair(*children),
+)
+
+
 @pytest.fixture(autouse=True)
 def _reset_backend() -> None:
     clear_backend()
@@ -173,6 +186,23 @@ def test_pytree_paths_support_flat_and_nested_per_group_clipping() -> None:
     assert aux.group_norms is not None
     assert _values(clipped["layers.0.weight"]) == pytest.approx([0.6, 0.8])
     assert _values(clipped["blocks"][0]["bias"]) == pytest.approx([2.0])
+
+
+def test_jax_registered_node_extension_round_trip() -> None:
+    backend = jax_backend()
+    tree = _Pair(jnp.array([1.0]), jnp.array([2.0]))
+
+    with use_backend(backend):
+        leaves, treedef = pytree.tree_flatten(tree)
+        mapped = pytree.tree_map(lambda value: value + 1, tree)
+        rebuilt = pytree.tree_unflatten(treedef, leaves)
+        array_leaves = pytree.tree_leaves(tree)
+
+    assert len(leaves) == 2
+    assert len(array_leaves) == 2
+    assert isinstance(rebuilt, _Pair)
+    assert _values(mapped.left) == [2.0]
+    assert _values(mapped.right) == [3.0]
 
 
 def test_empty_tree_and_nonfinite_sanitization() -> None:

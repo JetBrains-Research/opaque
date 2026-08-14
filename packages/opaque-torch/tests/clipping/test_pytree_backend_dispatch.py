@@ -1,10 +1,10 @@
 """Seam tests: clip pytree/array math dispatches through ``active_backend()``.
 
 ``global_norm`` / ``clip_pytree`` / ``auto_scale_pytree`` (and their
-per-group helpers) through the backend abstraction for their pytree ops and
-elementwise / reduction / dtype math. A recording provider proves the clip math
-is dispatched through the seam and
-that the numeric results stay identical to the default (direct) path.
+per-group helpers) through the backend abstraction for their pytree ops,
+composite reductions, and elementwise math. A recording provider proves the
+clip math is dispatched through the seam and that numeric results stay
+identical to the default path.
 """
 
 from __future__ import annotations
@@ -54,8 +54,11 @@ def test_global_norm_dispatches_reduction_math_through_seam():
         norm = global_norm(tree)
 
     assert norm.item() == pytest.approx(5.0)
-    for prim in ("tree_leaves", "square", "sum", "sqrt"):
+    for prim in ("tree_leaves", "_squared_l2_norms", "sqrt"):
         assert prim in recording.calls
+    assert recording.calls.count("_squared_l2_norms") == 1
+    assert "square" not in recording.calls
+    assert "sum" not in recording.calls
 
 
 @pytest.mark.parametrize(
@@ -97,9 +100,10 @@ def test_clip_pytree_dispatches_clip_math_through_seam():
         "astype",
     ):
         assert prim in recording.calls, prim
-    # global_norm's reduction ran through the same backend.
-    for prim in ("tree_leaves", "square", "sum", "sqrt"):
+    # global_norm's composite reduction ran through the same backend.
+    for prim in ("tree_leaves", "_squared_l2_norms", "sqrt"):
         assert prim in recording.calls, prim
+    assert recording.calls.count("_squared_l2_norms") == 1
 
 
 def test_auto_scale_pytree_dispatches_clip_math_through_seam():
@@ -134,8 +138,7 @@ def test_clip_pytree_per_group_dispatches_through_seam():
         "tree_flatten_with_paths",
         "is_floating",
         "astype",
-        "square",
-        "sum",
+        "_squared_l2_norms",
         "sqrt",
         "scalar",
         "clamp",
@@ -145,6 +148,7 @@ def test_clip_pytree_per_group_dispatches_through_seam():
         "tree_unflatten",
     ):
         assert prim in recording.calls, prim
+    assert recording.calls.count("_squared_l2_norms") == 1
 
 
 def test_clip_pytree_per_group_dispatches_low_precision_dtype_vocabulary():
@@ -181,8 +185,7 @@ def test_auto_scale_pytree_per_group_dispatches_through_seam():
     for prim in (
         "tree_flatten_with_paths",
         "astype",
-        "square",
-        "sum",
+        "_squared_l2_norms",
         "sqrt",
         "scalar",
         "clamp",
@@ -191,6 +194,7 @@ def test_auto_scale_pytree_per_group_dispatches_through_seam():
         "tree_unflatten",
     ):
         assert prim in recording.calls, prim
+    assert recording.calls.count("_squared_l2_norms") == 1
 
 
 def test_recording_backend_matches_default_numerics_global():

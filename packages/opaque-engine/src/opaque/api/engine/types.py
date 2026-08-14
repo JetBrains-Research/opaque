@@ -44,15 +44,10 @@ if TYPE_CHECKING:
 # ===========================================================================
 
 
-# A pytree whose leaves are ``torch.Tensor``.  Restricted to the
-# concrete container types the rest of the library actually rebuilds
-# and serialises (``dict``, ``list``, ``tuple``); custom ``Mapping`` /
-# ``Sequence`` subclasses are intentionally excluded.
-#
-# Real ``|`` union (not a string) so ``typing.get_type_hints()`` and
-# ``typing.get_args()`` see the alias correctly.  Recursion is encoded
-# with forward references; static checkers expand the alias to ``Any``,
-# which is fine — the alias is documentation-grade typing.
+# A backend-neutral pytree used for native-array payloads. The portable
+# structural contract covers ``dict``, ``list``, and ``tuple`` containers;
+# providers may additionally traverse nodes from their native registries.
+# ``Any`` intentionally leaves native array and provider extension types open.
 TensorPytree = Any
 
 

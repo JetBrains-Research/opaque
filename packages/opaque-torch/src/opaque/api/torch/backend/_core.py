@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from opaque.api.engine.random._engine import RngKey
 
 _TORCH = BackendProvider(KnownBackend.TORCH)
+_PYTREE_NAMESPACE = "opaque.torch"
 
 
 class TorchBackend:
@@ -289,12 +290,12 @@ def vmap(fn: Any, in_axes: Any = 0, out_axes: Any = 0) -> Any:
 
 @_TORCH.implements(pytree.tree_map)
 def tree_map(fn: Any, *trees: Any) -> Any:
-    return optree.tree_map(fn, *trees)
+    return optree.tree_map(fn, *trees, namespace=_PYTREE_NAMESPACE)
 
 
 @_TORCH.implements(pytree.tree_flatten)
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
-    leaves, treedef = optree.tree_flatten(tree)
+    leaves, treedef = optree.tree_flatten(tree, namespace=_PYTREE_NAMESPACE)
     return list(leaves), treedef
 
 
@@ -302,7 +303,9 @@ def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
 def tree_flatten_with_paths(tree: Any) -> tuple[list[Any], list[Any], Any]:
     from opaque.api.engine.pytree import param_path
 
-    paths, leaves, treedef = optree.tree_flatten_with_path(tree)
+    paths, leaves, treedef = optree.tree_flatten_with_path(
+        tree, namespace=_PYTREE_NAMESPACE
+    )
     return [param_path(path) for path in paths], list(leaves), treedef
 
 
@@ -313,13 +316,39 @@ def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
 
 @_TORCH.implements(pytree.tree_leaves)
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
-    leaves, _ = optree.tree_flatten(tree)
+    leaves, _ = optree.tree_flatten(tree, namespace=_PYTREE_NAMESPACE)
     return [leaf for leaf in leaves if is_array(leaf)]
 
 
 @_TORCH.implements(pytree.tree_structure)
 def tree_structure(tree: Any) -> Any:
-    return optree.tree_structure(tree)
+    return optree.tree_structure(tree, namespace=_PYTREE_NAMESPACE)
+
+
+@_TORCH.implements(pytree._squared_l2_norms)
+def squared_l2_norms(
+    leaves: list[torch.Tensor],
+    groups: list[str] | None,
+    *,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    terms = [
+        torch.sum(torch.square(torch.abs(leaf).to(dtype)), dtype=dtype)
+        if torch.is_complex(leaf)
+        else torch.sum(torch.square(leaf.to(dtype)), dtype=dtype)
+        for leaf in leaves
+    ]
+    total = torch.stack(terms).sum(dtype=dtype)
+    grouped: dict[str, torch.Tensor] = {}
+    if groups is not None:
+        grouped_terms: dict[str, list[torch.Tensor]] = {}
+        for group, term in zip(groups, terms, strict=True):
+            grouped_terms.setdefault(group, []).append(term)
+        grouped = {
+            group: torch.stack(values).sum(dtype=dtype)
+            for group, values in grouped_terms.items()
+        }
+    return total, grouped
 
 
 @_TORCH.implements(random_engine.normal)

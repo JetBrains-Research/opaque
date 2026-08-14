@@ -1,25 +1,22 @@
-"""PyTree utilities for working with nested parameter structures.
+"""Portable PyTree structure and backend-dispatched array operations.
 
-This module provides utilities for working with PyTrees, i.e. nested Python
-containers (dicts, lists, tuples, …) whose leaves are tensors. We implement a
-thin wrapper on top of `optree` to provide a stable, fast pytree API that does
-not depend on PyTorch's private modules.
+The portable structural core consists of ``dict``, ``list``, and ``tuple``
+containers. Every value not traversed by those containers is a *structural
+leaf*, including native arrays, numbers, strings, and ``None``. Providers may
+add nodes from their native registry, but those extensions are provider-owned
+and are not portable to another backend.
 
-Key functions:
-- `tree_leaves(tree)`: return the list of tensor leaves in a PyTree.
-- `tree_map(fn, *trees)`: apply a function to corresponding leaves of one or
-  more PyTrees and rebuild the structure.
-- `global_norm(tree)`: compute the global L2 norm across all tensor leaves:
-  sqrt(sum(||leaf||^2)).
+``tree_flatten``, ``tree_flatten_with_paths``, ``tree_map``, and
+``tree_structure`` operate on all structural leaves. ``tree_leaves`` and
+``global_norm`` deliberately select only native-array leaves. Portable
+dictionaries have deterministic provider traversal order; callers should use
+the returned paths rather than relying on insertion order.
 
-Notes
-- Only tensor leaves are considered for `tree_leaves` and `global_norm`.
-- `tree_map` applies `fn` to all leaves, passing through non-tensor leaves
-  unchanged unless `fn` handles them explicitly.
-- Supports mixed dtypes and complex numbers, returning complex norm for complex tensors.
-- Handles empty trees gracefully, returning 0.0 for empty PyTrees.
-- Supports PyTree parameters with nested dictionaries of tensors.
-- Handles microbatching for memory efficiency in gradient clipping.
+Treedefs are opaque provider values. They may only be compared with structures
+and passed to ``tree_unflatten`` while the provider that created them is active;
+they are not a cross-provider serialization format. For multi-tree mapping,
+all trees must have the same provider-defined structure; provider-native
+mismatch errors are propagated.
 """
 
 from collections.abc import Callable
@@ -29,14 +26,13 @@ from opaque.api.engine import ops
 from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 ParamPath = tuple[str | int, ...]
-"""Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
+"""Portable leaf path: dict keys (``str``) and sequence indices (``int``).
 
 Flat ``named_parameters`` dicts use a one-segment path, e.g.
 ``("layers.0.weight",)``.  Nested trees use multi-segment paths, e.g.
-``("layers", 0, "weight")``.  The two never collide.
+``("layers", 0, "weight")``. The two never collide.
 
-A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
-matching :func:`optree.tree_flatten_with_path`.
+A bare structural leaf uses the empty path ``()``.
 """
 
 
@@ -68,16 +64,18 @@ def param_path_display(path: ParamPath) -> str:
 def tree_flatten_with_paths(
     tree: Any,
 ) -> tuple[list[ParamPath], list[Any], Any]:
-    """Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.
+    """Flatten all structural leaves to ``(paths, leaves, treedef)``.
 
-    Providers normalize their native path representation to :data:`ParamPath`.
+    Providers normalize native paths to :data:`ParamPath`. A root leaf has
+    path ``()``; a flat dotted dict key remains one component and is distinct
+    from a nested path. The returned treedef belongs to the active provider.
     """
     raise NotImplementedError
 
 
 @primitive(tier=PrimitiveTier.CORE)
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
-    """Flatten ``tree`` to ``(leaves, treedef)``.
+    """Flatten all structural leaves to ``(leaves, treedef)``.
 
     Prefer :func:`tree_flatten_with_paths` when callers need leaf identities.
     """
@@ -88,14 +86,15 @@ def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
 def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
     """Rebuild a PyTree from ``treedef`` and ``leaves``.
 
-    Dispatches to the provider that created ``treedef``.
+    The provider that created ``treedef`` must be active. The number of leaves
+    must match the treedef; provider-native mismatch errors are propagated.
     """
     raise NotImplementedError
 
 
 @primitive(tier=PrimitiveTier.CORE)
 def tree_structure(tree: Any) -> Any:
-    """Return the optree structure of ``tree`` (no leaves).
+    """Return the active provider's opaque structure for ``tree``.
 
     Useful for asserting that independently gathered payloads share a layout
     before unflattening.
@@ -108,7 +107,7 @@ def tree_leaves(tree: Any) -> list[Any]:
     """Extract all native-array leaves from a PyTree.
 
     Args:
-        tree: Nested structure (dict/list/tuple/…) containing native arrays as leaves.
+        tree: A portable tree, optionally including provider-native nodes.
 
     Returns:
         List of all native-array leaves in the tree (non-array leaves are ignored).
@@ -123,14 +122,18 @@ def tree_leaves(tree: Any) -> list[Any]:
 
 @primitive(tier=PrimitiveTier.CORE)
 def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
-    """Apply function to all leaves of one or more PyTrees.
+    """Apply ``fn`` to every structural leaf of one or more PyTrees.
 
     Args:
         fn: Function to apply to each leaf (or set of leaves from multiple trees).
-        *trees: One or more PyTrees with matching structure.
+        *trees: One or more PyTrees with matching provider-defined structure.
 
     Returns:
-        PyTree with same structure as inputs, with `fn` applied to leaves.
+        PyTree with the same structure, with ``fn`` applied to all leaves.
+
+    Raises:
+        Exception: A provider-native structural error if multiple trees do not
+            have matching structures.
 
     Example:
         After selecting a provider, construct a tree of native arrays and
@@ -138,6 +141,43 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
         same structure with every native-array leaf doubled.
     """
     raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def _squared_l2_norms(
+    leaves: list[Any],
+    groups: list[str] | None,
+    *,
+    dtype: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Accumulate total and optional grouped squared L2 norms natively."""
+    raise NotImplementedError
+
+
+def _resolve_reduction_dtype(
+    leaves: list[Any],
+    compute_dtype: Any | None,
+) -> Any:
+    """Resolve a real accumulation dtype for squared L2 reductions."""
+    if compute_dtype is not None:
+        if not ops.is_floating(compute_dtype) or ops.is_complex(compute_dtype):
+            raise TypeError(
+                f"compute_dtype must be a real floating-point dtype, got "
+                f"{compute_dtype!r}. Integer/bool/complex compute dtypes can "
+                f"silently corrupt the L2-norm reduction."
+            )
+        return compute_dtype
+
+    acc_dtype = ops.float32()
+    for leaf in leaves:
+        leaf_dtype = ops.dtype(leaf)
+        if ops.is_complex(leaf_dtype):
+            leaf_dtype = ops.real_dtype(leaf_dtype)
+        elif not ops.is_floating(leaf_dtype):
+            continue
+        if not ops.is_low_precision(leaf_dtype):
+            acc_dtype = ops.promote_dtype(acc_dtype, leaf_dtype)
+    return acc_dtype
 
 
 def tree_map_with_path(
@@ -352,43 +392,12 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
-    if compute_dtype is not None and (
-        not ops.is_floating(compute_dtype) or ops.is_complex(compute_dtype)
-    ):
-        raise TypeError(
-            f"compute_dtype must be a real floating-point dtype, got "
-            f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
-            f"silently corrupt the L2-norm reduction (the squared sum is "
-            f"non-negative real and the final sqrt assumes a real "
-            f"accumulator)."
-        )
-
     leaves = tree_leaves(tree)
+    real_acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
     if not leaves:
-        return ops.scalar(0.0, dtype=compute_dtype or ops.float32())
+        return ops.scalar(0.0, dtype=real_acc_dtype)
 
-    if compute_dtype is not None:
-        real_acc_dtype = compute_dtype
-    else:
-        # Auto-promote: at least float32, but match user's intent if they
-        # supplied higher-precision inputs.
-        real_acc_dtype = ops.float32()
-        for leaf in leaves:
-            leaf_dtype = ops.dtype(leaf)
-            if ops.is_complex(leaf_dtype):
-                leaf_dtype = ops.real_dtype(leaf_dtype)
-            elif not ops.is_floating(leaf_dtype):
-                continue
-            if not ops.is_low_precision(leaf_dtype):
-                real_acc_dtype = ops.promote_dtype(real_acc_dtype, leaf_dtype)
-
-    total = ops.scalar(0.0, dtype=real_acc_dtype, like=leaves[0])
-
-    for leaf in leaves:
-        magnitude = ops.abs(leaf) if ops.is_complex(leaf) else leaf
-        x = ops.astype(magnitude, real_acc_dtype)
-        total = ops.add(total, ops.sum(ops.square(x), dtype=real_acc_dtype))
-
+    total, _ = _squared_l2_norms(leaves, None, dtype=real_acc_dtype)
     return ops.sqrt(total)
 
 

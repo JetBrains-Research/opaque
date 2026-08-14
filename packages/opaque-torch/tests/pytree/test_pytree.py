@@ -1,10 +1,25 @@
 import math
 from typing import Any
 
+import optree
 import pytest
 import torch
 
 from opaque import pytree as pu
+
+
+class _Pair:
+    def __init__(self, left: Any, right: Any) -> None:
+        self.left = left
+        self.right = right
+
+
+optree.register_pytree_node(
+    _Pair,
+    lambda pair: ((pair.left, pair.right), None),
+    lambda _, children: _Pair(*children),
+    namespace="opaque.torch",
+)
 
 
 def _to_device(tree: Any, device: torch.device) -> Any:
@@ -75,6 +90,19 @@ def test_tree_flatten_unflatten_roundtrip(device):
     torch.testing.assert_close(rebuilt["attn"], tree["attn"] * 2)
     torch.testing.assert_close(rebuilt["mlp"]["w"], tree["mlp"]["w"] * 2)
     torch.testing.assert_close(rebuilt["mlp"]["b"], tree["mlp"]["b"] * 2)
+
+
+def test_optree_registered_node_extension_round_trip(device):
+    tree = _Pair(torch.tensor([1.0], device=device), torch.tensor([2.0], device=device))
+
+    leaves, treedef = pu.tree_flatten(tree)
+    mapped = pu.tree_map(lambda value: value + 1, tree)
+    rebuilt = pu.tree_unflatten(treedef, leaves)
+
+    assert len(pu.tree_leaves(tree)) == 2
+    assert isinstance(rebuilt, _Pair)
+    torch.testing.assert_close(mapped.left, torch.tensor([2.0], device=device))
+    torch.testing.assert_close(mapped.right, torch.tensor([3.0], device=device))
 
 
 @pytest.mark.parametrize(

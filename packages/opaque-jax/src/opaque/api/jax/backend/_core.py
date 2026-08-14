@@ -371,6 +371,32 @@ def tree_structure(tree: Any) -> Any:
     return tree_util.tree_structure(tree)
 
 
+@_JAX.implements(pytree._squared_l2_norms)
+def squared_l2_norms(
+    leaves: list[Any],
+    groups: list[str] | None,
+    *,
+    dtype: Any,
+) -> tuple[Any, dict[str, Any]]:
+    terms = [
+        jnp.sum(jnp.square(jnp.abs(leaf).astype(dtype)), dtype=dtype)
+        if jnp.iscomplexobj(leaf)
+        else jnp.sum(jnp.square(leaf.astype(dtype)), dtype=dtype)
+        for leaf in leaves
+    ]
+    total = jnp.sum(jnp.stack(terms), dtype=dtype)
+    grouped: dict[str, Any] = {}
+    if groups is not None:
+        grouped_terms: dict[str, list[Any]] = {}
+        for group, term in zip(groups, terms, strict=True):
+            grouped_terms.setdefault(group, []).append(term)
+        grouped = {
+            group: jnp.sum(jnp.stack(values), dtype=dtype)
+            for group, values in grouped_terms.items()
+        }
+    return total, grouped
+
+
 @_JAX.implements(random_engine.normal)
 def normal(
     rng_key: RngKey,

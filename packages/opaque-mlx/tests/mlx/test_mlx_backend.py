@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import optree
 import pytest
 
 from opaque import autodiff, ops, pytree, random
@@ -21,6 +22,20 @@ from opaque.random import key
 mx = pytest.importorskip("mlx.core")
 
 _SEED_BOUNDARIES = (0, 1, 2**63 - 1, 2**63, 2**64 - 2, 2**64 - 1)
+
+
+class _Pair:
+    def __init__(self, left: Any, right: Any) -> None:
+        self.left = left
+        self.right = right
+
+
+optree.register_pytree_node(
+    _Pair,
+    lambda pair: ((pair.left, pair.right), None),
+    lambda _, children: _Pair(*children),
+    namespace="opaque.mlx",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -168,6 +183,23 @@ def test_pytree_paths_preserve_flat_dotted_keys_for_per_group_clipping() -> None
     assert _values(clipped["bias"]) == pytest.approx([2.0])
 
 
+def test_optree_registered_node_extension_round_trip() -> None:
+    backend = mlx_backend()
+    tree = _Pair(mx.array([1.0]), mx.array([2.0]))
+
+    with use_backend(backend):
+        leaves, treedef = pytree.tree_flatten(tree)
+        mapped = pytree.tree_map(lambda value: value + 1, tree)
+        rebuilt = pytree.tree_unflatten(treedef, leaves)
+        array_leaves = pytree.tree_leaves(tree)
+
+    assert len(leaves) == 2
+    assert len(array_leaves) == 2
+    assert isinstance(rebuilt, _Pair)
+    assert _values(mapped.left) == [2.0]
+    assert _values(mapped.right) == [3.0]
+
+
 def test_empty_tree_and_nonfinite_sanitization() -> None:
     backend = mlx_backend()
     nonfinite = mx.array([float("nan"), float("inf"), -float("inf"), 2.0])
@@ -312,5 +344,5 @@ def test_tree_leaves_filters_out_non_array_leaves() -> None:
 
     assert len(leaves) == 2
     assert all(isinstance(leaf, mx.array) for leaf in leaves)
-    assert _values(leaves[0]) == [1.0, 2.0]
-    assert _values(leaves[1]) == [3.0]
+    assert _values(leaves[0]) == [3.0]
+    assert _values(leaves[1]) == [1.0, 2.0]

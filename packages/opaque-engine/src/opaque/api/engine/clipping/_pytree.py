@@ -8,6 +8,8 @@ from typing import Any
 from opaque.api.engine import ops
 from opaque.api.engine.pytree import (
     ParamPath,
+    _resolve_reduction_dtype,
+    _squared_l2_norms,
     global_norm,
     param_path_display,
     tree_flatten_with_paths,
@@ -63,41 +65,16 @@ def _validate_per_group_paths(
     raise ValueError(" ".join(parts))
 
 
-def _resolve_compute_dtype_for_reduction(
-    leaves: list[Any],
-    compute_dtype: Any | None,
-) -> Any:
-    """Pick the dtype for sum-of-squares reductions over ``leaves``."""
-    if compute_dtype is not None:
-        return compute_dtype
-    acc = ops.float32()
-    for leaf in leaves:
-        leaf_dtype = ops.dtype(leaf)
-        if ops.is_complex(leaf_dtype):
-            leaf_dtype = ops.real_dtype(leaf_dtype)
-        elif not ops.is_floating(leaf_dtype):
-            continue
-        promoted = ops.float32() if ops.is_low_precision(leaf_dtype) else leaf_dtype
-        acc = ops.promote_dtype(acc, promoted)
-    return acc
-
-
 def _accumulate_group_sq_norms(
     paths: list[ParamPath],
     leaves: list[Any],
     pg: PerGroup,
     acc_dtype: Any,
-) -> dict[str, Any]:
-    group_sq_norms: dict[str, Any] = {}
-    for path, tensor in zip(paths, leaves, strict=True):
-        group_name = pg.groups[path]
-        magnitude = ops.abs(tensor) if ops.is_complex(tensor) else tensor
-        sq = ops.sum(ops.square(ops.astype(magnitude, acc_dtype)))
-        if group_name in group_sq_norms:
-            group_sq_norms[group_name] = ops.add(group_sq_norms[group_name], sq)
-        else:
-            group_sq_norms[group_name] = sq
-    return group_sq_norms
+) -> tuple[Any, dict[str, Any]]:
+    if not leaves:
+        return ops.scalar(0.0, dtype=acc_dtype), {}
+    group_names = [pg.groups[path] for path in paths]
+    return _squared_l2_norms(leaves, group_names, dtype=acc_dtype)
 
 
 def _scale_leaves_by_group(
@@ -123,9 +100,11 @@ def _auto_scale_per_group(
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
     paths, leaves, treedef = _tensor_path_leaves(pytree)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
+    total_sq_norm, group_sq_norms = _accumulate_group_sq_norms(
+        paths, leaves, pg, acc_dtype
+    )
 
     group_scales: dict[str, Any] = {}
     for group_name, sq_norm in group_sq_norms.items():
@@ -141,7 +120,7 @@ def _auto_scale_per_group(
 
     scaled = _scale_leaves_by_group(paths, leaves, pg, group_scales, treedef)
 
-    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
+    orig_norm = ops.sqrt(total_sq_norm)
     group_norms = {name: ops.sqrt(sq) for name, sq in group_sq_norms.items()}
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
@@ -224,9 +203,11 @@ def _clip_pytree_per_group(
     """Per-group clipping keyed by optree :data:`~opaque.pytree.ParamPath`."""
     paths, leaves, treedef = _tensor_path_leaves(pytree)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype)
+    total_sq_norm, group_sq_norms = _accumulate_group_sq_norms(
+        paths, leaves, pg, acc_dtype
+    )
 
     group_scales: dict[str, Any] = {}
     for group_name, sq_norm in group_sq_norms.items():
@@ -247,7 +228,7 @@ def _clip_pytree_per_group(
             lambda t: ops.zeros_like(t) if ops.is_array(t) else t, clipped
         )
 
-    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
+    orig_norm = ops.sqrt(total_sq_norm)
     group_norms = {name: ops.sqrt(sq) for name, sq in group_sq_norms.items()}
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
