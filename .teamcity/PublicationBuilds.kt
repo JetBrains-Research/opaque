@@ -56,7 +56,7 @@ private fun publicationBuild(
         if (releaseTagRequired) {
             script {
                 name = "Verify stable release tag"
-                scriptContent = "printf '%s' '%teamcity.build.branch%' | grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.(post|alpha|beta|rc)[0-9]+)?${'$'}'"
+                scriptContent = "printf '%%s' '%teamcity.build.branch%' | grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.(post|alpha|beta|rc)[0-9]+)?${'$'}'"
             }
         }
         script {

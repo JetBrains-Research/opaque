@@ -31,7 +31,7 @@ object PrepareVersion : BuildType({
             name = "Compute immutable version"
             scriptContent = """
                 ${prepareVersionScript()}
-                printf 'commit=%s\nversion=%s\nsource_build_id=%s\ntarget=source\n' '%build.vcs.number%' "${'$'}VERSION" '%teamcity.build.id%' > ${CiModel.Artifacts.VERSION_MANIFEST}
+                printf 'commit=%%s\nversion=%%s\nsource_build_id=%%s\ntarget=source\n' '%build.vcs.number%' "${'$'}VERSION" '%teamcity.build.id%' > ${CiModel.Artifacts.VERSION_MANIFEST}
             """.trimIndent()
         }
     }
@@ -65,7 +65,7 @@ private fun BuildType.recordArtifactManifest() {
     steps {
         script {
             name = "Record artifact manifest"
-            scriptContent = "printf 'commit=%s\nversion=%s\nsource_build_id=%s\ntarget=%s\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%opaque.artifact.target%' > ${CiModel.Artifacts.VERSION_MANIFEST}"
+            scriptContent = "printf 'commit=%%s\nversion=%%s\nsource_build_id=%%s\ntarget=%%s\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%opaque.artifact.target%' > ${CiModel.Artifacts.VERSION_MANIFEST}"
         }
     }
     pruneUvCacheForCi()
@@ -215,7 +215,7 @@ object ValidateDistributions : BuildType({
         }
         script {
             name = "Record artifact identity"
-            scriptContent = "printf 'commit=%s\\nversion=%s\\nsource_build_id=%s\\nbuild_id=%s\\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%teamcity.build.id%' > ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/${CiModel.Artifacts.IDENTITY_MANIFEST}"
+            scriptContent = "printf 'commit=%%s\\nversion=%%s\\nsource_build_id=%%s\\nbuild_id=%%s\\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%teamcity.build.id%' > ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/${CiModel.Artifacts.IDENTITY_MANIFEST}"
         }
     }
     pruneUvCacheForCi()
