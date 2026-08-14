@@ -48,8 +48,8 @@ private fun distributionBuild(
     buildNumberPattern = "%opaque.version%"
     templates(DistributionBuildTemplate)
     params {
-        param("opaque.version", "%dep.Opaque_PrepareVersion.opaque.version%")
-        param("opaque.source.build.id", "%dep.Opaque_PrepareVersion.opaque.source.build.id%")
+        param("opaque.version", "${PrepareVersion.depParamRefs["opaque.version"]}")
+        param("opaque.source.build.id", "${PrepareVersion.depParamRefs["opaque.source.build.id"]}")
         param("opaque.artifact.target", target)
     }
     dependencies {
@@ -157,8 +157,8 @@ object ValidateDistributions : BuildType({
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/** => ${CiModel.Artifacts.VALIDATED_BUNDLE}"
     useAgent(CiModel.AgentClass.LINUX_SMALL)
     params {
-        param("opaque.version", "%dep.Opaque_PrepareVersion.opaque.version%")
-        param("opaque.source.build.id", "%dep.Opaque_PrepareVersion.opaque.source.build.id%")
+        param("opaque.version", "${PrepareVersion.depParamRefs["opaque.version"]}")
+        param("opaque.source.build.id", "${PrepareVersion.depParamRefs["opaque.source.build.id"]}")
     }
     dependencies {
         snapshot(PrepareVersion) {
