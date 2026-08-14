@@ -9,6 +9,7 @@ object CiModel {
         val agentClass: AgentClass,
         val rustTarget: String,
         val manylinux: String?,
+        val manylinuxContainer: String?,
     )
 
     enum class BranchKind(val branchFilter: String) {
@@ -26,7 +27,9 @@ object CiModel {
     ) {
         LINUX_LARGE("Linux Large", "Linux-Large", "Linux", "amd64"),
         LINUX_SMALL("Linux Small", "Linux-Small", "Linux", "amd64"),
+        UBUNTU_22_LINUX_SMALL("Ubuntu 22.04 Linux Small", "Ubuntu-22.04-Small", "Linux", "amd64"),
         LINUX_ARM64_SMALL("Linux ARM64 Small", "Ubuntu-24.04-Small-Arm64", "Linux", "aarch64"),
+        UBUNTU_22_LINUX_ARM64_SMALL("Ubuntu 22.04 Linux ARM64 Small", "Ubuntu-22.04-Small-Arm64", "Linux", "aarch64"),
         MACOS_ARM64("macOS ARM64", "macOS-14-Sonoma-Medium-Arm64", "Mac OS X", "aarch64"),
         CUDA("CUDA", null, "Linux", "amd64", "opaque.agent.cuda" to "true"),
     }
@@ -113,22 +116,25 @@ object CiModel {
         AccountingTarget(
             "LinuxX64",
             "Linux x86_64",
-            AgentClass.LINUX_SMALL,
+            AgentClass.UBUNTU_22_LINUX_SMALL,
             "x86_64-unknown-linux-gnu",
             "2_28",
+            "quay.io/pypa/manylinux_2_28_x86_64:latest",
         ),
         AccountingTarget(
             "LinuxArm64",
             "Linux ARM64",
-            AgentClass.LINUX_ARM64_SMALL,
+            AgentClass.UBUNTU_22_LINUX_ARM64_SMALL,
             "aarch64-unknown-linux-gnu",
             "2_28",
+            "quay.io/pypa/manylinux_2_28_aarch64:latest",
         ),
         AccountingTarget(
             "MacArm64",
             "macOS ARM64",
             AgentClass.MACOS_ARM64,
             "aarch64-apple-darwin",
+            null,
             null,
         ),
     )

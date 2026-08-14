@@ -118,6 +118,34 @@ private fun BuildType.bootstrapRustToolchain() {
     }
 }
 
+private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
+    val maturinArguments = "--manifest-path packages/opaque-accounting/Cargo.toml --release --target $rustTarget --interpreter python3.11 --out ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} --compatibility pypi"
+    val manylinuxImage = manylinuxContainer ?: return "uv run --isolated --no-project --with maturin maturin build $maturinArguments"
+    val maturinArchitecture = when (rustTarget.substringBefore('-')) {
+        "x86_64" -> "x86_64"
+        "aarch64" -> "aarch64"
+        else -> error("Unsupported manylinux Rust target: $rustTarget")
+    }
+
+    return """
+        set -eu
+        docker run --rm \
+          --user "${'$'}(id -u):${'$'}(id -g)" \
+          --env HOME=/tmp \
+          --volume "%teamcity.build.checkoutDir%:/io" \
+          --workdir /io \
+          $manylinuxImage \
+          /bin/bash -lc '
+            set -eu
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+            export PATH="${'$'}HOME/.cargo/bin:/opt/python/cp311-cp311/bin:${'$'}PATH"
+            rustup target add $rustTarget
+            curl -LsSf https://github.com/PyO3/maturin/releases/latest/download/maturin-$maturinArchitecture-unknown-linux-musl.tar.gz | tar -xz -C "${'$'}HOME/.cargo/bin"
+            maturin build $maturinArguments --manylinux $manylinux
+          '
+    """.trimIndent()
+}
+
 object PythonWheels : BuildType({
     distributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels", "pure-python")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
@@ -137,12 +165,13 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
     distributionBuild(this, "Opaque_BuildAccounting${target.id}", "Build opaque-accounting (${target.label})", "accounting-${target.id}")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
     useAgent(target.agentClass)
-    bootstrapRustToolchain()
+    if (target.manylinuxContainer == null) {
+        bootstrapRustToolchain()
+    }
     steps {
         script {
             name = "Build native wheel"
-            val manylinux = target.manylinux?.let { "--manylinux $it" } ?: ""
-            scriptContent = "uv run --isolated --no-project --with maturin maturin build --manifest-path packages/opaque-accounting/Cargo.toml --release --target ${target.rustTarget} $manylinux --interpreter python3.11 --out ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} --compatibility pypi"
+            scriptContent = target.nativeWheelBuildScript()
         }
     }
     smokeAccountingWheel()
