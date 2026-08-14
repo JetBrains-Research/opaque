@@ -25,7 +25,7 @@ object PrepareVersion : BuildType({
     configureCleanup()
     configureAgentDiagnostics()
     artifactRules = "${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
-    useAgent(CiModel.AgentClass.LINUX_LARGE)
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     steps {
         script {
             name = "Compute immutable version"
@@ -100,7 +100,7 @@ private fun BuildType.smokeAccountingWheel() {
 object PythonWheels : BuildType({
     distributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels", "pure-python")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
-    useAgent(CiModel.AgentClass.LINUX_LARGE)
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     steps {
         script {
             name = "Build platform-agnostic wheels"
@@ -130,7 +130,7 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
 object AccountingSdist : BuildType({
     distributionBuild(this, "Opaque_BuildAccountingSdist", "Build opaque-accounting sdist", "accounting-sdist")
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.tar.gz => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
-    useAgent(CiModel.AgentClass.LINUX_LARGE)
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     steps {
         script {
             name = "Build accounting sdist"
@@ -155,7 +155,7 @@ object ValidateDistributions : BuildType({
     buildNumberPattern = "%opaque.version%"
     configurePythonTooling()
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/** => ${CiModel.Artifacts.VALIDATED_BUNDLE}"
-    useAgent(CiModel.AgentClass.LINUX_LARGE)
+    useAgent(CiModel.AgentClass.LINUX_SMALL)
     params {
         param("opaque.version", "%dep.Opaque_PrepareVersion.opaque.version%")
         param("opaque.source.build.id", "%dep.Opaque_PrepareVersion.opaque.source.build.id%")
