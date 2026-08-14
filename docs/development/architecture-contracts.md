@@ -31,7 +31,6 @@ of truth:
 | --- | --- |
 | Junie | `.junie/guidelines.md` |
 | Claude Code | `CLAUDE.md` |
-| Gemini CLI | `GEMINI.md` |
 | Copilot and other AGENTS-compatible agents | `AGENTS.md` |
 
 Agent-specific files contain only loading and workflow instructions; they do not
