@@ -99,11 +99,12 @@ The active `main` ruleset requires `Build documentation`, `Format Python`,
 and `Junie review`. The review workflow uses the `JUNIE_API_KEY` Actions secret.
 Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
-Automated and interactive Junie sessions follow the reviewed branch's
-`.junie/guidelines.md`, which loads `AGENTS.md`, the architecture contracts, and
-the differential privacy review protocol. The reviewer must apply every relevant
-active architecture contract. Privacy-sensitive reviews also trace the guarantee
-end to end and use Junie's read-only web search and URL fetching to verify
+Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use
+`.junie/review-guidelines.md`. The review file is also the canonical policy for
+Copilot code review through
+`.github/instructions/code-review.instructions.md`. Reviewers must apply every
+relevant active architecture contract. Privacy-sensitive reviews trace the
+guarantee end to end and use read-only web search and URL fetching to verify
 primary literature before reporting theorem-dependent findings.
 
 The automated review and interactive workflows use the same SHA-pinned upstream

@@ -56,6 +56,9 @@ composition, accounting, matrix strategies, distributed equivalence,
 serialization of privacy state, auditing, or a mathematical privacy claim. Use
 its literature map to verify theorem-dependent claims against primary sources.
 
+For code review, also read and follow `.junie/review-guidelines.md`.
+
+
 ## Pull requests
 
 The repo squash-merges. The PR title becomes the commit subject; the

@@ -29,9 +29,10 @@ of truth:
 
 | Agent | Repository entry point |
 | --- | --- |
-| Junie | `.junie/guidelines.md` |
+| Junie | `.junie/guidelines.md`; `.junie/review-guidelines.md` for review |
 | Claude Code | `CLAUDE.md` |
-| Copilot and other AGENTS-compatible agents | `AGENTS.md` |
+| Copilot agents | `AGENTS.md` |
+| Copilot code review | `.github/instructions/code-review.instructions.md` |
 
 Agent-specific files contain only loading and workflow instructions; they do not
 duplicate the contracts. Each entry point also loads
