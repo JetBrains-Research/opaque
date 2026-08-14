@@ -104,6 +104,10 @@ Normal Junie sessions read the current branch's
 `.junie/guidelines.md`; automated reviews use the base branch's trusted policy
 so a pull request cannot weaken its own review instructions.
 
+The policy-introduction pull request bootstraps review from the immutable commit
+that added the policy. Once the policy is on `main`, reviews always load it from
+the pull request's base commit.
+
 The review workflow currently uses the organization fork of
 `JetBrains/junie-github-action` because v1.7.4 contains three tag-based
 transitive actions rejected by Opaque's immutable-action policy. The fork changes
