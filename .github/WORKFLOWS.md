@@ -109,14 +109,8 @@ The policy-introduction pull request bootstraps review from the immutable commit
 that added the policy. Once the policy is on `main`, reviews always load it from
 the pull request's base commit.
 
-The review workflow currently uses the organization fork of
-`JetBrains/junie-github-action` because v1.7.4 contains three tag-based
-transitive actions rejected by Opaque's immutable-action policy. The fork changes
-only those references to full commit SHAs; switch back to the upstream action
-after that fix is released.
-
-The interactive `junie.yml` workflow uses the same pinned action fork and
-`JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
+The automated review and interactive workflows use the same SHA-pinned upstream
+Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
 `COLLABORATOR` association reach the action, which then verifies that the actor
 has repository write or admin access. The job grants `contents`, pull-request,
 and issue write access explicitly; repository-wide workflow permissions remain
