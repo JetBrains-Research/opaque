@@ -22,14 +22,13 @@ object CiModel {
         val image: String?,
         val osName: String,
         val architecture: String,
-        val minimumMemoryMb: Int,
         val requiredCapability: Pair<String, String>? = null,
     ) {
-        LINUX_LARGE("Linux Large", "Ubuntu-24.04-Large", "Linux", "amd64", 16_384),
-        LINUX_SMALL("Linux Small", "Ubuntu-24.04-Small", "Linux", "amd64", 4_096),
-        LINUX_ARM64_SMALL("Linux ARM64 Small", "Ubuntu-24.04-Small-Arm64", "Linux", "aarch64", 4_096),
-        MACOS_ARM64("macOS ARM64", null, "Mac OS X", "aarch64", 8_192),
-        CUDA("CUDA", null, "Linux", "amd64", 16_384, "opaque.agent.cuda" to "true"),
+        LINUX_LARGE("Linux Large", "Linux-Large", "Linux", "amd64"),
+        LINUX_SMALL("Linux Small", "Linux-Small", "Linux", "amd64"),
+        LINUX_ARM64_SMALL("Linux ARM64 Small", "Ubuntu-24.04-Small-Arm64", "Linux", "aarch64"),
+        MACOS_ARM64("macOS ARM64", "macOS-14-Sonoma-Medium-Arm64", "Mac OS X", "aarch64"),
+        CUDA("CUDA", null, "Linux", "amd64", "opaque.agent.cuda" to "true"),
     }
 
     enum class TestDevice(

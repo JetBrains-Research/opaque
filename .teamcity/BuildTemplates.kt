@@ -9,10 +9,9 @@ import jetbrains.buildServer.configs.kotlin.buildSteps.script
 
 fun BuildTypeSettings.useAgent(agentClass: CiModel.AgentClass) {
     requirements {
-        agentClass.image?.let { equals("agentmanager.image", it) }
+        agentClass.image?.let { startsWith("teamcity.agent.name", it) }
         equals("teamcity.agent.jvm.os.name", agentClass.osName)
         equals("teamcity.agent.jvm.os.arch", agentClass.architecture)
-        noLessThan("teamcity.agent.hardware.memorySizeMb", agentClass.minimumMemoryMb.toString())
         agentClass.requiredCapability?.let { (key, value) -> equals(key, value) }
     }
 }
