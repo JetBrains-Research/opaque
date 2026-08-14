@@ -146,6 +146,7 @@ nav:
   - Development:
     - Overview: development/index.md
     - Architecture contracts: development/architecture-contracts.md
+    - Differential privacy review: development/differential-privacy-review.md
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md
