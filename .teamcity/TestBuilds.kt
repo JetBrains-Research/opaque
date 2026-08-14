@@ -92,6 +92,8 @@ private val mpsTests = pythonTestMatrix(CiModel.TestDevice.MPS).apply {
 private val cudaTest = BuildType {
     id("Opaque_PythonCuda")
     name = "Python CUDA tests"
+    paused = true
+    description = "Disabled until TeamCity provides a compatible GPU hosted-agent type."
     configurePythonTooling()
     artifactRules = "coverage.xml => coverage"
     failureConditions {
@@ -139,14 +141,10 @@ private fun verificationBuild(
                 "override.dep.Opaque_PythonCpu.opaque.pytest.marker",
                 CiModel.TestDevice.CPU.markerForPullRequest,
             )
-            param(
-                "override.dep.Opaque_PythonCuda.opaque.pytest.marker",
-                CiModel.TestDevice.CUDA.markerForPullRequest,
-            )
         }
     }
     dependencies {
-        listOf(cpuTests, cudaTest).forEach { matrix ->
+        listOf(cpuTests).forEach { matrix ->
             snapshot(matrix) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
