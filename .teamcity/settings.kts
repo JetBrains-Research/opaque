@@ -1,4 +1,5 @@
 import jetbrains.buildServer.configs.kotlin.*
+import jetbrains.buildServer.configs.kotlin.projectFeatures.spaceConnection
 
 /*
 The settings script is an entry point for defining a TeamCity
@@ -25,4 +26,15 @@ To debug in IntelliJ Idea, open the 'Maven Projects' tool window (View
 version = "2026.1"
 
 project {
+
+    features {
+        spaceConnection {
+            id = "PROJECT_EXT_75"
+            displayName = "JetBrains Space"
+            serverUrl = "https://jetbrains.team/"
+            clientId = "37ed2d18-f9be-4e61-9ca1-288f4bde66f8"
+            clientSecret = "credentialsJSON:8bb1a9ed-18cf-409f-8024-6ef313ff98fe"
+            useUniqueRedirect = true
+        }
+    }
 }
