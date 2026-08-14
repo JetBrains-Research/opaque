@@ -62,7 +62,8 @@ fun ensureUvScript() = """
     set -eu
     if ! command -v uv >/dev/null 2>&1; then
       curl -LsSf https://astral.sh/uv/install.sh | sh
-      echo "##teamcity[setParameter name='env.PATH' value='${'$'}HOME/.local/bin:${'$'}PATH']"
+      export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
+      echo "##teamcity[setParameter name='env.PATH' value='${'$'}PATH']"
     fi
     uv --version
 """.trimIndent()
