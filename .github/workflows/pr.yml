@@ -134,6 +134,9 @@ jobs:
 
   qodana:
     name: Qodana
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     needs: [python-tests-gate]
     permissions:
       actions: read
