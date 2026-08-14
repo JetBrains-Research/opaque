@@ -4,11 +4,11 @@ Pytest discovers conftest.py by walking up from each test file, so every
 package in the workspace inherits these fixtures automatically.
 """
 
+import gc
 import os
 
 import pytest
 import torch
-
 
 # ---------------------------------------------------------------------------
 # Auto-skip logic for marker-based gating
@@ -22,6 +22,16 @@ def pytest_runtest_setup(item):
 
     if "mps" in item.keywords and not torch.backends.mps.is_available():
         pytest.skip("MPS not available")
+
+
+@pytest.fixture(autouse=True)
+def clear_mps_cache_between_tests():
+    """Release cached Metal allocations after each test on MPS hosts."""
+    yield
+    if torch.backends.mps.is_available():
+        gc.collect()
+        torch.mps.synchronize()
+        torch.mps.empty_cache()
 
 
 # ---------------------------------------------------------------------------
