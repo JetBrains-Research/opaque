@@ -35,11 +35,18 @@ demotes to a Python ``float`` list because PyArrow has no bf16 column type, but
 that demotion is now explicit at the storage boundary, not hidden inside the
 cache writer.
 
-**Cross-rank handling.** Per-column shards are concatenated across ranks
-with :func:`gather_for_metrics`; only :func:`is_main_process` writes the cache;
-:func:`wait_for_everyone` synchronises before the function returns so non-main
-ranks observe the file on the next run. In a single-process context the gather
-is the identity and ``is_main_process`` is ``True``.
+**Cross-rank handling.** When sharding is active each rank runs the reference
+over its own :func:`local_shard` and the per-column shards are concatenated back
+in rank order through one object collective. ``local_shard`` hands out
+contiguous slices, so that reproduces the original dataset order. Shards may be
+uneven (the last rank takes the remainder) and a rank whose shard is empty
+contributes no rows while still joining the collective.
+
+Every rank issues the same collectives regardless of its arguments: the cache
+decision is reduced before it is acted on, so a group cannot split into ranks
+that return early and ranks that wait in the gather. The group reuses the cache
+only when every rank holds the archive, which means the node-local default
+``cache_dir`` yields no reuse across nodes — point it at shared storage.
 """
 
 from __future__ import annotations
@@ -57,9 +64,17 @@ from safetensors.torch import load_file as _safetensors_load
 from safetensors.torch import save_file as _safetensors_save
 from torch.utils.data import DataLoader
 
+from opaque.api.engine.distributed._state import (
+    assert_scalar_equal,
+    gather_pytree,
+    reduce_scalar,
+)
 from opaque.distributed import (
-    gather_for_metrics,
+    get_rank,
+    get_world_size,
+    is_distributed,
     is_main_process,
+    local_shard,
     wait_for_everyone,
 )
 from opaque.serialization import from_state_dict, state_dict
@@ -150,12 +165,15 @@ def _cache_path(
 def _load_cache(
     path: str,
     output_columns: Sequence[str],
+    *,
+    expected_rows: int,
 ) -> dict[str, torch.Tensor] | None:
     """Load ``output_columns`` from a ``.safetensors`` cache, or ``None`` on miss.
 
     A miss is any of: file absent, a requested column absent from the archive,
-    or a load error (treated as a stale/corrupt cache that should be recomputed
-    rather than crash the run).
+    a column whose length does not match ``expected_rows``, or a load error
+    (all treated as a stale/corrupt cache that should be recomputed rather than
+    crash the run).
     """
     if not Path(path).exists():
         return None
@@ -164,6 +182,8 @@ def _load_cache(
     except Exception:
         return None
     if any(name not in flat for name in output_columns):
+        return None
+    if any(flat[name].shape[:1] != (expected_rows,) for name in output_columns):
         return None
     # Reconstruct the column dict via the serialization template so the load
     # path mirrors the save path (state_dict round-trip). The template
@@ -219,6 +239,95 @@ def _save_cache(
     Path(path).chmod(0o600)
 
 
+def _resolve_sharding(shard: bool | None) -> bool:
+    """Decide whether this call shards, and reject an impossible request."""
+    if shard is None:
+        return is_distributed()
+    if shard and not is_distributed():
+        raise RuntimeError(
+            "shard=True requires an initialised process group; call "
+            "torch.distributed.init_process_group first, or pass shard=None "
+            "to shard only when one is live."
+        )
+    return shard
+
+
+def _cache_hit_on_every_rank(local_hit: bool, *, sharded: bool) -> bool:
+    """Reduce a rank-local cache hit to a decision the whole group shares.
+
+    The default cache directory is node-local, so on a multi-node run some
+    ranks can hit while others miss; acting per-rank would leave the hitting
+    ranks returning early while the missing ranks wait in the gather.
+    """
+    if not sharded:
+        return local_hit
+    return bool(reduce_scalar(int(local_hit), op="min"))
+
+
+def _reference_forward(
+    dataset: Any,
+    ref: Callable[[dict[str, torch.Tensor]], dict[str, torch.Tensor]],
+    collator: Callable[[list[dict]], dict[str, torch.Tensor]],
+    columns: tuple[str, ...],
+    *,
+    batch_size: int,
+    rank: int,
+    world_size: int,
+) -> dict[str, torch.Tensor] | None:
+    """Run ``ref`` over this rank's shard, one ``(n_local,)`` tensor per column.
+
+    Returns ``None`` when the local shard is empty, so the caller can hand the
+    gather an absent payload instead of inventing a dtype that would not match
+    the ranks that did compute something.
+    """
+    shard = (
+        local_shard(dataset, rank=rank, world_size=world_size)
+        if world_size > 1
+        else dataset
+    )
+    loader = DataLoader(shard, batch_size=batch_size, collate_fn=collator)
+    parts: dict[str, list[torch.Tensor]] = {name: [] for name in columns}
+    with torch.no_grad():
+        for batch in loader:
+            out = ref(batch)
+            for name in columns:
+                value = out[name]
+                if not isinstance(value, torch.Tensor):
+                    value = torch.as_tensor(value)
+                parts[name].append(value.detach())
+    if all(not part for part in parts.values()):
+        return None
+    return {name: torch.cat(parts[name], dim=0) for name in columns}
+
+
+def _gather_columns(
+    local: dict[str, torch.Tensor] | None,
+    columns: tuple[str, ...],
+    *,
+    expected_rows: int,
+    sharded: bool,
+) -> dict[str, torch.Tensor]:
+    """Concatenate per-rank column shards back into dataset order.
+
+    One object collective covers every column, and ``gather_pytree`` orders the
+    contributions by rank; combined with the contiguous slices ``local_shard``
+    hands out, that reproduces the original dataset order.
+    """
+    gathered = gather_pytree(local, dim=0) if sharded else local
+    if gathered is None:
+        # No rank produced any rows, so there is no dtype to preserve.
+        gathered = {name: torch.empty((0,), dtype=torch.float32) for name in columns}
+    for name in columns:
+        rows = int(gathered[name].shape[0])
+        if rows != expected_rows:
+            raise RuntimeError(
+                f"reference column {name!r} yielded {rows} values for a dataset "
+                f"of {expected_rows} examples; either `ref` did not return one "
+                "value per row, or the ranks disagree on the dataset"
+            )
+    return gathered
+
+
 def compute_ref_logprobs_for_dataset(
     dataset: Any,
     ref: Callable[[dict[str, torch.Tensor]], dict[str, torch.Tensor]],
@@ -229,6 +338,7 @@ def compute_ref_logprobs_for_dataset(
     batch_size: int = 8,
     cache_dir: str | None = None,
     use_cache: bool = True,
+    shard: bool | None = None,
 ) -> Any:
     """Compute per-example reference logprobs, optionally using a cache.
 
@@ -243,11 +353,17 @@ def compute_ref_logprobs_for_dataset(
     removing selected cache directories when their contents are no longer
     needed.
 
+    Under a live process group each rank runs the reference over its own shard
+    and the results are gathered back into dataset order, so the returned
+    dataset is the same on every rank and matches a single-process run. Pass
+    the whole dataset on every rank; shard for training afterwards.
+
     **Outside vmap only** — see the module docstring.
 
     Args:
-        dataset: A :class:`datasets.Dataset`. Iterated via a ``DataLoader`` with
-            ``collator``; the result is returned with ``output_columns`` added
+        dataset: A :class:`datasets.Dataset`, identical on every rank. Iterated
+            via a ``DataLoader`` with ``collator`` — over this rank's shard when
+            a process group is live — and returned with ``output_columns`` added
             through :meth:`datasets.Dataset.add_column`.
         ref: A callable mapping a collated batch ``dict[str, Tensor]`` to a dict
             containing one ``(B,)`` tensor per name in ``output_columns``. A
@@ -270,50 +386,59 @@ def compute_ref_logprobs_for_dataset(
         use_cache: Whether to read or write the persistent cache. Set to
             ``False`` when results cannot be reused, such as TR-DPO seed
             values that are overwritten before each training and evaluation
-            step.
+            step. Must agree across ranks.
+        shard: Whether each rank scores only its own slice of ``dataset``.
+            ``None`` (default) shards when a process group is live. ``False``
+            makes every rank score the whole dataset, as before sharding
+            existed. ``True`` requires an initialised process group and raises
+            without one. Must agree across ranks.
 
     Returns:
         ``dataset`` with one new column per name in ``output_columns``, each of
         length ``len(dataset)``.
     """
     columns = tuple(output_columns)
+    n_examples = len(dataset)
+    sharded = _resolve_sharding(shard)
+    if sharded:
+        # Ranks that disagree on the dataset would shard it differently and
+        # gather a length nobody asked for.
+        assert_scalar_equal(n_examples, name="reference precompute dataset size")
+
     path: str | None = None
+    cached: dict[str, torch.Tensor] | None = None
     if use_cache:
         fingerprint = _cache_fingerprint(dataset, cache_identity, columns)
         path = _cache_path(cache_dir, fingerprint)
         _secure_cache_path(path)
+        cached = _load_cache(path, columns, expected_rows=n_examples)
 
-        cached = _load_cache(path, columns)
-        if cached is not None:
-            # HIT: attach cached columns WITHOUT calling ``ref``. PyArrow has no
-            # bf16 column type, so demote to a Python ``float`` list at the
-            # storage boundary (explicit, single conversion).
-            result = dataset
-            for name in columns:
-                result = result.add_column(name, cached[name].float().tolist())
-            return result
+    # Reduced unconditionally: a collective inside ``if use_cache`` would make
+    # the collective sequence depend on a rank-local argument, so ranks that
+    # disagree on it would block until the group timeout.
+    if _cache_hit_on_every_rank(cached is not None, sharded=sharded):
+        # HIT on every rank: attach cached columns WITHOUT calling ``ref``.
+        # PyArrow has no bf16 column type, so demote to a Python ``float``
+        # list at the storage boundary (explicit, single conversion).
+        assert cached is not None
+        result = dataset
+        for name in columns:
+            result = result.add_column(name, cached[name].float().tolist())
+        return result
 
-    # MISS: run the reference forward once over the dataset.
-    loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collator)
-    shards: dict[str, list[torch.Tensor]] = {name: [] for name in columns}
-    with torch.no_grad():
-        for batch in loader:
-            out = ref(batch)
-            for name in columns:
-                value = out[name]
-                if not isinstance(value, torch.Tensor):
-                    value = torch.as_tensor(value)
-                shards[name].append(value.detach())
-
-    # Concatenate local shards, then gather across ranks (identity in 1-proc).
-    gathered: dict[str, torch.Tensor] = {}
-    for name in columns:
-        local = (
-            torch.cat(shards[name], dim=0)
-            if shards[name]
-            else torch.empty((0,), dtype=torch.float32)
-        )
-        gathered[name] = gather_for_metrics(local)
+    # MISS: run the reference forward once over this rank's shard.
+    local = _reference_forward(
+        dataset,
+        ref,
+        collator,
+        columns,
+        batch_size=batch_size,
+        rank=get_rank() if sharded else 0,
+        world_size=get_world_size() if sharded else 1,
+    )
+    gathered = _gather_columns(
+        local, columns, expected_rows=n_examples, sharded=sharded
+    )
 
     # Only the main process writes the cache; all ranks sync before returning.
     if use_cache and is_main_process():

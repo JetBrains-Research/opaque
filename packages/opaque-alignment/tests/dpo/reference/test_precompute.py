@@ -389,3 +389,102 @@ def test_unsupported_cache_identity_value_raises(tmp_path) -> None:
             cache_identity={"model": object()},
             cache_dir=str(tmp_path),
         )
+
+
+# ---------------------------------------------------------------------------
+# Stale-cache and per-example contract
+# ---------------------------------------------------------------------------
+
+
+def test_cache_with_wrong_row_count_is_recomputed(tmp_path) -> None:
+    """An archive whose length disagrees with the dataset is a miss, not a crash."""
+    dataset = _make_dataset()
+    cache_dir = tmp_path / "cache"
+    cache_identity = {"kind": "dpo"}
+
+    compute_ref_logprobs_for_dataset(
+        dataset,
+        _CountingRef(),
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity=cache_identity,
+        cache_dir=str(cache_dir),
+    )
+
+    archive = next(cache_dir.glob("*.safetensors"))
+    doubled = {
+        name: torch.tensor(_expected(name, list(dataset["idx"]) * 2))
+        for name in OUTPUT_COLUMNS
+    }
+    _precompute._save_cache(str(archive), doubled)
+
+    ref = _CountingRef()
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity=cache_identity,
+        cache_dir=str(cache_dir),
+    )
+
+    assert ref.examples_seen == len(dataset)
+    for name in OUTPUT_COLUMNS:
+        assert result[name] == pytest.approx(_expected(name, list(dataset["idx"])))
+
+
+def test_ref_returning_wrong_number_of_values_raises(tmp_path) -> None:
+    """A ``ref`` that drops examples fails loudly instead of poisoning the cache."""
+
+    def _short_ref(batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        idx = batch["idx"].to(torch.float32)[:1]
+        return {"ref_chosen_logps": idx, "ref_rejected_logps": idx}
+
+    with pytest.raises(RuntimeError, match="did not return one value per row"):
+        compute_ref_logprobs_for_dataset(
+            _make_dataset(),
+            _short_ref,
+            _collator,
+            OUTPUT_COLUMNS,
+            batch_size=2,
+            cache_identity={"kind": "short-ref"},
+            cache_dir=str(tmp_path / "cache"),
+        )
+
+
+def test_shard_true_without_process_group_raises(tmp_path) -> None:
+    """Asking for sharding that cannot happen fails rather than silently not."""
+    with pytest.raises(RuntimeError, match="requires an initialised process group"):
+        compute_ref_logprobs_for_dataset(
+            _make_dataset(),
+            _CountingRef(),
+            _collator,
+            OUTPUT_COLUMNS,
+            batch_size=2,
+            cache_identity={"kind": "shard-no-group"},
+            cache_dir=str(tmp_path / "cache"),
+            shard=True,
+        )
+
+
+@pytest.mark.parametrize("shard", [None, False])
+def test_single_process_result_is_independent_of_shard(tmp_path, shard) -> None:
+    """Without a process group both settings score the whole dataset."""
+    dataset = _make_dataset()
+    ref = _CountingRef()
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collator,
+        OUTPUT_COLUMNS,
+        batch_size=2,
+        cache_identity={"kind": f"shard-{shard}"},
+        cache_dir=str(tmp_path / "cache"),
+        shard=shard,
+    )
+
+    assert ref.examples_seen == len(dataset)
+    for name in OUTPUT_COLUMNS:
+        assert result[name] == pytest.approx(_expected(name, list(dataset["idx"])))

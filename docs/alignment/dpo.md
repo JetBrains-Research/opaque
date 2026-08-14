@@ -45,7 +45,8 @@ Run the frozen reference once over the dataset, *before* training, and cache
 the per-example chosen/rejected logps when reuse is needed.
 `opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset` takes a
 `ref(batch) -> {col: (B,) tensor}` callable (wrap your model into one),
-runs a single `torch.no_grad()` pass, gathers across ranks, and caches to
+runs a single `torch.no_grad()` pass — sharded across ranks, see
+[Across ranks](#across-ranks) — and caches to
 a content-addressed `.safetensors` file whose name is the SHA-256 digest of
 `(dataset._fingerprint, cache_identity, output_columns)`.
 By default that file lives under `<tempdir>/opaque_ref_cache/`; pass
@@ -140,6 +141,32 @@ must be included in the digest. Both helpers run **outside vmap** (they mutate
 `nn.Module` adapter state). For TR-DPO, periodically move the reference toward
 the policy with `ema_update_reference(ref_params, policy_params, alpha)`
 between steps.
+
+### Across ranks
+
+Under a live process group each rank runs the reference over its own
+`local_shard` of the dataset, and the per-column results are gathered back into
+dataset order, so every rank returns the same full-length dataset and matches a
+single-process run. Pass the whole dataset on every rank and shard for training
+afterwards — the trainer's dataloaders do that themselves. Shards may be
+uneven, and a rank whose shard is empty still joins the gather.
+
+Sharding follows the process group, not the launcher. Pass `shard=True` to
+require one and fail if it is missing, or `shard=False` to score the whole
+dataset on every rank. `DPOTrainer` establishes the group before it precomputes,
+so its callers get the sharded path. `use_cache` and `shard` must agree across
+ranks — they select the collective sequence.
+
+Only the main process writes the cache, and the group reuses it only when every
+rank can see the archive; otherwise it recomputes rather than stranding the
+ranks that cannot.
+
+!!! warning "The default cache directory is node-local"
+
+    `<tempdir>/opaque_ref_cache/` lives on the node, so on a multi-node run
+    only the rank-0 node holds the archive and the group recomputes the
+    reference forward every time. Point `cache_dir=` at shared storage to get
+    reuse across nodes.
 
 ## 2. Preference collator
 
