@@ -84,7 +84,8 @@ private fun BuildType.smokeAccountingWheel() {
                 SMOKE_DIR="${'$'}(mktemp -d)"
                 trap 'rm -rf "${'$'}SMOKE_DIR"' EXIT
                 uv venv --python python3.11 "${'$'}SMOKE_DIR/venv"
-                uv pip install --python "${'$'}SMOKE_DIR/venv/bin/python" packages/opaque-base "${'$'}WHEEL"
+                uv pip install --no-deps --python "${'$'}SMOKE_DIR/venv/bin/python" packages/opaque-base
+                uv pip install --no-deps --python "${'$'}SMOKE_DIR/venv/bin/python" "${'$'}WHEEL"
                 cd "${'$'}SMOKE_DIR"
                 "${'$'}SMOKE_DIR/venv/bin/python" - <<'PY'
                 import opaque.accounting as acc
