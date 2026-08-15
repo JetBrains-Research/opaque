@@ -75,7 +75,7 @@ object MainCi : BuildType({
         buildId = "Opaque_MainCi",
         buildName = CiModel.Status.MAIN_CI,
         branchKind = CiModel.BranchKind.MAIN,
-        dependencies = listOf(Qodana, MinimumTests, MaximumTests, DevDistributions),
+        dependencies = listOf(Qodana, DependencyVersionVerification, DevDistributions),
         cancelObsoletePullRequestBuilds = false,
     )
 })
@@ -86,7 +86,7 @@ object ReleaseCandidate : BuildType({
         buildId = "Opaque_ReleaseCandidate",
         buildName = CiModel.Status.RELEASE_CANDIDATE,
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        dependencies = listOf(Qodana, MinimumTests, MaximumTests, ReleaseDistributions),
+        dependencies = listOf(Qodana, DependencyVersionVerification, ReleaseDistributions),
         cancelObsoletePullRequestBuilds = false,
     )
 })

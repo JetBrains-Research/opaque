@@ -150,33 +150,44 @@ private val cudaTest = BuildType {
     pruneUvCacheForCi()
 }
 
-private fun verificationProfile(profile: CiModel.VerificationProfile) = BuildType {
-    id("Opaque_Verification${profile.id}")
-    name = "${profile.displayName} verification"
+private fun tests() = BuildType {
+    id("Opaque_Tests")
+    name = "Tests"
     type = BuildTypeSettings.Type.COMPOSITE
     dependencies {
-        snapshot(profileTestMatrices.getValue(profile)) {
+        snapshot(profileTestMatrices.getValue(CiModel.pinnedVerification)) {
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
             reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
-        if (profile == CiModel.pinnedVerification) {
-            listOf(RustTests, StrictDocs).forEach {
-                snapshot(it) {
-                    onDependencyFailure = FailureAction.FAIL_TO_START
-                    onDependencyCancel = FailureAction.CANCEL
-                    synchronizeRevisions = true
-                    reuseBuilds = ReuseBuilds.SUCCESSFUL
-                }
+        snapshot(RustTests) {
+            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyCancel = FailureAction.CANCEL
+            synchronizeRevisions = true
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
+        }
+    }
+}
+
+private fun dependencyVersionVerification() = BuildType {
+    id("Opaque_DependencyVersionVerification")
+    name = "Dependency version verification"
+    type = BuildTypeSettings.Type.COMPOSITE
+    dependencies {
+        listOf(CiModel.minimumVerification, CiModel.maximumVerification).forEach { profile ->
+            snapshot(profileTestMatrices.getValue(profile)) {
+                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyCancel = FailureAction.CANCEL
+                synchronizeRevisions = true
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
             }
         }
     }
 }
 
-val PinnedVerification = verificationProfile(CiModel.pinnedVerification)
-val MinimumTests = profileTestMatrices.getValue(CiModel.minimumVerification)
-val MaximumTests = profileTestMatrices.getValue(CiModel.maximumVerification)
+val Tests = tests()
+val DependencyVersionVerification = dependencyVersionVerification()
 
 val verificationBuildTypes = listOf(
     *profileTestMatrices.values.toTypedArray(),
@@ -184,5 +195,6 @@ val verificationBuildTypes = listOf(
     cudaTest,
     RustTests,
     StrictDocs,
-    PinnedVerification,
+    Tests,
+    DependencyVersionVerification,
 )

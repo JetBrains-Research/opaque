@@ -15,7 +15,7 @@ private fun qodanaGate(
     }
     useAgent(CiModel.AgentClass.LINUX_LARGE)
     dependencies {
-        snapshot(PinnedVerification) {
+        snapshot(Tests) {
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
