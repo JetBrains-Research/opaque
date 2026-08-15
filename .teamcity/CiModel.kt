@@ -116,8 +116,8 @@ object CiModel {
     )
 
     val pinnedVerification = VerificationProfile(
-        id = "Pinned",
-        displayName = "Pinned",
+        id = "Tests",
+        displayName = "Tests",
         pythonVersion = PYTHON_311,
         agentClass = AgentClass.LINUX_LARGE,
         dependencyResolution = DependencyResolution.PINNED,

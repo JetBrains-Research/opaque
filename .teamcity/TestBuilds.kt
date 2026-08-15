@@ -90,7 +90,7 @@ private object RustTests : BuildType({
     }
 })
 
-private object StrictDocs : BuildType({
+object StrictDocs : BuildType({
     id("Opaque_StrictDocs")
     name = "Strict documentation build"
     templates(PythonUtilityTemplate)
