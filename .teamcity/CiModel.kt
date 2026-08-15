@@ -138,15 +138,24 @@ object CiModel {
     )
 
     val maximumVerification = VerificationProfile(
-        id = "MaximumAarch64",
-        displayName = "Maximum dependencies (aarch64)",
+        id = "MaximumAmd64",
+        displayName = "Maximum dependencies (amd64)",
         pythonVersionSelection = PythonVersionSelection.MAXIMUM,
-        agentClass = AgentClass.UBUNTU_22_LINUX_ARM64_LARGE,
+        agentClass = AgentClass.LINUX_LARGE,
         dependencyResolution = DependencyResolution.MAXIMUM,
         pytestMarker = TestDevice.CPU.markerForMain,
     )
 
-    val verificationProfiles = listOf(pinnedVerification, minimumVerification, maximumVerification)
+    val platformVerification = VerificationProfile(
+        id = "PlatformAarch64",
+        displayName = "Platform (aarch64)",
+        pythonVersionSelection = PythonVersionSelection.MAXIMUM,
+        agentClass = AgentClass.UBUNTU_22_LINUX_ARM64_LARGE,
+        dependencyResolution = DependencyResolution.PINNED,
+        pytestMarker = TestDevice.CPU.markerForMain,
+    )
+
+    val verificationProfiles = listOf(pinnedVerification, minimumVerification, maximumVerification, platformVerification)
 
     val pythonDistributions = listOf(
         PythonDistribution("opaque", "."),

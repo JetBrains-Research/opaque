@@ -220,13 +220,11 @@ private fun platformVerification() = BuildType {
     name = "Platform verification"
     type = BuildTypeSettings.Type.COMPOSITE
     dependencies {
-        platformWheelBuildTypes.forEach { buildType ->
-            snapshot(buildType) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
-                onDependencyCancel = FailureAction.CANCEL
-                synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.SUCCESSFUL
-            }
+        snapshot(profileTestMatrices.getValue(CiModel.platformVerification)) {
+            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyCancel = FailureAction.CANCEL
+            synchronizeRevisions = true
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
     }
 }

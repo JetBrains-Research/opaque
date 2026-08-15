@@ -55,7 +55,7 @@ object PrGate : BuildType({
         buildId = "Opaque_PrGate",
         buildName = CiModel.Status.PR_GATE,
         branchKind = CiModel.BranchKind.PULL_REQUEST,
-        dependencies = listOf(Qodana, StrictDocs, PlatformVerification, PreviewDistributions),
+        dependencies = listOf(Qodana, StrictDocs, PreviewDistributions),
         cancelObsoletePullRequestBuilds = true,
     )
     features {

@@ -228,11 +228,8 @@ private val pythonWheelBuilds = CiModel.pythonDistributions.map { distribution -
 private val accountingWheelBuilds = CiModel.accountingTargets.map { target ->
     DistributionBuilder("accounting-${target.id}", accountingWheel(target))
 }
-val platformWheelBuildTypes = accountingWheelBuilds.map { it.buildType }
 private val distributionBuilders = pythonWheelBuilds +
     accountingWheelBuilds +
-    DistributionBuilder("accounting-sdist", AccountingSdist)
-private val nonPlatformDistributionBuilders = pythonWheelBuilds +
     DistributionBuilder("accounting-sdist", AccountingSdist)
 
 object ValidateDistributions : BuildType({
@@ -253,13 +250,7 @@ object ValidateDistributions : BuildType({
             synchronizeRevisions = true
             reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
-        snapshot(PlatformVerification) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
-            onDependencyCancel = FailureAction.CANCEL
-            synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
-        }
-        nonPlatformDistributionBuilders.forEach { builder ->
+        distributionBuilders.forEach { builder ->
             snapshot(builder.buildType) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
