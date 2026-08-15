@@ -9,7 +9,7 @@ object Verification : Project({
     params {
         password(
             "opaque.qodana.cloud.token",
-            "",
+            "credentialsJSON:bab0ea16-4051-43f8-aab7-8c15d0c75e21",
             display = ParameterDisplay.HIDDEN,
         )
     }
