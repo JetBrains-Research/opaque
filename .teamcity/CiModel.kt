@@ -43,7 +43,7 @@ object CiModel {
         LINUX_LARGE("Linux Large", "Linux-Large", "Linux", "amd64"),
         LINUX_SMALL("Linux Small", "Linux-Small", "Linux", "amd64"),
         UBUNTU_22_LINUX_SMALL("Ubuntu 22.04 Linux Small", "Ubuntu-22.04-Small", "Linux", "amd64"),
-        LINUX_ARM64_SMALL("Linux ARM64 Small", "Ubuntu-24.04-Small-Arm64", "Linux", "aarch64"),
+        UBUNTU_22_LINUX_ARM64_LARGE("Ubuntu 22.04 Linux ARM64 Large", "Ubuntu-22.04-Large-Arm64", "Linux", "aarch64"),
         UBUNTU_22_LINUX_ARM64_SMALL("Ubuntu 22.04 Linux ARM64 Small", "Ubuntu-22.04-Small-Arm64", "Linux", "aarch64"),
         MACOS_ARM64("macOS ARM64", "macOS-14-Sonoma-Medium-Arm64", "Mac OS X", "aarch64"),
         CUDA("CUDA", null, "Linux", "amd64", "opaque.agent.cuda" to "true"),
@@ -137,7 +137,7 @@ object CiModel {
         id = "MaximumAarch64",
         displayName = "Maximum dependencies (aarch64)",
         pythonVersion = PYTHON_312,
-        agentClass = AgentClass.LINUX_ARM64_SMALL,
+        agentClass = AgentClass.UBUNTU_22_LINUX_ARM64_LARGE,
         dependencyResolution = DependencyResolution.MAXIMUM,
         pytestMarker = TestDevice.CPU.markerForMain,
     )

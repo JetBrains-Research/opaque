@@ -38,6 +38,7 @@ private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = 
     templates(PythonTestTemplate)
 
     params {
+        param("teamcity.build.tempDir", "%teamcity.build.checkoutDir%/.teamcity-tmp")
         param("opaque.pytest.path", "packages")
         param("opaque.pytest.marker", profile.pytestMarker)
         param("opaque.pytest.xdist", CiModel.TestDevice.CPU.xdistArguments)

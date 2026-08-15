@@ -18,7 +18,7 @@ private fun qodanaGate(
         root(DslContext.settingsRoot)
         branchFilter = branchKind.branchFilter
     }
-    useAgent(CiModel.AgentClass.LINUX_SMALL)
+    useAgent(CiModel.AgentClass.LINUX_LARGE)
     dependencies {
         verificationBuilds.forEach { verificationBuild ->
             snapshot(verificationBuild) {
