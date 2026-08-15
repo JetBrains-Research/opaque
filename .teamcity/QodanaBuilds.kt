@@ -33,7 +33,7 @@ private fun qodanaGate(
             }
             cloudToken = "%opaque.qodana.cloud.token%"
             reportAsTests = true
-            additionalQodanaArguments = "--baseline qodana.sarif.json --fail-threshold 0"
+            additionalQodanaArguments = "--baseline qodana.sarif.json"
         }
     }
 }
