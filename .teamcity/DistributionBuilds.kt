@@ -228,27 +228,12 @@ private val pythonWheelBuilds = CiModel.pythonDistributions.map { distribution -
 private val accountingWheelBuilds = CiModel.accountingTargets.map { target ->
     DistributionBuilder("accounting-${target.id}", accountingWheel(target))
 }
+val platformWheelBuildTypes = accountingWheelBuilds.map { it.buildType }
 private val distributionBuilders = pythonWheelBuilds +
     accountingWheelBuilds +
     DistributionBuilder("accounting-sdist", AccountingSdist)
 private val nonPlatformDistributionBuilders = pythonWheelBuilds +
     DistributionBuilder("accounting-sdist", AccountingSdist)
-
-object PlatformVerification : BuildType({
-    id("Opaque_PlatformVerification")
-    name = "Platform verification"
-    type = BuildTypeSettings.Type.COMPOSITE
-    dependencies {
-        accountingWheelBuilds.forEach { builder ->
-            snapshot(builder.buildType) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
-                onDependencyCancel = FailureAction.CANCEL
-                synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.SUCCESSFUL
-            }
-        }
-    }
-})
 
 object ValidateDistributions : BuildType({
     id("Opaque_ValidateDistributions")
@@ -379,4 +364,4 @@ object ReleaseDistributions : BuildType({
 
 val artifactBuildTypes = listOf(PrepareVersion) +
     distributionBuilders.map { it.buildType } +
-    listOf(PlatformVerification, ValidateDistributions, PreviewDistributions, DevDistributions, ReleaseDistributions)
+    listOf(ValidateDistributions, PreviewDistributions, DevDistributions, ReleaseDistributions)

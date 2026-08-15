@@ -186,8 +186,25 @@ private fun dependencyVersionVerification() = BuildType {
     }
 }
 
+private fun platformVerification() = BuildType {
+    id("Opaque_PlatformVerification")
+    name = "Platform verification"
+    type = BuildTypeSettings.Type.COMPOSITE
+    dependencies {
+        platformWheelBuildTypes.forEach { buildType ->
+            snapshot(buildType) {
+                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyCancel = FailureAction.CANCEL
+                synchronizeRevisions = true
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
+            }
+        }
+    }
+}
+
 val Tests = tests()
 val DependencyVersionVerification = dependencyVersionVerification()
+val PlatformVerification = platformVerification()
 
 val verificationBuildTypes = listOf(
     *profileTestMatrices.values.toTypedArray(),
@@ -197,4 +214,5 @@ val verificationBuildTypes = listOf(
     StrictDocs,
     Tests,
     DependencyVersionVerification,
+    PlatformVerification,
 )
