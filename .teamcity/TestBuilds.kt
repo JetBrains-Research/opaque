@@ -141,9 +141,9 @@ object StrictDocs : BuildType({
 private val profileTestMatrices = CiModel.verificationProfiles.associateWith(::pythonTestMatrix)
 private val mpsTests = BuildType {
     id("Opaque_PythonMps")
-    name = "Python MPS tests"
+    name = "macOS platform tests (MPS)"
     paused = true
-    description = "Disabled until TeamCity provides a larger compatible macOS hosted-agent type."
+    description = "Disabled until TeamCity provides a larger compatible macOS hosted-agent type; add this lane to Platform verification when enabled."
     templates(PythonTestTemplate)
     useAgent(CiModel.TestDevice.MPS.agentClass)
 }
@@ -218,6 +218,7 @@ private fun dependencyVersionVerification() = BuildType {
 private fun platformVerification() = BuildType {
     id("Opaque_PlatformVerification")
     name = "Platform verification"
+    description = "Linux aarch64 all-package tests; macOS MPS tests join when compatible hosted agents are available."
     type = BuildTypeSettings.Type.COMPOSITE
     dependencies {
         snapshot(profileTestMatrices.getValue(CiModel.platformVerification)) {
