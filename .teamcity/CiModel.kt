@@ -9,10 +9,15 @@ object CiModel {
         MAXIMUM("--resolution highest --upgrade", true),
     }
 
+    enum class PythonVersionSelection {
+        MINIMUM,
+        MAXIMUM,
+    }
+
     data class VerificationProfile(
         val id: String,
         val displayName: String,
-        val pythonVersion: String,
+        val pythonVersionSelection: PythonVersionSelection,
         val agentClass: AgentClass,
         val dependencyResolution: DependencyResolution,
         val pytestMarker: String,
@@ -97,7 +102,6 @@ object CiModel {
 
     const val ARTIFACT_RETENTION_DAYS = 90
     const val PYTHON_311 = "3.11"
-    const val PYTHON_312 = "3.12"
     const val TEST_TIMEOUT_MINUTES = 40
     const val BUILD_TIMEOUT_MINUTES = 30
 
@@ -118,7 +122,7 @@ object CiModel {
     val pinnedVerification = VerificationProfile(
         id = "Tests",
         displayName = "Tests",
-        pythonVersion = PYTHON_311,
+        pythonVersionSelection = PythonVersionSelection.MINIMUM,
         agentClass = AgentClass.LINUX_LARGE,
         dependencyResolution = DependencyResolution.PINNED,
         pytestMarker = TestDevice.CPU.markerForPullRequest,
@@ -127,7 +131,7 @@ object CiModel {
     val minimumVerification = VerificationProfile(
         id = "MinimumAmd64",
         displayName = "Minimum dependencies (amd64)",
-        pythonVersion = PYTHON_311,
+        pythonVersionSelection = PythonVersionSelection.MINIMUM,
         agentClass = AgentClass.LINUX_LARGE,
         dependencyResolution = DependencyResolution.MINIMUM,
         pytestMarker = TestDevice.CPU.markerForMain,
@@ -136,7 +140,7 @@ object CiModel {
     val maximumVerification = VerificationProfile(
         id = "MaximumAarch64",
         displayName = "Maximum dependencies (aarch64)",
-        pythonVersion = PYTHON_312,
+        pythonVersionSelection = PythonVersionSelection.MAXIMUM,
         agentClass = AgentClass.UBUNTU_22_LINUX_ARM64_LARGE,
         dependencyResolution = DependencyResolution.MAXIMUM,
         pytestMarker = TestDevice.CPU.markerForMain,

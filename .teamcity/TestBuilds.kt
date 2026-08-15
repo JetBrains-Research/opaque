@@ -6,12 +6,40 @@ import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.matrix
 
+private fun CiModel.VerificationProfile.pythonVersionPreparationScript() = """
+    PYTHON_VERSION=${'$'}(
+      uv run --isolated --no-project --with packaging==25.0 python - ${pythonVersionSelection.name.lowercase()} <<'PY'
+    import sys
+    import tomllib
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
+    selection = sys.argv[1]
+    with open("pyproject.toml", "rb") as project_file:
+        requires_python = tomllib.load(project_file)["project"]["requires-python"]
+    supported = [
+        Version(f"{major}.{minor}")
+        for major in range(2, 10)
+        for minor in range(100)
+        if Version(f"{major}.{minor}") in SpecifierSet(requires_python)
+    ]
+    if not supported:
+        raise SystemExit(f"No Python version satisfies {requires_python!r}")
+    print(min(supported) if selection == "minimum" else max(supported))
+    PY
+    )
+    echo "Using Python ${'$'}PYTHON_VERSION"
+""".trimIndent()
+
 private fun CiModel.VerificationProfile.projectDirectory() =
     if (dependencyResolution.isolated) "%teamcity.build.tempDir%/opaque-$id" else "%teamcity.build.checkoutDir%"
 
 private fun CiModel.VerificationProfile.prepareProjectScript(): String {
     if (!dependencyResolution.isolated) {
-        return "uv sync --python $pythonVersion --group dev --all-packages --extra all ${dependencyResolution.syncArguments}"
+        return """
+            ${pythonVersionPreparationScript()}
+            uv sync --python "${'$'}PYTHON_VERSION" --group dev --all-packages --extra all ${dependencyResolution.syncArguments}
+        """.trimIndent()
     }
     return """
         set -eu
@@ -27,7 +55,8 @@ private fun CiModel.VerificationProfile.prepareProjectScript(): String {
           --exclude target \
           ./ "${'$'}PROJECT_DIR/"
         cd "${'$'}PROJECT_DIR"
-        uv sync --python $pythonVersion --group dev --all-packages --extra all ${dependencyResolution.syncArguments}
+        ${pythonVersionPreparationScript()}
+        uv sync --python "${'$'}PYTHON_VERSION" --group dev --all-packages --extra all ${dependencyResolution.syncArguments}
         test "${'$'}(git -C %teamcity.build.checkoutDir% status --porcelain -- uv.lock)" = ""
     """.trimIndent()
 }
