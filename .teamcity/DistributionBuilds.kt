@@ -141,9 +141,12 @@ object PythonWheels : BuildType({
     steps {
         script {
             name = "Build platform-agnostic wheels"
-            scriptContent = CiModel.pythonDistributions.joinToString("\n") {
-                "(cd ${it.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})"
-            }
+            scriptContent = """
+                export SETUPTOOLS_SCM_PRETEND_VERSION='%opaque.version%'
+                ${CiModel.pythonDistributions.joinToString("\n") {
+                    "(cd ${it.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})"
+                }}
+            """.trimIndent()
         }
     }
     recordArtifactManifest()
