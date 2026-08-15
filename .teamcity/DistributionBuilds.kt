@@ -273,6 +273,20 @@ object ValidateDistributions : BuildType({
             scriptContent = "test \"${'$'}(find ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')\" = ${CiModel.Artifacts.COMPLETE_WHEEL_COUNT} && test \"${'$'}(find ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')\" = ${CiModel.Artifacts.SDIST_COUNT}"
         }
         script {
+            name = "Install and import complete bundle"
+            scriptContent = """
+                set -eu
+                bundle_venv=%teamcity.build.tempDir%/opaque-bundle
+                rm -rf "${'$'}bundle_venv"
+                uv venv --python ${CiModel.PYTHON_311} "${'$'}bundle_venv"
+                uv pip install --python "${'$'}bundle_venv/bin/python" --find-links %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY} --prerelease=allow "opaque[all]==%opaque.version%"
+                (
+                  cd "${'$'}bundle_venv"
+                  PYTHONNOUSERSITE=1 "${'$'}bundle_venv/bin/python" -c 'import importlib; [importlib.import_module(module) for module in ("opaque.accounting", "opaque.alignment", "opaque.auditing", "opaque.distributed", "opaque.dpftrl", "opaque.dpsgd", "opaque.functional", "opaque.optimizers", "opaque.patches", "opaque.precision", "opaque.profiling", "opaque.pytree", "opaque.random", "opaque.scheduling", "opaque.serialization", "opaque.transformers", "opaque.types")]'
+                )
+            """.trimIndent()
+        }
+        script {
             name = "Record artifact identity"
             scriptContent = "printf 'commit=%%s\\nversion=%%s\\nsource_build_id=%%s\\nbuild_id=%%s\\n' '%build.vcs.number%' '%opaque.version%' '%opaque.source.build.id%' '%teamcity.build.id%' > ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/${CiModel.Artifacts.IDENTITY_MANIFEST}"
         }
