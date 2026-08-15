@@ -87,7 +87,7 @@ object CiModel {
     object Artifacts {
         const val DISTRIBUTION_DIRECTORY = "dist"
         const val STAGED_INPUT_DIRECTORY = "inputs"
-        const val COMPLETE_WHEEL_COUNT = 13
+        const val COMPLETE_WHEEL_COUNT = 12
         const val SDIST_COUNT = 1
         const val VALIDATED_BUNDLE = "validated-distributions.zip"
         const val IDENTITY_MANIFEST = "teamcity-artifact-identity.txt"
@@ -186,14 +186,6 @@ object CiModel {
             "aarch64-unknown-linux-gnu",
             "2_28",
             "quay.io/pypa/manylinux_2_28_aarch64:latest",
-        ),
-        AccountingTarget(
-            "MacArm64",
-            "macOS ARM64",
-            AgentClass.MACOS_ARM64,
-            "aarch64-apple-darwin",
-            null,
-            null,
         ),
     )
 
