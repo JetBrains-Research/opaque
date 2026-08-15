@@ -3,6 +3,21 @@ object CiModel {
 
     data class PythonDistribution(val label: String, val path: String)
 
+    enum class DependencyResolution(val syncArguments: String, val isolated: Boolean) {
+        PINNED("--locked", false),
+        MINIMUM("--resolution lowest-direct --upgrade", true),
+        MAXIMUM("--resolution highest --upgrade", true),
+    }
+
+    data class VerificationProfile(
+        val id: String,
+        val displayName: String,
+        val pythonVersion: String,
+        val agentClass: AgentClass,
+        val dependencyResolution: DependencyResolution,
+        val pytestMarker: String,
+    )
+
     data class AccountingTarget(
         val id: String,
         val label: String,
@@ -81,7 +96,8 @@ object CiModel {
     }
 
     const val ARTIFACT_RETENTION_DAYS = 90
-    const val PYTHON_VERSION = "3.11"
+    const val PYTHON_311 = "3.11"
+    const val PYTHON_312 = "3.12"
     const val TEST_TIMEOUT_MINUTES = 40
     const val BUILD_TIMEOUT_MINUTES = 30
 
@@ -98,6 +114,35 @@ object CiModel {
         PackageShard("transformers", "packages/opaque-transformers"),
         PackageShard("repository", "tests"),
     )
+
+    val pinnedVerification = VerificationProfile(
+        id = "Pinned",
+        displayName = "Pinned",
+        pythonVersion = PYTHON_311,
+        agentClass = AgentClass.LINUX_LARGE,
+        dependencyResolution = DependencyResolution.PINNED,
+        pytestMarker = TestDevice.CPU.markerForPullRequest,
+    )
+
+    val minimumVerification = VerificationProfile(
+        id = "MinimumAmd64",
+        displayName = "Minimum dependencies (amd64)",
+        pythonVersion = PYTHON_311,
+        agentClass = AgentClass.LINUX_LARGE,
+        dependencyResolution = DependencyResolution.MINIMUM,
+        pytestMarker = TestDevice.CPU.markerForMain,
+    )
+
+    val maximumVerification = VerificationProfile(
+        id = "MaximumAarch64",
+        displayName = "Maximum dependencies (aarch64)",
+        pythonVersion = PYTHON_312,
+        agentClass = AgentClass.LINUX_ARM64_SMALL,
+        dependencyResolution = DependencyResolution.MAXIMUM,
+        pytestMarker = TestDevice.CPU.markerForMain,
+    )
+
+    val verificationProfiles = listOf(pinnedVerification, minimumVerification, maximumVerification)
 
     val pythonDistributions = listOf(
         PythonDistribution("opaque", "."),

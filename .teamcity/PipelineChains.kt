@@ -55,7 +55,7 @@ object PrGate : BuildType({
         buildId = "Opaque_PrGate",
         buildName = CiModel.Status.PR_GATE,
         branchKind = CiModel.BranchKind.PULL_REQUEST,
-        dependencies = listOf(OpaqueTestsPr, PreviewDistributions),
+        dependencies = listOf(QodanaPr, PreviewDistributions),
         cancelObsoletePullRequestBuilds = true,
     )
     features {
@@ -75,7 +75,7 @@ object MainCi : BuildType({
         buildId = "Opaque_MainCi",
         buildName = CiModel.Status.MAIN_CI,
         branchKind = CiModel.BranchKind.MAIN,
-        dependencies = listOf(OpaqueTestsMain, DevDistributions),
+        dependencies = listOf(QodanaMain, DevDistributions),
         cancelObsoletePullRequestBuilds = false,
     )
 })
@@ -86,7 +86,7 @@ object ReleaseCandidate : BuildType({
         buildId = "Opaque_ReleaseCandidate",
         buildName = CiModel.Status.RELEASE_CANDIDATE,
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        dependencies = listOf(OpaqueTestsTag, ReleaseDistributions),
+        dependencies = listOf(QodanaRelease, ReleaseDistributions),
         cancelObsoletePullRequestBuilds = false,
     )
 })

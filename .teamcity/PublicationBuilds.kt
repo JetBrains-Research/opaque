@@ -12,7 +12,7 @@ private fun publicationBuild(
     buildId: String,
     buildName: String,
     branchKind: CiModel.BranchKind,
-    verificationBuild: BuildType,
+    verificationBuilds: List<BuildType>,
     releaseTagRequired: Boolean = false,
 ) = buildType.apply {
     id(buildId)
@@ -38,7 +38,7 @@ private fun publicationBuild(
     }
     useAgent(CiModel.AgentClass.LINUX_SMALL)
     dependencies {
-        listOf(ValidateDistributions, verificationBuild).forEach { dependency ->
+        (listOf(ValidateDistributions) + verificationBuilds).forEach { dependency ->
             snapshot(dependency) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
@@ -81,7 +81,7 @@ object PublishDevArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishDev",
         buildName = "Publish dev artifact bundle",
         branchKind = CiModel.BranchKind.MAIN,
-        verificationBuild = OpaqueTestsMain,
+        verificationBuilds = listOf(QodanaMain),
     )
 })
 
@@ -91,7 +91,7 @@ object PublishReleaseArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishRelease",
         buildName = "Publish release artifact bundle",
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        verificationBuild = OpaqueTestsTag,
+        verificationBuilds = listOf(QodanaRelease),
         releaseTagRequired = true,
     )
 })

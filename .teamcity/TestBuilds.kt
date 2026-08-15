@@ -1,21 +1,46 @@
 import jetbrains.buildServer.configs.kotlin.BuildType
 import jetbrains.buildServer.configs.kotlin.BuildTypeSettings
-import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
 import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.matrix
 
-private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType {
-    id("Opaque_Python${device.name.lowercase().replaceFirstChar(Char::uppercase)}")
-    name = "Python ${device.displayName} tests"
+private fun CiModel.VerificationProfile.projectDirectory() =
+    if (dependencyResolution.isolated) "%teamcity.build.tempDir%/opaque-$id" else "%teamcity.build.checkoutDir%"
+
+private fun CiModel.VerificationProfile.prepareProjectScript(): String {
+    if (!dependencyResolution.isolated) {
+        return "uv sync --python $pythonVersion --group dev --all-packages --extra all ${dependencyResolution.syncArguments}"
+    }
+    return """
+        set -eu
+        PROJECT_DIR="${projectDirectory()}"
+        rm -rf "${'$'}PROJECT_DIR"
+        mkdir -p "${'$'}PROJECT_DIR"
+        rsync -a \
+          --exclude .git \
+          --exclude .teamcity-cache \
+          --exclude .venv \
+          --exclude dist \
+          --exclude site \
+          --exclude target \
+          ./ "${'$'}PROJECT_DIR/"
+        cd "${'$'}PROJECT_DIR"
+        uv sync --python $pythonVersion --group dev --all-packages --extra all ${dependencyResolution.syncArguments}
+        test "${'$'}(git -C %teamcity.build.checkoutDir% status --porcelain -- uv.lock)" = ""
+    """.trimIndent()
+}
+
+private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = BuildType {
+    id("Opaque_Python${profile.id}")
+    name = "Python ${profile.displayName} tests"
     templates(PythonTestTemplate)
 
     params {
         param("opaque.pytest.path", "packages")
-        param("opaque.pytest.marker", device.markerForMain)
-        param("opaque.pytest.xdist", device.xdistArguments)
+        param("opaque.pytest.marker", profile.pytestMarker)
+        param("opaque.pytest.xdist", CiModel.TestDevice.CPU.xdistArguments)
     }
     features {
         matrix {
@@ -25,21 +50,20 @@ private fun pythonTestMatrix(device: CiModel.TestDevice): BuildType = BuildType 
             )
         }
     }
-    useAgent(device.agentClass)
+    useAgent(profile.agentClass)
     steps {
         script {
             name = "Sync test environment"
-            scriptContent = "uv sync --python ${CiModel.PYTHON_VERSION} --group dev --all-packages --extra all"
-        }
-        if (device == CiModel.TestDevice.CUDA) {
-            script {
-                name = "Assert CUDA availability"
-                scriptContent = "uv run python -c \"import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU agent'\""
-            }
+            scriptContent = profile.prepareProjectScript()
         }
         script {
             name = "Run pytest"
-            scriptContent = "uv run pytest %opaque.pytest.path% -m \"%opaque.pytest.marker%\" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q"
+            scriptContent = """
+                set -eu
+                cd ${profile.projectDirectory()}
+                trap 'cp coverage.xml test-results.xml %teamcity.build.checkoutDir%/ 2>/dev/null || true' EXIT
+                uv run --frozen pytest %opaque.pytest.path% -m "%opaque.pytest.marker%" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q
+            """.trimIndent()
         }
     }
     pruneUvCacheForCi()
@@ -84,10 +108,14 @@ private object StrictDocs : BuildType({
     pruneUvCacheForCi()
 })
 
-private val cpuTests = pythonTestMatrix(CiModel.TestDevice.CPU)
-private val mpsTests = pythonTestMatrix(CiModel.TestDevice.MPS).apply {
+private val profileTestMatrices = CiModel.verificationProfiles.associateWith(::pythonTestMatrix)
+private val mpsTests = BuildType {
+    id("Opaque_PythonMps")
+    name = "Python MPS tests"
     paused = true
     description = "Disabled until TeamCity provides a larger compatible macOS hosted-agent type."
+    templates(PythonTestTemplate)
+    useAgent(CiModel.TestDevice.MPS.agentClass)
 }
 private val cudaTest = BuildType {
     id("Opaque_PythonCuda")
@@ -107,7 +135,7 @@ private val cudaTest = BuildType {
     steps {
         script {
             name = "Sync test environment"
-            scriptContent = "uv sync --python ${CiModel.PYTHON_VERSION} --group dev --all-packages --extra all"
+            scriptContent = "uv sync --python ${CiModel.PYTHON_311} --group dev --all-packages --extra all --locked"
         }
         script {
             name = "Assert CUDA availability"
@@ -121,82 +149,41 @@ private val cudaTest = BuildType {
     pruneUvCacheForCi()
 }
 
-private fun verificationBuild(
-    buildType: BuildType,
-    buildId: String,
-    buildName: String,
-    branchKind: CiModel.BranchKind,
-) = buildType.apply {
-    id(buildId)
-    name = buildName
+private fun verificationProfile(profile: CiModel.VerificationProfile) = BuildType {
+    id("Opaque_Verification${profile.id}")
+    name = "${profile.displayName} verification"
     type = BuildTypeSettings.Type.COMPOSITE
-
-    vcs {
-        root(DslContext.settingsRoot)
-        this.branchFilter = branchKind.branchFilter
-    }
-    params {
-        if (branchKind == CiModel.BranchKind.PULL_REQUEST) {
-            param(
-                "override.dep.Opaque_PythonCpu.opaque.pytest.marker",
-                CiModel.TestDevice.CPU.markerForPullRequest,
-            )
-        }
-    }
     dependencies {
-        listOf(cpuTests).forEach { matrix ->
-            snapshot(matrix) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
-                onDependencyCancel = FailureAction.CANCEL
-                synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.SUCCESSFUL
-            }
+        snapshot(profileTestMatrices.getValue(profile)) {
+            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyCancel = FailureAction.CANCEL
+            synchronizeRevisions = true
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
-        listOf(RustTests, StrictDocs).forEach {
-            snapshot(it) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
-                onDependencyCancel = FailureAction.CANCEL
-                synchronizeRevisions = true
-                reuseBuilds = ReuseBuilds.SUCCESSFUL
+        if (profile == CiModel.pinnedVerification) {
+            listOf(RustTests, StrictDocs).forEach {
+                snapshot(it) {
+                    onDependencyFailure = FailureAction.FAIL_TO_START
+                    onDependencyCancel = FailureAction.CANCEL
+                    synchronizeRevisions = true
+                    reuseBuilds = ReuseBuilds.SUCCESSFUL
+                }
             }
         }
     }
 }
 
-object OpaqueTestsPr : BuildType({
-    verificationBuild(
-        this,
-        buildId = "Opaque_TestsPr",
-        buildName = "PR verification",
-        branchKind = CiModel.BranchKind.PULL_REQUEST,
-    )
-})
-
-object OpaqueTestsMain : BuildType({
-    verificationBuild(
-        this,
-        buildId = "Opaque_TestsMain",
-        buildName = "Main verification",
-        branchKind = CiModel.BranchKind.MAIN,
-    )
-})
-
-object OpaqueTestsTag : BuildType({
-    verificationBuild(
-        this,
-        buildId = "Opaque_TestsTag",
-        buildName = "Tag verification",
-        branchKind = CiModel.BranchKind.RELEASE_TAG,
-    )
-})
+val PinnedVerification = verificationProfile(CiModel.pinnedVerification)
+val MinimumVerification = verificationProfile(CiModel.minimumVerification)
+val MaximumVerification = verificationProfile(CiModel.maximumVerification)
 
 val verificationBuildTypes = listOf(
-    cpuTests,
+    *profileTestMatrices.values.toTypedArray(),
     mpsTests,
     cudaTest,
     RustTests,
     StrictDocs,
-    OpaqueTestsPr,
-    OpaqueTestsMain,
-    OpaqueTestsTag,
+    PinnedVerification,
+    MinimumVerification,
+    MaximumVerification,
 )

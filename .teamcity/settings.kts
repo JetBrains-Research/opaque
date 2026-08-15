@@ -6,9 +6,18 @@ object Verification : Project({
     id("Opaque_Verification")
     name = "Verification"
 
+    params {
+        password(
+            "opaque.qodana.cloud.token",
+            "",
+            display = ParameterDisplay.HIDDEN,
+        )
+    }
+
     template(PythonTestTemplate)
     template(PythonUtilityTemplate)
     verificationBuildTypes.forEach(::buildType)
+    qodanaBuildTypes.forEach(::buildType)
 })
 
 object Artifacts : Project({

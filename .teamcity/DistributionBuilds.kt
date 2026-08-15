@@ -58,7 +58,7 @@ private fun distributionBuild(
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.NO
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
     }
 }
@@ -134,23 +134,33 @@ private fun CiModel.AccountingTarget.nativeWheelBuildScript(): String {
     """.trimIndent()
 }
 
-object PythonWheels : BuildType({
-    distributionBuild(this, "Opaque_BuildPythonWheels", "Build pure-Python wheels", "pure-python")
+private fun pythonWheel(distribution: CiModel.PythonDistribution) = BuildType {
+    val buildSuffix = distribution.label.split("-").joinToString("") { part ->
+        part.replaceFirstChar(Char::uppercaseChar)
+    }
+    distributionBuild(
+        this,
+        "Opaque_BuildPython$buildSuffix",
+        "Build ${distribution.label}",
+        "python-${distribution.label}",
+    )
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/*.whl => distributions\n${CiModel.Artifacts.VERSION_MANIFEST} => metadata"
     useAgent(CiModel.AgentClass.LINUX_SMALL)
     steps {
         script {
-            name = "Build platform-agnostic wheels"
+            name = "Build wheel"
             scriptContent = """
                 export SETUPTOOLS_SCM_PRETEND_VERSION='%opaque.version%'
-                ${CiModel.pythonDistributions.joinToString("\n") {
-                    "(cd ${it.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})"
-                }}
+                (cd ${distribution.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})
             """.trimIndent()
+        }
+        script {
+            name = "Validate internal pins"
+            scriptContent = "uv run --isolated --no-project --with packaging==25.0 python .github/scripts/check_wheel_internal_pins.py --wheel-dir ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
         }
     }
     recordArtifactManifest()
-})
+}
 
 private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
     distributionBuild(this, "Opaque_BuildAccounting${target.id}", "Build opaque-accounting (${target.label})", "accounting-${target.id}")
@@ -188,10 +198,13 @@ object AccountingSdist : BuildType({
 
 private data class DistributionBuilder(val target: String, val buildType: BuildType)
 
+private val pythonWheelBuilds = CiModel.pythonDistributions.map { distribution ->
+    DistributionBuilder("python-${distribution.label}", pythonWheel(distribution))
+}
 private val accountingWheelBuilds = CiModel.accountingTargets.map { target ->
     DistributionBuilder("accounting-${target.id}", accountingWheel(target))
 }
-private val distributionBuilders = listOf(DistributionBuilder("pure-python", PythonWheels)) +
+private val distributionBuilders = pythonWheelBuilds +
     accountingWheelBuilds +
     DistributionBuilder("accounting-sdist", AccountingSdist)
 
@@ -211,7 +224,7 @@ object ValidateDistributions : BuildType({
             onDependencyFailure = FailureAction.FAIL_TO_START
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.NO
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
         distributionBuilders.forEach { builder ->
             snapshot(builder.buildType) {
@@ -248,10 +261,6 @@ object ValidateDistributions : BuildType({
                   test "${'$'}(sed -n 's/^source_build_id=//p' "${'$'}manifest")" = "%opaque.source.build.id%"
                 done
             """.trimIndent()
-        }
-        script {
-            name = "Validate internal pins"
-            scriptContent = "uv run --isolated --no-project --with packaging==25.0 python .github/scripts/check_wheel_internal_pins.py --wheel-dir ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
         }
         script {
             name = "Validate accounting artifact policy"
