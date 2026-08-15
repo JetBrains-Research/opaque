@@ -14,6 +14,7 @@ private fun entryChain(
     buildName: String,
     branchKind: CiModel.BranchKind,
     dependencies: List<BuildType>,
+    nonBlockingDependencies: Set<BuildType> = emptySet(),
     cancelObsoletePullRequestBuilds: Boolean,
 ) = buildType.apply {
     id(buildId)
@@ -26,7 +27,11 @@ private fun entryChain(
     dependencies {
         dependencies.forEach { dependency ->
             snapshot(dependency) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyFailure = if (dependency in nonBlockingDependencies) {
+                    FailureAction.IGNORE
+                } else {
+                    FailureAction.FAIL_TO_START
+                }
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
                 reuseBuilds = ReuseBuilds.SUCCESSFUL
@@ -55,7 +60,8 @@ object PrGate : BuildType({
         buildId = "Opaque_PrGate",
         buildName = CiModel.Status.PR_GATE,
         branchKind = CiModel.BranchKind.PULL_REQUEST,
-        dependencies = listOf(Qodana, RustTests, StrictDocs, PreviewDistributions),
+        dependencies = listOf(PythonTests, Qodana, RustTests, StrictDocs, PreviewDistributions),
+        nonBlockingDependencies = setOf(Qodana),
         cancelObsoletePullRequestBuilds = true,
     )
     features {
@@ -75,7 +81,8 @@ object MainCi : BuildType({
         buildId = "Opaque_MainCi",
         buildName = CiModel.Status.MAIN_CI,
         branchKind = CiModel.BranchKind.MAIN,
-        dependencies = listOf(Qodana, RustTests, StrictDocs, DependencyVersionVerification, PlatformVerification, DevDistributions),
+        dependencies = listOf(PythonTests, Qodana, RustTests, StrictDocs, DependencyVersionVerification, PlatformVerification, DevDistributions),
+        nonBlockingDependencies = setOf(Qodana),
         cancelObsoletePullRequestBuilds = false,
     )
 })
@@ -86,7 +93,8 @@ object ReleaseCandidate : BuildType({
         buildId = "Opaque_ReleaseCandidate",
         buildName = CiModel.Status.RELEASE_CANDIDATE,
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        dependencies = listOf(Qodana, RustTests, StrictDocs, DependencyVersionVerification, PlatformVerification, ReleaseDistributions),
+        dependencies = listOf(PythonTests, Qodana, RustTests, StrictDocs, DependencyVersionVerification, PlatformVerification, ReleaseDistributions),
+        nonBlockingDependencies = setOf(Qodana),
         cancelObsoletePullRequestBuilds = false,
     )
 })

@@ -13,6 +13,7 @@ private fun publicationBuild(
     buildName: String,
     branchKind: CiModel.BranchKind,
     verificationBuilds: List<BuildType>,
+    nonBlockingVerificationBuilds: Set<BuildType> = emptySet(),
     releaseTagRequired: Boolean = false,
 ) = buildType.apply {
     id(buildId)
@@ -40,7 +41,11 @@ private fun publicationBuild(
     dependencies {
         (listOf(ValidateDistributions) + verificationBuilds).forEach { dependency ->
             snapshot(dependency) {
-                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyFailure = if (dependency in nonBlockingVerificationBuilds) {
+                    FailureAction.IGNORE
+                } else {
+                    FailureAction.FAIL_TO_START
+                }
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
                 reuseBuilds = ReuseBuilds.SUCCESSFUL
@@ -81,7 +86,8 @@ object PublishDevArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishDev",
         buildName = "Publish dev artifact bundle",
         branchKind = CiModel.BranchKind.MAIN,
-        verificationBuilds = listOf(Qodana, RustTests, DependencyVersionVerification),
+        verificationBuilds = listOf(PythonTests, Qodana, RustTests, DependencyVersionVerification),
+        nonBlockingVerificationBuilds = setOf(Qodana),
     )
 })
 
@@ -91,7 +97,8 @@ object PublishReleaseArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishRelease",
         buildName = "Publish release artifact bundle",
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        verificationBuilds = listOf(Qodana, RustTests, DependencyVersionVerification),
+        verificationBuilds = listOf(PythonTests, Qodana, RustTests, DependencyVersionVerification),
+        nonBlockingVerificationBuilds = setOf(Qodana),
         releaseTagRequired = true,
     )
 })

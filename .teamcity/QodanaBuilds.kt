@@ -16,7 +16,7 @@ private fun qodanaGate(
     useAgent(CiModel.AgentClass.LINUX_LARGE)
     dependencies {
         snapshot(PythonTests) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyFailure = FailureAction.IGNORE
             onDependencyCancel = FailureAction.CANCEL
             synchronizeRevisions = true
             reuseBuilds = ReuseBuilds.SUCCESSFUL
