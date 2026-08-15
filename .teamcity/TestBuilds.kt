@@ -99,7 +99,7 @@ private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = 
     pruneUvCacheForCi()
 }
 
-private object RustTests : BuildType({
+object RustTests : BuildType({
     id("Opaque_RustTests")
     name = "Rust tests"
     configureCheckout()
@@ -179,29 +179,9 @@ private val cudaTest = BuildType {
     pruneUvCacheForCi()
 }
 
-private fun tests() = BuildType {
-    id("Opaque_Tests")
-    name = "Tests"
-    type = BuildTypeSettings.Type.COMPOSITE
-    dependencies {
-        snapshot(profileTestMatrices.getValue(CiModel.pinnedVerification)) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
-            onDependencyCancel = FailureAction.CANCEL
-            synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
-        }
-        snapshot(RustTests) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
-            onDependencyCancel = FailureAction.CANCEL
-            synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
-        }
-    }
-}
-
 private fun dependencyVersionVerification() = BuildType {
     id("Opaque_DependencyVersionVerification")
-    name = "Dependency version verification"
+    name = "Dependency verification"
     type = BuildTypeSettings.Type.COMPOSITE
     dependencies {
         listOf(CiModel.minimumVerification, CiModel.maximumVerification).forEach { profile ->
@@ -230,7 +210,7 @@ private fun platformVerification() = BuildType {
     }
 }
 
-val Tests = tests()
+val PythonTests = profileTestMatrices.getValue(CiModel.pinnedVerification)
 val DependencyVersionVerification = dependencyVersionVerification()
 val PlatformVerification = platformVerification()
 
@@ -240,7 +220,6 @@ val verificationBuildTypes = listOf(
     cudaTest,
     RustTests,
     StrictDocs,
-    Tests,
     DependencyVersionVerification,
     PlatformVerification,
 )
