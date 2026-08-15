@@ -122,9 +122,10 @@ opaque-alignment = { workspace = true }
 # when CUDA + Triton are not importable.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
-  "pytest>=7.0.0",
+  "pytest>=8.0.0",
   "pytest-cov>=4.0.0",
   "pytest-xdist>=3.5.0",   # Parallel test execution (`-n auto`); CI shards within each job
+  "setuptools>=68.0",      # Required by Torch Inductor's C++ extension discovery
   "ruff>=0.16.0,<0.17",
   "scipy>=1.11.0",         # Statistical tests
   # Cross-validation against reference DP accounting libraries. Imported by
@@ -143,7 +144,7 @@ dev = [
 examples = [
   "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
-  "transformers>=4.57.0,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
+  "transformers>=4.57.1,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
   "peft>=0.18.0",             # LoRA adapters (needed by all training examples)
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
