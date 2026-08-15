@@ -73,6 +73,15 @@ private fun BuildType.recordArtifactManifest() {
     pruneUvCacheForCi()
 }
 
+private fun BuildType.validateInternalPins() {
+    steps {
+        script {
+            name = "Validate internal pins"
+            scriptContent = "uv run --isolated --no-project --with packaging==25.0 python .github/scripts/check_wheel_internal_pins.py --wheel-dir ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
+        }
+    }
+}
+
 private fun BuildType.smokeAccountingWheel() {
     steps {
         script {
@@ -156,11 +165,8 @@ private fun pythonWheel(distribution: CiModel.PythonDistribution) = BuildType {
                 git restore --source=HEAD -- Cargo.toml ${CiModel.versionedPyprojectPaths.joinToString(" ")}
             """.trimIndent()
         }
-        script {
-            name = "Validate internal pins"
-            scriptContent = "uv run --isolated --no-project --with packaging==25.0 python .github/scripts/check_wheel_internal_pins.py --wheel-dir ${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}"
-        }
     }
+    validateInternalPins()
     recordArtifactManifest()
 }
 
@@ -182,6 +188,7 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
         }
     }
     smokeAccountingWheel()
+    validateInternalPins()
     recordArtifactManifest()
 }
 
