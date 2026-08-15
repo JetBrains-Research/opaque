@@ -176,8 +176,8 @@ private fun pythonWheel(distribution: CiModel.PythonDistribution) = BuildType {
             """.trimIndent()
         }
     }
-    validateInternalPins()
     restoreVersionedFiles()
+    validateInternalPins()
     recordArtifactManifest()
 }
 
@@ -202,8 +202,8 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
         }
     }
     smokeAccountingWheel()
-    validateInternalPins()
     restoreVersionedFiles()
+    validateInternalPins()
     recordArtifactManifest()
 }
 
