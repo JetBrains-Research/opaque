@@ -63,7 +63,7 @@ private fun CiModel.VerificationProfile.prepareProjectScript(): String {
 
 private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = BuildType {
     id("Opaque_Python${profile.id}")
-    name = "Python ${profile.displayName} tests"
+    name = if (profile.id == "Tests") "Python tests" else "Python ${profile.displayName} tests"
     templates(PythonTestTemplate)
 
     params {
