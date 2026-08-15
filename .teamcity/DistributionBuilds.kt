@@ -49,6 +49,7 @@ private fun distributionBuild(
     buildNumberPattern = "%opaque.version%"
     templates(DistributionBuildTemplate)
     params {
+        param("teamcity.build.tempDir", "%teamcity.build.checkoutDir%/.teamcity-tmp")
         param("opaque.version", "${PrepareVersion.depParamRefs["opaque.version"]}")
         param("opaque.source.build.id", "${PrepareVersion.depParamRefs["opaque.source.build.id"]}")
         param("opaque.artifact.target", target)
@@ -240,6 +241,7 @@ object ValidateDistributions : BuildType({
     artifactRules = "${CiModel.Artifacts.DISTRIBUTION_DIRECTORY}/** => ${CiModel.Artifacts.VALIDATED_BUNDLE}"
     useAgent(CiModel.AgentClass.LINUX_SMALL)
     params {
+        param("teamcity.build.tempDir", "%teamcity.build.checkoutDir%/.teamcity-tmp")
         param("opaque.version", "${PrepareVersion.depParamRefs["opaque.version"]}")
         param("opaque.source.build.id", "${PrepareVersion.depParamRefs["opaque.source.build.id"]}")
     }
