@@ -32,7 +32,7 @@ private fun qodanaGate(
                 name = "qodana.starter"
             }
             cloudToken = "%opaque.qodana.cloud.token%"
-            reportAsTests = true
+            reportAsTests = false
             additionalQodanaArguments = "--baseline qodana.sarif.json"
         }
     }
