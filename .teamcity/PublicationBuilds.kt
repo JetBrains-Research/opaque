@@ -81,7 +81,7 @@ object PublishDevArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishDev",
         buildName = "Publish dev artifact bundle",
         branchKind = CiModel.BranchKind.MAIN,
-        verificationBuilds = listOf(QodanaMain),
+        verificationBuilds = listOf(Qodana, MinimumVerification, MaximumVerification),
     )
 })
 
@@ -91,7 +91,7 @@ object PublishReleaseArtifacts : BuildType({
         buildId = "Opaque_DeliveryPublishRelease",
         buildName = "Publish release artifact bundle",
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        verificationBuilds = listOf(QodanaRelease),
+        verificationBuilds = listOf(Qodana, MinimumVerification, MaximumVerification),
         releaseTagRequired = true,
     )
 })
