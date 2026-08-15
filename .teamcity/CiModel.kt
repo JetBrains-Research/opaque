@@ -29,7 +29,7 @@ object CiModel {
 
     enum class BranchKind(val branchFilter: String) {
         PULL_REQUEST("+:pull/*"),
-        MAIN("+:<default>"),
+        MAIN("+:main"),
         RELEASE_TAG("+:v*"),
     }
 
