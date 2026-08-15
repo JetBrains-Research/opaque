@@ -175,8 +175,8 @@ private fun verificationProfile(profile: CiModel.VerificationProfile) = BuildTyp
 }
 
 val PinnedVerification = verificationProfile(CiModel.pinnedVerification)
-val MinimumVerification = verificationProfile(CiModel.minimumVerification)
-val MaximumVerification = verificationProfile(CiModel.maximumVerification)
+val MinimumTests = profileTestMatrices.getValue(CiModel.minimumVerification)
+val MaximumTests = profileTestMatrices.getValue(CiModel.maximumVerification)
 
 val verificationBuildTypes = listOf(
     *profileTestMatrices.values.toTypedArray(),
@@ -185,6 +185,4 @@ val verificationBuildTypes = listOf(
     RustTests,
     StrictDocs,
     PinnedVerification,
-    MinimumVerification,
-    MaximumVerification,
 )

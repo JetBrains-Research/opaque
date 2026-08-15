@@ -150,6 +150,7 @@ private fun pythonWheel(distribution: CiModel.PythonDistribution) = BuildType {
         script {
             name = "Build wheel"
             scriptContent = """
+                bash .github/scripts/set_build_versions.sh '%opaque.version%'
                 export SETUPTOOLS_SCM_PRETEND_VERSION='%opaque.version%'
                 (cd ${distribution.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})
             """.trimIndent()
