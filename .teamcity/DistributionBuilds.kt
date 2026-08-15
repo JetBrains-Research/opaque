@@ -231,6 +231,24 @@ private val accountingWheelBuilds = CiModel.accountingTargets.map { target ->
 private val distributionBuilders = pythonWheelBuilds +
     accountingWheelBuilds +
     DistributionBuilder("accounting-sdist", AccountingSdist)
+private val nonPlatformDistributionBuilders = pythonWheelBuilds +
+    DistributionBuilder("accounting-sdist", AccountingSdist)
+
+object PlatformVerification : BuildType({
+    id("Opaque_PlatformVerification")
+    name = "Platform verification"
+    type = BuildTypeSettings.Type.COMPOSITE
+    dependencies {
+        accountingWheelBuilds.forEach { builder ->
+            snapshot(builder.buildType) {
+                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyCancel = FailureAction.CANCEL
+                synchronizeRevisions = true
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
+            }
+        }
+    }
+})
 
 object ValidateDistributions : BuildType({
     id("Opaque_ValidateDistributions")
@@ -250,13 +268,21 @@ object ValidateDistributions : BuildType({
             synchronizeRevisions = true
             reuseBuilds = ReuseBuilds.SUCCESSFUL
         }
-        distributionBuilders.forEach { builder ->
+        snapshot(PlatformVerification) {
+            onDependencyFailure = FailureAction.FAIL_TO_START
+            onDependencyCancel = FailureAction.CANCEL
+            synchronizeRevisions = true
+            reuseBuilds = ReuseBuilds.SUCCESSFUL
+        }
+        nonPlatformDistributionBuilders.forEach { builder ->
             snapshot(builder.buildType) {
                 onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
                 reuseBuilds = ReuseBuilds.SUCCESSFUL
             }
+        }
+        distributionBuilders.forEach { builder ->
             artifacts(builder.buildType) {
                 buildRule = sameChain()
                 artifactRules = """
@@ -353,4 +379,4 @@ object ReleaseDistributions : BuildType({
 
 val artifactBuildTypes = listOf(PrepareVersion) +
     distributionBuilders.map { it.buildType } +
-    listOf(ValidateDistributions, PreviewDistributions, DevDistributions, ReleaseDistributions)
+    listOf(PlatformVerification, ValidateDistributions, PreviewDistributions, DevDistributions, ReleaseDistributions)
