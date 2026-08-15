@@ -82,6 +82,17 @@ private fun BuildType.validateInternalPins() {
     }
 }
 
+private fun BuildType.restoreVersionedFiles() {
+    steps {
+        script {
+            name = "Restore source metadata"
+            scriptContent = """
+                git restore --source=HEAD -- Cargo.toml ${CiModel.versionedPyprojectPaths.joinToString(" ")}
+            """.trimIndent()
+        }
+    }
+}
+
 private fun BuildType.smokeAccountingWheel() {
     steps {
         script {
@@ -162,11 +173,11 @@ private fun pythonWheel(distribution: CiModel.PythonDistribution) = BuildType {
                 bash .github/scripts/set_build_versions.sh '%opaque.version%'
                 export SETUPTOOLS_SCM_PRETEND_VERSION='%opaque.version%'
                 (cd ${distribution.path} && uv build --wheel --out-dir %teamcity.build.checkoutDir%/${CiModel.Artifacts.DISTRIBUTION_DIRECTORY})
-                git restore --source=HEAD -- Cargo.toml ${CiModel.versionedPyprojectPaths.joinToString(" ")}
             """.trimIndent()
         }
     }
     validateInternalPins()
+    restoreVersionedFiles()
     recordArtifactManifest()
 }
 
@@ -180,7 +191,10 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
     steps {
         script {
             name = "Build native wheel"
-            scriptContent = target.nativeWheelBuildScript()
+            scriptContent = """
+                bash .github/scripts/set_build_versions.sh '%opaque.version%'
+                ${target.nativeWheelBuildScript()}
+            """.trimIndent()
             target.manylinuxContainer?.let {
                 dockerImage = it
                 dockerImagePlatform = ScriptBuildStep.ImagePlatform.Linux
@@ -189,6 +203,7 @@ private fun accountingWheel(target: CiModel.AccountingTarget) = BuildType {
     }
     smokeAccountingWheel()
     validateInternalPins()
+    restoreVersionedFiles()
     recordArtifactManifest()
 }
 
