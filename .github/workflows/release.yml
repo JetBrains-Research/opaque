@@ -81,7 +81,6 @@ jobs:
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
-      environment-label: Linux amd64
       environment-name: linux-amd64
       pytest-marker: not cuda and not mps
       pytest-xdist: -n auto --dist loadscope
@@ -89,16 +88,15 @@ jobs:
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
-  python-tests-lower-bounds:
-    name: Lower bounds
+  python-tests-minimum-supported:
+    name: Minimum supported dependencies
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       allow-test-failure: true
       checkout-ref: ${{ github.event.release.tag_name }}
-      dependency-selection: lower-bounds
-      environment-label: Linux amd64, Python 3.11
-      environment-name: lower-bounds
+      dependency-selection: minimum-supported
+      environment-name: minimum-supported-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
@@ -113,7 +111,6 @@ jobs:
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
       dependency-selection: latest
-      environment-label: Linux amd64, Python 3.12
       environment-name: latest-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
@@ -122,13 +119,12 @@ jobs:
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
-  python-tests-mps:
-    name: MPS
+  python-tests-macos-arm64:
+    name: macOS arm64
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
-      environment-label: MPS
       environment-name: mps
       pytest-marker: not cuda
       pytest-xdist: -n auto --dist loadscope
@@ -137,12 +133,11 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
   python-tests-linux-arm64:
-    name: Linux aarch64
+    name: Linux arm64
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
-      environment-label: Linux aarch64
       environment-name: linux-aarch64
       pytest-marker: not cuda and not mps
       pytest-xdist: -n auto --dist loadscope
@@ -157,7 +152,6 @@ jobs:
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
       assert-cuda: true
-      environment-label: CUDA
       environment-name: cuda
       pytest-marker: cuda
       pytest-xdist: -rs
@@ -170,9 +164,9 @@ jobs:
     if: always()
     needs:
       - python-tests
-      - python-tests-lower-bounds
+      - python-tests-minimum-supported
       - python-tests-latest
-      - python-tests-mps
+      - python-tests-macos-arm64
       - python-tests-linux-arm64
       - python-tests-cuda
     runs-on: ubuntu-latest
@@ -191,10 +185,10 @@ jobs:
           }
 
           check_result "Test" "${{ needs.python-tests.result }}"
-          check_result "Lower bounds" "${{ needs.python-tests-lower-bounds.result }}"
+          check_result "Minimum supported dependencies" "${{ needs.python-tests-minimum-supported.result }}"
           check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
-          check_result "MPS" "${{ needs.python-tests-mps.result }}"
-          check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"
+          check_result "macOS arm64" "${{ needs.python-tests-macos-arm64.result }}"
+          check_result "Linux arm64" "${{ needs.python-tests-linux-arm64.result }}"
           check_result "CUDA" "${{ needs.python-tests-cuda.result }}"
           exit "$failed"
 

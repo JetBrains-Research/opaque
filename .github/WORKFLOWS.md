@@ -8,8 +8,8 @@ private reusable components described below.
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux/amd64, dependency-boundary, MPS, and CUDA checks plus preview-wheel artifacts. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Linux/amd64, dependency-boundary, MPS, and CUDA validation; development-wheel publication; and draft-release updates. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main`, manual dispatch | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation; development-wheel publication; and draft-release updates. |
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
@@ -54,7 +54,7 @@ This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Each caller provides one runner environment plus its Python
 version, dependency selection, pytest marker filter, xdist arguments, and shard
-matrix. Dependency selection is `locked`, `lower-bounds` (uv `lowest-direct`),
+matrix. Dependency selection is `locked`, `minimum-supported` (uv `lowest-direct`),
 or `latest` (uv `highest`); adding a future platform such as Windows requires only
 another caller. Validation callers report every test phase taking at least five
 seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
@@ -62,8 +62,8 @@ Lower-bound pytest failures are currently advisory while dependency resolution
 and workflow failures remain blocking.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
-Linux/amd64 tests, lower-bound and latest dependency boundaries, and MPS,
-Linux/aarch64, and CUDA platform coverage. Main and release add slow tests to
+Linux amd64 tests, minimum-supported and latest dependency boundaries, and
+macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
 canonical and platform lanes; release reruns the same environment set at the
 published tag. Fork pull requests never receive the self-hosted CUDA runner.
 All three entry points keep a direct `Rust tests` job so their check names stay

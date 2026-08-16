@@ -19,13 +19,9 @@ on:
         default: ""
         type: string
       dependency-selection:
-        description: Dependency set to test (locked, lower-bounds, or latest).
+        description: Dependency set to test (locked, minimum-supported, or latest).
         required: false
         default: locked
-        type: string
-      environment-label:
-        description: Human-readable environment name shown in job titles.
-        required: true
         type: string
       environment-name:
         description: Stable environment identifier used in artifacts and Codecov flags.
@@ -71,7 +67,7 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.shard.label }} (${{ inputs.environment-label }})
+    name: ${{ matrix.shard.label }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
@@ -103,7 +99,7 @@ jobs:
             locked)
               uv sync --locked --group dev --all-packages --extra all
               ;;
-            lower-bounds)
+            minimum-supported)
               uv sync --upgrade --resolution lowest-direct \
                 --group dev --all-packages --extra all
               ;;
