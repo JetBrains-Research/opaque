@@ -38,5 +38,7 @@ def test_sampler_requires_iteration_implementation() -> None:
     class IncompleteSampler(Sampler[int]):
         pass
 
-    with pytest.raises(TypeError, match="abstract method '__iter__'"):
+    # Python 3.12 quotes the method name in this message and 3.11 does not,
+    # so match around the quoting rather than pinning one interpreter.
+    with pytest.raises(TypeError, match=r"abstract method .?__iter__"):
         IncompleteSampler()
