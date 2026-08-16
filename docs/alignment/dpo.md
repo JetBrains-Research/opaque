@@ -78,7 +78,13 @@ dataset = compute_ref_logprobs_for_dataset(
     collator=collate,                     # the preference collator (below)
     output_columns=("ref_chosen_logps", "ref_rejected_logps"),
     batch_size=8,
-    cache_identity={"kind": "dpo", "model": model_name},
+    cache_identity={
+        "kind": "dpo-reference-logprobs",
+        "reference": {
+            "adapter_mode": "disabled",
+            "state_sha256": ref_state_digest,
+        },
+    },
     cache_dir=cache_dir,
 )
 ```
@@ -87,7 +93,14 @@ dataset = compute_ref_logprobs_for_dataset(
 sequences. Mapping order does not affect the digest, and unsupported or
 non-deterministic values raise `TypeError` rather than falling back to `repr`.
 A dataset without a deterministic `_fingerprint` is rejected for the same
-reason. The `DPOTrainer` supplies the effective reference-model state here.
+reason.
+
+A hit reuses the stored logprobs without re-examining the model, so the
+identity must encode every input that changes reference behavior: an immutable
+revision or weight digest, plus the adapter mode. Keying on a mutable name
+alone — a model name, a checkpoint directory — silently returns logprobs from
+whatever last occupied that name. `DPOTrainer` derives this identity from the
+effective reference state on its own; only manual callers build it.
 
 When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
 enter `null_ref_context(model)` (or `with_disabled_adapter(model)`) around
