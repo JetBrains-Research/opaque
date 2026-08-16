@@ -53,9 +53,11 @@ Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Callers provide their shard and device matrices, timeout, and
 optional CUDA assertion or duration reporting.
 
-`pr.yml` keeps CPU/MPS and fork-guarded GPU calls separate so untrusted fork
-code never receives the self-hosted runner. `ci.yml` calls the same workflow
-with its combined CPU/MPS/GPU matrix and slow-test markers.
+`pr.yml`, `ci.yml`, and `release.yml` discover the same package-level test
+shards so every caller fans Python tests out across runners. The PR workflow
+keeps CPU/MPS and fork-guarded GPU calls separate so untrusted fork code never
+receives the self-hosted runner; main CI combines its CPU/MPS/GPU matrix and
+slow-test markers, while release reruns the CPU shards at the published tag.
 
 ### `.github/workflows/reusable-rust-tests.yml`
 
