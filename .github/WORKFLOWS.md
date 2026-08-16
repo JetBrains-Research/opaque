@@ -34,7 +34,7 @@ This composite action installs Rust stable, optional toolchain components, and
 the existing Cargo dependency cache. Use `components: clippy, rustfmt` for
 formatting jobs and `enable-cache: "true"` for Rust test jobs.
 
-### `.github/workflows/reusable-build-distributions.yml`
+### `.github/workflows/build-distributions.yml`
 
 This private `workflow_call` workflow builds all Python wheels, native wheels,
 the umbrella wheel, and the accounting sdist from caller-supplied package
@@ -43,12 +43,12 @@ supply them with an artifact prefix, retention period, and (when necessary) an
 explicit build version or release tag. This renders checks as
 `Build / <distribution>` without an internal discovery child.
 
-The reusable workflow intentionally does not own credentials, environments,
-publication, validation, or pipeline gates. Its callers keep those
-responsibilities so trusted release behavior and PR protections remain
-explicit at the entry point.
+Each build job validates its own wheel metadata. Native artifact jobs also
+validate accounting policy, and the sdist job proves that the source artifact
+can rebuild a wheel. The reusable workflow intentionally does not own
+credentials, publication, cross-package validation, or pipeline gates.
 
-### `.github/workflows/reusable-python-tests.yml`
+### `.github/workflows/python-tests.yml`
 
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
@@ -76,18 +76,21 @@ macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow 
 platform lanes; release reruns the same environment set at the
 published tag. Fork pull requests never receive the self-hosted CUDA runner.
 
-### `.github/workflows/reusable-rust-tests.yml`
+### `.github/workflows/rust-tests.yml`
 
 This private `workflow_call` workflow runs the accounting crate's unit and doc
 tests with the shared Rust setup and dependency cache. Entry workflows call it
-as `Rust`, so checks render as `Rust / opaque-accounting`.
+as `Rust`, so checks render as `Rust / opaque-accounting`. Tests above five
+seconds use `#[ignore = "slow"]`: PRs run the default set, while main and release
+add `cargo test --lib -- --ignored` after the default unit/doc-test run.
 
-### `.github/workflows/reusable-validate-distributions.yml`
+### `.github/workflows/validate-distributions.yml`
 
-This private `workflow_call` workflow downloads a caller-selected artifact
-family and validates both synchronized internal wheel pins and the accounting
-wheel/sdist policy. Preview and release pipelines differ only in artifact
-prefix and checkout ref; the validation implementation is shared.
+This private `workflow_call` workflow downloads a complete caller-selected
+artifact family, installs `opaque[all]` using only built Opaque wheels, and runs
+a representative DP-SGD + DP-FTRL cross-stack accounting scenario without
+checking out the source tree. PR, main, and release differ only in artifact
+prefix.
 
 ## Artifact contracts
 

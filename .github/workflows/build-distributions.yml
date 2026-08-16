@@ -1,4 +1,4 @@
-name: Reusable / Build distributions
+name: Build distributions
 
 on:
   workflow_call:
@@ -56,6 +56,11 @@ jobs:
       - name: Build wheel
         run: uv build "${{ matrix.package.path }}" --wheel --out-dir dist
 
+      - name: Validate wheel metadata
+        run: >-
+          uv run --isolated --no-project --with packaging==25.0
+          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
       - name: Upload wheel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -107,8 +112,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - if: matrix.target.kind == 'sdist'
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
       - name: Preflight build version
         run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
@@ -130,6 +134,26 @@ jobs:
       - name: Build sdist
         if: matrix.target.kind == 'sdist'
         run: uv build "${{ matrix.package.path }}" --sdist --out-dir dist
+
+      - name: Validate wheel metadata
+        if: matrix.target.kind == 'wheel'
+        run: >-
+          uv run --isolated --no-project --with packaging==25.0
+          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
+      - name: Validate artifact policy
+        if: matrix.package.dist == 'opaque-accounting'
+        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+
+      - name: Rebuild wheel from sdist
+        if: matrix.target.kind == 'sdist'
+        run: |
+          sdists=(dist/*.tar.gz)
+          if [[ "${#sdists[@]}" -ne 1 ]]; then
+            echo "::error::Expected one sdist, found ${#sdists[@]}"
+            exit 1
+          fi
+          uv build "${sdists[0]}" --wheel --out-dir rebuilt
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

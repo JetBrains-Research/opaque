@@ -104,6 +104,7 @@ uv run pytest -m "slow"                           # slow tests (run on push to m
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
+cargo test --workspace --lib -- --ignored        # Rust slow tests
 ```
 
 Per-package tests:
@@ -231,6 +232,9 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
 - `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
   and run on pushes to `main` (the CI job strips the `and not slow`
   clause conditionally).
+
+Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
+unit/doc-test set; main and release additionally run the ignored library tests.
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a

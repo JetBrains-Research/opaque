@@ -71,7 +71,7 @@ jobs:
   # ---------------------------------------------------------------------------
   rust-tests:
     name: Rust
-    uses: ./.github/workflows/reusable-rust-tests.yml
+    uses: ./.github/workflows/rust-tests.yml
 
   # ---------------------------------------------------------------------------
   # Python tests
@@ -83,7 +83,7 @@ jobs:
   python-tests-linux-amd64:
     name: Linux amd64
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-amd64
       pytest-marker: not cuda and not mps and not slow
@@ -97,7 +97,7 @@ jobs:
   python-tests-minimum:
     name: Minimum dependencies
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       allow-test-failure: true
       dependency-selection: minimum
@@ -113,7 +113,7 @@ jobs:
   python-tests-latest:
     name: Latest dependencies
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       dependency-selection: latest
       environment-name: latest-dependencies
@@ -128,7 +128,7 @@ jobs:
   python-tests-macos-arm64:
     name: macOS arm64
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: mps
       pytest-marker: not cuda and not slow
@@ -142,7 +142,7 @@ jobs:
   python-tests-linux-arm64:
     name: Linux arm64
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-aarch64
       pytest-marker: not cuda and not mps and not slow
@@ -161,7 +161,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
       allow-empty-test-selection: true
       assert-cuda: true
@@ -190,7 +190,7 @@ jobs:
       contents: read
       pull-requests: write
       security-events: write
-    uses: ./.github/workflows/reusable-qodana.yml
+    uses: ./.github/workflows/qodana.yml
     with:
       checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
       coverage-artifact-pattern: qodana-coverage-*
@@ -253,7 +253,7 @@ jobs:
   build-preview-distributions:
     name: Build
     needs: [compute-preview-version, discover-packages]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: preview-wheels
       native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
@@ -262,9 +262,9 @@ jobs:
       version: ${{ needs.compute-preview-version.outputs.version }}
 
   validate-preview-distributions:
-    name: Validate preview distribution artifacts
+    name: Validate
     needs: [build-preview-distributions]
-    uses: ./.github/workflows/reusable-validate-distributions.yml
+    uses: ./.github/workflows/validate-distributions.yml
     with:
       artifact-prefix: preview-wheels
 

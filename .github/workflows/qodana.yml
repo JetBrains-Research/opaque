@@ -1,4 +1,4 @@
-name: Reusable / Qodana analysis
+name: Qodana analysis
 
 on:
   workflow_call:

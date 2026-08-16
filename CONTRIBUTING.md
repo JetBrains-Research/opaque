@@ -177,6 +177,10 @@ uv run pytest -m mps
 uv run pytest -m slow
 ```
 
+Rust tests above five seconds use `#[ignore = "slow"]`. The PR gate runs the
+default Cargo test set; main and release additionally run
+`cargo test --lib -- --ignored`.
+
 Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run

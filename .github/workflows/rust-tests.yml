@@ -1,4 +1,4 @@
-name: Reusable / Rust tests
+name: Rust tests
 
 on:
   workflow_call:
@@ -8,6 +8,11 @@ on:
         required: false
         default: ""
         type: string
+      include-slow:
+        description: Include tests marked with `#[ignore = "slow"]`.
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
@@ -26,3 +31,9 @@ jobs:
       # No `--lib`: also run doc-tests so documented API examples cannot rot.
       - name: cargo test
         run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+
+      - name: cargo test (slow)
+        if: inputs.include-slow
+        run: >-
+          cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+          --lib -- --ignored
