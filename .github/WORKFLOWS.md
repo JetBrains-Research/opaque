@@ -69,7 +69,8 @@ under alternate dependency graphs rather than add platform behavior.
 Main publishes the scan's SARIF report to GitHub code scanning under the stable
 `qodana/python` category and waits for processing; missing or rejected reports
 fail the Qodana job. PR scans keep Qodana annotations, comments, Cloud results,
-and report artifacts without uploading a PR-ref code-scanning analysis.
+report artifacts, and manually dispatched branch runs without uploading a
+non-main code-scanning analysis.
 Repository Code Security must remain enabled.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
