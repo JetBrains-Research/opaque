@@ -53,6 +53,7 @@ WHEEL_IMPORT_ROOTS: dict[str, tuple[str, ...]] = {
         "opaque.primitive",
         "opaque.backend",
         "opaque.random",
+        "opaque.sampling",
         "opaque.distributed",
         "opaque.functional",
         "opaque.scheduling",
