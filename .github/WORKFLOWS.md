@@ -47,6 +47,8 @@ Each build job validates its own wheel metadata. Native artifact jobs also
 validate accounting policy, and the sdist job proves that the source artifact
 can rebuild a wheel. The reusable workflow intentionally does not own
 credentials, publication, cross-package validation, or pipeline gates.
+Builds start after package discovery in every entry workflow; main/release
+publication waits for the complete Python environment matrix and Rust tests.
 
 ### `.github/workflows/python-tests.yml`
 

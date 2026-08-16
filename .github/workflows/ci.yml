@@ -159,15 +159,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-distributions:
     name: Build
-    needs:
-      - discover-packages
-      - python-tests-linux-amd64
-      - python-tests-minimum
-      - python-tests-latest
-      - python-tests-macos-arm64
-      - python-tests-linux-arm64
-      - python-tests-cuda
-      - rust-tests
+    needs: [discover-packages]
     uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
@@ -197,7 +189,15 @@ jobs:
   publish-dev-wheels:
     name: Publish dev wheels to JetBrains Packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [merge-wheels]
+    needs:
+      - merge-wheels
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+      - rust-tests
     runs-on: ubuntu-latest
     environment: release
     permissions:
