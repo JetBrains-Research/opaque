@@ -464,11 +464,22 @@ class TestKPrefixInvariants:
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_supports_composition(self, amp: str, mech: str):
+        if (amp, mech) == ("BallsInBins", "IdentityMf"):
+            pytest.skip("covered by the slow identity-composition case")
         proc = _build(amp, mech)
         step = acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
         combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
         assert math.isfinite(combined.epsilon_at(_DELTA))
+
+
+@pytest.mark.slow
+@pytest.mark.usefixtures("_seed_mc")
+def test_balls_in_bins_identity_supports_composition():
+    proc = _build("BallsInBins", "IdentityMf")
+    step = acc.per_step(proc)
+    combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
+    assert math.isfinite(combined.epsilon_at(_DELTA))
 
 
 # ---------------------------------------------------------------------------

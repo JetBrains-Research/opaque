@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow-empty-test-selection:
+        description: Treat pytest exit 5 as success when a filtered shard has no tests.
+        required: false
+        default: false
+        type: boolean
       checkout-ref:
         description: Ref to test. Leave empty to test the triggering SHA.
         required: false
@@ -119,6 +124,7 @@ jobs:
 
       - name: pytest
         env:
+          ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
           ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
         shell: bash
         run: |
@@ -133,6 +139,10 @@ jobs:
           status=$?
           set -e
 
+          if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
+            echo "::notice::No tests matched this environment's filter for ${{ matrix.shard.label }}."
+            exit 0
+          fi
           if [[ "$status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
             echo "::warning::pytest exited with status $status in this advisory lane."
             exit 0

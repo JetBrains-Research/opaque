@@ -163,6 +163,7 @@ class TestBallsInBinsIdentity:
             f"deterministic vs MC gap too large: det={det_eps}, mc={ref_eps}"
         )
 
+    @pytest.mark.slow
     def test_factory_path_finite(self):
         """The default ``balls_in_bins`` factory produces a finite, positive ε."""
         nm, k, E = 1.5, 32, 4

@@ -204,6 +204,8 @@ class TestEndToEnd:
 
     def test_qwen2_lora_clipped_grad(self, device):
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
+        from opaque.patches import apply_model_patches
+
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
 
@@ -215,6 +217,7 @@ class TestEndToEnd:
             lora_dropout=0.0,
         )
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model)
 
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
         texts = ["Hello world test", "Another example", "Third sample", "Final one"]

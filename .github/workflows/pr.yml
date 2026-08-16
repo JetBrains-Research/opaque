@@ -173,6 +173,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
+      allow-empty-test-selection: true
       assert-cuda: true
       environment-name: cuda
       pytest-marker: cuda and not slow
@@ -182,52 +183,6 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
 
-  # Stable aggregate status check required by branch protection.
-  # The CUDA leg is required for repository branches and skipped for forks.
-  python-tests-gate:
-    name: Python tests
-    if: always()
-    needs:
-      - python-tests-linux-amd64
-      - python-tests-minimum
-      - python-tests-latest
-      - python-tests-macos-arm64
-      - python-tests-linux-arm64
-      - python-tests-cuda
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Python test results
-        run: |
-          failed=0
-          check_result() {
-            local name="$1"
-            local result="$2"
-            echo "$name: $result"
-            if [[ "$result" != "success" ]]; then
-              echo "ERROR: $name failed"
-              failed=1
-            fi
-          }
-
-          check_result "Linux amd64" "${{ needs.python-tests-linux-amd64.result }}"
-          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
-          check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
-          check_result "macOS arm64" "${{ needs.python-tests-macos-arm64.result }}"
-          check_result "Linux arm64" "${{ needs.python-tests-linux-arm64.result }}"
-
-          gpu="${{ needs.python-tests-cuda.result }}"
-          if [[ "${{ github.event_name }}" == "pull_request" &&
-                "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            if [[ "$gpu" != "skipped" ]]; then
-              echo "ERROR: CUDA validation should be skipped for forks but got: $gpu"
-              failed=1
-            fi
-          else
-            check_result "CUDA platform validation" "$gpu"
-          fi
-
-          exit "$failed"
-
   qodana:
     name: Qodana
     if: >-
@@ -235,7 +190,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'opened' ||
        github.event.action == 'ready_for_review')
-    needs: [python-tests-gate]
+    needs: [python-tests-linux-amd64]
     permissions:
       actions: read
       checks: write

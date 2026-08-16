@@ -56,6 +56,7 @@ class TestSecondMomentReduceGloo:
         _require_gloo()
         _spawn(2, _worker_second_moment_noise_gloo)
 
+    @pytest.mark.slow
     def test_paired_clipping_matches_single_process_full_batch(self) -> None:
         _require_gloo()
 

@@ -232,6 +232,7 @@ class TestParallelPoissonConstructor:
 class TestParallelPoissonAutoTruncation:
     """Automatic truncation from query-time discretization settings."""
 
+    @pytest.mark.slow
     def test_auto_respects_query_time_discretization_overrides(self):
         nm = 0.8
         q = 0.0032

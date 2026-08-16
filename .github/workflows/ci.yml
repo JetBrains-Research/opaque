@@ -141,43 +141,9 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
 
-  # Stable aggregate status check gates wheel builds and publishing.
-  python-tests-gate:
-    name: Python tests
-    if: always()
-    needs:
-      - python-tests-linux-amd64
-      - python-tests-minimum
-      - python-tests-latest
-      - python-tests-macos-arm64
-      - python-tests-linux-arm64
-      - python-tests-cuda
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Python test results
-        run: |
-          failed=0
-          check_result() {
-            local name="$1"
-            local result="$2"
-            echo "$name: $result"
-            if [[ "$result" != "success" ]]; then
-              echo "ERROR: $name failed"
-              failed=1
-            fi
-          }
-
-          check_result "Linux amd64" "${{ needs.python-tests-linux-amd64.result }}"
-          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
-          check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
-          check_result "macOS arm64" "${{ needs.python-tests-macos-arm64.result }}"
-          check_result "Linux arm64" "${{ needs.python-tests-linux-arm64.result }}"
-          check_result "CUDA" "${{ needs.python-tests-cuda.result }}"
-          exit "$failed"
-
   qodana:
     name: Qodana
-    needs: [python-tests-gate]
+    needs: [python-tests-linux-amd64]
     permissions:
       actions: read
       checks: write
@@ -196,7 +162,15 @@ jobs:
   # ---------------------------------------------------------------------------
   build-distributions:
     name: Build
-    needs: [discover-packages, python-tests-gate, rust-tests]
+    needs:
+      - discover-packages
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+      - rust-tests
     uses: ./.github/workflows/reusable-build-distributions.yml
     with:
       artifact-prefix: wheels
@@ -219,7 +193,7 @@ jobs:
   publish-dev-wheels:
     name: Publish dev wheels to JetBrains Packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [merge-wheels, python-tests-gate, rust-tests]
+    needs: [merge-wheels]
     runs-on: ubuntu-latest
     environment: release
     permissions:

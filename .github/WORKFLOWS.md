@@ -99,8 +99,9 @@ self-hosted GPU runner and never receive repository, package, or cloud
 credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
-`Format Rust`, `Conventional Commits PR title`, `Python tests`, `Rust tests`,
-and `Junie review`. The review workflow uses the `JUNIE_API_KEY` Actions secret.
+`Format Rust`, `Conventional Commits PR title`, the selected individual Python
+environment/package checks, `Rust tests`, and `Junie review`. The review
+workflow uses the `JUNIE_API_KEY` Actions secret.
 Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
 Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use
