@@ -89,8 +89,8 @@ Release body on the next main merge.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
 **Gate** — on every push the PR workflow runs Linux/amd64, dependency-boundary,
-MPS, and CUDA validation, plus Rust tests, the docs build, title validation,
-and autoformat checks. Preview wheels
+MPS, Linux/aarch64, and CUDA validation, plus Rust tests, the docs build, title
+validation, and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -243,14 +243,17 @@ CI lane marker expressions:
 - PR dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow"`.
 - PR MPS (macOS): `-m "not cuda and not slow"`.
+- PR Linux/aarch64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
 - PR CUDA (self-hosted): `-m "cuda and not slow"`.
 - Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
 - Main dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow"`.
 - Main MPS (macOS): `-m "not cuda"`.
+- Main Linux/aarch64 (Ubuntu): `-m "not cuda and not mps"`.
 - Main CUDA (self-hosted): `-m "cuda"`.
-- Main resolves dependency boundaries with uv's `lowest-direct` and `highest`
-  strategies; the canonical Linux and MPS lanes retain slow-test coverage.
+- Dependency selection uses the committed lock or uv's `lowest-direct` /
+  `highest` strategies. Main canonical and platform lanes retain slow-test
+  coverage.
 
 ### Supported HF model families
 

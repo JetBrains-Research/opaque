@@ -48,6 +48,9 @@ jobs:
           subjectPatternError: |
             The subject after the colon should start with a lowercase letter.
 
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
@@ -60,6 +63,9 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
+  # ---------------------------------------------------------------------------
+  # Rust tests
+  # ---------------------------------------------------------------------------
   rust-test-run:
     uses: ./.github/workflows/reusable-rust-tests.yml
 
@@ -77,70 +83,102 @@ jobs:
           echo "rust-test-run result: $result"
           test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
-  # The canonical Linux validation fans shards across hosted runners.
-  # `pytest -n auto` also fans across cores within each runner. Slow tests stay
-  # on main; supported dependency and platform boundaries remain pre-merge
-  # checks because they can fail independently of the canonical environment.
+  # ---------------------------------------------------------------------------
+  # Python tests
+  #
+  # Every environment calls the same reusable workflow with explicit runner,
+  # Python, dependency, marker, parallelism, and shard settings. Slow tests stay
+  # on main; supported dependency and platform boundaries remain pre-merge.
+  # ---------------------------------------------------------------------------
   python-tests:
-    name: Test validation
+    name: Test
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      devices: >-
-        [{"name":"cpu","label":"Linux amd64","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      environment-label: Linux amd64
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
       report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
+      upload-qodana-coverage: true
+
+  python-tests-minimum:
+    name: Minimum dependencies
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-selection: minimum
+      environment-label: Linux amd64 / Python 3.11 / minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-label: Linux amd64 / Python 3.12 / latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  python-tests-mps:
+    name: MPS
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      environment-label: MPS
+      environment-name: mps
+      pytest-marker: not cuda and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
-  dependency-validation-lowest:
-    name: Dependency validation (lowest direct / Python 3.11)
-    uses: ./.github/workflows/reusable-python-tests.yml
-    with:
-      dependency-resolution: lowest-direct
-      devices: >-
-        [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
-      python-version: "3.11"
-      report-durations: true
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
-      timeout-minutes: 60
-
-  dependency-validation-latest:
-    name: Dependency validation (latest / Python 3.12)
-    uses: ./.github/workflows/reusable-python-tests.yml
-    with:
-      dependency-resolution: highest
-      devices: >-
-        [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
-      python-version: "3.12"
-      report-durations: true
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
-      timeout-minutes: 60
-
-  platform-validation-mps:
-    name: Platform validation (MPS)
+  python-tests-linux-arm64:
+    name: Linux aarch64
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      devices: >-
-        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+      environment-label: Linux aarch64
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
       report-durations: true
+      runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
-  # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
-  # the job-level guard prevents runner allocation entirely.
-  python-tests-gpu:
-    name: Platform validation (CUDA)
+  # self-hosted GPU runner. The job-level guard prevents allocation entirely.
+  python-tests-cuda:
+    name: CUDA
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       assert-cuda: true
-      devices: >-
-        [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
+      environment-label: CUDA
+      environment-name: cuda
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
       report-durations: true
+      runner: GPU-runner-001
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 30
 
@@ -151,10 +189,11 @@ jobs:
     if: always()
     needs:
       - python-tests
-      - dependency-validation-lowest
-      - dependency-validation-latest
-      - platform-validation-mps
-      - python-tests-gpu
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-mps
+      - python-tests-linux-arm64
+      - python-tests-cuda
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
@@ -171,11 +210,12 @@ jobs:
           }
 
           check_result "Test validation" "${{ needs.python-tests.result }}"
-          check_result "Lowest dependency validation" "${{ needs.dependency-validation-lowest.result }}"
-          check_result "Latest dependency validation" "${{ needs.dependency-validation-latest.result }}"
-          check_result "MPS platform validation" "${{ needs.platform-validation-mps.result }}"
+          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
+          check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
+          check_result "MPS" "${{ needs.python-tests-mps.result }}"
+          check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"
 
-          gpu="${{ needs.python-tests-gpu.result }}"
+          gpu="${{ needs.python-tests-cuda.result }}"
           if [[ "${{ github.event_name }}" == "pull_request" &&
                 "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
             if [[ "$gpu" != "skipped" ]]; then

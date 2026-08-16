@@ -13,6 +13,9 @@ concurrency:
   cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
@@ -26,65 +29,114 @@ jobs:
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Validation groups repeat the supported boundaries checked on PRs. Main
-  # additionally includes slow tests in the canonical Linux and MPS lanes.
-  # Every group gates distribution publishing.
+  # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
     uses: ./.github/workflows/reusable-rust-tests.yml
 
-  test-validation:
-    name: Test validation
+  rust-tests-gate:
+    name: Rust tests gate
+    if: always()
+    needs: [rust-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Rust test results
+        run: |
+          result="${{ needs.rust-tests.result }}"
+          echo "rust-tests result: $result"
+          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+
+  # ---------------------------------------------------------------------------
+  # Python tests
+  #
+  # Main repeats every PR environment and includes slow tests in the canonical
+  # Linux and platform lanes. Every environment gates distribution publishing.
+  # ---------------------------------------------------------------------------
+  python-tests:
+    name: Test
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      devices: >-
-        [{"name":"cpu","label":"Linux amd64","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
+      environment-label: Linux amd64
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
       report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+      upload-qodana-coverage: true
+
+  python-tests-minimum:
+    name: Minimum dependencies
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-selection: minimum
+      environment-label: Linux amd64 / Python 3.11 / minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-label: Linux amd64 / Python 3.12 / latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  python-tests-mps:
+    name: MPS
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      environment-label: MPS
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
 
-  # `lowest-direct` selects the lowest declared direct requirements while
-  # resolving their transitive dependencies normally. Slow and hardware tests
-  # stay in their dedicated validation groups.
-  dependency-validation-lowest:
-    name: Dependency validation (lowest direct / Python 3.11)
-    uses: ./.github/workflows/reusable-python-tests.yml
-    with:
-      dependency-resolution: lowest-direct
-      devices: >-
-        [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
-      python-version: "3.11"
-      report-durations: true
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
-      timeout-minutes: 60
-
-  dependency-validation-latest:
-    name: Dependency validation (latest / Python 3.12)
-    uses: ./.github/workflows/reusable-python-tests.yml
-    with:
-      dependency-resolution: highest
-      devices: >-
-        [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
-      python-version: "3.12"
-      report-durations: true
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
-      timeout-minutes: 60
-
-  # MPS keeps the full applicable suite to catch backend-specific behavior.
-  # CUDA remains a single unsharded, serial leg on the self-hosted runner.
-  platform-validation:
-    name: Platform validation
+  python-tests-linux-arm64:
+    name: Linux aarch64
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      assert-cuda: true
-      devices: >-
-        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
-      included-combinations: >-
-        [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
+      environment-label: Linux aarch64
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
       report-durations: true
+      runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda:
+    name: CUDA
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      assert-cuda: true
+      environment-label: CUDA
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 40
 
   # Stable aggregate status check gates wheel builds and publishing.
@@ -92,10 +144,12 @@ jobs:
     name: Python tests
     if: always()
     needs:
-      - test-validation
-      - dependency-validation-lowest
-      - dependency-validation-latest
-      - platform-validation
+      - python-tests
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-mps
+      - python-tests-linux-arm64
+      - python-tests-cuda
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
@@ -111,10 +165,12 @@ jobs:
             fi
           }
 
-          check_result "Test validation" "${{ needs.test-validation.result }}"
-          check_result "Lowest dependency validation" "${{ needs.dependency-validation-lowest.result }}"
-          check_result "Latest dependency validation" "${{ needs.dependency-validation-latest.result }}"
-          check_result "Platform validation" "${{ needs.platform-validation.result }}"
+          check_result "Test" "${{ needs.python-tests.result }}"
+          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
+          check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
+          check_result "MPS" "${{ needs.python-tests-mps.result }}"
+          check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"
+          check_result "CUDA" "${{ needs.python-tests-cuda.result }}"
           exit "$failed"
 
   qodana:
@@ -130,20 +186,6 @@ jobs:
       coverage-artifact-pattern: qodana-coverage-*
       pr-mode: false
     secrets: inherit
-
-  # Aggregating gate for Rust tests. This is an independent required check
-  # (alongside python-tests-gate) that gates wheel builds and publishing.
-  rust-tests-gate:
-    name: Rust tests gate
-    if: always()
-    needs: [rust-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Rust test results
-        run: |
-          result="${{ needs.rust-tests.result }}"
-          echo "rust-tests result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight

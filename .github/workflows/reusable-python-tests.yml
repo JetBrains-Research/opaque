@@ -13,19 +13,27 @@ on:
         required: false
         default: ""
         type: string
-      devices:
-        description: JSON array of device matrix entries.
+      dependency-selection:
+        description: Dependency set to test (locked, minimum, or latest).
+        required: false
+        default: locked
+        type: string
+      environment-label:
+        description: Human-readable environment name shown in job titles.
         required: true
         type: string
-      dependency-resolution:
-        description: uv resolution strategy; empty uses the committed lock.
+      environment-name:
+        description: Stable environment identifier used in artifacts and Codecov flags.
+        required: true
+        type: string
+      pytest-marker:
+        description: pytest marker expression.
+        required: true
+        type: string
+      pytest-xdist:
+        description: pytest-xdist arguments; leave empty for serial execution.
         required: false
         default: ""
-        type: string
-      included-combinations:
-        description: JSON array of additional shard/device matrix entries.
-        required: false
-        default: "[]"
         type: string
       python-version:
         description: Python version used by every matrix leg.
@@ -41,23 +49,30 @@ on:
         description: JSON array of shard matrix entries.
         required: true
         type: string
+      runner:
+        description: GitHub Actions runner label.
+        required: true
+        type: string
       timeout-minutes:
         description: Maximum runtime for each matrix leg.
         required: false
         default: 360
         type: number
+      upload-qodana-coverage:
+        description: Upload this environment's coverage for Qodana.
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
-    name: opaque-${{ matrix.shard.name }} (${{ matrix.device.label }})
-    runs-on: ${{ matrix.device.os }}
+    name: opaque-${{ matrix.shard.name }} (${{ inputs.environment-label }})
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(inputs.test-shards) }}
-        device: ${{ fromJSON(inputs.devices) }}
-        include: ${{ fromJSON(inputs.included-combinations) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -76,42 +91,53 @@ jobs:
 
       - name: uv sync
         env:
-          DEPENDENCY_RESOLUTION: ${{ inputs.dependency-resolution }}
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        shell: bash
         run: |
-          if [[ -n "$DEPENDENCY_RESOLUTION" ]]; then
-            uv sync --upgrade --resolution "$DEPENDENCY_RESOLUTION" \
-              --group dev --all-packages --extra all
-          else
-            uv sync --group dev --all-packages --extra all
-          fi
+          case "$DEPENDENCY_SELECTION" in
+            locked)
+              uv sync --locked --group dev --all-packages --extra all
+              ;;
+            minimum)
+              uv sync --upgrade --resolution lowest-direct \
+                --group dev --all-packages --extra all
+              ;;
+            latest)
+              uv sync --upgrade --resolution highest \
+                --group dev --all-packages --extra all
+              ;;
+            *)
+              echo "::error::Unknown dependency selection: $DEPENDENCY_SELECTION"
+              exit 1
+              ;;
+          esac
 
       - name: Assert CUDA available
-        if: inputs.assert-cuda && matrix.device.name == 'gpu'
+        if: inputs.assert-cuda
         run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
+        shell: bash
         run: |
           uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ matrix.device.marker }}" \
-            ${{ matrix.device.xdist }} \
+            -m "${{ inputs.pytest-marker }}" \
+            ${{ inputs.pytest-xdist }} \
             --cov=opaque \
-            --cov-report=xml:coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml \
+            --cov-report=xml:coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml \
             ${{ inputs.report-durations && '--durations=0 --durations-min=5' || '' }} \
             -q
 
-      # CPU shards collectively cover the full source tree. Reusing only those
-      # reports avoids feeding Qodana duplicate MPS and CUDA measurements.
       - name: Upload coverage for Qodana
-        if: matrix.device.name == 'cpu'
+        if: inputs.upload-qodana-coverage
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: qodana-coverage-${{ matrix.shard.name }}
-          path: coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml
+          path: coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           if-no-files-found: error
           retention-days: 1
 
       - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
-          files: ./coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml
-          flags: ${{ matrix.device.name }}-${{ matrix.shard.name }}
+          files: ./coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
+          flags: ${{ inputs.environment-name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false

@@ -51,8 +51,11 @@ jobs:
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
-      devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
+      environment-label: Linux amd64
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
   release-rust-tests:

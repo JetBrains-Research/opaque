@@ -50,16 +50,19 @@ explicit at the entry point.
 
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
-Codecov upload. Callers provide their shard and device matrices, timeout, and
-optional Python version, uv resolution strategy, CUDA assertion, or duration
-reporting. Main callers report every test phase taking at least five seconds,
-so newly slow tests cannot disappear behind a fixed-size duration table.
+Codecov upload. Each caller provides one runner environment plus its Python
+version, dependency selection, pytest marker filter, xdist arguments, and shard
+matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or
+`latest` (uv `highest`); adding a future platform such as Windows requires only
+another caller. Validation callers report every test phase taking at least five
+seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
-Linux/amd64 tests, lowest-direct and latest dependency boundaries, and MPS/CUDA
-platform coverage. Main adds slow tests to the canonical Linux and MPS lanes,
-while `release.yml` reruns the discovered CPU shards at the published tag.
-Fork pull requests never receive the self-hosted CUDA runner.
+Linux/amd64 tests, minimum and latest dependency boundaries, and MPS,
+Linux/aarch64, and CUDA platform coverage. Main adds slow tests to canonical
+and platform lanes, while `release.yml` reruns the discovered Linux/amd64 shards
+at the published tag. Fork pull requests never receive the self-hosted CUDA
+runner.
 
 ### `.github/workflows/reusable-rust-tests.yml`
 
