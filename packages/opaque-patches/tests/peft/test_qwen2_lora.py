@@ -21,6 +21,7 @@ ATOL = 0.0001
 class TestEndToEnd:
     """End-to-end test with full model + LoRA + clipped_grad."""
 
+    @pytest.mark.slow
     def test_qwen2_lora_clipped_grad(self, device):
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")

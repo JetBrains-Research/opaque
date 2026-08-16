@@ -230,6 +230,7 @@ def test_unknown_loss_type_fails_at_dispatch(tmp_path):
 # ----------------------------------------------------------------------
 # SFT training
 # ----------------------------------------------------------------------
+@pytest.mark.slow
 def test_sft_chunked_nll_trains(tmp_path):
     # chunked_nll lets the model compute its own (fused, logits-free) loss.
     torch.manual_seed(0)

@@ -175,6 +175,7 @@ class TestBallsInBinsIdentity:
         assert math.isfinite(eps)
         assert eps > 0
 
+    @pytest.mark.slow
     def test_strictly_tighter_than_unamplified_composition(self):
         """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4

@@ -126,12 +126,14 @@ class TestCyclicPoissonIdentity:
             assert e >= prev - 1e-10, f"non-monotone at k={k}: {e} < {prev}"
             prev = e
 
+    @pytest.mark.slow
     def test_bounded_by_full(self):
         proc = self._proc(200)
         e_full = proc.epsilon_at(_DELTA)
         for k in [1, 50, 100, 199]:
             assert _eps_at(proc, k, _DELTA) <= e_full + 1e-10
 
+    @pytest.mark.slow
     def test_truncated_poisson_works(self):
         """K-prefix preserves the truncated-Poisson kwarg pair."""
         proc = ftrl_acc.poisson(

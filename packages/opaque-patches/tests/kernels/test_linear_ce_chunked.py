@@ -124,6 +124,7 @@ def test_chunked_linear_ce_parity_cpu():
 
 
 @pytest.mark.mps
+@pytest.mark.slow
 def test_chunked_linear_ce_parity_mps():
     _check_parity("mps")
 

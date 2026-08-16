@@ -7,6 +7,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 
 def _run(code: str) -> str:
     result = subprocess.run(
@@ -18,6 +20,7 @@ def _run(code: str) -> str:
     return result.stdout.strip()
 
 
+@pytest.mark.slow
 def test_subprocess_apply_runtime_patches_sets_state():
     out = _run(
         "from opaque.patches import apply_runtime_patches, is_runtime_patched\n"

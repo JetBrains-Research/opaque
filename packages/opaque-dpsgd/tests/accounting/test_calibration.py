@@ -358,6 +358,7 @@ class TestCalibratePrefix:
         )
         assert with_prefix.param > without.param
 
+    @pytest.mark.slow
     def test_prefix_exhausting_budget_raises(self):
         """Prefix alone above the target → bounds can't bracket."""
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps

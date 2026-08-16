@@ -178,6 +178,7 @@ def _reference_k_out_of_t_epsilon(
     ).epsilon_at(delta)
 
 
+@pytest.mark.slow
 def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     """The σ the trainer calibrates reproduces the target ε against an
     independently-built accountant — guards the calibration solver, which no
@@ -213,6 +214,7 @@ def test_calibrated_noise_hits_target_epsilon(gpt2_lora, lm_dataset, tmp_path):
     assert reported >= target_eps - 0.5
 
 
+@pytest.mark.slow
 def test_fractional_epochs_calibrate_and_compose_resolved_horizon(
     gpt2_lora, lm_dataset, tmp_path
 ):
@@ -320,6 +322,7 @@ def test_accountant_composes_exactly_total_steps(gpt2_lora, lm_dataset, tmp_path
     assert reported != pytest.approx(_reference_epsilon(nm, q, 6, delta), rel=1e-3)
 
 
+@pytest.mark.slow
 def test_resume_keeps_total_epsilon_on_budget(gpt2_lora, lm_dataset, tmp_path):
     """A run checkpointed mid-way and resumed reports the same final ε as an
     uninterrupted run (prefix + remaining stays on budget)."""
@@ -554,6 +557,7 @@ def test_rank_folded_key_decorrelates_per_shard_sampling():
     assert rank0 != rank1
 
 
+@pytest.mark.slow
 def test_epoch_driven_resume_does_not_overshoot_budget(gpt2_lora, lm_dataset, tmp_path):
     """Epoch-driven (no max_steps) resume with ignore_data_skip from a
     non-epoch-aligned checkpoint must stop at total_steps, not re-run the

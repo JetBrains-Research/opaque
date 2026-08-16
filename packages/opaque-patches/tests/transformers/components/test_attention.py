@@ -10,6 +10,7 @@ Known incompatibilities (not tested):
 - flex_attention: HigherOrderOperator has no vmap support
 """
 
+import pytest
 import torch
 
 from opaque.api.engine.clipping import clipped_grad
@@ -71,6 +72,7 @@ def test_gemma2_softcap_attention_matches_reference():
 class TestAttentionImplementations:
     """Test different attention implementations work with clipped_grad."""
 
+    @pytest.mark.slow
     def test_eager_attention(self, qwen2_config, qwen2_tokenizer, device):
         """Test eager attention (explicitly patched). Works on CPU and CUDA."""
         qwen2_config._attn_implementation = "eager"
@@ -122,18 +124,21 @@ class TestAttentionWithMicrobatching:
         )
         return grads
 
+    @pytest.mark.slow
     def test_eager_with_microbatching(self, qwen2_config, qwen2_tokenizer, device):
         """Test eager attention with microbatching."""
         qwen2_config._attn_implementation = "eager"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
         assert len(grads.pytree) > 0
 
+    @pytest.mark.slow
     def test_sdpa_with_microbatching(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA attention with microbatching."""
         qwen2_config._attn_implementation = "sdpa"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
         assert len(grads.pytree) > 0
 
+    @pytest.mark.slow
     def test_sdpa_microbatch_size_3(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA with microbatch_size=3 (uneven split of batch=4)."""
         qwen2_config._attn_implementation = "sdpa"
@@ -146,6 +151,7 @@ class TestAttentionWithMicrobatching:
 class TestAttentionNumericalParity:
     """Test that SDPA and eager produce similar gradients."""
 
+    @pytest.mark.slow
     def test_sdpa_eager_gradient_parity(self, qwen2_config, qwen2_tokenizer, device):
         """Verify SDPA and eager produce numerically similar clipped gradients.
 
