@@ -38,6 +38,7 @@ jobs:
       - uses: ./.github/actions/setup-python
         with:
           enable-uv-cache: "true"
+          uv-cache-suffix: locked-py3.11
 
       - name: Download coverage from Python test shards
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6

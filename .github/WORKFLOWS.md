@@ -24,9 +24,12 @@ private reusable components described below.
 This composite action installs the pinned Python version and optionally uv and
 its dependency cache. Use it in repository workflows that need Python; set
 `install-uv: "false"` for Python-only jobs and `enable-uv-cache: "true"` for
-dependency-heavy jobs. Release-capable reusable workflows keep their pinned
-external setup steps inline so checking out an older release tag cannot remove
-the local action implementation.
+dependency-heavy jobs. Test caches retain prepared wheel archives instead of
+using setup-uv's pruned CI cache and are separated by dependency selection /
+Python version (setup-uv also keys by runner platform). Qodana reuses the
+locked/Python 3.11 cache after platform tests. Release-capable called workflows
+keep pinned external setup steps inline so checking out an older release tag
+cannot remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 

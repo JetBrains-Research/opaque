@@ -14,6 +14,10 @@ inputs:
     description: Whether to enable the uv dependency cache.
     required: false
     default: "false"
+  uv-cache-suffix:
+    description: Optional suffix separating uv cache keys by environment.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -25,4 +29,6 @@ runs:
     - if: inputs.install-uv == 'true'
       uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
+        cache-suffix: ${{ inputs.uv-cache-suffix }}
         enable-cache: ${{ inputs.enable-uv-cache == 'true' }}
+        prune-cache: false

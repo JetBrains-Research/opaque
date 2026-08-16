@@ -93,7 +93,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
+          cache-suffix: ${{ inputs.dependency-selection }}-py${{ inputs.python-version }}
           enable-cache: true
+          prune-cache: false
 
       - name: uv sync
         env:
