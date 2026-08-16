@@ -68,13 +68,16 @@ def _outputs() -> dict[str, object]:
             ),
         ],
         "python_build_packages": [
-            {
-                "dir": package["dir"],
-                "dist": package["dist"],
-                "path": package["path"],
-            }
-            for package in packages
-            if not package["native"]
+            {"dir": ".", "dist": "opaque", "path": "."},
+            *(
+                {
+                    "dir": package["dir"],
+                    "dist": package["dist"],
+                    "path": package["path"],
+                }
+                for package in packages
+                if not package["native"]
+            ),
         ],
         "native_build_packages": [
             {

@@ -54,7 +54,7 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
 
       - name: Build wheel
-        run: cd ${{ matrix.package.path }} && uv build --wheel --out-dir ../../dist
+        run: uv build "${{ matrix.package.path }}" --wheel --out-dir dist
 
       - name: Upload wheel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -63,57 +63,40 @@ jobs:
           path: dist/*.whl
           retention-days: ${{ inputs.retention-days }}
 
-  build-opaque-wheel:
-    name: opaque
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.checkout-ref || github.sha }}
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - name: Preflight build version
-        run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
-
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: ${{ inputs.artifact-prefix }}-opaque
-          path: dist/opaque-*.whl
-          retention-days: ${{ inputs.retention-days }}
-
-  build-native-wheels:
-    name: ${{ matrix.package.dist }} (${{ matrix.target.platform }}/${{ matrix.target.arch }})
+  build-native-artifacts:
+    name: ${{ matrix.package.dist }} (${{ matrix.target.label }})
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
         package: ${{ fromJSON(inputs.native-build-packages) }}
         target:
-          - platform: linux
-            arch: x86_64
+          - kind: wheel
+            label: Linux x86_64
+            artifact: linux-x86_64
+            pattern: "*.whl"
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: 2_28
-          - platform: linux
-            arch: aarch64
+          - kind: wheel
+            label: Linux arm64
+            artifact: linux-arm64
+            pattern: "*.whl"
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: 2_28
-          - platform: macos
-            arch: arm64
+          - kind: wheel
+            label: macOS arm64
+            artifact: macos-arm64
+            pattern: "*.whl"
             runner: macos-latest
             target: aarch64-apple-darwin
             manylinux: off
+          - kind: sdist
+            label: sdist
+            artifact: sdist
+            pattern: "*.tar.gz"
+            runner: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -124,10 +107,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - if: matrix.target.kind == 'sdist'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
       - name: Preflight build version
         run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
 
       - name: Build wheel
+        if: matrix.target.kind == 'wheel'
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: build
@@ -140,37 +127,13 @@ jobs:
             --out ../../dist
             --compatibility pypi
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}-${{ matrix.target.platform }}-${{ matrix.target.arch }}
-          path: dist/*.whl
-          retention-days: ${{ inputs.retention-days }}
-
-  build-accounting-sdist:
-    name: opaque-accounting (sdist)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.checkout-ref || github.sha }}
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.11"
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-
-      - name: Preflight build version
-        run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
-
       - name: Build sdist
-        run: cd packages/opaque-accounting && uv build --sdist --out-dir ../../dist
+        if: matrix.target.kind == 'sdist'
+        run: uv build "${{ matrix.package.path }}" --sdist --out-dir dist
 
-      - name: Upload sdist
+      - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ inputs.artifact-prefix }}-opaque-accounting-sdist
-          path: dist/*.tar.gz
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}-${{ matrix.target.artifact }}
+          path: dist/${{ matrix.target.pattern }}
           retention-days: ${{ inputs.retention-days }}
