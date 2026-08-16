@@ -78,7 +78,9 @@ class TestVanilla:
     def test_decoupled_wd_zero_grad(self):
         params = {"w": torch.ones(3) * 2.0}
         grads = {"w": torch.zeros(3)}
-        step, state = adafactor(params, lr=0.1, weight_decay=0.5, decoupled_weight_decay=True)
+        step, state = adafactor(
+            params, lr=0.1, weight_decay=0.5, decoupled_weight_decay=True
+        )
         updates, _ = step(grads, state, params=params)
         # update = -lr * (0 + wd * params)
         expected = -0.1 * 0.5 * params["w"]
@@ -139,9 +141,15 @@ class TestUpdateRmsClip:
         }
         threshold = 0.47
         common = {"lr": 1.0, "eps_root": 1.0, "weight_decay": 0.0}
-        step_no_momentum, state_no_momentum = adafactor(params, **common, update_rms_clip=1e9)
-        step_clipped, state_clipped = adafactor(params, **common, beta1=0.5, update_rms_clip=threshold)
-        step_unclipped, state_unclipped = adafactor(params, **common, beta1=0.5, update_rms_clip=1e9)
+        step_no_momentum, state_no_momentum = adafactor(
+            params, **common, update_rms_clip=1e9
+        )
+        step_clipped, state_clipped = adafactor(
+            params, **common, beta1=0.5, update_rms_clip=threshold
+        )
+        step_unclipped, state_unclipped = adafactor(
+            params, **common, beta1=0.5, update_rms_clip=1e9
+        )
 
         normalized, _ = step_no_momentum(grads, state_no_momentum, params=params)
         updates, _ = step_clipped(grads, state_clipped, params=params)
@@ -181,9 +189,7 @@ class TestExplicitKwargsRejected:
         sq = {k: v.pow(2) for k, v in matrix_grads.items()}
         step, state = adafactor(matrix_params, lr=1e-3)
         with pytest.raises(TypeError, match="noisy_squared_grads"):
-            step(
-                matrix_grads, state, params=matrix_params, noisy_squared_grads=sq
-            )
+            step(matrix_grads, state, params=matrix_params, noisy_squared_grads=sq)
 
 
 class TestBCMode:
@@ -347,7 +353,9 @@ class TestScaleAware:
         denominator near ``sqrt(v̂) ≈ |g|`` instead, producing a materially
         different update.
         """
-        step, state = adafactor(small_params, lr=1.0, eps_root=1e-3, update_rms_clip=1e9)
+        step, state = adafactor(
+            small_params, lr=1.0, eps_root=1e-3, update_rms_clip=1e9
+        )
         for _ in range(5):
             _, state = step(dp_scale_grads, state, params=small_params)
         updates, _ = step(dp_scale_grads, state, params=small_params)
@@ -405,7 +413,9 @@ class TestScaleAware:
         scale = 1e-3  # DP-clipped magnitude
 
         def run_steps(grads, n=10):
-            step, state = adafactor(small_params, lr=1.0, update_rms_clip=1e9)  # disable rms clip
+            step, state = adafactor(
+                small_params, lr=1.0, update_rms_clip=1e9
+            )  # disable rms clip
             for _ in range(n):
                 _, state = step(grads, state, params=small_params)
             updates, _ = step(grads, state, params=small_params)

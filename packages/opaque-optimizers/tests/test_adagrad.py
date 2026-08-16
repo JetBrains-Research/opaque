@@ -144,7 +144,9 @@ class TestWeightDecay:
     def test_decoupled_with_zero_grad(self):
         params = {"w": torch.ones(4) * 2.0}
         grads = {"w": torch.zeros(4)}
-        step, state = adagrad(params, lr=0.1, weight_decay=0.1, initial_accumulator_value=1.0)
+        step, state = adagrad(
+            params, lr=0.1, weight_decay=0.1, initial_accumulator_value=1.0
+        )
         updates, _ = step(grads, state, params=params)
         # g = 0 → moment-scaled = 0; only WD survives.
         # update = -lr * (0 + wd * params) = -0.01 * 2.0

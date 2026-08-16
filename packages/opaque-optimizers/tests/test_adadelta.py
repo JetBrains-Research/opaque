@@ -57,7 +57,9 @@ def _state(chain_state) -> AdadeltaState:
 
 class TestVanillaAdadelta:
     def test_state_init(self, params):
-        step, state = adadelta(params, )
+        step, state = adadelta(
+            params,
+        )
         s = _state(state)
         assert s.step == 0
         # When noise_bias_correction=False (default), phi fields should be None
@@ -79,7 +81,9 @@ class TestVanillaAdadelta:
             assert torch.all(s.phi_dx[k] == 0)
 
     def test_step_increments(self, params, grads):
-        step, state = adadelta(params, )
+        step, state = adadelta(
+            params,
+        )
         for expected in [1, 2, 3]:
             _, state = step(grads, state, params=params)
             assert _state(state).step == expected
@@ -105,7 +109,9 @@ class TestVanillaAdadelta:
             torch.testing.assert_close(s.v_g[k], expected, rtol=1e-6, atol=1e-7)
 
     def test_finite_updates(self, params, grads):
-        step, state = adadelta(params, )
+        step, state = adadelta(
+            params,
+        )
         for _ in range(5):
             updates, state = step(grads, state, params=params)
             for k in params:

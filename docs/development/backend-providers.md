@@ -147,6 +147,28 @@ values across providers. Keyed NumPy generators used by samplers and other
 host-side control flow are an engine/mechanism concern, not a reason for a
 provider to add a global-RNG fallback.
 
+## Optional array profiles
+
+Matrix-factorization strategy math needs more than the portable core: matrix
+construction, cumulative scans, dense linear algebra, and real FFTs. These are
+declared `OPTIONAL` and grouped into `opaque.ops.ArrayProfile` — `EXTENDED`,
+`SCAN`, `LINALG`, and `SPECTRAL`. A provider missing them still activates, and
+callers check support before use:
+
+```python
+from opaque.ops import ArrayProfile
+
+if not ArrayProfile.SPECTRAL.supports():
+    raise RuntimeError("This backend cannot fit Toeplitz strategy coefficients.")
+```
+
+Two portability limits shape this surface. MLX has no float64, and JAX yields
+float32 unless `jax_enable_x64` is set, so strategy math must select precision
+through `ops.accumulator_dtype(...)` rather than naming a dtype; tests should
+derive tolerances from `ops.finfo_eps(...)` for the same reason. Separately,
+`nonzero` returns a data-dependent shape and so cannot be traced or compiled on
+any provider — treat it as host-side control flow.
+
 Automatic activation, `set_backend()`, and `use_backend()` validate the
 versioned portable core profile. `core_profile()` exposes the version and
 required primitives, and `validate_core_primitives()` is available to provider

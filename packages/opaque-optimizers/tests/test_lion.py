@@ -45,7 +45,9 @@ class TestLion:
 
     def test_update_is_signed(self, params, grads):
         """Lion's update direction is the sign of (β₁m + (1-β₁)g)."""
-        step, state = lion(params, lr=1.0, weight_decay=0.0)  # lr=1 so the sign survives.
+        step, state = lion(
+            params, lr=1.0, weight_decay=0.0
+        )  # lr=1 so the sign survives.
         updates, _ = step(grads, state, params=params)
         for k in updates:
             # update = -lr * sign(...), so all entries are ±lr.
@@ -70,7 +72,9 @@ class TestLion:
     def test_decoupled_wd_with_zero_grad(self):
         params = {"w": torch.ones(3) * 2.0}
         grads = {"w": torch.zeros(3)}
-        step, state = lion(params, lr=0.1, weight_decay=0.5, decoupled_weight_decay=True)
+        step, state = lion(
+            params, lr=0.1, weight_decay=0.5, decoupled_weight_decay=True
+        )
         updates, _ = step(grads, state, params=params)
         # sign(0) = 0 → only WD survives.  update = -lr * wd * params.
         expected = -0.1 * 0.5 * params["w"]

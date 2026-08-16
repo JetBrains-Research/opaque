@@ -388,4 +388,177 @@ def normal(
     )
 
 
+# ---------------------------------------------------------------------------
+# Optional array profiles
+# ---------------------------------------------------------------------------
+
+
+@_MLX.implements(ops.asarray)
+def asarray(value: Any, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return mx.array(value, dtype=dtype)
+
+
+@_MLX.implements(ops.arange)
+def arange(
+    start: Any,
+    stop: Any = None,
+    step: Any = 1,
+    *,
+    dtype: Any = None,
+    like: Any = None,
+) -> Any:
+    del like
+    if stop is None:
+        return mx.arange(start, dtype=dtype)
+    return mx.arange(start, stop, step, dtype=dtype)
+
+
+@_MLX.implements(ops.ones)
+def ones(value_shape: Any, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return mx.ones(value_shape, dtype=dtype)
+
+
+@_MLX.implements(ops.eye)
+def eye(n: int, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return mx.eye(n, dtype=dtype)
+
+
+@_MLX.implements(ops.diag)
+def diag(value: Any) -> Any:
+    return mx.diag(value)
+
+
+@_MLX.implements(ops.tril)
+def tril(value: Any, k: int = 0) -> Any:
+    return mx.tril(value, k=k)
+
+
+@_MLX.implements(ops.reshape)
+def reshape(value: Any, value_shape: Any) -> Any:
+    return mx.reshape(value, value_shape)
+
+
+@_MLX.implements(ops.transpose)
+def transpose(value: Any, axes: Any = None) -> Any:
+    if axes is None:
+        return mx.transpose(value)
+    return mx.transpose(value, axes=list(axes))
+
+
+@_MLX.implements(ops.stack)
+def stack(values: Any, axis: int = 0) -> Any:
+    return mx.stack(list(values), axis=axis)
+
+
+@_MLX.implements(ops.flip)
+def flip(value: Any, axis: int) -> Any:
+    return mx.flip(value, axis=axis)
+
+
+@_MLX.implements(ops.roll)
+def roll(value: Any, shift: int, axis: int) -> Any:
+    return mx.roll(value, shift, axis=axis)
+
+
+@_MLX.implements(ops.real)
+def real(value: Any) -> Any:
+    return mx.real(value)
+
+
+@_MLX.implements(ops.log)
+def log(value: Any) -> Any:
+    return mx.log(value)
+
+
+@_MLX.implements(ops.cumsum)
+def cumsum(value: Any, axis: int = 0) -> Any:
+    return mx.cumsum(value, axis=axis)
+
+
+@_MLX.implements(ops.cumprod)
+def cumprod(value: Any, axis: int = 0) -> Any:
+    return mx.cumprod(value, axis=axis)
+
+
+@_MLX.implements(ops.cummax)
+def cummax(value: Any, axis: int = 0) -> Any:
+    return mx.cummax(value, axis=axis)
+
+
+@_MLX.implements(ops.prod)
+def prod(value: Any, axis: Any = None) -> Any:
+    return mx.prod(value, axis=axis)
+
+
+@_MLX.implements(ops.amax)
+def amax(value: Any, axis: Any = None) -> Any:
+    return mx.max(value, axis=axis)
+
+
+@_MLX.implements(ops.amin)
+def amin(value: Any, axis: Any = None) -> Any:
+    return mx.min(value, axis=axis)
+
+
+@_MLX.implements(ops.any)
+def any(value: Any, axis: Any = None) -> Any:
+    return mx.any(value, axis=axis)
+
+
+@_MLX.implements(ops.argmax)
+def argmax(value: Any, axis: Any = None) -> Any:
+    return mx.argmax(value, axis=axis)
+
+
+@_MLX.implements(ops.argsort)
+def argsort(value: Any, *, descending: bool = False) -> Any:
+    # MLX sorts ascending only; reverse for the descending order. Ties keep
+    # MLX's own ordering rather than Torch's, which callers must not rely on.
+    order = mx.argsort(value)
+    return mx.flip(order, axis=0) if descending else order
+
+
+@_MLX.implements(ops.nonzero)
+def nonzero(value: Any) -> Any:
+    # MLX has no native ``nonzero``. The result is data-dependent in shape, so
+    # it cannot be traced on any backend; a host round-trip is the honest
+    # implementation rather than a hidden limitation.
+    import numpy as np
+
+    return mx.array(np.nonzero(np.array(value, copy=False))[0])
+
+
+@_MLX.implements(ops.matmul)
+def matmul(left: Any, right: Any) -> Any:
+    return mx.matmul(left, right)
+
+
+@_MLX.implements(ops.tensordot)
+def tensordot(left: Any, right: Any, axes: Any = 1) -> Any:
+    return mx.tensordot(left, right, axes=axes)
+
+
+@_MLX.implements(ops.linalg_inv)
+def linalg_inv(value: Any) -> Any:
+    return mx.linalg.inv(value, stream=mx.cpu)
+
+
+@_MLX.implements(ops.linalg_eigvals)
+def linalg_eigvals(value: Any) -> Any:
+    return mx.linalg.eigvals(value, stream=mx.cpu)
+
+
+@_MLX.implements(ops.fft_rfft)
+def fft_rfft(value: Any, n: int | None = None) -> Any:
+    return mx.fft.rfft(value, n=n)
+
+
+@_MLX.implements(ops.fft_irfft)
+def fft_irfft(value: Any, n: int | None = None) -> Any:
+    return mx.fft.irfft(value, n=n)
+
+
 __all__ = ["MlxBackend"]

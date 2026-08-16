@@ -46,9 +46,7 @@ class TestVanilla:
         torch.manual_seed(42)
         for _ in range(10):
             step_grads = {k: torch.randn_like(v) for k, v in params.items()}
-            updates, state = step(
-                step_grads, state, params=params
-            )
+            updates, state = step(step_grads, state, params=params)
 
         assert all(torch.isfinite(update).all() for update in updates.values())
 

@@ -55,9 +55,7 @@ class TestStrategyOutputs:
         assert 0 < sens < float("inf"), f"got {sens}"
 
     def test_bsr_sensitivity(self) -> None:
-        sens = bsr_strategy(
-            bandwidth=4, alpha=0.9, beta=0.0
-        ).sensitivity(**self._PART)
+        sens = bsr_strategy(bandwidth=4, alpha=0.9, beta=0.0).sensitivity(**self._PART)
         assert 0 < sens < float("inf"), f"got {sens}"
 
     def test_lambda_cgd_sensitivity(self) -> None:

@@ -1,5 +1,4 @@
-"""Tests for opaque.optimizers.adamw — universal Adam / AdamW.
-"""
+"""Tests for opaque.optimizers.adamw — universal Adam / AdamW."""
 
 from __future__ import annotations
 

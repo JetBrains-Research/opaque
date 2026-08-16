@@ -365,4 +365,169 @@ def normal(
     return sample.to(device=device) if device is not None else sample
 
 
+# ---------------------------------------------------------------------------
+# Optional array profiles
+# ---------------------------------------------------------------------------
+
+
+@_TORCH.implements(ops.asarray)
+def asarray(value: Any, *, dtype: Any = None, like: Any = None) -> torch.Tensor:
+    device = like.device if like is not None else None
+    return torch.as_tensor(value, dtype=dtype, device=device)
+
+
+@_TORCH.implements(ops.arange)
+def arange(
+    start: Any,
+    stop: Any = None,
+    step: Any = 1,
+    *,
+    dtype: Any = None,
+    like: Any = None,
+) -> torch.Tensor:
+    device = like.device if like is not None else None
+    if stop is None:
+        return torch.arange(start, dtype=dtype, device=device)
+    return torch.arange(start, stop, step, dtype=dtype, device=device)
+
+
+@_TORCH.implements(ops.ones)
+def ones(shape: Any, *, dtype: Any = None, like: Any = None) -> torch.Tensor:
+    device = like.device if like is not None else None
+    return torch.ones(shape, dtype=dtype, device=device)
+
+
+@_TORCH.implements(ops.eye)
+def eye(n: int, *, dtype: Any = None, like: Any = None) -> torch.Tensor:
+    device = like.device if like is not None else None
+    return torch.eye(n, dtype=dtype, device=device)
+
+
+@_TORCH.implements(ops.diag)
+def diag(value: Any) -> torch.Tensor:
+    return torch.diag(value)
+
+
+@_TORCH.implements(ops.tril)
+def tril(value: Any, k: int = 0) -> torch.Tensor:
+    return torch.tril(value, diagonal=k)
+
+
+@_TORCH.implements(ops.reshape)
+def reshape(value: Any, value_shape: Any) -> torch.Tensor:
+    return torch.reshape(value, value_shape)
+
+
+@_TORCH.implements(ops.transpose)
+def transpose(value: Any, axes: Any = None) -> torch.Tensor:
+    if axes is None:
+        return value.permute(*reversed(range(value.dim())))
+    return value.permute(*axes)
+
+
+@_TORCH.implements(ops.stack)
+def stack(values: Any, axis: int = 0) -> torch.Tensor:
+    return torch.stack(list(values), dim=axis)
+
+
+@_TORCH.implements(ops.flip)
+def flip(value: Any, axis: int) -> torch.Tensor:
+    return torch.flip(value, (axis,))
+
+
+@_TORCH.implements(ops.roll)
+def roll(value: Any, shift: int, axis: int) -> torch.Tensor:
+    return torch.roll(value, shift, dims=axis)
+
+
+@_TORCH.implements(ops.real)
+def real(value: Any) -> torch.Tensor:
+    return torch.real(value)
+
+
+@_TORCH.implements(ops.log)
+def log(value: Any) -> torch.Tensor:
+    return torch.log(value)
+
+
+@_TORCH.implements(ops.cumsum)
+def cumsum(value: Any, axis: int = 0) -> torch.Tensor:
+    return torch.cumsum(value, dim=axis)
+
+
+@_TORCH.implements(ops.cumprod)
+def cumprod(value: Any, axis: int = 0) -> torch.Tensor:
+    return torch.cumprod(value, dim=axis)
+
+
+@_TORCH.implements(ops.cummax)
+def cummax(value: Any, axis: int = 0) -> torch.Tensor:
+    return torch.cummax(value, dim=axis).values
+
+
+@_TORCH.implements(ops.prod)
+def prod(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.prod(value) if axis is None else torch.prod(value, dim=axis)
+
+
+@_TORCH.implements(ops.amax)
+def amax(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.amax(value) if axis is None else torch.amax(value, dim=axis)
+
+
+@_TORCH.implements(ops.amin)
+def amin(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.amin(value) if axis is None else torch.amin(value, dim=axis)
+
+
+@_TORCH.implements(ops.any)
+def any(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.any(value) if axis is None else torch.any(value, dim=axis)
+
+
+@_TORCH.implements(ops.argmax)
+def argmax(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.argmax(value) if axis is None else torch.argmax(value, dim=axis)
+
+
+@_TORCH.implements(ops.argsort)
+def argsort(value: Any, *, descending: bool = False) -> torch.Tensor:
+    return torch.argsort(value, descending=descending)
+
+
+@_TORCH.implements(ops.nonzero)
+def nonzero(value: Any) -> torch.Tensor:
+    return torch.nonzero(value, as_tuple=False).flatten()
+
+
+@_TORCH.implements(ops.matmul)
+def matmul(left: Any, right: Any) -> torch.Tensor:
+    return torch.matmul(left, right)
+
+
+@_TORCH.implements(ops.tensordot)
+def tensordot(left: Any, right: Any, axes: Any = 1) -> torch.Tensor:
+    return torch.tensordot(left, right, dims=axes)
+
+
+@_TORCH.implements(ops.linalg_inv)
+def linalg_inv(value: Any) -> torch.Tensor:
+    return torch.linalg.inv(value)
+
+
+@_TORCH.implements(ops.linalg_eigvals)
+def linalg_eigvals(value: Any) -> torch.Tensor:
+    return torch.linalg.eigvals(value)
+
+
+@_TORCH.implements(ops.fft_rfft)
+def fft_rfft(value: Any, n: int | None = None) -> torch.Tensor:
+    return torch.fft.rfft(value, n=n)
+
+
+@_TORCH.implements(ops.fft_irfft)
+def fft_irfft(value: Any, n: int | None = None) -> torch.Tensor:
+    return torch.fft.irfft(value, n=n)
+
+
 __all__ = ["TorchBackend"]

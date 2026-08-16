@@ -70,9 +70,7 @@ def _round_trip(
 
 class TestAdamW:
     def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            adamw, params, grads, lr=1e-3, weight_decay=0.01
-        )
+        u_orig, u_rest = _round_trip(adamw, params, grads, lr=1e-3, weight_decay=0.01)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
@@ -110,9 +108,7 @@ class TestAdamW:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_round_trip_with_rms_clip(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            adamw, params, grads, lr=1e-3, update_rms_clip=0.5
-        )
+        u_orig, u_rest = _round_trip(adamw, params, grads, lr=1e-3, update_rms_clip=0.5)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
@@ -212,9 +208,7 @@ class TestAdamW:
 
 class TestLion:
     def test_round_trip(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            lion, params, grads, lr=1e-4, weight_decay=0.0
-        )
+        u_orig, u_rest = _round_trip(lion, params, grads, lr=1e-4, weight_decay=0.0)
         for k in u_orig:
             torch.testing.assert_close(u_orig[k], u_rest[k])
 
@@ -462,7 +456,9 @@ class TestRobustness:
         _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Drop the step entry from the saved dict.
-        sd_partial = {k: v for k, v in sd.items() if k != "step" and not k.endswith(".step")}
+        sd_partial = {
+            k: v for k, v in sd.items() if k != "step" and not k.endswith(".step")
+        }
         _s2, template = adamw(params, lr=1e-3)
         restored = from_state_dict(template, sd_partial)
         # ``step`` falls back to template's 0.

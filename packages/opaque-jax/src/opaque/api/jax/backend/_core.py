@@ -411,4 +411,167 @@ def normal(
     )
 
 
+# ---------------------------------------------------------------------------
+# Optional array profiles
+# ---------------------------------------------------------------------------
+
+
+@_JAX.implements(ops.asarray)
+def asarray(value: Any, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return jnp.asarray(value, dtype=dtype)
+
+
+@_JAX.implements(ops.arange)
+def arange(
+    start: Any,
+    stop: Any = None,
+    step: Any = 1,
+    *,
+    dtype: Any = None,
+    like: Any = None,
+) -> Any:
+    del like
+    if stop is None:
+        return jnp.arange(start, dtype=dtype)
+    return jnp.arange(start, stop, step, dtype=dtype)
+
+
+@_JAX.implements(ops.ones)
+def ones(value_shape: Any, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return jnp.ones(value_shape, dtype=dtype)
+
+
+@_JAX.implements(ops.eye)
+def eye(n: int, *, dtype: Any = None, like: Any = None) -> Any:
+    del like
+    return jnp.eye(n, dtype=dtype)
+
+
+@_JAX.implements(ops.diag)
+def diag(value: Any) -> Any:
+    return jnp.diag(value)
+
+
+@_JAX.implements(ops.tril)
+def tril(value: Any, k: int = 0) -> Any:
+    return jnp.tril(value, k=k)
+
+
+@_JAX.implements(ops.reshape)
+def reshape(value: Any, value_shape: Any) -> Any:
+    return jnp.reshape(value, value_shape)
+
+
+@_JAX.implements(ops.transpose)
+def transpose(value: Any, axes: Any = None) -> Any:
+    return jnp.transpose(value, axes)
+
+
+@_JAX.implements(ops.stack)
+def stack(values: Any, axis: int = 0) -> Any:
+    return jnp.stack(list(values), axis=axis)
+
+
+@_JAX.implements(ops.flip)
+def flip(value: Any, axis: int) -> Any:
+    return jnp.flip(value, axis=axis)
+
+
+@_JAX.implements(ops.roll)
+def roll(value: Any, shift: int, axis: int) -> Any:
+    return jnp.roll(value, shift, axis=axis)
+
+
+@_JAX.implements(ops.real)
+def real(value: Any) -> Any:
+    return jnp.real(value)
+
+
+@_JAX.implements(ops.log)
+def log(value: Any) -> Any:
+    return jnp.log(value)
+
+
+@_JAX.implements(ops.cumsum)
+def cumsum(value: Any, axis: int = 0) -> Any:
+    return jnp.cumsum(value, axis=axis)
+
+
+@_JAX.implements(ops.cumprod)
+def cumprod(value: Any, axis: int = 0) -> Any:
+    return jnp.cumprod(value, axis=axis)
+
+
+@_JAX.implements(ops.cummax)
+def cummax(value: Any, axis: int = 0) -> Any:
+    return jax.lax.cummax(value, axis=axis)
+
+
+@_JAX.implements(ops.prod)
+def prod(value: Any, axis: Any = None) -> Any:
+    return jnp.prod(value, axis=axis)
+
+
+@_JAX.implements(ops.amax)
+def amax(value: Any, axis: Any = None) -> Any:
+    return jnp.max(value, axis=axis)
+
+
+@_JAX.implements(ops.amin)
+def amin(value: Any, axis: Any = None) -> Any:
+    return jnp.min(value, axis=axis)
+
+
+@_JAX.implements(ops.any)
+def any(value: Any, axis: Any = None) -> Any:
+    return jnp.any(value, axis=axis)
+
+
+@_JAX.implements(ops.argmax)
+def argmax(value: Any, axis: Any = None) -> Any:
+    return jnp.argmax(value, axis=axis)
+
+
+@_JAX.implements(ops.argsort)
+def argsort(value: Any, *, descending: bool = False) -> Any:
+    return jnp.argsort(value, descending=descending)
+
+
+@_JAX.implements(ops.nonzero)
+def nonzero(value: Any) -> Any:
+    return jnp.nonzero(value)[0]
+
+
+@_JAX.implements(ops.matmul)
+def matmul(left: Any, right: Any) -> Any:
+    return jnp.matmul(left, right)
+
+
+@_JAX.implements(ops.tensordot)
+def tensordot(left: Any, right: Any, axes: Any = 1) -> Any:
+    return jnp.tensordot(left, right, axes=axes)
+
+
+@_JAX.implements(ops.linalg_inv)
+def linalg_inv(value: Any) -> Any:
+    return jnp.linalg.inv(value)
+
+
+@_JAX.implements(ops.linalg_eigvals)
+def linalg_eigvals(value: Any) -> Any:
+    return jnp.linalg.eigvals(value)
+
+
+@_JAX.implements(ops.fft_rfft)
+def fft_rfft(value: Any, n: int | None = None) -> Any:
+    return jnp.fft.rfft(value, n=n)
+
+
+@_JAX.implements(ops.fft_irfft)
+def fft_irfft(value: Any, n: int | None = None) -> Any:
+    return jnp.fft.irfft(value, n=n)
+
+
 __all__ = ["JaxBackend"]
