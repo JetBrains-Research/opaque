@@ -176,17 +176,6 @@ class CoinFlip:
         excluded = set(self.out_indices.tolist())
         return [i for i in range(dataset_size) if i not in excluded]
 
-    def canary_subset(self, dataset: Any) -> Subset:
-        """Return a ``Subset`` containing only canary examples.
-
-        Args:
-            dataset: The full dataset (before filtering out held-out canaries).
-
-        Returns:
-            ``torch.utils.data.Subset`` over canary indices.
-        """
-        return Subset(dataset, self.canary_indices.tolist())
-
     def train_subset(self, dataset: Any) -> Subset:
         """Return a ``Subset`` containing all training examples.
 

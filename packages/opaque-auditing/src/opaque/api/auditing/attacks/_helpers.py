@@ -9,7 +9,7 @@ import numpy as np
 from opaque.api.auditing._coin_flip import CanaryScores
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable
 
     from opaque.api.auditing._coin_flip import CoinFlip
 
@@ -57,40 +57,13 @@ def _extract_batch_tensors(
     batch: Any,
     batch_argnums: tuple[int, ...],
 ) -> tuple[Any, ...]:
-    """Extract tensors from a dataloader batch.
+    """Extract tensors from a collated batch.
 
     Returns a tuple of tensors matching the length of ``batch_argnums``.
     """
     if isinstance(batch, (list, tuple)):
         return tuple(batch[i] for i in range(len(batch_argnums)))
     return (batch,)
-
-
-def _check_unshuffled(dataloader: Any) -> None:
-    """Raise when a torch ``DataLoader`` would shuffle the scoring order.
-
-    Membership scores are paired positionally with the coin-flip labels, so
-    a shuffled loader silently attaches scores to the wrong labels and the
-    audit reports no leakage that was never measured.  Detects the torch
-    shuffling samplers on both the ``sampler`` and ``batch_sampler.sampler``
-    seats.  Applies to legacy (bare ``dataloader=``) scoring only; verified
-    scoring joins scores to labels by canary identifier and never depends
-    on iteration order.
-    """
-    import torch.utils.data as tud
-
-    shuffling = (tud.RandomSampler, tud.SubsetRandomSampler)
-    sampler = getattr(dataloader, "sampler", None)
-    inner = getattr(getattr(dataloader, "batch_sampler", None), "sampler", None)
-    if isinstance(sampler, shuffling) or isinstance(inner, shuffling):
-        raise ValueError(
-            "dataloader is shuffled (RandomSampler/SubsetRandomSampler); "
-            "bare scores are paired positionally, so the scoring order "
-            "must be reproducible. Construct the DataLoader with "
-            "shuffle=False, or switch to verified scoring (coin_flip= + "
-            "dataset=), which pairs scores by canary identifier and does "
-            "not depend on order"
-        )
 
 
 class _IndexedCanaries:
@@ -161,75 +134,26 @@ def _canary_loader(
     )
 
 
-def _resolve_scoring_mode(
+def _scoring_loader(
     *,
-    dataloader: Any,
     dataset: Any,
-    coin_flip: CoinFlip | None,
-    batch_size: int | None,
+    coin_flip: CoinFlip,
+    batch_size: int,
     collate_fn: Callable | None,
-    reference_scores: np.ndarray | CanaryScores | None,
-) -> tuple[Any, bool]:
-    """Validate scoring arguments and return ``(loader, verified)``.
-
-    Verified mode (``coin_flip=`` + ``dataset=``) builds an internal
-    identifier-carrying loader; legacy mode passes ``dataloader`` through
-    unchanged and keeps the bare-array contract.
-    """
-    if coin_flip is not None or dataset is not None:
-        if coin_flip is None or dataset is None:
-            raise ValueError("verified scoring requires both coin_flip= and dataset=")
-        if dataloader is not None:
-            raise ValueError(
-                "pass either dataloader= or (coin_flip=, dataset=), not "
-                "both; verified scoring builds its own loader over the "
-                "canaries"
-            )
-        if reference_scores is not None and not isinstance(
-            reference_scores, CanaryScores
-        ):
-            raise TypeError(
-                "verified scoring requires reference_scores with canary "
-                "identifiers; compute the reference with coin_flip= and "
-                "dataset= as well"
-            )
-        loader = _canary_loader(
-            dataset,
-            coin_flip,
-            32 if batch_size is None else batch_size,
-            collate_fn,
-        )
-        return loader, True
-
-    if dataloader is None:
-        raise ValueError("either dataloader= or (coin_flip=, dataset=) is required")
-    if batch_size is not None or collate_fn is not None:
-        raise ValueError(
-            "batch_size= and collate_fn= apply to verified scoring "
-            "(coin_flip= + dataset=); configure them on your own "
-            "dataloader otherwise"
-        )
-    if isinstance(reference_scores, CanaryScores):
+    reference_scores: CanaryScores | None,
+) -> Any:
+    """Validate scoring arguments and build the canary loader."""
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int):
+        raise TypeError(f"batch_size must be an int, got {type(batch_size).__name__}")
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+    if reference_scores is not None and not isinstance(reference_scores, CanaryScores):
         raise TypeError(
-            "reference_scores carries canary identifiers but scoring uses "
-            "a bare dataloader; score with coin_flip= and dataset= so both "
-            "passes are verified (or subtract reference_scores.scores "
-            "yourself)"
+            "reference_scores must carry canary identifiers; compute it "
+            "with the same coin_flip= and dataset=, or attest identifiers "
+            "with canary_scores(values, canary_indices=...)"
         )
-    _check_unshuffled(dataloader)
-    return dataloader, False
-
-
-def _iter_scoring_batches(
-    loader: Any, verified: bool
-) -> Iterator[tuple[list[int] | None, Any]]:
-    """Yield ``(positions, batch)``; positions is None for legacy loaders."""
-    if verified:
-        for positions, batch in loader:
-            yield [int(position) for position in positions], batch
-    else:
-        for batch in loader:
-            yield None, batch
+    return _canary_loader(dataset, coin_flip, batch_size, collate_fn)
 
 
 def _aligned_reference(ids: np.ndarray, reference_scores: CanaryScores) -> np.ndarray:
@@ -255,23 +179,12 @@ def _aligned_reference(ids: np.ndarray, reference_scores: CanaryScores) -> np.nd
 
 def _bind_scores(
     scores: np.ndarray,
-    positions: list[int] | None,
+    positions: list[int],
     *,
-    coin_flip: CoinFlip | None,
-    reference_scores: np.ndarray | CanaryScores | None,
-) -> np.ndarray | CanaryScores:
-    """Apply reference calibration and, when verified, attach identifiers."""
-    if coin_flip is None:
-        if reference_scores is not None:
-            reference_scores = np.asarray(reference_scores)
-            if reference_scores.shape != scores.shape:
-                raise ValueError(
-                    f"reference_scores shape {reference_scores.shape} does "
-                    f"not match scores shape {scores.shape}"
-                )
-            scores = scores - reference_scores
-        return scores
-
+    coin_flip: CoinFlip,
+    reference_scores: CanaryScores | None,
+) -> CanaryScores:
+    """Apply reference calibration and attach canary identifiers."""
     ids = coin_flip.canary_indices[np.asarray(positions, dtype=int)]
     if reference_scores is not None:
         scores = scores - _aligned_reference(ids, reference_scores)

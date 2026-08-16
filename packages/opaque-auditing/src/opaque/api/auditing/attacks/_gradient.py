@@ -19,9 +19,8 @@ import numpy as np
 from opaque.api.auditing.attacks._helpers import (
     _bind_scores,
     _extract_batch_tensors,
-    _iter_scoring_batches,
     _merge_args,
-    _resolve_scoring_mode,
+    _scoring_loader,
     _validate_batch_argnums,
 )
 
@@ -37,13 +36,12 @@ def gradient_scores(
     loss_fn: Callable,
     *args: Any,
     batch_argnums: tuple[int, ...],
-    dataloader: Any | None = None,
-    reference_scores: np.ndarray | CanaryScores | None = None,
-    coin_flip: CoinFlip | None = None,
-    dataset: Any | None = None,
-    batch_size: int | None = None,
+    coin_flip: CoinFlip,
+    dataset: Any,
+    reference_scores: CanaryScores | None = None,
+    batch_size: int = 32,
     collate_fn: Callable | None = None,
-) -> np.ndarray | CanaryScores:
+) -> CanaryScores:
     """Compute membership scores as negative squared per-example gradient norm.
 
     Higher score = smaller gradient norm = more likely a training member.
@@ -51,18 +49,14 @@ def gradient_scores(
     ``loss_fn`` (position 0), matching the default ``argnums=0`` of
     :func:`~opaque.clipped_grad`.
 
-    Two scoring modes, matching
-    :func:`~opaque.api.auditing.attacks._loss.loss_scores`:
-
-    - **Verified** (``coin_flip=`` + ``dataset=``): scores the
-      partition's canaries over an internal identifier-carrying loader
-      and returns :class:`~opaque.auditing.types.CanaryScores`, which
-      :func:`~opaque.auditing.one_run` requires.  Identifiers are attached
-      per batch before collation, so ``collate_fn`` must emit one row per
-      example in the order it received them; reordering within a batch
-      misaligns the pairing undetectably.
-    - **Legacy** (``dataloader=``): scores an arbitrary loader and
-      returns a bare array with no identifiers.
+    Scores the partition's canaries over an internal identifier-carrying
+    loader and returns :class:`~opaque.auditing.types.CanaryScores`, which
+    :func:`~opaque.auditing.one_run` requires.  Identifiers are attached
+    per batch before collation, so ``collate_fn`` must emit one row per
+    example in the order it received them; reordering within a batch
+    misaligns the pairing undetectably.  To audit scores computed by some
+    other pipeline, attest their identifiers with
+    :func:`~opaque.auditing.canary_scores` instead.
 
     Processes one sample at a time to keep peak GPU memory at 2× model
     size regardless of model or batch size.  ``torch.func.grad`` is a
@@ -74,9 +68,8 @@ def gradient_scores(
     ``current - reference``, which equals
     ``||∇loss(θ₀)||² - ||∇loss(θₜ)||²`` (positive when the current model
     has smaller gradients, i.e. is more converged).  This matches the calibration pattern
-    of :func:`~opaque.api.auditing.attacks._loss.loss_scores`.  In
-    verified mode the reference must itself be a ``CanaryScores``; it is
-    aligned by identifier before subtraction.
+    of :func:`~opaque.api.auditing.attacks._loss.loss_scores`.  The
+    reference is aligned by identifier before subtraction.
 
     Args:
         loss_fn: Per-example loss function whose first argument is the
@@ -86,34 +79,29 @@ def gradient_scores(
         batch_argnums: Indices of ``loss_fn`` positional arguments that come
             from dataset batches.  Must not include 0 (reserved for params).
             Must be sorted, unique, non-negative.
-        dataloader: An iterable of batches (typically a ``DataLoader``)
-            for legacy scoring.  Mutually exclusive with
-            ``coin_flip``/``dataset``.
-        reference_scores: Baseline scores from an untrained model, shape
-            ``(n,)``.  When provided, returned scores are
+        coin_flip: The audit partition to score against.
+        dataset: The full dataset the partition was created from; canaries
+            are selected internally by identifier.
+        reference_scores: Baseline scores from an untrained model, over the
+            same partition.  When provided, returned scores are
             ``scores - reference_scores``.  Typically obtained by calling
             ``gradient_scores`` on the untrained model before training.
-        coin_flip: The audit partition to score against (verified mode).
-        dataset: The full dataset the partition was created from
-            (verified mode); canaries are selected internally.
-        batch_size: Batch size of the internal loader (verified mode
-            only). Defaults to 32.
-        collate_fn: Collation for the internal loader (verified mode
-            only). Defaults to ``torch.utils.data.default_collate``.
+        batch_size: Batch size of the internal loader. Defaults to 32.
+        collate_fn: Collation for the internal loader. Defaults to
+            ``torch.utils.data.default_collate``.
 
     Returns:
-        Membership scores, shape ``(n,)``: negated squared gradient norms
-        (higher = more likely member), optionally adjusted by reference
-        scores.  A :class:`~opaque.auditing.types.CanaryScores` in
-        verified mode, else a bare ``np.ndarray``.
+        A :class:`~opaque.auditing.types.CanaryScores`, shape ``(n,)``:
+        negated squared gradient norms (higher = more likely member),
+        optionally adjusted by reference scores, each carrying its
+        canary's dataset index.
 
     Raises:
-        ValueError: If ``0 in batch_argnums`` (params must be at
-            position 0), the scoring mode arguments are inconsistent, or
-            a legacy ``dataloader`` shuffles (RandomSampler-family
-            sampler).
-        TypeError: If ``reference_scores`` verification does not match
-            the scoring mode.
+        ValueError: If ``0 in batch_argnums`` (params must be at position
+            0), ``batch_size`` is not positive, or ``collate_fn`` changes
+            the batch row count.
+        TypeError: If ``batch_size`` is not an int, or ``reference_scores``
+            does not carry identifiers.
 
     Example::
 
@@ -142,8 +130,7 @@ def gradient_scores(
             f"Got batch_argnums={batch_argnums}."
         )
 
-    loader, verified = _resolve_scoring_mode(
-        dataloader=dataloader,
+    loader = _scoring_loader(
         dataset=dataset,
         coin_flip=coin_flip,
         batch_size=batch_size,
@@ -156,9 +143,8 @@ def gradient_scores(
     all_positions: list[int] = []
     all_scores: list[float] = []
     with torch.no_grad():
-        for positions, batch in _iter_scoring_batches(loader, verified):
-            if positions is not None:
-                all_positions.extend(positions)
+        for positions, batch in loader:
+            all_positions.extend(int(position) for position in positions)
             batch_tensors = _extract_batch_tensors(batch, batch_argnums)
             n_in_batch = batch_tensors[0].shape[0]
 
@@ -175,7 +161,7 @@ def gradient_scores(
 
     return _bind_scores(
         scores,
-        all_positions if verified else None,
+        all_positions,
         coin_flip=coin_flip,
         reference_scores=reference_scores,
     )

@@ -33,48 +33,44 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 ```python
 auditing.loss_scores(
     loss_fn, *args, *,
-    batch_argnums,
-    dataloader=None, reference_scores=None,
-    coin_flip=None, dataset=None,
-    batch_size=None, collate_fn=None,
-) -> CanaryScores | np.ndarray
+    batch_argnums, coin_flip, dataset,
+    reference_scores=None,
+    batch_size=32, collate_fn=None,
+) -> CanaryScores
 ```
 
 Compute per-example membership scores as negative loss. Higher score =
 lower loss = more likely a training member.
 
-**Verified mode** (`coin_flip=` + `dataset=`): builds an internal loader
-over the partition's canaries and pairs every score with the dataset index
-of the example that produced it. Returns [`CanaryScores`](#canaryscores) —
-the form [`one_run`](#one_run) requires. The pairing is joined by
-identifier, so no iteration order over the batches can misalign it.
-Identifiers are attached per batch *before* collation, so a `collate_fn`
-that reorders examples within a batch misaligns the pairing and cannot be
-detected; a `collate_fn` that drops or adds rows raises.
+Builds an internal loader over the partition's canaries and pairs every
+score with the dataset index of the example that produced it. Returns
+[`CanaryScores`](#canaryscores) — the form [`one_run`](#one_run) requires.
+The pairing is joined by identifier, so no iteration order over the
+batches can misalign it. Identifiers are attached per batch *before*
+collation, so a `collate_fn` that reorders examples within a batch
+misaligns the pairing and cannot be detected; a `collate_fn` that drops or
+adds rows raises.
 
-**Legacy mode** (`dataloader=`): scores an arbitrary iterable of batches
-and returns a bare array with no identifiers. Each batch should be a
-tensor (single `batch_argnums`) or a tuple of tensors (multiple
-`batch_argnums`).
+To audit scores computed by some other pipeline, attest their identifiers
+with [`canary_scores`](#canary_scores) instead.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
 | `*args` | any | — | Non-batched arguments (e.g., model parameters) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
-| `dataloader` | iterable | `None` | Legacy mode: yields tensors or tuples of tensors |
-| `reference_scores` | `CanaryScores \| np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model); `CanaryScores` in verified mode, aligned by identifier |
-| `coin_flip` | `CoinFlip` | `None` | Verified mode: the audit partition to score against |
-| `dataset` | any | `None` | Verified mode: the full dataset the partition was created from |
-| `batch_size` | `int` | `32` | Verified mode: batch size of the internal loader |
-| `collate_fn` | `Callable` | default collate | Verified mode: collates raw canary examples into a batch for `loss_fn`; must not reorder examples within a batch |
+| `coin_flip` | `CoinFlip` | required | The audit partition to score against |
+| `dataset` | any | required | The full dataset the partition was created from |
+| `reference_scores` | `CanaryScores` | `None` | Baseline scores to subtract (e.g., from untrained model), aligned by identifier |
+| `batch_size` | `int` | `32` | Batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Collates raw canary examples into a batch for `loss_fn`; must emit one row per example, in the order received |
 
-**Returns** [`CanaryScores`](#canaryscores) in verified mode, else
-`np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
+canary. Higher = more likely member.
 
-**Raises** `ValueError` if the mode arguments are inconsistent or a legacy
-`dataloader` shuffles (RandomSampler-family sampler); `TypeError` if
-`reference_scores` verification does not match the scoring mode.
+**Raises** `ValueError` if `batch_argnums` is malformed, `batch_size` is
+not positive, or `collate_fn` changes the batch row count; `TypeError` if
+`reference_scores` does not carry identifiers.
 
 ```python
 def canary_collate(examples):
@@ -97,11 +93,10 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 ```python
 auditing.gradient_scores(
     loss_fn, *args, *,
-    batch_argnums,
-    dataloader=None, reference_scores=None,
-    coin_flip=None, dataset=None,
-    batch_size=None, collate_fn=None,
-) -> CanaryScores | np.ndarray
+    batch_argnums, coin_flip, dataset,
+    reference_scores=None,
+    batch_size=32, collate_fn=None,
+) -> CanaryScores
 ```
 
 Compute per-example membership scores as negative squared gradient norm.
@@ -111,29 +106,27 @@ This is a white-box attack that differentiates with respect to the first
 `loss_fn` argument (model parameters). Therefore `0` must not appear in
 `batch_argnums`.
 
-Supports the same two scoring modes as [`loss_scores`](#loss_scores):
-verified (`coin_flip=` + `dataset=`, returns
-[`CanaryScores`](#canaryscores)) and legacy (`dataloader=`, returns a bare
-array).
+Scores the partition's canaries over an internal identifier-carrying
+loader, with the same pairing guarantees and `collate_fn` obligation as
+[`loss_scores`](#loss_scores).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example scalar loss function |
 | `*args` | any | — | Non-batched arguments; first arg is differentiated |
 | `batch_argnums` | `tuple[int, ...]` | required | Batched argument indices; must exclude 0 |
-| `dataloader` | iterable | `None` | Legacy mode: yields tensors or tuples of tensors |
-| `reference_scores` | `CanaryScores \| np.ndarray` | `None` | Baseline scores to subtract; `CanaryScores` in verified mode |
-| `coin_flip` | `CoinFlip` | `None` | Verified mode: the audit partition to score against |
-| `dataset` | any | `None` | Verified mode: the full dataset the partition was created from |
-| `batch_size` | `int` | `32` | Verified mode: batch size of the internal loader |
-| `collate_fn` | `Callable` | default collate | Verified mode: must not reorder examples within a batch |
+| `coin_flip` | `CoinFlip` | required | The audit partition to score against |
+| `dataset` | any | required | The full dataset the partition was created from |
+| `reference_scores` | `CanaryScores` | `None` | Baseline scores to subtract, aligned by identifier |
+| `batch_size` | `int` | `32` | Batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Must emit one row per example, in the order received |
 
-**Returns** [`CanaryScores`](#canaryscores) in verified mode, else
-`np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
+canary. Higher = more likely member.
 
-**Raises** `ValueError` if the mode arguments are inconsistent or a legacy
-`dataloader` shuffles (RandomSampler-family sampler); `TypeError` if
-`reference_scores` verification does not match the scoring mode.
+**Raises** `ValueError` if `0 in batch_argnums`, `batch_size` is not
+positive, or `collate_fn` changes the batch row count; `TypeError` if
+`reference_scores` does not carry identifiers.
 
 ```python
 ref = auditing.gradient_scores(
@@ -465,7 +458,6 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
 | `auditing.canary_scores(values, canary_indices=...)` | Attest identifiers for externally computed scores |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
-| `cf.canary_subset(dataset)` | `Subset` of canary examples (legacy loaders) |
 | `estimate.epsilon_at(delta=)` | ε bound (μ-GDP default) |
 | `estimate.delta_at(epsilon=)` | δ at given ε |
 | `estimate.beta_at(alpha=)` | Theoretical β at α (μ-GDP) |

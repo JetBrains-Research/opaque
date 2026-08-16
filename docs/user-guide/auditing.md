@@ -169,22 +169,23 @@ for complete working examples with the `--audit` flag.
 ### Parameter reference
 
 - **`batch_argnums`**: Which positional arguments of `loss_fn` come from the
-  dataloader. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
+  batch. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
   batched. Same convention as `clipped_grad`.
-- **`coin_flip` + `dataset`**: verified scoring. The scorer builds its own
-  loader over the partition's canaries and returns `CanaryScores` with
-  per-score identifiers — the form `one_run` requires. `batch_size` and
-  `collate_fn` configure the internal loader; `collate_fn` receives the raw
-  canary examples and must return a batch for `loss_fn` (it must not reorder
-  examples within a batch). The collated batch should be a tensor (single
+- **`coin_flip` + `dataset`**: required. The scorer builds its own loader
+  over the partition's canaries and returns `CanaryScores` with per-score
+  identifiers — the form `one_run` requires. `batch_size` and `collate_fn`
+  configure the internal loader; `collate_fn` receives the raw canary
+  examples and must return a batch for `loss_fn`, one row per example in
+  the order it received them. The collated batch should be a tensor (single
   `batch_argnums`) or a tuple of tensors (multiple `batch_argnums`).
-- **`dataloader`**: legacy scoring over your own iterable of batches.
-  Returns a bare array with no identifiers; to audit such scores, wrap them
-  in `auditing.canary_scores(values, canary_indices=...)` yourself.
-- **`reference_scores`**: Baseline scores from an untrained model. When
-  provided, returned scores are `scores - reference_scores` (loss
-  reduction). In verified mode the reference must be a `CanaryScores` and
-  is aligned by identifier before subtraction.
+- **`reference_scores`**: Baseline scores from an untrained model, over the
+  same partition. When provided, returned scores are
+  `scores - reference_scores` (loss reduction). The reference must be a
+  `CanaryScores` and is aligned by identifier before subtraction.
+
+Scoring a pipeline the built-in scorers cannot express is still supported —
+compute the scores yourself and attest their identifiers with
+`auditing.canary_scores(values, canary_indices=...)`.
 
 ## Attack-side metrics
 
