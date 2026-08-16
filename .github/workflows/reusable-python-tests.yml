@@ -17,13 +17,23 @@ on:
         description: JSON array of device matrix entries.
         required: true
         type: string
+      dependency-resolution:
+        description: uv resolution strategy; empty uses the committed lock.
+        required: false
+        default: ""
+        type: string
       included-combinations:
         description: JSON array of additional shard/device matrix entries.
         required: false
         default: "[]"
         type: string
+      python-version:
+        description: Python version used by every matrix leg.
+        required: false
+        default: "3.11"
+        type: string
       report-durations:
-        description: Report the 25 slowest tests.
+        description: Report every test phase taking at least five seconds.
         required: false
         default: false
         type: boolean
@@ -58,14 +68,22 @@ jobs:
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.11"
+          python-version: ${{ inputs.python-version }}
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
 
       - name: uv sync
-        run: uv sync --group dev --all-packages --extra all
+        env:
+          DEPENDENCY_RESOLUTION: ${{ inputs.dependency-resolution }}
+        run: |
+          if [[ -n "$DEPENDENCY_RESOLUTION" ]]; then
+            uv sync --upgrade --resolution "$DEPENDENCY_RESOLUTION" \
+              --group dev --all-packages --extra all
+          else
+            uv sync --group dev --all-packages --extra all
+          fi
 
       - name: Assert CUDA available
         if: inputs.assert-cuda && matrix.device.name == 'gpu'
@@ -78,7 +96,7 @@ jobs:
             ${{ matrix.device.xdist }} \
             --cov=opaque \
             --cov-report=xml:coverage-${{ matrix.device.name }}-${{ matrix.shard.name }}.xml \
-            ${{ inputs.report-durations && '--durations=25' || '' }} \
+            ${{ inputs.report-durations && '--durations=0 --durations-min=5' || '' }} \
             -q
 
       # CPU shards collectively cover the full source tree. Reusing only those

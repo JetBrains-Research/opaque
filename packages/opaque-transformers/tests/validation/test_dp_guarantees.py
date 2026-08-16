@@ -242,6 +242,7 @@ def test_fractional_epochs_calibrate_and_compose_resolved_horizon(
     )
 
 
+@pytest.mark.slow
 def test_random_allocation_calibration_and_step_accounting(
     gpt2_lora, lm_dataset, tmp_path
 ):
@@ -269,6 +270,7 @@ def test_random_allocation_calibration_and_step_accounting(
     assert target_eps - 0.5 <= reported <= target_eps + 1e-2
 
 
+@pytest.mark.slow
 def test_k_out_of_t_calibration_and_step_accounting(gpt2_lora, lm_dataset, tmp_path):
     model, tok = gpt2_lora
     target_eps, delta = 8.0, 1e-5

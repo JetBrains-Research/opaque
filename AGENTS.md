@@ -88,8 +88,9 @@ Release body on the next main merge.
   `ci.yml`'s `upsert-draft` job.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs tests (CPU + MPS), Rust tests,
-the docs build, title validation, and autoformat checks. Preview wheels
+**Gate** — on every push the PR workflow runs Linux/amd64, dependency-boundary,
+MPS, and CUDA validation, plus Rust tests, the docs build, title validation,
+and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -238,11 +239,18 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 
 CI lane marker expressions:
 
-- CPU (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- MPS (macOS): `-m "not cuda and not slow"`.
-- CUDA (self-hosted): `-m "cuda"`.
-- On push to `main` the CPU/MPS jobs drop `and not slow` so `slow` tests
-  run there.
+- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- PR MPS (macOS): `-m "not cuda and not slow"`.
+- PR CUDA (self-hosted): `-m "cuda and not slow"`.
+- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
+- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- Main MPS (macOS): `-m "not cuda"`.
+- Main CUDA (self-hosted): `-m "cuda"`.
+- Main resolves dependency boundaries with uv's `lowest-direct` and `highest`
+  strategies; the canonical Linux and MPS lanes retain slow-test coverage.
 
 ### Supported HF model families
 

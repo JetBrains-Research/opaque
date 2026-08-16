@@ -117,6 +117,7 @@ class TestCyclicPoissonIdentity:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 10_000).epsilon_at(_DELTA)
 
+    @pytest.mark.slow
     def test_monotonic(self):
         proc = self._proc(200)
         prev = -math.inf
@@ -176,6 +177,7 @@ class TestCyclicPoissonBand:
         e_full = proc.epsilon_at(_DELTA)
         assert math.isclose(_eps_at(proc, 64, _DELTA), e_full, rel_tol=1e-12)
 
+    @pytest.mark.slow
     def test_sandwich_at_every_step(self):
         """For K = G·M + r: ε(G·M) ≤ ε(K) ≤ ε((G+1)·M) for r ∈ [0, M)."""
         proc = self._proc(n_steps=80, bands=8)
@@ -250,6 +252,7 @@ class TestBallsInBinsIdentity:
         assert _atomic_unit(self._proc(num_bins=10)) == 10
         assert _atomic_unit(self._proc(num_bins=4)) == 4
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -258,6 +261,7 @@ class TestBallsInBinsIdentity:
         e_direct = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         assert math.isclose(e_full, e_direct, rel_tol=1e-9)
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_monotonic(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -399,6 +403,7 @@ class TestKPrefixInvariants:
         proc = _build(amp, mech)
         assert _eps_via_step(proc, 0, _DELTA) == 0.0
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_prefix_invariants(self, amp: str, mech: str):
         proc = _build(amp, mech)
@@ -443,6 +448,7 @@ class TestKPrefixInvariants:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
         if _is_mc_proc(_build(amp, mech)):

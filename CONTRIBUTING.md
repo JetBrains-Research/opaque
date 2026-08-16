@@ -156,6 +156,12 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
 
+The PR gate runs the non-slow Linux/amd64, MPS, and CUDA suites together with
+the lowest direct dependencies on Python 3.11 and the latest supported
+dependencies on Python 3.12. Main repeats these boundaries and adds slow-test
+coverage to the canonical Linux and MPS lanes. Dependency validation excludes
+slow and hardware-marked tests.
+
 ```bash
 # PR-equivalent lane (matches CPU CI)
 uv run pytest -m "not cuda and not mps and not slow"

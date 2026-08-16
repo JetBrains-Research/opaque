@@ -26,41 +26,94 @@ jobs:
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Tests. Same matrix as the PR gate, but includes `slow` tests and adds a
-  # GPU lane. Test failures block publishing.
+  # Validation groups repeat the supported boundaries checked on PRs. Main
+  # additionally includes slow tests in the canonical Linux and MPS lanes.
+  # Every group gates distribution publishing.
   # ---------------------------------------------------------------------------
   rust-tests:
     uses: ./.github/workflows/reusable-rust-tests.yml
 
-  # Same platform matrix as the PR gate (see pr.yml for the full rationale),
-  # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
-  # marker. The GPU platform is a single unsharded, serial leg.
-  python-tests:
+  test-validation:
+    name: Test validation
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      devices: >-
+        [{"name":"cpu","label":"Linux amd64","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
+      report-durations: true
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+
+  # `lowest-direct` selects the lowest declared direct requirements while
+  # resolving their transitive dependencies normally. Slow and hardware tests
+  # stay in their dedicated validation groups.
+  dependency-validation-lowest:
+    name: Dependency validation (lowest direct / Python 3.11)
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-resolution: lowest-direct
+      devices: >-
+        [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      python-version: "3.11"
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  dependency-validation-latest:
+    name: Dependency validation (latest / Python 3.12)
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-resolution: highest
+      devices: >-
+        [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      python-version: "3.12"
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  # MPS keeps the full applicable suite to catch backend-specific behavior.
+  # CUDA remains a single unsharded, serial leg on the self-hosted runner.
+  platform-validation:
+    name: Platform validation
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       assert-cuda: true
       devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
+        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
       included-combinations: >-
         [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
       report-durations: true
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
 
-  # Aggregating gate for Python tests. This is an independent required check
-  # (alongside rust-tests-gate) that gates wheel builds and publishing.
+  # Stable aggregate status check gates wheel builds and publishing.
   python-tests-gate:
     name: Python tests
     if: always()
-    needs: [python-tests]
+    needs:
+      - test-validation
+      - dependency-validation-lowest
+      - dependency-validation-latest
+      - platform-validation
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
         run: |
-          result="${{ needs.python-tests.result }}"
-          echo "python-tests matrix result: $result"
-          test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
+          failed=0
+          check_result() {
+            local name="$1"
+            local result="$2"
+            echo "$name: $result"
+            if [[ "$result" != "success" ]]; then
+              echo "ERROR: $name failed"
+              failed=1
+            fi
+          }
+
+          check_result "Test validation" "${{ needs.test-validation.result }}"
+          check_result "Lowest dependency validation" "${{ needs.dependency-validation-lowest.result }}"
+          check_result "Latest dependency validation" "${{ needs.dependency-validation-latest.result }}"
+          check_result "Platform validation" "${{ needs.platform-validation.result }}"
+          exit "$failed"
 
   qodana:
     name: Qodana

@@ -8,8 +8,8 @@ private reusable components described below.
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Required PR checks, preview-wheel artifacts, and fork-safe GPU testing. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Full CPU/MPS/CUDA test coverage, development-wheel publication, and draft-release updates. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux/amd64, dependency-boundary, MPS, and CUDA checks plus preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main`, manual dispatch | Linux/amd64, dependency-boundary, MPS, and CUDA validation; development-wheel publication; and draft-release updates. |
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
@@ -51,13 +51,15 @@ explicit at the entry point.
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Callers provide their shard and device matrices, timeout, and
-optional CUDA assertion or duration reporting.
+optional Python version, uv resolution strategy, CUDA assertion, or duration
+reporting. Main callers report every test phase taking at least five seconds,
+so newly slow tests cannot disappear behind a fixed-size duration table.
 
-`pr.yml`, `ci.yml`, and `release.yml` discover the same package-level test
-shards so every caller fans Python tests out across runners. The PR workflow
-keeps CPU/MPS and fork-guarded GPU calls separate so untrusted fork code never
-receives the self-hosted runner; main CI combines its CPU/MPS/GPU matrix and
-slow-test markers, while release reruns the CPU shards at the published tag.
+`pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
+Linux/amd64 tests, lowest-direct and latest dependency boundaries, and MPS/CUDA
+platform coverage. Main adds slow tests to the canonical Linux and MPS lanes,
+while `release.yml` reruns the discovered CPU shards at the published tag.
+Fork pull requests never receive the self-hosted CUDA runner.
 
 ### `.github/workflows/reusable-rust-tests.yml`
 

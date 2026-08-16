@@ -1406,7 +1406,6 @@ class TestDPTrainerCheckpointing:
     # Resume from checkpoint
     # ------------------------------------------------------------------
 
-    @pytest.mark.slow
     def test_lr_schedule_continues_across_resume(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):

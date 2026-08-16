@@ -65,6 +65,7 @@ class TestIdentityMfMechanism:
 
 
 class TestPoissonIdentity:
+    @pytest.mark.slow
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
         proc = ftrl_acc.poisson(
@@ -128,6 +129,7 @@ class TestPoissonBandMf:
 
 
 class TestBallsInBinsIdentity:
+    @pytest.mark.slow
     def test_pld_agrees_with_generic_bnb_mc(self):
         """The deterministic identity path must agree with the generic MC
         accountant on the same dominating pair.
@@ -172,7 +174,6 @@ class TestBallsInBinsIdentity:
         assert math.isfinite(eps)
         assert eps > 0
 
-    @pytest.mark.slow
     def test_strictly_tighter_than_unamplified_composition(self):
         """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4
@@ -299,6 +300,7 @@ class TestTruncatedPoissonIdentity:
         assert eps > 0
 
 
+@pytest.mark.slow
 def test_identity_mf_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),

@@ -77,61 +77,111 @@ jobs:
           echo "rust-test-run result: $result"
           test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
-  # One matrix over CPU/MPS platforms × shards. Parallelism is
-  # two-level: the matrix fans shards across runners, and `pytest -n auto`
-  # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
-  # each class/module on one worker so fixtures/order are preserved).
-  # The self-hosted GPU lane is a separate fork-guarded job below.
+  # The canonical Linux validation fans shards across hosted runners.
+  # `pytest -n auto` also fans across cores within each runner. Slow tests stay
+  # on main; supported dependency and platform boundaries remain pre-merge
+  # checks because they can fail independently of the canonical environment.
   python-tests:
+    name: Test validation
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+        [{"name":"cpu","label":"Linux amd64","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
+
+  dependency-validation-lowest:
+    name: Dependency validation (lowest direct / Python 3.11)
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-resolution: lowest-direct
+      devices: >-
+        [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      python-version: "3.11"
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  dependency-validation-latest:
+    name: Dependency validation (latest / Python 3.12)
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      dependency-resolution: highest
+      devices: >-
+        [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      python-version: "3.12"
+      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      timeout-minutes: 60
+
+  platform-validation-mps:
+    name: Platform validation (MPS)
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      devices: >-
+        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
-  # the job-level guard can prevent runner allocation entirely.
+  # the job-level guard prevents runner allocation entirely.
   python-tests-gpu:
+    name: Platform validation (CUDA)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
+      assert-cuda: true
       devices: >-
         [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 30
 
-  # Single aggregating status check for Python tests — ensures all test legs pass.
-  # This is the check required in branch protection (alongside rust-tests).
-  # The GPU leg is required for repo PRs but skipped for fork PRs.
-  # `if: always()` makes the gate report a failure when a shard fails.
+  # Stable aggregate status check required by branch protection.
+  # The CUDA leg is required for repository branches and skipped for forks.
   python-tests-gate:
     name: Python tests
     if: always()
-    needs: [python-tests, python-tests-gpu]
+    needs:
+      - python-tests
+      - dependency-validation-lowest
+      - dependency-validation-latest
+      - platform-validation-mps
+      - python-tests-gpu
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
         run: |
-          cpu_mps="${{ needs.python-tests.result }}"
+          failed=0
+          check_result() {
+            local name="$1"
+            local result="$2"
+            echo "$name: $result"
+            if [[ "$result" != "success" ]]; then
+              echo "ERROR: $name failed"
+              failed=1
+            fi
+          }
+
+          check_result "Test validation" "${{ needs.python-tests.result }}"
+          check_result "Lowest dependency validation" "${{ needs.dependency-validation-lowest.result }}"
+          check_result "Latest dependency validation" "${{ needs.dependency-validation-latest.result }}"
+          check_result "MPS platform validation" "${{ needs.platform-validation-mps.result }}"
+
           gpu="${{ needs.python-tests-gpu.result }}"
-          echo "python-tests matrix result: $cpu_mps"
-          echo "python-tests-gpu result: $gpu"
-          test "$cpu_mps" = "success" || (echo "ERROR: CPU/MPS tests failed"; exit 1)
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            # Fork PRs never get GPU runner allocation — skipped is expected
+          if [[ "${{ github.event_name }}" == "pull_request" &&
+                "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
             if [[ "$gpu" != "skipped" ]]; then
-              echo "ERROR: GPU job should be skipped for fork PRs but got: $gpu"
-              exit 1
+              echo "ERROR: CUDA validation should be skipped for forks but got: $gpu"
+              failed=1
             fi
           else
-            # Repo PRs must have GPU tests pass
-            test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
+            check_result "CUDA platform validation" "$gpu"
           fi
+
+          exit "$failed"
 
   qodana:
     name: Qodana
