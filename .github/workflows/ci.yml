@@ -55,6 +55,7 @@ jobs:
       devices: >-
         [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
       python-version: "3.11"
+      report-durations: true
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 60
 
@@ -66,6 +67,7 @@ jobs:
       devices: >-
         [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
       python-version: "3.12"
+      report-durations: true
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 60
 

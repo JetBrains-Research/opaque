@@ -88,6 +88,7 @@ jobs:
     with:
       devices: >-
         [{"name":"cpu","label":"Linux amd64","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
+      report-durations: true
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
@@ -99,6 +100,7 @@ jobs:
       devices: >-
         [{"name":"lowest-direct","label":"Lowest direct / Python 3.11","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
       python-version: "3.11"
+      report-durations: true
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 60
 
@@ -110,6 +112,7 @@ jobs:
       devices: >-
         [{"name":"latest","label":"Latest / Python 3.12","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"}]
       python-version: "3.12"
+      report-durations: true
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 60
 
@@ -120,6 +123,7 @@ jobs:
     with:
       devices: >-
         [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+      report-durations: true
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
@@ -136,6 +140,7 @@ jobs:
       assert-cuda: true
       devices: >-
         [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
+      report-durations: true
       test-shards: '[{"name":"all","paths":"packages tests"}]'
       timeout-minutes: 30
 
