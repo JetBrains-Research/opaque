@@ -178,9 +178,7 @@ jobs:
     name: Qodana
     if: >-
       !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event.action == 'opened' ||
-       github.event.action == 'ready_for_review')
+      github.event.pull_request.head.repo.full_name == github.repository
     needs:
       - python-tests-linux-amd64
       - python-tests-macos-arm64
