@@ -125,7 +125,7 @@ class TestBisrStrategy:
         assert float(out.noise_stddev) > 0
 
     @pytest.mark.parametrize("bandwidth", [2, 4])
-    @pytest.mark.parametrize("n_steps", [6, 12])
+    @pytest.mark.parametrize("n_steps", [2, 6, 12])
     def test_runtime_operator_uses_full_horizon_strategy(self, bandwidth, n_steps):
         strategy = bisr_strategy(bandwidth=bandwidth, normalized=False, momentum=0.3)
         streaming = strategy.streaming_matrix(n_steps=n_steps)

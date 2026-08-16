@@ -206,8 +206,10 @@ class BisrStrategy:
             # The strategy coefficients are dense (length n_steps), but
             # C^{-1} is banded with exactly these coefficients — hand them
             # over so the closed-form row norms stay O(bandwidth * n)
-            # instead of running the length-n inversion recurrence.
-            inverse_coefficients=torch.tensor(inv, dtype=torch.float64),
+            # instead of running the length-n inversion recurrence. Only the
+            # first n_steps entries lie within the horizon; a longer hint
+            # describes a matrix that does not exist at this size.
+            inverse_coefficients=torch.tensor(inv[:n_steps], dtype=torch.float64),
         )
 
     def raw_noise_factory(
