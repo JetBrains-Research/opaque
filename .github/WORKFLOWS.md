@@ -66,8 +66,12 @@ tests, minimum and latest dependency boundaries, and
 macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
 platform lanes; release reruns the same environment set at the
 published tag. Fork pull requests never receive the self-hosted CUDA runner.
-All three entry points keep a direct `Rust tests` job so their check names stay
-stable and uncluttered.
+
+### `.github/workflows/reusable-rust-tests.yml`
+
+This private `workflow_call` workflow runs the accounting crate's unit and doc
+tests with the shared Rust setup and dependency cache. Entry workflows call it
+as `Rust`, so checks render as `Rust / opaque-accounting`.
 
 ### `.github/workflows/reusable-validate-distributions.yml`
 
@@ -100,8 +104,8 @@ credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
 `Format Rust`, `Conventional Commits PR title`, the selected individual Python
-environment/package checks, `Rust tests`, and `Junie review`. The review
-workflow uses the `JUNIE_API_KEY` Actions secret.
+environment/package checks, `Rust / opaque-accounting`, and `Junie review`.
+The review workflow uses the `JUNIE_API_KEY` Actions secret.
 Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
 Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use

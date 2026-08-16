@@ -35,20 +35,8 @@ jobs:
   # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
-    name: Rust tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - uses: ./.github/actions/setup-rust
-        with:
-          enable-cache: "true"
-
-      # No `--lib`: also run doc-tests so documented API examples cannot rot.
-      - name: cargo test
-        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+    name: Rust
+    uses: ./.github/workflows/reusable-rust-tests.yml
 
   # ---------------------------------------------------------------------------
   # Python tests
