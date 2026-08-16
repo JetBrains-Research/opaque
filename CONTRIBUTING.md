@@ -157,11 +157,11 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
   `main`.
 
 The PR gate runs the non-slow Linux amd64, macOS arm64, Linux arm64, and CUDA
-suites together with the minimum supported dependencies on Python 3.11 and the
+suites together with the minimum dependencies on Python 3.11 and the
 latest supported dependencies on Python 3.12. Main repeats these boundaries and adds
 slow-test coverage to platform lanes. Dependency validation
-excludes slow and hardware-marked tests. Lower-bound pytest failures are
-currently advisory; environment setup and dependency resolution still gate.
+excludes slow and hardware-marked tests. Failures in the Minimum dependencies
+lane are currently advisory; environment setup and dependency resolution still gate.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)

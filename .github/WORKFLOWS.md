@@ -54,7 +54,7 @@ This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Each caller provides one runner environment plus its Python
 version, dependency selection, pytest marker filter, xdist arguments, and shard
-matrix. Dependency selection is `locked`, `minimum-supported` (uv `lowest-direct`),
+matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`),
 or `latest` (uv `highest`); adding a future platform such as Windows requires only
 another caller. Validation callers report every test phase taking at least five
 seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
@@ -62,7 +62,7 @@ Lower-bound pytest failures are currently advisory while dependency resolution
 and workflow failures remain blocking.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
-tests, minimum-supported and latest dependency boundaries, and
+tests, minimum and latest dependency boundaries, and
 macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
 platform lanes; release reruns the same environment set at the
 published tag. Fork pull requests never receive the self-hosted CUDA runner.

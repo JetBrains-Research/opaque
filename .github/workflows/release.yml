@@ -88,15 +88,15 @@ jobs:
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
-  python-tests-minimum-supported:
-    name: Minimum supported dependencies
+  python-tests-minimum:
+    name: Minimum dependencies
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       allow-test-failure: true
       checkout-ref: ${{ github.event.release.tag_name }}
-      dependency-selection: minimum-supported
-      environment-name: minimum-supported-dependencies
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
@@ -164,7 +164,7 @@ jobs:
     if: always()
     needs:
       - python-tests-linux-amd64
-      - python-tests-minimum-supported
+      - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64
       - python-tests-linux-arm64
@@ -185,7 +185,7 @@ jobs:
           }
 
           check_result "Linux amd64" "${{ needs.python-tests-linux-amd64.result }}"
-          check_result "Minimum supported dependencies" "${{ needs.python-tests-minimum-supported.result }}"
+          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
           check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
           check_result "macOS arm64" "${{ needs.python-tests-macos-arm64.result }}"
           check_result "Linux arm64" "${{ needs.python-tests-linux-arm64.result }}"
