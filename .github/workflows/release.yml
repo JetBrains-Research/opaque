@@ -47,7 +47,7 @@ jobs:
 
   release-python-tests:
     name: Release Python tests
-    needs: [tag-guard, discover-packages]
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
