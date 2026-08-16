@@ -206,10 +206,10 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
-      - name: uv sync
+      - name: Install documentation dependencies
         run: uv sync --group docs --all-packages
 
-      - name: mkdocs build --strict
+      - name: Build documentation
         run: uv run mkdocs build --strict
 
   # ---------------------------------------------------------------------------

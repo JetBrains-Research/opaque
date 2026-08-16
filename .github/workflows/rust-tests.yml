@@ -29,10 +29,10 @@ jobs:
           enable-cache: "true"
 
       # No `--lib`: also run doc-tests so documented API examples cannot rot.
-      - name: cargo test
+      - name: Run Rust tests
         run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
-      - name: cargo test (slow)
+      - name: Run slow Rust tests
         if: inputs.include-slow
         run: >-
           cargo test --manifest-path packages/opaque-accounting/Cargo.toml

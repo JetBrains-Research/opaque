@@ -92,7 +92,7 @@ jobs:
           enable-cache: true
           prune-cache: false
 
-      - name: uv sync
+      - name: Install dependencies
         env:
           DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
         shell: bash
@@ -115,7 +115,7 @@ jobs:
               ;;
           esac
 
-      - name: pytest
+      - name: Run Python tests
         env:
           ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
           ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
@@ -142,7 +142,7 @@ jobs:
           fi
           exit "$status"
 
-      - name: Upload coverage for Qodana
+      - name: Upload coverage
         if: inputs.upload-qodana-coverage
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
