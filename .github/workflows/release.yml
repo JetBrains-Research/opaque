@@ -13,6 +13,9 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Release ref validation and package discovery
+  # ---------------------------------------------------------------------------
   tag-guard:
     name: Verify tag is on main
     runs-on: ubuntu-latest
@@ -35,6 +38,7 @@ jobs:
     needs: [tag-guard]
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -45,8 +49,32 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  release-python-tests:
-    name: Release Python tests
+  # ---------------------------------------------------------------------------
+  # Rust tests
+  # ---------------------------------------------------------------------------
+  rust-tests:
+    name: Rust tests
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          enable-cache: "true"
+
+      # No `--lib`: also run doc-tests so documented API examples cannot rot.
+      - name: cargo test
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+
+  # ---------------------------------------------------------------------------
+  # Python tests
+  # ---------------------------------------------------------------------------
+  python-tests:
+    name: Test
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
@@ -55,15 +83,117 @@ jobs:
       environment-name: linux-amd64
       pytest-marker: not cuda and not mps
       pytest-xdist: -n auto --dist loadscope
+      report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
-  release-rust-tests:
-    name: Release Rust tests
-    needs: [tag-guard]
-    uses: ./.github/workflows/reusable-rust-tests.yml
+  python-tests-lower-bounds:
+    name: Lower bounds
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
+      dependency-selection: lower-bounds
+      environment-label: Linux amd64 / Python 3.11 / lower bounds
+      environment-name: lower-bounds
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      dependency-selection: latest
+      environment-label: Linux amd64 / Python 3.12 / latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-mps:
+    name: MPS
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-label: MPS
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-linux-arm64:
+    name: Linux aarch64
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-label: Linux aarch64
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      assert-cuda: true
+      environment-label: CUDA
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+
+  python-tests-gate:
+    name: Release Python tests
+    if: always()
+    needs:
+      - python-tests
+      - python-tests-lower-bounds
+      - python-tests-latest
+      - python-tests-mps
+      - python-tests-linux-arm64
+      - python-tests-cuda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Python test results
+        run: |
+          failed=0
+          check_result() {
+            local name="$1"
+            local result="$2"
+            echo "$name: $result"
+            if [[ "$result" != "success" ]]; then
+              echo "ERROR: $name failed"
+              failed=1
+            fi
+          }
+
+          check_result "Test" "${{ needs.python-tests.result }}"
+          check_result "Lower bounds" "${{ needs.python-tests-lower-bounds.result }}"
+          check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
+          check_result "MPS" "${{ needs.python-tests-mps.result }}"
+          check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"
+          check_result "CUDA" "${{ needs.python-tests-cuda.result }}"
+          exit "$failed"
 
   build-distributions:
     name: Build distribution artifacts @ ${{ github.event.release.tag_name }}
@@ -96,7 +226,7 @@ jobs:
 
   publish:
     name: Publish to JetBrains Packages + attach Release assets
-    needs: [merge-wheels, release-python-tests, release-rust-tests, validate-release-distributions]
+    needs: [merge-wheels, python-tests-gate, rust-tests, validate-release-distributions]
     runs-on: ubuntu-latest
     environment: release
     permissions:

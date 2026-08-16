@@ -14,7 +14,7 @@ on:
         default: ""
         type: string
       dependency-selection:
-        description: Dependency set to test (locked, minimum, or latest).
+        description: Dependency set to test (locked, lower-bounds, or latest).
         required: false
         default: locked
         type: string
@@ -98,7 +98,7 @@ jobs:
             locked)
               uv sync --locked --group dev --all-packages --extra all
               ;;
-            minimum)
+            lower-bounds)
               uv sync --upgrade --resolution lowest-direct \
                 --group dev --all-packages --extra all
               ;;

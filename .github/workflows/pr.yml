@@ -55,6 +55,7 @@ jobs:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -66,22 +67,21 @@ jobs:
   # ---------------------------------------------------------------------------
   # Rust tests
   # ---------------------------------------------------------------------------
-  rust-test-run:
-    uses: ./.github/workflows/reusable-rust-tests.yml
-
-  # Stable aggregate check required by the main branch ruleset. Reusable
-  # workflow jobs expose compound check names, so keep this caller-owned gate.
   rust-tests:
     name: Rust tests
-    if: always()
-    needs: [rust-test-run]
     runs-on: ubuntu-latest
     steps:
-      - name: Check Rust test result
-        run: |
-          result="${{ needs.rust-test-run.result }}"
-          echo "rust-test-run result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          enable-cache: "true"
+
+      # No `--lib`: also run doc-tests so documented API examples cannot rot.
+      - name: cargo test
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
   # ---------------------------------------------------------------------------
   # Python tests
@@ -105,23 +105,25 @@ jobs:
       timeout-minutes: 30
       upload-qodana-coverage: true
 
-  python-tests-minimum:
-    name: Minimum dependencies
+  python-tests-lower-bounds:
+    name: Lower bounds
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      dependency-selection: minimum
-      environment-label: Linux amd64 / Python 3.11 / minimum
-      environment-name: minimum-dependencies
+      dependency-selection: lower-bounds
+      environment-label: Linux amd64 / Python 3.11 / lower bounds
+      environment-name: lower-bounds
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
 
   python-tests-latest:
     name: Latest dependencies
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       dependency-selection: latest
@@ -132,7 +134,7 @@ jobs:
       python-version: "3.12"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
 
   python-tests-mps:
@@ -167,6 +169,7 @@ jobs:
   # self-hosted GPU runner. The job-level guard prevents allocation entirely.
   python-tests-cuda:
     name: CUDA
+    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -179,7 +182,7 @@ jobs:
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
 
   # Stable aggregate status check required by branch protection.
@@ -189,7 +192,7 @@ jobs:
     if: always()
     needs:
       - python-tests
-      - python-tests-minimum
+      - python-tests-lower-bounds
       - python-tests-latest
       - python-tests-mps
       - python-tests-linux-arm64
@@ -210,7 +213,7 @@ jobs:
           }
 
           check_result "Test validation" "${{ needs.python-tests.result }}"
-          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
+          check_result "Lower bounds" "${{ needs.python-tests-lower-bounds.result }}"
           check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
           check_result "MPS" "${{ needs.python-tests-mps.result }}"
           check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"

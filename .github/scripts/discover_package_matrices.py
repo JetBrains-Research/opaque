@@ -5,12 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import tomllib
-
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
+
+
+def _has_pytest_marker(path: Path, marker: str) -> bool:
+    needle = f"pytest.mark.{marker}"
+    return any(needle in test_path.read_text() for test_path in path.rglob("*.py"))
 
 
 def _package_entries() -> list[dict[str, object]]:
@@ -27,6 +31,7 @@ def _package_entries() -> list[dict[str, object]]:
                 "name": dist_name.removeprefix("opaque-"),
                 "path": package_dir.relative_to(REPO_ROOT).as_posix(),
                 "native": build_backend == "maturin",
+                "cuda_tests": _has_pytest_marker(package_dir / "tests", "cuda"),
             }
         )
     return entries
@@ -41,6 +46,18 @@ def _outputs() -> dict[str, object]:
                 for package in packages
             ),
             {"name": "repo-tests", "paths": "tests"},
+        ],
+        "cuda_test_shards": [
+            *(
+                {"name": package["name"], "paths": package["path"]}
+                for package in packages
+                if package["cuda_tests"]
+            ),
+            *(
+                [{"name": "repo-tests", "paths": "tests"}]
+                if _has_pytest_marker(REPO_ROOT / "tests", "cuda")
+                else []
+            ),
         ],
         "python_build_packages": [
             {
@@ -64,6 +81,7 @@ def _outputs() -> dict[str, object]:
 
 
 def main() -> int:
+    """Print or export the discovered package matrices."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--github-output",

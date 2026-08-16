@@ -20,6 +20,7 @@ jobs:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -32,19 +33,20 @@ jobs:
   # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
-    uses: ./.github/workflows/reusable-rust-tests.yml
-
-  rust-tests-gate:
-    name: Rust tests gate
-    if: always()
-    needs: [rust-tests]
+    name: Rust tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check Rust test results
-        run: |
-          result="${{ needs.rust-tests.result }}"
-          echo "rust-tests result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          enable-cache: "true"
+
+      # No `--lib`: also run doc-tests so documented API examples cannot rot.
+      - name: cargo test
+        run: cargo test --manifest-path packages/opaque-accounting/Cargo.toml
 
   # ---------------------------------------------------------------------------
   # Python tests
@@ -67,23 +69,25 @@ jobs:
       timeout-minutes: 40
       upload-qodana-coverage: true
 
-  python-tests-minimum:
-    name: Minimum dependencies
+  python-tests-lower-bounds:
+    name: Lower bounds
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
-      dependency-selection: minimum
-      environment-label: Linux amd64 / Python 3.11 / minimum
-      environment-name: minimum-dependencies
+      dependency-selection: lower-bounds
+      environment-label: Linux amd64 / Python 3.11 / lower bounds
+      environment-name: lower-bounds
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
 
   python-tests-latest:
     name: Latest dependencies
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       dependency-selection: latest
@@ -94,7 +98,7 @@ jobs:
       python-version: "3.12"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
 
   python-tests-mps:
@@ -127,6 +131,7 @@ jobs:
 
   python-tests-cuda:
     name: CUDA
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       assert-cuda: true
@@ -136,7 +141,7 @@ jobs:
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
 
   # Stable aggregate status check gates wheel builds and publishing.
@@ -145,7 +150,7 @@ jobs:
     if: always()
     needs:
       - python-tests
-      - python-tests-minimum
+      - python-tests-lower-bounds
       - python-tests-latest
       - python-tests-mps
       - python-tests-linux-arm64
@@ -166,7 +171,7 @@ jobs:
           }
 
           check_result "Test" "${{ needs.python-tests.result }}"
-          check_result "Minimum dependencies" "${{ needs.python-tests-minimum.result }}"
+          check_result "Lower bounds" "${{ needs.python-tests-lower-bounds.result }}"
           check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
           check_result "MPS" "${{ needs.python-tests-mps.result }}"
           check_result "Linux aarch64" "${{ needs.python-tests-linux-arm64.result }}"
@@ -194,7 +199,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-distributions:
     name: Build distribution artifacts
-    needs: [python-tests-gate, rust-tests-gate]
+    needs: [python-tests-gate, rust-tests]
     uses: ./.github/workflows/reusable-build-distributions.yml
     with:
       artifact-prefix: wheels
@@ -215,7 +220,7 @@ jobs:
   publish-dev-wheels:
     name: Publish dev wheels to JetBrains Packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [merge-wheels, python-tests-gate, rust-tests-gate]
+    needs: [merge-wheels, python-tests-gate, rust-tests]
     runs-on: ubuntu-latest
     environment: release
     permissions:

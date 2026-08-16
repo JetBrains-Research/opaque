@@ -52,25 +52,18 @@ This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Each caller provides one runner environment plus its Python
 version, dependency selection, pytest marker filter, xdist arguments, and shard
-matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or
-`latest` (uv `highest`); adding a future platform such as Windows requires only
+matrix. Dependency selection is `locked`, `lower-bounds` (uv `lowest-direct`),
+or `latest` (uv `highest`); adding a future platform such as Windows requires only
 another caller. Validation callers report every test phase taking at least five
 seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
-Linux/amd64 tests, minimum and latest dependency boundaries, and MPS,
-Linux/aarch64, and CUDA platform coverage. Main adds slow tests to canonical
-and platform lanes, while `release.yml` reruns the discovered Linux/amd64 shards
-at the published tag. Fork pull requests never receive the self-hosted CUDA
-runner.
-
-### `.github/workflows/reusable-rust-tests.yml`
-
-This private `workflow_call` workflow runs the accounting crate's Cargo tests,
-including doc-tests, with the shared Rust setup and dependency cache. PR,
-main CI, and release workflows all invoke it; the release workflow runs this
-lane alongside the shared Python test workflow instead of running both
-sequentially in a dedicated job.
+Linux/amd64 tests, lower-bound and latest dependency boundaries, and MPS,
+Linux/aarch64, and CUDA platform coverage. Main and release add slow tests to
+canonical and platform lanes; release reruns the same environment set at the
+published tag. Fork pull requests never receive the self-hosted CUDA runner.
+All three entry points keep a direct `Rust tests` job so their check names stay
+stable and uncluttered.
 
 ### `.github/workflows/reusable-validate-distributions.yml`
 
