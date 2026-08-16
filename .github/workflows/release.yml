@@ -30,15 +30,30 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME is on main — proceeding."
 
+  discover-packages:
+    name: Discover package matrices
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    outputs:
+      test_shards: ${{ steps.discover.outputs.test_shards }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Discover packages
+        id: discover
+        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
+
   release-python-tests:
     name: Release Python tests
-    needs: [tag-guard]
+    needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
       devices: >-
         [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
   release-rust-tests:
     name: Release Rust tests
