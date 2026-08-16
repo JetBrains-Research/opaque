@@ -85,6 +85,7 @@ jobs:
           cache-suffix: ${{ inputs.dependency-selection }}-py${{ inputs.python-version }}
           enable-cache: true
           prune-cache: false
+          save-cache: ${{ matrix.shard.name == 'engine' }}
 
       - name: Install dependencies
         env:
@@ -149,3 +150,7 @@ jobs:
           files: ./coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           flags: ${{ inputs.environment-name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
+
+      - name: Prepare uv cache
+        if: ${{ always() && matrix.shard.name == 'engine' }}
+        run: rm -rf -- .venv target

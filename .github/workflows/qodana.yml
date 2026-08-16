@@ -87,3 +87,7 @@ jobs:
           sarif_file: ${{ steps.sarif.outputs.path }}
           sha: ${{ inputs.checkout-ref || github.sha }}
           wait-for-processing: true
+
+      - name: Prepare uv cache
+        if: ${{ always() }}
+        run: rm -rf -- .venv target

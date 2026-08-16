@@ -27,7 +27,9 @@ its dependency cache. Use it in repository workflows that need Python; set
 dependency-heavy jobs. Test caches retain prepared wheel archives instead of
 using setup-uv's pruned CI cache and are separated by dependency selection /
 Python version (setup-uv also keys by runner platform). Qodana reuses the
-locked/Python 3.11 cache after platform tests. Release-capable called workflows
+locked/Python 3.11 cache after platform tests. Only the `opaque-engine` shard
+saves each environment cache; disposable virtualenv/Rust outputs are removed
+first to leave enough disk for cache archiving. Release-capable called workflows
 keep pinned external setup steps inline so checking out an older release tag
 cannot remove the local action implementation.
 
