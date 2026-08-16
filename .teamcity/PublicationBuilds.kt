@@ -4,8 +4,8 @@ import jetbrains.buildServer.configs.kotlin.DslContext
 import jetbrains.buildServer.configs.kotlin.FailureAction
 import jetbrains.buildServer.configs.kotlin.ParameterDisplay
 import jetbrains.buildServer.configs.kotlin.ReuseBuilds
+import jetbrains.buildServer.configs.kotlin.buildFeatures.approval
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
-import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 private fun publicationBuild(
     buildType: BuildType,
@@ -13,7 +13,6 @@ private fun publicationBuild(
     buildName: String,
     branchKind: CiModel.BranchKind,
     verificationBuilds: List<BuildType>,
-    nonBlockingVerificationBuilds: Set<BuildType> = emptySet(),
     releaseTagRequired: Boolean = false,
 ) = buildType.apply {
     id(buildId)
@@ -41,11 +40,7 @@ private fun publicationBuild(
     dependencies {
         (listOf(ValidateDistributions) + verificationBuilds).forEach { dependency ->
             snapshot(dependency) {
-                onDependencyFailure = if (dependency in nonBlockingVerificationBuilds) {
-                    FailureAction.IGNORE
-                } else {
-                    FailureAction.FAIL_TO_START
-                }
+                onDependencyFailure = FailureAction.FAIL_TO_START
                 onDependencyCancel = FailureAction.CANCEL
                 synchronizeRevisions = true
                 reuseBuilds = ReuseBuilds.SUCCESSFUL
@@ -80,72 +75,36 @@ private fun publicationBuild(
     }
 }
 
-object PublishDevArtifacts : BuildType({
-    publicationBuild(
-        this,
-        buildId = "Opaque_DeliveryPublishDev",
-        buildName = "Publish dev artifact bundle",
-        branchKind = CiModel.BranchKind.MAIN,
-        verificationBuilds = listOf(PythonTests, Qodana, RustTests, DependencyVersionVerification),
-        nonBlockingVerificationBuilds = setOf(Qodana),
-    )
-})
-
-object PublishReleaseArtifacts : BuildType({
-    publicationBuild(
-        this,
-        buildId = "Opaque_DeliveryPublishRelease",
-        buildName = "Publish release artifact bundle",
-        branchKind = CiModel.BranchKind.RELEASE_TAG,
-        verificationBuilds = listOf(PythonTests, Qodana, RustTests, DependencyVersionVerification),
-        nonBlockingVerificationBuilds = setOf(Qodana),
-        releaseTagRequired = true,
-    )
-})
-
-val deliveryBuildTypes = listOf(PublishDevArtifacts, PublishReleaseArtifacts)
-
-private fun deploymentEntry(
-    buildType: BuildType,
-    buildId: String,
-    buildName: String,
-    branchKind: CiModel.BranchKind,
-    deliveryBuild: BuildType,
-) = buildType.apply {
-    id(buildId)
-    name = buildName
-    type = BuildTypeSettings.Type.COMPOSITE
-    paused = true
-    vcs {
-        root(DslContext.settingsRoot)
-        branchFilter = branchKind.branchFilter
-    }
-    dependencies {
-        snapshot(deliveryBuild) {
-            onDependencyFailure = FailureAction.FAIL_TO_START
-            onDependencyCancel = FailureAction.CANCEL
-            synchronizeRevisions = true
-            reuseBuilds = ReuseBuilds.SUCCESSFUL
-        }
-    }
-}
-
 object PublishDevDistributions : BuildType({
-    deploymentEntry(
+    publicationBuild(
         this,
         buildId = "Opaque_PublishDevDistributions",
         buildName = "Publish dev distributions",
         branchKind = CiModel.BranchKind.MAIN,
-        deliveryBuild = PublishDevArtifacts,
+        verificationBuilds = listOf(MainCi),
     )
+    type = BuildTypeSettings.Type.DEPLOYMENT
+    enablePersonalBuilds = false
+    maxRunningBuilds = 1
 })
 
 object PublishReleaseDistributions : BuildType({
-    deploymentEntry(
+    publicationBuild(
         this,
         buildId = "Opaque_PublishReleaseDistributions",
         buildName = "Publish release distributions",
         branchKind = CiModel.BranchKind.RELEASE_TAG,
-        deliveryBuild = PublishReleaseArtifacts,
+        verificationBuilds = listOf(ReleaseCandidate),
+        releaseTagRequired = true,
     )
+    type = BuildTypeSettings.Type.DEPLOYMENT
+    enablePersonalBuilds = false
+    maxRunningBuilds = 1
+    features {
+        approval {
+            approvalRules = DslContext.getParameter("opaque.release.approvalRules")
+            timeout = 60
+            manualRunsApproved = false
+        }
+    }
 })

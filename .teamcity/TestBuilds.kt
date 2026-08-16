@@ -78,6 +78,7 @@ private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = 
                 "opaque.pytest.path",
                 CiModel.testShards.map { value(it.path, it.label) },
             )
+            groupArtifactsByBuild = true
         }
     }
     useAgent(profile.agentClass)
@@ -91,8 +92,9 @@ private fun pythonTestMatrix(profile: CiModel.VerificationProfile): BuildType = 
             scriptContent = """
                 set -eu
                 cd ${profile.projectDirectory()}
-                trap 'cp coverage.xml test-results.xml %teamcity.build.checkoutDir%/ 2>/dev/null || true' EXIT
-                uv run --frozen pytest %opaque.pytest.path% -m "%opaque.pytest.marker%" %opaque.pytest.xdist% --cov=opaque --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q
+                trap 'for output in coverage.xml .coverage test-results.xml; do test -f "${'$'}output" && cp "${'$'}output" %teamcity.build.checkoutDir%/ || true; done' EXIT
+                printf '[run]\nrelative_files = true\n' > .teamcity-coverage.ini
+                uv run --frozen pytest %opaque.pytest.path% -m "%opaque.pytest.marker%" %opaque.pytest.xdist% --cov=opaque --cov-config=.teamcity-coverage.ini --cov-report=xml:coverage.xml --junitxml=test-results.xml --durations=25 -q
             """.trimIndent()
         }
     }
@@ -211,6 +213,7 @@ private fun platformVerification() = BuildType {
 }
 
 val PythonTests = profileTestMatrices.getValue(CiModel.pinnedVerification)
+val PlatformTests = profileTestMatrices.getValue(CiModel.platformVerification)
 val DependencyVersionVerification = dependencyVersionVerification()
 val PlatformVerification = platformVerification()
 

@@ -1,18 +1,12 @@
 import jetbrains.buildServer.configs.kotlin.*
+import jetbrains.buildServer.configs.kotlin.projectFeatures.UntrustedBuildsSettings
+import jetbrains.buildServer.configs.kotlin.projectFeatures.untrustedBuildsSettings
 
 version = "2026.1"
 
 object Verification : Project({
     id("Opaque_Verification")
     name = "Verification"
-
-    params {
-        password(
-            "opaque.qodana.cloud.token",
-            "credentialsJSON:bab0ea16-4051-43f8-aab7-8c15d0c75e21",
-            display = ParameterDisplay.HIDDEN,
-        )
-    }
 
     template(PythonTestTemplate)
     template(PythonUtilityTemplate)
@@ -48,13 +42,22 @@ object Delivery : Project({
     }
 
     template(PublicationTemplate)
-    deliveryBuildTypes.forEach(::buildType)
     buildType(PublishDevDistributions)
     buildType(PublishReleaseDistributions)
 })
 
 project {
     description = "Hybrid CI prototype; GitHub Actions remains required until parity is demonstrated"
+
+    features {
+        untrustedBuildsSettings {
+            id = "Opaque_UntrustedBuildApproval"
+            defaultAction = UntrustedBuildsSettings.DefaultAction.APPROVE
+            approvalRules = DslContext.getParameter("opaque.untrustedBuilds.approvalRules")
+            enableLog = true
+            timeoutMinutes = 60
+        }
+    }
 
     subProject(Verification)
     subProject(Artifacts)

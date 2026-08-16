@@ -36,19 +36,20 @@ fun BuildTypeSettings.configureCleanup() {
 
 fun BuildTypeSettings.configureHostedCachePolicy() {
     params {
+        param("opaque.cache.scope", "trusted")
         param("env.UV_CACHE_DIR", "%teamcity.build.checkoutDir%/.teamcity-cache/uv")
         param("env.CARGO_HOME", "%teamcity.build.checkoutDir%/.teamcity-cache/cargo")
     }
     features {
         buildCache {
-            name = "opaque-uv-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
+            name = "opaque-uv-%opaque.cache.scope%-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
             rules = ".teamcity-cache/uv"
             use = true
             publish = true
             publishOnlyChanged = true
         }
         buildCache {
-            name = "opaque-cargo-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
+            name = "opaque-cargo-%opaque.cache.scope%-%teamcity.agent.jvm.os.name%-%teamcity.agent.jvm.os.arch%"
             rules = ".teamcity-cache/cargo"
             use = true
             publish = true
@@ -160,7 +161,7 @@ object PythonTestTemplate : Template({
     id("Opaque_PythonTestTemplate")
     name = "Python test template"
 
-    artifactRules = "coverage.xml => coverage"
+    artifactRules = "coverage.xml => coverage\n.coverage => coverage-data"
     failureConditions {
         executionTimeoutMin = CiModel.TEST_TIMEOUT_MINUTES
     }

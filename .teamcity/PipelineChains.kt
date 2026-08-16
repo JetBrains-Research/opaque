@@ -60,10 +60,13 @@ object PrGate : BuildType({
         buildId = "Opaque_PrGate",
         buildName = CiModel.Status.PR_GATE,
         branchKind = CiModel.BranchKind.PULL_REQUEST,
-        dependencies = listOf(PythonTests, Qodana, RustTests, StrictDocs, PreviewDistributions),
-        nonBlockingDependencies = setOf(Qodana),
+        dependencies = listOf(PythonTests, QodanaPr, RustTests, StrictDocs, PreviewDistributions),
+        nonBlockingDependencies = setOf(QodanaPr),
         cancelObsoletePullRequestBuilds = true,
     )
+    params {
+        param("override.dep.*.opaque.cache.scope", "pr-%teamcity.pullRequest.number%")
+    }
     features {
         pullRequests {
             provider = github {
