@@ -36,10 +36,12 @@ formatting jobs and `enable-cache: "true"` for Rust test jobs.
 
 ### `.github/workflows/reusable-build-distributions.yml`
 
-This private `workflow_call` workflow discovers package matrices and builds all
-Python wheels, native wheels, the umbrella wheel, and the accounting sdist.
-`pr.yml`, `ci.yml`, and `release.yml` supply an artifact prefix, retention
-period, and (when necessary) an explicit build version or release tag.
+This private `workflow_call` workflow builds all Python wheels, native wheels,
+the umbrella wheel, and the accounting sdist from caller-supplied package
+matrices. `pr.yml`, `ci.yml`, and `release.yml` discover the matrices once and
+supply them with an artifact prefix, retention period, and (when necessary) an
+explicit build version or release tag. This renders checks as
+`Build / <distribution>` without an internal discovery child.
 
 The reusable workflow intentionally does not own credentials, environments,
 publication, validation, or pipeline gates. Its callers keep those

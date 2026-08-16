@@ -12,6 +12,14 @@ on:
         required: false
         default: ""
         type: string
+      native-build-packages:
+        description: JSON array of native package matrix entries.
+        required: true
+        type: string
+      python-build-packages:
+        description: JSON array of pure-Python package matrix entries.
+        required: true
+        type: string
       retention-days:
         description: Number of days to retain uploaded artifacts.
         required: true
@@ -23,30 +31,13 @@ on:
         type: string
 
 jobs:
-  discover-packages:
-    name: Discover package matrices
-    runs-on: ubuntu-latest
-    outputs:
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.checkout-ref || github.sha }}
-
-      - name: Discover packages
-        id: discover
-        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
-
   build-python-wheels:
-    name: Build ${{ matrix.package.dist }}
-    needs: [discover-packages]
+    name: ${{ matrix.package.dist }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.python_build_packages) }}
+        package: ${{ fromJSON(inputs.python-build-packages) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -73,7 +64,7 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
 
   build-opaque-wheel:
-    name: Build opaque
+    name: opaque
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -101,13 +92,12 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
 
   build-native-wheels:
-    name: Build ${{ matrix.package.dist }} - ${{ matrix.target.platform }}/${{ matrix.target.arch }}
-    needs: [discover-packages]
+    name: ${{ matrix.package.dist }} (${{ matrix.target.platform }}/${{ matrix.target.arch }})
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.discover-packages.outputs.native_build_packages) }}
+        package: ${{ fromJSON(inputs.native-build-packages) }}
         target:
           - platform: linux
             arch: x86_64
@@ -158,7 +148,7 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
 
   build-accounting-sdist:
-    name: Build opaque-accounting sdist
+    name: opaque-accounting (sdist)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

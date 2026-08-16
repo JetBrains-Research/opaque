@@ -56,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -112,7 +114,7 @@ jobs:
     with:
       allow-test-failure: true
       dependency-selection: lower-bounds
-      environment-label: Linux amd64 / Python 3.11 / lower bounds
+      environment-label: Linux amd64, Python 3.11
       environment-name: lower-bounds
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
@@ -128,7 +130,7 @@ jobs:
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       dependency-selection: latest
-      environment-label: Linux amd64 / Python 3.12 / latest
+      environment-label: Linux amd64, Python 3.12
       environment-name: latest-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
@@ -307,11 +309,13 @@ jobs:
           echo "Preview version: $VERSION"
 
   build-preview-distributions:
-    name: Build preview distribution artifacts
-    needs: [compute-preview-version]
+    name: Build
+    needs: [compute-preview-version, discover-packages]
     uses: ./.github/workflows/reusable-build-distributions.yml
     with:
       artifact-prefix: preview-wheels
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 14
       version: ${{ needs.compute-preview-version.outputs.version }}
 
