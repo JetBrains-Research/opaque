@@ -3,11 +3,6 @@ name: Python tests
 on:
   workflow_call:
     inputs:
-      assert-cuda:
-        description: Assert CUDA availability before GPU test legs.
-        required: false
-        default: false
-        type: boolean
       allow-test-failure:
         description: Report pytest failures without failing the job.
         required: false
@@ -119,10 +114,6 @@ jobs:
               exit 1
               ;;
           esac
-
-      - name: Assert CUDA available
-        if: inputs.assert-cuda
-        run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
         env:

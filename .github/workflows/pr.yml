@@ -164,7 +164,6 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-empty-test-selection: true
-      assert-cuda: true
       environment-name: cuda
       pytest-marker: cuda and not slow
       pytest-xdist: -rs

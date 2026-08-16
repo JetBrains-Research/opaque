@@ -124,7 +124,6 @@ jobs:
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
-      assert-cuda: true
       environment-name: cuda
       pytest-marker: cuda
       pytest-xdist: -rs

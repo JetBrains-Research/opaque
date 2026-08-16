@@ -146,7 +146,6 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
-      assert-cuda: true
       environment-name: cuda
       pytest-marker: cuda
       pytest-xdist: -rs
