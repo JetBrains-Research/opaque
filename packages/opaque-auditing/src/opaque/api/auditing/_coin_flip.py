@@ -7,8 +7,10 @@ probability 0.5 (a fair coin flip).
 Membership scores enter the estimator as :class:`CanaryScores`: each score
 carries the dataset index of the canary it was computed for, and
 :meth:`CoinFlip.split_scores` joins scores to coin-flip labels by that
-identifier.  Scoring order therefore cannot silently misalign scores with
-labels — wrong, missing, or duplicated identifiers raise instead.
+identifier.  The order scores arrive in therefore cannot misalign them
+against the labels — wrong, missing, or duplicated identifiers raise
+instead.  Whether each score carries the *right* identifier is settled
+earlier, when the score is produced; see :func:`canary_scores`.
 
 Reference:
     Steinke, Nasr, Jagielski. "Privacy Auditing with One (1) Training

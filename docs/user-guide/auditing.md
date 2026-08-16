@@ -59,8 +59,14 @@ Scoring with `coin_flip=` + `dataset=` builds the canary loader internally
 and returns `CanaryScores`: every score is paired with the dataset index of
 the canary that produced it. `one_run` joins scores to coin-flip labels by
 those identifiers — identifiers that are wrong, missing, or duplicated
-raise instead of silently pairing scores with the wrong labels, so a
-reordered scoring pipeline cannot fake a "no leakage" result.
+raise instead of silently pairing scores with the wrong labels, so however
+the pipeline orders its batches, it cannot fake a "no leakage" result.
+
+The one thing you still own is `collate_fn`. Identifiers ride alongside
+the examples and are captured *before* your collate runs, so a collate
+that reorders rows within a batch attaches every score to the wrong
+canary — silently, since the count still matches. Keep it
+order-preserving; dropping or adding rows raises.
 
 For scores computed outside the built-in scorers, attest their
 identifiers explicitly (any order is accepted — the join realigns them):

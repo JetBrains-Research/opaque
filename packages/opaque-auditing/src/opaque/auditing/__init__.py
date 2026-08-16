@@ -19,8 +19,10 @@ Quick start::
 
 Scoring with ``coin_flip=`` + ``dataset=`` pairs every score with the
 dataset index of its canary; ``one_run`` joins scores to coin-flip labels
-by those identifiers, so a reordered scoring pipeline can never silently
-misalign the audit.
+by those identifiers, so however the scoring pipeline orders its batches,
+the audit cannot silently misalign.  A ``collate_fn`` that reorders
+examples *within* a batch is the one exception — identifiers are attached
+before collation, so keep it order-preserving.
 
 Result data classes (``CanaryScores``, ``CoinFlip``, ``OneRunEstimate``)
 live in :mod:`opaque.auditing.types`.

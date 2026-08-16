@@ -390,6 +390,52 @@ class TestVerifiedScoring:
         )
         np.testing.assert_allclose(verified.scores, legacy, atol=1e-6)
 
+    def test_collate_dropping_rows_raises(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+
+        def dropping_collate(batch):
+            kept = batch[:-1]
+            return (
+                torch.stack([x for x, _ in kept]),
+                torch.stack([y for _, y in kept]),
+            )
+
+        with pytest.raises(ValueError, match="exactly one row per example"):
+            auditing.loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=dataset,
+                batch_size=8,
+                collate_fn=dropping_collate,
+            )
+
+    def test_order_preserving_collate_is_unaffected(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))
+
+        def explicit_collate(batch):
+            return (
+                torch.stack([x for x, _ in batch]),
+                torch.stack([y for _, y in batch]),
+            )
+
+        default = auditing.loss_scores(
+            loss_fn, params, batch_argnums=(1, 2), coin_flip=cf, dataset=dataset
+        )
+        explicit = auditing.loss_scores(
+            loss_fn,
+            params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+            collate_fn=explicit_collate,
+        )
+        np.testing.assert_allclose(explicit.scores, default.scores, atol=1e-6)
+        np.testing.assert_array_equal(explicit.canary_indices, default.canary_indices)
+
     def test_batch_size_does_not_affect_verified_scores(self, linear_setup):
         params, dataset, loss_fn = linear_setup
         cf = auditing.coin_flip(dataset, num_canaries=40, key=key(3))

@@ -47,7 +47,10 @@ lower loss = more likely a training member.
 over the partition's canaries and pairs every score with the dataset index
 of the example that produced it. Returns [`CanaryScores`](#canaryscores) —
 the form [`one_run`](#one_run) requires. The pairing is joined by
-identifier, so it cannot be misaligned by loader order.
+identifier, so no iteration order over the batches can misalign it.
+Identifiers are attached per batch *before* collation, so a `collate_fn`
+that reorders examples within a batch misaligns the pairing and cannot be
+detected; a `collate_fn` that drops or adds rows raises.
 
 **Legacy mode** (`dataloader=`): scores an arbitrary iterable of batches
 and returns a bare array with no identifiers. Each batch should be a

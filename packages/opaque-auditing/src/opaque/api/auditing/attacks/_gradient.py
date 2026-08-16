@@ -57,8 +57,10 @@ def gradient_scores(
     - **Verified** (``coin_flip=`` + ``dataset=``): scores the
       partition's canaries over an internal identifier-carrying loader
       and returns :class:`~opaque.auditing.types.CanaryScores`, which
-      :func:`~opaque.auditing.one_run` requires.  ``collate_fn`` must not
-      reorder examples within a batch.
+      :func:`~opaque.auditing.one_run` requires.  Identifiers are attached
+      per batch before collation, so ``collate_fn`` must emit one row per
+      example in the order it received them; reordering within a batch
+      misaligns the pairing undetectably.
     - **Legacy** (``dataloader=``): scores an arbitrary loader and
       returns a bare array with no identifiers.
 

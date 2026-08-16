@@ -107,6 +107,17 @@ class _IndexedCanaries:
         return position, self._dataset[int(self._canary_indices[position])]
 
 
+def _collated_length(collated: Any) -> int | None:
+    """Leading dimension of a collated batch, or None if undeterminable."""
+    probe = (
+        collated[0] if isinstance(collated, (list, tuple)) and collated else collated
+    )
+    shape = getattr(probe, "shape", None)
+    if shape is None or len(shape) == 0:
+        return None
+    return int(shape[0])
+
+
 def _canary_loader(
     dataset: Any,
     coin_flip: CoinFlip,
@@ -116,9 +127,13 @@ def _canary_loader(
     """Build the internal DataLoader for verified canary scoring.
 
     Each batch arrives as ``(positions, collated_examples)``: the canary
-    positions ride alongside the examples through collation, so every
-    score is paired with the identifier of the example that produced it —
-    the pairing never relies on the loader's iteration order.
+    positions ride alongside the examples through collation, so the
+    pairing never relies on the loader's iteration order.  Positions are
+    captured before collation, so ``collate_fn`` must emit one row per
+    input example in the order it received them — a collate that drops or
+    reorders rows breaks the pairing.  Dropped rows are caught here;
+    reordering within a batch cannot be detected and is a caller
+    obligation.
     """
     import torch.utils.data as tud
 
@@ -127,7 +142,16 @@ def _canary_loader(
     def indexed_collate(batch: list[tuple[int, Any]]) -> tuple[list[int], Any]:
         positions = [position for position, _ in batch]
         examples = [example for _, example in batch]
-        return positions, example_collate(examples)
+        collated = example_collate(examples)
+        n_collated = _collated_length(collated)
+        if n_collated is not None and n_collated != len(positions):
+            raise ValueError(
+                f"collate_fn returned {n_collated} rows for a batch of "
+                f"{len(positions)} canaries; it must emit exactly one row "
+                "per example, in the order received, or scores lose the "
+                "identifiers they are paired with"
+            )
+        return positions, collated
 
     return tud.DataLoader(
         _IndexedCanaries(dataset, coin_flip.canary_indices),

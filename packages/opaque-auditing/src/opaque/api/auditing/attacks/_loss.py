@@ -52,11 +52,13 @@ def loss_scores(
       the dataset index of the example that produced it.  Returns
       :class:`~opaque.auditing.types.CanaryScores`, which
       :func:`~opaque.auditing.one_run` requires — the score-to-membership
-      pairing is joined by identifier, so it cannot be misaligned by
-      loader order.  ``batch_size`` and ``collate_fn`` configure the
-      internal loader; ``collate_fn`` receives the raw canary examples
-      and must return a batch for ``loss_fn`` without reordering examples
-      within the batch.
+      pairing is joined by identifier, so no iteration order over the
+      batches can misalign it.  ``batch_size`` and ``collate_fn``
+      configure the internal loader; ``collate_fn`` receives the raw
+      canary examples and must return one row per example in the order it
+      received them.  Identifiers are attached per batch before collation,
+      so a ``collate_fn`` that reorders within a batch does misalign the
+      pairing and cannot be detected — keep it order-preserving.
     - **Legacy** (``dataloader=``): scores an arbitrary loader and
       returns a bare array with no identifiers.  Use for custom attack
       pipelines; to audit such scores, attest their identifiers
