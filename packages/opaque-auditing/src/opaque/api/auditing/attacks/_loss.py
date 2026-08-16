@@ -60,7 +60,7 @@ def loss_scores(
     - **Legacy** (``dataloader=``): scores an arbitrary loader and
       returns a bare array with no identifiers.  Use for custom attack
       pipelines; to audit such scores, attest their identifiers
-      explicitly via ``CanaryScores(values, canary_indices=...)``.
+      explicitly via ``canary_scores(values, canary_indices=...)``.
 
     When ``reference_scores`` are provided, the returned scores are
     ``current - reference``, which equals ``loss(w0) - loss(wt)``

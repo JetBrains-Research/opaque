@@ -522,3 +522,34 @@ class TestCanaryScores:
     def test_repr(self):
         scores = CanaryScores(np.arange(3.0), canary_indices=np.arange(3))
         assert repr(scores) == "CanaryScores(num_canaries=3)"
+
+
+class TestCanaryScoresFactory:
+    """Tests for auditing.canary_scores() module-level function."""
+
+    def test_basic_canary_scores(self):
+        scores = auditing.canary_scores(np.arange(3.0), canary_indices=np.arange(3))
+        assert isinstance(scores, CanaryScores)
+        assert len(scores) == 3
+        np.testing.assert_array_equal(np.asarray(scores), np.arange(3.0))
+
+    def test_canary_scores_validates_identifiers(self):
+        with pytest.raises(ValueError, match="unique"):
+            auditing.canary_scores(np.arange(3.0), canary_indices=np.array([0, 1, 1]))
+
+    def test_attested_scores_join_in_any_order(self):
+        dataset = list(range(100))
+        cf = auditing.coin_flip(dataset, num_canaries=20, key=key(7))
+        values = np.arange(20.0)
+
+        reordered = np.argsort(-cf.canary_indices)
+        attested = auditing.canary_scores(
+            values[reordered], canary_indices=cf.canary_indices[reordered]
+        )
+
+        expected_in, expected_out = cf.split_scores(
+            CanaryScores(values, canary_indices=cf.canary_indices)
+        )
+        in_scores, out_scores = cf.split_scores(attested)
+        np.testing.assert_array_equal(in_scores, expected_in)
+        np.testing.assert_array_equal(out_scores, expected_out)

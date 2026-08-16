@@ -66,9 +66,7 @@ For scores computed outside the built-in scorers, attest their
 identifiers explicitly (any order is accepted — the join realigns them):
 
 ```python
-from opaque.auditing.types import CanaryScores
-
-scores = CanaryScores(values, canary_indices=ids_in_your_scoring_order)
+scores = auditing.canary_scores(values, canary_indices=ids_in_your_scoring_order)
 estimate = auditing.one_run(scores, coin_flip=cf)
 ```
 
@@ -176,7 +174,7 @@ for complete working examples with the `--audit` flag.
   `batch_argnums`) or a tuple of tensors (multiple `batch_argnums`).
 - **`dataloader`**: legacy scoring over your own iterable of batches.
   Returns a bare array with no identifiers; to audit such scores, wrap them
-  in `CanaryScores(values, canary_indices=...)` yourself.
+  in `auditing.canary_scores(values, canary_indices=...)` yourself.
 - **`reference_scores`**: Baseline scores from an untrained model. When
   provided, returned scores are `scores - reference_scores` (loss
   reduction). In verified mode the reference must be a `CanaryScores` and

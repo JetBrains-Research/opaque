@@ -52,7 +52,7 @@ def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
             verified mode (``coin_flip=`` + ``dataset=``).  Higher score
             = more likely a training member.  For scores computed
             outside the built-in scorers, attest identifiers explicitly
-            with ``CanaryScores(values, canary_indices=...)``.
+            with ``canary_scores(values, canary_indices=...)``.
         coin_flip: The :class:`~opaque.auditing.CoinFlip` partition.
 
     Returns:

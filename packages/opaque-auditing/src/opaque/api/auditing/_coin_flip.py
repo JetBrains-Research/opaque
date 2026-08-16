@@ -28,7 +28,7 @@ from opaque.random import fold_in
 if TYPE_CHECKING:
     from opaque.random.types import RngKey
 
-__all__ = ["CanaryScores", "CoinFlip", "coin_flip"]
+__all__ = ["CanaryScores", "CoinFlip", "canary_scores", "coin_flip"]
 
 _CANARY_SELECTION_DOMAIN = "auditing.canary_selection"
 _COIN_FLIP_DOMAIN = "auditing.coin_flip"
@@ -45,10 +45,9 @@ class CanaryScores:
 
     Produced by :func:`~opaque.auditing.loss_scores` and
     :func:`~opaque.auditing.gradient_scores` when scoring in verified
-    mode (``coin_flip=`` + ``dataset=``).  Construct directly only to
-    attest identifiers for scores computed outside those helpers::
-
-        scores = CanaryScores(values, canary_indices=ids_in_your_order)
+    mode (``coin_flip=`` + ``dataset=``).  Use the :func:`canary_scores`
+    factory to attest identifiers for scores computed outside those
+    helpers.
 
     Both arrays are defensively copied and marked read-only.  This guards
     against honest mistakes (post-hoc sorting, in-place edits), not
@@ -99,6 +98,36 @@ class CanaryScores:
 
     def __repr__(self) -> str:
         return f"CanaryScores(num_canaries={len(self)})"
+
+
+def canary_scores(scores: Any, *, canary_indices: Any) -> CanaryScores:
+    """Attest which canary each externally computed score belongs to.
+
+    :func:`~opaque.auditing.loss_scores` and
+    :func:`~opaque.auditing.gradient_scores` already return
+    :class:`CanaryScores` in verified mode; use this factory for scores
+    computed by some other pipeline.  Pass the identifiers in whatever
+    order the scores were computed — :meth:`CoinFlip.split_scores` joins
+    on them rather than assuming a position.
+
+    Args:
+        scores: Membership scores, shape ``(num_canaries,)``, float.
+        canary_indices: Dataset index of the canary behind each score, in
+            the same order as ``scores``.
+
+    Returns:
+        A :class:`CanaryScores` pairing each score with its identifier.
+
+    Raises:
+        ValueError: If either array is not 1-D, the identifiers are not
+            integers, the lengths disagree, or an identifier repeats.
+
+    Example::
+
+        scores = auditing.canary_scores(values, canary_indices=ids)
+        estimate = auditing.one_run(scores, coin_flip=cf)
+    """
+    return CanaryScores(scores, canary_indices=canary_indices)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -200,7 +229,7 @@ class CoinFlip:
                 "silently misaligns scores with coin flips). Score with "
                 "loss_scores(..., coin_flip=cf, dataset=dataset) / "
                 "gradient_scores(..., coin_flip=cf, dataset=dataset), or "
-                "attest identifiers explicitly with CanaryScores(values, "
+                "attest identifiers explicitly with canary_scores(values, "
                 "canary_indices=...)."
             )
         canonical = self._join_scores(scores)

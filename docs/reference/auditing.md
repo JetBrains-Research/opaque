@@ -154,6 +154,34 @@ from opaque.auditing.attacks import gradient_scores
 
 ---
 
+### canary_scores
+
+```python
+auditing.canary_scores(
+    scores, *, canary_indices,
+) -> CanaryScores
+```
+
+Attest which canary each externally computed score belongs to. The
+built-in scorers already return `CanaryScores` in verified mode; use this
+for scores produced by another pipeline. Identifiers may be in any order
+— [`one_run`](#one_run) joins on them rather than assuming a position.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `scores` | array-like | required | Membership scores, shape `(n,)`, float |
+| `canary_indices` | array-like | required | Dataset index behind each score, same order as `scores` |
+
+**Raises** `ValueError` if either array is not 1-D, the identifiers are
+not integers, the lengths disagree, or an identifier repeats.
+
+```python
+scores = auditing.canary_scores(values, canary_indices=ids)
+estimate = auditing.one_run(scores, coin_flip=cf)
+```
+
+---
+
 ### one_run
 
 ```python
@@ -227,8 +255,9 @@ class CanaryScores(scores, canary_indices)  # frozen dataclass
 
 Membership scores paired with stable canary identifiers: `scores[k]` was
 computed for dataset example `canary_indices[k]`. Produced by the scoring
-functions in verified mode; construct directly to attest identifiers for
-scores computed elsewhere (any order — [`one_run`](#one_run) joins by
+functions in verified mode; build one with
+[`canary_scores`](#canary_scores) to attest identifiers for scores
+computed elsewhere (any order — [`one_run`](#one_run) joins by
 identifier). Arrays are defensively copied, validated (1-D, equal length,
 unique integer identifiers), and marked read-only.
 
@@ -431,7 +460,7 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | `auditing.loss_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified membership scores → `CanaryScores` |
 | `auditing.gradient_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified white-box scores → `CanaryScores` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
-| `CanaryScores(values, canary_indices=...)` | Attest identifiers for externally computed scores |
+| `auditing.canary_scores(values, canary_indices=...)` | Attest identifiers for externally computed scores |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
 | `cf.canary_subset(dataset)` | `Subset` of canary examples (legacy loaders) |
 | `estimate.epsilon_at(delta=)` | ε bound (μ-GDP default) |

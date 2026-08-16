@@ -34,7 +34,13 @@ References:
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
-from opaque.api.auditing import coin_flip, gradient_scores, loss_scores, one_run
+from opaque.api.auditing import (
+    canary_scores,
+    coin_flip,
+    gradient_scores,
+    loss_scores,
+    one_run,
+)
 
 try:
     __version__ = _pkg_version("opaque-auditing")
@@ -43,6 +49,7 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "canary_scores",
     "coin_flip",
     "gradient_scores",
     "loss_scores",
