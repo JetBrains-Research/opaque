@@ -53,11 +53,11 @@ jobs:
   # ---------------------------------------------------------------------------
   # Python tests
   #
-  # Main repeats every PR environment and includes slow tests in the canonical
-  # Linux and platform lanes. Every environment gates distribution publishing.
+  # Main repeats every PR environment and includes slow tests in platform lanes.
+  # Every environment gates distribution publishing.
   # ---------------------------------------------------------------------------
-  python-tests:
-    name: Test
+  python-tests-linux-amd64:
+    name: Linux amd64
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
@@ -146,7 +146,7 @@ jobs:
     name: Python tests
     if: always()
     needs:
-      - python-tests
+      - python-tests-linux-amd64
       - python-tests-minimum-supported
       - python-tests-latest
       - python-tests-macos-arm64
@@ -167,7 +167,7 @@ jobs:
             fi
           }
 
-          check_result "Test" "${{ needs.python-tests.result }}"
+          check_result "Linux amd64" "${{ needs.python-tests-linux-amd64.result }}"
           check_result "Minimum supported dependencies" "${{ needs.python-tests-minimum-supported.result }}"
           check_result "Latest dependencies" "${{ needs.python-tests-latest.result }}"
           check_result "macOS arm64" "${{ needs.python-tests-macos-arm64.result }}"

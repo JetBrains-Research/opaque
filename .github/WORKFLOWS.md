@@ -61,10 +61,10 @@ seconds, so newly slow tests cannot disappear behind a fixed-size duration table
 Lower-bound pytest failures are currently advisory while dependency resolution
 and workflow failures remain blocking.
 
-`pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
-Linux amd64 tests, minimum-supported and latest dependency boundaries, and
+`pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
+tests, minimum-supported and latest dependency boundaries, and
 macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
-canonical and platform lanes; release reruns the same environment set at the
+platform lanes; release reruns the same environment set at the
 published tag. Fork pull requests never receive the self-hosted CUDA runner.
 All three entry points keep a direct `Rust tests` job so their check names stay
 stable and uncluttered.
