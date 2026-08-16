@@ -58,7 +58,6 @@ jobs:
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
-      upload-qodana-coverage: true
 
   python-tests-minimum:
     name: Minimum dependencies
@@ -103,7 +102,6 @@ jobs:
       runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
-      upload-qodana-coverage: true
 
   python-tests-linux-arm64:
     name: Linux arm64
@@ -117,7 +115,6 @@ jobs:
       runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
-      upload-qodana-coverage: true
 
   python-tests-cuda:
     name: CUDA
@@ -131,7 +128,6 @@ jobs:
       runner: GPU-runner-001
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
-      upload-qodana-coverage: true
 
   qodana:
     name: Qodana
@@ -147,7 +143,7 @@ jobs:
       security-events: write
     uses: ./.github/workflows/qodana.yml
     with:
-      coverage-artifact-pattern: qodana-coverage-*
+      coverage-artifact-pattern: coverage-locked-*
       pr-mode: false
     secrets: inherit
 

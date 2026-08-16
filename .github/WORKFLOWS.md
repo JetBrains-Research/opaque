@@ -68,7 +68,8 @@ and workflow failures remain blocking.
 
 Qodana merges coverage from Linux amd64, macOS arm64, Linux arm64, and CUDA.
 Dependency-boundary lanes are excluded because they repeat the same source
-under alternate dependency graphs rather than add platform behavior.
+under alternate dependency graphs rather than add platform behavior. Every
+test lane uploads coverage unconditionally; Qodana selects `coverage-locked-*`.
 Main publishes the scan's SARIF report to GitHub code scanning under the stable
 `qodana/python` category and waits for processing; missing or rejected reports
 fail the Qodana job. PR scans keep Qodana annotations, comments, Cloud results,

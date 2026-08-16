@@ -59,12 +59,6 @@ on:
         required: false
         default: 360
         type: number
-      upload-qodana-coverage:
-        description: Upload this environment's coverage for Qodana.
-        required: false
-        default: false
-        type: boolean
-
 jobs:
   test:
     name: ${{ matrix.shard.label }}
@@ -143,10 +137,9 @@ jobs:
           exit "$status"
 
       - name: Upload coverage
-        if: inputs.upload-qodana-coverage
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: qodana-coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}
+          name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-${{ matrix.shard.name }}
           path: coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           if-no-files-found: error
           retention-days: 1
