@@ -61,6 +61,10 @@ seconds, so newly slow tests cannot disappear behind a fixed-size duration table
 Lower-bound pytest failures are currently advisory while dependency resolution
 and workflow failures remain blocking.
 
+Qodana merges coverage from Linux amd64, macOS arm64, Linux arm64, and CUDA.
+Dependency-boundary lanes are excluded because they repeat the same source
+under alternate dependency graphs rather than add platform behavior.
+
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
 tests, minimum and latest dependency boundaries, and
 macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to

@@ -137,6 +137,7 @@ jobs:
       runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
+      upload-qodana-coverage: true
 
   python-tests-linux-arm64:
     name: Linux arm64
@@ -150,6 +151,7 @@ jobs:
       runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
+      upload-qodana-coverage: true
 
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. The job-level guard prevents allocation entirely.
@@ -170,6 +172,7 @@ jobs:
       runner: GPU-runner-001
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
+      upload-qodana-coverage: true
 
   qodana:
     name: Qodana
@@ -178,7 +181,11 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'opened' ||
        github.event.action == 'ready_for_review')
-    needs: [python-tests-linux-amd64]
+    needs:
+      - python-tests-linux-amd64
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     permissions:
       actions: read
       checks: write

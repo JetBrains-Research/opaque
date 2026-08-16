@@ -101,6 +101,7 @@ jobs:
       runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
+      upload-qodana-coverage: true
 
   python-tests-linux-arm64:
     name: Linux arm64
@@ -114,6 +115,7 @@ jobs:
       runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
+      upload-qodana-coverage: true
 
   python-tests-cuda:
     name: CUDA
@@ -128,10 +130,15 @@ jobs:
       runner: GPU-runner-001
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
+      upload-qodana-coverage: true
 
   qodana:
     name: Qodana
-    needs: [python-tests-linux-amd64]
+    needs:
+      - python-tests-linux-amd64
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     permissions:
       actions: read
       checks: write
