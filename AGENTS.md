@@ -253,7 +253,8 @@ CI lane marker expressions:
 - Main CUDA (self-hosted): `-m "cuda"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main canonical and platform lanes retain slow-test
-  coverage.
+  coverage. Lower-bound pytest failures are currently advisory, while setup and
+  resolution failures remain blocking.
 
 ### Supported HF model families
 

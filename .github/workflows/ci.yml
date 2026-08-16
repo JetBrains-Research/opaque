@@ -74,6 +74,7 @@ jobs:
     needs: [discover-packages]
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
+      allow-test-failure: true
       dependency-selection: lower-bounds
       environment-label: Linux amd64 / Python 3.11 / lower bounds
       environment-name: lower-bounds

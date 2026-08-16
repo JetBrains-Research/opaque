@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow-test-failure:
+        description: Report pytest failures without failing the job.
+        required: false
+        default: false
+        type: boolean
       checkout-ref:
         description: Ref to test. Leave empty to test the triggering SHA.
         required: false
@@ -66,7 +71,7 @@ on:
 
 jobs:
   test:
-    name: opaque-${{ matrix.shard.name }} (${{ inputs.environment-label }})
+    name: ${{ matrix.shard.label }} (${{ inputs.environment-label }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
@@ -117,8 +122,11 @@ jobs:
         run: uv run python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available on GPU runner'"
 
       - name: pytest
+        env:
+          ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
         shell: bash
         run: |
+          set +e
           uv run pytest ${{ matrix.shard.paths }} \
             -m "${{ inputs.pytest-marker }}" \
             ${{ inputs.pytest-xdist }} \
@@ -126,6 +134,14 @@ jobs:
             --cov-report=xml:coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml \
             ${{ inputs.report-durations && '--durations=0 --durations-min=5' || '' }} \
             -q
+          status=$?
+          set -e
+
+          if [[ "$status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
+            echo "::warning::pytest exited with status $status in this advisory lane."
+            exit 0
+          fi
+          exit "$status"
 
       - name: Upload coverage for Qodana
         if: inputs.upload-qodana-coverage

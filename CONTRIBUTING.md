@@ -160,7 +160,8 @@ The PR gate runs the non-slow Linux/amd64, MPS, Linux/aarch64, and CUDA suites
 together with the declared lower-bound dependencies on Python 3.11 and the
 latest supported dependencies on Python 3.12. Main repeats these boundaries and adds
 slow-test coverage to canonical and platform lanes. Dependency validation
-excludes slow and hardware-marked tests.
+excludes slow and hardware-marked tests. Lower-bound pytest failures are
+currently advisory; environment setup and dependency resolution still gate.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)

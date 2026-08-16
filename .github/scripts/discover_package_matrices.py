@@ -42,19 +42,27 @@ def _outputs() -> dict[str, object]:
     return {
         "test_shards": [
             *(
-                {"name": package["name"], "paths": package["path"]}
+                {
+                    "label": package["dist"],
+                    "name": package["name"],
+                    "paths": package["path"],
+                }
                 for package in packages
             ),
-            {"name": "repo-tests", "paths": "tests"},
+            {"label": "integration", "name": "integration", "paths": "tests"},
         ],
         "cuda_test_shards": [
             *(
-                {"name": package["name"], "paths": package["path"]}
+                {
+                    "label": package["dist"],
+                    "name": package["name"],
+                    "paths": package["path"],
+                }
                 for package in packages
                 if package["cuda_tests"]
             ),
             *(
-                [{"name": "repo-tests", "paths": "tests"}]
+                [{"label": "integration", "name": "integration", "paths": "tests"}]
                 if _has_pytest_marker(REPO_ROOT / "tests", "cuda")
                 else []
             ),

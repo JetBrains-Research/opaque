@@ -56,6 +56,8 @@ matrix. Dependency selection is `locked`, `lower-bounds` (uv `lowest-direct`),
 or `latest` (uv `highest`); adding a future platform such as Windows requires only
 another caller. Validation callers report every test phase taking at least five
 seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
+Lower-bound pytest failures are currently advisory while dependency resolution
+and workflow failures remain blocking.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for canonical
 Linux/amd64 tests, lower-bound and latest dependency boundaries, and MPS,
