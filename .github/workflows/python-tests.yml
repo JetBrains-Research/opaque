@@ -82,10 +82,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          cache-suffix: ${{ inputs.dependency-selection }}-py${{ inputs.python-version }}
-          enable-cache: true
-          prune-cache: false
-          save-cache: ${{ matrix.shard.name == 'engine' }}
+          enable-cache: false
 
       - name: Install dependencies
         env:
@@ -150,7 +147,3 @@ jobs:
           files: ./coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           flags: ${{ inputs.environment-name }}-${{ matrix.shard.name }}
           fail_ci_if_error: false
-
-      - name: Prepare uv cache
-        if: ${{ always() && matrix.shard.name == 'engine' }}
-        run: rm -rf -- .venv target
