@@ -26,12 +26,19 @@
          per-file requirement contract. Qodana audits declared dependencies. -->
     <inspection_tool class="PyPackageRequirementsInspection" enabled="false" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyStubPackagesAdvertiser" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
+    <!-- This checks whether PyPI has a newer release, not whether a declared
+         requirement is satisfiable. Library compatibility is owned by bounds,
+         the lockfile, and CI's dependency matrix. -->
+    <inspection_tool class="DependenciesInspection" enabled="false" level="WARNING" enabled_by_default="true" />
 
     <!-- JetBrains owns semantic checks that complement Ruff.
          Scopes describe analyzer-limited code categories, never individual findings. -->
     <!-- PyCharm 2026.3 incorrectly rejects valid NamedTuple, dataclass, and
          callable signatures. Qodana's stable engine retains this CI check. -->
     <inspection_tool class="PyArgumentListInspection" enabled="false" level="WARNING" enabled_by_default="true" />
+    <!-- PyCharm 2026.3 misclassifies valid Protocol declarations as subclasses
+         of a final typing special form. -->
+    <inspection_tool class="PyFinalInspection" enabled="false" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyDataclassInspection" enabled="true" level="WARNING" enabled_by_default="true">
       <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
     </inspection_tool>
@@ -117,6 +124,10 @@
       <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
       <scope name="Opaque_DynamicModuleFacades" level="WARNING" enabled="false" />
     </inspection_tool>
 

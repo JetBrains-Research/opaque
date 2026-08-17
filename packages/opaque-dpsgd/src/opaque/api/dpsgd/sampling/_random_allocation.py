@@ -145,6 +145,7 @@ class RandomAllocationSampler(Sampler):
                 bins = self._epoch_bins(epoch)
                 cur_epoch = epoch
             self._consumed = i + 1
+            assert bins is not None
             yield bins[slot]
             i += 1
 

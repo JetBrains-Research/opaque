@@ -1140,9 +1140,9 @@ class DPTrainer:
                         a.privacy_target_epsilon,
                     )
                     return TrainOutput(
-                        global_step=self.state.global_step,
-                        training_loss=0.0,
-                        metrics={
+                        self.state.global_step,
+                        0.0,
+                        {
                             "privacy_epsilon": resumed_eps,
                             "privacy_delta": ctx.target_delta,
                         },
@@ -1964,11 +1964,7 @@ class DPTrainer:
         if self.args.push_to_hub:
             _hub.push_to_hub(self, commit_message="End of training")
 
-        return TrainOutput(
-            global_step=global_step,
-            training_loss=train_loss,
-            metrics=metrics,
-        )
+        return TrainOutput(global_step, train_loss, metrics)
 
     # ------------------------------------------------------------------
     # training_step() — single DP-SGD step

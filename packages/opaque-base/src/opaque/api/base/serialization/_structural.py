@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 
 WalkSave = Callable[[Any, str, dict[str, Any]], None]
 WalkLoad = Callable[[Any, Mapping[str, Any], str], Any]
@@ -55,7 +55,8 @@ def walk_save(state: Any, prefix: str, out: dict[str, Any], recurse: WalkSave) -
             recurse(getattr(state, f.name), sub, out)
         return
     if _is_named_tuple_instance(state):
-        for f in state._fields:
+        named_tuple = cast("Any", state)
+        for f in named_tuple._fields:
             sub = f"{prefix}.{f}" if prefix else f
             recurse(getattr(state, f), sub, out)
         return
@@ -92,10 +93,11 @@ def walk_load(
             replacements[f.name] = recurse(getattr(template, f.name), sd, sub)
         return dataclasses.replace(template, **replacements)
     if _is_named_tuple_instance(template):
+        fields = cast("Any", template)._fields
         return type(template)(
             *(
                 recurse(getattr(template, f), sd, f"{prefix}.{f}" if prefix else f)
-                for f in template._fields
+                for f in fields
             )
         )
     if isinstance(template, tuple):

@@ -181,14 +181,14 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
     """
     if isinstance(pytree, SecondMomentClippingOutput):
         return SecondMomentClippingOutput(
-            grads=reduce_pytree(pytree.grads, op=op),
-            squared_grads=reduce_pytree(pytree.squared_grads, op=op),
+            reduce_pytree(pytree.grads, op=op),
+            reduce_pytree(pytree.squared_grads, op=op),
         )
 
     if isinstance(pytree, SecondMomentNoiseOutput):
         return SecondMomentNoiseOutput(
-            noisy_grads=reduce_pytree(pytree.noisy_grads, op=op),
-            noisy_squared_grads=reduce_pytree(pytree.noisy_squared_grads, op=op),
+            reduce_pytree(pytree.noisy_grads, op=op),
+            reduce_pytree(pytree.noisy_squared_grads, op=op),
         )
 
     if isinstance(pytree, ClippedPytree):
