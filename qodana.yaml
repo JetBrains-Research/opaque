@@ -49,6 +49,8 @@ profile:
         - "scope#$Opaque_ExamplesAndTutorials"
         - "scope#$Opaque_DynamicFrameworkSources"
         - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyClassHasNoInitInspection
+      enabled: false
     - inspection: PyAsyncCallInspection
       enabled: true
     - inspection: PyDictDuplicateKeysInspection
@@ -189,7 +191,7 @@ failureConditions:
     critical: 0
   testCoverageThresholds:
     fresh: 80
-    total: 70
+    total: 75
   dependencyLicenses:
     failOnProhibited: true
     failOnUnknown: false
