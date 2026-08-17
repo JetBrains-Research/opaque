@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import namedtuple
 from typing import Any
 
@@ -70,22 +71,34 @@ def _validate_per_group_paths(
     raise ValueError(" ".join(parts))
 
 
+def _real_dtype(dtype: torch.dtype) -> torch.dtype:
+    """The real dtype a complex leaf's magnitudes accumulate in."""
+    if not dtype.is_complex:
+        return dtype
+    return torch.tensor((), dtype=dtype).real.dtype
+
+
 def _resolve_compute_dtype_for_reduction(
     leaves: list[torch.Tensor],
     compute_dtype: torch.dtype | None,
 ) -> torch.dtype:
     """Pick the dtype for sum-of-squares reductions over ``leaves``."""
     if compute_dtype is not None:
+        if not compute_dtype.is_floating_point:
+            raise TypeError(
+                f"compute_dtype must be a real floating-point dtype, got "
+                f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
+                f"silently corrupt the L2-norm reduction (the squared sum is "
+                f"non-negative real and the final sqrt assumes a real "
+                f"accumulator)."
+            )
         return compute_dtype
     acc = torch.float32
     for leaf in leaves:
-        if not torch.is_floating_point(leaf):
+        if not (torch.is_floating_point(leaf) or torch.is_complex(leaf)):
             continue
-        promoted = (
-            torch.float32
-            if leaf.dtype in (torch.float16, torch.bfloat16)
-            else leaf.dtype
-        )
+        real = _real_dtype(leaf.dtype)
+        promoted = torch.float32 if real in (torch.float16, torch.bfloat16) else real
         acc = torch.promote_types(acc, promoted)
     return acc
 
@@ -106,7 +119,7 @@ def _guard_scale(
     The absolute term covers subnormals, where round-to-nearest error is not
     bounded by ``u * |x|``; it is sized from ``storage_dtype`` alone.
     """
-    if not storage_dtype.is_floating_point:
+    if not (storage_dtype.is_floating_point or storage_dtype.is_complex):
         return ratio
     store = torch.finfo(storage_dtype)
     relative = 1.0 - 2.0 * (store.eps / 2.0 + norm_roundoff)
@@ -140,19 +153,70 @@ def _sq_accum_dtype(leaves: list[torch.Tensor]) -> torch.dtype:
     return _SQ_NORM_ACCUM_DTYPE
 
 
+_BLOCKED_REDUCTION_MIN = 4096
+"""Element count above which a leaf's sum of squares is reduced in two stages.
+
+A flat reduction admits ``numel`` sequential roundings; splitting it into
+``sqrt(numel)`` blocks admits ``2 sqrt(numel)``, which is what keeps the guard
+affordable on the float32 accumulator MPS is limited to.  Below the threshold
+the flat term is already negligible and the extra kernel is not worth it.
+"""
+
+
+def _reduction_terms(leaves: list[torch.Tensor], sq_dtype: torch.dtype) -> int:
+    """Worst-case sequential additions inside a single leaf's reduction."""
+    widest = max((math.prod(leaf.shape) for leaf in leaves), default=0)
+    if widest <= 1:
+        return 0
+    if widest > _BLOCKED_REDUCTION_MIN:
+        return 2 * math.isqrt(widest) + 2
+    return widest
+
+
 def _norm_roundoff(
-    acc_dtype: torch.dtype, sq_dtype: torch.dtype, n_terms: int
+    acc_dtype: torch.dtype, sq_dtype: torch.dtype, n_leaves: int, n_reduction: int
 ) -> float:
     """Relative error bound on the computed norm.
 
-    Two sources: squaring each element in ``acc_dtype``, and accumulating the
-    per-leaf partial sums sequentially in ``sq_dtype``, which is the term that
-    grows with the number of leaves.  Both are halved because the error is
+    Three sources: squaring each element in ``acc_dtype``, the reduction inside
+    the widest leaf (``n_reduction`` additions, see :func:`_reduction_terms`),
+    and the cross-leaf accumulation (``n_leaves``).  Halved because the error is
     carried through a square root.
     """
     u_acc = torch.finfo(acc_dtype).eps / 2.0 if acc_dtype.is_floating_point else 0.0
     u_sq = torch.finfo(sq_dtype).eps / 2.0 if sq_dtype.is_floating_point else 0.0
-    return (u_acc + max(n_terms, 1) * u_sq) / 2.0
+    return (u_acc + (max(n_leaves, 1) + n_reduction) * u_sq) / 2.0
+
+
+def _leaf_sq_sum(
+    leaf: torch.Tensor, acc_dtype: torch.dtype, sq_dtype: torch.dtype
+) -> torch.Tensor:
+    """Sum of squares of one leaf, reduced in ``sq_dtype``.
+
+    Complex leaves contribute ``real^2 + imag^2``; casting them to a real
+    accumulator would drop the imaginary part and under-read the norm.
+    """
+    if torch.is_complex(leaf):
+        real = leaf.real.to(acc_dtype)
+        imag = leaf.imag.to(acc_dtype)
+        sq = real * real + imag * imag
+    else:
+        x = leaf.to(acc_dtype)
+        sq = x * x
+
+    flat = sq.reshape(-1)
+    n = flat.shape[0]
+    if n <= _BLOCKED_REDUCTION_MIN:
+        return flat.sum(dtype=sq_dtype)
+
+    block = math.isqrt(n)
+    main = (n // block) * block
+    total = (
+        flat[:main].reshape(-1, block).sum(dim=-1, dtype=sq_dtype).sum(dtype=sq_dtype)
+    )
+    if main < n:
+        total = total + flat[main:].sum(dtype=sq_dtype)
+    return total
 
 
 def _sq_norm(
@@ -161,7 +225,7 @@ def _sq_norm(
     """Sum of squares over ``leaves``, accumulated in ``sq_dtype``."""
     total: torch.Tensor | None = None
     for leaf in leaves:
-        sq = (leaf.to(acc_dtype) ** 2).sum(dtype=sq_dtype)
+        sq = _leaf_sq_sum(leaf, acc_dtype, sq_dtype)
         total = sq if total is None else total + sq
     if total is None:
         return torch.zeros((), dtype=sq_dtype)
@@ -178,7 +242,7 @@ def _accumulate_group_sq_norms(
     group_sq_norms: dict[str, torch.Tensor] = {}
     for path, tensor in zip(paths, leaves, strict=True):
         group_name = pg.groups[path]
-        sq = (tensor.to(acc_dtype) ** 2).sum(dtype=sq_dtype)
+        sq = _leaf_sq_sum(tensor, acc_dtype, sq_dtype)
         if group_name in group_sq_norms:
             group_sq_norms[group_name] = group_sq_norms[group_name] + sq
         else:
@@ -220,7 +284,9 @@ def _auto_scale_per_group(
     _validate_per_group_paths(paths, pg)
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(acc_dtype, sq_dtype, len(leaves))
+    roundoff = _norm_roundoff(
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+    )
 
     group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
 
@@ -306,7 +372,9 @@ def auto_scale_pytree(
     leaves = [leaf for leaf in tree_leaves(pytree) if isinstance(leaf, torch.Tensor)]
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(acc_dtype, sq_dtype, len(leaves))
+    roundoff = _norm_roundoff(
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+    )
 
     norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype))
     orig_norm = norm.to(acc_dtype)
@@ -341,7 +409,9 @@ def _clip_pytree_per_group(
     _validate_per_group_paths(paths, pg)
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(acc_dtype, sq_dtype, len(leaves))
+    roundoff = _norm_roundoff(
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+    )
 
     group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
 
@@ -429,7 +499,9 @@ def clip_pytree(
     leaves = [leaf for leaf in tree_leaves(pytree) if isinstance(leaf, torch.Tensor)]
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(acc_dtype, sq_dtype, len(leaves))
+    roundoff = _norm_roundoff(
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+    )
 
     sq_norm = _sq_norm(leaves, acc_dtype, sq_dtype)
     norm = torch.sqrt(sq_norm)

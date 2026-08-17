@@ -12,6 +12,7 @@ import pytest
 import torch
 from torch.func import grad
 
+from opaque.api.engine.clipping import _pytree
 from opaque.api.engine.clipping._clipped_fun import clipped_fun
 from opaque.api.engine.clipping._pytree import auto_scale_pytree, clip_pytree
 from opaque.pytree import tree_leaves, tree_map
@@ -202,6 +203,52 @@ def test_clip_pytree_is_differentiable_through_the_guard():
     clipped["w"].sum().backward()
     assert x.grad is not None
     assert torch.isfinite(x.grad).all()
+
+
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+def test_complex_leaves_clip_by_their_magnitude(dtype):
+    """``|z|^2 = re^2 + im^2``; a real accumulator would drop the imaginary part."""
+    for leaf in (
+        torch.tensor([3 + 4j], dtype=dtype),
+        torch.tensor([0 + 5j], dtype=dtype),  # a real cast reads this as norm 0
+    ):
+        clipped, aux = clip_pytree({"w": leaf}, clipping_norm=1.0)
+        assert float(aux.norm) == pytest.approx(5.0)
+        assert torch.linalg.vector_norm(clipped["w"].to(torch.complex128)) <= 1.0
+
+
+@pytest.mark.parametrize("bad_dtype", [torch.int32, torch.bool, torch.complex64])
+def test_non_real_compute_dtype_is_rejected(bad_dtype):
+    """A non-real accumulator corrupts the reduction; reject it at the boundary."""
+    with pytest.raises(TypeError, match="real floating-point"):
+        clip_pytree({"w": torch.tensor([3.0, 4.0])}, 1.0, compute_dtype=bad_dtype)
+
+
+def _one_dominant_element(n, device, dtype=torch.float32):
+    """A leaf whose reduction is worst-case: one large term, many small ones."""
+    leaf = torch.full((n,), 1e-4, dtype=dtype, device=device)
+    leaf[0] = 1.0
+    return leaf * (3.0 / torch.linalg.vector_norm(leaf.double())).to(dtype)
+
+
+def test_bound_holds_for_one_large_leaf(all_devices):
+    """The error inside a single leaf's reduction grows with its element count.
+
+    Runs on MPS in CI, where the accumulator is limited to float32 and this is
+    the term that dominates.
+    """
+    leaf = _one_dominant_element(1 << 22, all_devices)
+    clipped, _ = clip_pytree({"w": leaf}, clipping_norm=1.0)
+    assert torch.linalg.vector_norm(clipped["w"].double()) <= 1.0
+
+
+@pytest.mark.parametrize("n", [1 << 14, 1 << 22])
+def test_bound_holds_without_a_float64_accumulator(monkeypatch, n):
+    """Pin the MPS configuration on every host: no float64 anywhere."""
+    monkeypatch.setattr(_pytree, "_SQ_NORM_ACCUM_DTYPE", torch.float32)
+    leaf = _one_dominant_element(n, torch.device("cpu"))
+    clipped, _ = clip_pytree({"w": leaf}, clipping_norm=1.0)
+    assert torch.linalg.vector_norm(clipped["w"].double()) <= 1.0
 
 
 # ----------------------------------------------------------------------------
