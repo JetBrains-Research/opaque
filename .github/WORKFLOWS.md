@@ -2,31 +2,32 @@
 
 This directory contains Opaque's CI/CD configuration. Workflow files define
 triggers, permissions, and pipeline policy; shared implementation lives in
-private reusable components described below.
+private callable workflows described below.
 
 ## Entry-point workflows
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
 | `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
-| `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation; development-wheel publication; and draft-release updates. |
-| `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
-| `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
+| `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation plus development-wheel publication. |
+| `prepare-release.yml` | Manual dispatch from `main` or `release/X.Y` | Resolves a release line, runs the complete release test matrix, builds and validates its exact SHA, and either stops as a non-mutating dry run or creates the maintenance branch and complete draft Release. |
+| `release.yml` | Published GitHub Release, manual tag recovery | Verifies attached Release assets, publishes them idempotently to JetBrains Packages, and deploys immutable documentation. |
+| `docs.yml` | Pushes to `main`, manual dispatch, callable workflow | Builds rolling documentation or deploys a caller-selected immutable release version. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
 | `junie-review.yml` | Pull requests to `main` | Runs Junie as a repository reviewer using the branch's Junie guidance and architecture contracts. |
 | `junie.yml` | Trusted `@junie-agent` or `/junie` commands in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
-## Reusable components
+## Callable components
 
 ### `.github/actions/setup-python`
 
 This composite action installs the pinned Python version and optionally uv. Use
 `install-uv: "false"` for Python-only jobs. uv cache restore/save is explicitly
 disabled repository-wide: the large all-extras environments made cache
-archiving costly and vulnerable to runner disk exhaustion. Release-capable called
-workflows keep pinned external setup steps inline so checking out an older
-release tag cannot remove the local action implementation.
+archiving costly and vulnerable to runner disk exhaustion. Release-capable
+called workflows keep pinned external setup steps inline so checking out an
+older release tag cannot remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
@@ -38,17 +39,15 @@ formatting jobs and `enable-cache: "true"` for Rust test jobs.
 
 This private `workflow_call` workflow builds all Python wheels, native wheels,
 the umbrella wheel, and the accounting sdist from caller-supplied package
-matrices. `pr.yml`, `ci.yml`, and `release.yml` discover the matrices once and
-supply them with an artifact prefix, retention period, and (when necessary) an
-explicit build version or release tag. This renders checks as
-`Build / <distribution>` without an internal discovery child.
+matrices. `pr.yml`, `ci.yml`, and release preparation discover the matrices once
+and supply them with an artifact prefix, retention period, and, when necessary,
+an explicit build version. This renders checks as `Build / <distribution>`
+without an internal discovery child.
 
 Each build job validates its own wheel metadata. Native artifact jobs also
 validate accounting policy, and the sdist job proves that the source artifact
-can rebuild a wheel. The reusable workflow intentionally does not own
+can rebuild a wheel. The callable workflow intentionally does not own
 credentials, publication, cross-package validation, or pipeline gates.
-Builds start after package discovery in every entry workflow; main/release
-publication waits for the complete Python environment matrix and Rust tests.
 
 ### `.github/workflows/python-tests.yml`
 
@@ -56,39 +55,24 @@ This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Each caller provides one runner environment plus its Python
 version, dependency selection, pytest marker filter, xdist arguments, and shard
-matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`),
-or `latest` (uv `highest`); adding a future platform such as Windows requires only
-another caller. Validation callers report every test phase taking at least five
-seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
-Lower-bound pytest failures are currently advisory while dependency resolution
-and workflow failures remain blocking.
+matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or
+`latest` (uv `highest`). Validation callers report every test phase taking at
+least five seconds, so newly slow tests cannot disappear behind a fixed-size
+duration table. Lower-bound pytest failures are advisory while dependency
+resolution and workflow failures remain blocking.
 
-Qodana merges coverage from Linux amd64, macOS arm64, Linux arm64, and CUDA.
-Dependency-boundary lanes are excluded because they repeat the same source
-under alternate dependency graphs rather than add platform behavior. Every
-test lane uploads coverage unconditionally; Qodana selects `coverage-locked-*`.
-Trusted PRs and main publish the scan's SARIF report to GitHub code scanning
-under the stable `qodana/python` category and wait for processing; missing or
-rejected reports fail the Qodana job. PR scans use Qodana `pr-mode` for
-incremental findings and upload against the PR head ref/SHA. Qodana's own
-annotation check remains disabled, avoiding a duplicate check source. Main
-Qodana runs only on the actual main ref, so manually dispatched feature-branch
-validation cannot attach a full-scan check to a pull request.
-Repository Code Security must remain enabled.
-
-`pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
-tests, minimum and latest dependency boundaries, and
-macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
-platform lanes; release reruns the same environment set at the
-published tag. Fork pull requests never receive the self-hosted CUDA runner.
+`pr.yml`, `ci.yml`, and release preparation invoke the callable workflow for
+Linux amd64 tests, minimum and latest dependency boundaries, and macOS arm64,
+Linux arm64, and CUDA platform coverage. Main and release include slow tests in
+platform lanes. Fork pull requests never receive the self-hosted CUDA runner.
 
 ### `.github/workflows/rust-tests.yml`
 
 This private `workflow_call` workflow runs the accounting crate's unit and doc
 tests with the shared Rust setup and dependency cache. Entry workflows call it
 as `Rust`, so checks render as `Rust / opaque-accounting`. Tests above five
-seconds use `#[ignore = "slow"]`: PRs run the default set, while main and release
-add `cargo test --lib -- --ignored` after the default unit/doc-test run.
+seconds use `#[ignore = "slow"]`: PRs run the default set, while main and
+release add `cargo test --lib -- --ignored` after the default unit/doc-test run.
 
 ### `.github/workflows/validate-distributions.yml`
 
@@ -98,49 +82,64 @@ a representative DP-SGD + DP-FTRL cross-stack accounting scenario without
 checking out the source tree. PR, main, and release differ only in artifact
 prefix.
 
+### `.github/workflows/prepare-release-implementation.yml`
+
+`prepare-release.yml` is a stable branch-selected dispatcher. It calls the
+implementation on `main` while passing the selected branch and SHA explicitly,
+so workflow-only fixes do not need backports. The implementation rejects sources
+other than `main` and `release/X.Y`, creates a missing maintenance branch only
+after the candidate is green, and preserves handwritten release prose outside
+the three generated fences.
+
 ## Artifact contracts
 
-The reusable distribution workflow uploads artifacts named
-`<prefix>-<distribution>`. Callers preserve the existing prefixes:
+The distribution workflow uploads artifacts named `<prefix>-<distribution>`.
+Callers preserve the existing prefixes:
 
 | Caller | Prefix | Retention |
 |---|---|---|
 | PR previews | `preview-wheels` | 14 days |
 | Main development builds | `wheels` | 30 days |
-| Releases | `wheels` | 90 days |
+| Release preparation | `candidate` | 90 days |
 
-Downstream validation and merge jobs consume these prefixes, so update the
-caller and consumer together if a new artifact family is introduced.
+Release preparation merges the `candidate-*` family into a checksummed
+`release-candidate` Actions artifact and attaches its distributions plus
+`release-manifest.json` to the draft GitHub Release. The published-Release
+workflow consumes only those attached assets; it never rebuilds them.
 
 ## Security and maintenance
 
-Actions remain pinned to immutable commit SHAs. Entry-point workflows default
-to read-only permissions and elevate permissions only for trusted deployment
-or publishing jobs. Fork pull requests do not run untrusted code on the
-self-hosted GPU runner and never receive repository, package, or cloud
-credentials.
+Actions remain pinned to immutable commit SHAs. The maintenance-branch
+dispatcher deliberately calls this repository's current `main` release
+workflow; its selected source SHA remains immutable and is the only code tested
+or packaged. Entry-point workflows default to read-only permissions and
+elevate permissions only for trusted preparation or publishing jobs. Registry
+credentials exist only in `release.yml` after a maintainer publishes the draft.
+Fork pull requests do not run untrusted code on the self-hosted GPU runner and
+never receive repository, package, or cloud credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
 `Format Rust`, `Conventional Commits PR title`, the selected individual Python
 environment/package checks, `Rust / opaque-accounting`, and `Junie review`.
-The review workflow uses the `JUNIE_API_KEY` Actions secret.
-Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
-the job records that limitation and completes without invoking Junie.
+The review workflow uses the `JUNIE_API_KEY` Actions secret. Fork and Dependabot
+pull requests cannot receive the secret-backed Junie review; the job records
+that limitation and completes without invoking Junie.
+
 Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use
 `.junie/review-guidelines.md`. The review file is also the canonical policy for
-Copilot code review through
-`.github/instructions/code-review.instructions.md`. Reviewers must apply every
-relevant active architecture contract. Privacy-sensitive reviews trace the
-guarantee end to end and use read-only web search and URL fetching to verify
-primary literature before reporting theorem-dependent findings.
+Copilot code review through `.github/instructions/code-review.instructions.md`.
+Reviewers must apply every relevant active architecture contract.
+Privacy-sensitive reviews trace the guarantee end to end and use read-only web
+search and URL fetching to verify primary literature before reporting
+theorem-dependent findings.
 
 The automated review and interactive workflows use the same SHA-pinned upstream
-Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`, `MEMBER`, or
-`COLLABORATOR` association reach the action, which then verifies that the actor
-has repository write or admin access. The job grants `contents`, pull-request,
-and issue write access explicitly; repository-wide workflow permissions remain
-read-only. Repository Settings > Actions > General must also allow GitHub
-Actions to create and approve pull requests.
+Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`,
+`MEMBER`, or `COLLABORATOR` association reach the action, which then verifies
+that the actor has repository write or admin access. The job grants `contents`,
+pull-request, and issue write access explicitly; repository-wide workflow
+permissions remain read-only. Repository Settings > Actions > General must also
+allow GitHub Actions to create and approve pull requests.
 
 Interactive Junie tasks use the default `GITHUB_TOKEN`, so comments and commits
 are attributed to `github-actions[bot]`. GitHub does not start new `push` or
