@@ -1,15 +1,9 @@
 """Numerical guarantees of clipping under microbatching and low precision.
 
-Two properties are pinned here (issue #343):
+Two properties, swept over tree shapes, norms and dtypes (issue #343):
 
-- ``norm(clipped) <= clipping_norm`` holds on the values *as stored*, not just
-  in exact arithmetic.  Downcasting the scale into a bf16/fp16 leaf and
-  multiplying it through are both round-to-nearest steps that can round up.
-- Microbatched accumulation runs in ``compute_dtype``, so splitting a batch
-  does not degrade the sum relative to the non-microbatched path.
-
-The repo has no ``hypothesis`` dependency, so "property test" here means a
-seeded sweep over tree shapes, norms and dtypes.
+- ``norm(clipped) <= clipping_norm`` holds on the values *as stored*.
+- Microbatched accumulation runs in ``compute_dtype``.
 """
 
 from __future__ import annotations
@@ -129,9 +123,7 @@ def test_mixed_dtype_tree_bound_holds(dtype):
 def test_bound_holds_as_leaf_count_grows(n_leaves, dtype):
     """The guard must cover the norm reduction, whose error grows with leaves.
 
-    Summing the per-leaf squares in the leaf dtype makes ``fl(norm)`` drift low
-    in proportion to the number of leaves, and an underestimated norm inflates
-    the scale. A realistic model has hundreds of parameter tensors.
+    A realistic model has hundreds of parameter tensors.
     """
     generator = torch.Generator().manual_seed(8)
     for trial in range(20):
@@ -147,12 +139,7 @@ def test_bound_holds_as_leaf_count_grows(n_leaves, dtype):
 
 @pytest.mark.parametrize("low", LOW_PRECISION_DTYPES)
 def test_low_precision_leaf_does_not_zero_its_neighbours(low):
-    """The subnormal guard is per leaf, so one narrow leaf cannot zero the rest.
-
-    float16's smallest subnormal is ~5.96e-8. Taken tree-wide it swamps a
-    legitimately small scale and drives every leaf, including the float32 and
-    float64 ones, to zero.
-    """
+    """The subnormal guard is per leaf, so one narrow leaf cannot zero the rest."""
     pytree = {
         "narrow": torch.tensor([1.0], dtype=low),
         "f32": torch.tensor([1000.0, 0.0], dtype=torch.float32),
@@ -251,8 +238,7 @@ def test_microbatching_matches_full_batch_in_low_precision(dtype, microbatch_siz
     micro = _run(microbatch_size, batch, params).to(torch.float64)
 
     # Both land in the same output dtype, so they can differ by at most the
-    # rounding of that final cast — orders of magnitude tighter than the
-    # ~1e-2 drift of accumulating each partial sum in the output dtype.
+    # rounding of that final cast.
     denom = torch.linalg.vector_norm(full).clamp(min=1e-12)
     relative = (torch.linalg.vector_norm(micro - full) / denom).item()
     assert relative < 1e-2 * torch.finfo(dtype).eps
@@ -275,12 +261,7 @@ def test_microbatching_is_unchanged_at_full_precision(dtype, microbatch_size):
 
 
 def test_microbatch_accumulates_at_the_requested_output_precision():
-    """A wider ``dtype=`` must not be degraded by a narrower ``compute_dtype``.
-
-    The accumulator resolves from ``compute_dtype``, which for float32 leaves is
-    float32; if it ignores the requested float64 output the running sum is held
-    below the precision the caller asked to be given back.
-    """
+    """A wider ``dtype=`` must not be degraded by a narrower ``compute_dtype``."""
     generator = torch.Generator().manual_seed(11)
     params = torch.randn(64, generator=generator)
     batch = torch.randn(4096, 64, generator=generator)

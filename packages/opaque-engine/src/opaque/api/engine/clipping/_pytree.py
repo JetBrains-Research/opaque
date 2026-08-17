@@ -18,12 +18,9 @@ from opaque.api.engine.pytree import (
 from opaque.api.engine.types import PerGroup
 
 _SQ_NORM_ACCUM_DTYPE = torch.float64
-"""Dtype the squared-norm reduction accumulates in.
+"""Dtype the cross-leaf squared-norm accumulator runs in.
 
-The accumulator is a scalar, so the precision is free; the per-leaf squaring
-still happens in the caller's ``compute_dtype``.  Accumulating in that dtype
-instead makes the norm's error grow with the number of leaves, which no fixed
-ULP budget can cover.
+The per-leaf squaring still happens in the caller's ``compute_dtype``.
 """
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
@@ -101,21 +98,13 @@ def _guard_scale(
     """Shrink a clipping ratio so that storing it cannot break the norm bound.
 
     Three roundings sit between ``C / ||x||`` and the stored output: the norm
-    reduction (bounded by ``norm_roundoff``, see :func:`_norm_roundoff`), the
-    downcast of the scale into ``storage_dtype``, and the per-element multiply.
-    Each can push the result up, so an unguarded scale only gives
-    ``||out|| <= (1 + norm_roundoff)(1 + u_store)^2 * C``.  Removing
-    ``2 (u_store + norm_roundoff)`` leaves ``(1 - norm_roundoff)`` — inside the
-    bound, with room to spare.
+    reduction (bounded by ``norm_roundoff``), the downcast of the scale into
+    ``storage_dtype``, and the per-element multiply.  Each can round up, so the
+    ratio gives up ``2 (u_store + norm_roundoff)``.  Non-floating leaves carry
+    no rounding error and are returned unchanged.
 
-    Non-floating leaves carry no rounding error and are returned unchanged.
-
-    The subtracted absolute term covers subnormals: round-to-nearest error is
-    bounded by ``u * |x|`` only while ``x`` stays normal, and in float16 the
-    scale itself turns subnormal once ``||x||`` exceeds about ``1.6e4 * C``,
-    after which one rounding can inflate it by a large fraction of itself.
-    It is taken from ``storage_dtype`` alone, so a low-precision leaf cannot
-    drag down the leaves stored beside it.
+    The absolute term covers subnormals, where round-to-nearest error is not
+    bounded by ``u * |x|``; it is sized from ``storage_dtype`` alone.
     """
     if not storage_dtype.is_floating_point:
         return ratio

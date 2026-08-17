@@ -119,8 +119,7 @@ class _MicrobatchAccumulator:
     """Running sum over microbatches, held at the accumulation precision.
 
     The sum stays in the wider of ``compute_dtype`` and the output dtype and is
-    cast to the output dtype once, at the end, so splitting a batch does not
-    degrade it relative to summing the batch whole.
+    cast to the output dtype once, at the end.
     """
 
     __slots__ = ("_compute_dtype", "_output_dtype", "_targets", "_total")
@@ -201,8 +200,7 @@ def _microbatch_accumulate(
 
     This implementation processes the batch in chunks of `microbatch_size`, accumulating
     results according to their type:
-    - Clipped values: SUM (into a running accumulator in `compute_dtype`, so the
-      per-example values are never all materialized at once)
+    - Clipped values: SUM (into a running accumulator in `compute_dtype`)
     - Auxiliary outputs: CONCAT (keep per-example for privacy analysis)
 
     Args:
