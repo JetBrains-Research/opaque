@@ -136,12 +136,13 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
                 stack.append((child, False))
             continue
         cls = _PROCESS_REGISTRY[t]
-        field_names = {f.name for f in fields(cls)}
+        dataclass_cls: Any = cls
+        field_names = {f.name for f in fields(dataclass_cls)}
         extra = set(node) - {"type", *field_names}
         if extra:
             raise ValueError(f"unexpected keys for {cls.__name__}: {sorted(extra)!r}")
         kwargs: dict[str, Any] = {}
-        for f in fields(cls):
+        for f in fields(dataclass_cls):
             if f.name in node:
                 raw = node[f.name]
                 if f.name in child_fields:
@@ -158,7 +159,7 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
                 raise ValueError(
                     f"missing required field {f.name!r} for {cls.__name__}"
                 )
-        built[id(node)] = cls(**kwargs)
+        built[id(node)] = dataclass_cls(**kwargs)
     return built[id(sd)]
 
 
@@ -172,9 +173,12 @@ def _load_leaf(sd: dict[str, Any]) -> Any:
     cls = _PROCESS_REGISTRY.get(t)
     if cls is None:
         raise ValueError(f"Unknown DpProcess type: {t}")
+    if not dataclasses.is_dataclass(cls):
+        raise ValueError(f"DpProcess type {t!r} is not a dataclass")
 
+    dataclass_cls: Any = cls
     kwargs: dict[str, Any] = {}
-    for f in fields(cls):
+    for f in fields(dataclass_cls):
         if f.name in sd:
             raw = sd.pop(f.name)
             if isinstance(raw, dict) and "type" in raw:
@@ -198,7 +202,7 @@ def _load_leaf(sd: dict[str, Any]) -> Any:
     if sd:
         raise ValueError(f"unexpected keys for {cls.__name__}: {sorted(sd)!r}")
 
-    return cls(**kwargs)
+    return dataclass_cls(**kwargs)
 
 
 def _coerce_field(cls: type[Any], fname: str, val: Any) -> Any:

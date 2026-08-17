@@ -57,4 +57,4 @@ def ipo_loss(
         Per-example scalar loss tensor with the same shape as the inputs.
     """
     logits = chosen_logratio - rejected_logratio
-    return (logits - 1.0 / (2.0 * beta)) ** 2
+    return (logits - 1.0 / (2.0 * beta)).pow(2)

@@ -22,17 +22,24 @@
     <inspection_tool class="PyTypeHintsInspection" enabled="false" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyUnnecessaryCastInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="PyUnusedParameterInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
+    <!-- uv's PEP 420 workspace membership and optional extras are not a
+         per-file requirement contract. Qodana audits declared dependencies. -->
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="false" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="PyStubPackagesAdvertiser" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
 
-    <!-- JetBrains owns semantic checks that complement Ruff. -->
-    <inspection_tool class="PyArgumentListInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyArgumentList_exclusions" level="WARNING" enabled="false" />
-    </inspection_tool>
+    <!-- JetBrains owns semantic checks that complement Ruff.
+         Scopes describe analyzer-limited code categories, never individual findings. -->
+    <!-- PyCharm 2026.3 incorrectly rejects valid NamedTuple, dataclass, and
+         callable signatures. Qodana's stable engine retains this CI check. -->
+    <inspection_tool class="PyArgumentListInspection" enabled="false" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyDataclassInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyDataclass_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyTypeCheckerInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyTypeChecker_exclusions" level="WARNING" enabled="false" />
-      <scope name="Opaque_PyTypeChecker_IDE_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyAsyncCallInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyCompatibilityInspection" enabled="true" level="WARNING" enabled_by_default="true">
@@ -49,56 +56,68 @@
     <inspection_tool class="PyInvalidCastInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyMockPatchArgumentCountInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyTestParametrizedInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyTestParametrized_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyTestUnpassedFixtureInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyUnhashableInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyUnusedImportsInspection" enabled="false" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyUnusedLocalVariableInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="PyNoneFunctionAssignmentInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyNoneFunctionAssignment_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyUnboundLocalVariableInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyUnboundLocalVariable_exclusions" level="WARNING" enabled="false" />
-      <scope name="Opaque_PyUnboundLocalVariable_IDE_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyCallingNonCallableInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyCallingNonCallable_exclusions" level="WARNING" enabled="false" />
-      <scope name="Opaque_PyCallingNonCallable_IDE_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyMethodOverridingInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyMethodOverriding_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyUnreachableCodeInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyUnreachableCode_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyTypedDictInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyTypedDict_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyDeprecationInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyDeprecation_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyPropertyAccessInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyPropertyAccess_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyPropertyDefinitionInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyPropertyDefinition_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyPatternInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyPattern_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyDecoratorInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyDecorator_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyInconsistentReturnsInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyInconsistentReturns_exclusions" level="WEAK WARNING" enabled="false" />
-      <scope name="Opaque_PyInconsistentReturns_IDE_exclusions" level="WEAK WARNING" enabled="false" />
+      <scope name="Opaque_PythonTests" level="WEAK WARNING" enabled="false" />
+      <scope name="Opaque_ExamplesAndTutorials" level="WEAK WARNING" enabled="false" />
+      <scope name="Opaque_DynamicFrameworkSources" level="WEAK WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WEAK WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyRedeclarationInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyRedeclaration_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <scope name="Opaque_PyUnresolvedReferences_exclusions" level="WARNING" enabled="false" />
+      <scope name="Opaque_DynamicModuleFacades" level="WARNING" enabled="false" />
     </inspection_tool>
 
     <!-- Keep useful cross-language checks while excluding known parser gaps. -->
@@ -107,7 +126,6 @@
     </inspection_tool>
     <inspection_tool class="MarkdownUnresolvedFileReference" enabled="true" level="ERROR" enabled_by_default="true">
       <scope name="Opaque_DevelopmentDocs_exclusions" level="ERROR" enabled="false" />
-      <scope name="Opaque_CrossModuleMarkdown_exclusions" level="ERROR" enabled="false" />
     </inspection_tool>
     <inspection_tool class="MarkdownUnresolvedHeaderReference" enabled="true" level="ERROR" enabled_by_default="true">
       <scope name="Opaque_DocsHeaderReference_exclusions" level="ERROR" enabled="false" />

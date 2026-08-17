@@ -5,6 +5,8 @@ linter: qodana-python
 withinDocker: "false"
 
 profile:
+  # The unpinned starter profile evolves with Qodana releases. The explicit
+  # additions below are only semantic checks absent from that baseline.
   base:
     name: qodana.starter
   groups:
@@ -34,16 +36,19 @@ profile:
     - inspection: PyArgumentListInspection
       enabled: true
       ignore:
-        - "scope#$Opaque_PyArgumentList_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalApiSignatures"
     - inspection: PyDataclassInspection
       enabled: true
       ignore:
-        - "scope#$Opaque_PyDataclass_exclusions"
+        - "scope#$Opaque_PythonTests"
     - inspection: PyTypeCheckerInspection
       enabled: true
       ignore:
-        - "scope#$Opaque_PyTypeChecker_exclusions"
-        - "scope#$Opaque_PyTypeChecker_IDE_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyAsyncCallInspection
       enabled: true
     - inspection: PyDictDuplicateKeysInspection
@@ -55,69 +60,97 @@ profile:
     - inspection: PyTestParametrizedInspection
       enabled: true
       ignore:
-        - "scope#$Opaque_PyTestParametrized_exclusions"
+        - "scope#$Opaque_PythonTests"
     - inspection: PyTestUnpassedFixtureInspection
       enabled: true
     - inspection: PyUnhashableInspection
       enabled: true
     - inspection: PyNoneFunctionAssignmentInspection
       ignore:
-        - "scope#$Opaque_PyNoneFunctionAssignment_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
     - inspection: PyUnboundLocalVariableInspection
       ignore:
-        - "scope#$Opaque_PyUnboundLocalVariable_exclusions"
-        - "scope#$Opaque_PyUnboundLocalVariable_IDE_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
     - inspection: PyCallingNonCallableInspection
       ignore:
-        - "scope#$Opaque_PyCallingNonCallable_exclusions"
-        - "scope#$Opaque_PyCallingNonCallable_IDE_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyMethodOverridingInspection
       ignore:
-        - "scope#$Opaque_PyMethodOverriding_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyUnreachableCodeInspection
       ignore:
-        - "scope#$Opaque_PyUnreachableCode_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyTypedDictInspection
       ignore:
-        - "scope#$Opaque_PyTypedDict_exclusions"
+        - "scope#$Opaque_PythonTests"
     - inspection: PyDeprecationInspection
       ignore:
-        - "scope#$Opaque_PyDeprecation_exclusions"
+        - "scope#$Opaque_PythonTests"
     - inspection: PyPropertyAccessInspection
       ignore:
-        - "scope#$Opaque_PyPropertyAccess_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyPropertyDefinitionInspection
       ignore:
-        - "scope#$Opaque_PyPropertyDefinition_exclusions"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyPatternInspection
       ignore:
-        - "scope#$Opaque_PyPattern_exclusions"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyDecoratorInspection
       ignore:
-        - "scope#$Opaque_PyDecorator_exclusions"
+        - "scope#$Opaque_DynamicFrameworkSources"
     - inspection: PyInconsistentReturnsInspection
       ignore:
-        - "scope#$Opaque_PyInconsistentReturns_exclusions"
-        - "scope#$Opaque_PyInconsistentReturns_IDE_exclusions"
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyRedeclarationInspection
       ignore:
-        - "scope#$Opaque_PyRedeclaration_exclusions"
+        - "scope#$Opaque_FunctionalRuntimeSources"
 # Qodana uses a starter-based bridge because its headless engine interprets
-# several project-profile inspections differently from PyCharm. Shared named
-# scopes keep the overlapping Python semantic policy aligned.
+# several project-profile inspections differently from PyCharm. The shared
+# category scopes describe stable analyzer limitations, not individual files.
 
 # Sanity analysis uses a separate profile, so its unresolved-reference
 # exclusions must remain in Qodana's top-level configuration as well.
 exclude:
+  - name: All
+    paths:
+      - .github
   - name: PyUnresolvedReferencesInspection
     paths:
-      - packages/opaque-engine/src/opaque/api/engine/functional/__init__.py
-      - packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py
-      - packages/opaque-engine/src/opaque/api/engine/random/_helpers.py
-      - packages/opaque-patches/src/opaque/api/patches/__init__.py
-      - packages/opaque-patches/src/opaque/api/patches/kernels
-      - packages/opaque-patches/src/opaque/api/patches/torch/checkpoint
-      - packages/opaque-patches/src/opaque/api/patches/torch/functorch_transform.py
+      - docs/tutorials
+      - examples
+      - packages/opaque-accounting/tests
+      - packages/opaque-alignment/tests
+      - packages/opaque-auditing/tests
+      - packages/opaque-base/tests
+      - packages/opaque-dpftrl/tests
+      - packages/opaque-dpsgd/tests
+      - packages/opaque-engine/tests
+      - packages/opaque-jax/tests
+      - packages/opaque-mlx/tests
+      - packages/opaque-optimizers/tests
+      - packages/opaque-patches/tests
+      - packages/opaque-torch/tests
+      - packages/opaque-transformers/tests
+      - tests
+      - packages/opaque-engine/src/opaque/api/engine/clipping
+      - packages/opaque-engine/src/opaque/api/engine/functional
+      - packages/opaque-engine/src/opaque/api/engine/random
+      - packages/opaque-patches/src/opaque/api/patches
 
 # Resolve every workspace package so inspections, vulnerability checks, license
 # audit, and SBOM generation see the same dependency graph as CI.

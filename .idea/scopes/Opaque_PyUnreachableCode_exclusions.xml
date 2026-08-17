@@ -1,3 +1,0 @@
-<component name="DependencyValidationManager">
-  <scope name="Opaque_PyUnreachableCode_exclusions" pattern="file[opaque]:examples/train_dpftrl.py||file[opaque]:examples/train_dpo.py||file[opaque]:examples/train_dpo_trainer.py||file[opaque]:examples/train_dpsgd_trainer.py||file[opaque-dpftrl]:tests/accounting/test_amplification_protocol.py||file[opaque-dpsgd]:src/opaque/api/dpsgd/clipping/_adaptive.py||file[opaque-transformers]:src/opaque/api/transformers/trainer/_training_arguments.py" />
-</component>

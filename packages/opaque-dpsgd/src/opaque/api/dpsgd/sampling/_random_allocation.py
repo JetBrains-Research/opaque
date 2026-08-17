@@ -123,7 +123,8 @@ class RandomAllocationSampler(Sampler):
         assignment = rng.integers(0, self.num_bins, size=self._num_samples)
         bins: list[list[int]] = [[] for _ in range(self.num_bins)]
         for idx, b in enumerate(assignment):
-            bins[b].append(int(idx))
+            target_bin: list[int] = bins[b]
+            target_bin.append(int(idx))
         return bins
 
     def __iter__(self) -> Iterator[list[int]]:

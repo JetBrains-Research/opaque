@@ -1,3 +1,0 @@
-<component name="DependencyValidationManager">
-  <scope name="Opaque_PyPattern_exclusions" pattern="file[opaque-dpftrl]:src/opaque/api/accounting/dpftrl/amplification/_poisson.py" />
-</component>

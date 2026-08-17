@@ -1,3 +1,0 @@
-<component name="DependencyValidationManager">
-  <scope name="Opaque_PyTestParametrized_exclusions" pattern="file[opaque]:tests/integration/noise/test_auto_clipping_mf_noise.py" />
-</component>

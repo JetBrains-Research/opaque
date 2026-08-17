@@ -79,7 +79,9 @@ def _is_default(value: Any, default: Any) -> bool:
         and dataclasses.is_dataclass(default_value)
     ):
         try:
-            return dataclasses.asdict(value) == dataclasses.asdict(default_value)
+            return _get_dataclass_field_values(value) == _get_dataclass_field_values(
+                default_value
+            )
         except Exception:  # pragma: no cover
             pass
 

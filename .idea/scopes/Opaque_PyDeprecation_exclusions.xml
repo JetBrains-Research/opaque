@@ -1,3 +1,0 @@
-<component name="DependencyValidationManager">
-  <scope name="Opaque_PyDeprecation_exclusions" pattern="file[opaque-engine]:tests/ddp/engine_ddp_helpers.py||file[opaque-engine]:tests/profiling/test_step_perf.py" />
-</component>

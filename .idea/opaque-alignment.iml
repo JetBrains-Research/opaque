@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-alignment/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/packages/opaque-alignment/build" />
     </content>
-    <orderEntry type="jdk" jdkName="/tmp/qodana-venv" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="~/Workspaces/jbr-fed/opaque/.venv" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-base" exported="" />
     <orderEntry type="module" module-name="opaque-engine" exported="" />

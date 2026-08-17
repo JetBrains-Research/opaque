@@ -142,8 +142,16 @@ class BMinSep(DpHorizonProcess):
         )
         native_cfg = config.to_native()
 
-        coefs = s.coefficients(n_steps=self.n_steps).tolist()
-        sensitivity = s.sensitivity(n_steps=self.n_steps)
+        coefs = s.coefficients(
+            n_steps=self.n_steps,
+            min_sep=self.min_sep,
+            max_participations=self.max_participations,
+        ).tolist()
+        sensitivity = s.sensitivity(
+            n_steps=self.n_steps,
+            min_sep=self.min_sep,
+            max_participations=self.max_participations,
+        )
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = self.sampling_prob
 

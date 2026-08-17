@@ -24,6 +24,12 @@ from opaque.random import key
 from opaque.types import clipped
 
 
+def test_accounting_mechanism_types_facade_imports():
+    from opaque.dpftrl.accounting.mechanisms.types import MfGaussian
+
+    assert MfGaussian.__name__ == "MfGaussian"
+
+
 def _engine_train_loop(
     model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev
 ):
