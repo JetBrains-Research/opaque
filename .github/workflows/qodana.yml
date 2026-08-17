@@ -60,7 +60,7 @@ jobs:
 
       - name: Verify SARIF report
         id: sarif
-        if: ${{ !cancelled() && !inputs.pr-mode && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() }}
         env:
           SARIF_PATH: ${{ runner.temp }}/qodana/results/qodana.sarif.json
         run: |
@@ -71,16 +71,12 @@ jobs:
           echo "path=$SARIF_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Upload SARIF to GitHub code scanning
-        if: >-
-          ${{ !cancelled() &&
-              !inputs.pr-mode &&
-              github.ref == 'refs/heads/main' &&
-              steps.sarif.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.sarif.outcome == 'success' }}
         uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           category: qodana/python
           checkout_path: ${{ github.workspace }}
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.pr-mode && format('refs/pull/{0}/head', github.event.pull_request.number) || github.ref }}
           sarif_file: ${{ steps.sarif.outputs.path }}
           sha: ${{ inputs.checkout-ref || github.sha }}
           wait-for-processing: true

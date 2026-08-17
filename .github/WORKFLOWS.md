@@ -67,12 +67,13 @@ Qodana merges coverage from Linux amd64, macOS arm64, Linux arm64, and CUDA.
 Dependency-boundary lanes are excluded because they repeat the same source
 under alternate dependency graphs rather than add platform behavior. Every
 test lane uploads coverage unconditionally; Qodana selects `coverage-locked-*`.
-Main publishes the scan's SARIF report to GitHub code scanning under the stable
-`qodana/python` category and waits for processing; missing or rejected reports
-fail the Qodana job. PR scans keep Qodana comments, Cloud results, and report
-artifacts without creating a second annotation check. Main Qodana runs only on
-the actual main ref, so manually dispatched feature-branch validation cannot
-attach a full-scan check to a pull request.
+Trusted PRs and main publish the scan's SARIF report to GitHub code scanning
+under the stable `qodana/python` category and wait for processing; missing or
+rejected reports fail the Qodana job. PR scans use Qodana `pr-mode` for
+incremental findings and upload against the PR head ref/SHA. Qodana's own
+annotation check remains disabled, avoiding a duplicate check source. Main
+Qodana runs only on the actual main ref, so manually dispatched feature-branch
+validation cannot attach a full-scan check to a pull request.
 Repository Code Security must remain enabled.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
