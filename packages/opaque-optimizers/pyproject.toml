@@ -27,7 +27,7 @@ classifiers = [
 # opaque.api.engine.types.
 dependencies = [
     "opaque-engine>=0.0.0.dev0",
-    "torch>=2.9.0",
+    "torch>=2.13.0",
     "torchopt>=0.7.3",
 ]
 
