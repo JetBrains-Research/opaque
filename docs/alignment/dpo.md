@@ -70,7 +70,26 @@ dataset column: those values are converted to Python `float` because PyArrow
 has no bf16 column type.
 
 ```python
+import hashlib
+
 from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+
+def ref_state_digest(model) -> str:
+    """Hash the effective adapter-disabled reference weights."""
+    hasher = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        if ".lora_" in name or ".modules_to_save." in name:
+            continue
+        value = tensor.detach().cpu().contiguous()
+        hasher.update(name.encode("utf-8"))
+        hasher.update(str(value.dtype).encode("ascii"))
+        hasher.update(str(tuple(value.shape)).encode("ascii"))
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
+    return hasher.hexdigest()
+
 
 dataset = compute_ref_logprobs_for_dataset(
     dataset,
@@ -82,7 +101,7 @@ dataset = compute_ref_logprobs_for_dataset(
         "kind": "dpo-reference-logprobs",
         "reference": {
             "adapter_mode": "disabled",
-            "state_sha256": ref_state_digest,
+            "state_sha256": ref_state_digest(model),
         },
     },
     cache_dir=cache_dir,
@@ -100,7 +119,11 @@ identity must encode every input that changes reference behavior: an immutable
 revision or weight digest, plus the adapter mode. Keying on a mutable name
 alone — a model name, a checkpoint directory — silently returns logprobs from
 whatever last occupied that name. `DPOTrainer` derives this identity from the
-effective reference state on its own; only manual callers build it.
+effective reference state on its own; only manual callers build it. Hashing the
+weights as above is the conservative choice — an immutable Hub revision pin is
+cheaper and equally safe when the reference is loaded straight from the Hub and
+never mutated in-process. `examples/train_dpo.py` builds the same identity for
+its manual precompute path.
 
 When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
 enter `null_ref_context(model)` (or `with_disabled_adapter(model)`) around
