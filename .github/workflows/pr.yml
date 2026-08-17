@@ -189,6 +189,7 @@ jobs:
     with:
       checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
       coverage-artifact-pattern: coverage-locked-*
+      fail-on-problems: true
       pr-mode: true
     secrets: inherit
 
