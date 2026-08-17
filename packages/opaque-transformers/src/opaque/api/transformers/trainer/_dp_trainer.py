@@ -578,7 +578,7 @@ class DPTrainer:
         # log row averages over the right window.  The tensor stays on
         # device so the DDP gather of ``tr_loss`` needs no
         # extra device migration.
-        self._tr_loss: torch.Tensor = torch.tensor(0.0, device=self._device)
+        self._tr_loss: Tensor = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged: int = 0
         # Token-count bookkeeping.
