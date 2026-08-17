@@ -183,6 +183,9 @@ coverage:
 
 failureConditions:
   severityThresholds:
+    # The inspected policy is deliberately clean; any unsuppressed finding is
+    # a CI failure rather than only critical-severity findings.
+    any: 0
     critical: 0
   testCoverageThresholds:
     fresh: 80
