@@ -23,13 +23,12 @@ private callable workflows described below.
 ### `.github/actions/setup-python`
 
 This composite action installs the pinned Python version and optionally uv. Use
-`install-uv: "false"` for Python-only jobs. On GitHub-hosted runners,
-`setup-uv` uses its standard pruned artifact cache; virtual environments are not
-cached. The locked Linux amd64 test matrix retains pre-built wheels in a single
-cache written by its `opaque-engine` shard; Qodana restores that cache for its
-identical all-package environment. Release-capable called workflows keep pinned
-external setup steps inline so checking out an older release tag cannot remove
-the local action implementation.
+`install-uv: "false"` for Python-only jobs. uv cache restore/save is disabled
+repository-wide: caching a full all-extras environment benefits only one
+platform/dependency combination, while the pruned cache omits the pre-built
+wheels that dominate installation time. Release-capable called workflows keep
+pinned external setup steps inline so checking out an older release tag cannot
+remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
