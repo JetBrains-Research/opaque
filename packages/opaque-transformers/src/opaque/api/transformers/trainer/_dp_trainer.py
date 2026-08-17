@@ -578,7 +578,7 @@ class DPTrainer:
         # log row averages over the right window.  The tensor stays on
         # device so the DDP gather of ``tr_loss`` needs no
         # extra device migration.
-        self._tr_loss = torch.tensor(0.0, device=self._device)
+        self._tr_loss: torch.Tensor = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged: int = 0
         # Token-count bookkeeping.
@@ -1782,7 +1782,7 @@ class DPTrainer:
                     # the user sees the honest signal instead of a
                     # smoothed-over fake curve.
                     tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                    self._tr_loss = self._tr_loss + tr_loss_step
+                    self._tr_loss = torch.add(self._tr_loss, tr_loss_step)
                 # Token counting.
                 if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
@@ -3963,7 +3963,7 @@ class DPTrainer:
             smoothed_loss = tr_loss_scalar / window
             # HF parity: accumulate into _total_loss_scalar, then reset tr_loss.
             self._total_loss_scalar += tr_loss_scalar
-            self._tr_loss -= self._tr_loss  # zero in place
+            self._tr_loss = torch.zeros_like(self._tr_loss)
             self._globalstep_last_logged = global_step
             # HF parity: log the LR that was just applied to the optimizer
             # update we performed for ``global_step``.  Inside torchopt the
