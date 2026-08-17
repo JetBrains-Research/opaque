@@ -132,7 +132,8 @@ profile:
 exclude:
   - name: All
     paths:
-      - .github
+      - .github/actions
+      - .github/workflows
   - name: PyUnresolvedReferencesInspection
     paths:
       - docs/tutorials
