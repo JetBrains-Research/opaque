@@ -9,7 +9,7 @@ private reusable components described below.
 | Workflow | Trigger | Responsibility |
 |---|---|---|
 | `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation; development-wheel publication; and draft-release updates. |
+| `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation; development-wheel publication; and draft-release updates. |
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
