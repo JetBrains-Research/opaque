@@ -1,236 +1,173 @@
 name: Release
 
-# Fires when a draft Release is published (or a Release is created
-# directly via `gh release create`). Publishing creates the git tag at
-# `target_commitish` (default: main HEAD). Drafts are maintained on
-# every main merge by the `upsert-draft` job in ci.yml.
-
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to resume.
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
+  id-token: write
+  pages: write
+
+concurrency:
+  group: publish-release-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Release ref validation and package discovery
-  # ---------------------------------------------------------------------------
-  tag-guard:
-    name: Verify tag is on main
+  resolve:
+    name: Verify published Release assets
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      target_sha: ${{ steps.manifest.outputs.target_sha }}
+      version: ${{ steps.manifest.outputs.version }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
-      - name: Fetch main
-        run: git fetch origin main
-      - name: Check tag commit is reachable from origin/main
+          ref: main
+
+      - name: Resolve published release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from origin/main."
+          set -euo pipefail
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\.(alpha|beta|rc|post)[0-9]+)?$ ]]; then
+            echo "::error::Unsupported release tag: $REQUESTED_TAG"
             exit 1
           fi
-          echo "Tag $GITHUB_REF_NAME is on main — proceeding."
+          gh api "/repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG" > /tmp/release.json
+          if [[ "$(jq -r .draft /tmp/release.json)" != "false" ]]; then
+            echo "::error::$REQUESTED_TAG is not a published Release."
+            exit 1
+          fi
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
 
-  discover-packages:
-    name: Discover package matrices
-    needs: [tag-guard]
-    runs-on: ubuntu-latest
-    outputs:
-      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      test_shards: ${{ steps.discover.outputs.test_shards }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Download attached release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          mkdir assets
+          gh release download "$TAG" --dir assets --repo "$GITHUB_REPOSITORY"
+
+      - name: Resolve immutable tag
+        id: tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          echo "sha=$(git rev-parse "refs/tags/$TAG^{commit}")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release manifest and assets
+        id: manifest
+        run: >-
+          python3 .github/scripts/release.py verify-manifest
+          --asset-dir assets
+          --manifest assets/release-manifest.json
+          --expected-repository "$GITHUB_REPOSITORY"
+          --expected-tag '${{ steps.release.outputs.tag }}'
+          --expected-target-sha '${{ steps.tag.outputs.sha }}'
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Retain verified publication input
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          ref: ${{ github.event.release.tag_name }}
-
-      - name: Discover packages
-        id: discover
-        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
-
-  # ---------------------------------------------------------------------------
-  # Rust tests
-  # ---------------------------------------------------------------------------
-  rust-tests:
-    name: Rust
-    needs: [tag-guard]
-    uses: ./.github/workflows/rust-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      include-slow: true
-
-  # ---------------------------------------------------------------------------
-  # Python tests
-  # ---------------------------------------------------------------------------
-  python-tests-linux-amd64:
-    name: Linux amd64
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      environment-name: linux-amd64
-      pytest-marker: not cuda and not mps
-      pytest-xdist: -n auto --dist loadscope
-      report-durations: true
-      runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 40
-
-  python-tests-minimum:
-    name: Minimum dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      allow-test-failure: true
-      checkout-ref: ${{ github.event.release.tag_name }}
-      dependency-selection: minimum
-      environment-name: minimum-dependencies
-      pytest-marker: not cuda and not mps and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.11"
-      report-durations: true
-      runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
-  python-tests-latest:
-    name: Latest dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      dependency-selection: latest
-      environment-name: latest-dependencies
-      pytest-marker: not cuda and not mps and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.12"
-      report-durations: true
-      runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
-  python-tests-macos-arm64:
-    name: macOS arm64
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      environment-name: mps
-      pytest-marker: not cuda
-      pytest-xdist: -n auto --dist loadscope
-      report-durations: true
-      runner: macos-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 40
-
-  python-tests-linux-arm64:
-    name: Linux arm64
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      environment-name: linux-aarch64
-      pytest-marker: not cuda and not mps
-      pytest-xdist: -n auto --dist loadscope
-      report-durations: true
-      runner: ubuntu-24.04-arm
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
-  python-tests-cuda:
-    name: CUDA
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      environment-name: cuda
-      pytest-marker: cuda
-      pytest-xdist: -rs
-      report-durations: true
-      runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
-      timeout-minutes: 40
-
-  build-distributions:
-    name: Build
-    needs: [discover-packages, tag-guard]
-    uses: ./.github/workflows/build-distributions.yml
-    with:
-      artifact-prefix: wheels
-      checkout-ref: ${{ github.event.release.tag_name }}
-      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
-      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
-      retention-days: 90
-
-  validate-release-distributions:
-    name: Validate
-    needs: [build-distributions]
-    uses: ./.github/workflows/validate-distributions.yml
-    with:
-      artifact-prefix: wheels
-
-  merge-wheels:
-    name: Merge wheels into single artifact
-    needs: [build-distributions, validate-release-distributions]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: release-wheels
-          pattern: wheels-*
-          delete-merged: true
-          retention-days: 90
+          name: publication-candidate
+          path: assets/
+          retention-days: 14
 
   publish:
-    name: Publish to JetBrains Packages + attach Release assets
-    needs:
-      - merge-wheels
-      - python-tests-linux-amd64
-      - python-tests-minimum
-      - python-tests-latest
-      - python-tests-macos-arm64
-      - python-tests-linux-arm64
-      - python-tests-cuda
-      - rust-tests
+    name: Publish attached assets to JetBrains Packages
+    needs: [resolve]
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      contents: write
+      actions: read
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
 
-      - name: Download all wheels
+      - name: Download verified publication input
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: release-wheels
-          path: dist/
-
-      - name: List wheels
-        run: |
-          echo "Releasing ${{ github.event.release.tag_name }}. Artifacts:"
-          ls -lh dist/*.whl dist/*.tar.gz
+          name: publication-candidate
+          path: assets
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: false
 
-      - name: Publish release wheels to JetBrains Packages
+      - name: Reverify publication input
+        run: >-
+          python3 .github/scripts/release.py verify-manifest
+          --asset-dir assets
+          --manifest assets/release-manifest.json
+          --expected-repository "$GITHUB_REPOSITORY"
+          --expected-tag '${{ needs.resolve.outputs.tag }}'
+          --expected-target-sha '${{ needs.resolve.outputs.target_sha }}'
+
+      - name: Publish or verify every distribution
         env:
           TWINE_USERNAME: ${{ vars.JETBRAINS_PACKAGES_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.JETBRAINS_PACKAGES_TOKEN }}
         run: |
+          set -euo pipefail
           uv run --isolated --no-project --with twine==6.2.0 \
-            python .github/scripts/twine_upload.py upload \
+            python .github/scripts/publish_release.py \
+            --asset-dir assets \
+            --manifest assets/release-manifest.json \
             --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
-            dist/*.whl dist/*.tar.gz
+            --simple-url https://packages.jetbrains.team/pypi/p/fed/python/simple/ \
+            | tee /tmp/publication.txt
 
-      - name: Attach wheels to Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write package publication summary
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" dist/*.whl dist/*.tar.gz \
-            --clobber --repo "$GITHUB_REPOSITORY"
+          {
+            echo "## Package publication"
+            echo
+            echo '```text'
+            cat /tmp/publication.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-docs:
+    name: Deploy immutable release documentation
+    needs: [resolve, publish]
+    permissions:
+      contents: write
+      id-token: write
+      pages: write
+    uses: JetBrains-Research/opaque/.github/workflows/docs.yml@main
+    with:
+      checkout_ref: ${{ needs.resolve.outputs.target_sha }}
+      release_version: ${{ needs.resolve.outputs.version }}
+
+  complete:
+    name: Release deployment complete
+    needs: [resolve, publish, deploy-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write completion summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release deployed
+
+          \`${{ needs.resolve.outputs.tag }}\` was published from
+          \`${{ needs.resolve.outputs.target_sha }}\`.
+
+          The attached distributions are present in JetBrains Packages and
+          documentation \`${{ needs.resolve.outputs.version }}\` is deployed.
+          EOF

@@ -312,7 +312,7 @@ uv run mkdocs build
 Docs are deployed with `mike` and versioned on `gh-pages`.
 
 - **Push to `main`** updates the rolling docs alias: `latest`
-- **Push tag `vX.Y.Z`** publishes immutable docs version: `X.Y.Z`
+- **Publish GitHub Release `vX.Y.Z`** publishes immutable docs version: `X.Y.Z`
 - Default docs version remains `latest`
 
 This keeps release docs stable while allowing continuous docs updates on `main`.
@@ -336,34 +336,70 @@ page. There is no `CHANGELOG.md` to maintain.
 |---|---|---|
 | PR push | `0.X.Y.devN+pr.<num>.g<sha>` | workflow artifacts on the PR's Actions run (14-day retention) |
 | Push to `main` | `0.X.Y.devN+g<sha>` | JetBrains Packages (dev channel) |
+| Prepared draft `vX.Y.Z` | `X.Y.Z` | Git tag + draft GitHub Release assets |
 | Published Release `vX.Y.Z` | `X.Y.Z` | JetBrains Packages + GitHub Release assets |
 
 ### Releasing
 
-1. **Let the draft maintain itself.** On every main merge, `ci.yml`
-   upserts a single open draft Release for the next-patch version
-   (`v0.2.2` if last stable was `v0.2.1`). The draft body has three
-   fenced sections — AI-summarized highlights, `git-cliff`'s "What's
-   changed", and contributors — all refreshed on each main merge.
-2. **Prep in the GitHub Releases UI.** Open the draft, edit the title
-   or tag if you want a different bump (`v0.3.0` for a minor release,
-   `v0.3.0.rc1` for a release candidate), and type hand-written prose
-   anywhere outside the `<!-- *:begin --> ... <!-- *:end -->` fences
-   — those survive the next refresh.
-3. **Click Publish.** `release.yml` runs:
-   - `tag-guard` verifies the tag's commit is reachable from `origin/main`.
-   - Matrix builds: 7 Python wheels + `opaque-accounting` for
-     linux-{amd64, arm64} and macos-arm64.
-   - Wheels publish to JetBrains Packages at the clean version.
-   - Wheels attach to the Release as assets.
+1. **Choose the release line.** Open **Actions → Prepare Release** and use
+   GitHub's **Use workflow from** selector:
+   - For a new `X.Y` line, select `main` and enter the complete version
+     (`X.Y.Z`, `X.Y.Z.rcN`, and so on). Preparation fails if
+     `release/X.Y` already exists.
+   - For an existing line, select `release/X.Y`. Leave the version blank to
+     infer the next stable patch from the latest reachable `vX.Y.Z` tag, or
+     enter an explicit matching version for a prerelease, post-release, or
+     interrupted preparation.
+   - Any other source branch, a tag selection, or an `X.Y` mismatch fails
+     before release work starts.
+2. **Prepare the immutable candidate.** The workflow resolves an exact source
+   SHA and tag range, generates notes, runs the release Python and Rust tests,
+   builds every lockstep wheel and sdist, validates the distributions, and
+   records SHA-256 digests. Only after all gates pass does a release from
+   `main` create `release/X.Y` at that SHA. Preparation then creates the
+   immutable tag and a draft GitHub Release containing the final artifacts and
+   checksum manifest.
+3. **Review the draft.** Inspect its notes and attached files. The generated
+   body retains the AI highlights, `git-cliff` "What's changed" section, and
+   contributors section. Handwritten prose outside
+   `<!-- *:begin --> ... <!-- *:end -->` fences survives preparation reruns.
+4. **Click Publish release.** This is the human promotion action. `release.yml`
+   verifies the attached candidate, uploads those exact files to JetBrains
+   Packages, and deploys immutable documentation. It performs no tests or
+   builds, so normal reruns are fast.
+
+### Maintenance release lines
+
+The first green release of an `X.Y` series creates `release/X.Y`
+automatically. Subsequent fixes land on `main` first and are backported through
+ordinary pull requests to each maintained release branch. Prepare each patch
+from its own branch; for example, `v1.1.2` notes are generated from the exact
+`v1.1.1..<selected release/1.1 SHA>` range even when `release/1.2` is also
+active.
 
 ### Release-note conventions
 
-The draft body is generated from Conventional Commit messages via
-`git-cliff`; keeping PR titles conventional is what makes this
-pipeline work. See the [Commit Messages](#commit-messages) section
-above for the accepted types and their mapping to release-note
-sections.
+The draft body is generated from Conventional Commit messages in the resolved
+release range via `git-cliff`; keeping PR titles conventional is what makes
+this pipeline work. See the [Commit Messages](#commit-messages) section above
+for the accepted types and their mapping to release-note sections.
+
+### Recovering a failed release
+
+- If preparation fails before the draft is ready, fix the source branch and
+  run **Prepare Release** again. No package has been published, so the same
+  version remains available.
+- If an initial preparation created `release/X.Y` or its tag but failed while
+  finalizing the draft, rerun from `release/X.Y` with the same explicit
+  version. Existing tags are accepted only when they still point to the
+  selected SHA.
+- If deployment fails after **Publish release**, rerun its failed jobs. If the
+  workflow itself needs a fix, merge that fix to `main`, manually run
+  **Release** from `main`, and enter the existing tag. Recovery reuses and
+  verifies the attached Release assets. Existing registry files count as
+  complete only when their SHA-256 digest matches.
+- If a public artifact is defective rather than merely incompletely deployed,
+  mark or yank that version and publish a corrected patch.
 
 ### Manual local release smoke-test
 
@@ -403,16 +439,10 @@ git checkout -- pyproject.toml \
 
 ### Yanking a bad release
 
-If a release is broken, delete the tag + GitHub Release, then recut:
-
-```bash
-git tag -d v0.2.0
-git push --delete origin v0.2.0
-# Delete the GitHub Release via gh CLI or UI; delete the wheel from
-# JetBrains Packages (delete the published version from the package registry).
-```
-
-Then prep a fresh draft for `v0.2.1` with the fix.
+Published tags and versions are immutable: never delete, recreate, or move
+them. Clearly mark the GitHub Release as broken, yank or otherwise withdraw
+the package version using the registry's supported operation, backport the
+fix, and prepare the next patch from `release/X.Y`.
 
 ---
 

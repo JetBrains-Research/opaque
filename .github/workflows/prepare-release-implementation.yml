@@ -1,0 +1,626 @@
+name: Prepare release implementation
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Full selected branch ref from the dispatching workflow.
+        required: true
+        type: string
+      source_sha:
+        description: Immutable selected branch SHA from the dispatching workflow.
+        required: true
+        type: string
+      version:
+        description: Explicit version, or blank to infer a maintenance patch.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  plan:
+    name: Resolve release and generate notes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read
+    outputs:
+      base_tag: ${{ steps.plan.outputs.base_tag }}
+      commit_range: ${{ steps.plan.outputs.commit_range }}
+      create_branch: ${{ steps.plan.outputs.create_branch }}
+      maintenance_branch: ${{ steps.plan.outputs.maintenance_branch }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      source_branch: ${{ steps.plan.outputs.source_branch }}
+      tag: ${{ steps.plan.outputs.tag }}
+      target_sha: ${{ steps.plan.outputs.target_sha }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - name: Check out selected source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_sha }}
+
+      - name: Fetch release refs
+        run: |
+          git fetch --force origin \
+            '+refs/heads/*:refs/remotes/origin/*' \
+            '+refs/tags/*:refs/tags/*'
+
+      - name: Check out current release tooling
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          path: .release-tooling
+          ref: main
+
+      - name: Resolve release plan
+        id: plan
+        run: >-
+          python3 .release-tooling/.github/scripts/release.py plan
+          --repo .
+          --source-ref '${{ inputs.source_ref }}'
+          --source-sha '${{ inputs.source_sha }}'
+          --version '${{ inputs.version }}'
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Find existing matching draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[][] | select(.tag_name == \"$TAG\")" > /tmp/release.json
+          if [[ -s /tmp/release.json ]]; then
+            if [[ "$(jq -r .draft /tmp/release.json)" != "true" ]]; then
+              echo "::error::Release $TAG is already published."
+              exit 1
+            fi
+            jq -r '.body // ""' /tmp/release.json > /tmp/body_existing.md
+          else
+            : > /tmp/body_existing.md
+          fi
+
+      - name: Generate git-cliff section
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4
+        with:
+          config: .release-tooling/cliff.toml
+          args: ${{ steps.plan.outputs.commit_range }} --tag ${{ steps.plan.outputs.tag }} --strip header
+        env:
+          OUTPUT: AUTO_SECTION.md
+
+      - name: Install gh models extension
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh extension install github/gh-models
+
+      - name: Generate AI highlights
+        env:
+          BASE_TAG: ${{ steps.plan.outputs.base_tag }}
+          COMMIT_RANGE: ${{ steps.plan.outputs.commit_range }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_BRANCH: ${{ steps.plan.outputs.source_branch }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git log "$COMMIT_RANGE" --format='- %s' --no-merges > /tmp/commits.txt
+
+          if [[ ! -s /tmp/commits.txt ]]; then
+            echo "<!-- No unreleased commits yet. -->" > /tmp/ai_highlights.md
+            exit 0
+          fi
+
+          cat > /tmp/prompt.md <<EOF
+          You are summarizing release changes for Opaque, a PyTorch
+          differential-privacy library (DP-SGD, DP-FTRL, privacy accounting).
+
+          Below are the commits for $TAG from $SOURCE_BRANCH, after
+          ${BASE_TAG:-the beginning of history}. Produce 3–7 release highlights
+          for library users.
+
+          Rules:
+          - Return only a markdown bulleted list. No preamble, no headers, no code fences.
+          - Group related commits into one bullet; deduplicate overlap.
+          - Emphasize user-facing impact (APIs, behavior, correctness).
+          - Skip pure refactors, chore, test, or ci commits unless they change user-visible behavior.
+          - Use imperative present tense ("Add", "Fix", "Document").
+
+          Commits:
+
+          $(cat /tmp/commits.txt)
+          EOF
+
+          if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_highlights.md 2>/tmp/ai_err; then
+            echo "AI summary failed: $(cat /tmp/ai_err)" >&2
+            echo "<!-- AI summary unavailable. -->" > /tmp/ai_highlights.md
+          fi
+
+      - name: Extract contributors
+        env:
+          BASE_TAG: ${{ steps.plan.outputs.base_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ steps.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          : > /tmp/contributor_logins.txt
+          if [[ -n "$BASE_TAG" ]]; then
+            gh api --paginate \
+              "/repos/$GITHUB_REPOSITORY/compare/${BASE_TAG}...${TARGET_SHA}?per_page=100" \
+              --jq '.commits[].author.login // empty' > /tmp/contributor_logins.txt
+          else
+            while read -r sha; do
+              gh api "/repos/$GITHUB_REPOSITORY/commits/$sha" \
+                --jq '.author.login // empty'
+            done < <(git rev-list --reverse "$TARGET_SHA") > /tmp/contributor_logins.txt
+          fi
+
+          python3 - <<'PY' > /tmp/contributors.md
+          from pathlib import Path
+
+          logins = Path("/tmp/contributor_logins.txt").read_text().splitlines()
+          unique = list(dict.fromkeys(
+              login for login in logins
+              if login and not login.endswith("[bot]")
+          ))
+          if unique:
+              print("Thanks to " + ", ".join(f"@{login}" for login in unique) + " for contributions to this release.")
+          else:
+              print("<!-- No contributors to credit. -->")
+          PY
+
+      - name: Render release notes
+        run: >-
+          python3 .release-tooling/.github/scripts/release.py render-notes
+          --existing-body /tmp/body_existing.md
+          --ai-highlights /tmp/ai_highlights.md
+          --auto-notes AUTO_SECTION.md
+          --contributors /tmp/contributors.md
+          --output /tmp/release-body.md
+
+      - name: Collect release metadata
+        run: |
+          mkdir release-metadata
+          cp /tmp/ai_highlights.md release-metadata/
+          cp /tmp/contributors.md release-metadata/
+          cp /tmp/release-body.md release-metadata/
+          cp AUTO_SECTION.md release-metadata/
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-metadata
+          path: release-metadata/
+          retention-days: 90
+
+      - name: Write plan summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release candidate
+
+          | Field | Value |
+          |---|---|
+          | Source branch | \`${{ steps.plan.outputs.source_branch }}\` |
+          | Maintenance branch | \`${{ steps.plan.outputs.maintenance_branch }}\` |
+          | Target SHA | \`${{ steps.plan.outputs.target_sha }}\` |
+          | Base tag | \`${{ steps.plan.outputs.base_tag || '<none>' }}\` |
+          | Version | \`${{ steps.plan.outputs.version }}\` |
+          | Tag | \`${{ steps.plan.outputs.tag }}\` |
+          | Commit range | \`${{ steps.plan.outputs.commit_range }}\` |
+          EOF
+
+  discover-packages:
+    name: Discover package matrices
+    needs: [plan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
+      test_shards: ${{ steps.discover.outputs.test_shards }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.plan.outputs.target_sha }}
+
+      - name: Discover packages
+        id: discover
+        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
+
+  python-tests-linux-amd64:
+    name: Release Linux amd64
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-minimum:
+    name: Release minimum dependencies
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      allow-test-failure: true
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Release latest dependencies
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: Release macOS arm64
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+
+  python-tests-linux-arm64:
+    name: Release Linux arm64
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda:
+    name: Release CUDA
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 40
+
+  release-rust-tests:
+    name: Release Rust tests
+    needs: [plan]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/rust-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      include-slow: true
+
+  build-distributions:
+    name: Build release distributions
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/build-distributions.yml@main
+    with:
+      artifact-prefix: candidate
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
+      retention-days: 90
+      version: ${{ needs.plan.outputs.version }}
+
+  validate-distributions:
+    name: Validate release distributions
+    needs: [plan, build-distributions]
+    permissions:
+      actions: read
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/validate-distributions.yml@main
+    with:
+      artifact-prefix: candidate
+
+  assemble-candidate:
+    name: Assemble immutable release candidate
+    needs:
+      - plan
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+      - release-rust-tests
+      - build-distributions
+      - validate-distributions
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out current release tooling
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+
+      - name: Download distributions
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: candidate-*
+          path: candidate/assets
+          merge-multiple: true
+
+      - name: Download release metadata
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-metadata
+          path: candidate/metadata
+
+      - name: Create candidate manifest
+        run: >-
+          python3 .github/scripts/release.py create-manifest
+          --asset-dir candidate/assets
+          --output candidate/assets/release-manifest.json
+          --repository "$GITHUB_REPOSITORY"
+          --tag '${{ needs.plan.outputs.tag }}'
+          --version '${{ needs.plan.outputs.version }}'
+          --target-sha '${{ needs.plan.outputs.target_sha }}'
+          --source-branch '${{ needs.plan.outputs.source_branch }}'
+          --maintenance-branch '${{ needs.plan.outputs.maintenance_branch }}'
+          --base-tag '${{ needs.plan.outputs.base_tag }}'
+          --preparation-run-id "$GITHUB_RUN_ID"
+
+      - name: Verify candidate manifest
+        run: >-
+          python3 .github/scripts/release.py verify-manifest
+          --asset-dir candidate/assets
+          --manifest candidate/assets/release-manifest.json
+          --expected-repository "$GITHUB_REPOSITORY"
+          --expected-tag '${{ needs.plan.outputs.tag }}'
+          --expected-target-sha '${{ needs.plan.outputs.target_sha }}'
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-candidate
+          path: candidate/
+          retention-days: 90
+
+  create-draft:
+    name: Create complete draft Release
+    needs: [plan, assemble-candidate]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out selected source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.plan.outputs.target_sha }}
+
+      - name: Check out current release tooling
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          path: .release-tooling
+          ref: main
+
+      - name: Download release candidate
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-candidate
+          path: candidate
+
+      - name: Verify candidate before mutation
+        run: >-
+          python3 .release-tooling/.github/scripts/release.py verify-manifest
+          --asset-dir candidate/assets
+          --manifest candidate/assets/release-manifest.json
+          --expected-repository "$GITHUB_REPOSITORY"
+          --expected-tag '${{ needs.plan.outputs.tag }}'
+          --expected-target-sha '${{ needs.plan.outputs.target_sha }}'
+
+      - name: Create maintenance branch
+        if: needs.plan.outputs.create_branch == 'true'
+        env:
+          BRANCH: ${{ needs.plan.outputs.maintenance_branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
+            if [[ "$remote_sha" != "$TARGET_SHA" ]]; then
+              echo "::error::$BRANCH was created at $remote_sha while this candidate was running; it will not be moved."
+              exit 1
+            fi
+            echo "$BRANCH already exists at the candidate SHA; continuing an interrupted finalization."
+          else
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$BRANCH" \
+              -f sha="$TARGET_SHA"
+          fi
+
+      - name: Inspect immutable release tag
+        id: tag
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+            tagged_sha=$(git rev-parse "refs/tags/$TAG^{commit}")
+            if [[ "$tagged_sha" != "$TARGET_SHA" ]]; then
+              echo "::error::$TAG points to $tagged_sha, not $TARGET_SHA."
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify selected maintenance branch has not moved
+        if: needs.plan.outputs.create_branch != 'true' && steps.tag.outputs.exists != 'true'
+        env:
+          BRANCH: ${{ needs.plan.outputs.maintenance_branch }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
+          if [[ "$remote_sha" != "$TARGET_SHA" ]]; then
+            echo "::error::$BRANCH moved from $TARGET_SHA to ${remote_sha:-<missing>}; prepare again."
+            exit 1
+          fi
+
+      - name: Create immutable release tag
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$TARGET_SHA"
+
+      - name: Refresh release notes from live draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[][] | select(.tag_name == \"$TAG\")" > /tmp/release.json
+          if [[ -s /tmp/release.json ]]; then
+            if [[ "$(jq -r .draft /tmp/release.json)" != "true" ]]; then
+              echo "::error::Release $TAG is already published."
+              exit 1
+            fi
+            jq -r '.body // ""' /tmp/release.json > /tmp/body_existing.md
+          else
+            : > /tmp/body_existing.md
+          fi
+
+          python3 .release-tooling/.github/scripts/release.py render-notes \
+            --existing-body /tmp/body_existing.md \
+            --ai-highlights candidate/metadata/ai_highlights.md \
+            --auto-notes candidate/metadata/AUTO_SECTION.md \
+            --contributors candidate/metadata/contributors.md \
+            --output /tmp/release-body.md
+
+      - name: Create or update draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -s /tmp/release.json ]]; then
+            release_id=$(jq -r .id /tmp/release.json)
+            gh api --method PATCH "/repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -f body="$(cat /tmp/release-body.md)" \
+              -f target_commitish="$TARGET_SHA" \
+              -F prerelease="$PRERELEASE"
+          else
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" \
+              -f target_commitish="$TARGET_SHA" \
+              -f name="$TAG" \
+              -f body="$(cat /tmp/release-body.md)" \
+              -F draft=true \
+              -F prerelease="$PRERELEASE"
+          fi
+
+      - name: Attach final release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          gh release upload "$TAG" candidate/assets/* \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify assets from the draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          mkdir verify-assets
+          gh release download "$TAG" \
+            --dir verify-assets \
+            --repo "$GITHUB_REPOSITORY"
+          python3 .release-tooling/.github/scripts/release.py verify-manifest \
+            --asset-dir verify-assets \
+            --manifest verify-assets/release-manifest.json \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-tag "$TAG" \
+            --expected-target-sha '${{ needs.plan.outputs.target_sha }}'
+
+      - name: Write draft summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          release_url=$(gh release view "$TAG" --json url --jq .url --repo "$GITHUB_REPOSITORY")
+          {
+            echo "## Draft Release is ready"
+            echo
+            echo "Review [$TAG]($release_url), including its notes and attached final artifacts."
+            echo "Publishing that draft starts the deployment-only Release workflow."
+            echo
+            echo "### Attached assets"
+            echo
+            echo '```text'
+            sha256sum verify-assets/*
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
