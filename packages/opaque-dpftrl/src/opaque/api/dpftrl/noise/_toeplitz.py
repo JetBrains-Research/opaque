@@ -192,8 +192,8 @@ def inverse_as_streaming_matrix(
             recurrence inside the closed-form row norms.  Validated at
             construction: raises ``ValueError`` unless
             ``toeplitz(coef) @ toeplitz(inverse_coefficients)`` is the
-            identity.  That check spans ``max(len(coef), len(inverse_
-            coefficients))`` terms, so the hint is only trusted out to that
+            identity.  That check spans as many terms as the longer of the
+            two coefficient windows, so the hint is only trusted out to that
             horizon; row norms past it are computed by the inversion
             recurrence instead, because a hint that merely agrees with the
             inverse over the checked window may still have a nonzero tail
