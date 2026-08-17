@@ -33,12 +33,34 @@ class TestScheduleFreeWrapper:
             torch.testing.assert_close(state.x[k], params[k])
         assert state.step == 0
 
-    def test_eval_params_helper(self, params):
-        opt = schedule_free(adamw(lr=1e-3))
+    def test_published_x_differs_from_train_params_mid_run(self, params, grads):
+        opt = schedule_free(adamw(lr=1e-2), beta=0.9)
         state = opt.init(params)
-        ep = state.x
-        for k in params:
-            torch.testing.assert_close(ep[k], state.x[k])
+        y = params
+        for _ in range(3):
+            delta, state = opt.update(grads, state, params=y)
+            y = torchopt.apply_updates(y, delta)
+        # Mid-run, the published x differs from the trainer's y iterate.
+        assert any(not torch.equal(state.x[k], y[k]) for k in y)
+
+    def test_published_x_matches_hand_computed_average(self, params, grads):
+        # Constant grads under SGD: z_t = p0 - t*lr*g, so
+        # x_1 = z_1 (w=1) and x_2 = 0.5*x_1 + 0.5*z_2.
+        lr, beta = 0.1, 0.5
+        p0 = {k: v.clone() for k, v in params.items()}  # pristine reference
+        opt = schedule_free(torchopt.sgd(lr), beta=beta)
+        state = opt.init(params)
+        y = params
+        for _ in range(2):
+            delta, state = opt.update(grads, state, params=y)
+            # inplace=False: the default mutates ``params`` tensors in place,
+            # which would corrupt the hand-computed reference below.
+            y = torchopt.apply_updates(y, delta, inplace=False)
+        for k in p0:
+            z1 = p0[k] - lr * grads[k]
+            z2 = p0[k] - 2 * lr * grads[k]
+            expected_x = 0.5 * z1 + 0.5 * z2
+            torch.testing.assert_close(state.x[k], expected_x, atol=1e-6, rtol=1e-5)
 
     def test_update_advances_step_and_x(self, params, grads):
         opt = schedule_free(adamw(lr=1e-2), beta=0.9)

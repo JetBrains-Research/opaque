@@ -3,7 +3,7 @@
 This guide is for contributors working from a GitHub fork or a local clone of
 Opaque. It summarizes the maintained workflow in
 [CONTRIBUTING.md](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md);
-consult that file for the full test, documentation, and pull-request conventions.
+consult that file for the full testing, documentation, and pull-request conventions.
 
 ## Get the source
 
@@ -38,11 +38,6 @@ contribute to the shared `opaque` and `opaque.api` PEP 420 namespaces. Package
 implementations live under `packages/opaque-*/src/opaque/api/`; the matching
 `src/opaque/` directories are public façades that re-export the supported user
 API.
-
-Keep the namespace roots implicit: do not add `opaque/__init__.py`,
-`opaque/api/__init__.py`, or `opaque/api/accounting/__init__.py`. Place tests
-in the package that owns every dependency they import, and use public façade
-imports in user-facing documentation and examples.
 
 The accounting package includes the Rust/PyO3 extension. Run its Cargo tests
 from the repository root along with the relevant Python tests when changing the

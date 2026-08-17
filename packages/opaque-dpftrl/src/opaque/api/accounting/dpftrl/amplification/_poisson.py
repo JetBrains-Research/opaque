@@ -136,6 +136,8 @@ class CyclicPoisson(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         """K-step Poisson-amplified PLD using N-tuned strategy quantities.
 
@@ -155,11 +157,17 @@ class CyclicPoisson(DpHorizonProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
         s = self.inner.strategy
         if isinstance(s, BandMfStrategy):
-            sensitivity = s.sensitivity(n_steps=self.n_steps)
+            sensitivity = s.sensitivity(
+                n_steps=self.n_steps,
+                min_sep=self.min_sep,
+                max_participations=self.max_participations,
+            )
             effective_nm = self.inner.noise_multiplier / sensitivity
             bands = s.bands
             rounded = min(-(-n_steps // bands) * bands, self.n_steps)
@@ -198,6 +206,8 @@ class CyclicPoisson(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         return self.pld_at(
             self.n_steps,
@@ -205,6 +215,8 @@ class CyclicPoisson(DpHorizonProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
 

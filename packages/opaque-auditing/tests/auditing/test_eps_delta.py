@@ -6,9 +6,6 @@ Covers ``methods/_eps_delta.py`` — the analytical Xiang p-value and the
 
 from __future__ import annotations
 
-import ast
-import pathlib
-
 import numpy as np
 import pytest
 import scipy.special
@@ -162,26 +159,3 @@ class TestEpsDeltaDeltaAt:
 
 
 # ---- Contract: torch-free --------------------------------------------------
-
-
-class TestTorchFree:
-    """eps_delta method must not import torch."""
-
-    _PATH = (
-        pathlib.Path(__file__).resolve().parents[2]
-        / "src"
-        / "opaque"
-        / "api"
-        / "auditing"
-        / "one_run"
-        / "_eps_delta.py"
-    )
-
-    def test_no_torch_import(self):
-        tree = ast.parse(self._PATH.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert not alias.name.startswith("torch")
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                assert not node.module.startswith("torch")

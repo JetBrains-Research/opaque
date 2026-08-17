@@ -59,9 +59,9 @@ def _atomic_unit(proc: DpHorizonProcess) -> int:
 def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
     """K-step ε via ``per_step(proc) * K`` — the public API surface.
 
-    MC kwargs are read off the global ``acc.set_discretization`` config
-    when the underlying amplifier is MC-based; tests pin them with the
-    :func:`_seed_mc` fixture.
+    MC kwargs could be passed per call (``epsilon_at`` forwards
+    ``num_mc_samples`` / ``seed``); these tests pin them globally with the
+    :func:`_seed_mc` fixture so every call site resolves the same config.
     """
     if K <= 0:
         return Identity().epsilon_at(delta)
@@ -73,9 +73,10 @@ def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
 def _seed_mc():
     """Pin global MC discretization for MC-based amplifiers.
 
-    ``Repeated.pld()`` → ``repeated_pld(count)`` only accepts the core
-    discretization kwargs; MC sample budget / seed must come from the
-    global config.  Set globally for the duration of the test.
+    ``Repeated.pld()`` → ``repeated_pld(count)`` also forwards
+    ``num_mc_samples`` / ``seed`` per call; pinning them globally keeps
+    the shared helpers here parameter-free.  Set for the duration of the
+    test.
     """
     acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
     yield
@@ -116,6 +117,7 @@ class TestCyclicPoissonIdentity:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 10_000).epsilon_at(_DELTA)
 
+    @pytest.mark.slow
     def test_monotonic(self):
         proc = self._proc(200)
         prev = -math.inf
@@ -124,12 +126,14 @@ class TestCyclicPoissonIdentity:
             assert e >= prev - 1e-10, f"non-monotone at k={k}: {e} < {prev}"
             prev = e
 
+    @pytest.mark.slow
     def test_bounded_by_full(self):
         proc = self._proc(200)
         e_full = proc.epsilon_at(_DELTA)
         for k in [1, 50, 100, 199]:
             assert _eps_at(proc, k, _DELTA) <= e_full + 1e-10
 
+    @pytest.mark.slow
     def test_truncated_poisson_works(self):
         """K-prefix preserves the truncated-Poisson kwarg pair."""
         proc = ftrl_acc.poisson(
@@ -175,6 +179,7 @@ class TestCyclicPoissonBand:
         e_full = proc.epsilon_at(_DELTA)
         assert math.isclose(_eps_at(proc, 64, _DELTA), e_full, rel_tol=1e-12)
 
+    @pytest.mark.slow
     def test_sandwich_at_every_step(self):
         """For K = G·M + r: ε(G·M) ≤ ε(K) ≤ ε((G+1)·M) for r ∈ [0, M)."""
         proc = self._proc(n_steps=80, bands=8)
@@ -249,6 +254,7 @@ class TestBallsInBinsIdentity:
         assert _atomic_unit(self._proc(num_bins=10)) == 10
         assert _atomic_unit(self._proc(num_bins=4)) == 4
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -257,6 +263,7 @@ class TestBallsInBinsIdentity:
         e_direct = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         assert math.isclose(e_full, e_direct, rel_tol=1e-9)
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_monotonic(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -398,12 +405,43 @@ class TestKPrefixInvariants:
         proc = _build(amp, mech)
         assert _eps_via_step(proc, 0, _DELTA) == 0.0
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
-    def test_full_horizon_matches_proc(self, amp: str, mech: str):
+    def test_prefix_invariants(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        e_full_via_step = _eps_via_step(proc, proc.n_steps, _DELTA)
+        n, M = proc.n_steps, proc.atomic_unit
         e_full = _eps_full(proc, _DELTA)
-        assert math.isclose(e_full_via_step, e_full, rel_tol=1e-9)
+        checked_steps = {
+            1,
+            M,
+            n // 2,
+            n - 1,
+            *range(M, n + 1, M),
+            n,
+        }
+        epsilons = {K: _eps_via_step(proc, K, _DELTA) for K in checked_steps}
+
+        assert math.isclose(epsilons[n], e_full, rel_tol=1e-9)
+
+        # MC paths have transcript noise: 10% slack at the test budget.
+        bound_slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
+        for K in (1, M, n // 2, n - 1):
+            assert epsilons[K] <= e_full + bound_slack
+
+        assert epsilons[M] < e_full
+
+        # MC paths regenerate independent transcripts at each n_steps, so
+        # the per-K ε curve has MC noise; the monotone bound holds in
+        # expectation, with seed-dependent per-step gaps.  15% slack is
+        # empirically robust at the test's sample budget.
+        monotone_slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
+        prev = 0.0
+        steps = list(range(M, n + 1, M))
+        if steps[-1] != n:
+            steps.append(n)
+        for K in steps:
+            assert epsilons[K] >= prev - monotone_slack
+            prev = epsilons[K]
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_overshoot_step_raises(self, amp: str, mech: str):
@@ -412,41 +450,7 @@ class TestKPrefixInvariants:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_bounded_by_full(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        e_full = _eps_full(proc, _DELTA)
-        # MC paths have transcript noise: 10% slack at the test budget.
-        slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
-        for K in (1, proc.atomic_unit, proc.n_steps // 2, proc.n_steps - 1):
-            assert _eps_via_step(proc, K, _DELTA) <= e_full + slack
-
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_trend_increases(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        e_small = _eps_via_step(proc, proc.atomic_unit, _DELTA)
-        e_full = _eps_full(proc, _DELTA)
-        assert e_small < e_full
-
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_monotone_at_unit_boundaries(self, amp: str, mech: str):
-        proc = _build(amp, mech)
-        n, M = proc.n_steps, proc.atomic_unit
-        e_full = _eps_full(proc, _DELTA)
-        # MC paths regenerate independent transcripts at each n_steps, so
-        # the per-K ε curve has MC noise; the monotone bound holds in
-        # expectation, with seed-dependent per-step gaps.  15% slack is
-        # empirically robust at the test's sample budget.
-        slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
-        prev = 0.0
-        steps = list(range(M, n + 1, M))
-        if steps[-1] != n:
-            steps.append(n)
-        for K in steps:
-            e_K = _eps_via_step(proc, K, _DELTA)
-            assert e_K >= prev - slack
-            prev = e_K
-
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
         if _is_mc_proc(_build(amp, mech)):
@@ -462,11 +466,22 @@ class TestKPrefixInvariants:
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_supports_composition(self, amp: str, mech: str):
+        if (amp, mech) == ("BallsInBins", "IdentityMf"):
+            pytest.skip("covered by the slow identity-composition case")
         proc = _build(amp, mech)
         step = acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
         combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
         assert math.isfinite(combined.epsilon_at(_DELTA))
+
+
+@pytest.mark.slow
+@pytest.mark.usefixtures("_seed_mc")
+def test_balls_in_bins_identity_supports_composition():
+    proc = _build("BallsInBins", "IdentityMf")
+    step = acc.per_step(proc)
+    combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
+    assert math.isfinite(combined.epsilon_at(_DELTA))
 
 
 # ---------------------------------------------------------------------------

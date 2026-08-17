@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opaque-air"
 STATE_DIR="$CACHE_ROOT/startup"
 SYNC_STAMP="$STATE_DIR/dev-sync.sha256"
@@ -87,6 +87,8 @@ ensure_rust() {
 }
 
 persist_shell_env() {
+    # Persist the expansion for future shells.
+    # shellcheck disable=SC2016
     grep -q 'opaque uv/cargo PATH' "$HOME/.bashrc" 2>/dev/null || \
         printf '\n# opaque uv/cargo PATH\nexport PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"\n' >> "$HOME/.bashrc"
     grep -q 'PYTHONUNBUFFERED' "$HOME/.bashrc" 2>/dev/null || \

@@ -28,12 +28,9 @@ import importlib
 
 import torch
 
-# ``opaque-alignment`` forbids static imports of ``opaque.api.patches`` (see
-# ``tests/contracts/test_dependency_direction.py``) — patches is the optional
-# ``opaque-alignment[patches]`` extra, not a runtime dep. The contract test
-# uses an AST scan, so even a try-except'd ``import`` would trip it; we
-# resolve the kernel module dynamically via ``importlib.import_module`` so the
-# bridge stays optional without a static import node anywhere in this file.
+# Patches is the optional ``opaque-alignment[patches]`` extra, not a runtime
+# dependency. Resolve the kernel module dynamically so the bridge remains
+# optional.
 _LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
 _CE_KERNEL_PATH = "opaque.api.patches.kernels.cross_entropy"
 # Pure-PyTorch chunked kernel (Triton-free): the fused-CE path on MPS/CPU.

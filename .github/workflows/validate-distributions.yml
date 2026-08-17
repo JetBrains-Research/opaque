@@ -1,0 +1,76 @@
+name: Validate distributions
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: Prefix used by distribution build artifacts.
+        required: true
+        type: string
+
+jobs:
+  install-all:
+    name: opaque[all]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Install opaque[all] from built wheels
+        run: |
+          opaque_wheels=(dist/opaque-*.whl)
+          if [[ "${#opaque_wheels[@]}" -ne 1 ]]; then
+            echo "::error::Expected one opaque wheel, found ${#opaque_wheels[@]}"
+            exit 1
+          fi
+          uv venv --python 3.11 .artifact-venv
+          uv pip install \
+            --python .artifact-venv/bin/python \
+            --find-links dist \
+            --only-binary :all: \
+            "${opaque_wheels[0]}[all]"
+
+      - name: Run cross-stack scenario
+        run: |
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/.artifact-venv/bin/python" - <<'PY'
+          import math
+          from importlib.metadata import distributions, version
+
+          import opaque.dpftrl.accounting as dpftrl
+          import opaque.dpsgd.accounting as dpsgd
+          from opaque.dpftrl.noise import identity_strategy
+
+          umbrella_version = version("opaque")
+          opaque_versions = {
+              dist.metadata["Name"]: dist.version
+              for dist in distributions()
+              if (name := dist.metadata["Name"]) == "opaque"
+              or name.startswith("opaque-")
+          }
+          assert len(opaque_versions) > 1
+          assert set(opaque_versions.values()) == {umbrella_version}, opaque_versions
+
+          dpsgd_process = dpsgd.gaussian(1.0)
+          dpftrl_process = dpftrl.poisson(
+              dpftrl.mf_gaussian(1.0, identity_strategy()),
+              sample_rate=0.01,
+              n_steps=4,
+          )
+          epsilon = (dpsgd_process | dpftrl_process).epsilon_at(1e-5)
+          assert math.isfinite(epsilon) and epsilon > 0
+          print(f"opaque[all] cross-stack epsilon: {epsilon:.6f}")
+          PY

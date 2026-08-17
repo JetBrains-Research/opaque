@@ -30,6 +30,7 @@ import logging
 import math
 import os
 import shutil
+import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -253,6 +254,99 @@ class _TrainingContext:
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
+    # Predicted stop-at-ε crossing step (absolute), or ``None`` when the
+    # target is unreachable / unset / the accountant is Monte-Carlo based.
+    # See :func:`predict_stop_step`.
+    stop_at_step: int | None = None
+
+
+def predict_stop_step(
+    prefix_process: Any,
+    step_process: Any,
+    *,
+    target_epsilon: float,
+    delta: float,
+    k0: int,
+    horizon: int,
+) -> int | None:
+    """Predict the first accounted step where ε reaches ``target_epsilon``.
+
+    The accountant after ``k`` accrued steps is exactly
+    ``prefix ∘ step_process^(k - k0)`` — the per-step ``|=`` fold and the
+    ``Repeated`` (``*``) operator produce the same process — so for a
+    deterministic, monotone ε(k) the crossing step can be binary-searched
+    once at setup (~log2(horizon) ``epsilon_at`` probes) instead of being
+    measured during the training loop.
+
+    Returns the absolute step count in ``(k0, horizon]``, or ``None`` when
+    the target is not reached within the horizon or the ε sequence fails
+    the boundary monotonicity check (callers fall back to the log-boundary
+    stop check).
+    """
+    remaining = horizon - k0
+    if remaining < 1:
+        return None
+
+    cache: dict[int, float] = {}
+
+    def eps(j: int) -> float:
+        if j not in cache:
+            proc = (
+                step_process * j
+                if prefix_process is None
+                else prefix_process | (step_process * j)
+            )
+            cache[j] = proc.epsilon_at(delta)
+        return cache[j]
+
+    if eps(remaining) < target_epsilon:
+        return None
+    lo, hi = 1, remaining
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if eps(mid) >= target_epsilon:
+            hi = mid
+        else:
+            lo = mid + 1
+    # Guard against numerical non-monotonicity: the crossing must be a
+    # genuine boundary (ε(M-1) < target <= ε(M)); both probes are cached
+    # from the search, so the check is free.
+    if eps(lo) < target_epsilon or (lo > 1 and eps(lo - 1) >= target_epsilon):
+        log.warning(
+            "stop-at-ε prediction failed the monotone-boundary check near "
+            "step %d; falling back to the log-boundary check.",
+            k0 + lo,
+        )
+        return None
+    return k0 + lo
+
+
+@contextlib.contextmanager
+def _deep_json_recursion(limit: int = 30_000):
+    """Temporarily raise the recursion limit around stdlib json of deep
+    accountant wire dicts.
+
+    The DpProcess codec walks composition spines iteratively, but stdlib
+    ``json``'s C encoder/scanner still recurse once per nesting level and
+    hit the default limit near ~1000 — an accountant with a thousand-plus
+    heterogeneous accounted steps could otherwise not be checkpointed or
+    resumed.  Bounded and restored on exit; 30k covers >25k-step spines.
+
+    Do NOT raise the cap: the recursion limit is what keeps the json C
+    scanner inside the native stack (empirically a hard segfault near
+    depth 100k under limit 150k), and on Python 3.13+ the C recursion is
+    additionally capped by ``Py_C_RECURSION_LIMIT`` regardless of this
+    limit.  ``sys.setrecursionlimit`` is process-global; the save/load
+    paths are single-threaded per process (DDP is per-process), so the
+    temporary bump cannot race another thread's limit.
+    """
+    old = sys.getrecursionlimit()
+    if limit > old:
+        sys.setrecursionlimit(limit)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(old)
 
 
 class DPTrainer:
@@ -271,6 +365,15 @@ class DPTrainer:
     - ``get_eval_dataloader()`` — standard DataLoader
     - ``log()`` — append to state + fire callbacks
     """
+
+    #: eval_loss aggregation: ``True`` → weight per-example / batch losses by
+    #: their real (non ``-100``) token counts, reconstructing the corpus
+    #: per-token mean (HF CE parity; valid when the per-example loss is a
+    #: token-mean CE).  Subclasses whose eval loss is a per-example objective
+    #: in its own right (e.g. SFT ``dft``) set this ``False`` → plain
+    #: per-example mean, matching the training objective's fixed,
+    #: per-example-equal weighting (no data-dependent token-count divisor).
+    _eval_token_weighted_loss: bool = True
 
     def __init__(
         self,
@@ -354,6 +457,8 @@ class DPTrainer:
         self._compute_metrics = compute_metrics
         self._compute_loss_func = compute_loss_func
         self._preprocess_logits = preprocess_logits_for_metrics
+        self._warned_per_example_logits_only = False
+        self._warned_eval_on_train = False
         # Lazily-built per-example eval-loss closure (vmap'd).  Populated
         # by ``_get_eval_per_example_loss_fn`` on first use; reset to
         # ``None`` here so model rebinding can invalidate the cache.
@@ -475,7 +580,7 @@ class DPTrainer:
         # log row averages over the right window.  The tensor stays on
         # device so the DDP gather of ``tr_loss`` needs no
         # extra device migration.
-        self._tr_loss = torch.tensor(0.0, device=self._device)
+        self._tr_loss: Tensor = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged: int = 0
         # Token-count bookkeeping.
@@ -1035,13 +1140,45 @@ class DPTrainer:
                         a.privacy_target_epsilon,
                     )
                     return TrainOutput(
-                        global_step=self.state.global_step,
-                        training_loss=0.0,
-                        metrics={
+                        self.state.global_step,
+                        0.0,
+                        {
                             "privacy_epsilon": resumed_eps,
                             "privacy_delta": ctx.target_delta,
                         },
                     )
+
+        # Predict the stop-at-ε step once at setup (accounting is
+        # deterministic): the crossing step is binary-searchable up front, so
+        # the in-loop check becomes a free integer comparison (#392).  Scoped
+        # to the fixed-NM + target path on deterministic accountants; the
+        # Monte-Carlo PLDs (b_min_sep / balls_in_bins) are non-monotone in k
+        # and thread-count-sensitive, so they keep the log-boundary check as
+        # their stop mechanism.
+        a = self.args
+        if (
+            a.privacy_noise_multiplier is not None
+            and a.privacy_noise_multiplier > 0
+            and a.privacy_target_epsilon is not None
+            and a.sampling_mode not in ("b_min_sep", "balls_in_bins")
+            and self.state.global_step < ctx.total_steps
+        ):
+            ctx.stop_at_step = predict_stop_step(
+                ctx.accounting.process,
+                ctx.step_process,
+                target_epsilon=a.privacy_target_epsilon,
+                delta=ctx.target_delta,
+                k0=self.state.global_step,
+                horizon=ctx.total_steps,
+            )
+            if ctx.stop_at_step is not None:
+                log.info(
+                    "stop-at-ε: will stop after step %d of %d (target ε=%g at δ=%.2e)",
+                    ctx.stop_at_step,
+                    ctx.total_steps,
+                    a.privacy_target_epsilon,
+                    ctx.target_delta,
+                )
 
         try:
             return self._inner_training_loop(
@@ -1647,7 +1784,7 @@ class DPTrainer:
                     # the user sees the honest signal instead of a
                     # smoothed-over fake curve.
                     tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                    self._tr_loss = self._tr_loss + tr_loss_step
+                    self._tr_loss = torch.add(self._tr_loss, tr_loss_step)
                 # Token counting.
                 if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
@@ -1714,11 +1851,26 @@ class DPTrainer:
                     ignore_keys_for_eval=ignore_keys_for_eval,
                 )
 
+                # Stop-at-ε: free integer comparison against the predicted
+                # crossing step — after the accounted step and its
+                # log/save/eval gate, before the next batch fetch, so the
+                # resumable sampler never advances past ``global_step`` and a
+                # target reached exactly on the final step still sets the
+                # flag (checked before the ``total_steps`` ceiling) (#392).
+                if ctx.stop_at_step is not None and global_step >= ctx.stop_at_step:
+                    self.state.privacy_target_epsilon_reached = True
+                    self._control.should_training_stop = True
+                    log.info(
+                        "stop-at-ε: predicted budget boundary reached at step %d",
+                        global_step,
+                    )
+                    break
+
                 if self._control.should_training_stop:
                     break
                 if self._control.should_epoch_stop:
                     break
-                if a.max_steps > 0 and global_step >= a.max_steps:
+                if 0 < a.max_steps <= global_step:
                     break
                 # Hard ceiling at the calibrated horizon.  Noise was
                 # calibrated for exactly ``ctx.total_steps`` composed
@@ -1748,7 +1900,7 @@ class DPTrainer:
 
             if self._control.should_training_stop:
                 break
-            if a.max_steps > 0 and global_step >= a.max_steps:
+            if 0 < a.max_steps <= global_step:
                 break
             if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
@@ -1812,11 +1964,7 @@ class DPTrainer:
         if self.args.push_to_hub:
             _hub.push_to_hub(self, commit_message="End of training")
 
-        return TrainOutput(
-            global_step=global_step,
-            training_loss=train_loss,
-            metrics=metrics,
-        )
+        return TrainOutput(global_step, train_loss, metrics)
 
     # ------------------------------------------------------------------
     # training_step() — single DP-SGD step
@@ -2585,10 +2733,11 @@ class DPTrainer:
                 #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
                 #     example i's total CE; summing then dividing by the total
                 #     real-token count gives the same per-token mean.
-                # When labels aren't exposed (rare), fall back to per-example
-                # weighting.
+                # When labels aren't exposed (rare), or the trainer opted out
+                # of token weighting (``_eval_token_weighted_loss=False``),
+                # fall back to the plain per-example mean.
                 if loss is not None:
-                    if labels is not None:
+                    if labels is not None and self._eval_token_weighted_loss:
                         # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
                         # position 0 via the internal shift); the per-token-mean
                         # weighting denominator must match that count.
@@ -2607,7 +2756,8 @@ class DPTrainer:
                             total_loss += float(loss.item()) * real_tokens
                             loss_samples += real_tokens
                     else:
-                        # labels not exposed: fall back to per-example weighting
+                        # labels not exposed, or token weighting opted out:
+                        # plain per-example mean
                         total_loss += (
                             float(loss.sum().item())
                             if loss.ndim > 0
@@ -3779,12 +3929,17 @@ class DPTrainer:
             # amortized.  Mirrors ``_after_evaluate`` and the manual loop.
             ctx.accounting = acc.cached(ctx.accounting)
             epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
-            # Stop-at-ε: only fires on the fixed-NM path; the calibrated NM
-            # was sized to hit target_epsilon at max_steps, so stopping
-            # earlier would mean we over-noised the run.
+            # Stop-at-ε (fallback): owns the stop only when no crossing step
+            # was predicted (``ctx.stop_at_step is None`` — Monte-Carlo
+            # accountants, unreachable target); otherwise the in-loop integer
+            # check is the single stop owner and this block only computed ε
+            # for the log line.  Fixed-NM path only; the calibrated NM was
+            # sized to hit target_epsilon at max_steps, so stopping earlier
+            # would mean we over-noised the run.
             a = self.args
             if (
-                a.privacy_noise_multiplier is not None
+                ctx.stop_at_step is None
+                and a.privacy_noise_multiplier is not None
                 and a.privacy_noise_multiplier > 0
                 and a.privacy_target_epsilon is not None
                 and epsilon >= a.privacy_target_epsilon
@@ -3806,7 +3961,7 @@ class DPTrainer:
             smoothed_loss = tr_loss_scalar / window
             # HF parity: accumulate into _total_loss_scalar, then reset tr_loss.
             self._total_loss_scalar += tr_loss_scalar
-            self._tr_loss -= self._tr_loss  # zero in place
+            self._tr_loss = torch.zeros_like(self._tr_loss)
             self._globalstep_last_logged = global_step
             # HF parity: log the LR that was just applied to the optimizer
             # update we performed for ``global_step``.  Inside torchopt the
@@ -4771,8 +4926,11 @@ class DPTrainer:
 
     def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
         path = Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME
-        with path.open("w") as f:
-            json.dump(opaque_state_dict(accountant), f, indent=2)
+        # Compact JSON (no indent): pretty-printing writes O(n^2)
+        # indentation over a deep composition spine — ~800 MB at 10k
+        # heterogeneous steps vs ~3 MB compact.
+        with path.open("w") as f, _deep_json_recursion():
+            json.dump(opaque_state_dict(accountant), f)
 
     def _save_rng_state(self, ckpt_dir: str) -> None:
         """Snapshot this rank's Python/NumPy/torch RNG state to disk.
@@ -4958,7 +5116,10 @@ class DPTrainer:
         runtime_payload = ckpt.load_dp_runtime_state(
             str(Path(ckpt_dir) / ckpt.DP_STATE_NAME)
         )
-        with (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f:
+        with (
+            (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f,
+            _deep_json_recursion(),
+        ):
             accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
 

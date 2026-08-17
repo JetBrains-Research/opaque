@@ -14,8 +14,8 @@ Opaque provides several noise mechanisms:
 
 ### Independent Noise (DP-SGD)
 
-- **`gaussian_noise()`** — Gaussian noise; pass ``bound=B`` (or
-  ``bound=(low, high)``) for the bounded Gaussian mechanism (renormalized
+- **`gaussian_noise()`** — Gaussian noise; pass `bound=B` (or
+  `bound=(low, high)`) for the bounded Gaussian mechanism (renormalized
   density on the interval — no point masses at the boundaries).
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
@@ -31,7 +31,8 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 
-All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
+All noise functions return `(noise_fn, state)`, where
+`noise_fn(grads, state) -> (noisy_grads, new_state)`.
 When private second moments are enabled, the noisy value is a
 `SecondMomentNoiseOutput` carrying both `noisy_grads` and
 `noisy_squared_grads`.
@@ -94,7 +95,7 @@ transformation wrapper and no `ρ` knob.
 
 `mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the
-MSE-optimal allocation from :meth:`ClippedPytree.noise_stddev_for` (same
+MSE-optimal allocation from `ClippedPytree.noise_stddev_for` (the same
 Mahalanobis allocation as `gaussian_noise`). Leaf→group keys are optree
 `ParamPath` tuples (build them with `per_group(params, …)`); nested
 parameter trees are supported. Trainer/examples keep flat
@@ -102,9 +103,9 @@ parameter trees are supported. Trainer/examples keep flat
 
 ## Gaussian (optionally bounded)
 
-`gaussian_noise` accepts an optional ``bound`` argument: ``bound=B`` for the
-symmetric interval ``[-B, B]`` or ``bound=(low, high)`` for an asymmetric
-one (with ``low <= 0 <= high``).  The per-coordinate sample is then drawn
+`gaussian_noise` accepts an optional `bound` argument: `bound=B` for the
+symmetric interval `[-B, B]` or `bound=(low, high)` for an asymmetric
+one (with `low <= 0 <= high`). The per-coordinate sample is then drawn
 from a Gaussian renormalized over the interval (Chen and Hale, 2024).
 Bounds are absolute, in the same units as the gradient / clip norm.
 

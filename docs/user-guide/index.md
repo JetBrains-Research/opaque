@@ -18,16 +18,16 @@ standalone install targets in user-facing workflows.
 Pick the track that matches your problem:
 
 - **[DP-SGD end-to-end](dp-sgd.md)** — independent Gaussian noise at
-  every step, per-step privacy composition. The standard DP training
-  recipe. Imports from `opaque.dpsgd.*`.
+  every step, with per-step privacy composition. This is the standard DP
+  training recipe. Imports from `opaque.dpsgd.*`.
 - **[DP-FTRL end-to-end](dp-ftrl.md)** — correlated noise across the
   whole training run via matrix factorization. Imports from
   `opaque.dpftrl.*`.
 
 Both pipelines share the same primitives (clipping, noise, sampling,
 optimizer, accounting). The topic pages below are stack-agnostic
-concept reference; each end-to-end guide picks the right pieces and
-stitches them.
+concept references; each end-to-end guide picks the right pieces and
+combines them.
 
 ## Topics
 
@@ -45,7 +45,7 @@ stitches them.
   `auto_clipped_grad`, `adaptive_clipped_grad` (DP-SGD-only),
   microbatching, per-group clipping.
 - **[Noise Addition](noise.md)** — `gaussian_noise` (optional
-  ``bound`` for the bounded Gaussian mechanism) (DP-SGD); `mf_gaussian_noise`
+  `bound` for the bounded Gaussian mechanism) (DP-SGD); `mf_gaussian_noise`
   with strategy factories (DP-FTRL).
 - **[Privacy Accounting](accounting.md)** — Composable `DpProcess`
   objects, privacy metrics, calibration, the `Accountant` helper.

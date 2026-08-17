@@ -17,7 +17,7 @@ Opaque ships two complementary training pipelines:
   length in advance.
 
 Both pipelines share the same primitives — clipping, noise, sampling,
-optimizer, accounting — but use them differently. Pick the track
+optimizers, and accounting — but use them differently. Pick the track
 that matches your problem.
 
 ## Per-example gradient clipping

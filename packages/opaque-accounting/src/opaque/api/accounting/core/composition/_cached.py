@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class CachedProcess(DpProcess):
     """Caching wrapper around a :class:`DpProcess`.
 
@@ -44,6 +44,21 @@ class CachedProcess(DpProcess):
 
         return iter_hash(self)
 
+    def __eq__(self, other: object) -> bool:
+        # Iterative tree walk (dataclass semantics preserved) — depth
+        # bounded by heap, not stack.  See ``_iter_eq``.
+        if not isinstance(other, DpProcess):
+            return NotImplemented
+        from ._iter_eq import iter_eq
+
+        return iter_eq(self, other)
+
+    def __repr__(self) -> str:
+        # Iterative tree walk, string-identical to the dataclass repr.
+        from ._iter_repr import iter_repr
+
+        return iter_repr(self)
+
     @functools.lru_cache(maxsize=16)
     def pld(
         self,
@@ -52,12 +67,16 @@ class CachedProcess(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         return self.inner.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
     def repeated_pld(
@@ -68,6 +87,8 @@ class CachedProcess(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         # Transparent relay: CachedProcess is a merge barrier / cache, not a
         # privacy transform.  Without this, Repeated(CachedProcess(inner), K)
@@ -80,6 +101,8 @@ class CachedProcess(DpProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
 

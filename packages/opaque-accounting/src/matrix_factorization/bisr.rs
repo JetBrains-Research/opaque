@@ -169,7 +169,7 @@ fn validate_common(
 }
 
 fn effective_k(n_steps: usize, min_sep: usize, max_participations: Option<usize>) -> usize {
-    let k_inferred = (n_steps + min_sep - 1) / min_sep;
+    let k_inferred = n_steps.div_ceil(min_sep);
     match max_participations {
         Some(max_k) => max_k.min(k_inferred),
         None => k_inferred,
@@ -298,7 +298,7 @@ pub fn bisr_gram_matrix(
 
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = (n + b - 1) / b;
+    let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
         None => k_inferred,
@@ -404,7 +404,7 @@ pub fn bisr_gram_matrix_lr(
     let p = coefficients.len();
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = (n + b - 1) / b;
+    let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
         None => k_inferred,
@@ -548,7 +548,7 @@ pub fn toeplitz_gram_matrix(
     let p = strategy_coef.len(); // bandwidth
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = (n + b - 1) / b;
+    let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
         None => k_inferred,

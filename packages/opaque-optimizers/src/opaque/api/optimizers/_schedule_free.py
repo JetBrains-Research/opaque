@@ -42,10 +42,10 @@ Trainer-integration caveat (Phase B).  The wrapper's published params
 are ``x_t``, not the ``params`` argument the trainer passes in
 (``y_t``).  Saving / evaluating against ``y_t`` would defeat the
 purpose of schedule-free averaging.  The wrapper exposes the published
-params via :func:`get_eval_params`, which trainer integrations should
-consult at save / eval boundaries.  This is the dependency that gates
-schedule-free's usefulness through ``DPTrainer``; the wrapper itself
-is correct end-to-end as a library API.
+params as the ``x`` field of :class:`ScheduleFreeState`, which trainer
+integrations should consult at save / eval boundaries.  This is the
+dependency that gates schedule-free's usefulness through ``DPTrainer``;
+the wrapper itself is correct end-to-end as a library API.
 """
 
 from __future__ import annotations

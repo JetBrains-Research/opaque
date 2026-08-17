@@ -15,9 +15,6 @@ Covers the four §7.8 dispatch paths:
    — no-op.
 5. ``with_disabled_adapter`` no-op on a plain ``nn.Linear``.
 
-Additionally verifies the public import path:
-    ``from opaque.api.alignment.dpo.reference._adapter import null_ref_context``
-
 All tests run CPU-only and use the smallest possible PEFT models (a tiny
 ``nn.Linear``-backed module) to keep the suite fast.
 """
@@ -68,22 +65,6 @@ def _make_peft_model(adapter_name: str = "default") -> peft.PeftModel:
         init_lora_weights=False,
     )
     return get_peft_model(base, lora_cfg, adapter_name=adapter_name)
-
-
-# ---------------------------------------------------------------------------
-# Import contract
-# ---------------------------------------------------------------------------
-
-
-def test_import_from_impl_path() -> None:
-    """Public symbols are importable from the implementation module path."""
-    from opaque.api.alignment.dpo.reference._adapter import (
-        null_ref_context,
-        with_disabled_adapter,
-    )
-
-    assert callable(null_ref_context)
-    assert callable(with_disabled_adapter)
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ tests in ``test_collectives.py``.
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.distributed as dist
 from engine_ddp_helpers import (
@@ -60,17 +61,15 @@ def test_gather_for_metrics_scalar_non_distributed() -> None:
     assert out.dim() == 0
 
 
+@pytest.mark.slow
 def test_gather_optional_and_ragged_payloads() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
-        import pytest
-
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_gather_optional_ragged)
 
 
+@pytest.mark.slow
 def test_scalar_reductions_preserve_integer_and_float64_exactness() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
-        import pytest
-
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_scalar_exactness_gloo)

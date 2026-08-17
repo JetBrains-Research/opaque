@@ -56,8 +56,8 @@ def pytorch_linear_ce(
     weight,
     labels,
     ignore_index=-100,
-    softcap=None,
-    scaling=0,
+    softcap: float | None = None,
+    scaling: float = 0.0,
     label_smoothing=0.0,
 ):
     """PyTorch reference: matmul + shift + F.cross_entropy.
@@ -93,8 +93,8 @@ def opaque_linear_ce(
     weight,
     labels,
     ignore_index=-100,
-    softcap=0,
-    scaling=0,
+    softcap: float = 0.0,
+    scaling: float = 0.0,
     label_smoothing=0.0,
 ):
     """Opaque kernel wrapper for functional use in vmap/grad.

@@ -1,8 +1,8 @@
 # Random Number Generation
 
 Opaque uses explicit RNG keys instead of global random state. Every
-function that involves randomness -- noise injection, sampling, adaptive
-clipping, auditing -- takes a `key` parameter. This follows the JAX PRNG
+function that involves randomness — noise injection, sampling, adaptive
+clipping, and auditing — takes a `key` parameter. This follows the JAX PRNG
 model: no hidden state, fully deterministic, and safe in distributed
 settings.
 
@@ -98,7 +98,7 @@ full     = fold_in(k, step, rank, worker) # step → rank → worker
 `fold_in(k, a, b)` is equivalent to `fold_in(fold_in(k, a), b)`.
 
 `fold_in` uses BLAKE2b hashing internally. Different data values produce
-different keys, and int vs str are distinguished:
+different keys, and `int` versus `str` values are distinguished:
 
 ```python
 fold_in(k, 0).seed != fold_in(k, 1).seed
@@ -230,7 +230,7 @@ In centralized DP-SGD, all ranks must add the **same** noise so that
 models stay in sync. Pass the same `key(seed)` on every rank:
 
 ```python
-# Same key on all ranks -> same noise -> models stay in sync
+# Same key on all ranks → same noise → models stay in sync
 noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 ```
 

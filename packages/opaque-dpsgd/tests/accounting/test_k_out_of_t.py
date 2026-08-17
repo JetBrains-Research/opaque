@@ -21,6 +21,7 @@ def test_factory_returns_horizon_process():
     assert process.n_steps == 10
 
 
+@pytest.mark.slow
 def test_prefixes_are_finite_and_full_matches_pld():
     process = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
@@ -33,6 +34,7 @@ def test_prefixes_are_finite_and_full_matches_pld():
     assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=1e-12, abs=0)
 
 
+@pytest.mark.slow
 def test_k_one_prefix_matches_redrawn_single_epoch_process():
     k_out = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),

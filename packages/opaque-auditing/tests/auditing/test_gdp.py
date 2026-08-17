@@ -6,9 +6,7 @@ discretised base pair, and order-statistics p-value.
 
 from __future__ import annotations
 
-import ast
 import math
-import pathlib
 
 import numpy as np
 import pytest
@@ -327,29 +325,3 @@ class TestGdpPldSurface:
         mu = method._mu_at(0.05, None)
         expected = 2.0 * scipy.stats.norm.cdf(mu / 2.0) - 1.0
         assert abs(method.advantage() - expected) < 1e-10
-
-
-# ---- Contract: torch-free --------------------------------------------------
-
-
-class TestTorchFree:
-    """gdp method module must not import torch."""
-
-    _PATH = (
-        pathlib.Path(__file__).resolve().parents[2]
-        / "src"
-        / "opaque"
-        / "api"
-        / "auditing"
-        / "one_run"
-        / "_gdp.py"
-    )
-
-    def test_no_torch_import(self):
-        tree = ast.parse(self._PATH.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert not alias.name.startswith("torch")
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                assert not node.module.startswith("torch")

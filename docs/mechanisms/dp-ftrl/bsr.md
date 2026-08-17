@@ -1,6 +1,6 @@
 # BSR (Banded Square Root)
 
-**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism where the **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the workload :math:`A_{\alpha,\beta}` in the paper (multiplicative decay :math:`\alpha`, Polyak momentum :math:`\beta`).
+**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism whose **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the paper's workload \(A_{\alpha,\beta}\) (multiplicative decay \(\alpha\), Polyak momentum \(\beta\)).
 
 Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS optimization step at initialization.
 
@@ -42,7 +42,7 @@ eps = training.epsilon_at(1e-5)
 | `bandwidth` | Bandwidth \(p\) (≥ 1). Coefficients \(c_j\) for \(j \ge p\) are zero. |
 | `n_steps` | Total training steps |
 | `min_sep` | Minimum separation between participations (typically steps per epoch) |
-| `max_participations` | Maximum participations per user (epochs) |
+| `max_participations` | Maximum number of participations per user (epochs) |
 | `alpha` | Paper \(\alpha \in (0, 1]\) |
 | `beta` | Paper \(\beta \in [0, 1)\); must satisfy \(\alpha > \beta\) |
 
@@ -78,7 +78,7 @@ noise_fn, state = mf_gaussian_noise(
 
 ## Assumptions and limitations
 
-- **Closed-form regime only**: \(\beta \in [0,1)\), \(\alpha \in (0,1]\), \(\alpha > \beta\). Other hyperparameters raise `ValueError` with guidance to use `band_mf_strategy`.
+- **Closed-form regime only**: \(0 \leq \beta < 1\), \(0 < \alpha \leq 1\), \(\alpha > \beta\). Other hyperparameters raise `ValueError` with guidance to use `band_mf_strategy`.
 - **`examples/train_dpftrl.py`**: workload **`--bsr-alpha`** → `alpha`; **`--momentum`** (SGD) or **`--beta1`** (Adam) → `beta`. Optimizer **`--weight-decay`** is separate (default `0.0`).
 - **No learning-rate schedule**: BSR coefficients assume the paper’s workload; use BandMF/BLT with `lr_schedule` if you need schedule-shaped workloads in the optimizer.
 - **vs BISR**: BISR bands the **inverse** square root of the workload (different coefficient family). BSR bands the **forward** square root factors from Theorem 1.

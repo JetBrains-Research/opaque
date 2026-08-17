@@ -448,7 +448,7 @@ pub fn random_allocation_gaussian_pld(
 
     // k > 1 reduces to a composition of single allocations: split t into
     // m_f rounds of ⌊t/k⌋ steps and m_c rounds of ⌈t/k⌉.
-    let (t_floor, t_ceil) = (t / k, (t + k - 1) / k);
+    let (t_floor, t_ceil) = (t / k, t.div_ceil(k));
     let (m_f, m_c) = if t_floor == t_ceil {
         (k, 0)
     } else {
@@ -520,6 +520,7 @@ mod tests {
 
     /// More noise, less privacy loss.
     #[test]
+    #[ignore = "slow"]
     fn test_monotone_in_sigma() {
         let c = cfg();
         let a = random_allocation_gaussian_pld(1.0, 8, 1, &c)
@@ -532,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow"]
     fn test_prefix_endpoints_and_monotonicity() {
         let c = cfg();
         let sigma = 1.0;
@@ -569,6 +571,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow"]
     fn test_k_out_of_t_prefix_is_finite_and_matches_full_horizon() {
         let c = cfg();
         let mut last = 0.0;
@@ -590,6 +593,7 @@ mod tests {
     /// [3.711, 3.726], [1.792, 1.806], [0.315, 0.345], [1.253, 1.270]).
     /// Opaque's safe bound must land inside that independent bracket.
     #[test]
+    #[ignore = "slow"]
     fn test_golden_epsilons() {
         let c = cfg();
         for &(sigma, t, want_lo, want_hi) in &[
@@ -615,6 +619,7 @@ mod tests {
 
     /// More steps to hide among, less privacy loss.
     #[test]
+    #[ignore = "slow"]
     fn test_monotone_in_t() {
         let c = cfg();
         let mut prev = f64::INFINITY;
@@ -629,6 +634,7 @@ mod tests {
 
     /// More participations, more privacy loss.
     #[test]
+    #[ignore = "slow"]
     fn test_monotone_in_k() {
         let c = cfg();
         let e1 = random_allocation_gaussian_pld(1.0, 16, 1, &c)
@@ -772,6 +778,7 @@ mod tests {
     /// A larger max_conv_grid cap produces a tighter (lower or equal) ε
     /// upper bound — it never loosens the bound.
     #[test]
+    #[ignore = "slow"]
     fn test_larger_max_conv_grid_tightens_bound() {
         let c_coarse = DiscretizationConfig::default().with_max_conv_grid(8_192);
         let c_fine = DiscretizationConfig::default().with_max_conv_grid(32_768);

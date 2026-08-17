@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import pytest
 
@@ -49,6 +50,19 @@ def _assert_safe_result(
         target,
         rel_tol=tolerance,
         abs_tol=0.0,
+    )
+
+
+@lru_cache
+def _calibrate_epsilon(
+    target: float, param_min: float, param_max: float
+) -> CalibrateResult:
+    """Reuse identical expensive PLD calibration requests within this module."""
+    return cal.calibrate(
+        cal.epsilon_budget(target, delta=1e-5),
+        lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
+        param_min,
+        param_max,
     )
 
 
@@ -285,7 +299,7 @@ class TestCalibrateSafeEndpoint:
         assert "target=1.0" in message
         assert "relative tolerance=1e-06" in message
         assert "iterations=4" in message
-        assert "final bracket=[" in message
+        assert "final bracket=(unsafe=" in message
         assert "last safe achieved=0.5" in message
         assert len(calls) == 2 + 4
 
@@ -307,6 +321,7 @@ class TestCalibratePrefix:
     def _prefix(self):
         return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 12
 
+    @pytest.mark.slow
     def test_matches_manual_closure(self):
         """prefix= is equivalent to composing inside the objective."""
         prefix = self._prefix()
@@ -319,6 +334,7 @@ class TestCalibratePrefix:
         assert via_param.param == pytest.approx(via_closure.param)
         assert via_param.achieved == pytest.approx(via_closure.achieved)
 
+    @pytest.mark.slow
     def test_total_hits_budget(self):
         """The composed total (prefix | stage) achieves the target."""
         prefix = self._prefix()
@@ -332,6 +348,7 @@ class TestCalibratePrefix:
         assert achieved <= 6.0
         assert math.isclose(achieved, 6.0, rel_tol=1e-6, abs_tol=0.0)
 
+    @pytest.mark.slow
     def test_prefix_demands_more_noise(self):
         """Same budget with a prefix → larger noise multiplier."""
         budget = cal.epsilon_budget(6.0, delta=1e-5)
@@ -341,6 +358,7 @@ class TestCalibratePrefix:
         )
         assert with_prefix.param > without.param
 
+    @pytest.mark.slow
     def test_prefix_exhausting_budget_raises(self):
         """Prefix alone above the target → bounds can't bracket."""
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps
@@ -363,36 +381,23 @@ class TestCalibratePrefix:
 class TestCalibrateEpsilon:
     """Calibrate noise multiplier for target epsilon — verify roundtrip."""
 
-    def _process(self, nm):
-        return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000
-
     def test_basic(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(5.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result = _calibrate_epsilon(5.0, 0.3, 1.2)
         assert isinstance(result, CalibrateResult)
         _assert_safe_result(result, target=5.0, decreasing=True)
 
     def test_strict_epsilon(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result = _calibrate_epsilon(4.0, 0.3, 1.2)
         _assert_safe_result(result, target=4.0, decreasing=True)
 
     def test_loose_epsilon(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
-        )
+        result = _calibrate_epsilon(8.0, 0.1, 1.0)
         _assert_safe_result(result, target=8.0, decreasing=True)
 
     def test_monotonicity(self):
         """Stricter target → more noise."""
-        result_loose = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
-        )
-        result_strict = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result_loose = _calibrate_epsilon(8.0, 0.1, 1.0)
+        result_strict = _calibrate_epsilon(4.0, 0.3, 1.2)
         # stricter (lower) epsilon requires higher noise_multiplier
         assert result_strict.param > result_loose.param
 
@@ -469,3 +474,41 @@ class TestCalibrateResult:
     def test_repr_not_converged(self):
         r = CalibrateResult(1.0, 3.1, 3.0, 100, False)
         assert "max iterations" in repr(r)
+
+
+class TestCalibrateDirectionIntegration:
+    """PLD-mechanism regressions for probe-derived search direction (#333).
+
+    The fast quadrant/rejection coverage lives in
+    ``packages/opaque-accounting/tests/test_calibrate_direction.py``; these
+    pin the real Poisson/Gaussian shapes end-to-end (PLD-heavy, slow-marked).
+    """
+
+    @pytest.mark.slow
+    def test_sample_rate_calibration_converges(self):
+        # epsilon INCREASES with sample rate; raised ValueError before #333.
+        budget = cal.epsilon_budget(3.0, delta=1e-5)
+        result = cal.calibrate(
+            budget,
+            lambda sr: dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sr) * 1000,
+            param_min=0.001,
+            param_max=0.05,
+            tolerance=1e-4,
+        )
+        assert result.converged
+        assert result.achieved <= 3.0
+        check = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), result.param) * 1000
+        assert check.epsilon_at(1e-5) == pytest.approx(3.0, rel=1e-3)
+
+    @pytest.mark.slow
+    def test_noise_multiplier_regression_value_unchanged(self):
+        # The classic decreasing direction still lands the same parameter.
+        result = cal.calibrate(
+            cal.epsilon_budget(3.0, delta=1e-5),
+            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * 500,
+            param_min=0.1,
+            param_max=10.0,
+            tolerance=1e-4,
+        )
+        assert result.achieved <= 3.0
+        assert result.param == pytest.approx(1.2656, rel=1e-2)

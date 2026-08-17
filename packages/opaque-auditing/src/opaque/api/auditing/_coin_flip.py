@@ -308,7 +308,7 @@ def coin_flip(
     rng = np.random.default_rng(fold_in(key, _CANARY_SELECTION_DOMAIN).seed)
     canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
     coin_rng = np.random.default_rng(fold_in(key, _COIN_FLIP_DOMAIN).seed)
-    in_mask = coin_rng.random(num_canaries) < 0.5
+    in_mask = np.asarray(coin_rng.random(num_canaries) < 0.5, dtype=bool)
 
     return CoinFlip(
         num_canaries=num_canaries,

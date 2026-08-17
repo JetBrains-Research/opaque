@@ -5,9 +5,9 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 
 ## Project snapshot
 
-- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.70)
+- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.83)
 - **Package manager**: `uv`
-- **Hardware**: H200 80GB GPU for training runs; CPU/MPS for most tests
+- **Hardware**: GPU for training runs; CPU/MPS for most tests
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
 
 Opaque provides composable primitives for differentially private model
@@ -41,72 +41,30 @@ pulls only `opaque-engine`, `opaque-accounting`, and their transitive
 deps. `pip install opaque-accounting` alone is **torch-free** (only
 `opaque-base` + the Rust extension).
 
-## Namespace contract
+## Architecture contracts
 
-Nine namespace/package conventions (the PEP 420 namespace invariant,
-façade-only export discipline, and explicit-`__all__` discipline are
-enforced in CI under `tests/contracts/`):
+`.junie/architecture-contracts.md` is the single source of truth for
+package boundaries, public API architecture, test placement, artifact
+guarantees, and advisory API-design rules. Read it before planning, implementing,
+or reviewing a change that affects those areas. Do not reproduce its full rule
+set in agent instructions or source-tree inventory tests.
 
-1. **No wheel ships `src/opaque/__init__.py`, `src/opaque/api/__init__.py`,
-   or `src/opaque/api/accounting/__init__.py`.** All three are pure PEP 420
-   implicit namespaces because multiple wheels contribute to them. CI guard
-   in `pr.yml` + `tests/contracts/test_pep420_no_init.py`.
-2. **Façade modules contain only re-exports.** A façade under
-   `opaque/<concern>/` re-exports from the corresponding `opaque.api.*`
-   impl tree, with `__all__` and (optionally) `__version__` / private
-   PEP 562 lazy-import helpers. No business logic.
-   `tests/contracts/test_facade_discipline.py` enforces this on every
-   listed façade.
-3. **`opaque.api.*` is internal-but-discoverable.** It is the contributor
-   surface for new mechanism families (`opaque.api.lipschitz.*` plugs in
-   without foundation changes). User code is expected to import from the
-   façades. `opaque.api.*` paths surface in tracebacks and IDE jumps;
-   that is intentional. No runtime warning machinery.
-4. **`opaque-accounting` is torch-free.** Source and tests must not
-   import torch (`tests/contracts/test_accounting_torch_free.py`). The
-   wheel's only `opaque` dependency is `opaque-base`, the pure-Python
-   serialization registry. PLD types register against the unified
-   registry directly — no bridging code in dpsgd/dpftrl.
-5. **Tests live in the wheel that depends on every package they
-   import.** `tests/contracts/test_test_placement.py` enforces this with
-   an explicit `KNOWN_CROSS_CONE_IMPORTS` allowlist for legitimate
-   cross-cutting tests (mutual non-dependency between dpsgd ↔ dpftrl,
-   patches ↔ dpsgd). Each refactor phase shrinks the allowlist.
-6. **Every `__init__.py` declares an explicit `__all__`.** Public
-   façades re-export only the names listed in `__all__`; internal
-   `opaque.api.*` `__init__.py` files declare `__all__` for the
-   names they intend to be importable from that level (private
-   `_*.py` helpers are imported by sibling files only). Contract
-   coverage for `__all__` parity exists where implemented; keep new
-   surfaces aligned with that pattern and extend contract coverage
-   when adding new export surfaces.
-7. **Concern directories use singular names** (`clipping`, `noise`,
-   `sampling`, `scheduling`, `loss`, `collator`, `reference`,
-   `metric`, `kernel`, `data`). The only plural exceptions are
-   wheel-name collections (`opaque-optimizers` → `opaque.optimizers`)
-   that ship a homogeneous family where the collection is the
-   primary surface. When in doubt, choose singular.
-8. **`types.py` lives next to its concern.** Public dataclasses /
-   typed dicts / `Literal` enums for concern `X` live in
-   `opaque.api.<dist>.X.types` and are re-exported from
-   `opaque.<concern>.types`. Cross-cutting types
-   (`ClippedPytree`, `PerGroup`, `MaxNorm`) live in `opaque.types`.
-9. **Prefer factory functions returning callables (or callable
-   dataclasses) over user-instantiated classes.** Match the
-   `opaque.optimizers.adamw(...)`, `opaque.clipping.clipped_grad(...)`
-   pattern. New API surfaces should expose `<verb>(...)` (e.g.
-   `language_modeling_collator(...)` returning a callable) rather
-   than `<Noun>Class(...)`. Class constructors are acceptable for
-   inert state containers (configs, metadata records); they are
-   not the preferred shape for "build me a thing that does X."
+`.junie/differential-privacy-review.md` is the review protocol for
+privacy-sensitive and mathematical changes. Read it when work affects privacy
+mechanisms, sensitivity, clipping, noise, randomness, sampling, amplification,
+composition, accounting, matrix strategies, distributed equivalence,
+serialization of privacy state, auditing, or a mathematical privacy claim. Use
+its literature map to verify theorem-dependent claims against primary sources.
+
+For code review, also read and follow `.junie/review-guidelines.md`.
 
 
 ## Pull requests
 
 The repo squash-merges. The PR title becomes the commit subject; the
 PR body becomes the commit body (repo-level squash setting =
-`PR_TITLE` + `PR_BODY`). Both feed `git-cliff` when it builds the draft
-Release body on the next main merge.
+`PR_TITLE` + `PR_BODY`). Both feed `git-cliff` when release preparation builds
+the draft Release body from an exact tag-to-candidate range.
 
 **Title** — Conventional Commits form `<type>(scope): <imperative subject>`:
 
@@ -126,13 +84,13 @@ Release body on the next main merge.
 **Body** — short prose:
 
 - 2–4 sentences of "why" + what the change does. This text lands in
-  `git log` on main and feeds the AI release-note summary in
-  `ci.yml`'s `upsert-draft` job.
+  `git log` and feeds the AI summary for every release line containing the
+  commit.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs: tests (CPU + MPS),
-rust-tests, smoke-imports, docs build, title check, autoformat. All 8
-are required for merge. Preview wheels
+**Gate** — on every push the PR workflow runs Linux amd64, dependency-boundary,
+macOS arm64, Linux arm64, and CUDA validation, plus Rust tests, the docs build, title
+validation, and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -140,12 +98,13 @@ downloadable workflow artifacts on the run page (14-day retention).
 
 ```bash
 uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
-uv sync --group examples --all-packages --extra all  # examples/: torchopt, datasets, wandb + all package extras
+uv sync --group examples --all-packages --extra all  # examples and all package extras
 uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
 uv run pytest -m "slow"                           # slow tests (run on push to main)
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
+cargo test --workspace --lib -- --ignored        # Rust slow tests
 ```
 
 Per-package tests:
@@ -160,7 +119,6 @@ uv run pytest packages/opaque-auditing/tests/
 uv run pytest packages/opaque-patches/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
-uv run pytest tests/contracts/                   # repo-level structural-invariant checks
 ```
 
 ## Installation matrix
@@ -275,6 +233,9 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   and run on pushes to `main` (the CI job strips the `and not slow`
   clause conditionally).
 
+Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
+unit/doc-test set; main and release additionally run the ignored library tests.
+
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
@@ -282,11 +243,22 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 
 CI lane marker expressions:
 
-- CPU (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- MPS (macOS): `-m "not cuda and not slow"`.
-- CUDA (self-hosted): `-m "cuda"`.
-- On push to `main` the CPU/MPS jobs drop `and not slow` so `slow` tests
-  run there.
+- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- PR macOS arm64: `-m "not cuda and not slow"`.
+- PR Linux arm64: `-m "not cuda and not mps and not slow"`.
+- PR CUDA (self-hosted): `-m "cuda and not slow"`.
+- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
+- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- Main macOS arm64: `-m "not cuda"`.
+- Main Linux arm64: `-m "not cuda and not mps"`.
+- Main CUDA (self-hosted): `-m "cuda"`.
+- Dependency selection uses the committed lock or uv's `lowest-direct` /
+  `highest` strategies. Main platform lanes retain slow-test coverage.
+  Failures in the Minimum dependencies lane are currently advisory, while
+  setup and resolution failures remain blocking.
 
 ### Supported HF model families
 
@@ -311,76 +283,13 @@ Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
   refactor-diary guards and have been removed now that the migration
   is complete.
 
-## MCP tools (agent extensions)
+## Training examples
 
-Two MCP extensions provide agent-accessible infrastructure tooling.
-They are installed via the JetBrains AI marketplace — this repo does
-not bundle or configure them.
-
-### jbr-fed-researcher
-
-Skills for individual contributors / experiment work:
-
-| Skill | What it does |
-| --- | --- |
-| `cadence-experiments` | Submit and monitor GPU training runs on Cadence (JetTrain). Default workspace: `JbrFed`. |
-| `wandb-metrics` | Query experiment tracking on `jetbrains.wandb.io`. Default entity: `federated-compute`. |
-| `zenml-experiments` | Manage ML pipelines on `zenml.labs.jb.gg`. Default workspace: `prod`. |
-
-### jbr-fed-team
-
-Skills for team-level coordination:
-
-| Skill | What it does |
-| --- | --- |
-| `youtrack-issues` | Track issues in YouTrack (project `JBRes`, subsystem `Federated Compute`). |
-| `meta-issue-updates` | Post weekly status updates to YouTrack meta issues from meeting notes. |
-
-### Feature-validation agent
-
-An autonomous multi-hour Claude Code agent at
-`.claude/agents/feature-validation.md` that validates code changes by
-running GPU experiments (Cadence) and analyzing results (W&B). It
-designs baseline-vs-variant experiments, gets user approval once, then
-runs fully autonomously using `/loop` for multi-hour monitoring. See
-the agent file for the full protocol.
-
-## Experiment tracking (W&B)
-
-- Entity: `federated-compute`, Project: `opaque`
-- Instance: `https://jetbrains.wandb.io`
-- Always `PYTHONUNBUFFERED=1` for real-time output
-- Offline by default; goes online when `WANDB_API_KEY` is set
-- Env: `WANDB_API_KEY`, `WANDB_BASE_URL`, `WANDB_ENTITY`, `WANDB_PROJECT`, `WANDB_NAME`
-
-## Training entry points
-
-```bash
-uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
-uv run python examples/train_dpftrl.py   # MF-based DP-FTRL training
-```
-
-Baseline without kernel patches:
-
-```bash
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all \
-  uv run python examples/train_dpsgd.py --preset mellum-kstack --max-steps 100
-```
-
-## Cadence presets
-
-GPU training configs in `.cadence/configs/`:
-
-| Preset file | Entry point | Notes |
-| --- | --- | --- |
-| `train_dpsgd (mellum_kstack).yaml` | `train_dpsgd.py --preset mellum-kstack` | Single H200, DP-SGD |
-| `train_dpftrl (mellum_kstack).yaml` | `train_dpftrl.py --preset mellum-kstack` | Single H200, DP-FTRL |
-| `train_dpsgd (qwen_7b_kstack).yaml` | `train_dpsgd.py` | 7B model, single H200 |
-| `train_dpsgd (mellum_kstack_distributed).yaml` | `train_dpsgd.py --preset mellum-kstack` | Multi-GPU DDP |
-| `train_dpftrl (mellum_kstack_distributed).yaml` | `train_dpftrl.py --preset mellum-kstack` | Multi-GPU DDP |
-
-Override args via `-e EXTRA_ARGS="--max-steps 200"` and run name via
-`-e RUN_NAME="my-experiment"`.
+The `examples/` scripts are optional integration examples. Install the
+`examples` dependency group before using them, inspect their command-line help,
+and choose a compatible model and dataset available in your environment.
+Configure any experiment tracking service through its own documented settings;
+the repository does not require a particular provider.
 
 ## Documentation
 
@@ -409,7 +318,7 @@ is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
 ### Environment prerequisites
 
 - **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
-- **Rust stable** (≥ 1.70) is pre-installed for the `opaque-accounting` PyO3 build.
+- **Rust stable** (≥ 1.83) is pre-installed for the `opaque-accounting` PyO3 build.
 - **uv** must be on `PATH` (`$HOME/.local/bin`). Install via
   `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.
 
@@ -438,8 +347,7 @@ the canonical lint / test / Rust-test commands.
   `opaque.dpftrl.accounting`.
 - CUDA/MPS tests auto-skip; no special handling needed on CPU-only VMs.
 - Running the `examples/` training scripts requires the `examples` dependency
-  group (`uv sync --group examples --all-packages --extra all`, which adds
-  `datasets`, `wandb`, and related packages). Pass `--no-wandb` for offline runs.
+  group (`uv sync --group examples --all-packages --extra all`).
 - The example scripts download models and datasets from the Hugging Face Hub.
   Two constraints apply with the pinned `transformers` / `huggingface_hub`
   versions: the model must belong to a supported family (listed above), as

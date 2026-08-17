@@ -60,7 +60,9 @@ def _check_cargo_config() -> list[str]:
     has_pycache = any("__pycache__" in str(pattern) for pattern in exclude_patterns)
     has_pyc = any("*.pyc" in str(pattern) for pattern in exclude_patterns)
     if not (has_pycache and has_pyc):
-        errors.append("Cargo.toml package.exclude missing transient bytecode patterns (__pycache__ or *.pyc)")
+        errors.append(
+            "Cargo.toml package.exclude missing transient bytecode patterns (__pycache__ or *.pyc)"
+        )
 
     return errors
 

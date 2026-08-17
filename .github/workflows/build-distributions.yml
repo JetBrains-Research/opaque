@@ -1,0 +1,170 @@
+name: Build distributions
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: Prefix for all uploaded build artifacts.
+        required: true
+        type: string
+      checkout-ref:
+        description: Ref to build. Leave empty to build the triggering SHA.
+        required: false
+        default: ""
+        type: string
+      native-build-packages:
+        description: JSON array of native package matrix entries.
+        required: true
+        type: string
+      python-build-packages:
+        description: JSON array of pure-Python package matrix entries.
+        required: true
+        type: string
+      retention-days:
+        description: Number of days to retain uploaded artifacts.
+        required: true
+        type: number
+      version:
+        description: Explicit build version. Leave empty to derive it from git.
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  build-python-wheels:
+    name: ${{ matrix.package.dist }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(inputs.python-build-packages) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Preflight build version
+        run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
+
+      - name: Build wheel
+        run: uv build "${{ matrix.package.path }}" --wheel --out-dir dist
+
+      - name: Validate wheel metadata
+        run: >-
+          uv run --isolated --no-project --with packaging==25.0
+          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}
+          path: dist/*.whl
+          retention-days: ${{ inputs.retention-days }}
+
+  build-native-artifacts:
+    name: ${{ matrix.package.dist }} (${{ matrix.target.label }})
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(inputs.native-build-packages) }}
+        target:
+          - kind: wheel
+            label: Linux x86_64
+            artifact: linux-x86_64
+            pattern: "*.whl"
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: 2_28
+          - kind: wheel
+            label: Linux arm64
+            artifact: linux-arm64
+            pattern: "*.whl"
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: 2_28
+          - kind: wheel
+            label: macOS arm64
+            artifact: macos-arm64
+            pattern: "*.whl"
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            manylinux: off
+          - kind: sdist
+            label: sdist
+            artifact: sdist
+            pattern: "*.tar.gz"
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - if: matrix.target.kind == 'wheel'
+        uses: ./.github/actions/setup-rust
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Preflight build version
+        run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
+
+      - name: Build wheel
+        if: matrix.target.kind == 'wheel'
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        with:
+          command: build
+          working-directory: ${{ matrix.package.path }}
+          target: ${{ matrix.target.target }}
+          manylinux: ${{ matrix.target.manylinux }}
+          args: >-
+            --release
+            --interpreter python3.11
+            --out ../../dist
+            --compatibility pypi
+
+      - name: Build sdist
+        if: matrix.target.kind == 'sdist'
+        run: uv build "${{ matrix.package.path }}" --sdist --out-dir dist
+
+      - name: Validate wheel metadata
+        if: matrix.target.kind == 'wheel'
+        run: >-
+          uv run --isolated --no-project --with packaging==25.0
+          python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
+
+      - name: Validate artifact policy
+        if: matrix.package.dist == 'opaque-accounting'
+        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
+
+      - name: Rebuild wheel from sdist
+        if: matrix.target.kind == 'sdist'
+        run: |
+          sdists=(dist/*.tar.gz)
+          if [[ "${#sdists[@]}" -ne 1 ]]; then
+            echo "::error::Expected one sdist, found ${#sdists[@]}"
+            exit 1
+          fi
+          uv build "${sdists[0]}" --wheel --out-dir rebuilt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}-${{ matrix.target.artifact }}
+          path: dist/${{ matrix.target.pattern }}
+          retention-days: ${{ inputs.retention-days }}

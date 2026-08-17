@@ -201,6 +201,7 @@ class TestAccountantBudget:
         # Should exceed the budget
         assert acct.budget_exceeded
 
+    @pytest.mark.slow
     def test_non_epsilon_budget(self):
         """Budget works with non-epsilon budgets (advantage)."""
         budget = acc.advantage_budget(0.5)

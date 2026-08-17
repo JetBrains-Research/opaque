@@ -35,6 +35,7 @@ def linear_setup():
 class TestGradientScores:
     """Tests for auditing.gradient_scores."""
 
+    @pytest.mark.slow
     def test_basic_scoring(self, linear_setup):
         """Test that gradient_scores returns one score per canary."""
         params, dataset, loss_fn = linear_setup

@@ -95,10 +95,10 @@ for epoch in range(10):
 
 1. **`make_functional`** converts the model so parameters are passed
    explicitly, which is required for `torch.func.vmap`.
-2. **`clipped_grad`** computes per-example gradients, clips each to L2
+2. **`clipped_grad`** computes per-example gradients, clips each to an L2
    norm 1.0, and sums the result.
-3. **`acc.calibrate`** binary-searches for the noise multiplier that
-   achieves epsilon=3.0 over the full training run.
+3. **`acc.calibrate`** performs a binary search for the noise multiplier
+   that achieves ε = 3.0 over the full training run.
 4. **`gaussian_noise`** adds calibrated Gaussian noise to the clipped
    gradient sum.
 5. **`Accountant`** tracks cumulative privacy cost and checks against the
@@ -106,7 +106,7 @@ for epoch in range(10):
 
 ## Next steps
 
-- [User Guide](../user-guide/index.md) -- detailed explanations of each
+- [User Guide](../user-guide/index.md) — detailed explanations of each
   component.
-- [Tutorials](../tutorials/README.md) -- hands-on Jupyter notebooks.
-- [API Reference](../reference/index.md) -- complete function signatures.
+- [Tutorials](../tutorials/README.md) — hands-on Jupyter notebooks.
+- [API Reference](../reference/index.md) — complete function signatures.

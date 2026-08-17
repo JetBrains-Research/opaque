@@ -249,11 +249,11 @@ _AMPLIFICATIONS: dict[str, tuple[Callable[..., DpHorizonProcess], bool]] = {
 
 @pytest.fixture
 def _seed_mc():
-    """Pin global MC discretization so PLDs flow through ``Repeated.pld()``.
+    """Pin global MC discretization for MC-based amplifiers.
 
-    ``Repeated.pld()`` only accepts the core discretization kwargs; the MC
-    sample budget / seed must come from the global config (or per-call on
-    the leaf, which is not what ``Repeated`` does).  Set globally for the
+    ``Repeated.pld()`` also accepts ``num_mc_samples`` / ``seed`` per call
+    (see :class:`TestQueryTimeMcParams`); pinning them globally keeps the
+    many ``epsilon_at`` call sites in these tests unchanged.  Set for the
     duration of the test.
     """
     acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
@@ -352,3 +352,78 @@ class TestSerializationRegistryHardening:
         assert "CyclicPoisson" in _PROCESS_REGISTRY
         assert "BallsInBins" in _PROCESS_REGISTRY
         assert "PerStep" in _PROCESS_REGISTRY
+
+
+# ---------------------------------------------------------------------------
+# Query-time MC params (num_mc_samples / seed) propagate through the
+# composition algebra to MC leaves — issue #479.
+# ---------------------------------------------------------------------------
+
+
+class TestQueryTimeMcParams:
+    """``num_mc_samples`` / ``seed`` flow from any ``pld()``-family call
+    through ``Repeated`` / ``CachedProcess`` / ``PerStep`` / ``Composed``
+    down to the MC leaf's ``get_discretization`` — no global
+    ``set_discretization`` mutation required.
+
+    Inequality assertions use the MC sample *budget* (500 vs 4000), whose
+    effect on ε is far larger than one discretization grid bucket.  Seed
+    changes are asserted for reproducibility only: ε is grid-quantized
+    and the native sampler seeds per-thread streams as ``seed + tid``, so
+    nearby seeds can produce bit-identical ε on any given machine.
+    """
+
+    def _mc_proc(self) -> DpHorizonProcess:
+        return ftrl_acc.b_min_sep(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=4)),
+            n_steps=32,
+            p0=0.02,
+        )
+
+    def test_chain_forwards_to_pld_at(self):
+        """``cached(per_step(p)) * K`` resolves the same config as a direct
+        ``pld_at(K, **mc_kw)`` call — byte-identical PLD."""
+        proc = self._mc_proc()
+        chain = acc.cached(acc.per_step(proc)) * 8
+
+        e_chain = chain.epsilon_at(_DELTA, **_MC_KW)
+        e_direct = proc.pld_at(8, **_MC_KW).epsilon_at(_DELTA)
+        assert e_chain == e_direct
+
+    def test_chain_honors_mc_budget(self):
+        proc = self._mc_proc()
+        chain = acc.cached(acc.per_step(proc)) * 8
+
+        e_small = chain.epsilon_at(_DELTA, num_mc_samples=500, seed=_MC_KW["seed"])
+        e_large = chain.epsilon_at(_DELTA, **_MC_KW)
+        assert e_small != e_large
+
+    def test_composed_broadcasts_to_mc_leaves(self):
+        proc = self._mc_proc()
+        composed = acc.eps_delta(0.5, 0.0) | acc.per_step(proc) * 4
+
+        e_small = composed.epsilon_at(_DELTA, num_mc_samples=500, seed=_MC_KW["seed"])
+        e_large = composed.epsilon_at(_DELTA, **_MC_KW)
+        assert e_small != e_large
+
+    def test_full_horizon_seed_reproducible(self):
+        proc = self._mc_proc()
+        e_a = proc.pld(num_mc_samples=3000, seed=1).epsilon_at(_DELTA)
+        e_a_again = proc.pld(num_mc_samples=3000, seed=1).epsilon_at(_DELTA)
+        assert e_a == e_a_again
+
+    def test_per_call_matches_global_config(self):
+        """``pld(**mc)`` and ``set_discretization(**mc); pld()`` resolve the
+        same native config, hence identical PLDs (broadcast semantics)."""
+        proc = self._mc_proc()
+        # ``pld_at``'s lru_cache keys on (process, kwargs), not the resolved
+        # global config: the no-kwargs entry for an equal-valued process must
+        # not have been populated under a different global config by an
+        # earlier test (all files pin the same _MC_KW).
+        e_per_call = proc.epsilon_at(_DELTA, **_MC_KW)
+        acc.set_discretization(**_MC_KW)
+        try:
+            e_global = proc.epsilon_at(_DELTA)
+        finally:
+            acc.set_discretization()  # restore defaults
+        assert e_per_call == e_global

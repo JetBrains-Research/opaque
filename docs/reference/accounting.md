@@ -27,7 +27,7 @@ published at the moment.
 
 ---
 
-## Namespace Organization
+## Namespace organization
 
 The accounting API is split into three namespaces:
 
@@ -148,6 +148,7 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
 | `num_mc_samples`               | `100_000`    | Samples for Monte Carlo PLD builders             |
 | `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
+| `max_conv_grid`                | `32_768`     | Convolution grid cap for random-allocation PLD   |
 
 Discretization is unconditionally conservative: exact atoms, PMF coarsening,
 and histogram buckets are rounded upward. The API has no optimistic or
@@ -162,7 +163,17 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 # Apply config at query time
 eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
 eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
+
+# Monte Carlo accountants (b_min_sep, balls_in_bins) take the same
+# query-time overrides; analytic PLDs accept and ignore them
+eps_mc = proc.epsilon_at(1e-5, num_mc_samples=500_000, seed=123)
 ```
+
+All `pld()`-family methods (`epsilon_at`, `delta_at`, `advantage`, `beta_at`,
+`risk_at`) accept every parameter in the table above except
+`tail_mass_truncation` (composition-internal, module-level only). Overrides
+are broadcast to every node of a composed process, so one `seed` is shared
+by all Monte Carlo nodes — the same semantics as `set_discretization`.
 
 **Module-level discretization defaults:**
 
@@ -174,12 +185,12 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
-- `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
-- `acc.get_discretization()` -- Return current `DiscretizationConfig`
+- `acc.set_discretization(discretization=1e-4, ...)` — Set the global default
+- `acc.get_discretization()` — Return the current `DiscretizationConfig`
 
 ---
 
-## Mechanism Functions
+## Mechanism functions
 
 All mechanism constructors return a `DpProcess`. Discretization is configured
 at query time via `epsilon_at(..., discretization=...)` or module-level via
@@ -284,7 +295,7 @@ fraction query. Returns an `AdaClip` process composable with `poisson()`
 
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
-- `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
+- `expected_batch_size` (float): Expected batch size (`sample_rate × dataset_size`), used to compute the absolute noise std for the quantile query.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
@@ -353,7 +364,7 @@ training = step * 1000
 
 ---
 
-## Matrix Factorization Mechanisms
+## Matrix factorization mechanisms
 
 MF mechanisms take pre-computed `sensitivity` and `gram_matrix` values from the
 corresponding noise **strategy** (e.g. `band_mf_strategy()`, `blt_strategy()`).
@@ -370,7 +381,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
 - `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
-- `coefficients` (tuple[float, ...]): From `strategy.coefficients`.
+- `coefficients` (tuple of float values): From `strategy.coefficients`.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
@@ -436,13 +447,16 @@ proc = dpftrl_acc.poisson(
 )
 ```
 
-### `b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -> DpProcess`
+### `b_min_sep(inner, *, n_steps, p0) -> DpProcess`
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
-Uses Monte Carlo PLD accounting. `inner` must be `BandMf`.
-`strategy_coefficients` is the first column of the same BandMF strategy matrix
-used for noise. `p0` is the per-example participation rate per iteration
-`E[|B|]/|D|` (match the training sampler’s target batch size).
+Uses Monte Carlo PLD accounting. `inner` must be
+`mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
+are read from `inner.strategy`. `p0` is the per-example participation rate per
+iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
+Control the Monte Carlo budget per query
+(`proc.epsilon_at(delta, num_mc_samples=..., seed=...)`) or module-wide via
+`set_discretization`.
 
 !!! warning
     b-min-sep, and Balls-in-Bins with a **correlated** strategy, build their
@@ -476,9 +490,6 @@ proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
-
-# With Gaussian (conservative Poisson approximation)
-proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
 ### `per_step(proc) -> PerStep`
@@ -546,11 +557,11 @@ eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 
 ## Serialization
 
-Processes checkpoint as a **flat** ``dict[str, Any]`` (string keys with dotted
-prefixes for nested composition). Use :func:`opaque.serialization.state_dict`
-and :func:`opaque.serialization.from_state_dict` — pass any concrete
-``DpProcess`` instance as the template (for example ``identity()``); the
-registered handler rebuilds from the dict's root ``type`` field.
+Processes checkpoint as a **flat** `dict[str, Any]` (string keys with dotted
+prefixes for nested composition). Use `opaque.serialization.state_dict`
+and `opaque.serialization.from_state_dict` — pass any concrete `DpProcess`
+instance as the template (for example, `identity()`); the registered handler
+rebuilds from the dict's root `type` field.
 
 ```python
 import opaque.accounting as acc
@@ -645,7 +656,7 @@ flat = state_dict(acct)
 acct2 = from_state_dict(Accountant(), flat)
 ```
 
-``process.*`` keys hold the composed tree; ``budget.*`` keys are present when
+`process.*` keys hold the composed tree; `budget.*` keys are present when
 the accountant was constructed with a budget.
 
 ---
@@ -676,11 +687,12 @@ Binary search for a parameter value such that `process(param)` produces a
 | `prefix`         | `None`  | Already-executed `DpProcess` composed into every probe   |
 
 The `process` callable takes a single float parameter and returns a `DpProcess`.
-Its metric must be monotone in the direction declared by the budget. The
-current direction contract supports parameters such as `noise_multiplier`,
-whose increase improves privacy: epsilon, delta, and advantage decrease, while
-beta and risk increase. `param_min` must be the unsafe endpoint and `param_max`
-the privacy-safe endpoint under that contract.
+Its metric must be monotone in the parameter over `[param_min, param_max]`;
+the search direction is derived automatically by probing both endpoints, so
+noise-multiplier-like parameters (increase improves privacy) and
+sample-rate/step-like parameters (increase spends privacy) are both
+supported. Exactly one endpoint must be privacy-safe; which one is detected,
+not positional.
 
 ```python
 import opaque.accounting as acc
@@ -762,9 +774,10 @@ optimize and what value to achieve.
 | `cal.beta_budget(beta, alpha)`      | Type-II error at given Type-I error     | No                    |
 | `cal.risk_budget(risk, prior)`      | Bayes risk under optimal adversary      | No                    |
 
-"Decreasing with noise" indicates whether the metric decreases as the
-calibrated parameter (typically noise_multiplier) increases. The binary search
-adapts direction automatically based on the budget's `decreasing` property.
+"Decreasing with noise" indicates the metric kind: privacy-loss metrics
+(epsilon/delta/advantage) are safe at-or-below the target, privacy-gain
+metrics (beta/risk) at-or-above. The binary search derives the parameter
+direction automatically by probing both bracket endpoints.
 
 ```python
 # (epsilon, delta)-DP

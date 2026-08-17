@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_DevelopmentDocs_exclusions" pattern="file[opaque-transformers]:docs/development//*" />
+</component>

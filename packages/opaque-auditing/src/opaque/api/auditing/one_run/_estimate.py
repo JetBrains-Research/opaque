@@ -131,10 +131,8 @@ class OneRunEstimate:
     canary_indices: np.ndarray | None = None
 
     def __repr__(self) -> str:
-        return (
-            f"OneRunEstimate(n_in={self.n_in}, n_out={self.n_out}, "
-            f"auc={self.attack_auc():.4f})"
-        )
+        auc = _auc_from_counts(self.tn_counts, self.fn_counts)
+        return f"OneRunEstimate(n_in={self.n_in}, n_out={self.n_out}, auc={auc:.4f})"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -301,7 +299,7 @@ class OneRunEstimate:
             values[i] = _auc_from_counts(tn, fn)
 
         # Bias-corrected bootstrap
-        prop_less = (np.sum(values < point) + 1) / (num_samples + 2)
+        prop_less = (int(np.sum(values < point)) + 1) / (num_samples + 2)
         z0 = scipy.stats.norm.ppf(prop_less)
         z_q = scipy.stats.norm.ppf(quantiles)
         corrected = scipy.stats.norm.cdf(2 * z0 + z_q)

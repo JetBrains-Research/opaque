@@ -330,6 +330,7 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_family_name_for_known_hf_model():
     import transformers
 
@@ -492,8 +493,21 @@ def test_register_family_routes_via_apply_transformers_model_patches():
     name = "public_api_test_router_dispatch"
     calls: list[dict] = []
 
-    def my_apply_fn(model, *, performance=True, compat=True, **kwargs):
-        calls.append({"model": model, "performance": performance, "kwargs": kwargs})
+    def my_apply_fn(
+        model: object | None = None,
+        *,
+        performance: bool = True,
+        compat: bool = True,
+        kernels: bool | None = None,
+        **kwargs: object,
+    ) -> None:
+        calls.append(
+            {
+                "model": model,
+                "performance": performance,
+                "kwargs": {"kernels": kernels, **kwargs},
+            }
+        )
 
     register_family(name, my_apply_fn)
 

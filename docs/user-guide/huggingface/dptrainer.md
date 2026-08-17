@@ -1,13 +1,13 @@
 # DPTrainer
 
-`DPTrainer` mirrors HuggingFace's `Trainer` interface: construct with
+`DPTrainer` mirrors Hugging Face's `Trainer` interface: construct with
 `(model, args, datasets, …)`, call `train()` / `evaluate()` /
-`predict()`, query the result.  Under the surface the loop runs DP-SGD
+`predict()`, and query the result. Under the surface, the loop runs DP-SGD
 with `vmap(grad(...))` over per-example losses; the public API is
 designed so a user familiar with `Trainer` doesn't have to think about
 that.
 
-This page covers the common usage patterns.  For the full constructor
+This page covers the common usage patterns. For the full constructor
 signature, every method's parameters / return type, and the public
 state objects (`EvaluationResult`, `DPTrainerState`, `TrainOutput`),
 see [API reference — transformers](../../reference/transformers.md).
@@ -47,7 +47,7 @@ Construction immediately moves the model to the resolved device and
 auto-patches it (vmap-safety + optional Triton kernels).  The noise
 multiplier is calibrated from `privacy_target_epsilon` at the start of
 `train()` (once the dataset size and step count are known), not at
-construction.  No extra setup calls are needed before `train()`.
+construction. No extra setup calls are needed before `train()`.
 
 At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
 must be set — neither has a silent default; see the
@@ -66,7 +66,7 @@ result = trainer.predict(test_ds)                # returns EvaluationResult
 
 End-of-train metrics always include `privacy_epsilon`,
 `privacy_delta`, and `privacy_noise_multiplier` alongside the usual
-loss / step / runtime fields.  Evaluation and prediction route through
+loss / step / runtime fields. Evaluation and prediction route through
 the same loop; `predict()` returns the full `EvaluationResult`
 (predictions + labels + metrics) while `evaluate()` returns only the
 metrics dict.
@@ -78,7 +78,7 @@ run.
 ## Per-example eval losses
 
 Setting `args.include_for_metrics=["loss"]` switches the eval path to
-the vmap'd per-example closure: `EvalPrediction.losses` carries real
+the `vmap`-based per-example closure: `EvalPrediction.losses` carries real
 per-example losses instead of the batch-mean repeated.  Useful for
 threshold calibration, percentile metrics, or member / non-member
 analyses driven by `compute_metrics`.
@@ -121,7 +121,7 @@ clip-noise-step over one Poisson sample.
 
 ## Custom losses
 
-`compute_loss_func=` on the constructor accepts a callable
+`compute_loss_func` on the constructor accepts a callable
 `(outputs, labels) -> scalar` for one-off losses without subclassing.
 The callable is invoked **per example under vmap** (one example's
 outputs, one example's labels), not once per batch — there's no

@@ -1,5 +1,5 @@
 site_name: Opaque
-site_description: Functional DP-SGD for PyTorch
+site_description: Functional DP-SGD and DP-FTRL for PyTorch
 site_author: Opaque Contributors
 site_url: https://jetbrains-research.github.io/opaque/
 
@@ -108,6 +108,7 @@ nav:
     - HuggingFace Integration:
       - Overview: user-guide/huggingface/index.md
       - DPTrainer: user-guide/huggingface/dptrainer.md
+      - Distributed DPTrainer: user-guide/distributed-trainer.md
       - TrainingArguments: user-guide/huggingface/training-arguments.md
       - Model Patches: user-guide/huggingface/model-patches.md
     - Memory Optimizations: user-guide/memory-optimizations.md

@@ -440,21 +440,23 @@ evaluated. If the search cannot find a safe endpoint satisfying
 
 ### Budget types
 
-| Function | Target metric | Direction |
-|----------|---------------|-----------|
-| `acc.epsilon_budget(eps, delta)` | epsilon | decreasing (more noise = lower epsilon) |
-| `acc.delta_budget(delta, epsilon)` | delta | decreasing |
-| `acc.advantage_budget(adv)` | advantage | decreasing |
-| `acc.beta_budget(beta, alpha)` | beta | increasing (more noise = higher beta) |
-| `acc.risk_budget(risk, prior)` | risk | increasing |
+| Function | Target metric | Metric kind |
+|----------|---------------|-------------|
+| `acc.epsilon_budget(eps, delta)` | epsilon | privacy loss (safe at-or-below target) |
+| `acc.delta_budget(delta, epsilon)` | delta | privacy loss (safe at-or-below) |
+| `acc.advantage_budget(adv)` | advantage | privacy loss (safe at-or-below) |
+| `acc.beta_budget(beta, alpha)` | beta | privacy gain (safe at-or-above target) |
+| `acc.risk_budget(risk, prior)` | risk | privacy gain (safe at-or-above) |
 
 ### Search direction
 
-The current search contract supports parameters such as noise multiplier whose
-increase improves privacy in the direction declared by the selected budget:
-privacy-loss metrics decrease and privacy-gain metrics increase. The metric
-produced by `process(param)` must follow that declared direction, with
-`param_min` as the unsafe endpoint and `param_max` as the safe endpoint.
+The search direction is derived from the calibrated parameter itself: the
+metric is probed at both endpoints and the privacy-safe endpoint detected
+automatically. Parameters whose increase improves privacy (noise multiplier)
+and parameters whose increase spends privacy (sample rate, step count) are
+both supported, for every budget kind. The metric produced by
+`process(param)` must be monotone over `[param_min, param_max]`; flat or
+detectably non-monotone parameterizations raise `ValueError`.
 
 ## Accountant
 
@@ -533,11 +535,11 @@ flat = state_dict(acct)
 # ... torch.save(flat, path) / flat = torch.load(path) ...
 ```
 
-The flat mapping may include ``torch.Tensor`` and NumPy arrays. Persist it with
-:func:`torch.save` / :func:`torch.load` (or another pickle-compatible format),
-not JSON, unless every leaf is JSON-serialisable.
+The flat mapping may include `torch.Tensor` and NumPy arrays. Persist it with
+`torch.save` / `torch.load` (or another pickle-compatible format), not JSON,
+unless every leaf is JSON-serializable.
 
-For a bare ``DpProcess``, use ``from_state_dict(identity(), flat)`` (or any
+For a bare `DpProcess`, use `from_state_dict(identity(), flat)` (or any
 concrete process as the template).
 
 ## Discretization

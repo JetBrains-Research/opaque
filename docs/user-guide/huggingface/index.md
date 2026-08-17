@@ -1,20 +1,20 @@
-# HuggingFace Integration
+# Hugging Face Integration
 
-Opaque ships a HuggingFace-shaped trainer (`opaque.transformers.DPTrainer`)
+Opaque ships a Hugging Face–style trainer (`opaque.transformers.DPTrainer`)
 plus a per-model patch surface (`opaque.patches`) so existing
 `transformers` models can be trained under DP-SGD with the familiar
 `Trainer.train()` / `evaluate()` / `predict()` interface.
 
-This section is the routing guide.  Pick the page that matches what
+This section is the routing guide. Pick the page that matches what
 you're trying to do.
 
 ## What's covered
 
 - **[DPTrainer](dptrainer.md)** — common training / eval / predict
-  usage.  Start here if you have a model and a dataset and want to
+  usage. Start here if you have a model and a dataset and want to
   train.
 - **[TrainingArguments](training-arguments.md)** — the most-used DP
-  knobs, the batch-size contract, and the save / resume claims.  The
+  knobs, the batch-size contract, and the save / resume claims. The
   exhaustive field listing lives in the API reference.
 - **[Model patches](model-patches.md)** — what `apply_runtime_patches`
   and `apply_model_patches` do, why vmap needs them, the model
@@ -44,7 +44,7 @@ Have a model + dataset, want to train?
 
 ## Quick start
 
-A minimal DPTrainer run looks like a HuggingFace `Trainer` run with a
+A minimal DPTrainer run looks like a Hugging Face `Trainer` run with a
 few DP-specific fields on `TrainingArguments`:
 
 ```python
@@ -79,7 +79,7 @@ linked above.
 
 ## Scope
 
-The HF integration prioritises **decoder-only text models**
+The HF integration prioritizes **decoder-only text models**
 (`*ForCausalLM` and shared text modules) tested against
 `transformers==4.57.1`.  Vision-language stacks (e.g.
 `*ForConditionalGeneration`) are not in the default patch set; see

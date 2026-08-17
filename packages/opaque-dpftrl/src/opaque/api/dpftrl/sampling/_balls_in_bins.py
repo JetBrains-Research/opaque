@@ -26,7 +26,7 @@ References:
     - Choquette-Choo et al. (2024), "Privacy Amplification for Matrix Mechanisms"
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
 import numpy as np
@@ -70,7 +70,7 @@ class BallsInBinsSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         num_bins: int,
         n_steps: int | None = None,
         *,
@@ -91,7 +91,7 @@ class BallsInBinsSampler(Sampler):
                     f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
                 )
 
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.num_bins = num_bins
         self.n_steps = n_steps
 

@@ -187,5 +187,5 @@ def _bind_scores(
     """Apply reference calibration and attach canary identifiers."""
     ids = coin_flip.canary_indices[np.asarray(positions, dtype=int)]
     if reference_scores is not None:
-        scores = scores - _aligned_reference(ids, reference_scores)
+        scores = np.subtract(scores, _aligned_reference(ids, reference_scores))
     return CanaryScores(scores, canary_indices=ids)

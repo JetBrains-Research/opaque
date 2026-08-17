@@ -277,6 +277,7 @@ def clipped_grad(
                 (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
             if _force_grad_norms:
                 if isinstance(result, tuple):
+                    stats = None
                     if _return_stats:
                         if len(result) == 3:
                             clipped_grads, aux, stats = result
@@ -297,12 +298,15 @@ def clipped_grad(
                             if aux is not None
                             else (
                                 stats.clipping_rate
-                                if isinstance(stats.clipping_rate, float)
+                                if stats is not None
+                                and isinstance(stats.clipping_rate, float)
                                 else None
                             )
                         ),
                         batch_size=(
-                            aux.batch_size if aux is not None else stats.batch_size
+                            aux.batch_size
+                            if aux is not None
+                            else (stats.batch_size if stats is not None else 0)
                         ),
                         group_norms=(aux.group_norms if aux is not None else None),
                     )

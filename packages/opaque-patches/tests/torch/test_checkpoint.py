@@ -133,6 +133,7 @@ class TestCheckpointPatches:
 class TestCheckpointWithClippedGrad:
     """Test checkpoint with the full clipped_grad pipeline."""
 
+    @pytest.mark.slow
     def test_use_reentrant_override(self, device):
         """Patch overrides use_reentrant=True to False."""
         transformers = pytest.importorskip("transformers")
@@ -157,6 +158,7 @@ class TestCheckpointWithClippedGrad:
                         "use_reentrant was not overridden to False"
                     )
 
+    @pytest.mark.slow
     def test_clipped_grad_with_checkpoint_model(self, device):
         """clipped_grad works on a HF model with gradient_checkpointing_enable()."""
         transformers = pytest.importorskip("transformers")
@@ -212,6 +214,7 @@ class TestCheckpointWithClippedGrad:
             "All gradients are zero"
         )
 
+    @pytest.mark.slow
     def test_checkpoint_gradient_correctness(self, device):
         """Checkpointed gradients match non-checkpointed for same model."""
         transformers = pytest.importorskip("transformers")

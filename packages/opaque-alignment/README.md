@@ -1,11 +1,11 @@
 # opaque-alignment
 
 Functional, mechanism-agnostic primitives for **DP-safe preference learning**:
-per-example loss functions (DPO / SFT families), logprob helpers, preference
+per-example loss functions (DPO / SFT families), log-probability helpers, preference
 collators, dataset transforms, reference-model helpers, alignment metrics, and
 memory-efficient fused-linear twins (`fused_nll_loss` / `fused_dft_loss` /
 `fused_sequence_logp`) that project hidden states through the `lm_head` via the
-optional opaque-patches linear-CE kernel.
+optional `opaque-patches` linear-CE kernel.
 
 Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
 (serialization). Consumed by both functional training scripts
@@ -21,7 +21,7 @@ Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
 - **Mechanism-agnostic.** Depends only on the substrate packages
   (`opaque-engine`, `opaque-base`); never on `opaque-dpsgd`, `opaque-dpftrl`,
   or `opaque-optimizers`. The DP mechanism and optimizer are chosen at the call
-  site. This is enforced by `tests/contracts/test_dependency_direction.py`.
+  site.
 - **Per-example API.** Public losses map each record to its own scalar and
   compose with `vmap(grad(...))`; this does not imply family-wide locality
   verification. Batch-coupled Tier 3 variants are not shipped.
@@ -61,5 +61,5 @@ through the method that consumes them, following the shared-impl re-import patte
 
 ## Status
 
-Planning / early implementation. See `docs/development/opaque-alignment-plan.md`
+Planning and early implementation. See `docs/development/opaque-alignment-plan.md`
 for the full package plan and phase breakdown.
