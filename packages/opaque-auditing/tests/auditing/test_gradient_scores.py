@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Subset, TensorDataset
+from torch.utils.data import TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import gradient_scores, one_run
+from opaque.auditing.types import CanaryScores
 from opaque.random import key
 
 
@@ -36,65 +37,95 @@ class TestGradientScores:
 
     @pytest.mark.slow
     def test_basic_scoring(self, linear_setup):
-        """Test that gradient_scores returns correct shape."""
+        """Test that gradient_scores returns one score per canary."""
         params, dataset, loss_fn = linear_setup
-        loader = DataLoader(dataset, batch_size=64)
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
-        assert scores.shape == (200,)
+        assert isinstance(scores, CanaryScores)
+        assert scores.scores.shape == (50,)
+        assert len(scores) == 50
 
-    def test_scoring_with_subset(self, linear_setup):
-        """Test scoring a subset via Subset + DataLoader."""
+    def test_only_canaries_are_scored(self, linear_setup):
+        """Only the partition's canaries are scored, not the whole dataset."""
         params, dataset, loss_fn = linear_setup
-        indices = [0, 10, 20, 30, 40]
-        loader = DataLoader(Subset(dataset, indices), batch_size=32)
+        cf = auditing.coin_flip(dataset, num_canaries=5, key=key(42))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
-        assert scores.shape == (5,)
+        assert len(scores) == 5
+        assert len(scores) < len(dataset)
+        np.testing.assert_array_equal(scores.canary_indices, cf.canary_indices)
 
     def test_scores_are_non_positive(self, linear_setup):
         """Test that scores are <= 0 (negative squared norms)."""
         params, dataset, loss_fn = linear_setup
-        loader = DataLoader(dataset, batch_size=64)
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
-        assert np.all(scores <= 0)
+        assert np.all(scores.scores <= 0)
 
     def test_perfect_model_has_near_zero_scores(self, linear_setup):
         """Perfect model: gradient norms near 0, so scores near 0."""
         params, dataset, loss_fn = linear_setup
-        loader = DataLoader(dataset, batch_size=64)
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
         # Perfect model has zero loss => zero gradient => scores near 0
-        assert np.all(scores > -1e-3)
+        assert np.all(scores.scores > -1e-3)
+
+    def test_scores_match_per_example_gradient_norms(self, linear_setup):
+        """Each score is the negated squared gradient norm of its canary."""
+        params, dataset, loss_fn = linear_setup
+        random_params = torch.randn_like(params)
+        cf = auditing.coin_flip(dataset, num_canaries=25, key=key(42))
+        scores = gradient_scores(
+            loss_fn,
+            random_params,
+            batch_argnums=(1, 2),
+            coin_flip=cf,
+            dataset=dataset,
+        )
+
+        X, y = dataset.tensors
+        with torch.no_grad():
+            # d/dw (x @ w - y)^2 = 2 (x @ w - y) x
+            residual = X @ random_params - y
+            grads = 2 * residual.unsqueeze(1) * X
+            all_expected = -(grads.square().sum(dim=1))
+        expected = all_expected.numpy()[scores.canary_indices]
+        np.testing.assert_allclose(scores.scores, expected, rtol=1e-4)
 
     def test_random_model_has_larger_norms(self, linear_setup):
         """Random model has larger gradient norms than perfect model."""
         params, dataset, loss_fn = linear_setup
-        loader = DataLoader(dataset, batch_size=64)
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
 
         scores_perfect = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
 
         random_params = torch.randn_like(params) * 10
@@ -102,47 +133,59 @@ class TestGradientScores:
             loss_fn,
             random_params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
 
         # Random model has larger gradient norms => more negative scores
-        assert np.mean(scores_perfect) > np.mean(scores_random)
+        assert np.mean(scores_perfect.scores) > np.mean(scores_random.scores)
 
     def test_batch_size_does_not_affect_result(self, linear_setup):
         """Test that different batch sizes give same scores."""
         params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
         scores_32 = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=DataLoader(dataset, batch_size=32),
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=32,
         )
         scores_128 = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=DataLoader(dataset, batch_size=128),
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=128,
         )
-        np.testing.assert_allclose(scores_32, scores_128, atol=1e-5)
+        np.testing.assert_allclose(scores_32.scores, scores_128.scores, atol=1e-5)
+        np.testing.assert_array_equal(
+            scores_32.canary_indices, scores_128.canary_indices
+        )
 
     def test_single_batch_argnum(self):
         """Test with a single batch argument."""
         torch.manual_seed(42)
         X = torch.randn(30, 5)
         params = torch.randn(5)
+        dataset = TensorDataset(X)
 
         def loss_fn(params, x):
             return (x @ params).pow(2).sum()
 
-        loader = DataLoader(TensorDataset(X), batch_size=16)
+        cf = auditing.coin_flip(dataset, num_canaries=15, key=key(1))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=16,
         )
-        assert scores.shape == (30,)
-        assert np.all(scores <= 0)
+        assert scores.scores.shape == (15,)
+        assert np.all(scores.scores <= 0)
 
 
 class TestGradientScoresValidation:
@@ -153,25 +196,27 @@ class TestGradientScoresValidation:
         torch.manual_seed(42)
         X = torch.randn(10, 4)
         params = torch.randn(4)
+        dataset = TensorDataset(X)
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(0))
 
         def loss_fn(x, params):
             return (x @ params).pow(2).sum()
-
-        loader = DataLoader(TensorDataset(X), batch_size=10)
 
         with pytest.raises(ValueError, match="must not be in batch_argnums"):
             gradient_scores(
                 loss_fn,
                 params,
                 batch_argnums=(0,),
-                dataloader=loader,
+                coin_flip=cf,
+                dataset=dataset,
             )
 
     def test_empty_batch_argnums_raises(self):
         """Empty batch_argnums must raise."""
         torch.manual_seed(42)
         params = torch.randn(4)
-        loader = DataLoader(TensorDataset(torch.randn(10, 4)), batch_size=10)
+        dataset = TensorDataset(torch.randn(10, 4))
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(0))
 
         def loss_fn(params, x):
             return (x @ params).pow(2).sum()
@@ -181,15 +226,17 @@ class TestGradientScoresValidation:
                 loss_fn,
                 params,
                 batch_argnums=(),
-                dataloader=loader,
+                coin_flip=cf,
+                dataset=dataset,
             )
 
 
 class TestGradientScoresReference:
     """Tests for reference_scores subtraction."""
 
-    def test_reference_scores_subtraction(self):
-        """Test that reference_scores are subtracted from current scores."""
+    @pytest.fixture
+    def reference_setup(self):
+        """Dataset, params, and loss function for reference calibration."""
         torch.manual_seed(42)
         dim = 8
         n = 50
@@ -202,19 +249,26 @@ class TestGradientScoresReference:
         def loss_fn(params, tokens):
             return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
 
-        loader = DataLoader(dataset, batch_size=32)
+        return params, ref_params, dataset, loss_fn
+
+    def test_reference_scores_subtraction(self, reference_setup):
+        """Test that reference_scores are subtracted from current scores."""
+        params, ref_params, dataset, loss_fn = reference_setup
+        cf = auditing.coin_flip(dataset, num_canaries=20, key=key(7))
 
         ref_scores = gradient_scores(
             loss_fn,
             ref_params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
             reference_scores=ref_scores,
         )
 
@@ -223,32 +277,45 @@ class TestGradientScoresReference:
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
         )
-        expected = raw_scores - ref_scores
-        np.testing.assert_allclose(scores, expected, atol=1e-5)
+        np.testing.assert_array_equal(
+            raw_scores.canary_indices, ref_scores.canary_indices
+        )
+        expected = raw_scores.scores - ref_scores.scores
+        np.testing.assert_allclose(scores.scores, expected, atol=1e-5)
+        np.testing.assert_array_equal(scores.canary_indices, cf.canary_indices)
 
-    def test_reference_scores_shape_mismatch(self):
-        """Test that mismatched reference_scores raises ValueError."""
-        torch.manual_seed(42)
-        dim = 8
-        tokens = torch.randn(10, dim)
-        dataset = TensorDataset(tokens)
-        params = torch.randn(dim)
+    def test_reference_not_covering_canaries_raises(self, reference_setup):
+        """A reference missing some canaries raises ValueError."""
+        params, _ref_params, dataset, loss_fn = reference_setup
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(7))
+        partial_ref = CanaryScores(np.zeros(5), canary_indices=cf.canary_indices[:5])
 
-        def loss_fn(params, tokens):
-            return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
-
-        loader = DataLoader(dataset, batch_size=32)
-        wrong_ref = np.zeros(5)
-
-        with pytest.raises(ValueError, match="reference_scores shape"):
+        with pytest.raises(ValueError, match="do not cover"):
             gradient_scores(
                 loss_fn,
                 params,
                 batch_argnums=(1,),
-                dataloader=loader,
-                reference_scores=wrong_ref,
+                coin_flip=cf,
+                dataset=dataset,
+                reference_scores=partial_ref,
+            )
+
+    def test_bare_reference_raises(self, reference_setup):
+        """A bare ndarray reference carries no identifiers and is rejected."""
+        params, _ref_params, dataset, loss_fn = reference_setup
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(7))
+
+        with pytest.raises(TypeError, match="identifiers"):
+            gradient_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1,),
+                coin_flip=cf,
+                dataset=dataset,
+                reference_scores=np.zeros(10),
             )
 
 
@@ -260,20 +327,23 @@ class TestGradientScoresPyTree:
         torch.manual_seed(42)
         n = 20
         X = torch.randn(n, 4)
+        dataset = TensorDataset(X)
         params = {"w": torch.randn(4, 3), "b": torch.randn(3)}
 
         def loss_fn(params, x):
             return F.mse_loss(x @ params["w"] + params["b"], torch.zeros(3))
 
-        loader = DataLoader(TensorDataset(X), batch_size=8)
+        cf = auditing.coin_flip(dataset, num_canaries=12, key=key(4))
         scores = gradient_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=8,
         )
-        assert scores.shape == (n,)
-        assert np.all(scores <= 0)
+        assert scores.scores.shape == (12,)
+        assert np.all(scores.scores <= 0)
 
 
 class TestEndToEnd:
@@ -294,10 +364,6 @@ class TestEndToEnd:
         params = true_w.clone()
 
         cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
-        loader = DataLoader(
-            Subset(dataset, cf.canary_indices.tolist()),
-            batch_size=32,
-        )
 
         def loss_fn(params, x, y):
             return F.mse_loss(x @ params, y, reduction="sum")
@@ -306,9 +372,12 @@ class TestEndToEnd:
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataloader=loader,
+            coin_flip=cf,
+            dataset=dataset,
+            batch_size=32,
         )
-        assert scores.shape == (len(cf.canary_indices),)
+        assert isinstance(scores, CanaryScores)
+        np.testing.assert_array_equal(scores.canary_indices, cf.canary_indices)
 
         estimate = one_run(scores, coin_flip=cf)
         # Perfect model should give a valid estimate

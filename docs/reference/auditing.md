@@ -33,45 +33,57 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 ```python
 auditing.loss_scores(
     loss_fn, *args, *,
-    batch_argnums, dataloader,
+    batch_argnums, coin_flip, dataset,
     reference_scores=None,
-) -> np.ndarray
+    batch_size=32, collate_fn=None,
+) -> CanaryScores
 ```
 
 Compute per-example membership scores as negative loss. Higher score =
 lower loss = more likely a training member.
 
-The `dataloader` must yield batches compatible with `loss_fn`. Each batch
-should be a tensor (single `batch_argnums`) or a tuple of tensors
-(multiple `batch_argnums`). Use a custom `collate_fn` on the DataLoader
-to handle dict-style batches (e.g., HuggingFace).
+Builds an internal loader over the partition's canaries and pairs every
+score with the dataset index of the example that produced it. Returns
+[`CanaryScores`](#canaryscores) — the form [`one_run`](#one_run) requires.
+The pairing is joined by identifier, so no iteration order over the
+batches can misalign it. Identifiers are attached per batch *before*
+collation, so a `collate_fn` that reorders examples within a batch
+misaligns the pairing and cannot be detected; a `collate_fn` that drops or
+adds rows raises.
+
+To audit scores computed by some other pipeline, attest their identifiers
+with [`canary_scores`](#canary_scores) instead.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
 | `*args` | any | — | Non-batched arguments (e.g., model parameters) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
-| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
-| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model) |
+| `coin_flip` | `CoinFlip` | required | The audit partition to score against |
+| `dataset` | any | required | The full dataset the partition was created from |
+| `reference_scores` | `CanaryScores` | `None` | Baseline scores to subtract (e.g., from untrained model), aligned by identifier |
+| `batch_size` | `int` | `32` | Batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Collates raw canary examples into a batch for `loss_fn`; must emit one row per example, in the order received |
 
-**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
+canary. Higher = more likely member.
+
+**Raises** `ValueError` if `batch_argnums` is malformed, `batch_size` is
+not positive, or `collate_fn` changes the batch row count; `TypeError` if
+`reference_scores` does not carry identifiers.
 
 ```python
-from torch.utils.data import DataLoader, Subset
-
 def canary_collate(examples):
     batch = data_collator(examples)
     return (batch["input_ids"].to(device),)
 
-canary_loader = DataLoader(
-    Subset(dataset, cf.canary_indices.tolist()),
-    batch_size=32, collate_fn=canary_collate,
-)
 scores = auditing.loss_scores(
     loss_fn, params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
+    batch_size=32, collate_fn=canary_collate,
 )
+estimate = auditing.one_run(scores, coin_flip=cf)
 ```
 
 ---
@@ -81,9 +93,10 @@ scores = auditing.loss_scores(
 ```python
 auditing.gradient_scores(
     loss_fn, *args, *,
-    batch_argnums, dataloader,
+    batch_argnums, coin_flip, dataset,
     reference_scores=None,
-) -> np.ndarray
+    batch_size=32, collate_fn=None,
+) -> CanaryScores
 ```
 
 Compute per-example membership scores as negative squared gradient norm.
@@ -93,26 +106,38 @@ This is a white-box attack that differentiates with respect to the first
 `loss_fn` argument (model parameters). Therefore `0` must not appear in
 `batch_argnums`.
 
+Scores the partition's canaries over an internal identifier-carrying
+loader, with the same pairing guarantees and `collate_fn` obligation as
+[`loss_scores`](#loss_scores).
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example scalar loss function |
 | `*args` | any | — | Non-batched arguments; first arg is differentiated |
 | `batch_argnums` | `tuple[int, ...]` | required | Batched argument indices; must exclude 0 |
-| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
-| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract |
+| `coin_flip` | `CoinFlip` | required | The audit partition to score against |
+| `dataset` | any | required | The full dataset the partition was created from |
+| `reference_scores` | `CanaryScores` | `None` | Baseline scores to subtract, aligned by identifier |
+| `batch_size` | `int` | `32` | Batch size of the internal loader |
+| `collate_fn` | `Callable` | default collate | Must emit one row per example, in the order received |
 
-**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+**Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
+canary. Higher = more likely member.
+
+**Raises** `ValueError` if `0 in batch_argnums`, `batch_size` is not
+positive, or `collate_fn` changes the batch row count; `TypeError` if
+`reference_scores` does not carry identifiers.
 
 ```python
 ref = auditing.gradient_scores(
     loss_fn, initial_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
 )
 scores = auditing.gradient_scores(
     loss_fn, trained_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
     reference_scores=ref,
 )
 ```
@@ -125,20 +150,53 @@ from opaque.auditing.attacks import gradient_scores
 
 ---
 
+### canary_scores
+
+```python
+auditing.canary_scores(
+    scores, *, canary_indices,
+) -> CanaryScores
+```
+
+Attest which canary each externally computed score belongs to. The
+built-in scorers already return `CanaryScores` in verified mode; use this
+for scores produced by another pipeline. Identifiers may be in any order
+— [`one_run`](#one_run) joins on them rather than assuming a position.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `scores` | array-like | required | Membership scores, shape `(n,)`, float |
+| `canary_indices` | array-like | required | Dataset index behind each score, same order as `scores` |
+
+**Raises** `ValueError` if either array is not 1-D, the identifiers are
+not integers, the lengths disagree, or an identifier repeats.
+
+```python
+scores = auditing.canary_scores(values, canary_indices=ids)
+estimate = auditing.one_run(scores, coin_flip=cf)
+```
+
+---
+
 ### one_run
 
 ```python
 auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
 ```
 
-Build a one-run privacy estimate from canary scores. Splits scores by
-the coin-flip partition, precomputes the empirical ROC,
-and returns a frozen estimate.
+Build a one-run privacy estimate from canary scores. Joins scores to the
+coin-flip partition by canary identifier, precomputes the empirical ROC,
+and returns a frozen estimate. The join makes scoring order irrelevant;
+identifiers that do not cover the partition's canaries one-to-one raise
+instead of silently producing a meaningless estimate.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `scores` | `np.ndarray` | required | Per-canary membership scores, shape `(num_canaries,)` |
+| `scores` | [`CanaryScores`](#canaryscores) | required | Per-canary membership scores with identifiers, from verified scoring or explicit attestation |
 | `coin_flip` | `CoinFlip` | required | The coin-flip partition |
+
+**Raises** `TypeError` for bare arrays without identifiers; `ValueError`
+if identifiers are unexpected, duplicated, or missing.
 
 ```python
 estimate = auditing.one_run(scores, coin_flip=cf)
@@ -178,7 +236,33 @@ All indices except held-out canaries. Returns `list[int]` for HuggingFace
 cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
 ```
 
-Split per-canary scores into `(in_scores, out_scores)`.
+Split per-canary scores into `(in_scores, out_scores)`, joining
+[`CanaryScores`](#canaryscores) to the partition by identifier. Bare
+arrays raise `TypeError`; identifiers that do not join one-to-one onto
+`canary_indices` raise `ValueError`.
+
+---
+
+## CanaryScores
+
+```python
+class CanaryScores(scores, canary_indices)  # frozen dataclass
+```
+
+Membership scores paired with stable canary identifiers: `scores[k]` was
+computed for dataset example `canary_indices[k]`. Produced by the scoring
+functions in verified mode; build one with
+[`canary_scores`](#canary_scores) to attest identifiers for scores
+computed elsewhere (any order — [`one_run`](#one_run) joins by
+identifier). Arrays are defensively copied, validated (1-D, equal length,
+unique integer identifiers), and marked read-only.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `scores` | `np.ndarray` | Membership scores, shape `(n,)`, float, read-only |
+| `canary_indices` | `np.ndarray` | Dataset index of the canary behind each score |
+
+Supports `len()` and `np.asarray()` (yields the score values).
 
 ---
 
@@ -201,6 +285,7 @@ Holds the empirical ROC counts and exposes:
 |---|---|---|
 | `n_in` | `int` | Number of held-in canaries |
 | `n_out` | `int` | Number of held-out canaries |
+| `canary_indices` | `np.ndarray \| None` | Stable example identifiers: dataset indices of the audited canaries, in partition order (always populated by `one_run`) |
 
 ### epsilon_at
 
@@ -368,11 +453,11 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | | |
 |---|---|
 | `auditing.coin_flip(dataset, ...)` | Coin-flip partition → `CoinFlip` |
-| `auditing.loss_scores(loss_fn, ...)` | Membership scores → `np.ndarray` |
-| `auditing.gradient_scores(loss_fn, ...)` | White-box membership scores → `np.ndarray` |
+| `auditing.loss_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified membership scores → `CanaryScores` |
+| `auditing.gradient_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified white-box scores → `CanaryScores` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |
+| `auditing.canary_scores(values, canary_indices=...)` | Attest identifiers for externally computed scores |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
-| `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
 | `estimate.epsilon_at(delta=)` | ε bound (μ-GDP default) |
 | `estimate.delta_at(epsilon=)` | δ at given ε |
 | `estimate.beta_at(alpha=)` | Theoretical β at α (μ-GDP) |

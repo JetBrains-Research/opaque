@@ -18,9 +18,10 @@ with the tight order-statistics tests from
 3. **Train once.** Train on the resulting subset. Non-canary data is always
    included.
 4. **Score.** Compute a membership score for each canary (negative loss by
-   default — lower loss means more likely a member).
-5. **Test.** Convert scores + coin flips into an ε lower bound via the
-   audit-method surface on `OneRunEstimate`.
+   default — lower loss means more likely a member). Each score carries the
+   dataset index of its canary.
+5. **Test.** Join scores to coin flips by those identifiers and convert them
+   into an ε lower bound via the audit-method surface on `OneRunEstimate`.
 
 Only one training run is needed, unlike shadow-model approaches.
 
@@ -29,7 +30,6 @@ Only one training run is needed, unlike shadow-model approaches.
 ```python
 import opaque.auditing as auditing
 from opaque.random import key
-from torch.utils.data import DataLoader, Subset
 
 # 1. Partition: designate canaries and flip coins
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
@@ -37,25 +37,43 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 
 # 2. Train with DP-SGD on train_data ...
 
-# 3. Score: compute membership scores for canaries
+# 3. Score: compute membership scores for the canaries
 def canary_collate(examples):
     batch = data_collator(examples)
     return (batch["input_ids"].to(device),)
 
-canary_loader = DataLoader(
-    Subset(dataset, cf.canary_indices.tolist()),
-    batch_size=32, collate_fn=canary_collate,
-)
 scores = auditing.loss_scores(
     loss_fn, trained_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
+    batch_size=32, collate_fn=canary_collate,
 )
 
 # 4. Estimate: build the one-run estimate and query ε
 estimate = auditing.one_run(scores, coin_flip=cf)
 print(f"ε (audit):  {estimate.epsilon_at(delta=1e-5):.4f}")
 print(f"AUC (attack): {estimate.attack_auc():.4f}")
+```
+
+Scoring with `coin_flip=` + `dataset=` builds the canary loader internally
+and returns `CanaryScores`: every score is paired with the dataset index of
+the canary that produced it. `one_run` joins scores to coin-flip labels by
+those identifiers — identifiers that are wrong, missing, or duplicated
+raise instead of silently pairing scores with the wrong labels, so however
+the pipeline orders its batches, it cannot fake a "no leakage" result.
+
+The one thing you still own is `collate_fn`. Identifiers ride alongside
+the examples and are captured *before* your collate runs, so a collate
+that reorders rows within a batch attaches every score to the wrong
+canary — silently, since the count still matches. Keep it
+order-preserving; dropping or adding rows raises.
+
+For scores computed outside the built-in scorers, attest their
+identifiers explicitly (any order is accepted — the join realigns them):
+
+```python
+scores = auditing.canary_scores(values, canary_indices=ids_in_your_scoring_order)
+estimate = auditing.one_run(scores, coin_flip=cf)
 ```
 
 ## Default audit method: μ-GDP
@@ -137,7 +155,8 @@ No changes to the training loop. The dataset is already filtered.
 scores = auditing.loss_scores(
     per_example_loss_fn, trained_params,
     batch_argnums=(1,),
-    dataloader=canary_loader,
+    coin_flip=cf, dataset=dataset,
+    batch_size=32, collate_fn=canary_collate,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
 print(f"ε (audit): {estimate.epsilon_at(delta=1e-5):.4f}")
@@ -150,14 +169,23 @@ for complete working examples with the `--audit` flag.
 ### Parameter reference
 
 - **`batch_argnums`**: Which positional arguments of `loss_fn` come from the
-  dataloader. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
+  batch. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
   batched. Same convention as `clipped_grad`.
-- **`dataloader`**: Any iterable yielding batches. Each batch should be a
-  tensor (single `batch_argnums`) or a tuple of tensors (multiple
-  `batch_argnums`). Use a custom `collate_fn` on the DataLoader to handle
-  dict-style batches (e.g., HuggingFace).
-- **`reference_scores`**: Baseline scores from an untrained model. When
-  provided, returned scores are `scores - reference_scores` (loss reduction).
+- **`coin_flip` + `dataset`**: required. The scorer builds its own loader
+  over the partition's canaries and returns `CanaryScores` with per-score
+  identifiers — the form `one_run` requires. `batch_size` and `collate_fn`
+  configure the internal loader; `collate_fn` receives the raw canary
+  examples and must return a batch for `loss_fn`, one row per example in
+  the order it received them. The collated batch should be a tensor (single
+  `batch_argnums`) or a tuple of tensors (multiple `batch_argnums`).
+- **`reference_scores`**: Baseline scores from an untrained model, over the
+  same partition. When provided, returned scores are
+  `scores - reference_scores` (loss reduction). The reference must be a
+  `CanaryScores` and is aligned by identifier before subtraction.
+
+Scoring a pipeline the built-in scorers cannot express is still supported —
+compute the scores yourself and attest their identifiers with
+`auditing.canary_scores(values, canary_indices=...)`.
 
 ## Attack-side metrics
 

@@ -25,7 +25,7 @@ from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
 
 if TYPE_CHECKING:
-    from opaque.api.auditing._coin_flip import CoinFlip
+    from opaque.api.auditing._coin_flip import CanaryScores, CoinFlip
     from opaque.random.types import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
@@ -37,23 +37,32 @@ __all__ = ["OneRunEstimate", "one_run"]
 _MIN_GRID_SIZE = 16
 
 
-def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
+def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
     """Build a one-run privacy estimate from canary scores.
 
-    Splits scores by the coin-flip partition, precomputes the raw
-    empirical ROC, and returns a frozen estimate.
+    Joins scores to the coin-flip partition by canary identifier,
+    precomputes the raw empirical ROC, and returns a frozen estimate.
+    The join makes scoring order irrelevant: identifiers that do not
+    cover the partition's canaries one-to-one raise instead of silently
+    producing a meaningless estimate.
 
     Args:
-        scores: Per-canary membership scores, shape ``(num_canaries,)``.
-            Higher score = more likely a training member.
+        scores: Per-canary membership scores carrying canary
+            identifiers, as returned by the scoring functions in
+            verified mode (``coin_flip=`` + ``dataset=``).  Higher score
+            = more likely a training member.  For scores computed
+            outside the built-in scorers, attest identifiers explicitly
+            with ``canary_scores(values, canary_indices=...)``.
         coin_flip: The :class:`~opaque.auditing.CoinFlip` partition.
 
     Returns:
         A :class:`OneRunEstimate` with precomputed threshold structure.
 
     Raises:
-        ValueError: If either partition is empty or any score is NaN or
-            infinite.
+        TypeError: If ``scores`` is a bare array without identifiers.
+        ValueError: If the identifiers do not join one-to-one onto the
+            partition's canaries, either partition is empty, or any
+            score is NaN or infinite.
 
     Example::
 
@@ -63,7 +72,7 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         scores = auditing.loss_scores(loss_fn, params,
                                        batch_argnums=(1,),
-                                       dataloader=canary_loader)
+                                       coin_flip=cf, dataset=dataset)
         estimate = auditing.one_run(scores, coin_flip=cf)
         print(estimate.eps_delta().epsilon_at(delta=1e-5))
     """
@@ -90,6 +99,7 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
         fp_counts=fp_counts,
         in_scores=in_scores,
         out_scores=out_scores,
+        canary_indices=coin_flip.canary_indices,
     )
 
 
@@ -115,6 +125,10 @@ class OneRunEstimate:
     fp_counts: np.ndarray
     in_scores: np.ndarray
     out_scores: np.ndarray
+    #: Stable example identifiers: the dataset indices of the audited
+    #: canaries, in the order the scores were split.  Always populated by
+    #: :func:`one_run`; ``None`` only for directly-constructed estimates.
+    canary_indices: np.ndarray | None = None
 
     def __repr__(self) -> str:
         auc = _auc_from_counts(self.tn_counts, self.fn_counts)
