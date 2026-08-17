@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.9.0",
+    "torch>=2.13.0",
     "scipy>=1.11.0",
     "opaque-engine>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
