@@ -67,12 +67,11 @@ def _run_dp_step(
     *,
     compile_backend: str | None = None,
     compile_fullgraph: bool = False,
-    compile_transform: bool = False,
     clip_norm: float = 1.0,
     noise_stddev: float = 0.0,
     rng_seed: int = 42,
 ):
-    """One DP step with an optionally compiled loss closure or DP transform."""
+    """One DP step. If ``compile_backend`` is set, compile the loss closure."""
     fmodel, params = make_functional(model)
 
     def loss_fn(p, xi, yi):
@@ -80,7 +79,7 @@ def _run_dp_step(
         pred = fmodel(p, xi.unsqueeze(0)).squeeze(0)
         return ((pred - yi) ** 2).mean()
 
-    if compile_backend is not None and not compile_transform:
+    if compile_backend is not None:
         loss_fn = torch.compile(
             loss_fn, backend=compile_backend, fullgraph=compile_fullgraph
         )
@@ -91,10 +90,6 @@ def _run_dp_step(
         batch_argnums=(1, 2),
         clipping_norm=clip_norm,
     )
-    if compile_backend is not None and compile_transform:
-        grad_fn = torch.compile(
-            grad_fn, backend=compile_backend, fullgraph=compile_fullgraph
-        )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
     noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(rng_seed))
@@ -153,15 +148,23 @@ def test_compile_dp_transform_fullgraph_aot_eager():
     """fullgraph=True compiles the outer DP transform without graph breaks."""
     model, x, y = _build_model_and_batch()
     eager_grads, _, _ = _run_dp_step(model, x, y, compile_backend=None)
-    compiled_grads, _, _ = _run_dp_step(
-        model,
-        x,
-        y,
-        compile_backend="aot_eager",
-        compile_fullgraph=True,
-        compile_transform=True,
+
+    fmodel, params = make_functional(model)
+
+    def loss_fn(p, xi, yi):
+        pred = fmodel(p, xi.unsqueeze(0)).squeeze(0)
+        return ((pred - yi) ** 2).mean()
+
+    grad_fn, clip_state = clipped_grad(
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        clipping_norm=1.0,
     )
-    _assert_pytree_close(eager_grads, compiled_grads, rtol=1e-5, atol=1e-6)
+    compiled_grad_fn = torch.compile(grad_fn, backend="aot_eager", fullgraph=True)
+    compiled_grads, _ = compiled_grad_fn(params, x, y, state=clip_state)
+
+    _assert_pytree_close(eager_grads, compiled_grads.pytree, rtol=1e-5, atol=1e-6)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda required")
