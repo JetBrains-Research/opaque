@@ -164,6 +164,28 @@ class TestRowNormsClosedForm:
             norms, _probing_row_norms_squared(with_hint, n), atol=1e-12, rtol=1e-12
         )
 
+    def test_hint_not_used_past_validated_horizon(self):
+        # coef=[1, 0.5] with inv_hint=[1, -0.5] passes validation: the full
+        # convolution is [1, 0, -0.25] and only its first
+        # max(len(coef), len(inv_hint)) = 2 terms are checked. The hint is
+        # not the whole inverse though -- the true one continues
+        # [..., 0.25, -0.125] -- so zero-padding it past that horizon
+        # terminates the inverse early and under-reports the third squared
+        # row norm as 1.25 instead of 1.3125.
+        coef = torch.tensor([1.0, 0.5], dtype=torch.float64)
+        inv_hint = torch.tensor([1.0, -0.5], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef, inverse_coefficients=inv_hint)
+        norms = streaming.row_norms_squared(3)
+        torch.testing.assert_close(
+            norms,
+            torch.tensor([1.0, 1.25, 1.3125], dtype=torch.float64),
+            atol=1e-12,
+            rtol=1e-12,
+        )
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, 3), atol=1e-12, rtol=1e-12
+        )
+
     def test_inconsistent_inverse_coefficients_raise(self):
         coef = torch.tensor([1.0, 0.7, 0.3], dtype=torch.float64)
         with pytest.raises(ValueError, match="not the Toeplitz inverse"):

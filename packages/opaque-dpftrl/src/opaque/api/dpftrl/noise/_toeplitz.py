@@ -192,7 +192,12 @@ def inverse_as_streaming_matrix(
             recurrence inside the closed-form row norms.  Validated at
             construction: raises ``ValueError`` unless
             ``toeplitz(coef) @ toeplitz(inverse_coefficients)`` is the
-            identity.  Gradients do not flow through the hint (it is
+            identity.  That check spans ``max(len(coef), len(inverse_
+            coefficients))`` terms, so the hint is only trusted out to that
+            horizon; row norms past it are computed by the inversion
+            recurrence instead, because a hint that merely agrees with the
+            inverse over the checked window may still have a nonzero tail
+            beyond it.  Gradients do not flow through the hint (it is
             redundant with ``coef``); a grad-carrying hint falls back to
             the probing path like a grad-carrying ``coef`` does.
 
@@ -207,6 +212,7 @@ def inverse_as_streaming_matrix(
 
     hint_requires_grad = False
     inv_hint: torch.Tensor | None = None
+    hint_horizon = 0
     if inverse_coefficients is not None:
         hint_requires_grad = (
             isinstance(inverse_coefficients, torch.Tensor)
@@ -219,6 +225,7 @@ def inverse_as_streaming_matrix(
         # tail of a length-n coef (e.g. BISR's dense strategy recovery),
         # not an inconsistency inside the n x n matrix — ignore them.
         window = max(coef.shape[0], inv_hint.shape[0])
+        hint_horizon = window
         product = np.convolve(coef.detach().cpu().numpy(), inv_hint.numpy())[:window]
         identity = np.zeros_like(product)
         identity[0] = 1.0
@@ -266,7 +273,11 @@ def inverse_as_streaming_matrix(
             return fallback.row_norms_squared(n)
         if n == 0:
             return torch.zeros(0, dtype=torch.float64, device="cpu")
-        if inv_hint is not None:
+        if inv_hint is not None and n <= hint_horizon:
+            # Validation only checked the convolution through ``hint_horizon``,
+            # so the hint reproduces the true inverse coefficients only that
+            # far. Zero-padding it past that point would silently assume the
+            # inverse terminates there and under-report the row norms.
             inv_coefs = pad_coefs_to_n(inv_hint, n)
         else:
             impulse = np.zeros(n)
