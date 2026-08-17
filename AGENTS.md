@@ -88,8 +88,9 @@ Release body on the next main merge.
   `ci.yml`'s `upsert-draft` job.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs tests (CPU + MPS), Rust tests,
-the docs build, title validation, and autoformat checks. Preview wheels
+**Gate** — on every push the PR workflow runs Linux amd64, dependency-boundary,
+macOS arm64, Linux arm64, and CUDA validation, plus Rust tests, the docs build, title
+validation, and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -103,6 +104,7 @@ uv run pytest -m "slow"                           # slow tests (run on push to m
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
+cargo test --workspace --lib -- --ignored        # Rust slow tests
 ```
 
 Per-package tests:
@@ -231,6 +233,9 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   and run on pushes to `main` (the CI job strips the `and not slow`
   clause conditionally).
 
+Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
+unit/doc-test set; main and release additionally run the ignored library tests.
+
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
@@ -238,11 +243,22 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 
 CI lane marker expressions:
 
-- CPU (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- MPS (macOS): `-m "not cuda and not slow"`.
-- CUDA (self-hosted): `-m "cuda"`.
-- On push to `main` the CPU/MPS jobs drop `and not slow` so `slow` tests
-  run there.
+- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- PR macOS arm64: `-m "not cuda and not slow"`.
+- PR Linux arm64: `-m "not cuda and not mps and not slow"`.
+- PR CUDA (self-hosted): `-m "cuda and not slow"`.
+- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
+- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- Main macOS arm64: `-m "not cuda"`.
+- Main Linux arm64: `-m "not cuda and not mps"`.
+- Main CUDA (self-hosted): `-m "cuda"`.
+- Dependency selection uses the committed lock or uv's `lowest-direct` /
+  `highest` strategies. Main platform lanes retain slow-test coverage.
+  Failures in the Minimum dependencies lane are currently advisory, while
+  setup and resolution failures remain blocking.
 
 ### Supported HF model families
 

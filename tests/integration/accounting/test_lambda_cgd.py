@@ -92,19 +92,16 @@ class TestBisrDataclass:
 
 
 class TestMfGaussianPld:
-    @pytest.mark.slow
     def test_epsilon_is_finite_positive(self):
         eps = _lambda_cgd_mech(1.0).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    @pytest.mark.slow
     def test_more_noise_lowers_epsilon(self):
         # Higher nm → lower ε (more noise = better privacy)
         eps_low = _lambda_cgd_mech(0.5).epsilon_at(1e-5)
         eps_high = _lambda_cgd_mech(2.0).epsilon_at(1e-5)
         assert eps_high < eps_low
 
-    @pytest.mark.slow
     def test_single_step_matches_gaussian(self):
         """λCGD at n_steps=1 (lambda=0) reduces to a single Gaussian."""
         nm = 1.0
@@ -115,7 +112,6 @@ class TestMfGaussianPld:
         eps_gauss = dpsgd_acc.gaussian(nm).epsilon_at(1e-5)
         assert abs(eps_mf - eps_gauss) / eps_gauss < 0.01
 
-    @pytest.mark.slow
     def test_bisr_pld_valid(self):
         eps = _bisr_mech(1.0).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
@@ -127,7 +123,6 @@ class TestMfGaussianPld:
 class TestBnbAmplification:
     """BnB amplification with MF Gram matrix types."""
 
-    @pytest.mark.slow
     def test_bnb_rejects_non_accepted_type(self):
         """BnB rejects BandMf (should use poisson)."""
         from opaque.dpftrl.noise import band_mf_strategy
@@ -139,7 +134,6 @@ class TestBnbAmplification:
                 n_steps=150,
             )
 
-    @pytest.mark.slow
     def test_composition(self):
         """Can compose with * operator."""
         proc = _lambda_cgd_mech(1.0)

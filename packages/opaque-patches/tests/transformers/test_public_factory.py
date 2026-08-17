@@ -330,6 +330,7 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_family_name_for_known_hf_model():
     import transformers
 

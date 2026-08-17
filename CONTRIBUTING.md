@@ -156,6 +156,13 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
 
+The PR gate runs the non-slow Linux amd64, macOS arm64, Linux arm64, and CUDA
+suites together with the minimum dependencies on Python 3.11 and the
+latest supported dependencies on Python 3.12. Main repeats these boundaries and adds
+slow-test coverage to platform lanes. Dependency validation
+excludes slow and hardware-marked tests. Failures in the Minimum dependencies
+lane are currently advisory; environment setup and dependency resolution still gate.
+
 ```bash
 # PR-equivalent lane (matches CPU CI)
 uv run pytest -m "not cuda and not mps and not slow"
@@ -169,6 +176,10 @@ uv run pytest -m mps
 # Slow tests (run on push to main)
 uv run pytest -m slow
 ```
+
+Rust tests above five seconds use `#[ignore = "slow"]`. The PR gate runs the
+default Cargo test set; main and release additionally run
+`cargo test --lib -- --ignored`.
 
 Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set

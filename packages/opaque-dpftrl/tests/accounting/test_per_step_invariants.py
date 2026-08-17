@@ -117,6 +117,7 @@ class TestCyclicPoissonIdentity:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 10_000).epsilon_at(_DELTA)
 
+    @pytest.mark.slow
     def test_monotonic(self):
         proc = self._proc(200)
         prev = -math.inf
@@ -125,12 +126,14 @@ class TestCyclicPoissonIdentity:
             assert e >= prev - 1e-10, f"non-monotone at k={k}: {e} < {prev}"
             prev = e
 
+    @pytest.mark.slow
     def test_bounded_by_full(self):
         proc = self._proc(200)
         e_full = proc.epsilon_at(_DELTA)
         for k in [1, 50, 100, 199]:
             assert _eps_at(proc, k, _DELTA) <= e_full + 1e-10
 
+    @pytest.mark.slow
     def test_truncated_poisson_works(self):
         """K-prefix preserves the truncated-Poisson kwarg pair."""
         proc = ftrl_acc.poisson(
@@ -176,6 +179,7 @@ class TestCyclicPoissonBand:
         e_full = proc.epsilon_at(_DELTA)
         assert math.isclose(_eps_at(proc, 64, _DELTA), e_full, rel_tol=1e-12)
 
+    @pytest.mark.slow
     def test_sandwich_at_every_step(self):
         """For K = G·M + r: ε(G·M) ≤ ε(K) ≤ ε((G+1)·M) for r ∈ [0, M)."""
         proc = self._proc(n_steps=80, bands=8)
@@ -250,6 +254,7 @@ class TestBallsInBinsIdentity:
         assert _atomic_unit(self._proc(num_bins=10)) == 10
         assert _atomic_unit(self._proc(num_bins=4)) == 4
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -258,6 +263,7 @@ class TestBallsInBinsIdentity:
         e_direct = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         assert math.isclose(e_full, e_direct, rel_tol=1e-9)
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_monotonic(self):
         proc = self._proc(num_bins=10, num_epochs=10)
@@ -399,6 +405,7 @@ class TestKPrefixInvariants:
         proc = _build(amp, mech)
         assert _eps_via_step(proc, 0, _DELTA) == 0.0
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_prefix_invariants(self, amp: str, mech: str):
         proc = _build(amp, mech)
@@ -443,6 +450,7 @@ class TestKPrefixInvariants:
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
+    @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
         if _is_mc_proc(_build(amp, mech)):
@@ -458,11 +466,22 @@ class TestKPrefixInvariants:
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_supports_composition(self, amp: str, mech: str):
+        if (amp, mech) == ("BallsInBins", "IdentityMf"):
+            pytest.skip("covered by the slow identity-composition case")
         proc = _build(amp, mech)
         step = acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
         combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
         assert math.isfinite(combined.epsilon_at(_DELTA))
+
+
+@pytest.mark.slow
+@pytest.mark.usefixtures("_seed_mc")
+def test_balls_in_bins_identity_supports_composition():
+    proc = _build("BallsInBins", "IdentityMf")
+    step = acc.per_step(proc)
+    combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
+    assert math.isfinite(combined.epsilon_at(_DELTA))
 
 
 # ---------------------------------------------------------------------------

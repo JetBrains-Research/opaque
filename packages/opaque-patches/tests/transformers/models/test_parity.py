@@ -206,9 +206,32 @@ def _get_families():
 
 FAMILIES = _get_families()
 
+_FORWARD_PARITY_CASES = [
+    pytest.param(
+        family,
+        impl,
+        id=f"{impl}-{family}",
+        marks=(
+            pytest.mark.slow
+            if (family, impl) in {("cohere", "eager"), ("hunyuan_v1_moe", "eager")}
+            else ()
+        ),
+    )
+    for impl in ("eager", "sdpa")
+    for family in FAMILIES
+]
 
-@pytest.mark.parametrize("family", FAMILIES)
-@pytest.mark.parametrize("impl", ["eager", "sdpa"])
+
+def _family_params_with_slow(*slow_families: str):
+    return [
+        pytest.param(family, marks=pytest.mark.slow)
+        if family in slow_families
+        else family
+        for family in FAMILIES
+    ]
+
+
+@pytest.mark.parametrize(("family", "impl"), _FORWARD_PARITY_CASES)
 def test_forward_logits_parity(family, impl, device):
     """Patched and unpatched models produce identical forward logits."""
     if family in _STRICT_FORWARD_PARITY_SKIP_FAMILIES:
@@ -235,7 +258,7 @@ def test_forward_logits_parity(family, impl, device):
         raise AssertionError(f"{family} [{impl}] forward parity failed") from e
 
 
-@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("family", _family_params_with_slow("cohere"))
 def test_backward_grads_parity(family, device):
     """Patched and unpatched models produce identical per-parameter gradients."""
     if family in _GRAD_PARITY_SKIP_FAMILIES:
@@ -316,7 +339,10 @@ def test_softcapping_parity(family, device):
         raise AssertionError(f"{family} softcapping parity failed") from e
 
 
-@pytest.mark.parametrize("family", ["llama", "qwen2"])
+@pytest.mark.parametrize(
+    "family",
+    [pytest.param("llama", marks=pytest.mark.slow), "qwen2"],
+)
 def test_kv_cache_parity(family, device):
     """Patched and unpatched models generate identical tokens with KV cache."""
     config_cls, model_cls = _resolve_family_imports(family)
@@ -419,7 +445,7 @@ def test_lora_forward_parity(family, device):
     )
 
 
-@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("family", _family_params_with_slow("cohere"))
 def test_vmap_grad_parity(family, device):
     """Patched and runtime-compatible reference vmap(grad) values match."""
     if family in _GRAD_PARITY_SKIP_FAMILIES:

@@ -48,10 +48,16 @@ jobs:
           subjectPatternError: |
             The subject after the colon should start with a lowercase letter.
 
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -60,97 +66,129 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  rust-test-run:
-    uses: ./.github/workflows/reusable-rust-tests.yml
-
-  # Stable aggregate check required by the main branch ruleset. Reusable
-  # workflow jobs expose compound check names, so keep this caller-owned gate.
+  # ---------------------------------------------------------------------------
+  # Rust tests
+  # ---------------------------------------------------------------------------
   rust-tests:
-    name: Rust tests
-    if: always()
-    needs: [rust-test-run]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Rust test result
-        run: |
-          result="${{ needs.rust-test-run.result }}"
-          echo "rust-test-run result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+    name: Rust
+    uses: ./.github/workflows/rust-tests.yml
 
-  # One matrix over CPU/MPS platforms × shards. Parallelism is
-  # two-level: the matrix fans shards across runners, and `pytest -n auto`
-  # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
-  # each class/module on one worker so fixtures/order are preserved).
-  # The self-hosted GPU lane is a separate fork-guarded job below.
-  python-tests:
+  # ---------------------------------------------------------------------------
+  # Python tests
+  #
+  # Every environment calls the same reusable workflow with explicit runner,
+  # Python, dependency, marker, parallelism, and shard settings. Slow tests stay
+  # on main; supported dependency and platform boundaries remain pre-merge.
+  # ---------------------------------------------------------------------------
+  python-tests-linux-amd64:
+    name: Linux amd64
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
-      devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
+
+  python-tests-minimum:
+    name: Minimum dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      allow-test-failure: true
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: macOS arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: mps
+      pytest-marker: not cuda and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
+
+  python-tests-linux-arm64:
+    name: Linux arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
-  # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
-  # the job-level guard can prevent runner allocation entirely.
-  python-tests-gpu:
+  # self-hosted GPU runner. The job-level guard prevents allocation entirely.
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
-      devices: >-
-        [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      allow-empty-test-selection: true
+      environment-name: cuda
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
-
-  # Single aggregating status check for Python tests — ensures all test legs pass.
-  # This is the check required in branch protection (alongside rust-tests).
-  # The GPU leg is required for repo PRs but skipped for fork PRs.
-  # `if: always()` makes the gate report a failure when a shard fails.
-  python-tests-gate:
-    name: Python tests
-    if: always()
-    needs: [python-tests, python-tests-gpu]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Python test results
-        run: |
-          cpu_mps="${{ needs.python-tests.result }}"
-          gpu="${{ needs.python-tests-gpu.result }}"
-          echo "python-tests matrix result: $cpu_mps"
-          echo "python-tests-gpu result: $gpu"
-          test "$cpu_mps" = "success" || (echo "ERROR: CPU/MPS tests failed"; exit 1)
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            # Fork PRs never get GPU runner allocation — skipped is expected
-            if [[ "$gpu" != "skipped" ]]; then
-              echo "ERROR: GPU job should be skipped for fork PRs but got: $gpu"
-              exit 1
-            fi
-          else
-            # Repo PRs must have GPU tests pass
-            test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
-          fi
 
   qodana:
     name: Qodana
     if: >-
       !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event.action == 'opened' ||
-       github.event.action == 'ready_for_review')
-    needs: [python-tests-gate]
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - python-tests-linux-amd64
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     permissions:
       actions: read
       checks: write
       contents: read
       pull-requests: write
       security-events: write
-    uses: ./.github/workflows/reusable-qodana.yml
+    uses: ./.github/workflows/qodana.yml
     with:
       checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      coverage-artifact-pattern: qodana-coverage-*
+      coverage-artifact-pattern: coverage-locked-*
       pr-mode: true
     secrets: inherit
 
@@ -164,10 +202,10 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
-      - name: uv sync
+      - name: Install documentation dependencies
         run: uv sync --group docs --all-packages
 
-      - name: mkdocs build --strict
+      - name: Build documentation
         run: uv run mkdocs build --strict
 
   # ---------------------------------------------------------------------------
@@ -208,18 +246,20 @@ jobs:
           echo "Preview version: $VERSION"
 
   build-preview-distributions:
-    name: Build preview distribution artifacts
-    needs: [compute-preview-version]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    name: Build
+    needs: [compute-preview-version, discover-packages]
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: preview-wheels
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 14
       version: ${{ needs.compute-preview-version.outputs.version }}
 
   validate-preview-distributions:
-    name: Validate preview distribution artifacts
+    name: Validate
     needs: [build-preview-distributions]
-    uses: ./.github/workflows/reusable-validate-distributions.yml
+    uses: ./.github/workflows/validate-distributions.yml
     with:
       artifact-prefix: preview-wheels
 

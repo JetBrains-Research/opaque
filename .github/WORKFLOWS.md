@@ -8,8 +8,8 @@ private reusable components described below.
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Required PR checks, preview-wheel artifacts, and fork-safe GPU testing. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Full CPU/MPS/CUDA test coverage, development-wheel publication, and draft-release updates. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation; development-wheel publication; and draft-release updates. |
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
@@ -21,12 +21,12 @@ private reusable components described below.
 
 ### `.github/actions/setup-python`
 
-This composite action installs the pinned Python version and optionally uv and
-its dependency cache. Use it in repository workflows that need Python; set
-`install-uv: "false"` for Python-only jobs and `enable-uv-cache: "true"` for
-dependency-heavy jobs. Release-capable reusable workflows keep their pinned
-external setup steps inline so checking out an older release tag cannot remove
-the local action implementation.
+This composite action installs the pinned Python version and optionally uv. Use
+`install-uv: "false"` for Python-only jobs. uv cache restore/save is explicitly
+disabled repository-wide: the large all-extras environments made cache
+archiving costly and vulnerable to runner disk exhaustion. Release-capable called
+workflows keep pinned external setup steps inline so checking out an older
+release tag cannot remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
@@ -34,45 +34,69 @@ This composite action installs Rust stable, optional toolchain components, and
 the existing Cargo dependency cache. Use `components: clippy, rustfmt` for
 formatting jobs and `enable-cache: "true"` for Rust test jobs.
 
-### `.github/workflows/reusable-build-distributions.yml`
+### `.github/workflows/build-distributions.yml`
 
-This private `workflow_call` workflow discovers package matrices and builds all
-Python wheels, native wheels, the umbrella wheel, and the accounting sdist.
-`pr.yml`, `ci.yml`, and `release.yml` supply an artifact prefix, retention
-period, and (when necessary) an explicit build version or release tag.
+This private `workflow_call` workflow builds all Python wheels, native wheels,
+the umbrella wheel, and the accounting sdist from caller-supplied package
+matrices. `pr.yml`, `ci.yml`, and `release.yml` discover the matrices once and
+supply them with an artifact prefix, retention period, and (when necessary) an
+explicit build version or release tag. This renders checks as
+`Build / <distribution>` without an internal discovery child.
 
-The reusable workflow intentionally does not own credentials, environments,
-publication, validation, or pipeline gates. Its callers keep those
-responsibilities so trusted release behavior and PR protections remain
-explicit at the entry point.
+Each build job validates its own wheel metadata. Native artifact jobs also
+validate accounting policy, and the sdist job proves that the source artifact
+can rebuild a wheel. The reusable workflow intentionally does not own
+credentials, publication, cross-package validation, or pipeline gates.
+Builds start after package discovery in every entry workflow; main/release
+publication waits for the complete Python environment matrix and Rust tests.
 
-### `.github/workflows/reusable-python-tests.yml`
+### `.github/workflows/python-tests.yml`
 
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
-Codecov upload. Callers provide their shard and device matrices, timeout, and
-optional CUDA assertion or duration reporting.
+Codecov upload. Each caller provides one runner environment plus its Python
+version, dependency selection, pytest marker filter, xdist arguments, and shard
+matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`),
+or `latest` (uv `highest`); adding a future platform such as Windows requires only
+another caller. Validation callers report every test phase taking at least five
+seconds, so newly slow tests cannot disappear behind a fixed-size duration table.
+Lower-bound pytest failures are currently advisory while dependency resolution
+and workflow failures remain blocking.
 
-`pr.yml`, `ci.yml`, and `release.yml` discover the same package-level test
-shards so every caller fans Python tests out across runners. The PR workflow
-keeps CPU/MPS and fork-guarded GPU calls separate so untrusted fork code never
-receives the self-hosted runner; main CI combines its CPU/MPS/GPU matrix and
-slow-test markers, while release reruns the CPU shards at the published tag.
+Qodana merges coverage from Linux amd64, macOS arm64, Linux arm64, and CUDA.
+Dependency-boundary lanes are excluded because they repeat the same source
+under alternate dependency graphs rather than add platform behavior. Every
+test lane uploads coverage unconditionally; Qodana selects `coverage-locked-*`.
+Trusted PRs and main publish the scan's SARIF report to GitHub code scanning
+under the stable `qodana/python` category and wait for processing; missing or
+rejected reports fail the Qodana job. PR scans use Qodana `pr-mode` for
+incremental findings and upload against the PR head ref/SHA. Qodana's own
+annotation check remains disabled, avoiding a duplicate check source. Main
+Qodana runs only on the actual main ref, so manually dispatched feature-branch
+validation cannot attach a full-scan check to a pull request.
+Repository Code Security must remain enabled.
 
-### `.github/workflows/reusable-rust-tests.yml`
+`pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
+tests, minimum and latest dependency boundaries, and
+macOS arm64, Linux arm64, and CUDA platform coverage. Main and release add slow tests to
+platform lanes; release reruns the same environment set at the
+published tag. Fork pull requests never receive the self-hosted CUDA runner.
 
-This private `workflow_call` workflow runs the accounting crate's Cargo tests,
-including doc-tests, with the shared Rust setup and dependency cache. PR,
-main CI, and release workflows all invoke it; the release workflow runs this
-lane alongside the shared Python test workflow instead of running both
-sequentially in a dedicated job.
+### `.github/workflows/rust-tests.yml`
 
-### `.github/workflows/reusable-validate-distributions.yml`
+This private `workflow_call` workflow runs the accounting crate's unit and doc
+tests with the shared Rust setup and dependency cache. Entry workflows call it
+as `Rust`, so checks render as `Rust / opaque-accounting`. Tests above five
+seconds use `#[ignore = "slow"]`: PRs run the default set, while main and release
+add `cargo test --lib -- --ignored` after the default unit/doc-test run.
 
-This private `workflow_call` workflow downloads a caller-selected artifact
-family and validates both synchronized internal wheel pins and the accounting
-wheel/sdist policy. Preview and release pipelines differ only in artifact
-prefix and checkout ref; the validation implementation is shared.
+### `.github/workflows/validate-distributions.yml`
+
+This private `workflow_call` workflow downloads a complete caller-selected
+artifact family, installs `opaque[all]` using only built Opaque wheels, and runs
+a representative DP-SGD + DP-FTRL cross-stack accounting scenario without
+checking out the source tree. PR, main, and release differ only in artifact
+prefix.
 
 ## Artifact contracts
 
@@ -97,8 +121,9 @@ self-hosted GPU runner and never receive repository, package, or cloud
 credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
-`Format Rust`, `Conventional Commits PR title`, `Python tests`, `Rust tests`,
-and `Junie review`. The review workflow uses the `JUNIE_API_KEY` Actions secret.
+`Format Rust`, `Conventional Commits PR title`, the selected individual Python
+environment/package checks, `Rust / opaque-accounting`, and `Junie review`.
+The review workflow uses the `JUNIE_API_KEY` Actions secret.
 Fork and Dependabot pull requests cannot receive the secret-backed Junie review;
 the job records that limitation and completes without invoking Junie.
 Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use

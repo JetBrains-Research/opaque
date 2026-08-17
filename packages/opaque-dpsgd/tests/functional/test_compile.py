@@ -112,6 +112,7 @@ def _assert_pytree_close(a, b, *, rtol: float, atol: float):
 
 
 @pytest.mark.parametrize("backend", ["aot_eager", "inductor"])
+@pytest.mark.slow
 def test_compile_loss_closure_grad_parity(backend: str):
     model, x, y = _build_model_and_batch()
     eager_grads, _, _ = _run_dp_step(model, x, y, compile_backend=None)

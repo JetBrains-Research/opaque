@@ -3,7 +3,6 @@ name: CI (main)
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,10 +12,16 @@ concurrency:
   cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -26,69 +31,121 @@ jobs:
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Tests. Same matrix as the PR gate, but includes `slow` tests and adds a
-  # GPU lane. Test failures block publishing.
+  # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
-    uses: ./.github/workflows/reusable-rust-tests.yml
-
-  # Same platform matrix as the PR gate (see pr.yml for the full rationale),
-  # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
-  # marker. The GPU platform is a single unsharded, serial leg.
-  python-tests:
-    needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    name: Rust
+    uses: ./.github/workflows/rust-tests.yml
     with:
-      assert-cuda: true
-      devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
-      included-combinations: >-
-        [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
+      include-slow: true
+
+  # ---------------------------------------------------------------------------
+  # Python tests
+  #
+  # Main repeats every PR environment and includes slow tests in platform lanes.
+  # Every environment gates distribution publishing.
+  # ---------------------------------------------------------------------------
+  python-tests-linux-amd64:
+    name: Linux amd64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
       report-durations: true
+      runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
 
-  # Aggregating gate for Python tests. This is an independent required check
-  # (alongside rust-tests-gate) that gates wheel builds and publishing.
-  python-tests-gate:
-    name: Python tests
-    if: always()
-    needs: [python-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Python test results
-        run: |
-          result="${{ needs.python-tests.result }}"
-          echo "python-tests matrix result: $result"
-          test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
+  python-tests-minimum:
+    name: Minimum dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      allow-test-failure: true
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: macOS arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+
+  python-tests-linux-arm64:
+    name: Linux arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 40
 
   qodana:
     name: Qodana
-    needs: [python-tests-gate]
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - python-tests-linux-amd64
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     permissions:
       actions: read
       checks: write
       contents: read
       security-events: write
-    uses: ./.github/workflows/reusable-qodana.yml
+    uses: ./.github/workflows/qodana.yml
     with:
-      coverage-artifact-pattern: qodana-coverage-*
+      coverage-artifact-pattern: coverage-locked-*
       pr-mode: false
     secrets: inherit
-
-  # Aggregating gate for Rust tests. This is an independent required check
-  # (alongside python-tests-gate) that gates wheel builds and publishing.
-  rust-tests-gate:
-    name: Rust tests gate
-    if: always()
-    needs: [rust-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Rust test results
-        run: |
-          result="${{ needs.rust-tests.result }}"
-          echo "rust-tests result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
@@ -96,16 +153,25 @@ jobs:
   # Release builds live in release.yml (triggered on `v*` tag push).
   # ---------------------------------------------------------------------------
   build-distributions:
-    name: Build distribution artifacts
-    needs: [python-tests-gate, rust-tests-gate]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    name: Build
+    needs: [discover-packages]
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 30
+
+  validate-distributions:
+    name: Validate
+    needs: [build-distributions]
+    uses: ./.github/workflows/validate-distributions.yml
+    with:
+      artifact-prefix: wheels
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-distributions]
+    needs: [build-distributions, validate-distributions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -118,7 +184,15 @@ jobs:
   publish-dev-wheels:
     name: Publish dev wheels to JetBrains Packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [merge-wheels, python-tests-gate, rust-tests-gate]
+    needs:
+      - merge-wheels
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+      - rust-tests
     runs-on: ubuntu-latest
     environment: release
     permissions:

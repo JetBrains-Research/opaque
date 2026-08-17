@@ -13,6 +13,9 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Release ref validation and package discovery
+  # ---------------------------------------------------------------------------
   tag-guard:
     name: Verify tag is on main
     runs-on: ubuntu-latest
@@ -35,6 +38,9 @@ jobs:
     needs: [tag-guard]
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -45,39 +51,126 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  release-python-tests:
-    name: Release Python tests
-    needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
-    with:
-      checkout-ref: ${{ github.event.release.tag_name }}
-      devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"}]
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-
-  release-rust-tests:
-    name: Release Rust tests
+  # ---------------------------------------------------------------------------
+  # Rust tests
+  # ---------------------------------------------------------------------------
+  rust-tests:
+    name: Rust
     needs: [tag-guard]
-    uses: ./.github/workflows/reusable-rust-tests.yml
+    uses: ./.github/workflows/rust-tests.yml
     with:
       checkout-ref: ${{ github.event.release.tag_name }}
+      include-slow: true
+
+  # ---------------------------------------------------------------------------
+  # Python tests
+  # ---------------------------------------------------------------------------
+  python-tests-linux-amd64:
+    name: Linux amd64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-name: linux-amd64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+
+  python-tests-minimum:
+    name: Minimum dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      allow-test-failure: true
+      checkout-ref: ${{ github.event.release.tag_name }}
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: macOS arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 40
+
+  python-tests-linux-arm64:
+    name: Linux arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      checkout-ref: ${{ github.event.release.tag_name }}
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 40
 
   build-distributions:
-    name: Build distribution artifacts @ ${{ github.event.release.tag_name }}
-    needs: [tag-guard]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    name: Build
+    needs: [discover-packages, tag-guard]
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
       checkout-ref: ${{ github.event.release.tag_name }}
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 90
 
   validate-release-distributions:
-    name: Validate release distribution artifacts
+    name: Validate
     needs: [build-distributions]
-    uses: ./.github/workflows/reusable-validate-distributions.yml
+    uses: ./.github/workflows/validate-distributions.yml
     with:
       artifact-prefix: wheels
-      checkout-ref: ${{ github.event.release.tag_name }}
 
   merge-wheels:
     name: Merge wheels into single artifact
@@ -93,7 +186,15 @@ jobs:
 
   publish:
     name: Publish to JetBrains Packages + attach Release assets
-    needs: [merge-wheels, release-python-tests, release-rust-tests, validate-release-distributions]
+    needs:
+      - merge-wheels
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+      - rust-tests
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -114,6 +215,8 @@ jobs:
           ls -lh dist/*.whl dist/*.tar.gz
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
 
       - name: Publish release wheels to JetBrains Packages
         env:
