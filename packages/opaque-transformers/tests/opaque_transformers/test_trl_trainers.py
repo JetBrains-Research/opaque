@@ -1876,20 +1876,14 @@ def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
 def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypatch):
     """The reference forward must find a live process group, or it cannot shard.
 
-    ``resolve_ddp_state`` auto-initialises the group only when ``WORLD_SIZE > 1``
-    (`_distributed.py`), and ``DPTrainer`` calls it inside ``super().__init__()``
-    — after the reference forward. So the trainer has to bring the group up
-    itself first; otherwise every rank silently scores the whole dataset.
-
-    Driving the real auto-init path needs a second process, which is what the
-    ``slow`` scenarios in ``tests/distributed`` are for. Here the launcher
-    environment is faked and ``init_process_group`` is stubbed, which is enough
-    to pin that the attempt happens, and that it happens before ``ref`` runs.
+    The launcher environment is faked and ``init_process_group`` stubbed, which
+    pins that the attempt happens and that it happens before ``ref`` runs; the
+    real auto-init path needs a second process and lives in ``tests/distributed``.
     """
     from opaque.api.alignment.dpo.reference import _precompute
 
-    # Keep the reference cache inside the test's tmp_path; the shared system
-    # tempdir would let a previous run's archive turn this into a cache HIT.
+    # Keep the reference cache inside the test's tmp_path, out of reach of any
+    # archive left in the shared system tempdir.
     monkeypatch.setattr(_precompute.tempfile, "gettempdir", lambda: str(tmp_path))
 
     import socket

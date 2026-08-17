@@ -17,9 +17,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-# Gloo blocks forever on a mismatched collective sequence, which would burn the
-# whole CI job instead of failing the test. A short group timeout turns a
-# desync into a prompt error.
+# Short timeout: a mismatched collective sequence must fail the test promptly
+# rather than hang the CI job.
 _PG_TIMEOUT = timedelta(seconds=120)
 
 
@@ -152,10 +151,8 @@ def _worker_empty_shard_preserves_dtype(
         from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
 
         # One row across two ranks: rank 0's shard is empty, rank 1 takes the
-        # remainder. The non-empty rank computes in bf16, so a rank that
-        # invented a float32 payload for its empty shard would break the gather.
-        # The row index is non-zero so the assertion sees a real value rather
-        # than a zero that any dtype would produce.
+        # remainder and computes in bf16.  The row index is non-zero so the
+        # assertion sees a real value rather than a dtype-independent zero.
         dataset = make_dataset(1, start=7)
         ref = CountingRef(dtype=torch.bfloat16)
         result = compute_ref_logprobs_for_dataset(
@@ -179,11 +176,7 @@ def _worker_empty_shard_preserves_dtype(
 
 
 def _worker_mismatched_dataset_sizes(rank: int, world_size: int, port: int) -> None:
-    """Ranks holding different datasets are named as such, on every rank.
-
-    Left unchecked this shards into pieces that gather to a length nobody asked
-    for, and only the ranks whose own length disagrees with the total notice.
-    """
+    """Ranks holding different datasets are named as such, on every rank."""
     import pytest
 
     _setup_gloo(rank, world_size, port)
@@ -211,11 +204,8 @@ def _worker_divergent_cache_state(
 ) -> None:
     """Node-local cache dirs must not split the group into different branches.
 
-    Every rank gets its own cache directory, so the seeding call — which writes
-    on the main process only — leaves rank 0 holding the one archive. That is
-    the multi-node shape, where only the node that ran rank 0 kept the file.
-    Acting on a rank-local hit would strand rank 0 outside the gather the other
-    ranks are waiting in.
+    Every rank gets its own cache directory and the seeding call writes on the
+    main process only, so rank 0 alone holds the archive — the multi-node shape.
     """
     _setup_gloo(rank, world_size, port)
     try:
@@ -260,9 +250,7 @@ def _worker_divergent_use_cache(
     """Ranks disagreeing on ``use_cache`` must not deadlock.
 
     The cache decision is reduced whether or not the caller wants a cache, so
-    the collective sequence does not depend on the argument. Reducing it inside
-    ``if use_cache`` instead leaves one rank in the reduction while its peer has
-    moved on to the gather, which blocks until the group timeout.
+    the collective sequence does not depend on the argument.
     """
     _setup_gloo(rank, world_size, port)
     try:

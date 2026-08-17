@@ -427,11 +427,10 @@ class DPOTrainer(DPTrainer):
 
         # ---- reference logps (precompute, or seed for TR-DPO) -------------
         if self._sync_ref_model or self._needs_reference:
-            # The precompute shards itself across a live process group, and
-            # DPTrainer only auto-initialises one inside ``super().__init__``
-            # below — too late to spare each rank the whole reference forward.
-            # ``resolve_ddp_state`` is idempotent, so resolving it again there
-            # reads the group this call establishes.
+            # The precompute shards across a live process group, which
+            # ``super().__init__`` below brings up too late.
+            # ``resolve_ddp_state`` is idempotent, so the later call reads the
+            # group established here.
             resolve_ddp_state(self._precompute_device, args)
         if self._sync_ref_model:
             train_dataset, eval_dataset = self._setup_tr_dpo(

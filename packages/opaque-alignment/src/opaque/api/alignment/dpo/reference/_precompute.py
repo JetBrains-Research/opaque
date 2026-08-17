@@ -256,8 +256,7 @@ def _cache_hit_on_every_rank(local_hit: bool, *, sharded: bool) -> bool:
     """Reduce a rank-local cache hit to a decision the whole group shares.
 
     The default cache directory is node-local, so on a multi-node run some
-    ranks can hit while others miss; acting per-rank would leave the hitting
-    ranks returning early while the missing ranks wait in the gather.
+    ranks can hit while others miss.
     """
     if not sharded:
         return local_hit
@@ -276,9 +275,8 @@ def _reference_forward(
 ) -> dict[str, torch.Tensor] | None:
     """Run ``ref`` over this rank's shard, one ``(n_local,)`` tensor per column.
 
-    Returns ``None`` when the local shard is empty, so the caller can hand the
-    gather an absent payload instead of inventing a dtype that would not match
-    the ranks that did compute something.
+    Returns ``None`` when the local shard is empty, so the caller hands the
+    gather an absent payload rather than a dtype of its own choosing.
     """
     shard = (
         local_shard(dataset, rank=rank, world_size=world_size)
@@ -389,9 +387,9 @@ def compute_ref_logprobs_for_dataset(
             step. Must agree across ranks.
         shard: Whether each rank scores only its own slice of ``dataset``.
             ``None`` (default) shards when a process group is live. ``False``
-            makes every rank score the whole dataset, as before sharding
-            existed. ``True`` requires an initialised process group and raises
-            without one. Must agree across ranks.
+            makes every rank score the whole dataset. ``True`` requires an
+            initialised process group and raises without one. Must agree
+            across ranks.
 
     Returns:
         ``dataset`` with one new column per name in ``output_columns``, each of
@@ -401,8 +399,7 @@ def compute_ref_logprobs_for_dataset(
     n_examples = len(dataset)
     sharded = _resolve_sharding(shard)
     if sharded:
-        # Ranks that disagree on the dataset would shard it differently and
-        # gather a length nobody asked for.
+        # Sharding is only well defined when every rank holds the same dataset.
         assert_scalar_equal(n_examples, name="reference precompute dataset size")
 
     path: str | None = None
@@ -413,9 +410,8 @@ def compute_ref_logprobs_for_dataset(
         _secure_cache_path(path)
         cached = _load_cache(path, columns, expected_rows=n_examples)
 
-    # Reduced unconditionally: a collective inside ``if use_cache`` would make
-    # the collective sequence depend on a rank-local argument, so ranks that
-    # disagree on it would block until the group timeout.
+    # Reduced unconditionally: the collective sequence must not depend on the
+    # rank-local ``use_cache``.
     if _cache_hit_on_every_rank(cached is not None, sharded=sharded):
         # HIT on every rank: attach cached columns WITHOUT calling ``ref``.
         # PyArrow has no bf16 column type, so demote to a Python ``float``
