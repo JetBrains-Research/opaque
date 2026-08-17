@@ -69,7 +69,7 @@ def _extract_batch_tensors(
 class _IndexedCanaries:
     """Map-style dataset yielding ``(position, example)`` canary pairs."""
 
-    def __init__(self, dataset: Any, canary_indices: np.ndarray) -> None:
+    def __init__(self, dataset: Any, canary_indices: np.ndarray):
         self._dataset = dataset
         self._canary_indices = canary_indices
 
