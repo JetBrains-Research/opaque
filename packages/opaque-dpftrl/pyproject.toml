@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-optimizers = ["opaque-optimizers>=0.0.0.dev0"]
+optimizers = ["opaque-optimizers>=999.9.9"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
