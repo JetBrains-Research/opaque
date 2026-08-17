@@ -25,8 +25,6 @@ jobs:
           ref: ${{ inputs.checkout-ref || github.sha }}
 
       - uses: ./.github/actions/setup-rust
-        with:
-          enable-cache: "true"
 
       # No `--lib`: also run doc-tests so documented API examples cannot rot.
       - name: Run Rust tests

@@ -23,17 +23,18 @@ private callable workflows described below.
 ### `.github/actions/setup-python`
 
 This composite action installs the pinned Python version and optionally uv. Use
-`install-uv: "false"` for Python-only jobs. uv cache restore/save is explicitly
-disabled repository-wide: the large all-extras environments made cache
-archiving costly and vulnerable to runner disk exhaustion. Release-capable
-called workflows keep pinned external setup steps inline so checking out an
-older release tag cannot remove the local action implementation.
+`install-uv: "false"` for Python-only jobs. uv cache restore/save is disabled
+repository-wide: caching a full all-extras environment benefits only one
+platform/dependency combination, while the pruned cache omits the pre-built
+wheels that dominate installation time. Release-capable called workflows keep
+pinned external setup steps inline so checking out an older release tag cannot
+remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
 This composite action installs Rust stable, optional toolchain components, and
-the existing Cargo dependency cache. Use `components: clippy, rustfmt` for
-formatting jobs and `enable-cache: "true"` for Rust test jobs.
+a shared Cargo dependency cache. Use `components: clippy, rustfmt` for
+formatting jobs.
 
 ### `.github/workflows/build-distributions.yml`
 
