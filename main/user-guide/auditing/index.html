@@ -3386,41 +3386,54 @@ with the tight order-statistics tests from
 <li><strong>Train once.</strong> Train on the resulting subset. Non-canary data is always
    included.</li>
 <li><strong>Score.</strong> Compute a membership score for each canary (negative loss by
-   default — lower loss means more likely a member).</li>
-<li><strong>Test.</strong> Convert scores + coin flips into an ε lower bound via the
-   audit-method surface on <code>OneRunEstimate</code>.</li>
+   default — lower loss means more likely a member). Each score carries the
+   dataset index of its canary.</li>
+<li><strong>Test.</strong> Join scores to coin flips by those identifiers and convert them
+   into an ε lower bound via the audit-method surface on <code>OneRunEstimate</code>.</li>
 </ol>
 <p>Only one training run is needed, unlike shadow-model approaches.</p>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.auditing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">auditing</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">Subset</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 1. Partition: designate canaries and flip coins</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">train_data</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># 2. Train with DP-SGD on train_data ...</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># 3. Score: compute membership scores for canaries</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_collate</span><span class="p">(</span><span class="n">examples</span><span class="p">):</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">batch</span> <span class="o">=</span> <span class="n">data_collator</span><span class="p">(</span><span class="n">examples</span><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">canary_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">Subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">cf</span><span class="o">.</span><span class="n">canary_indices</span><span class="o">.</span><span class="n">tolist</span><span class="p">()),</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">,</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="p">)</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="p">)</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="c1"># 4. Estimate: build the one-run estimate and query ε</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit):  </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC (attack): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># 1. Partition: designate canaries and flip coins</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">train_data</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># 2. Train with DP-SGD on train_data ...</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># 3. Score: compute membership scores for the canaries</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_collate</span><span class="p">(</span><span class="n">examples</span><span class="p">):</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">batch</span> <span class="o">=</span> <span class="n">data_collator</span><span class="p">(</span><span class="n">examples</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">,</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="c1"># 4. Estimate: build the one-run estimate and query ε</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit):  </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC (attack): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Scoring with <code>coin_flip=</code> + <code>dataset=</code> builds the canary loader internally
+and returns <code>CanaryScores</code>: every score is paired with the dataset index of
+the canary that produced it. <code>one_run</code> joins scores to coin-flip labels by
+those identifiers — identifiers that are wrong, missing, or duplicated
+raise instead of silently pairing scores with the wrong labels, so however
+the pipeline orders its batches, it cannot fake a "no leakage" result.</p>
+<p>The one thing you still own is <code>collate_fn</code>. Identifiers ride alongside
+the examples and are captured <em>before</em> your collate runs, so a collate
+that reorders rows within a batch attaches every score to the wrong
+canary — silently, since the count still matches. Keep it
+order-preserving; dropping or adding rows raises.</p>
+<p>For scores computed outside the built-in scorers, attest their
+identifiers explicitly (any order is accepted — the join realigns them):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">canary_scores</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">canary_indices</span><span class="o">=</span><span class="n">ids_in_your_scoring_order</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="default-audit-method-gdp">Default audit method: μ-GDP<a class="headerlink" href="#default-audit-method-gdp" title="Permanent link">&para;</a></h2>
 <p><code>OneRunEstimate.epsilon_at(delta=)</code>, <code>.delta_at(epsilon=)</code>, <code>.beta_at(alpha=)</code>,
@@ -3429,20 +3442,20 @@ Xiang et al. (2025).</p>
 <p>Use μ-GDP only when it models the audited mechanism; otherwise use the
 mechanism-agnostic method.</p>
 <p>The dispatch requires <code>delta &gt; 0</code>: μ-GDP is incompatible with pure ε-DP.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>                       <span class="c1"># default — μ-GDP</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># stricter confidence</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">4.0</span><span class="p">)</span>        <span class="c1"># specific threshold</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">estimate</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>                        <span class="c1"># inverse along the boundary</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>                          <span class="c1"># theoretical β under μ̂-GDP</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">estimate</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>                                  <span class="c1"># TV(μ̂) = 2·Φ(μ̂/2) − 1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>                       <span class="c1"># default — μ-GDP</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># stricter confidence</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">4.0</span><span class="p">)</span>        <span class="c1"># specific threshold</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">estimate</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>                        <span class="c1"># inverse along the boundary</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>                          <span class="c1"># theoretical β under μ̂-GDP</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">estimate</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>                                  <span class="c1"># TV(μ̂) = 2·Φ(μ̂/2) − 1</span>
 </code></pre></div>
 <h2 id="choosing-a-different-method">Choosing a different method<a class="headerlink" href="#choosing-a-different-method" title="Permanent link">&para;</a></h2>
 <p><code>OneRunEstimate.gdp(grid_size=)</code> returns the underlying μ-GDP method
 object — useful if you want to tune the integration grid or reuse a
 single μ̂ across multiple queries:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">gdp</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="n">grid_size</span><span class="o">=</span><span class="mi">20_000</span><span class="p">)</span>   <span class="c1"># tighter numerics</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">gdp</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">gdp</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">gdp</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="n">grid_size</span><span class="o">=</span><span class="mi">20_000</span><span class="p">)</span>   <span class="c1"># tighter numerics</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">gdp</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">gdp</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 </code></pre></div>
 <p><code>OneRunEstimate.eps_delta()</code> returns the mechanism-agnostic (ε,δ)-DP
 method object. Use it when:</p>
@@ -3451,9 +3464,9 @@ method object. Use it when:</p>
   heavy-tailed noise, …).</li>
 <li>You need pure ε-DP (δ=0) auditing.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>   <span class="c1"># pure ε-DP</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># general (ε, δ)-DP fallback</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>   <span class="c1"># pure ε-DP</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># general (ε, δ)-DP fallback</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
 </code></pre></div>
 <p><code>EpsDeltaMethod</code> deliberately does <em>not</em> expose <code>beta_at</code> / <code>advantage</code>:
 the (ε,δ)-DP trade-off function is a family envelope, so those metrics
@@ -3467,21 +3480,22 @@ would be worst-case across the family rather than instance-specific. The
 <p>Call <code>auditing.coin_flip</code> after preparing the dataset. It derives distinct
 audit subkeys for canary selection and coins internally; training mechanisms
 should use their own RNG domains:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Remove held-out canaries from training set</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Remove held-out canaries from training set</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
 </code></pre></div>
 <h3 id="step-2-train-normally">Step 2: Train normally<a class="headerlink" href="#step-2-train-normally" title="Permanent link">&para;</a></h3>
 <p>No changes to the training loop. The dataset is already filtered.</p>
 <h3 id="step-3-score-and-estimate-after-training">Step 3: Score and estimate after training<a class="headerlink" href="#step-3-score-and-estimate-after-training" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">per_example_loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">per_example_loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (audit): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py">examples/train_dpsgd.py</a>
 and <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpftrl.py">examples/train_dpftrl.py</a>
@@ -3489,24 +3503,32 @@ for complete working examples with the <code>--audit</code> flag.</p>
 <h3 id="parameter-reference">Parameter reference<a class="headerlink" href="#parameter-reference" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>batch_argnums</code></strong>: Which positional arguments of <code>loss_fn</code> come from the
-  dataloader. <code>(1,)</code> means arg 1 is batched; <code>(1, 2)</code> means args 1 and 2 are
+  batch. <code>(1,)</code> means arg 1 is batched; <code>(1, 2)</code> means args 1 and 2 are
   batched. Same convention as <code>clipped_grad</code>.</li>
-<li><strong><code>dataloader</code></strong>: Any iterable yielding batches. Each batch should be a
-  tensor (single <code>batch_argnums</code>) or a tuple of tensors (multiple
-  <code>batch_argnums</code>). Use a custom <code>collate_fn</code> on the DataLoader to handle
-  dict-style batches (e.g., HuggingFace).</li>
-<li><strong><code>reference_scores</code></strong>: Baseline scores from an untrained model. When
-  provided, returned scores are <code>scores - reference_scores</code> (loss reduction).</li>
+<li><strong><code>coin_flip</code> + <code>dataset</code></strong>: required. The scorer builds its own loader
+  over the partition's canaries and returns <code>CanaryScores</code> with per-score
+  identifiers — the form <code>one_run</code> requires. <code>batch_size</code> and <code>collate_fn</code>
+  configure the internal loader; <code>collate_fn</code> receives the raw canary
+  examples and must return a batch for <code>loss_fn</code>, one row per example in
+  the order it received them. The collated batch should be a tensor (single
+  <code>batch_argnums</code>) or a tuple of tensors (multiple <code>batch_argnums</code>).</li>
+<li><strong><code>reference_scores</code></strong>: Baseline scores from an untrained model, over the
+  same partition. When provided, returned scores are
+  <code>scores - reference_scores</code> (loss reduction). The reference must be a
+  <code>CanaryScores</code> and is aligned by identifier before subtraction.</li>
 </ul>
+<p>Scoring a pipeline the built-in scorers cannot express is still supported —
+compute the scores yourself and attest their identifiers with
+<code>auditing.canary_scores(values, canary_indices=...)</code>.</p>
 <h2 id="attack-side-metrics">Attack-side metrics<a class="headerlink" href="#attack-side-metrics" title="Permanent link">&para;</a></h2>
 <p>Independent of the audit method, you can read attack-side empirical
 metrics directly from the estimate:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span>                  <span class="c1"># ROC AUC (0.5 = random, 1.0 = perfect)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># empirical attack β = 1 − TPR at FPR=α</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">()</span>                  <span class="c1"># ROC AUC (0.5 = random, 1.0 = perfect)</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>    <span class="c1"># empirical attack β = 1 − TPR at FPR=α</span>
 </code></pre></div>
 <p>AUC confidence intervals:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>The <code>attack_</code> prefix distinguishes these from the (audit-side) <code>beta_at</code>
 that reads the theoretical f-DP β at the inferred μ̂-GDP.</p>
@@ -3570,8 +3592,8 @@ has an approximate ceiling <code>ε ≲ ln(m / -ln(α))</code>. This does not ap
 </table>
 <h2 id="interpreting-results">Interpreting results<a class="headerlink" href="#interpreting-results" title="Permanent link">&para;</a></h2>
 <p>The audited epsilon should be <strong>below</strong> the theoretical epsilon:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>  ε (one-run):          1.50
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>  ε (one-run):          1.50
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
 </code></pre></div>
 <p><strong>Gap is expected.</strong> The audit runs a suboptimal attack and is capped by
 <code>ln(m)</code>; the theoretical bound is a worst-case upper bound. A large gap is

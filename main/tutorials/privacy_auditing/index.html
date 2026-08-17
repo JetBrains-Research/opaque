@@ -4252,19 +4252,21 @@ loss <em>reduction</em> from training (Steinke et al., Algorithm 3).</p>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
 <span class="p">)</span>
 
-<span class="c1"># Score canaries on the untrained model</span>
-<span class="n">canary_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
-    <span class="n">cf</span><span class="o">.</span><span class="n">canary_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">),</span>
-    <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-    <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="c1"># Score canaries on the untrained model. Passing coin_flip= and dataset=</span>
+<span class="c1"># makes the scorer build its own canary loader and bind every score to</span>
+<span class="c1"># the dataset index of its canary.</span>
 <span class="n">ref_scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">params</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span>
+    <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Reference scores: mean=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">"Reference scores: mean=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">scores</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, "</span>
+    <span class="sa">f</span><span class="s2">"std=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">scores</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span>
+<span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-4">batch_size = 64
 clipping_norm = 1.0
@@ -4283,19 +4285,21 @@ noise_fn, noise_state = gaussian_noise(
     key=key(0),
 )
 
-# Score canaries on the untrained model
-canary_loader = DataLoader(
-    cf.canary_subset(dataset),
-    batch_size=batch_size,
-    shuffle=False,
-)
+# Score canaries on the untrained model. Passing coin_flip= and dataset=
+# makes the scorer build its own canary loader and bind every score to
+# the dataset index of its canary.
 ref_scores = auditing.loss_scores(
     loss_fn,
     params,
     batch_argnums=(1, 2),
-    dataloader=canary_loader,
+    coin_flip=cf,
+    dataset=dataset,
+    batch_size=batch_size,
 )
-print(f"Reference scores: mean={ref_scores.mean():.4f}, std={ref_scores.std():.4f}")</div>
+print(
+    f"Reference scores: mean={ref_scores.scores.mean():.4f}, "
+    f"std={ref_scores.scores.std():.4f}"
+)</div>
 </div>
 </div>
 </div>
@@ -4416,6 +4420,11 @@ Epoch 100  accuracy=68.5%
 <h2 id="step-4-score-canaries-and-estimate-epsilon">Step 4 — Score canaries and estimate epsilon<a class="anchor-link" href="#step-4-score-canaries-and-estimate-epsilon">¶</a></h2><p><code>loss_scores()</code> computes per-canary membership scores (negated loss)
 using <code>vmap</code>. Passing <code>reference_scores</code> subtracts the untrained
 baseline so the score measures <em>loss reduction</em> from training.</p>
+<p>Scoring with <code>coin_flip=</code> + <code>dataset=</code> returns <code>CanaryScores</code>: each
+score carries the dataset index of its canary. <code>one_run()</code> joins the
+scores to the coin-flip labels by those identifiers — wrong, missing,
+or duplicated identifiers raise instead of silently pairing scores
+with the wrong labels.</p>
 <p><code>one_run()</code> then builds a <code>OneRunEstimate</code>. The estimate exposes a
 PLD-mirror surface (<code>epsilon_at</code>, <code>delta_at</code>, <code>beta_at</code>, <code>advantage</code>)
 that defaults to the <strong>μ-GDP order-statistics test</strong>
@@ -4448,7 +4457,9 @@ DP-SGD. The mechanism-agnostic (ε, δ)-DP fallback is available via
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">params</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span>
+    <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
     <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref_scores</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -4458,7 +4469,9 @@ DP-SGD. The mechanism-agnostic (ε, δ)-DP fallback is available via
     loss_fn,
     params,
     batch_argnums=(1, 2),
-    dataloader=canary_loader,
+    coin_flip=cf,
+    dataset=dataset,
+    batch_size=batch_size,
     reference_scores=ref_scores,
 )
 
