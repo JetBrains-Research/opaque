@@ -48,6 +48,9 @@
       <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
       <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
     </inspection_tool>
+    <inspection_tool class="PyClassHasNoInitInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <scope name="Opaque_PythonTests" level="WEAK WARNING" enabled="false" />
+    </inspection_tool>
     <inspection_tool class="PyAsyncCallInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyCompatibilityInspection" enabled="true" level="WARNING" enabled_by_default="true">
       <option name="ourVersions">
@@ -152,7 +155,6 @@
     </inspection_tool>
 
     <!-- Advisory editor hints are not trusted project findings. -->
-    <inspection_tool class="PyClassHasNoInitInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="DuplicatedCode" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="GrazieInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="GrazieStyle" enabled="false" level="WEAK WARNING" enabled_by_default="true" />

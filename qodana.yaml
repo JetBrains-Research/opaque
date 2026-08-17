@@ -50,7 +50,9 @@ profile:
         - "scope#$Opaque_DynamicFrameworkSources"
         - "scope#$Opaque_FunctionalRuntimeSources"
     - inspection: PyClassHasNoInitInspection
-      enabled: false
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
     - inspection: PyAsyncCallInspection
       enabled: true
     - inspection: PyDictDuplicateKeysInspection
