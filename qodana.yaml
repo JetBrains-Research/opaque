@@ -54,10 +54,6 @@ profile:
       # Qodana does not recognize generated dataclass constructors or extension
       # stubs. PyDataclassInspection remains enabled for real dataclass errors.
       enabled: false
-    - inspection: PyCoverageInspection
-      # Per-location coverage findings duplicate the aggregate coverage gates
-      # below, which are the intended CI policy.
-      enabled: false
     - inspection: PyAsyncCallInspection
       enabled: true
     - inspection: PyDictDuplicateKeysInspection
@@ -189,6 +185,9 @@ raiseLicenseProblems: true
 
 coverage:
   reportProblems: true
+  # Aggregate coverage gates below are the intended CI policy; do not turn
+  # every uncovered location into a code-inspection problem.
+  reportProblems: false
   codeCoverageLocations:
     - .qodana/code-coverage
 
