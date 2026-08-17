@@ -56,7 +56,7 @@ jobs:
           use-annotations: false
           use-caches: true
         env:
-          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN_1970838931 }}
+          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
 
       - name: Verify SARIF report
         id: sarif
