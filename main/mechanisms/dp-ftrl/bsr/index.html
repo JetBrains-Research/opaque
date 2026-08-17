@@ -2847,7 +2847,7 @@
 </code></pre></div>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Closed-form regime only</strong>: <span class="arithmatex">\(\beta \in [0,1)\)</span>, <span class="arithmatex">\(\alpha \in (0,1]\)</span>, <span class="arithmatex">\(\alpha &gt; \beta\)</span>. Other hyperparameters raise <code>ValueError</code> with guidance to use <code>band_mf_strategy</code>.</li>
+<li><strong>Closed-form regime only</strong>: <span class="arithmatex">\(0 \leq \beta &lt; 1\)</span>, <span class="arithmatex">\(0 &lt; \alpha \leq 1\)</span>, <span class="arithmatex">\(\alpha &gt; \beta\)</span>. Other hyperparameters raise <code>ValueError</code> with guidance to use <code>band_mf_strategy</code>.</li>
 <li><strong><code>examples/train_dpftrl.py</code></strong>: workload <strong><code>--bsr-alpha</code></strong> → <code>alpha</code>; <strong><code>--momentum</code></strong> (SGD) or <strong><code>--beta1</code></strong> (Adam) → <code>beta</code>. Optimizer <strong><code>--weight-decay</code></strong> is separate (default <code>0.0</code>).</li>
 <li><strong>No learning-rate schedule</strong>: BSR coefficients assume the paper’s workload; use BandMF/BLT with <code>lr_schedule</code> if you need schedule-shaped workloads in the optimizer.</li>
 <li><strong>vs BISR</strong>: BISR bands the <strong>inverse</strong> square root of the workload (different coefficient family). BSR bands the <strong>forward</strong> square root factors from Theorem 1.</li>

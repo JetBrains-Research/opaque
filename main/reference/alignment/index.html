@@ -8599,7 +8599,7 @@ from the reference to achieve the same reward margin.</p>
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
 <a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">    &quot;&quot;&quot;</span>
 <a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="n">logits</span> <span class="o">=</span> <span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">rejected_logratio</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">logits</span> <span class="o">-</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">beta</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">logits</span> <span class="o">-</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">beta</span><span class="p">))</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -10105,7 +10105,7 @@ non-zero.</p>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    &quot;&quot;&quot;</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a>    <span class="n">target</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">/</span> <span class="n">beta</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">target</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">rejected_logratio</span> <span class="o">+</span> <span class="n">target</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">target</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">rejected_logratio</span> <span class="o">+</span> <span class="n">target</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

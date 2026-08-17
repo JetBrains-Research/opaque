@@ -2519,9 +2519,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#splitrng_key-rngkey-num-int-2-tuplerngkey" class="md-nav__link">
+  <a href="#splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values" class="md-nav__link">
     <span class="md-ellipsis">
-      split(rng_key: RngKey, num: int = 2) → tuple[RngKey, ...]
+      split(rng_key: RngKey, num: int = 2) → tuple of RngKey values
     </span>
   </a>
   
@@ -2992,9 +2992,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#splitrng_key-rngkey-num-int-2-tuplerngkey" class="md-nav__link">
+  <a href="#splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values" class="md-nav__link">
     <span class="md-ellipsis">
-      split(rng_key: RngKey, num: int = 2) → tuple[RngKey, ...]
+      split(rng_key: RngKey, num: int = 2) → tuple of RngKey values
     </span>
   </a>
   
@@ -3247,7 +3247,7 @@ threading for deterministic and reproducible DP training.</p>
 <p>Useful for prototyping and experiments. For reproducible training, use <code>key()</code> with an explicit seed.</p>
 <p><strong>Returns:</strong> RngKey with seed from <code>secrets.randbits(64)</code></p>
 <hr />
-<h4 id="splitrng_key-rngkey-num-int-2-tuplerngkey">split(rng_key: RngKey, num: int = 2) → tuple[RngKey, ...]<a class="headerlink" href="#splitrng_key-rngkey-num-int-2-tuplerngkey" title="Permanent link">&para;</a></h4>
+<h4 id="splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values">split(rng_key: RngKey, num: int = 2) → tuple of RngKey values<a class="headerlink" href="#splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values" title="Permanent link">&para;</a></h4>
 <p>Split a key into <code>num</code> independent child keys.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">split</span><span class="p">,</span> <span class="n">key</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>

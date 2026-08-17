@@ -6241,7 +6241,11 @@ moment required by DP-FTRL noise mechanisms.</p>
 <span class="normal"><a href="#__codelineno-0-334">334</a></span>
 <span class="normal"><a href="#__codelineno-0-335">335</a></span>
 <span class="normal"><a href="#__codelineno-0-336">336</a></span>
-<span class="normal"><a href="#__codelineno-0-337">337</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_grad</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#__codelineno-0-341">341</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-0-78" name="__codelineno-0-78"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
 <a id="__codelineno-0-79" name="__codelineno-0-79"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-0-80" name="__codelineno-0-80"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -6444,64 +6448,68 @@ moment required by DP-FTRL noise mechanisms.</p>
 <a id="__codelineno-0-277" name="__codelineno-0-277"></a>                <span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span><span class="p">)</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 <a id="__codelineno-0-278" name="__codelineno-0-278"></a>            <span class="k">if</span> <span class="n">_force_grad_norms</span><span class="p">:</span>
 <a id="__codelineno-0-279" name="__codelineno-0-279"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                            <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                        <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                    <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                        <span class="n">loss_values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a>                        <span class="n">grad_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>                        <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                        <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                        <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                            <span class="k">else</span> <span class="p">(</span>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                                <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                            <span class="p">)</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                        <span class="n">batch_size</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                        <span class="n">group_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                        <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">,</span> <span class="n">stats</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                    <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a>        <span class="c1"># Need to convert ClippedFunAux to ClippedGradAux</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn_wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a>            <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-320" name="__codelineno-0-320"></a>                <span class="k">return</span> <span class="n">_empty_batch_response</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-0-321" name="__codelineno-0-321"></a>
-<a id="__codelineno-0-322" name="__codelineno-0-322"></a>            <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::clipped_grad&quot;</span><span class="p">):</span>
-<a id="__codelineno-0-323" name="__codelineno-0-323"></a>                <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">returned_state</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span>
-<a id="__codelineno-0-324" name="__codelineno-0-324"></a>                    <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-<a id="__codelineno-0-325" name="__codelineno-0-325"></a>                <span class="p">)</span>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-327" name="__codelineno-0-327"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span><span class="p">,</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span><span class="p">,</span>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">value_aux</span><span class="p">,</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a>            <span class="p">)</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>                    <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                            <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                        <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                    <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>                        <span class="n">loss_values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>                        <span class="n">grad_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>                        <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                        <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                        <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                            <span class="k">else</span> <span class="p">(</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                                <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                                <span class="k">if</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                                <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                            <span class="p">)</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                        <span class="n">batch_size</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                            <span class="k">else</span> <span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                        <span class="n">group_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>                        <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">,</span> <span class="n">stats</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>                    <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>                <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>        <span class="c1"># Need to convert ClippedFunAux to ClippedGradAux</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn_wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>            <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>                <span class="k">return</span> <span class="n">_empty_batch_response</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::clipped_grad&quot;</span><span class="p">):</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>                <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">returned_state</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>                    <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>                <span class="p">)</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>            <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span><span class="p">,</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span><span class="p">,</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">value_aux</span><span class="p">,</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>            <span class="p">)</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -8642,7 +8650,9 @@ controls the <em>output</em> dtype).</p>
 <span class="normal"><a href="#__codelineno-0-819">819</a></span>
 <span class="normal"><a href="#__codelineno-0-820">820</a></span>
 <span class="normal"><a href="#__codelineno-0-821">821</a></span>
-<span class="normal"><a href="#__codelineno-0-822">822</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-483" name="__codelineno-0-483"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_fun</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-822">822</a></span>
+<span class="normal"><a href="#__codelineno-0-823">823</a></span>
+<span class="normal"><a href="#__codelineno-0-824">824</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-483" name="__codelineno-0-483"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_fun</span><span class="p">(</span>
 <a id="__codelineno-0-484" name="__codelineno-0-484"></a>    <span class="n">fun</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
 <a id="__codelineno-0-485" name="__codelineno-0-485"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-0-486" name="__codelineno-0-486"></a>    <span class="o">*</span><span class="p">,</span>
@@ -8847,141 +8857,143 @@ controls the <em>output</em> dtype).</p>
 <a id="__codelineno-0-685" name="__codelineno-0-685"></a>            <span class="k">return</span> <span class="n">clipped_value</span>
 <a id="__codelineno-0-686" name="__codelineno-0-686"></a>
 <a id="__codelineno-0-687" name="__codelineno-0-687"></a>        <span class="c1"># Choose execution path based on microbatch_size</span>
-<a id="__codelineno-0-688" name="__codelineno-0-688"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-689" name="__codelineno-0-689"></a>            <span class="c1"># Fast path: vmap entire batch at once.  Output shape depends</span>
-<a id="__codelineno-0-690" name="__codelineno-0-690"></a>            <span class="c1"># on the (second_moment, return_aux) flags — see the per_example_fn</span>
-<a id="__codelineno-0-691" name="__codelineno-0-691"></a>            <span class="c1"># branches above.  When n_outputs == 1, vmap returns the single</span>
-<a id="__codelineno-0-692" name="__codelineno-0-692"></a>            <span class="c1"># pytree (which may itself be a tuple of tensors for tuple</span>
-<a id="__codelineno-0-693" name="__codelineno-0-693"></a>            <span class="c1"># params); when n_outputs &gt; 1 the per_example_fn returns a</span>
-<a id="__codelineno-0-694" name="__codelineno-0-694"></a>            <span class="c1"># tuple of n_outputs pytrees.</span>
-<a id="__codelineno-0-695" name="__codelineno-0-695"></a>            <span class="n">n_outputs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">second_moment</span><span class="p">))</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span>
-<a id="__codelineno-0-696" name="__codelineno-0-696"></a>            <span class="n">out_dims</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="o">*</span> <span class="n">n_outputs</span>
-<a id="__codelineno-0-697" name="__codelineno-0-697"></a>            <span class="n">vmapped</span> <span class="o">=</span> <span class="n">_vmap</span><span class="p">(</span>
-<a id="__codelineno-0-698" name="__codelineno-0-698"></a>                <span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-699" name="__codelineno-0-699"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-700" name="__codelineno-0-700"></a>                <span class="n">out_dims</span><span class="o">=</span><span class="n">out_dims</span><span class="p">,</span>
-<a id="__codelineno-0-701" name="__codelineno-0-701"></a>                <span class="n">randomness</span><span class="o">=</span><span class="s2">&quot;same&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-702" name="__codelineno-0-702"></a>            <span class="p">)</span>
-<a id="__codelineno-0-703" name="__codelineno-0-703"></a>            <span class="n">outputs</span> <span class="o">=</span> <span class="n">vmapped</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
-<a id="__codelineno-0-704" name="__codelineno-0-704"></a>            <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-705" name="__codelineno-0-705"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span>
-<a id="__codelineno-0-706" name="__codelineno-0-706"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-707" name="__codelineno-0-707"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
-<a id="__codelineno-0-708" name="__codelineno-0-708"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-709" name="__codelineno-0-709"></a>                <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
-<a id="__codelineno-0-710" name="__codelineno-0-710"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
-<a id="__codelineno-0-711" name="__codelineno-0-711"></a>                <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-712" name="__codelineno-0-712"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">second_moment</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-713" name="__codelineno-0-713"></a>                <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-714" name="__codelineno-0-714"></a>                    <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-715" name="__codelineno-0-715"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span> <span class="k">else</span> <span class="p">()</span>
-<a id="__codelineno-0-716" name="__codelineno-0-716"></a>
-<a id="__codelineno-0-717" name="__codelineno-0-717"></a>            <span class="c1"># Sum clipped values across batch dimension</span>
-<a id="__codelineno-0-718" name="__codelineno-0-718"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
-<a id="__codelineno-0-719" name="__codelineno-0-719"></a>                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
-<a id="__codelineno-0-720" name="__codelineno-0-720"></a>                    <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
-<a id="__codelineno-0-721" name="__codelineno-0-721"></a>                <span class="p">),</span>
-<a id="__codelineno-0-722" name="__codelineno-0-722"></a>                <span class="n">clipped_values</span><span class="p">,</span>
-<a id="__codelineno-0-723" name="__codelineno-0-723"></a>            <span class="p">)</span>
-<a id="__codelineno-0-724" name="__codelineno-0-724"></a>            <span class="n">squared_result</span> <span class="o">=</span> <span class="p">(</span>
-<a id="__codelineno-0-725" name="__codelineno-0-725"></a>                <span class="n">tree_map</span><span class="p">(</span>
-<a id="__codelineno-0-726" name="__codelineno-0-726"></a>                    <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
-<a id="__codelineno-0-727" name="__codelineno-0-727"></a>                        <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
-<a id="__codelineno-0-728" name="__codelineno-0-728"></a>                    <span class="p">),</span>
-<a id="__codelineno-0-729" name="__codelineno-0-729"></a>                    <span class="n">squared_values</span><span class="p">,</span>
-<a id="__codelineno-0-730" name="__codelineno-0-730"></a>                <span class="p">)</span>
-<a id="__codelineno-0-731" name="__codelineno-0-731"></a>                <span class="k">if</span> <span class="n">second_moment</span>
-<a id="__codelineno-0-732" name="__codelineno-0-732"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-733" name="__codelineno-0-733"></a>            <span class="p">)</span>
-<a id="__codelineno-0-734" name="__codelineno-0-734"></a>        <span class="k">elif</span> <span class="n">_return_stats</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-735" name="__codelineno-0-735"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">_microbatch_accumulate_stats_only</span><span class="p">(</span>
-<a id="__codelineno-0-736" name="__codelineno-0-736"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-737" name="__codelineno-0-737"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
-<a id="__codelineno-0-738" name="__codelineno-0-738"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
-<a id="__codelineno-0-739" name="__codelineno-0-739"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-740" name="__codelineno-0-740"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
-<a id="__codelineno-0-741" name="__codelineno-0-741"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
-<a id="__codelineno-0-742" name="__codelineno-0-742"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
-<a id="__codelineno-0-743" name="__codelineno-0-743"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-744" name="__codelineno-0-744"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
-<a id="__codelineno-0-745" name="__codelineno-0-745"></a>            <span class="p">)</span>
-<a id="__codelineno-0-746" name="__codelineno-0-746"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
-<a id="__codelineno-0-747" name="__codelineno-0-747"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-748" name="__codelineno-0-748"></a>            <span class="c1"># Manual microbatch accumulation: process in chunks, accumulate as we go</span>
-<a id="__codelineno-0-749" name="__codelineno-0-749"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">_microbatch_accumulate</span><span class="p">(</span>
-<a id="__codelineno-0-750" name="__codelineno-0-750"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-751" name="__codelineno-0-751"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
-<a id="__codelineno-0-752" name="__codelineno-0-752"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
-<a id="__codelineno-0-753" name="__codelineno-0-753"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-754" name="__codelineno-0-754"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
-<a id="__codelineno-0-755" name="__codelineno-0-755"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
-<a id="__codelineno-0-756" name="__codelineno-0-756"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
-<a id="__codelineno-0-757" name="__codelineno-0-757"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
-<a id="__codelineno-0-758" name="__codelineno-0-758"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
-<a id="__codelineno-0-759" name="__codelineno-0-759"></a>            <span class="p">)</span>
-<a id="__codelineno-0-760" name="__codelineno-0-760"></a>
-<a id="__codelineno-0-761" name="__codelineno-0-761"></a>        <span class="c1"># Normalize</span>
-<a id="__codelineno-0-762" name="__codelineno-0-762"></a>        <span class="k">if</span> <span class="n">normalize_by</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">:</span>
-<a id="__codelineno-0-763" name="__codelineno-0-763"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
-<a id="__codelineno-0-764" name="__codelineno-0-764"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-765" name="__codelineno-0-765"></a>                <span class="n">squared_result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">)</span>
-<a id="__codelineno-0-766" name="__codelineno-0-766"></a>
-<a id="__codelineno-0-767" name="__codelineno-0-767"></a>        <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-768" name="__codelineno-0-768"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
-<a id="__codelineno-0-769" name="__codelineno-0-769"></a>                <span class="n">grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span><span class="n">pytree</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">),</span>
-<a id="__codelineno-0-770" name="__codelineno-0-770"></a>                <span class="n">squared_grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-771" name="__codelineno-0-771"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">squared_result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_squared_max_norm</span>
-<a id="__codelineno-0-772" name="__codelineno-0-772"></a>                <span class="p">),</span>
-<a id="__codelineno-0-773" name="__codelineno-0-773"></a>            <span class="p">)</span>
-<a id="__codelineno-0-774" name="__codelineno-0-774"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-775" name="__codelineno-0-775"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">)</span>
-<a id="__codelineno-0-776" name="__codelineno-0-776"></a>
-<a id="__codelineno-0-777" name="__codelineno-0-777"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-778" name="__codelineno-0-778"></a>            <span class="k">return</span> <span class="n">output</span>
-<a id="__codelineno-0-779" name="__codelineno-0-779"></a>
-<a id="__codelineno-0-780" name="__codelineno-0-780"></a>        <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-781" name="__codelineno-0-781"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
-<a id="__codelineno-0-782" name="__codelineno-0-782"></a>            <span class="n">norms</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-783" name="__codelineno-0-783"></a>            <span class="n">group_norms_dict</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-784" name="__codelineno-0-784"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
-<a id="__codelineno-0-785" name="__codelineno-0-785"></a>                <span class="n">norms</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span> <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">group_norms_dict</span>
-<a id="__codelineno-0-786" name="__codelineno-0-786"></a>            <span class="p">)</span>
-<a id="__codelineno-0-787" name="__codelineno-0-787"></a>
-<a id="__codelineno-0-788" name="__codelineno-0-788"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="n">ClippedFunAux</span><span class="p">(</span>
-<a id="__codelineno-0-789" name="__codelineno-0-789"></a>                <span class="n">values</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;values&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-790" name="__codelineno-0-790"></a>                <span class="n">norms</span><span class="o">=</span><span class="n">norms</span><span class="p">,</span>
-<a id="__codelineno-0-791" name="__codelineno-0-791"></a>                <span class="n">clipped_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;clipped_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-792" name="__codelineno-0-792"></a>                <span class="n">value_aux</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value_aux&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-793" name="__codelineno-0-793"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-794" name="__codelineno-0-794"></a>                    <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-795" name="__codelineno-0-795"></a>                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
-<a id="__codelineno-0-796" name="__codelineno-0-796"></a>                    <span class="ow">or</span> <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="ow">is</span> <span class="kc">None</span>
-<a id="__codelineno-0-797" name="__codelineno-0-797"></a>                    <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-798" name="__codelineno-0-798"></a>                <span class="p">),</span>
-<a id="__codelineno-0-799" name="__codelineno-0-799"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-800" name="__codelineno-0-800"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-801" name="__codelineno-0-801"></a>            <span class="p">)</span>
-<a id="__codelineno-0-802" name="__codelineno-0-802"></a>            <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-803" name="__codelineno-0-803"></a>                <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span>
-<a id="__codelineno-0-804" name="__codelineno-0-804"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span>
-<a id="__codelineno-0-805" name="__codelineno-0-805"></a>
-<a id="__codelineno-0-806" name="__codelineno-0-806"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-807" name="__codelineno-0-807"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
-<a id="__codelineno-0-808" name="__codelineno-0-808"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
-<a id="__codelineno-0-809" name="__codelineno-0-809"></a>                <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-810" name="__codelineno-0-810"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-811" name="__codelineno-0-811"></a>                <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-812" name="__codelineno-0-812"></a>            <span class="p">)</span>
-<a id="__codelineno-0-813" name="__codelineno-0-813"></a>
-<a id="__codelineno-0-814" name="__codelineno-0-814"></a>        <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">stats</span>
-<a id="__codelineno-0-815" name="__codelineno-0-815"></a>
-<a id="__codelineno-0-816" name="__codelineno-0-816"></a>    <span class="c1"># Wrap function to accept and return state</span>
-<a id="__codelineno-0-817" name="__codelineno-0-817"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">stateful_clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-818" name="__codelineno-0-818"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-819" name="__codelineno-0-819"></a>        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>  <span class="c1"># State unchanged for fixed clipping</span>
-<a id="__codelineno-0-820" name="__codelineno-0-820"></a>
-<a id="__codelineno-0-821" name="__codelineno-0-821"></a>    <span class="c1"># Return wrapped function with state</span>
-<a id="__codelineno-0-822" name="__codelineno-0-822"></a>    <span class="k">return</span> <span class="n">stateful_clipped_fn</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-688" name="__codelineno-0-688"></a>        <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-689" name="__codelineno-0-689"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-690" name="__codelineno-0-690"></a>            <span class="c1"># Fast path: vmap entire batch at once.  Output shape depends</span>
+<a id="__codelineno-0-691" name="__codelineno-0-691"></a>            <span class="c1"># on the (second_moment, return_aux) flags — see the per_example_fn</span>
+<a id="__codelineno-0-692" name="__codelineno-0-692"></a>            <span class="c1"># branches above.  When n_outputs == 1, vmap returns the single</span>
+<a id="__codelineno-0-693" name="__codelineno-0-693"></a>            <span class="c1"># pytree (which may itself be a tuple of tensors for tuple</span>
+<a id="__codelineno-0-694" name="__codelineno-0-694"></a>            <span class="c1"># params); when n_outputs &gt; 1 the per_example_fn returns a</span>
+<a id="__codelineno-0-695" name="__codelineno-0-695"></a>            <span class="c1"># tuple of n_outputs pytrees.</span>
+<a id="__codelineno-0-696" name="__codelineno-0-696"></a>            <span class="n">n_outputs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">second_moment</span><span class="p">))</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span>
+<a id="__codelineno-0-697" name="__codelineno-0-697"></a>            <span class="n">out_dims</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="o">*</span> <span class="n">n_outputs</span>
+<a id="__codelineno-0-698" name="__codelineno-0-698"></a>            <span class="n">vmapped</span> <span class="o">=</span> <span class="n">_vmap</span><span class="p">(</span>
+<a id="__codelineno-0-699" name="__codelineno-0-699"></a>                <span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-700" name="__codelineno-0-700"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-701" name="__codelineno-0-701"></a>                <span class="n">out_dims</span><span class="o">=</span><span class="n">out_dims</span><span class="p">,</span>
+<a id="__codelineno-0-702" name="__codelineno-0-702"></a>                <span class="n">randomness</span><span class="o">=</span><span class="s2">&quot;same&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-703" name="__codelineno-0-703"></a>            <span class="p">)</span>
+<a id="__codelineno-0-704" name="__codelineno-0-704"></a>            <span class="n">outputs</span> <span class="o">=</span> <span class="n">vmapped</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+<a id="__codelineno-0-705" name="__codelineno-0-705"></a>            <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-706" name="__codelineno-0-706"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span>
+<a id="__codelineno-0-707" name="__codelineno-0-707"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-708" name="__codelineno-0-708"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
+<a id="__codelineno-0-709" name="__codelineno-0-709"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-710" name="__codelineno-0-710"></a>                <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-711" name="__codelineno-0-711"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+<a id="__codelineno-0-712" name="__codelineno-0-712"></a>                <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-713" name="__codelineno-0-713"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">second_moment</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-714" name="__codelineno-0-714"></a>                <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-715" name="__codelineno-0-715"></a>                    <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-716" name="__codelineno-0-716"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span> <span class="k">else</span> <span class="p">()</span>
+<a id="__codelineno-0-717" name="__codelineno-0-717"></a>
+<a id="__codelineno-0-718" name="__codelineno-0-718"></a>            <span class="c1"># Sum clipped values across batch dimension</span>
+<a id="__codelineno-0-719" name="__codelineno-0-719"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-720" name="__codelineno-0-720"></a>                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
+<a id="__codelineno-0-721" name="__codelineno-0-721"></a>                    <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
+<a id="__codelineno-0-722" name="__codelineno-0-722"></a>                <span class="p">),</span>
+<a id="__codelineno-0-723" name="__codelineno-0-723"></a>                <span class="n">clipped_values</span><span class="p">,</span>
+<a id="__codelineno-0-724" name="__codelineno-0-724"></a>            <span class="p">)</span>
+<a id="__codelineno-0-725" name="__codelineno-0-725"></a>            <span class="n">squared_result</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-726" name="__codelineno-0-726"></a>                <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-727" name="__codelineno-0-727"></a>                    <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
+<a id="__codelineno-0-728" name="__codelineno-0-728"></a>                        <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
+<a id="__codelineno-0-729" name="__codelineno-0-729"></a>                    <span class="p">),</span>
+<a id="__codelineno-0-730" name="__codelineno-0-730"></a>                    <span class="n">squared_values</span><span class="p">,</span>
+<a id="__codelineno-0-731" name="__codelineno-0-731"></a>                <span class="p">)</span>
+<a id="__codelineno-0-732" name="__codelineno-0-732"></a>                <span class="k">if</span> <span class="n">second_moment</span>
+<a id="__codelineno-0-733" name="__codelineno-0-733"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-734" name="__codelineno-0-734"></a>            <span class="p">)</span>
+<a id="__codelineno-0-735" name="__codelineno-0-735"></a>        <span class="k">elif</span> <span class="n">_return_stats</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-736" name="__codelineno-0-736"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">_microbatch_accumulate_stats_only</span><span class="p">(</span>
+<a id="__codelineno-0-737" name="__codelineno-0-737"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-738" name="__codelineno-0-738"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+<a id="__codelineno-0-739" name="__codelineno-0-739"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-740" name="__codelineno-0-740"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-741" name="__codelineno-0-741"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-742" name="__codelineno-0-742"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-743" name="__codelineno-0-743"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
+<a id="__codelineno-0-744" name="__codelineno-0-744"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-745" name="__codelineno-0-745"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-746" name="__codelineno-0-746"></a>            <span class="p">)</span>
+<a id="__codelineno-0-747" name="__codelineno-0-747"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
+<a id="__codelineno-0-748" name="__codelineno-0-748"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-749" name="__codelineno-0-749"></a>            <span class="c1"># Manual microbatch accumulation: process in chunks, accumulate as we go</span>
+<a id="__codelineno-0-750" name="__codelineno-0-750"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">_microbatch_accumulate</span><span class="p">(</span>
+<a id="__codelineno-0-751" name="__codelineno-0-751"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-752" name="__codelineno-0-752"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+<a id="__codelineno-0-753" name="__codelineno-0-753"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-754" name="__codelineno-0-754"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-755" name="__codelineno-0-755"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-756" name="__codelineno-0-756"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-757" name="__codelineno-0-757"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-758" name="__codelineno-0-758"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
+<a id="__codelineno-0-759" name="__codelineno-0-759"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-760" name="__codelineno-0-760"></a>            <span class="p">)</span>
+<a id="__codelineno-0-761" name="__codelineno-0-761"></a>
+<a id="__codelineno-0-762" name="__codelineno-0-762"></a>        <span class="c1"># Normalize</span>
+<a id="__codelineno-0-763" name="__codelineno-0-763"></a>        <span class="k">if</span> <span class="n">normalize_by</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">:</span>
+<a id="__codelineno-0-764" name="__codelineno-0-764"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+<a id="__codelineno-0-765" name="__codelineno-0-765"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-766" name="__codelineno-0-766"></a>                <span class="n">squared_result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">)</span>
+<a id="__codelineno-0-767" name="__codelineno-0-767"></a>
+<a id="__codelineno-0-768" name="__codelineno-0-768"></a>        <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-769" name="__codelineno-0-769"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
+<a id="__codelineno-0-770" name="__codelineno-0-770"></a>                <span class="n">grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span><span class="n">pytree</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">),</span>
+<a id="__codelineno-0-771" name="__codelineno-0-771"></a>                <span class="n">squared_grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-772" name="__codelineno-0-772"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">squared_result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_squared_max_norm</span>
+<a id="__codelineno-0-773" name="__codelineno-0-773"></a>                <span class="p">),</span>
+<a id="__codelineno-0-774" name="__codelineno-0-774"></a>            <span class="p">)</span>
+<a id="__codelineno-0-775" name="__codelineno-0-775"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-776" name="__codelineno-0-776"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">)</span>
+<a id="__codelineno-0-777" name="__codelineno-0-777"></a>
+<a id="__codelineno-0-778" name="__codelineno-0-778"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-779" name="__codelineno-0-779"></a>            <span class="k">return</span> <span class="n">output</span>
+<a id="__codelineno-0-780" name="__codelineno-0-780"></a>
+<a id="__codelineno-0-781" name="__codelineno-0-781"></a>        <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-782" name="__codelineno-0-782"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<a id="__codelineno-0-783" name="__codelineno-0-783"></a>            <span class="n">norms</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-784" name="__codelineno-0-784"></a>            <span class="n">group_norms_dict</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-785" name="__codelineno-0-785"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
+<a id="__codelineno-0-786" name="__codelineno-0-786"></a>                <span class="n">norms</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span> <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">group_norms_dict</span>
+<a id="__codelineno-0-787" name="__codelineno-0-787"></a>            <span class="p">)</span>
+<a id="__codelineno-0-788" name="__codelineno-0-788"></a>
+<a id="__codelineno-0-789" name="__codelineno-0-789"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="n">ClippedFunAux</span><span class="p">(</span>
+<a id="__codelineno-0-790" name="__codelineno-0-790"></a>                <span class="n">values</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;values&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-791" name="__codelineno-0-791"></a>                <span class="n">norms</span><span class="o">=</span><span class="n">norms</span><span class="p">,</span>
+<a id="__codelineno-0-792" name="__codelineno-0-792"></a>                <span class="n">clipped_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;clipped_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-793" name="__codelineno-0-793"></a>                <span class="n">value_aux</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value_aux&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-794" name="__codelineno-0-794"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-795" name="__codelineno-0-795"></a>                    <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-796" name="__codelineno-0-796"></a>                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+<a id="__codelineno-0-797" name="__codelineno-0-797"></a>                    <span class="ow">or</span> <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="ow">is</span> <span class="kc">None</span>
+<a id="__codelineno-0-798" name="__codelineno-0-798"></a>                    <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-799" name="__codelineno-0-799"></a>                <span class="p">),</span>
+<a id="__codelineno-0-800" name="__codelineno-0-800"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-801" name="__codelineno-0-801"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-802" name="__codelineno-0-802"></a>            <span class="p">)</span>
+<a id="__codelineno-0-803" name="__codelineno-0-803"></a>            <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-804" name="__codelineno-0-804"></a>                <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span>
+<a id="__codelineno-0-805" name="__codelineno-0-805"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span>
+<a id="__codelineno-0-806" name="__codelineno-0-806"></a>
+<a id="__codelineno-0-807" name="__codelineno-0-807"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-808" name="__codelineno-0-808"></a>            <span class="k">assert</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-809" name="__codelineno-0-809"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">stats</span>
+<a id="__codelineno-0-810" name="__codelineno-0-810"></a>
+<a id="__codelineno-0-811" name="__codelineno-0-811"></a>        <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<a id="__codelineno-0-812" name="__codelineno-0-812"></a>        <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
+<a id="__codelineno-0-813" name="__codelineno-0-813"></a>            <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-814" name="__codelineno-0-814"></a>            <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-815" name="__codelineno-0-815"></a>            <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-816" name="__codelineno-0-816"></a>        <span class="p">)</span>
+<a id="__codelineno-0-817" name="__codelineno-0-817"></a>
+<a id="__codelineno-0-818" name="__codelineno-0-818"></a>    <span class="c1"># Wrap function to accept and return state</span>
+<a id="__codelineno-0-819" name="__codelineno-0-819"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">stateful_clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-820" name="__codelineno-0-820"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-821" name="__codelineno-0-821"></a>        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>  <span class="c1"># State unchanged for fixed clipping</span>
+<a id="__codelineno-0-822" name="__codelineno-0-822"></a>
+<a id="__codelineno-0-823" name="__codelineno-0-823"></a>    <span class="c1"># Return wrapped function with state</span>
+<a id="__codelineno-0-824" name="__codelineno-0-824"></a>    <span class="k">return</span> <span class="n">stateful_clipped_fn</span><span class="p">,</span> <span class="n">clip_state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -11044,7 +11056,11 @@ moment required by DP-FTRL noise mechanisms.</p>
 <span class="normal"><a href="#__codelineno-0-334">334</a></span>
 <span class="normal"><a href="#__codelineno-0-335">335</a></span>
 <span class="normal"><a href="#__codelineno-0-336">336</a></span>
-<span class="normal"><a href="#__codelineno-0-337">337</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_grad</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#__codelineno-0-341">341</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-0-78" name="__codelineno-0-78"></a>    <span class="n">loss_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
 <a id="__codelineno-0-79" name="__codelineno-0-79"></a>    <span class="n">argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <a id="__codelineno-0-80" name="__codelineno-0-80"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -11247,64 +11263,68 @@ moment required by DP-FTRL noise mechanisms.</p>
 <a id="__codelineno-0-277" name="__codelineno-0-277"></a>                <span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span><span class="p">)</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 <a id="__codelineno-0-278" name="__codelineno-0-278"></a>            <span class="k">if</span> <span class="n">_force_grad_norms</span><span class="p">:</span>
 <a id="__codelineno-0-279" name="__codelineno-0-279"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                            <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                        <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                    <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                        <span class="n">loss_values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a>                        <span class="n">grad_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a>                        <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                        <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                        <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                            <span class="k">else</span> <span class="p">(</span>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                                <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                            <span class="p">)</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                        <span class="n">batch_size</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                        <span class="p">),</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                        <span class="n">group_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                        <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">,</span> <span class="n">stats</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                    <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a>        <span class="c1"># Need to convert ClippedFunAux to ClippedGradAux</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn_wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a>            <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-320" name="__codelineno-0-320"></a>                <span class="k">return</span> <span class="n">_empty_batch_response</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-0-321" name="__codelineno-0-321"></a>
-<a id="__codelineno-0-322" name="__codelineno-0-322"></a>            <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::clipped_grad&quot;</span><span class="p">):</span>
-<a id="__codelineno-0-323" name="__codelineno-0-323"></a>                <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">returned_state</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span>
-<a id="__codelineno-0-324" name="__codelineno-0-324"></a>                    <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-<a id="__codelineno-0-325" name="__codelineno-0-325"></a>                <span class="p">)</span>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
-<a id="__codelineno-0-327" name="__codelineno-0-327"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span><span class="p">,</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span><span class="p">,</span>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">value_aux</span><span class="p">,</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a>            <span class="p">)</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>                    <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                            <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                            <span class="n">aux</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                        <span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">result</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                    <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>                        <span class="n">loss_values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>                        <span class="n">grad_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>                        <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                        <span class="n">loss_aux</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                        <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                            <span class="k">else</span> <span class="p">(</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                                <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                                <span class="k">if</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                                <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                            <span class="p">)</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                        <span class="n">batch_size</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                            <span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                            <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                            <span class="k">else</span> <span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span> <span class="k">if</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                        <span class="p">),</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                        <span class="n">group_norms</span><span class="o">=</span><span class="p">(</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span> <span class="k">if</span> <span class="n">aux</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>                    <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>                        <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">,</span> <span class="n">stats</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>                    <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>                <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>            <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>        <span class="c1"># Need to convert ClippedFunAux to ClippedGradAux</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">grad_fn_wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>            <span class="k">if</span> <span class="n">batch_size_from_args</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">batch_argnums_tuple</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>                <span class="k">return</span> <span class="n">_empty_batch_response</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="k">with</span> <span class="n">record_function</span><span class="p">(</span><span class="s2">&quot;opaque::clipped_grad&quot;</span><span class="p">):</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>                <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">returned_state</span> <span class="o">=</span> <span class="n">clipped_grad_fn</span><span class="p">(</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>                    <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>                <span class="p">)</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>            <span class="n">grad_aux</span> <span class="o">=</span> <span class="n">ClippedGradAux</span><span class="p">(</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>                <span class="n">loss_values</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>                <span class="n">grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">norms</span><span class="p">,</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>                <span class="n">clipped_grad_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipped_norms</span><span class="p">,</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>                <span class="n">loss_aux</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">value_aux</span><span class="p">,</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span><span class="p">,</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>            <span class="p">)</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>            <span class="k">return</span> <span class="p">(</span><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">grad_aux</span><span class="p">),</span> <span class="n">returned_state</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>        <span class="k">return</span> <span class="n">grad_fn_wrapper</span><span class="p">,</span> <span class="n">clip_state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -13445,7 +13465,9 @@ controls the <em>output</em> dtype).</p>
 <span class="normal"><a href="#__codelineno-0-819">819</a></span>
 <span class="normal"><a href="#__codelineno-0-820">820</a></span>
 <span class="normal"><a href="#__codelineno-0-821">821</a></span>
-<span class="normal"><a href="#__codelineno-0-822">822</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-483" name="__codelineno-0-483"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_fun</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-822">822</a></span>
+<span class="normal"><a href="#__codelineno-0-823">823</a></span>
+<span class="normal"><a href="#__codelineno-0-824">824</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-483" name="__codelineno-0-483"></a><span class="k">def</span><span class="w"> </span><span class="nf">clipped_fun</span><span class="p">(</span>
 <a id="__codelineno-0-484" name="__codelineno-0-484"></a>    <span class="n">fun</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
 <a id="__codelineno-0-485" name="__codelineno-0-485"></a>    <span class="n">has_aux</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-0-486" name="__codelineno-0-486"></a>    <span class="o">*</span><span class="p">,</span>
@@ -13650,141 +13672,143 @@ controls the <em>output</em> dtype).</p>
 <a id="__codelineno-0-685" name="__codelineno-0-685"></a>            <span class="k">return</span> <span class="n">clipped_value</span>
 <a id="__codelineno-0-686" name="__codelineno-0-686"></a>
 <a id="__codelineno-0-687" name="__codelineno-0-687"></a>        <span class="c1"># Choose execution path based on microbatch_size</span>
-<a id="__codelineno-0-688" name="__codelineno-0-688"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-689" name="__codelineno-0-689"></a>            <span class="c1"># Fast path: vmap entire batch at once.  Output shape depends</span>
-<a id="__codelineno-0-690" name="__codelineno-0-690"></a>            <span class="c1"># on the (second_moment, return_aux) flags — see the per_example_fn</span>
-<a id="__codelineno-0-691" name="__codelineno-0-691"></a>            <span class="c1"># branches above.  When n_outputs == 1, vmap returns the single</span>
-<a id="__codelineno-0-692" name="__codelineno-0-692"></a>            <span class="c1"># pytree (which may itself be a tuple of tensors for tuple</span>
-<a id="__codelineno-0-693" name="__codelineno-0-693"></a>            <span class="c1"># params); when n_outputs &gt; 1 the per_example_fn returns a</span>
-<a id="__codelineno-0-694" name="__codelineno-0-694"></a>            <span class="c1"># tuple of n_outputs pytrees.</span>
-<a id="__codelineno-0-695" name="__codelineno-0-695"></a>            <span class="n">n_outputs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">second_moment</span><span class="p">))</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span>
-<a id="__codelineno-0-696" name="__codelineno-0-696"></a>            <span class="n">out_dims</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="o">*</span> <span class="n">n_outputs</span>
-<a id="__codelineno-0-697" name="__codelineno-0-697"></a>            <span class="n">vmapped</span> <span class="o">=</span> <span class="n">_vmap</span><span class="p">(</span>
-<a id="__codelineno-0-698" name="__codelineno-0-698"></a>                <span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-699" name="__codelineno-0-699"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-700" name="__codelineno-0-700"></a>                <span class="n">out_dims</span><span class="o">=</span><span class="n">out_dims</span><span class="p">,</span>
-<a id="__codelineno-0-701" name="__codelineno-0-701"></a>                <span class="n">randomness</span><span class="o">=</span><span class="s2">&quot;same&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-702" name="__codelineno-0-702"></a>            <span class="p">)</span>
-<a id="__codelineno-0-703" name="__codelineno-0-703"></a>            <span class="n">outputs</span> <span class="o">=</span> <span class="n">vmapped</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
-<a id="__codelineno-0-704" name="__codelineno-0-704"></a>            <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-705" name="__codelineno-0-705"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span>
-<a id="__codelineno-0-706" name="__codelineno-0-706"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-707" name="__codelineno-0-707"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
-<a id="__codelineno-0-708" name="__codelineno-0-708"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-709" name="__codelineno-0-709"></a>                <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
-<a id="__codelineno-0-710" name="__codelineno-0-710"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
-<a id="__codelineno-0-711" name="__codelineno-0-711"></a>                <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-712" name="__codelineno-0-712"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">second_moment</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-713" name="__codelineno-0-713"></a>                <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-714" name="__codelineno-0-714"></a>                    <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-715" name="__codelineno-0-715"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span> <span class="k">else</span> <span class="p">()</span>
-<a id="__codelineno-0-716" name="__codelineno-0-716"></a>
-<a id="__codelineno-0-717" name="__codelineno-0-717"></a>            <span class="c1"># Sum clipped values across batch dimension</span>
-<a id="__codelineno-0-718" name="__codelineno-0-718"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
-<a id="__codelineno-0-719" name="__codelineno-0-719"></a>                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
-<a id="__codelineno-0-720" name="__codelineno-0-720"></a>                    <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
-<a id="__codelineno-0-721" name="__codelineno-0-721"></a>                <span class="p">),</span>
-<a id="__codelineno-0-722" name="__codelineno-0-722"></a>                <span class="n">clipped_values</span><span class="p">,</span>
-<a id="__codelineno-0-723" name="__codelineno-0-723"></a>            <span class="p">)</span>
-<a id="__codelineno-0-724" name="__codelineno-0-724"></a>            <span class="n">squared_result</span> <span class="o">=</span> <span class="p">(</span>
-<a id="__codelineno-0-725" name="__codelineno-0-725"></a>                <span class="n">tree_map</span><span class="p">(</span>
-<a id="__codelineno-0-726" name="__codelineno-0-726"></a>                    <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
-<a id="__codelineno-0-727" name="__codelineno-0-727"></a>                        <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
-<a id="__codelineno-0-728" name="__codelineno-0-728"></a>                    <span class="p">),</span>
-<a id="__codelineno-0-729" name="__codelineno-0-729"></a>                    <span class="n">squared_values</span><span class="p">,</span>
-<a id="__codelineno-0-730" name="__codelineno-0-730"></a>                <span class="p">)</span>
-<a id="__codelineno-0-731" name="__codelineno-0-731"></a>                <span class="k">if</span> <span class="n">second_moment</span>
-<a id="__codelineno-0-732" name="__codelineno-0-732"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-733" name="__codelineno-0-733"></a>            <span class="p">)</span>
-<a id="__codelineno-0-734" name="__codelineno-0-734"></a>        <span class="k">elif</span> <span class="n">_return_stats</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-735" name="__codelineno-0-735"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">_microbatch_accumulate_stats_only</span><span class="p">(</span>
-<a id="__codelineno-0-736" name="__codelineno-0-736"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-737" name="__codelineno-0-737"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
-<a id="__codelineno-0-738" name="__codelineno-0-738"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
-<a id="__codelineno-0-739" name="__codelineno-0-739"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-740" name="__codelineno-0-740"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
-<a id="__codelineno-0-741" name="__codelineno-0-741"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
-<a id="__codelineno-0-742" name="__codelineno-0-742"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
-<a id="__codelineno-0-743" name="__codelineno-0-743"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-744" name="__codelineno-0-744"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
-<a id="__codelineno-0-745" name="__codelineno-0-745"></a>            <span class="p">)</span>
-<a id="__codelineno-0-746" name="__codelineno-0-746"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
-<a id="__codelineno-0-747" name="__codelineno-0-747"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-748" name="__codelineno-0-748"></a>            <span class="c1"># Manual microbatch accumulation: process in chunks, accumulate as we go</span>
-<a id="__codelineno-0-749" name="__codelineno-0-749"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">_microbatch_accumulate</span><span class="p">(</span>
-<a id="__codelineno-0-750" name="__codelineno-0-750"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
-<a id="__codelineno-0-751" name="__codelineno-0-751"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
-<a id="__codelineno-0-752" name="__codelineno-0-752"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
-<a id="__codelineno-0-753" name="__codelineno-0-753"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
-<a id="__codelineno-0-754" name="__codelineno-0-754"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
-<a id="__codelineno-0-755" name="__codelineno-0-755"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
-<a id="__codelineno-0-756" name="__codelineno-0-756"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
-<a id="__codelineno-0-757" name="__codelineno-0-757"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
-<a id="__codelineno-0-758" name="__codelineno-0-758"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
-<a id="__codelineno-0-759" name="__codelineno-0-759"></a>            <span class="p">)</span>
-<a id="__codelineno-0-760" name="__codelineno-0-760"></a>
-<a id="__codelineno-0-761" name="__codelineno-0-761"></a>        <span class="c1"># Normalize</span>
-<a id="__codelineno-0-762" name="__codelineno-0-762"></a>        <span class="k">if</span> <span class="n">normalize_by</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">:</span>
-<a id="__codelineno-0-763" name="__codelineno-0-763"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
-<a id="__codelineno-0-764" name="__codelineno-0-764"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-765" name="__codelineno-0-765"></a>                <span class="n">squared_result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">)</span>
-<a id="__codelineno-0-766" name="__codelineno-0-766"></a>
-<a id="__codelineno-0-767" name="__codelineno-0-767"></a>        <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
-<a id="__codelineno-0-768" name="__codelineno-0-768"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
-<a id="__codelineno-0-769" name="__codelineno-0-769"></a>                <span class="n">grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span><span class="n">pytree</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">),</span>
-<a id="__codelineno-0-770" name="__codelineno-0-770"></a>                <span class="n">squared_grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span>
-<a id="__codelineno-0-771" name="__codelineno-0-771"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">squared_result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_squared_max_norm</span>
-<a id="__codelineno-0-772" name="__codelineno-0-772"></a>                <span class="p">),</span>
-<a id="__codelineno-0-773" name="__codelineno-0-773"></a>            <span class="p">)</span>
-<a id="__codelineno-0-774" name="__codelineno-0-774"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-775" name="__codelineno-0-775"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">)</span>
-<a id="__codelineno-0-776" name="__codelineno-0-776"></a>
-<a id="__codelineno-0-777" name="__codelineno-0-777"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-778" name="__codelineno-0-778"></a>            <span class="k">return</span> <span class="n">output</span>
-<a id="__codelineno-0-779" name="__codelineno-0-779"></a>
-<a id="__codelineno-0-780" name="__codelineno-0-780"></a>        <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
-<a id="__codelineno-0-781" name="__codelineno-0-781"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
-<a id="__codelineno-0-782" name="__codelineno-0-782"></a>            <span class="n">norms</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-783" name="__codelineno-0-783"></a>            <span class="n">group_norms_dict</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-784" name="__codelineno-0-784"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
-<a id="__codelineno-0-785" name="__codelineno-0-785"></a>                <span class="n">norms</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span> <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">group_norms_dict</span>
-<a id="__codelineno-0-786" name="__codelineno-0-786"></a>            <span class="p">)</span>
-<a id="__codelineno-0-787" name="__codelineno-0-787"></a>
-<a id="__codelineno-0-788" name="__codelineno-0-788"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="n">ClippedFunAux</span><span class="p">(</span>
-<a id="__codelineno-0-789" name="__codelineno-0-789"></a>                <span class="n">values</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;values&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-790" name="__codelineno-0-790"></a>                <span class="n">norms</span><span class="o">=</span><span class="n">norms</span><span class="p">,</span>
-<a id="__codelineno-0-791" name="__codelineno-0-791"></a>                <span class="n">clipped_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;clipped_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-792" name="__codelineno-0-792"></a>                <span class="n">value_aux</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value_aux&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-793" name="__codelineno-0-793"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-794" name="__codelineno-0-794"></a>                    <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
-<a id="__codelineno-0-795" name="__codelineno-0-795"></a>                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
-<a id="__codelineno-0-796" name="__codelineno-0-796"></a>                    <span class="ow">or</span> <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="ow">is</span> <span class="kc">None</span>
-<a id="__codelineno-0-797" name="__codelineno-0-797"></a>                    <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-798" name="__codelineno-0-798"></a>                <span class="p">),</span>
-<a id="__codelineno-0-799" name="__codelineno-0-799"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-800" name="__codelineno-0-800"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-801" name="__codelineno-0-801"></a>            <span class="p">)</span>
-<a id="__codelineno-0-802" name="__codelineno-0-802"></a>            <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
-<a id="__codelineno-0-803" name="__codelineno-0-803"></a>                <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span>
-<a id="__codelineno-0-804" name="__codelineno-0-804"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span>
-<a id="__codelineno-0-805" name="__codelineno-0-805"></a>
-<a id="__codelineno-0-806" name="__codelineno-0-806"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-807" name="__codelineno-0-807"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
-<a id="__codelineno-0-808" name="__codelineno-0-808"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
-<a id="__codelineno-0-809" name="__codelineno-0-809"></a>                <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-810" name="__codelineno-0-810"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
-<a id="__codelineno-0-811" name="__codelineno-0-811"></a>                <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
-<a id="__codelineno-0-812" name="__codelineno-0-812"></a>            <span class="p">)</span>
-<a id="__codelineno-0-813" name="__codelineno-0-813"></a>
-<a id="__codelineno-0-814" name="__codelineno-0-814"></a>        <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">stats</span>
-<a id="__codelineno-0-815" name="__codelineno-0-815"></a>
-<a id="__codelineno-0-816" name="__codelineno-0-816"></a>    <span class="c1"># Wrap function to accept and return state</span>
-<a id="__codelineno-0-817" name="__codelineno-0-817"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">stateful_clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<a id="__codelineno-0-818" name="__codelineno-0-818"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-819" name="__codelineno-0-819"></a>        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>  <span class="c1"># State unchanged for fixed clipping</span>
-<a id="__codelineno-0-820" name="__codelineno-0-820"></a>
-<a id="__codelineno-0-821" name="__codelineno-0-821"></a>    <span class="c1"># Return wrapped function with state</span>
-<a id="__codelineno-0-822" name="__codelineno-0-822"></a>    <span class="k">return</span> <span class="n">stateful_clipped_fn</span><span class="p">,</span> <span class="n">clip_state</span>
+<a id="__codelineno-0-688" name="__codelineno-0-688"></a>        <span class="n">stats</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-689" name="__codelineno-0-689"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-690" name="__codelineno-0-690"></a>            <span class="c1"># Fast path: vmap entire batch at once.  Output shape depends</span>
+<a id="__codelineno-0-691" name="__codelineno-0-691"></a>            <span class="c1"># on the (second_moment, return_aux) flags — see the per_example_fn</span>
+<a id="__codelineno-0-692" name="__codelineno-0-692"></a>            <span class="c1"># branches above.  When n_outputs == 1, vmap returns the single</span>
+<a id="__codelineno-0-693" name="__codelineno-0-693"></a>            <span class="c1"># pytree (which may itself be a tuple of tensors for tuple</span>
+<a id="__codelineno-0-694" name="__codelineno-0-694"></a>            <span class="c1"># params); when n_outputs &gt; 1 the per_example_fn returns a</span>
+<a id="__codelineno-0-695" name="__codelineno-0-695"></a>            <span class="c1"># tuple of n_outputs pytrees.</span>
+<a id="__codelineno-0-696" name="__codelineno-0-696"></a>            <span class="n">n_outputs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">second_moment</span><span class="p">))</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span>
+<a id="__codelineno-0-697" name="__codelineno-0-697"></a>            <span class="n">out_dims</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="o">*</span> <span class="n">n_outputs</span>
+<a id="__codelineno-0-698" name="__codelineno-0-698"></a>            <span class="n">vmapped</span> <span class="o">=</span> <span class="n">_vmap</span><span class="p">(</span>
+<a id="__codelineno-0-699" name="__codelineno-0-699"></a>                <span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-700" name="__codelineno-0-700"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-701" name="__codelineno-0-701"></a>                <span class="n">out_dims</span><span class="o">=</span><span class="n">out_dims</span><span class="p">,</span>
+<a id="__codelineno-0-702" name="__codelineno-0-702"></a>                <span class="n">randomness</span><span class="o">=</span><span class="s2">&quot;same&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-703" name="__codelineno-0-703"></a>            <span class="p">)</span>
+<a id="__codelineno-0-704" name="__codelineno-0-704"></a>            <span class="n">outputs</span> <span class="o">=</span> <span class="n">vmapped</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+<a id="__codelineno-0-705" name="__codelineno-0-705"></a>            <span class="k">if</span> <span class="n">n_outputs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-706" name="__codelineno-0-706"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span>
+<a id="__codelineno-0-707" name="__codelineno-0-707"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-708" name="__codelineno-0-708"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
+<a id="__codelineno-0-709" name="__codelineno-0-709"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-710" name="__codelineno-0-710"></a>                <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-711" name="__codelineno-0-711"></a>                <span class="n">clipped_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+<a id="__codelineno-0-712" name="__codelineno-0-712"></a>                <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-713" name="__codelineno-0-713"></a>                <span class="n">squared_values</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">second_moment</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-714" name="__codelineno-0-714"></a>                <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-715" name="__codelineno-0-715"></a>                    <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-716" name="__codelineno-0-716"></a>                <span class="n">aux</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">if</span> <span class="p">(</span><span class="n">return_aux</span> <span class="ow">or</span> <span class="n">_return_stats</span><span class="p">)</span> <span class="k">else</span> <span class="p">()</span>
+<a id="__codelineno-0-717" name="__codelineno-0-717"></a>
+<a id="__codelineno-0-718" name="__codelineno-0-718"></a>            <span class="c1"># Sum clipped values across batch dimension</span>
+<a id="__codelineno-0-719" name="__codelineno-0-719"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-720" name="__codelineno-0-720"></a>                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
+<a id="__codelineno-0-721" name="__codelineno-0-721"></a>                    <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
+<a id="__codelineno-0-722" name="__codelineno-0-722"></a>                <span class="p">),</span>
+<a id="__codelineno-0-723" name="__codelineno-0-723"></a>                <span class="n">clipped_values</span><span class="p">,</span>
+<a id="__codelineno-0-724" name="__codelineno-0-724"></a>            <span class="p">)</span>
+<a id="__codelineno-0-725" name="__codelineno-0-725"></a>            <span class="n">squared_result</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-726" name="__codelineno-0-726"></a>                <span class="n">tree_map</span><span class="p">(</span>
+<a id="__codelineno-0-727" name="__codelineno-0-727"></a>                    <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_sum_clipped_tensor</span><span class="p">(</span>
+<a id="__codelineno-0-728" name="__codelineno-0-728"></a>                        <span class="n">x</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">output_dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span>
+<a id="__codelineno-0-729" name="__codelineno-0-729"></a>                    <span class="p">),</span>
+<a id="__codelineno-0-730" name="__codelineno-0-730"></a>                    <span class="n">squared_values</span><span class="p">,</span>
+<a id="__codelineno-0-731" name="__codelineno-0-731"></a>                <span class="p">)</span>
+<a id="__codelineno-0-732" name="__codelineno-0-732"></a>                <span class="k">if</span> <span class="n">second_moment</span>
+<a id="__codelineno-0-733" name="__codelineno-0-733"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-734" name="__codelineno-0-734"></a>            <span class="p">)</span>
+<a id="__codelineno-0-735" name="__codelineno-0-735"></a>        <span class="k">elif</span> <span class="n">_return_stats</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-736" name="__codelineno-0-736"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">stats</span> <span class="o">=</span> <span class="n">_microbatch_accumulate_stats_only</span><span class="p">(</span>
+<a id="__codelineno-0-737" name="__codelineno-0-737"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-738" name="__codelineno-0-738"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+<a id="__codelineno-0-739" name="__codelineno-0-739"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-740" name="__codelineno-0-740"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-741" name="__codelineno-0-741"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-742" name="__codelineno-0-742"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-743" name="__codelineno-0-743"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
+<a id="__codelineno-0-744" name="__codelineno-0-744"></a>                <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-745" name="__codelineno-0-745"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-746" name="__codelineno-0-746"></a>            <span class="p">)</span>
+<a id="__codelineno-0-747" name="__codelineno-0-747"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="p">()</span>
+<a id="__codelineno-0-748" name="__codelineno-0-748"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-749" name="__codelineno-0-749"></a>            <span class="c1"># Manual microbatch accumulation: process in chunks, accumulate as we go</span>
+<a id="__codelineno-0-750" name="__codelineno-0-750"></a>            <span class="n">result</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">_microbatch_accumulate</span><span class="p">(</span>
+<a id="__codelineno-0-751" name="__codelineno-0-751"></a>                <span class="n">per_example_fn</span><span class="o">=</span><span class="n">per_example_fn</span><span class="p">,</span>
+<a id="__codelineno-0-752" name="__codelineno-0-752"></a>                <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+<a id="__codelineno-0-753" name="__codelineno-0-753"></a>                <span class="n">batch_argnums</span><span class="o">=</span><span class="n">batch_argnums</span><span class="p">,</span>
+<a id="__codelineno-0-754" name="__codelineno-0-754"></a>                <span class="n">in_dims</span><span class="o">=</span><span class="n">in_dims</span><span class="p">,</span>
+<a id="__codelineno-0-755" name="__codelineno-0-755"></a>                <span class="n">microbatch_size</span><span class="o">=</span><span class="n">microbatch_size</span><span class="p">,</span>
+<a id="__codelineno-0-756" name="__codelineno-0-756"></a>                <span class="n">return_aux</span><span class="o">=</span><span class="n">return_aux</span><span class="p">,</span>
+<a id="__codelineno-0-757" name="__codelineno-0-757"></a>                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+<a id="__codelineno-0-758" name="__codelineno-0-758"></a>                <span class="n">compute_dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">,</span>
+<a id="__codelineno-0-759" name="__codelineno-0-759"></a>                <span class="n">second_moment</span><span class="o">=</span><span class="n">second_moment</span><span class="p">,</span>
+<a id="__codelineno-0-760" name="__codelineno-0-760"></a>            <span class="p">)</span>
+<a id="__codelineno-0-761" name="__codelineno-0-761"></a>
+<a id="__codelineno-0-762" name="__codelineno-0-762"></a>        <span class="c1"># Normalize</span>
+<a id="__codelineno-0-763" name="__codelineno-0-763"></a>        <span class="k">if</span> <span class="n">normalize_by</span> <span class="o">!=</span> <span class="mf">1.0</span><span class="p">:</span>
+<a id="__codelineno-0-764" name="__codelineno-0-764"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+<a id="__codelineno-0-765" name="__codelineno-0-765"></a>            <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-766" name="__codelineno-0-766"></a>                <span class="n">squared_result</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">normalize_by</span><span class="p">,</span> <span class="n">squared_result</span><span class="p">)</span>
+<a id="__codelineno-0-767" name="__codelineno-0-767"></a>
+<a id="__codelineno-0-768" name="__codelineno-0-768"></a>        <span class="k">if</span> <span class="n">second_moment</span><span class="p">:</span>
+<a id="__codelineno-0-769" name="__codelineno-0-769"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
+<a id="__codelineno-0-770" name="__codelineno-0-770"></a>                <span class="n">grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span><span class="n">pytree</span><span class="o">=</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">),</span>
+<a id="__codelineno-0-771" name="__codelineno-0-771"></a>                <span class="n">squared_grads</span><span class="o">=</span><span class="n">ClippedPytree</span><span class="p">(</span>
+<a id="__codelineno-0-772" name="__codelineno-0-772"></a>                    <span class="n">pytree</span><span class="o">=</span><span class="n">squared_result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_squared_max_norm</span>
+<a id="__codelineno-0-773" name="__codelineno-0-773"></a>                <span class="p">),</span>
+<a id="__codelineno-0-774" name="__codelineno-0-774"></a>            <span class="p">)</span>
+<a id="__codelineno-0-775" name="__codelineno-0-775"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-776" name="__codelineno-0-776"></a>            <span class="n">output</span> <span class="o">=</span> <span class="n">clipped</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">max_norm</span><span class="o">=</span><span class="n">output_max_norm</span><span class="p">)</span>
+<a id="__codelineno-0-777" name="__codelineno-0-777"></a>
+<a id="__codelineno-0-778" name="__codelineno-0-778"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_aux</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-779" name="__codelineno-0-779"></a>            <span class="k">return</span> <span class="n">output</span>
+<a id="__codelineno-0-780" name="__codelineno-0-780"></a>
+<a id="__codelineno-0-781" name="__codelineno-0-781"></a>        <span class="k">if</span> <span class="n">return_aux</span><span class="p">:</span>
+<a id="__codelineno-0-782" name="__codelineno-0-782"></a>            <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<a id="__codelineno-0-783" name="__codelineno-0-783"></a>            <span class="n">norms</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-784" name="__codelineno-0-784"></a>            <span class="n">group_norms_dict</span> <span class="o">=</span> <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-785" name="__codelineno-0-785"></a>            <span class="n">stats</span> <span class="o">=</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
+<a id="__codelineno-0-786" name="__codelineno-0-786"></a>                <span class="n">norms</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span> <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">group_norms_dict</span>
+<a id="__codelineno-0-787" name="__codelineno-0-787"></a>            <span class="p">)</span>
+<a id="__codelineno-0-788" name="__codelineno-0-788"></a>
+<a id="__codelineno-0-789" name="__codelineno-0-789"></a>            <span class="n">aux</span> <span class="o">=</span> <span class="n">ClippedFunAux</span><span class="p">(</span>
+<a id="__codelineno-0-790" name="__codelineno-0-790"></a>                <span class="n">values</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;values&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-791" name="__codelineno-0-791"></a>                <span class="n">norms</span><span class="o">=</span><span class="n">norms</span><span class="p">,</span>
+<a id="__codelineno-0-792" name="__codelineno-0-792"></a>                <span class="n">clipped_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;clipped_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-793" name="__codelineno-0-793"></a>                <span class="n">value_aux</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value_aux&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-794" name="__codelineno-0-794"></a>                <span class="n">clipping_rate</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-795" name="__codelineno-0-795"></a>                    <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span>
+<a id="__codelineno-0-796" name="__codelineno-0-796"></a>                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+<a id="__codelineno-0-797" name="__codelineno-0-797"></a>                    <span class="ow">or</span> <span class="n">stats</span><span class="o">.</span><span class="n">clipping_rate</span> <span class="ow">is</span> <span class="kc">None</span>
+<a id="__codelineno-0-798" name="__codelineno-0-798"></a>                    <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-799" name="__codelineno-0-799"></a>                <span class="p">),</span>
+<a id="__codelineno-0-800" name="__codelineno-0-800"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">stats</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-801" name="__codelineno-0-801"></a>                <span class="n">group_norms</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-802" name="__codelineno-0-802"></a>            <span class="p">)</span>
+<a id="__codelineno-0-803" name="__codelineno-0-803"></a>            <span class="k">if</span> <span class="n">_return_stats</span><span class="p">:</span>
+<a id="__codelineno-0-804" name="__codelineno-0-804"></a>                <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span><span class="p">,</span> <span class="n">stats</span>
+<a id="__codelineno-0-805" name="__codelineno-0-805"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">aux</span>
+<a id="__codelineno-0-806" name="__codelineno-0-806"></a>
+<a id="__codelineno-0-807" name="__codelineno-0-807"></a>        <span class="k">if</span> <span class="n">microbatch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-808" name="__codelineno-0-808"></a>            <span class="k">assert</span> <span class="n">stats</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-809" name="__codelineno-0-809"></a>            <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">stats</span>
+<a id="__codelineno-0-810" name="__codelineno-0-810"></a>
+<a id="__codelineno-0-811" name="__codelineno-0-811"></a>        <span class="n">aux_dict</span> <span class="o">=</span> <span class="n">aux</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aux</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<a id="__codelineno-0-812" name="__codelineno-0-812"></a>        <span class="k">return</span> <span class="n">output</span><span class="p">,</span> <span class="n">_compute_clipping_stats</span><span class="p">(</span>
+<a id="__codelineno-0-813" name="__codelineno-0-813"></a>            <span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-814" name="__codelineno-0-814"></a>            <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+<a id="__codelineno-0-815" name="__codelineno-0-815"></a>            <span class="n">group_norms_dict</span><span class="o">=</span><span class="n">aux_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;group_norms&quot;</span><span class="p">),</span>
+<a id="__codelineno-0-816" name="__codelineno-0-816"></a>        <span class="p">)</span>
+<a id="__codelineno-0-817" name="__codelineno-0-817"></a>
+<a id="__codelineno-0-818" name="__codelineno-0-818"></a>    <span class="c1"># Wrap function to accept and return state</span>
+<a id="__codelineno-0-819" name="__codelineno-0-819"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">stateful_clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<a id="__codelineno-0-820" name="__codelineno-0-820"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">clipped_fn</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-821" name="__codelineno-0-821"></a>        <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">state</span>  <span class="c1"># State unchanged for fixed clipping</span>
+<a id="__codelineno-0-822" name="__codelineno-0-822"></a>
+<a id="__codelineno-0-823" name="__codelineno-0-823"></a>    <span class="c1"># Return wrapped function with state</span>
+<a id="__codelineno-0-824" name="__codelineno-0-824"></a>    <span class="k">return</span> <span class="n">stateful_clipped_fn</span><span class="p">,</span> <span class="n">clip_state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

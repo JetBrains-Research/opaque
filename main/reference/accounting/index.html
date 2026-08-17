@@ -3765,7 +3765,7 @@ band-width is <code>len(coefficients)</code>; <code>coefficients</code> must be 
 <ul>
 <li><code>noise_multiplier</code> (float): Raw noise standard deviation sigma.</li>
 <li><code>sensitivity</code> (float): From <code>strategy.sensitivity(n_steps=...)</code>.</li>
-<li><code>coefficients</code> (tuple[float, ...]): From <code>strategy.coefficients</code>.</li>
+<li><code>coefficients</code> (tuple of float values): From <code>strategy.coefficients</code>.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
