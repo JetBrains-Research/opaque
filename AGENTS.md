@@ -79,7 +79,8 @@ Release body on the next main merge.
   `ci.yml`'s `upsert-draft` job.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs tests (CPU + MPS), Rust tests,
+**Gate** — on every push the PR workflow waits for TeamCity's Linux CPU Python
+and Rust tests, runs MPS and eligible CUDA tests on GitHub Actions, and runs
 the docs build, title validation, and autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
@@ -219,21 +220,30 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
 - `cuda` — test needs CUDA; auto-skipped on non-CUDA hosts.
 - `mps` — test needs Apple Metal; auto-skipped on non-MPS hosts.
 - `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
-  and run on pushes to `main` (the CI job strips the `and not slow`
-  clause conditionally).
+  and run on pushes to `main` (the TeamCity CPU lane strips the `and not slow`
+  clause there).
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
-CI lane marker expressions:
+CI execution ownership and marker expressions:
 
-- CPU (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- MPS (macOS): `-m "not cuda and not slow"`.
-- CUDA (self-hosted): `-m "cuda"`.
-- On push to `main` the CPU/MPS jobs drop `and not slow` so `slow` tests
-  run there.
+- TeamCity owns Linux CPU Python shards and accounting Rust tests for PRs and
+  `main`. Its `TeamCity Linux tests` Check Run uses
+  `-m "not cuda and not mps and not slow"` for PRs and
+  `-m "not cuda and not mps"` on `main`.
+- GitHub Actions owns MPS (`-m "not cuda and not slow"` on PRs and
+  `-m "not cuda"` on `main`) and self-hosted CUDA (`-m "cuda"`), plus docs,
+  formatting, distributions, artifact validation, publication, and releases.
+  Fork PRs never run untrusted code on the self-hosted CUDA runner.
+- GitHub polls the exact TeamCity check against the PR-head or `main` SHA and
+  accepts only `success`. Keep the stable aggregate names `Python tests` and
+  `Rust tests` (PR) / `Rust tests gate` (`main`) for branch rules.
+- The reusable Linux Python and Rust workflows remain for release and rollback.
+  To roll back this offload, restore their PR/main callers and make the stable
+  aggregate gates depend on those callers without renaming the checks.
 
 ### Supported HF model families
 

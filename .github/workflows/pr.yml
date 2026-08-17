@@ -59,26 +59,49 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  rust-test-run:
-    uses: ./.github/workflows/reusable-rust-tests.yml
+  # TeamCity owns Linux CPU Python shards and accounting Rust tests. Wait for
+  # its exact PR-head check, including forks, without exposing TeamCity
+  # credentials to GitHub Actions.
+  teamcity-linux-tests:
+    name: TeamCity Linux tests waiter
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for TeamCity Linux tests
+        id: wait-for-teamcity
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: TeamCity Linux tests
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          timeoutSeconds: 5400
+          intervalSeconds: 15
 
-  # Stable aggregate check required by the main branch ruleset. Reusable
-  # workflow jobs expose compound check names, so keep this caller-owned gate.
+      - name: Require a successful TeamCity conclusion
+        run: |
+          conclusion="${{ steps.wait-for-teamcity.outputs.conclusion }}"
+          echo "TeamCity Linux tests conclusion: $conclusion"
+          test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
+
+  # Stable aggregate check required by the main branch ruleset. Keep this
+  # caller-owned name while TeamCity supplies the Linux Rust result.
   rust-tests:
     name: Rust tests
     if: always()
-    needs: [rust-test-run]
+    needs: [teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check Rust test result
         run: |
-          result="${{ needs.rust-test-run.result }}"
-          echo "rust-test-run result: $result"
+          result="${{ needs.teamcity-linux-tests.result }}"
+          echo "teamcity-linux-tests result: $result"
           test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
-  # One matrix over CPU/MPS platforms × shards. Parallelism is
-  # two-level: the matrix fans shards across runners, and `pytest -n auto`
-  # (cpu/mps only) fans across cores within a runner (`--dist loadscope` keeps
+  # TeamCity owns CPU shards; this GitHub matrix is MPS only. The matrix fans
+  # shards across runners, and
+  # `pytest -n auto` fans across cores within a runner (`--dist loadscope` keeps
   # each class/module on one worker so fixtures/order are preserved).
   # The self-hosted GPU lane is a separate fork-guarded job below.
   python-tests:
@@ -86,7 +109,7 @@ jobs:
     uses: ./.github/workflows/reusable-python-tests.yml
     with:
       devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps and not slow","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
@@ -111,16 +134,19 @@ jobs:
   python-tests-gate:
     name: Python tests
     if: always()
-    needs: [python-tests, python-tests-gpu]
+    needs: [python-tests, python-tests-gpu, teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
         run: |
-          cpu_mps="${{ needs.python-tests.result }}"
+          mps="${{ needs.python-tests.result }}"
           gpu="${{ needs.python-tests-gpu.result }}"
-          echo "python-tests matrix result: $cpu_mps"
+          teamcity="${{ needs.teamcity-linux-tests.result }}"
+          echo "python-tests MPS matrix result: $mps"
           echo "python-tests-gpu result: $gpu"
-          test "$cpu_mps" = "success" || (echo "ERROR: CPU/MPS tests failed"; exit 1)
+          echo "teamcity-linux-tests result: $teamcity"
+          test "$mps" = "success" || (echo "ERROR: MPS tests failed"; exit 1)
+          test "$teamcity" = "success" || (echo "ERROR: TeamCity Linux tests failed"; exit 1)
           if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
             # Fork PRs never get GPU runner allocation — skipped is expected
             if [[ "$gpu" != "skipped" ]]; then

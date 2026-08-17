@@ -8,8 +8,8 @@ private reusable components described below.
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Required PR checks, preview-wheel artifacts, and fork-safe GPU testing. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Full CPU/MPS/CUDA test coverage, development-wheel publication, and draft-release updates. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Waits for TeamCity Linux CPU/Rust tests, runs GitHub MPS and fork-safe GPU tests, and builds preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main`, manual dispatch | Waits for TeamCity Linux CPU/Rust tests, runs GitHub MPS/CUDA coverage, publishes development wheels, and updates draft releases. |
 | `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
 | `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
@@ -52,17 +52,17 @@ Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Callers provide their shard and device matrices, timeout, and
 optional CUDA assertion or duration reporting.
 
-`pr.yml` keeps CPU/MPS and fork-guarded GPU calls separate so untrusted fork
-code never receives the self-hosted runner. `ci.yml` calls the same workflow
-with its combined CPU/MPS/GPU matrix and slow-test markers.
+PR and `main` callers use this workflow for GitHub-owned MPS and CUDA lanes;
+TeamCity owns their Linux CPU shard matrix. The reusable Linux path is retained
+for release and rollback. PR GPU calls stay separate and fork-guarded so
+untrusted code never receives the self-hosted runner.
 
 ### `.github/workflows/reusable-rust-tests.yml`
 
 This private `workflow_call` workflow runs the accounting crate's Cargo tests,
-including doc-tests, with the shared Rust setup and dependency cache. PR,
-main CI, and release workflows all invoke it; the release workflow runs this
-lane alongside the shared Python test workflow instead of running both
-sequentially in a dedicated job.
+including doc-tests, with the shared Rust setup and dependency cache. PR and
+`main` receive this result from TeamCity; this reusable workflow remains
+available for release and rollback use.
 
 ### `.github/workflows/reusable-validate-distributions.yml`
 
@@ -70,6 +70,28 @@ This private `workflow_call` workflow downloads a caller-selected artifact
 family and validates both synchronized internal wheel pins and the accounting
 wheel/sdist policy. Preview and release pipelines differ only in artifact
 prefix and checkout ref; the validation implementation is shared.
+
+## Test execution ownership and rollback
+
+TeamCity's GitHub Checks Webhook Trigger is the only TeamCity trigger for
+Linux tests. For each eligible PR-head or `main` SHA it publishes exactly one
+`TeamCity Linux tests` Check Run after its synchronized Python CPU shard matrix
+and accounting Rust tests succeed. The PR/main waiters poll that exact check
+and SHA with `checks: read`, and reject every conclusion except `success`.
+
+TeamCity runs the Linux CPU marker `not cuda and not mps and not slow` for
+pull requests and `not cuda and not mps` on `main`; therefore `slow` tests run
+only on `main`. GitHub Actions owns MPS, CUDA, documentation, formatting,
+distribution builds, artifact validation, publication, and releases. PR CUDA
+remains a separate fork-guarded job, so untrusted code never reaches the
+self-hosted runner and TeamCity credentials are never exposed through Actions.
+
+Keep the stable aggregate checks named `Python tests` and `Rust tests` on PRs,
+and `Python tests` and `Rust tests gate` on `main`; branch rules rely on those
+names, not the TeamCity check name. The reusable Linux Python and Rust workflows
+remain available for release and rollback. To roll back the offload, restore
+their PR/main calls and switch the stable aggregate gates back to those results
+without renaming the required checks.
 
 ## Artifact contracts
 

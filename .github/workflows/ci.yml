@@ -25,15 +25,37 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  # ---------------------------------------------------------------------------
-  # Tests. Same matrix as the PR gate, but includes `slow` tests and adds a
-  # GPU lane. Test failures block publishing.
-  # ---------------------------------------------------------------------------
-  rust-tests:
-    uses: ./.github/workflows/reusable-rust-tests.yml
+  # TeamCity owns Linux CPU Python shards and accounting Rust tests. Wait for
+  # its exact check on the pushed main revision.
+  teamcity-linux-tests:
+    name: TeamCity Linux tests waiter
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for TeamCity Linux tests
+        id: wait-for-teamcity
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: TeamCity Linux tests
+          ref: ${{ github.sha }}
+          timeoutSeconds: 5400
+          intervalSeconds: 15
 
-  # Same platform matrix as the PR gate (see pr.yml for the full rationale),
-  # but this lane keeps `slow` tests and the GPU leg runs the whole `cuda`
+      - name: Require a successful TeamCity conclusion
+        run: |
+          conclusion="${{ steps.wait-for-teamcity.outputs.conclusion }}"
+          echo "TeamCity Linux tests conclusion: $conclusion"
+          test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
+
+  # ---------------------------------------------------------------------------
+  # GitHub owns accelerator tests. The MPS matrix includes `slow` tests and the
+  # GPU lane runs the complete CUDA marker; TeamCity owns Linux CPU tests.
+  # Test failures block publishing.
+  # ---------------------------------------------------------------------------
+  # This MPS lane keeps `slow` tests and the GPU leg runs the whole `cuda`
   # marker. The GPU platform is a single unsharded, serial leg.
   python-tests:
     needs: [discover-packages]
@@ -41,7 +63,7 @@ jobs:
     with:
       assert-cuda: true
       devices: >-
-        [{"name":"cpu","label":"CPU","os":"ubuntu-latest","marker":"not cuda and not mps","xdist":"-n auto --dist loadscope"},{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
+        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
       included-combinations: >-
         [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
       report-durations: true
@@ -53,27 +75,30 @@ jobs:
   python-tests-gate:
     name: Python tests
     if: always()
-    needs: [python-tests]
+    needs: [python-tests, teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check Python test results
         run: |
-          result="${{ needs.python-tests.result }}"
-          echo "python-tests matrix result: $result"
-          test "$result" = "success" || (echo "ERROR: Python tests failed"; exit 1)
+          mps="${{ needs.python-tests.result }}"
+          teamcity="${{ needs.teamcity-linux-tests.result }}"
+          echo "python-tests MPS matrix result: $mps"
+          echo "teamcity-linux-tests result: $teamcity"
+          test "$mps" = "success" || (echo "ERROR: MPS tests failed"; exit 1)
+          test "$teamcity" = "success" || (echo "ERROR: TeamCity Linux tests failed"; exit 1)
 
   # Aggregating gate for Rust tests. This is an independent required check
   # (alongside python-tests-gate) that gates wheel builds and publishing.
   rust-tests-gate:
     name: Rust tests gate
     if: always()
-    needs: [rust-tests]
+    needs: [teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Check Rust test results
         run: |
-          result="${{ needs.rust-tests.result }}"
-          echo "rust-tests result: $result"
+          result="${{ needs.teamcity-linux-tests.result }}"
+          echo "teamcity-linux-tests result: $result"
           test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
 
   # ---------------------------------------------------------------------------
