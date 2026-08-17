@@ -148,7 +148,7 @@ examples = [
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
-  "torchvision>=0.24.0",       # Vision example datasets
+  "torchvision>=0.28.0",       # Vision example datasets
 ]
 
 # Documentation building
