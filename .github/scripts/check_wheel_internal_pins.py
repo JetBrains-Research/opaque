@@ -11,6 +11,7 @@ from email import message_from_bytes
 from pathlib import Path
 
 from packaging.requirements import Requirement
+from packaging.version import InvalidVersion, Version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SENTINEL_SPECIFIER = ">=0.0.0.dev0"
@@ -65,16 +66,36 @@ def _expected_requirement_keys(
     built_version: str,
 ) -> set[tuple[str, tuple[str, ...], str | None]]:
     expected: set[tuple[str, tuple[str, ...], str | None]] = set()
-    allowed_specifiers = {SENTINEL_SPECIFIER, f"=={built_version}"}
     for requirement in source_requirements:
-        if str(requirement.specifier) not in allowed_specifiers:
+        if not _is_rewriteable_specifier(
+            requirement,
+            built_version=built_version,
+        ):
             raise ValueError(
                 "expected source requirement to use the development sentinel "
-                f"{SENTINEL_SPECIFIER!r} or synchronized pin '=={built_version}', "
+                f"{SENTINEL_SPECIFIER!r} or a synchronized pin equivalent to "
+                f"'=={built_version}', "
                 f"got {str(requirement)!r}"
             )
         expected.add(_requirement_key(requirement))
     return expected
+
+
+def _is_rewriteable_specifier(
+    requirement: Requirement,
+    *,
+    built_version: str,
+) -> bool:
+    if str(requirement.specifier) == SENTINEL_SPECIFIER:
+        return True
+
+    specifiers = list(requirement.specifier)
+    if len(specifiers) != 1 or specifiers[0].operator != "==":
+        return False
+    try:
+        return Version(specifiers[0].version) == Version(built_version)
+    except InvalidVersion:
+        return False
 
 
 def _metadata_requirements(
