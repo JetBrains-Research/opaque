@@ -89,11 +89,22 @@ def _is_rewriteable_specifier(
     if str(requirement.specifier) == SENTINEL_SPECIFIER:
         return True
 
+    return _is_exact_pin_to_version(
+        requirement,
+        version=built_version,
+    )
+
+
+def _is_exact_pin_to_version(
+    requirement: Requirement,
+    *,
+    version: str,
+) -> bool:
     specifiers = list(requirement.specifier)
     if len(specifiers) != 1 or specifiers[0].operator != "==":
         return False
     try:
-        return Version(specifiers[0].version) == Version(built_version)
+        return Version(specifiers[0].version) == Version(version)
     except InvalidVersion:
         return False
 
@@ -150,9 +161,13 @@ def _validate_wheel(
 
     for key in expected_requirement_keys:
         built_requirement = built_requirements[key]
-        if str(built_requirement.specifier) != f"=={version}":
+        if not _is_exact_pin_to_version(
+            built_requirement,
+            version=version,
+        ):
             errors.append(
-                f"{wheel_path.name}: expected {built_requirement.name} to pin =={version}, "
+                f"{wheel_path.name}: expected {built_requirement.name} to pin "
+                f"a version equivalent to =={version}, "
                 f"got {built_requirement.specifier}"
             )
 
