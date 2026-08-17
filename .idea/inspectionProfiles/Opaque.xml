@@ -47,10 +47,10 @@
       <scope name="Opaque_ExamplesAndTutorials" level="WARNING" enabled="false" />
       <scope name="Opaque_DynamicFrameworkSources" level="WARNING" enabled="false" />
       <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />
+      <scope name="Opaque_GitHubScripts" level="WARNING" enabled="false" />
     </inspection_tool>
-    <inspection_tool class="PyClassHasNoInitInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
-      <scope name="Opaque_PythonTests" level="WEAK WARNING" enabled="false" />
-    </inspection_tool>
+    <!-- Dataclass and extension constructors are intentionally generated. -->
+    <inspection_tool class="PyClassHasNoInitInspection" enabled="false" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="PyAsyncCallInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyCompatibilityInspection" enabled="true" level="WARNING" enabled_by_default="true">
       <option name="ourVersions">
@@ -122,6 +122,7 @@
       <scope name="Opaque_ExamplesAndTutorials" level="WEAK WARNING" enabled="false" />
       <scope name="Opaque_DynamicFrameworkSources" level="WEAK WARNING" enabled="false" />
       <scope name="Opaque_FunctionalRuntimeSources" level="WEAK WARNING" enabled="false" />
+      <scope name="Opaque_GitHubScripts" level="WEAK WARNING" enabled="false" />
     </inspection_tool>
     <inspection_tool class="PyRedeclarationInspection" enabled="true" level="WARNING" enabled_by_default="true">
       <scope name="Opaque_FunctionalRuntimeSources" level="WARNING" enabled="false" />

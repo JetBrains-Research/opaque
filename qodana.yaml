@@ -49,10 +49,15 @@ profile:
         - "scope#$Opaque_ExamplesAndTutorials"
         - "scope#$Opaque_DynamicFrameworkSources"
         - "scope#$Opaque_FunctionalRuntimeSources"
+        - "scope#$Opaque_GitHubScripts"
     - inspection: PyClassHasNoInitInspection
-      enabled: true
-      ignore:
-        - "scope#$Opaque_PythonTests"
+      # Qodana does not recognize generated dataclass constructors or extension
+      # stubs. PyDataclassInspection remains enabled for real dataclass errors.
+      enabled: false
+    - inspection: PyCoverageInspection
+      # Per-location coverage findings duplicate the aggregate coverage gates
+      # below, which are the intended CI policy.
+      enabled: false
     - inspection: PyAsyncCallInspection
       enabled: true
     - inspection: PyDictDuplicateKeysInspection
@@ -120,6 +125,7 @@ profile:
         - "scope#$Opaque_ExamplesAndTutorials"
         - "scope#$Opaque_DynamicFrameworkSources"
         - "scope#$Opaque_FunctionalRuntimeSources"
+        - "scope#$Opaque_GitHubScripts"
     - inspection: PyRedeclarationInspection
       ignore:
         - "scope#$Opaque_FunctionalRuntimeSources"
