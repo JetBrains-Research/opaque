@@ -124,7 +124,7 @@ opaque-alignment = { workspace = true }
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
-  "pytest-xdist>=3.5.0",   # Parallel test execution (`-n auto`); CI shards within each job
+  "pytest-xdist>=3.8.0",   # Parallel test execution (`-n auto`); CI shards within each job
   "ruff>=0.16.0,<0.17",
   "scipy>=1.11.0",         # Statistical tests
   # Cross-validation against reference DP accounting libraries. Imported by
