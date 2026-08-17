@@ -90,10 +90,11 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep the shared workspace lock within the integration versions exercised by
-# CI. Published packages retain their broader runtime requirements.
+# Keep the shared workspace lock on patched build and PyTorch releases.
+# Published packages retain their broader runtime requirements.
 constraint-dependencies = [
-    "torch>=2.9,<2.13",
+    "setuptools>=83",
+    "torch>=2.13,<2.14",
     "transformers<5.12",
     "trl<1.7",
     "peft<0.19",

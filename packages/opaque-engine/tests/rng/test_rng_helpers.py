@@ -45,6 +45,15 @@ class TestRandomKey:
 class TestReproducibleSeed:
     """``set_reproducible_pytorch_seed`` seeds every available device RNG."""
 
+    @pytest.fixture(autouse=True)
+    def _restore_deterministic_algorithms(self):
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+        try:
+            yield
+        finally:
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+
     def test_cpu_reproducible(self):
         set_reproducible_pytorch_seed(key(42))
         a = torch.randn(1000)
