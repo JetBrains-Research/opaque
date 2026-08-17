@@ -25,9 +25,11 @@ private callable workflows described below.
 This composite action installs the pinned Python version and optionally uv. Use
 `install-uv: "false"` for Python-only jobs. On GitHub-hosted runners,
 `setup-uv` uses its standard pruned artifact cache; virtual environments are not
-cached. Release-capable called workflows keep pinned external setup steps inline
-so checking out an older release tag cannot remove the local action
-implementation.
+cached. The locked Linux amd64 test matrix retains pre-built wheels in a single
+cache written by its `opaque-engine` shard; Qodana restores that cache for its
+identical all-package environment. Release-capable called workflows keep pinned
+external setup steps inline so checking out an older release tag cannot remove
+the local action implementation.
 
 ### `.github/actions/setup-rust`
 

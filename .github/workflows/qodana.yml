@@ -36,6 +36,8 @@ jobs:
       - uses: ./.github/actions/setup-rust
 
       - uses: ./.github/actions/setup-python
+        with:
+          prune-uv-cache: "false"
 
       - name: Download coverage from Python test shards
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6

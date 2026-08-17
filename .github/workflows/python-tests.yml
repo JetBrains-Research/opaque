@@ -81,6 +81,9 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          prune-cache: ${{ inputs.environment-name != 'linux-amd64' || inputs.dependency-selection != 'locked' }}
+          save-cache: ${{ inputs.environment-name != 'linux-amd64' || inputs.dependency-selection != 'locked' || matrix.shard.name == 'engine' }}
 
       - name: Install dependencies
         env:
