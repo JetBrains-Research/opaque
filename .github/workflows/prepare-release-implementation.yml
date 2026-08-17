@@ -78,9 +78,9 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp \
+          gh api --paginate \
             "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[][] | select(.tag_name == \"$TAG\")" > /tmp/release.json
+            --jq ".[] | select(.tag_name == \"$TAG\")" > /tmp/release.json
           if [[ -s /tmp/release.json ]]; then
             if [[ "$(jq -r .draft /tmp/release.json)" != "true" ]]; then
               echo "::error::Release $TAG is already published."
@@ -544,9 +544,9 @@ jobs:
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp \
+          gh api --paginate \
             "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[][] | select(.tag_name == \"$TAG\")" > /tmp/release.json
+            --jq ".[] | select(.tag_name == \"$TAG\")" > /tmp/release.json
           if [[ -s /tmp/release.json ]]; then
             if [[ "$(jq -r .draft /tmp/release.json)" != "true" ]]; then
               echo "::error::Release $TAG is already published."
