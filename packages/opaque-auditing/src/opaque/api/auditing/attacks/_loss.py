@@ -123,6 +123,6 @@ def loss_scores(
                 f"reference_scores shape {reference_scores.shape} does not match "
                 f"scores shape {scores.shape}"
             )
-        scores = scores - reference_scores
+        scores = np.subtract(scores, reference_scores)
 
     return scores

@@ -48,14 +48,17 @@ def _require_gloo() -> None:
 
 
 class TestSecondMomentReduceGloo:
+    @pytest.mark.slow
     def test_second_moment_clipping_sum(self) -> None:
         _require_gloo()
         _spawn(2, _worker_second_moment_clip_gloo)
 
+    @pytest.mark.slow
     def test_second_moment_noise_sum(self) -> None:
         _require_gloo()
         _spawn(2, _worker_second_moment_noise_gloo)
 
+    @pytest.mark.slow
     def test_paired_clipping_matches_single_process_full_batch(self) -> None:
         _require_gloo()
 

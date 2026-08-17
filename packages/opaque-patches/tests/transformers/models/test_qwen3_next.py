@@ -42,5 +42,6 @@ def test_qwen3_next_forward_no_grad(tiny, device):
     assert_forward_no_grad(tiny[0], device)
 
 
+@pytest.mark.slow
 def test_qwen3_next_forward_backward(tiny, device):
     assert_forward_backward(tiny[0], device)

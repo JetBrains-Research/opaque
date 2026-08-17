@@ -685,6 +685,7 @@ def clipped_fun(
             return clipped_value
 
         # Choose execution path based on microbatch_size
+        stats = None
         if microbatch_size is None:
             # Fast path: vmap entire batch at once.  Output shape depends
             # on the (second_moment, return_aux) flags — see the per_example_fn
@@ -803,15 +804,16 @@ def clipped_fun(
                 return output, aux, stats
             return output, aux
 
-        if microbatch_size is None:
-            aux_dict = outputs[-1] if isinstance(outputs, tuple) else {}
-            stats = _compute_clipping_stats(
-                aux_dict.get("norms"),
-                clipping_norm=clipping_norm,
-                group_norms_dict=aux_dict.get("group_norms"),
-            )
+        if microbatch_size is not None:
+            assert stats is not None
+            return output, stats
 
-        return output, stats
+        aux_dict = aux if isinstance(aux, dict) else {}
+        return output, _compute_clipping_stats(
+            aux_dict.get("norms"),
+            clipping_norm=clipping_norm,
+            group_norms_dict=aux_dict.get("group_norms"),
+        )
 
     # Wrap function to accept and return state
     def stateful_clipped_fn(*args, state, **kwargs):

@@ -53,7 +53,7 @@ fn validate_params(lambda: f64, n_steps: usize, min_sep: usize, momentum: f64) -
 }
 
 fn effective_k(n_steps: usize, min_sep: usize, max_participations: Option<usize>) -> usize {
-    let k_inferred = (n_steps + min_sep - 1) / min_sep;
+    let k_inferred = n_steps.div_ceil(min_sep);
     match max_participations {
         Some(max_k) => max_k.min(k_inferred),
         None => k_inferred,

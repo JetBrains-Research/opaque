@@ -33,6 +33,7 @@ _DELTA = 1e-5
         (1.5, 0.02, 100, 256, 50_000),
     ],
 )
+@pytest.mark.slow
 def test_ftrl_identity_truncated_matches_dpsgd_truncated_composed(
     nm: float,
     sample_rate: float,

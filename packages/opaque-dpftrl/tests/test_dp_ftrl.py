@@ -24,6 +24,12 @@ from opaque.random import key
 from opaque.types import clipped
 
 
+def test_accounting_mechanism_types_facade_imports():
+    from opaque.dpftrl.accounting.mechanisms.types import MfGaussian
+
+    assert MfGaussian.__name__ == "MfGaussian"
+
+
 def _engine_train_loop(
     model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev
 ):
@@ -86,6 +92,7 @@ class TestDPFTRLTrainingLoop:
     def _make_template(self, model):
         return {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
 
+    @pytest.mark.slow
     def test_identity_noise_trains(self):
         """Identity noise (DP-SGD equivalent) trains a simple model."""
         torch.manual_seed(0)

@@ -36,6 +36,7 @@ def test_deepseek_v4_experts_not_patched(tiny):
     assert not experts_forward_patched(tiny[1])
 
 
+@pytest.mark.slow
 def test_deepseek_v4_forward_no_grad(tiny, device):
     assert_forward_no_grad(tiny[0], device)
 
@@ -44,6 +45,7 @@ def test_deepseek_v4_forward_backward(tiny, device):
     assert_forward_backward(tiny[0], device)
 
 
+@pytest.mark.slow
 def test_deepseek_v4_vmap_grad(tiny, device):
     """DP-SGD per-sample gradients run through HF's (vmap-safe) experts forward."""
     assert_vmap_grad(tiny[0], device)

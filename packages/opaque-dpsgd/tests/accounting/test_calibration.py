@@ -2,6 +2,7 @@
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import pytest
 
@@ -49,6 +50,19 @@ def _assert_safe_result(
         target,
         rel_tol=tolerance,
         abs_tol=0.0,
+    )
+
+
+@lru_cache
+def _calibrate_epsilon(
+    target: float, param_min: float, param_max: float
+) -> CalibrateResult:
+    """Reuse identical expensive PLD calibration requests within this module."""
+    return cal.calibrate(
+        cal.epsilon_budget(target, delta=1e-5),
+        lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
+        param_min,
+        param_max,
     )
 
 
@@ -307,6 +321,7 @@ class TestCalibratePrefix:
     def _prefix(self):
         return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 12
 
+    @pytest.mark.slow
     def test_matches_manual_closure(self):
         """prefix= is equivalent to composing inside the objective."""
         prefix = self._prefix()
@@ -319,6 +334,7 @@ class TestCalibratePrefix:
         assert via_param.param == pytest.approx(via_closure.param)
         assert via_param.achieved == pytest.approx(via_closure.achieved)
 
+    @pytest.mark.slow
     def test_total_hits_budget(self):
         """The composed total (prefix | stage) achieves the target."""
         prefix = self._prefix()
@@ -332,6 +348,7 @@ class TestCalibratePrefix:
         assert achieved <= 6.0
         assert math.isclose(achieved, 6.0, rel_tol=1e-6, abs_tol=0.0)
 
+    @pytest.mark.slow
     def test_prefix_demands_more_noise(self):
         """Same budget with a prefix → larger noise multiplier."""
         budget = cal.epsilon_budget(6.0, delta=1e-5)
@@ -341,6 +358,7 @@ class TestCalibratePrefix:
         )
         assert with_prefix.param > without.param
 
+    @pytest.mark.slow
     def test_prefix_exhausting_budget_raises(self):
         """Prefix alone above the target → bounds can't bracket."""
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps
@@ -363,36 +381,23 @@ class TestCalibratePrefix:
 class TestCalibrateEpsilon:
     """Calibrate noise multiplier for target epsilon — verify roundtrip."""
 
-    def _process(self, nm):
-        return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000
-
     def test_basic(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(5.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result = _calibrate_epsilon(5.0, 0.3, 1.2)
         assert isinstance(result, CalibrateResult)
         _assert_safe_result(result, target=5.0, decreasing=True)
 
     def test_strict_epsilon(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result = _calibrate_epsilon(4.0, 0.3, 1.2)
         _assert_safe_result(result, target=4.0, decreasing=True)
 
     def test_loose_epsilon(self):
-        result = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
-        )
+        result = _calibrate_epsilon(8.0, 0.1, 1.0)
         _assert_safe_result(result, target=8.0, decreasing=True)
 
     def test_monotonicity(self):
         """Stricter target → more noise."""
-        result_loose = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
-        )
-        result_strict = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
-        )
+        result_loose = _calibrate_epsilon(8.0, 0.1, 1.0)
+        result_strict = _calibrate_epsilon(4.0, 0.3, 1.2)
         # stricter (lower) epsilon requires higher noise_multiplier
         assert result_strict.param > result_loose.param
 

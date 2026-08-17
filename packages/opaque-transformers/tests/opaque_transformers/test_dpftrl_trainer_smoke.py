@@ -200,6 +200,7 @@ class TestDpTrainerAllocationModes:
             ("mf_identity", "balls_in_bins", 16),
         ],
     )
+    @pytest.mark.slow
     def test_trains_complete_schedule(
         self, tmp_path, mechanism, sampling_mode, max_steps
     ):

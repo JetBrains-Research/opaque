@@ -48,4 +48,4 @@ def sppo_loss(
         Per-example scalar loss tensor with the same shape as the inputs.
     """
     target = 0.5 / beta
-    return (chosen_logratio - target) ** 2 + (rejected_logratio + target) ** 2
+    return (chosen_logratio - target).pow(2) + (rejected_logratio + target).pow(2)

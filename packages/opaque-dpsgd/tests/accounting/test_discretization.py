@@ -78,6 +78,13 @@ class TestDiscretizationAffectsResults:
         # Both valid, but coarser grid = different result
         assert eps_fine != pytest.approx(eps_coarse, rel=1e-3)
 
+    def test_mc_params_accepted_and_ignored_by_analytic_plds(self):
+        """Analytic mechanisms accept ``num_mc_samples`` / ``seed`` (so
+        composition can broadcast them to MC leaves) and ignore them."""
+        proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01) * 100
+        assert proc.epsilon_at(1e-5) == proc.epsilon_at(1e-5, num_mc_samples=50, seed=1)
+        assert proc.delta_at(2.0) == proc.delta_at(2.0, num_mc_samples=50, seed=1)
+
 
 class TestQueryTimeOverrides:
     """Test query-time parameter overrides via get_discretization()."""
@@ -118,6 +125,26 @@ class TestQueryTimeOverrides:
 
         global_cfg = get_discretization()
         assert global_cfg.max_grid_size == 10_000_000
+
+    def test_num_mc_samples_override(self):
+        """Query-time num_mc_samples override works."""
+        set_discretization(num_mc_samples=100_000)
+
+        cfg = get_discretization(num_mc_samples=5_000)
+        assert cfg.num_mc_samples == 5_000
+
+        global_cfg = get_discretization()
+        assert global_cfg.num_mc_samples == 100_000
+
+    def test_seed_override(self):
+        """Query-time seed override works."""
+        set_discretization(seed=42)
+
+        cfg = get_discretization(seed=7)
+        assert cfg.seed == 7
+
+        global_cfg = get_discretization()
+        assert global_cfg.seed == 42
 
     def test_multiple_overrides(self):
         """Multiple query-time overrides work together."""

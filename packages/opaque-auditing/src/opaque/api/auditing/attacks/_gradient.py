@@ -115,7 +115,7 @@ def gradient_scores(
 
                 grad_pytree = grad_fn(*full_args)
                 norm = global_norm(grad_pytree)
-                all_scores.append(-(norm**2).item())
+                all_scores.append(-norm.pow(2).item())
                 del grad_pytree
 
     scores = np.array(all_scores)

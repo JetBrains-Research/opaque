@@ -17,9 +17,7 @@ both post-noise gradient trees are finite — only the noise step differs.
 
 This test imports both ``opaque.dpsgd`` and ``opaque.dpftrl`` (outside the
 alignment wheel's dependency cone), so it lives under repo-root
-``tests/integration/`` — exempt from the per-wheel dep-cone placement
-contract (``tests/contracts/test_test_placement.py``) — not under
-``packages/opaque-alignment/tests/``.
+``tests/integration/`` rather than ``packages/opaque-alignment/tests/``.
 
 CPU-only, tiny, deterministic; no network.
 """

@@ -202,8 +202,11 @@ class TestVmapCompatibility:
 class TestEndToEnd:
     """End-to-end test with full model + LoRA + clipped_grad."""
 
+    @pytest.mark.slow
     def test_qwen2_lora_clipped_grad(self, device):
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
+        from opaque.patches import apply_model_patches
+
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
 
@@ -215,6 +218,7 @@ class TestEndToEnd:
             lora_dropout=0.0,
         )
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model)
 
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
         texts = ["Hello world test", "Another example", "Third sample", "Final one"]
@@ -1086,6 +1090,7 @@ class TestFusedLoRAQKV:
                 assert not torch.isnan(p.grad).any(), f"NaN in gradient for {name}"
         assert has_grad, "No gradients computed"
 
+    @pytest.mark.slow
     def test_qwen2_skips_qkv_fusion(self, device):
         """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
@@ -1107,6 +1112,7 @@ class TestFusedLoRAQKV:
                 "Qwen2 attention should NOT have fused QKV (bias=True)"
             )
 
+    @pytest.mark.slow
     def test_qwen3_skips_qkv_fusion(self, device):
         """Qwen3 attention should NOT be fused (has q_norm/k_norm)."""
         try:

@@ -33,7 +33,7 @@ use crate::pld::pmf::Pmf;
 use crate::pld::PrivacyLossDistribution;
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
@@ -69,7 +69,7 @@ fn sample_privacy_loss_remove(
     rng: &mut impl Rng,
 ) -> f64 {
     // Step 1: Sample bin i ~ Uniform([b])
-    let i: usize = rng.gen_range(0..b);
+    let i: usize = rng.random_range(0..b);
 
     // Step 2: Sample z ~ N(0, I_b)
     for v in z_buf.iter_mut() {

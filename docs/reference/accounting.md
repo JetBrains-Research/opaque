@@ -148,6 +148,7 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
 | `num_mc_samples`               | `100_000`    | Samples for Monte Carlo PLD builders             |
 | `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
+| `max_conv_grid`                | `32_768`     | Convolution grid cap for random-allocation PLD   |
 
 Discretization is unconditionally conservative: exact atoms, PMF coarsening,
 and histogram buckets are rounded upward. The API has no optimistic or
@@ -162,7 +163,17 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 # Apply config at query time
 eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
 eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
+
+# Monte Carlo accountants (b_min_sep, balls_in_bins) take the same
+# query-time overrides; analytic PLDs accept and ignore them
+eps_mc = proc.epsilon_at(1e-5, num_mc_samples=500_000, seed=123)
 ```
+
+All `pld()`-family methods (`epsilon_at`, `delta_at`, `advantage`, `beta_at`,
+`risk_at`) accept every parameter in the table above except
+`tail_mass_truncation` (composition-internal, module-level only). Overrides
+are broadcast to every node of a composed process, so one `seed` is shared
+by all Monte Carlo nodes — the same semantics as `set_discretization`.
 
 **Module-level discretization defaults:**
 
@@ -370,7 +381,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
 - `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
-- `coefficients` (tuple[float, ...]): From `strategy.coefficients`.
+- `coefficients` (tuple of float values): From `strategy.coefficients`.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
@@ -436,13 +447,16 @@ proc = dpftrl_acc.poisson(
 )
 ```
 
-### `b_min_sep(inner, strategy_coefficients, n_steps, p0, *, num_mc_samples=100_000, mc_seed=42) -> DpProcess`
+### `b_min_sep(inner, *, n_steps, p0) -> DpProcess`
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
-Uses Monte Carlo PLD accounting. `inner` must be `BandMf`.
-`strategy_coefficients` is the first column of the same BandMF strategy matrix
-used for noise. `p0` is the per-example participation rate per iteration
-`E[|B|]/|D|` (match the training sampler’s target batch size).
+Uses Monte Carlo PLD accounting. `inner` must be
+`mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
+are read from `inner.strategy`. `p0` is the per-example participation rate per
+iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
+Control the Monte Carlo budget per query
+(`proc.epsilon_at(delta, num_mc_samples=..., seed=...)`) or module-wide via
+`set_discretization`.
 
 !!! warning
     b-min-sep, and Balls-in-Bins with a **correlated** strategy, build their
@@ -476,9 +490,6 @@ proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
-
-# With Gaussian (conservative Poisson approximation)
-proc = dpftrl_acc.balls_in_bins(dpsgd_acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
 ### `per_step(proc) -> PerStep`

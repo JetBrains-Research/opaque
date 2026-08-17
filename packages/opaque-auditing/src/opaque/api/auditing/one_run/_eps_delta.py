@@ -19,9 +19,9 @@ Reference: Xiang et al. (2025), https://arxiv.org/abs/2509.08704
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import TYPE_CHECKING
 
-import scipy.special
 import scipy.stats
 
 from opaque.api.auditing.one_run._stats import (
@@ -40,7 +40,8 @@ _DELTA_TOL = 1e-6
 
 def _p_value(r: int, u: int, eps: float, delta: float) -> float:
     """P-value under (ε, δ)-DP at ``r`` guesses with ``u`` errors."""
-    p = 0.5 if eps <= 0.0 else scipy.special.expit(-eps)
+    exp_neg_eps = float(math.exp(-eps)) if eps > 0.0 else 1.0
+    p = exp_neg_eps / (1.0 + exp_neg_eps)
     n_eff = max(r - round(r * delta), 0)
     if n_eff == 0:
         return 1.0

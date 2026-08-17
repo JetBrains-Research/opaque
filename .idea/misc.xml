@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="Black">
-    <option name="sdkName" value="uv (opaque)" />
+  <component name="PyDocumentationSettings">
+    <option name="format" value="GOOGLE" />
+    <option name="myAnalyzeDoctest" value="true" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="uv (opaque)" project-jdk-type="Python SDK" />
+  <component name="TestRunnerService">
+    <option name="PROJECT_TEST_RUNNER" value="pytest" />
+  </component>
 </project>

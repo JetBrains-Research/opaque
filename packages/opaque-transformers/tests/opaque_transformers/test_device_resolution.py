@@ -45,6 +45,11 @@ def _args(**kwargs) -> TrainingArguments:
 # ----------------------------------------------------------------------------
 
 
+def test_n_gpu_starts_at_hf_sentinel():
+    args = _args()
+    assert args._n_gpu == -1
+
+
 @patch("torch.cuda.is_available", return_value=True)
 def test_default_resolves_to_cuda_when_available(mock_cuda):
     args = _args()

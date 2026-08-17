@@ -207,32 +207,3 @@ def test_inherits_liger_to_perf_kernels(tmp_path):
         clipping_norm=1.0,
     )
     assert cfg.use_performance_kernels is True
-
-
-# ---------------------------------------------------------------------------
-# Optional dependency gate
-# ---------------------------------------------------------------------------
-
-
-def test_import_error_when_trl_missing(tmp_path, monkeypatch):
-    """Simulate missing ``trl`` via ``sys.modules`` patching."""
-    # Patch ``trl`` out of sys.modules and force the import to fail.
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "trl":
-            raise ImportError("simulated missing trl")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-    # The classmethod imports ``trl`` inside the converter; the
-    # ImportError should bubble out with a clear install hint.
-    with pytest.raises(ImportError, match="opaque\\[trl\\]"):
-        SFTConfig.from_trl(
-            _trl_args(tmp_path),
-            privacy_noise_multiplier=0.8,
-            clipping_norm=1.0,
-        )

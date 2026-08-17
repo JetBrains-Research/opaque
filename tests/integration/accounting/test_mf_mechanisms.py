@@ -50,7 +50,6 @@ class TestBandMfGaussian:
         assert _band(1.0, n_steps=20, bands=2) == _band(1.0, n_steps=20, bands=2)
         assert _band(1.0, n_steps=20, bands=2) != _band(1.0, n_steps=20, bands=4)
 
-    @pytest.mark.slow
     def test_pld_returns_valid(self):
         proc = _band(1.0, n_steps=20, bands=1)
         eps = proc.epsilon_at(1e-5)

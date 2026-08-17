@@ -1,0 +1,149 @@
+name: Python tests
+
+on:
+  workflow_call:
+    inputs:
+      allow-test-failure:
+        description: Report pytest failures without failing the job.
+        required: false
+        default: false
+        type: boolean
+      allow-empty-test-selection:
+        description: Treat pytest exit 5 as success when a filtered shard has no tests.
+        required: false
+        default: false
+        type: boolean
+      checkout-ref:
+        description: Ref to test. Leave empty to test the triggering SHA.
+        required: false
+        default: ""
+        type: string
+      dependency-selection:
+        description: Dependency set to test (locked, minimum, or latest).
+        required: false
+        default: locked
+        type: string
+      environment-name:
+        description: Stable environment identifier used in artifacts and Codecov flags.
+        required: true
+        type: string
+      pytest-marker:
+        description: pytest marker expression.
+        required: true
+        type: string
+      pytest-xdist:
+        description: pytest-xdist arguments; leave empty for serial execution.
+        required: false
+        default: ""
+        type: string
+      python-version:
+        description: Python version used by every matrix leg.
+        required: false
+        default: "3.11"
+        type: string
+      report-durations:
+        description: Report every test phase taking at least five seconds.
+        required: false
+        default: false
+        type: boolean
+      test-shards:
+        description: JSON array of shard matrix entries.
+        required: true
+        type: string
+      runner:
+        description: GitHub Actions runner label.
+        required: true
+        type: string
+      timeout-minutes:
+        description: Maximum runtime for each matrix leg.
+        required: false
+        default: 360
+        type: number
+jobs:
+  test:
+    name: ${{ matrix.shard.label }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.test-shards) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - uses: ./.github/actions/setup-rust
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        env:
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        shell: bash
+        run: |
+          case "$DEPENDENCY_SELECTION" in
+            locked)
+              uv sync --locked --group dev --all-packages --extra all
+              ;;
+            minimum)
+              uv sync --upgrade --resolution lowest-direct \
+                --group dev --all-packages --extra all
+              ;;
+            latest)
+              uv sync --upgrade --resolution highest \
+                --group dev --all-packages --extra all
+              ;;
+            *)
+              echo "::error::Unknown dependency selection: $DEPENDENCY_SELECTION"
+              exit 1
+              ;;
+          esac
+
+      - name: Run Python tests
+        env:
+          ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+          ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+        shell: bash
+        run: |
+          set +e
+          uv run pytest ${{ matrix.shard.paths }} \
+            -m "${{ inputs.pytest-marker }}" \
+            ${{ inputs.pytest-xdist }} \
+            --cov=opaque \
+            --cov-report=xml:coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml \
+            ${{ inputs.report-durations && '--durations=0 --durations-min=5' || '' }} \
+            -q
+          status=$?
+          set -e
+
+          if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
+            echo "::notice::No tests matched this environment's filter for ${{ matrix.shard.label }}."
+            exit 0
+          fi
+          if [[ "$status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
+            echo "::warning::pytest exited with status $status in this advisory lane."
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-${{ matrix.shard.name }}
+          path: coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
+          if-no-files-found: error
+          retention-days: 1
+
+      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+        with:
+          files: ./coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
+          flags: ${{ inputs.environment-name }}-${{ matrix.shard.name }}
+          fail_ci_if_error: false

@@ -11,6 +11,7 @@ from email import message_from_bytes
 from pathlib import Path
 
 from packaging.requirements import Requirement
+from packaging.version import InvalidVersion, Version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SENTINEL_SPECIFIER = ">=0.0.0.dev0"
@@ -41,7 +42,9 @@ def _project_requirements(pyproject_path: Path) -> list[Requirement]:
         for requirement in project.get("dependencies", [])
         if requirement.startswith("opaque-")
     ]
-    for extra_name, extra_requirements in project.get("optional-dependencies", {}).items():
+    for extra_name, extra_requirements in project.get(
+        "optional-dependencies", {}
+    ).items():
         requirements.extend(
             Requirement(f'{requirement}; extra == "{extra_name}"')
             for requirement in extra_requirements
@@ -50,25 +53,65 @@ def _project_requirements(pyproject_path: Path) -> list[Requirement]:
     return requirements
 
 
-def _requirement_key(requirement: Requirement) -> tuple[str, tuple[str, ...], str | None]:
+def _requirement_key(
+    requirement: Requirement,
+) -> tuple[str, tuple[str, ...], str | None]:
     marker = None if requirement.marker is None else str(requirement.marker)
     return (requirement.name, tuple(sorted(requirement.extras)), marker)
 
 
 def _expected_requirement_keys(
     source_requirements: list[Requirement],
+    *,
+    built_version: str,
 ) -> set[tuple[str, tuple[str, ...], str | None]]:
     expected: set[tuple[str, tuple[str, ...], str | None]] = set()
     for requirement in source_requirements:
-        if str(requirement.specifier) != SENTINEL_SPECIFIER:
+        if not _is_rewriteable_specifier(
+            requirement,
+            built_version=built_version,
+        ):
             raise ValueError(
-                f"expected sentinel specifier {SENTINEL_SPECIFIER!r}, got {str(requirement)!r}"
+                "expected source requirement to use the development sentinel "
+                f"{SENTINEL_SPECIFIER!r} or a synchronized pin equivalent to "
+                f"'=={built_version}', "
+                f"got {str(requirement)!r}"
             )
         expected.add(_requirement_key(requirement))
     return expected
 
 
-def _metadata_requirements(wheel_path: Path) -> tuple[str, str, dict[tuple[str, tuple[str, ...], str | None], Requirement]]:
+def _is_rewriteable_specifier(
+    requirement: Requirement,
+    *,
+    built_version: str,
+) -> bool:
+    if str(requirement.specifier) == SENTINEL_SPECIFIER:
+        return True
+
+    return _is_exact_pin_to_version(
+        requirement,
+        version=built_version,
+    )
+
+
+def _is_exact_pin_to_version(
+    requirement: Requirement,
+    *,
+    version: str,
+) -> bool:
+    specifiers = list(requirement.specifier)
+    if len(specifiers) != 1 or specifiers[0].operator != "==":
+        return False
+    try:
+        return Version(specifiers[0].version) == Version(version)
+    except InvalidVersion:
+        return False
+
+
+def _metadata_requirements(
+    wheel_path: Path,
+) -> tuple[str, str, dict[tuple[str, tuple[str, ...], str | None], Requirement]]:
     with zipfile.ZipFile(wheel_path) as wheel:
         metadata_name = next(
             name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
@@ -99,7 +142,10 @@ def _validate_wheel(
         raise ValueError(f"no pyproject.toml found for built wheel {dist_name!r}")
 
     source_requirements = _project_requirements(pyproject_path)
-    expected_requirement_keys = _expected_requirement_keys(source_requirements)
+    expected_requirement_keys = _expected_requirement_keys(
+        source_requirements,
+        built_version=version,
+    )
 
     errors: list[str] = []
     if built_requirements.keys() != expected_requirement_keys:
@@ -108,14 +154,20 @@ def _validate_wheel(
         if missing:
             errors.append(f"{wheel_path.name}: missing opaque requirements {missing}")
         if unexpected:
-            errors.append(f"{wheel_path.name}: unexpected opaque requirements {unexpected}")
+            errors.append(
+                f"{wheel_path.name}: unexpected opaque requirements {unexpected}"
+            )
         return errors
 
     for key in expected_requirement_keys:
         built_requirement = built_requirements[key]
-        if str(built_requirement.specifier) != f"=={version}":
+        if not _is_exact_pin_to_version(
+            built_requirement,
+            version=version,
+        ):
             errors.append(
-                f"{wheel_path.name}: expected {built_requirement.name} to pin =={version}, "
+                f"{wheel_path.name}: expected {built_requirement.name} to pin "
+                f"a version equivalent to =={version}, "
                 f"got {built_requirement.specifier}"
             )
 
@@ -123,6 +175,7 @@ def _validate_wheel(
 
 
 def main() -> int:
+    """Validate internal dependency pins for every wheel in the target directory."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--wheel-dir",

@@ -161,6 +161,7 @@ def _scale_by_adadelta(
             )
 
         t = state.step + 1
+        effective = noise_stddev if noise_stddev is not None else 0.0
 
         # ---- E[g²] update -------------------------------------------
         if noisy_squared_grads is not None:
@@ -182,7 +183,6 @@ def _scale_by_adadelta(
                 lambda v, g: rho * v + (1 - rho) * g * g, state.v_g, updates
             )
 
-            effective = noise_stddev if noise_stddev is not None else 0.0
             if noise_bias_correction:
                 if is_per_group(effective) or isinstance(state.phi_g, dict):
                     new_phi_g_dict: dict[str, float] = {}

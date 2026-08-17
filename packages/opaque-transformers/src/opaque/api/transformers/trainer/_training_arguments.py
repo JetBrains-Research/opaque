@@ -514,6 +514,10 @@ class TrainingArguments:
     # snapshot, leaving the run resumable after preemption.
     enable_jit_checkpoint: bool = False
 
+    # HF-compatible private device counter. Device resolution replaces the
+    # sentinel with 0 for CPU/MPS or 1 for CUDA.
+    _n_gpu: int = field(init=False, repr=False, default=-1)
+
     # =================================================================
     # Validation / coercion
     # =================================================================

@@ -178,6 +178,25 @@ class TestSequentialRoundTrip:
 
         assert restored._batch_size == 25
 
+    def test_cycling_snapshot_resumes_past_first_pass(self):
+        """A cursor beyond one pass round-trips (``n_steps`` cycles);
+        the template's ``n_steps`` fixes the restored horizon."""
+        full = list(SequentialBatchSampler(_ds(200), batch_size=10, n_steps=60))
+
+        fresh = SequentialBatchSampler(_ds(200), batch_size=10, n_steps=60)
+        it = iter(fresh)
+        K = 27  # past the first 20-batch pass
+        head = [next(it) for _ in range(K)]
+        assert head == full[:K]
+
+        snapshot = state_dict(fresh)
+        template = SequentialBatchSampler(_ds(200), batch_size=10, n_steps=60)
+        restored = from_state_dict(template, snapshot)
+
+        assert restored.consumed == K
+        assert len(restored) == 60 - K
+        assert list(restored) == full[K:]
+
 
 class TestLenReflectsRemaining:
     """``__len__`` reports remaining batches, not the original total."""

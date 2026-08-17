@@ -21,7 +21,7 @@ Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
 - **Mechanism-agnostic.** Depends only on the substrate packages
   (`opaque-engine`, `opaque-base`); never on `opaque-dpsgd`, `opaque-dpftrl`,
   or `opaque-optimizers`. The DP mechanism and optimizer are chosen at the call
-  site. This is enforced by `tests/contracts/test_dependency_direction.py`.
+  site.
 - **Per-example API.** Public losses map each record to its own scalar and
   compose with `vmap(grad(...))`; this does not imply family-wide locality
   verification. Batch-coupled Tier 3 variants are not shipped.

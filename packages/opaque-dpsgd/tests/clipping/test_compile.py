@@ -55,6 +55,7 @@ def _grads(out):
 
 
 @pytest.mark.parametrize("mode", ["fixed", "auto", "adaptive"])
+@pytest.mark.slow
 def test_compiled_transform_matches_eager(mode):
     params, x, y = _data()
     gf_eager, st_e = _build(mode)

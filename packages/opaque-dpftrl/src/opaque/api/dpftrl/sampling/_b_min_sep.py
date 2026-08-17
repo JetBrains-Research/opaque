@@ -20,7 +20,7 @@ from torch.utils.data import Sampler
 from opaque.random.types import RngKey
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sized
 
 
 class BMinSepSampler(Sampler):
@@ -47,7 +47,7 @@ class BMinSepSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         bands: int,
         sampling_prob: float,
         n_steps: int,
@@ -65,7 +65,7 @@ class BMinSepSampler(Sampler):
             raise ValueError(f"n_steps must be >= 1, got {n_steps}")
 
         self.num_examples = len(data_source)
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.bands = bands
         self.sampling_prob = sampling_prob
         self.n_steps = n_steps

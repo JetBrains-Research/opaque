@@ -3,7 +3,8 @@
 //! Numerically stable operations in log space.
 //! These functions avoid overflow/underflow by working with logarithms.
 
-use std::f64;
+#[cfg(test)]
+use std::f64::consts;
 
 /// Compute log(e^x + e^y) in a numerically stable way
 ///
@@ -244,7 +245,7 @@ mod tests {
     fn test_log_add_large_values() {
         // log(e^100 + e^101) = log(e^100 * (1 + e)) = 100 + log(1 + e)
         let result = log_add(100.0, 101.0);
-        let expected = 101.0 + (1.0 + f64::consts::E.recip()).ln();
+        let expected = 101.0 + (1.0 + consts::E.recip()).ln();
         assert_relative_eq!(result, expected, epsilon = 1e-10);
     }
 
@@ -269,14 +270,14 @@ mod tests {
     fn test_log_sub_basic() {
         // log(e^1 - e^0) = log(e - 1)
         let result = log_sub(1.0, 0.0).unwrap();
-        assert_relative_eq!(result, (f64::consts::E - 1.0).ln(), epsilon = 1e-10);
+        assert_relative_eq!(result, (consts::E - 1.0).ln(), epsilon = 1e-10);
     }
 
     #[test]
     fn test_log_sub_large_values() {
         // log(e^101 - e^100) = log(e^100 * (e - 1)) = 100 + log(e - 1)
         let result = log_sub(101.0, 100.0).unwrap();
-        let expected = 100.0 + (f64::consts::E - 1.0).ln();
+        let expected = 100.0 + (consts::E - 1.0).ln();
         assert_relative_eq!(result, expected, epsilon = 1e-10);
     }
 
@@ -303,7 +304,7 @@ mod tests {
         // log(e^0 + e^1 + e^2) = log(1 + e + e^2)
         let values = vec![0.0, 1.0, 2.0];
         let result = log_sumexp(&values);
-        let expected = (1.0 + f64::consts::E + f64::consts::E.powi(2)).ln();
+        let expected = (1.0 + consts::E + consts::E.powi(2)).ln();
         assert_relative_eq!(result, expected, epsilon = 1e-10);
     }
 
@@ -313,7 +314,7 @@ mod tests {
         let values = vec![100.0, 101.0, 102.0];
         let result = log_sumexp(&values);
         // e^100 + e^101 + e^102 = e^100 * (1 + e + e^2)
-        let expected = 100.0 + (1.0 + f64::consts::E + f64::consts::E.powi(2)).ln();
+        let expected = 100.0 + (1.0 + consts::E + consts::E.powi(2)).ln();
         assert_relative_eq!(result, expected, epsilon = 1e-10);
     }
 

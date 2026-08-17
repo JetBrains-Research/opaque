@@ -16,7 +16,7 @@ use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
@@ -88,16 +88,16 @@ fn sample_x_under_p(n: usize, bands: usize, p: f64, rng: &mut impl Rng, x_buf: &
         0
     } else {
         let denom = 1.0 + (bands - 1) as f64 * p;
-        if rng.gen::<f64>() * denom < 1.0 {
+        if rng.random::<f64>() * denom < 1.0 {
             0
         } else {
-            1 + rng.gen_range(0..bands - 1)
+            1 + rng.random_range(0..bands - 1)
         }
     };
 
     for xb in x_buf.iter_mut().take(n) {
         let eligible = barred_remaining == 0;
-        let participate = eligible && rng.gen::<f64>() < p;
+        let participate = eligible && rng.random::<f64>() < p;
         *xb = if participate { 1.0 } else { 0.0 };
         if participate {
             barred_remaining = bands.saturating_sub(1);

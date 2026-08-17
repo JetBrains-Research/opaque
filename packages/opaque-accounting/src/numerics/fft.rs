@@ -437,8 +437,8 @@ mod tests {
             select_self_convolution_strategy(2, count, count + 1, false),
             Err(PldError::SelfCompositionTooLarge {
                 requested,
-                maximum: MAX_LINEAR_FFT_SIZE,
-            }) if requested > MAX_LINEAR_FFT_SIZE
+                maximum,
+            }) if requested > MAX_LINEAR_FFT_SIZE && maximum == MAX_LINEAR_FFT_SIZE
         ));
     }
 

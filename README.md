@@ -166,7 +166,7 @@ for batch_x, batch_y in dataloader:
 - [User Guide](docs/user-guide/index.md)
 - [Tutorials](docs/tutorials/README.md)
 - [API Reference](docs/reference/index.md)
-- [Examples](examples/)
+- [Examples](examples)
 
 ## Development
 

@@ -219,7 +219,7 @@ pub fn lambda_cgd_gram_matrix(
 
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = (n + b - 1) / b;
+    let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
         None => k_inferred,
@@ -382,7 +382,7 @@ pub fn lambda_cgd_gram_matrix_lr(
 
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = (n + b - 1) / b;
+    let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
         None => k_inferred,

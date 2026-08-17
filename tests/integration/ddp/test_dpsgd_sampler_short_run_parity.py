@@ -12,8 +12,8 @@ headroom over the observed drift while still catching real bugs
 (missing gradient reduction, wrong noise scaling, mis-keyed sampler,
 etc.).
 
-This is the test that mirrors what the Cadence single-vs-multi-GPU
-``train_dpsgd`` W&B comparison checks at production scale.
+This test validates the same single-vs-multi-GPU training behavior at a
+small scale.
 """
 
 from __future__ import annotations
