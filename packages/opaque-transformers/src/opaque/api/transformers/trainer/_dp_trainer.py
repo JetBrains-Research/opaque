@@ -457,6 +457,8 @@ class DPTrainer:
         self._compute_metrics = compute_metrics
         self._compute_loss_func = compute_loss_func
         self._preprocess_logits = preprocess_logits_for_metrics
+        self._warned_per_example_logits_only = False
+        self._warned_eval_on_train = False
         # Lazily-built per-example eval-loss closure (vmap'd).  Populated
         # by ``_get_eval_per_example_loss_fn`` on first use; reset to
         # ``None`` here so model rebinding can invalidate the cache.
@@ -1138,9 +1140,9 @@ class DPTrainer:
                         a.privacy_target_epsilon,
                     )
                     return TrainOutput(
-                        global_step=self.state.global_step,
-                        training_loss=0.0,
-                        metrics={
+                        self.state.global_step,
+                        0.0,
+                        {
                             "privacy_epsilon": resumed_eps,
                             "privacy_delta": ctx.target_delta,
                         },
@@ -1868,7 +1870,7 @@ class DPTrainer:
                     break
                 if self._control.should_epoch_stop:
                     break
-                if a.max_steps > 0 and global_step >= a.max_steps:
+                if 0 < a.max_steps <= global_step:
                     break
                 # Hard ceiling at the calibrated horizon.  Noise was
                 # calibrated for exactly ``ctx.total_steps`` composed
@@ -1898,7 +1900,7 @@ class DPTrainer:
 
             if self._control.should_training_stop:
                 break
-            if a.max_steps > 0 and global_step >= a.max_steps:
+            if 0 < a.max_steps <= global_step:
                 break
             if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
@@ -1962,11 +1964,7 @@ class DPTrainer:
         if self.args.push_to_hub:
             _hub.push_to_hub(self, commit_message="End of training")
 
-        return TrainOutput(
-            global_step=global_step,
-            training_loss=train_loss,
-            metrics=metrics,
-        )
+        return TrainOutput(global_step, train_loss, metrics)
 
     # ------------------------------------------------------------------
     # training_step() — single DP-SGD step

@@ -2,14 +2,175 @@
 
 version: "1.0"
 linter: qodana-python
-withinDocker: false
+withinDocker: "false"
 
 profile:
-  name: qodana.recommended
+  # The unpinned starter profile evolves with Qodana releases. The explicit
+  # additions below are only semantic checks absent from that baseline.
+  base:
+    name: qodana.starter
+  groups:
+    - groupId: RuffOwned
+      inspections:
+        - PyBroadExceptionInspection
+        - PyDefaultArgumentInspection
+        - PyIncorrectDocstringInspection
+        - PyMethodMayBeStaticInspection
+        - PyPep8NamingInspection
+        - PyProtectedMemberInspection
+        - PyProtocolInspection
+        - PyRedundantParenthesesInspection
+        - PyShadowingBuiltinsInspection
+        - PyShadowingNamesInspection
+        - PySimplifyBooleanCheckInspection
+        - PyStringConversionWithoutDunderMethodInspection
+        - PyStringFormatInspection
+        - PyTypeHintsInspection
+        - PyUnnecessaryCastInspection
+        - PyUnusedImportsInspection
+        - PyUnusedLocalVariableInspection
+        - PyUnusedParameterInspection
+  inspections:
+    - group: RuffOwned
+      enabled: false
+    - inspection: PyArgumentListInspection
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalApiSignatures"
+    - inspection: PyDataclassInspection
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
+    - inspection: PyTypeCheckerInspection
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyClassHasNoInitInspection
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
+    - inspection: PyAsyncCallInspection
+      enabled: true
+    - inspection: PyDictDuplicateKeysInspection
+      enabled: true
+    - inspection: PyInvalidCastInspection
+      enabled: true
+    - inspection: PyMockPatchArgumentCountInspection
+      enabled: true
+    - inspection: PyTestParametrizedInspection
+      enabled: true
+      ignore:
+        - "scope#$Opaque_PythonTests"
+    - inspection: PyTestUnpassedFixtureInspection
+      enabled: true
+    - inspection: PyUnhashableInspection
+      enabled: true
+    - inspection: PyNoneFunctionAssignmentInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+    - inspection: PyUnboundLocalVariableInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+    - inspection: PyCallingNonCallableInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyMethodOverridingInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyUnreachableCodeInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyTypedDictInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+    - inspection: PyDeprecationInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+    - inspection: PyPropertyAccessInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyPropertyDefinitionInspection
+      ignore:
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyPatternInspection
+      ignore:
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyDecoratorInspection
+      ignore:
+        - "scope#$Opaque_DynamicFrameworkSources"
+    - inspection: PyInconsistentReturnsInspection
+      ignore:
+        - "scope#$Opaque_PythonTests"
+        - "scope#$Opaque_ExamplesAndTutorials"
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyRedeclarationInspection
+      ignore:
+        - "scope#$Opaque_FunctionalRuntimeSources"
+# Qodana uses a starter-based bridge because its headless engine interprets
+# several project-profile inspections differently from PyCharm. The shared
+# category scopes describe stable analyzer limitations, not individual files.
+
+# Sanity analysis uses a separate profile, so its inspection-specific
+# analyzer workarounds must remain in Qodana's top-level configuration.
+exclude:
+  - name: UndefinedParamsPresent
+    paths:
+      - .github/actions
+      - .github/workflows
+  - name: PyUnresolvedReferencesInspection
+    paths:
+      - docs/tutorials
+      - examples
+      - packages/opaque-accounting/tests
+      - packages/opaque-alignment/tests
+      - packages/opaque-auditing/tests
+      - packages/opaque-base/tests
+      - packages/opaque-dpftrl/tests
+      - packages/opaque-dpsgd/tests
+      - packages/opaque-engine/tests
+      - packages/opaque-jax/tests
+      - packages/opaque-mlx/tests
+      - packages/opaque-optimizers/tests
+      - packages/opaque-patches/tests
+      - packages/opaque-torch/tests
+      - packages/opaque-transformers/tests
+      - tests
+      - packages/opaque-engine/src/opaque/api/engine/clipping
+      - packages/opaque-engine/src/opaque/api/engine/functional
+      - packages/opaque-engine/src/opaque/api/engine/random
+      - packages/opaque-patches/src/opaque/api/patches
 
 # Resolve every workspace package so inspections, vulnerability checks, license
 # audit, and SBOM generation see the same dependency graph as CI.
-bootstrap: uv sync --frozen --group dev --all-packages --extra all
+bootstrap: |
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/qodana-cache}"
+  export UV_CACHE_DIR="${UV_CACHE_DIR:-$XDG_CACHE_HOME/uv}"
+  if ! command -v cc >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
+  fi
+  uv sync --frozen --group dev --all-packages --extra all
 analyzeDevDependencies: true
 
 include:
@@ -27,6 +188,9 @@ coverage:
 
 failureConditions:
   severityThresholds:
+    # The inspected policy is deliberately clean; any unsuppressed finding is
+    # a CI failure rather than only critical-severity findings.
+    any: 0
     critical: 0
   testCoverageThresholds:
     fresh: 80

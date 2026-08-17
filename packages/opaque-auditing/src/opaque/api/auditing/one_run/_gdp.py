@@ -295,12 +295,7 @@ def _gdp_base_pair_grid(mu: float, num_points: int) -> _BaseGrid:
     F_y[0] = 0.0
     F_y[1:] = cum[:-1]
 
-    return _BaseGrid(
-        z=z_sorted,
-        mass=mass_sorted,
-        F_y=F_y,
-        abs_privacy_loss=abs_pl_sorted,
-    )
+    return _BaseGrid(z_sorted, mass_sorted, F_y, abs_pl_sorted)
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +349,7 @@ def _compute_v_k(n: int, r_prime: int, grid: _BaseGrid) -> np.ndarray:
     log_mass = np.log(np.maximum(mass, 1e-300))
     log_F = np.log(np.maximum(F, 1e-300))
     log_1mF = np.log(np.maximum(1.0 - F, 1e-300))
-    log_sig = scipy.special.log_expit(-abs_pl)
+    log_sig = np.asarray(scipy.special.log_expit(-abs_pl))
 
     k = k_vals[:, None]
 

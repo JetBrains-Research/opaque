@@ -43,7 +43,7 @@ from opaque.random import fold_in
 from opaque.random.types import RngKey
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sized
 
 
 class RandomAllocationSampler(Sampler):
@@ -74,7 +74,7 @@ class RandomAllocationSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         num_bins: int,
         n_steps: int | None = None,
         *,
@@ -89,7 +89,7 @@ class RandomAllocationSampler(Sampler):
         if n_steps is not None and n_steps < 1:
             raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
 
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.num_bins = num_bins
         self.n_steps = n_steps
 
@@ -123,7 +123,8 @@ class RandomAllocationSampler(Sampler):
         assignment = rng.integers(0, self.num_bins, size=self._num_samples)
         bins: list[list[int]] = [[] for _ in range(self.num_bins)]
         for idx, b in enumerate(assignment):
-            bins[b].append(int(idx))
+            target_bin: list[int] = bins[b]
+            target_bin.append(int(idx))
         return bins
 
     def __iter__(self) -> Iterator[list[int]]:
@@ -144,6 +145,7 @@ class RandomAllocationSampler(Sampler):
                 bins = self._epoch_bins(epoch)
                 cur_epoch = epoch
             self._consumed = i + 1
+            assert bins is not None
             yield bins[slot]
             i += 1
 

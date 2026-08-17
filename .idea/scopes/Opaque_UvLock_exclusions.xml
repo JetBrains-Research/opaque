@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_UvLock_exclusions" pattern="file[opaque]:uv.lock" />
+</component>

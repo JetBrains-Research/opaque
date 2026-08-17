@@ -44,6 +44,7 @@ from opaque.api.engine.device import device_capabilities
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+    from contextlib import AbstractContextManager
 
 
 @dataclass(frozen=True)
@@ -613,7 +614,7 @@ class PerfStage:
         *,
         batch_size: int = 0,
         track_memory: bool = True,
-    ) -> Iterator[_StepPerfBuilder]:
+    ) -> AbstractContextManager[_StepPerfBuilder]:
         @contextmanager
         def _ctx() -> Iterator[_StepPerfBuilder]:
             with step_perf(

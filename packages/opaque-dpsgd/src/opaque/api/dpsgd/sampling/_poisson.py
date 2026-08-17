@@ -19,7 +19,7 @@ the cursor + RNG.  ``__iter__`` continues from ``self._consumed`` and
 ``tests/sampling/test_poisson_state_dict.py``.
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
 import numpy as np
@@ -77,7 +77,7 @@ class PoissonSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         sample_rate: float,
         n_steps: int | None = None,
         truncated_batch_size: int | None = None,
@@ -95,7 +95,7 @@ class PoissonSampler(Sampler):
                 f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
             )
 
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.sample_rate = sample_rate
         self.n_steps = n_steps
         self.truncated_batch_size = truncated_batch_size

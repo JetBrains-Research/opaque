@@ -264,7 +264,7 @@ uv run ruff check --fix packages/
 **Types**: `feat` / `add`, `fix`, `refactor` / `change` / `perf`,
 `docs`, `test`, `ci` / `build`, `chore` / `style`, `delete`. Append `!`
 to mark a breaking change (e.g. `feat!:`). See [Changelog
-conventions](#changelog-conventions) for how each type maps to a
+conventions](#release-note-conventions) for how each type maps to a
 release-notes section.
 
 Since the repo squash-merges, the PR title is the commit message on
@@ -467,4 +467,4 @@ Thank you for contributing to differential privacy research and making private m
 
 **Key Resources**:
 - [JAX-Privacy](https://github.com/google-deepmind/jax_privacy) - Reference implementation
-- [Full Opaque Documentation](docs/)
+- [Full Opaque Documentation](docs/index.md)

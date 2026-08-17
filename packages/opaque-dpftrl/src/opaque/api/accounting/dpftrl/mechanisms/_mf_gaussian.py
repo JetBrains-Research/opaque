@@ -32,6 +32,8 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core.discretization import get_discretization
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from opaque.api.dpftrl.noise.types import MfStrategy
 
 
@@ -158,7 +160,7 @@ def _serialize_mf_gaussian(p: MfGaussian) -> dict[str, Any]:
     }
 
 
-def _load_mf_gaussian(_template: Any, sd: dict[str, Any]) -> MfGaussian:
+def _load_mf_gaussian(_template: Any, sd: Mapping[str, Any]) -> MfGaussian:
     from opaque.api.dpftrl.noise._strategy_codec import deserialize_strategy
 
     sd = dict(sd)

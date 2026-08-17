@@ -9,7 +9,7 @@ Unlike Poisson or BnB sampling there is no randomness — the dataset
 should be pre-shuffled once before constructing the sampler.
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
 from torch.utils.data import Sampler
@@ -48,7 +48,7 @@ class SequentialBatchSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         batch_size: int,
         n_steps: int | None = None,
     ):
@@ -59,7 +59,7 @@ class SequentialBatchSampler(Sampler):
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self._num_samples = len(data_source)
         self._batch_size = batch_size
         self._num_batches = self._num_samples // self._batch_size

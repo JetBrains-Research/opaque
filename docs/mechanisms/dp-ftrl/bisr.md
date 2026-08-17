@@ -67,7 +67,7 @@ formula (Lemma 1 of the paper):
 - Base sequence: r̃_0 = 1, r̃_j = ((j - 3/2) / j) · r̃_{j-1}
 - With momentum β: c̃_k = Σ_{j=0}^{k} r̃_j · β^j · r̃_{k-j}
 
-For β=0 (FTRL): c̃ = [1, -0.5, -0.125, -0.0625, ...]
+For β=0 (FTRL), the c̃ sequence starts with 1, -0.5, -0.125, and -0.0625.
 
 Momentum enters the coefficient computation, changing the strategy matrix C
 itself. The privacy analysis then uses the resulting C columns; momentum is
