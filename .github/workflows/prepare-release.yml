@@ -1,0 +1,36 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version. Required from main; blank infers the next patch on release/X.Y.
+        required: false
+        type: string
+      dry_run:
+        description: Validate the candidate without creating a branch, tag, or draft Release.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+  models: read
+
+concurrency:
+  group: prepare-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    # Keep release orchestration current even when "Use workflow from" selects
+    # an older maintenance branch. The selected branch and SHA remain the only
+    # source inputs tested and packaged by the called workflow.
+    uses: JetBrains-Research/opaque/.github/workflows/prepare-release-implementation.yml@main
+    with:
+      dry_run: ${{ inputs.dry_run }}
+      source_ref: ${{ github.ref }}
+      source_sha: ${{ github.sha }}
+      version: ${{ inputs.version }}
+    secrets: inherit
