@@ -35,7 +35,7 @@ dependencies = [
     # pins for preview/release artifacts while local workspace installs continue
     # to resolve against the editable members below.
     "opaque-engine>=0.0.0.dev0",
-    "opaque-accounting>=0.0.0.dev0",
+    "opaque-accounting>=999.9.9",
     "opaque-dpsgd>=0.0.0.dev0",
     "opaque-optimizers>=0.0.0.dev0",
     "opaque-patches>=0.0.0.dev0",
