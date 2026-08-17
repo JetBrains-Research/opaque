@@ -2,13 +2,15 @@
 
 Two axes are validated here:
 
-1. **Loss-closure compile under ``vmap(grad(...))``** — the documented
-   PyTorch pattern for compiling functional gradients. We compare each
-   stage of the DP pipeline (per-example grad → clipped sum → noised →
-   torchopt update) eager vs. compiled and assert pytree-equal-or-
-   tolerated parity.
+1. **Loss-closure compile under ``vmap(grad(...))``** — the permissive
+   compatibility path. We compare each stage of the DP pipeline
+   (per-example grad → clipped sum → noised → torchopt update) eager vs.
+   compiled and assert pytree-equal-or-tolerated parity.
 
-2. **Forward-only compile** — what HuggingFace calls ``jit_mode_eval``.
+2. **Full DP-transform compile** — the supported full-graph path, with
+   ``vmap(grad(...))`` inside the compiled transform.
+
+3. **Forward-only compile** — what HuggingFace calls ``jit_mode_eval``.
    A compiled functional model in ``eval()`` matches eager forward.
 
 Compile-the-model-first is **not** a supported pattern with
@@ -65,11 +67,12 @@ def _run_dp_step(
     *,
     compile_backend: str | None = None,
     compile_fullgraph: bool = False,
+    compile_transform: bool = False,
     clip_norm: float = 1.0,
     noise_stddev: float = 0.0,
     rng_seed: int = 42,
 ):
-    """One DP step. If ``compile_backend`` is set, compile the loss closure."""
+    """One DP step with an optionally compiled loss closure or DP transform."""
     fmodel, params = make_functional(model)
 
     def loss_fn(p, xi, yi):
@@ -77,7 +80,7 @@ def _run_dp_step(
         pred = fmodel(p, xi.unsqueeze(0)).squeeze(0)
         return ((pred - yi) ** 2).mean()
 
-    if compile_backend is not None:
+    if compile_backend is not None and not compile_transform:
         loss_fn = torch.compile(
             loss_fn, backend=compile_backend, fullgraph=compile_fullgraph
         )
@@ -88,6 +91,10 @@ def _run_dp_step(
         batch_argnums=(1, 2),
         clipping_norm=clip_norm,
     )
+    if compile_backend is not None and compile_transform:
+        grad_fn = torch.compile(
+            grad_fn, backend=compile_backend, fullgraph=compile_fullgraph
+        )
     grads, _ = grad_fn(params, x, y, state=clip_state)
 
     noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(rng_seed))
@@ -142,12 +149,17 @@ def test_compile_loss_closure_optimizer_step_parity(backend: str):
     _assert_pytree_close(eager_params, compiled_params, rtol=1e-5, atol=1e-6)
 
 
-def test_compile_loss_closure_fullgraph_aot_eager():
-    """fullgraph=True with aot_eager — should not graph-break on this closure."""
+def test_compile_dp_transform_fullgraph_aot_eager():
+    """fullgraph=True compiles the outer DP transform without graph breaks."""
     model, x, y = _build_model_and_batch()
     eager_grads, _, _ = _run_dp_step(model, x, y, compile_backend=None)
     compiled_grads, _, _ = _run_dp_step(
-        model, x, y, compile_backend="aot_eager", compile_fullgraph=True
+        model,
+        x,
+        y,
+        compile_backend="aot_eager",
+        compile_fullgraph=True,
+        compile_transform=True,
     )
     _assert_pytree_close(eager_grads, compiled_grads, rtol=1e-5, atol=1e-6)
 
