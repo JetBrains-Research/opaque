@@ -225,10 +225,19 @@ def test_non_real_compute_dtype_is_rejected(bad_dtype):
 
 
 def _one_dominant_element(n, device, dtype=torch.float32):
-    """A leaf whose reduction is worst-case: one large term, many small ones."""
-    leaf = torch.full((n,), 1e-4, dtype=dtype, device=device)
+    """A leaf whose reduction is worst-case: one large term, many small ones.
+
+    Built on the CPU because MPS has no float64 to normalize in.
+    """
+    leaf = torch.full((n,), 1e-4, dtype=dtype)
     leaf[0] = 1.0
-    return leaf * (3.0 / torch.linalg.vector_norm(leaf.double())).to(dtype)
+    leaf = leaf * (3.0 / torch.linalg.vector_norm(leaf.double())).to(dtype)
+    return leaf.to(device)
+
+
+def _norm_on_cpu(tensor):
+    """Exact norm of a stored tensor; MPS cannot hold the float64 itself."""
+    return torch.linalg.vector_norm(tensor.cpu().double())
 
 
 def test_bound_holds_for_one_large_leaf(all_devices):
@@ -239,7 +248,7 @@ def test_bound_holds_for_one_large_leaf(all_devices):
     """
     leaf = _one_dominant_element(1 << 22, all_devices)
     clipped, _ = clip_pytree({"w": leaf}, clipping_norm=1.0)
-    assert torch.linalg.vector_norm(clipped["w"].double()) <= 1.0
+    assert _norm_on_cpu(clipped["w"]) <= 1.0
 
 
 @pytest.mark.parametrize("n", [1 << 14, 1 << 22])
@@ -248,7 +257,7 @@ def test_bound_holds_without_a_float64_accumulator(monkeypatch, n):
     monkeypatch.setattr(_pytree, "_SQ_NORM_ACCUM_DTYPE", torch.float32)
     leaf = _one_dominant_element(n, torch.device("cpu"))
     clipped, _ = clip_pytree({"w": leaf}, clipping_norm=1.0)
-    assert torch.linalg.vector_norm(clipped["w"].double()) <= 1.0
+    assert _norm_on_cpu(clipped["w"]) <= 1.0
 
 
 # ----------------------------------------------------------------------------

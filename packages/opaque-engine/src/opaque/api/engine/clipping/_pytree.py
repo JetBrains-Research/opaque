@@ -163,9 +163,15 @@ the flat term is already negligible and the extra kernel is not worth it.
 """
 
 
-def _reduction_terms(leaves: list[torch.Tensor], sq_dtype: torch.dtype) -> int:
-    """Worst-case sequential additions inside a single leaf's reduction."""
-    widest = max((math.prod(leaf.shape) for leaf in leaves), default=0)
+def _reduction_terms(leaves: list[torch.Tensor]) -> int:
+    """Worst-case sequential additions inside a single leaf's reduction.
+
+    Written as a loop rather than ``max(..., default=0)`` over a generator,
+    which ``torch.compile`` rejects.
+    """
+    widest = 0
+    for leaf in leaves:
+        widest = max(widest, math.prod(leaf.shape))
     if widest <= 1:
         return 0
     if widest > _BLOCKED_REDUCTION_MIN:
@@ -285,7 +291,7 @@ def _auto_scale_per_group(
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
     roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
     )
 
     group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
@@ -373,7 +379,7 @@ def auto_scale_pytree(
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
     roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
     )
 
     norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype))
@@ -410,7 +416,7 @@ def _clip_pytree_per_group(
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
     roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
     )
 
     group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
@@ -500,7 +506,7 @@ def clip_pytree(
     acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
     sq_dtype = _sq_accum_dtype(leaves)
     roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves, sq_dtype)
+        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
     )
 
     sq_norm = _sq_norm(leaves, acc_dtype, sq_dtype)
