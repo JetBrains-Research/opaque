@@ -153,14 +153,41 @@ def _sq_accum_dtype(leaves: list[torch.Tensor]) -> torch.dtype:
     return _SQ_NORM_ACCUM_DTYPE
 
 
+_REDUCTION_BLOCK = 2048
+"""Width of one block in the two-stage leaf reduction.
+
+Deliberately a compile-time constant rather than ``isqrt(numel)``.  The
+balanced split is the tightest bound, but ``math.isqrt`` on a symbolic shape
+makes ``torch.compile(fullgraph=True)`` fail outright (and the default mode
+fall back to a graph break) for every leaf past the threshold below.  Since
+``clipped_grad`` is on the hot path, breaking compilation there breaks it
+everywhere, which costs more than the slack a fixed block gives up.
+
+At 2048 the two stages stay balanced for the multi-million-element leaves that
+motivate the guard — the bound matches the ``isqrt`` one to within a term at
+``numel ~ 4e6``.  Smaller leaves get a looser bound than ``isqrt`` would give,
+but still a far tighter one than the flat reduction they would otherwise use.
+"""
+
 _BLOCKED_REDUCTION_MIN = 4096
 """Element count above which a leaf's sum of squares is reduced in two stages.
 
 A flat reduction admits ``numel`` sequential roundings; splitting it into
-``sqrt(numel)`` blocks admits ``2 sqrt(numel)``, which is what keeps the guard
-affordable on the float32 accumulator MPS is limited to.  Below the threshold
-the flat term is already negligible and the extra kernel is not worth it.
+blocks of ``_REDUCTION_BLOCK`` admits ``_REDUCTION_BLOCK + numel /
+_REDUCTION_BLOCK``, which is what keeps the guard affordable on the float32
+accumulator MPS is limited to.  Below the threshold the flat term is already
+negligible and the extra kernel is not worth it.
 """
+
+
+def _blocked_reduction_terms(n: int) -> int:
+    """Worst-case sequential additions for a two-stage reduction of ``n``.
+
+    ``_REDUCTION_BLOCK`` additions inside the widest block, then one per block.
+    Integer arithmetic only, so it survives tracing on a symbolic ``n``.
+    """
+    block = _REDUCTION_BLOCK
+    return block + (n + block - 1) // block
 
 
 def _reduction_terms(leaves: list[torch.Tensor]) -> int:
@@ -175,7 +202,7 @@ def _reduction_terms(leaves: list[torch.Tensor]) -> int:
     if widest <= 1:
         return 0
     if widest > _BLOCKED_REDUCTION_MIN:
-        return 2 * math.isqrt(widest) + 2
+        return _blocked_reduction_terms(widest)
     return widest
 
 
@@ -215,7 +242,7 @@ def _leaf_sq_sum(
     if n <= _BLOCKED_REDUCTION_MIN:
         return flat.sum(dtype=sq_dtype)
 
-    block = math.isqrt(n)
+    block = _REDUCTION_BLOCK
     main = (n // block) * block
     total = (
         flat[:main].reshape(-1, block).sum(dim=-1, dtype=sq_dtype).sum(dtype=sq_dtype)

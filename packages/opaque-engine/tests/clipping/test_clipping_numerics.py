@@ -260,6 +260,28 @@ def test_bound_holds_without_a_float64_accumulator(monkeypatch, n):
     assert _norm_on_cpu(clipped["w"]) <= 1.0
 
 
+@pytest.mark.parametrize("n", [1 << 12, 1 << 13, 1 << 20])
+def test_blocked_reduction_traces_in_a_full_graph(n):
+    """The two-stage reduction must survive ``fullgraph=True`` at any leaf size.
+
+    ``clipped_grad`` is on the hot path, so a graph break here is a
+    whole-pipeline regression rather than a local one.  Sizing the blocks from
+    the leaf itself (``isqrt(numel)``) traces fine below
+    ``_BLOCKED_REDUCTION_MIN`` and fails above it, on a symbolic shape.
+    """
+    torch._dynamo.reset()
+
+    def reduce(leaf):
+        leaves = [leaf]
+        # The bound and the reduction it describes have to agree, so trace both.
+        terms = _pytree._reduction_terms(leaves)
+        return _pytree._sq_norm(leaves, torch.float32, torch.float32) + terms
+
+    compiled = torch.compile(reduce, backend="aot_eager", fullgraph=True, dynamic=True)
+    leaf = torch.randn(n)
+    torch.testing.assert_close(compiled(leaf), reduce(leaf))
+
+
 # ----------------------------------------------------------------------------
 # Microbatch accumulation precision
 # ----------------------------------------------------------------------------

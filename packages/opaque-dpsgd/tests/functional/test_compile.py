@@ -37,14 +37,14 @@ def _cpu_inductor_available() -> bool:
     return shutil.which("g++") is not None or shutil.which("clang++") is not None
 
 
-def _build_model_and_batch(seed: int = 0):
+def _build_model_and_batch(seed: int = 0, in_features: int = 8, hidden: int = 16):
     torch.manual_seed(seed)
     model = nn.Sequential(
-        nn.Linear(8, 16),
+        nn.Linear(in_features, hidden),
         nn.GELU(),
-        nn.Linear(16, 4),
+        nn.Linear(hidden, 4),
     )
-    x = torch.randn(5, 8)
+    x = torch.randn(5, in_features)
     y = torch.randn(5, 4)
     return model, x, y
 
@@ -144,9 +144,20 @@ def test_compile_loss_closure_optimizer_step_parity(backend: str):
     _assert_pytree_close(eager_params, compiled_params, rtol=1e-5, atol=1e-6)
 
 
-def test_compile_dp_transform_fullgraph_aot_eager():
-    """fullgraph=True compiles the outer DP transform without graph breaks."""
-    model, x, y = _build_model_and_batch()
+@pytest.mark.parametrize(
+    ("in_features", "hidden"),
+    [(8, 16), (128, 64)],
+    ids=["flat_reduction", "blocked_reduction"],
+)
+def test_compile_dp_transform_fullgraph_aot_eager(in_features: int, hidden: int):
+    """fullgraph=True compiles the outer DP transform without graph breaks.
+
+    The wide case gives the clipping norm a leaf past
+    ``_BLOCKED_REDUCTION_MIN`` (8192 elements), so the two-stage reduction is
+    traced as well.  Sizing its blocks from the leaf's own shape compiles at
+    the narrow width and breaks the graph at the wide one.
+    """
+    model, x, y = _build_model_and_batch(in_features=in_features, hidden=hidden)
     eager_grads, _, _ = _run_dp_step(model, x, y, compile_backend=None)
 
     fmodel, params = make_functional(model)
