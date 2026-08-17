@@ -1,0 +1,28 @@
+name: Validate Release Preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Immutable main SHA to validate.
+        required: true
+        type: string
+      version:
+        description: Candidate version to build without creating a release.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  models: read
+
+jobs:
+  prepare:
+    uses: ./.github/workflows/prepare-release-implementation.yml
+    with:
+      dry_run: true
+      source_ref: refs/heads/main
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+    secrets: inherit
