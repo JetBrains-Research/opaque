@@ -10,11 +10,6 @@ inputs:
     description: Whether to install uv.
     required: false
     default: "true"
-  enable-uv-cache:
-    description: Whether to enable the uv dependency cache.
-    required: false
-    default: "false"
-
 runs:
   using: composite
   steps:
@@ -25,4 +20,4 @@ runs:
     - if: inputs.install-uv == 'true'
       uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
-        enable-cache: ${{ inputs.enable-uv-cache == 'true' }}
+        enable-cache: false

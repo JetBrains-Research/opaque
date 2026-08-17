@@ -21,14 +21,12 @@ private reusable components described below.
 
 ### `.github/actions/setup-python`
 
-This composite action installs the pinned Python version and optionally uv and
-its dependency cache. Use it in repository workflows that need Python; set
-`install-uv: "false"` for Python-only jobs and `enable-uv-cache: "true"` for
-dependency-heavy jobs. Python test and Qodana workflows intentionally do not
-enable uv cache restore/save: their large all-extras environments made cache
-archiving costly and vulnerable to runner disk exhaustion. Release-capable
-called workflows keep pinned external setup steps inline so checking out an
-older release tag cannot remove the local action implementation.
+This composite action installs the pinned Python version and optionally uv. Use
+`install-uv: "false"` for Python-only jobs. uv cache restore/save is explicitly
+disabled repository-wide: the large all-extras environments made cache
+archiving costly and vulnerable to runner disk exhaustion. Release-capable called
+workflows keep pinned external setup steps inline so checking out an older
+release tag cannot remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
