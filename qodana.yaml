@@ -185,9 +185,9 @@ raiseLicenseProblems: true
 
 coverage:
   reportProblems: true
-  # Aggregate coverage gates below are the intended CI policy; do not turn
-  # every uncovered location into a code-inspection problem.
-  reportProblems: false
+  # Qodana's baseline records existing gaps while reporting newly introduced
+  # uncovered locations for incremental cleanup.
+  reportProblems: true
   codeCoverageLocations:
     - .qodana/code-coverage
 
