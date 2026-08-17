@@ -7,6 +7,11 @@ on:
         description: Full selected branch ref from the dispatching workflow.
         required: true
         type: string
+      dry_run:
+        description: Stop after building and verifying the candidate artifact.
+        required: false
+        default: false
+        type: boolean
       source_sha:
         description: Immutable selected branch SHA from the dispatching workflow.
         required: true
@@ -436,6 +441,7 @@ jobs:
   create-draft:
     name: Create complete draft Release
     needs: [plan, assemble-candidate]
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -624,3 +630,23 @@ jobs:
             sha256sum verify-assets/*
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  dry-run-summary:
+    name: Candidate validation complete
+    needs: [plan, assemble-candidate]
+    if: inputs.dry_run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write dry-run summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release candidate validated
+
+          \`${{ needs.plan.outputs.tag }}\` was planned from
+          \`${{ needs.plan.outputs.target_sha }}\`.
+
+          The full release test matrix, distribution build, artifact validation,
+          and candidate manifest completed. This dry run did not create
+          \`${{ needs.plan.outputs.maintenance_branch }}\`, a tag, or a draft
+          Release.
+          EOF

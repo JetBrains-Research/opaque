@@ -359,6 +359,8 @@ page. There is no `CHANGELOG.md` to maintain.
    `main` create `release/X.Y` at that SHA. Preparation then creates the
    immutable tag and a draft GitHub Release containing the final artifacts and
    checksum manifest.
+   Select **dry run** to exercise every preceding gate and retain the verified
+   candidate artifact without creating a maintenance branch, tag, or draft.
 3. **Review the draft.** Inspect its notes and attached files. The generated
    body retains the AI highlights, `git-cliff` "What's changed" section, and
    contributors section. Handwritten prose outside
