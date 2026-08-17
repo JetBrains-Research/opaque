@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-auditing = ["opaque-auditing>=0.0.0.dev0"]
+auditing = ["opaque-auditing>=999.9.9"]
 dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
 alignment = ["opaque-alignment>=0.0.0.dev0"]
 transformers = [
