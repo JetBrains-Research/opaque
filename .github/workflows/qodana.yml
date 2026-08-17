@@ -53,7 +53,7 @@ jobs:
           pr-mode: ${{ inputs.pr-mode }}
           results-dir: ${{ runner.temp }}/qodana/results
           upload-result: true
-          use-annotations: true
+          use-annotations: false
           use-caches: true
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN_1970838931 }}

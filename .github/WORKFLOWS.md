@@ -69,9 +69,10 @@ under alternate dependency graphs rather than add platform behavior. Every
 test lane uploads coverage unconditionally; Qodana selects `coverage-locked-*`.
 Main publishes the scan's SARIF report to GitHub code scanning under the stable
 `qodana/python` category and waits for processing; missing or rejected reports
-fail the Qodana job. PR scans keep Qodana annotations, comments, Cloud results,
-report artifacts, and manually dispatched branch runs without uploading a
-non-main code-scanning analysis.
+fail the Qodana job. PR scans keep Qodana comments, Cloud results, and report
+artifacts without creating a second annotation check. Main Qodana runs only on
+the actual main ref, so manually dispatched feature-branch validation cannot
+attach a full-scan check to a pull request.
 Repository Code Security must remain enabled.
 
 `pr.yml` and `ci.yml` invoke the reusable workflow separately for Linux amd64
