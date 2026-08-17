@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyCallingNonCallable_IDE_exclusions" pattern="file[opaque-alignment]:tests/dpo/reference/test_adapter.py||file[opaque-transformers]:tests/distributed/_ddp_runner.py" />
+</component>

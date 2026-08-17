@@ -226,6 +226,16 @@ src = [
 #   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
 #   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
+# Keep editor diagnostics aligned with the CI lint gate. Ruff still formats
+# these paths, while pytest and Qodana own their behavioral and semantic checks.
+exclude = [
+  ".github/scripts/**",
+  "benchmarks/**",
+  "conftest.py",
+  "docs/**",
+  "examples/**",
+  "tests/**",
+]
 select = [
   "E", "F", "W",
   "I",

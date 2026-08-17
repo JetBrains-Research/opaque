@@ -33,18 +33,23 @@ env/
 !.idea/codeStyles/*.xml
 !.idea/inspectionProfiles/
 !.idea/inspectionProfiles/*.xml
-!.idea/dictionaries/
-!.idea/dictionaries/*.xml
+!.idea/scopes/
+!.idea/scopes/*.xml
 !.idea/icon.svg
 !.idea/externalDependencies.xml
 !.idea/modules.xml
 !.idea/misc.xml
+!.idea/pyLspTools.xml
+!.idea/pyProjectModel.xml
 !.idea/vcs.xml
 !.idea/*.iml
 *.swp
 *.swo
 *~
 .DS_Store
+
+# Qodana
+.qodana
 
 # Testing
 .pytest_cache/

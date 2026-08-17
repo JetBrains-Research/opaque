@@ -11,7 +11,7 @@ from opaque.api.accounting.core import _native
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.types import MfGaussian
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
-from opaque.dpftrl.noise.types import IdentityStrategy
+from opaque.dpftrl.noise.types import BandMfStrategy, IdentityStrategy
 
 _DELTA = 1e-5
 
@@ -101,6 +101,38 @@ class TestPoissonIdentity:
 
 
 class TestPoissonBandMf:
+    def test_passes_amplification_context_to_sensitivity(self, monkeypatch):
+        captured = {}
+
+        def sensitivity(
+            _strategy,
+            *,
+            n_steps: int,
+            min_sep: int,
+            max_participations: int | None,
+        ) -> float:
+            captured.update(
+                n_steps=n_steps,
+                min_sep=min_sep,
+                max_participations=max_participations,
+            )
+            return 1.0
+
+        monkeypatch.setattr(BandMfStrategy, "sensitivity", sensitivity)
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(0.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=6,
+        )
+
+        proc.pld()
+
+        assert captured == {
+            "n_steps": 6,
+            "min_sep": 1,
+            "max_participations": 6,
+        }
+
     def test_pld_matches_self_composed_with_bands(self):
         """For BandMf: num_groups = ceil(n_steps / bands)."""
         nm, p = 1.1, 0.01

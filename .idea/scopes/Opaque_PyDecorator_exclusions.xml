@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyDecorator_exclusions" pattern="file[opaque-patches]:src/opaque/api/patches/torch/checkpoint/noop_save_inputs.py" />
+</component>

@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyPropertyAccess_exclusions" pattern="file[opaque-alignment]:tests/data/test_chat_template.py||file[opaque-alignment]:tests/data/test_completion_mask.py" />
+</component>

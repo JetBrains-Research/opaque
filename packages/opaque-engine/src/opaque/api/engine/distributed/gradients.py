@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from typing import Any
+from typing import Any, TypeGuard
 
 import torch
 import torch.distributed as dist
@@ -35,7 +35,7 @@ from ._state import assert_scalar_equal
 from .collectives import all_reduce_, get_world_size, is_distributed
 
 
-def _is_noised(pytree: Any) -> bool:
+def _is_noised(pytree: Any) -> TypeGuard[NoisedPytree]:
     return isinstance(pytree, NoisedPytree)
 
 

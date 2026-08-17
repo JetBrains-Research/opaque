@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 
 import pytest
 
 from opaque.api.transformers.trainer import TrainingArguments
-from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
+from opaque.api.transformers.trainer._convert import (
+    _is_default,
+    _normalize_dp_overrides,
+)
 
 # ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
@@ -40,6 +44,32 @@ def _convert(tmp_path, **dp_overrides):
         clipping_norm=1.0,
         **dp_overrides,
     )
+
+
+def test_is_default_does_not_pass_dataclass_classes_to_asdict(monkeypatch):
+    @dataclasses.dataclass
+    class DefaultValue:
+        pass
+
+    @dataclasses.dataclass
+    class ActualValue:
+        pass
+
+    @dataclasses.dataclass
+    class Config:
+        value: type = DefaultValue
+
+    calls = []
+    real_asdict = dataclasses.asdict
+
+    def spy_asdict(value):
+        calls.append(value)
+        return real_asdict(value)
+
+    monkeypatch.setattr(dataclasses, "asdict", spy_asdict)
+
+    assert not _is_default(ActualValue, dataclasses.fields(Config)[0])
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------

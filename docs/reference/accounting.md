@@ -381,7 +381,7 @@ band-width is `len(coefficients)`; `coefficients` must be non-empty.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
 - `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
-- `coefficients` (tuple[float, ...]): From `strategy.coefficients`.
+- `coefficients` (tuple of float values): From `strategy.coefficients`.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy

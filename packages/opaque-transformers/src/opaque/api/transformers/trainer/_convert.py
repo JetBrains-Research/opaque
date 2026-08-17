@@ -72,7 +72,12 @@ def _is_default(value: Any, default: Any) -> bool:
 
     # Both dataclass instances? Compare via field dicts (handles
     # ``AcceleratorConfig`` and other HF nested dataclasses).
-    if dataclasses.is_dataclass(value) and dataclasses.is_dataclass(default_value):
+    if (
+        not isinstance(value, type)
+        and dataclasses.is_dataclass(value)
+        and not isinstance(default_value, type)
+        and dataclasses.is_dataclass(default_value)
+    ):
         try:
             return dataclasses.asdict(value) == dataclasses.asdict(default_value)
         except Exception:  # pragma: no cover

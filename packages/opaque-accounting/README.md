@@ -196,5 +196,5 @@ Apache-2.0
 
 ## Related links
 
-- [Main Opaque library](../opaque/) — PyTorch differential privacy library
+- [Main Opaque library](../../README.md) — PyTorch differential privacy library
 - [maturin documentation](https://www.maturin.rs/)

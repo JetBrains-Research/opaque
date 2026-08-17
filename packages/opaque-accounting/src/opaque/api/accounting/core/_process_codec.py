@@ -107,6 +107,8 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
     while stack:
         node, expanded = stack.pop()
         t = node.get("type")
+        if t is None:
+            raise ValueError("missing required field 'type' for serialized DpProcess")
         child_fields = _WRAPPER_CHILD_FIELDS.get(t)
         if child_fields is None:
             # Non-wrapper node.  A class with a CUSTOM registered serializer

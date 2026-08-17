@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyUnboundLocalVariable_IDE_exclusions" pattern="file[opaque]:tests/integration/noise/test_auto_clipping_mf_noise.py||file[opaque-patches]:tests/peft/test_fused_lora_qkv.py||file[opaque-patches]:tests/transformers/models/test_parity.py||file[opaque-transformers]:src/opaque/api/transformers/trainer/_dp_trainer.py||file[opaque-transformers]:tests/opaque_transformers/test_kernel_patches.py" />
+</component>

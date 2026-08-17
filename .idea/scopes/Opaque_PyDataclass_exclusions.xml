@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyDataclass_exclusions" pattern="file[opaque-dpsgd]:tests//*||file[opaque-engine]:tests//*||file[opaque-accounting]:src/opaque/api/accounting/core/_process_codec.py||file[opaque-transformers]:src/opaque/api/transformers/trainer/_convert.py" />
+</component>

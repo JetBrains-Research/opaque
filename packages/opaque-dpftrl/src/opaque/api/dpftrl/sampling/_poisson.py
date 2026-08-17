@@ -26,7 +26,7 @@ References:
     - Cyclic Poisson sampling for matrix mechanisms: https://arxiv.org/abs/2211.06530
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
 import numpy as np
@@ -82,7 +82,7 @@ class CyclicPoissonSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         sample_rate: float,
         bands: int = 1,
         n_steps: int = 1,
@@ -120,7 +120,7 @@ class CyclicPoissonSampler(Sampler):
         dtype = np.min_scalar_type(-self.num_examples)
         self.partition = partition_fn(self.num_examples, bands, self.generator, dtype)
 
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.sample_rate = sample_rate
         self.bands = bands
         self.n_steps = n_steps

@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyUnresolvedReferences_exclusions" pattern="file[opaque-engine]:src/opaque/api/engine/clipping/_clipped_grad.py||file[opaque-engine]:src/opaque/api/engine/functional/__init__.py||file[opaque-engine]:src/opaque/api/engine/random/_helpers.py||file[opaque-patches]:src/opaque/api/patches/__init__.py||file[opaque-patches]:src/opaque/api/patches/kernels//*||file[opaque-patches]:src/opaque/api/patches/torch/checkpoint//*||file[opaque-patches]:src/opaque/api/patches/torch/functorch_transform.py" />
+</component>

@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_PyRedeclaration_exclusions" pattern="file[opaque-accounting]:src/opaque/api/accounting/core/composition/_cached.py" />
+</component>
