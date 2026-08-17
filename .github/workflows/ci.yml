@@ -130,7 +130,7 @@ jobs:
 
   qodana:
     name: Qodana
-    if: github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/main'
     needs:
       - python-tests-linux-amd64
       - python-tests-macos-arm64

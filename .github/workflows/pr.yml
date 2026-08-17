@@ -4,7 +4,6 @@ on:
   pull_request:
     branches: [ main ]
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -169,9 +168,65 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
 
+  # Keep a stable, matrix-independent check name for branch protection rules.
+  # CUDA is intentionally skipped for fork pull requests because the runner is
+  # self-hosted and must not execute untrusted code.
+  python-tests:
+    name: Python tests
+    if: ${{ always() }}
+    needs:
+      - python-tests-linux-amd64
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify test results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          failures="$(
+            jq -r '
+              to_entries[]
+              | select(
+                  .value.result != "success"
+                  and (.key != "python-tests-cuda" or .value.result != "skipped")
+                )
+              | "\(.key): \(.value.result)"
+            ' <<< "$RESULTS"
+          )"
+
+          if [[ -n "$failures" ]]; then
+            echo "::error::Required Python test jobs did not succeed:"
+            echo "$failures"
+            exit 1
+          fi
+
+  # Like the Python gate above, this is the stable check branch protection
+  # should require rather than the reusable workflow's implementation job.
+  rust-test-gate:
+    name: Rust tests
+    if: ${{ always() }}
+    needs: [rust-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify test results
+        env:
+          RESULT: ${{ needs.rust-tests.result }}
+        shell: bash
+        run: |
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::Rust tests finished with result: $RESULT"
+            exit 1
+          fi
+
   qodana:
     name: Qodana
     if: >-
+      always() &&
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs:
