@@ -28,21 +28,29 @@ env/
 
 # IDEs
 .vscode/
+# Keep IDE user state private by default. The explicit exceptions below are
+# portable project policy and project-model settings shared by the team.
 .idea/*
+
+# Shared editor policy
 !.idea/codeStyles/
 !.idea/codeStyles/*.xml
 !.idea/inspectionProfiles/
 !.idea/inspectionProfiles/*.xml
 !.idea/scopes/
 !.idea/scopes/*.xml
+
+# Shared project model
 !.idea/icon.svg
 !.idea/externalDependencies.xml
 !.idea/modules.xml
 !.idea/misc.xml
 !.idea/pyLspTools.xml
 !.idea/pyProjectModel.xml
-!.idea/vcs.xml
 !.idea/*.iml
+
+# Shared commit tooling
+!.idea/vcs.xml
 *.swp
 *.swo
 *~
