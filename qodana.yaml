@@ -127,10 +127,10 @@ profile:
 # several project-profile inspections differently from PyCharm. The shared
 # category scopes describe stable analyzer limitations, not individual files.
 
-# Sanity analysis uses a separate profile, so its unresolved-reference
-# exclusions must remain in Qodana's top-level configuration as well.
+# Sanity analysis uses a separate profile, so its inspection-specific
+# analyzer workarounds must remain in Qodana's top-level configuration.
 exclude:
-  - name: All
+  - name: UndefinedParamsPresent
     paths:
       - .github/actions
       - .github/workflows
