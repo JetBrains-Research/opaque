@@ -16,7 +16,9 @@
 #                                analyses reached this same n=0 conclusion.
 #   2. LoRA-XSe d5, tau=1      — the current best-known config, and the matched
 #                                CONTROL for every mechanism arm in batch 2.
-#   3. the same + orthonormal-A — the conditioning test. See the QUEUE note.
+#   3. frozen LoRA-XS, p_e=0   — no rotation. Also verified absent here: p_e==0
+#                                in 0/62 runs. See the QUEUE note for the basis
+#                                -normalization confound this exposes.
 #
 # All three: r=16, 2 epochs, seed 42, 520 steps, weight-decay 0, --eval-bpb.
 #
@@ -26,10 +28,9 @@
 # a shared control across batches is worth more than a marginal compute saving.
 # Rotation cost is ~4ms against a ~15s step, so doubling rotation count is free.
 #
-# NOT in this batch, deliberately: the p_e=0 no-rotation arm (which quantifies
-# what rotation buys) and the reset-in-place ablation. Both are batch 2. Slot 3
-# goes to orthonormal-A instead because it is the only candidate that might
-# IMPROVE on the current best, and it costs no code change.
+# NOT in this batch, deliberately: the reset-in-place ablation, p_e=0 WITH
+# --lora-xs-orthonormal-a, and the LoRA-SB gradient-basis init. All batch 2.
+# This batch buys the denominators; batch 2 spends them.
 #
 # --eval-bpb is on because bits-per-byte carries ~20x the SNR of aggregate eval
 # loss on code (arXiv 2508.13144) and yields PER-EXAMPLE values, which allows a
@@ -43,7 +44,7 @@
 #
 # Usage (VPN MUST be up -- check FIRST, a 000 means submissions silently die):
 #   curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 \
-#     https://zenml.grazie.aws.intellij.net        # expect 200, not 000
+#     https://zenml.labs.jb.gg/api/v1/info        # expect 200, not 000
 #   ./campaign_logs/queue/batch1_refframe.sh
 #
 # Idempotent: a run whose name already exists in W&B is skipped, so re-running
@@ -139,7 +140,7 @@ PY
 # Fail fast rather than submitting into a void: with the VPN down, ZenML returns
 # 000 and run.py dies partway through "Archiving pipeline code directory".
 ZC="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-      https://zenml.grazie.aws.intellij.net 2>/dev/null)"
+      https://zenml.labs.jb.gg/api/v1/info 2>/dev/null)"
 if [[ "$ZC" != "200" && "$ZC" != "302" && "$ZC" != "401" ]]; then
   echo "[ABORT] ZenML unreachable (HTTP $ZC) — connect the VPN and re-run."
   exit 1
