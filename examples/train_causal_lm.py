@@ -43,6 +43,7 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
+import itertools
 import math
 import os
 import sys
@@ -660,6 +661,31 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=False,
         help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-init",
+        type=str,
+        choices=["weight", "grad", "grad-sb"],
+        default="weight",
+        help=(
+            "Which basis the frozen LoRA-XS factors are built from. "
+            "weight = SVD of W0 (the LoRA-XS default). "
+            "grad = SVD of the first full-weight gradient, i.e. LoRA-SB's basis "
+            "(arXiv:2411.19557), with R left at its usual small-Gaussian init so "
+            "the only change vs weight is the subspace. "
+            "grad-sb = full LoRA-SB: also seeds R = diag(S)*lr/scaling, baking "
+            "the first step into the initialization."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-init-batches",
+        type=int,
+        default=1,
+        help=(
+            "Batches to accumulate the gradient over for --lora-xs-init grad*. "
+            "LoRA-SB uses ~1/1000 of the dataset; more batches means a less noisy "
+            "basis at ~1%% of an epoch per batch."
+        ),
     )
     lora_group.add_argument(
         "--lora-xs-manifold-mode",
@@ -1513,6 +1539,57 @@ def main():
             f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)"
         )
 
+    # ---------- LoRA-SB: re-base the frozen factors on the first gradient ----------
+    # Placed here deliberately, and it cannot move: it needs the train dataset
+    # (built above) and it must precede make_functional below, because that call
+    # snapshots the frozen tensors into the functional dict. Re-basing afterwards
+    # would change the module while training kept using the old basis.
+    if args.lora_method == "lora-xs" and args.lora_xs_init != "weight":
+        from lora_privacy.peft_lora_xs import rebase_on_gradient
+
+        n_probe = max(1, args.lora_xs_init_batches)
+        print(
+            f"\nLoRA-SB init: probing {n_probe} batch(es) for the gradient basis "
+            f"(mode={args.lora_xs_init})..."
+        )
+        _probe_loader = DataLoader(
+            train_dataset,
+            batch_size=args.microbatch_size or args.eval_batch_size,
+            shuffle=False,
+            collate_fn=collate,
+            drop_last=False,
+        )
+        _probe_batches = list(itertools.islice(_probe_loader, n_probe))
+
+        _pad = tokenizer.pad_token_id
+
+        def _probe_loss(batch):
+            ids = batch["input_ids"].to(device)
+            labels = ids.masked_fill(ids == _pad, -100) if _pad is not None else ids
+            return model(ids, labels=labels).loss
+
+        _t0 = time.time()
+        _captured = rebase_on_gradient(
+            model,
+            _probe_loss,
+            _probe_batches,
+            args.lora_modules,
+            # seed_r bakes LoRA-SB's first step into R as diag(S)*lr/scaling.
+            # Default "grad" changes only the BASIS, so a comparison against a
+            # W0-basis control moves exactly one thing.
+            seed_r=(args.lora_xs_init == "grad-sb"),
+            eta=args.learning_rate,
+        )
+        _vals = sorted(_captured.values())
+        print(
+            f"  re-based {len(_captured)} layers in {time.time()-_t0:.1f}s; "
+            f"captured energy min={_vals[0]:.4f} median={_vals[len(_vals)//2]:.4f} "
+            f"max={_vals[-1]:.4f}"
+        )
+        del _probe_batches, _probe_loader
+        for _p in model.parameters():
+            _p.grad = None
+
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
     print("  (This may take 1-2 minutes for large models...)")
@@ -1974,13 +2051,39 @@ def main():
 
             base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
-        from opaque.optimizers import adamw
-
-        base_opt = adamw(
-            lr=lr_for_opt,
-            weight_decay=args.weight_decay,
-            noise_bias_correction=args.noise_bias_correction,
+        # LoRA-XSe under AdamW. Until now _use_xse was only reachable from the
+        # sgd branch above, so --lora-xse-p-e was silently ignored here and every
+        # XSe run in the corpus is heavy-ball SGD. That was an accident of where
+        # the check was written, not a property of the method: published LoRA-XS
+        # uses AdamW throughout. It also matters, because the one configuration
+        # in which full LoRA beats LoRA-XSe on this corpus is the AdamW one.
+        _use_xse = (
+            args.lora_method == "lora-xs"
+            and getattr(args, "lora_xse_p_e", 0.0) > 0
         )
+        if _use_xse:
+            from lora_privacy.peft_lora_xs import xse_adamw
+
+            base_opt = xse_adamw(
+                lr=lr_for_opt,
+                lora_alpha=args.lora_alpha,
+                p_e=args.lora_xse_p_e,
+                rotation_step_interval=args.lora_xse_rotation_step_interval,
+                # beta2 = 0.99, not the 0.999 default: the second-moment
+                # timescale 1/(1-beta2) must not outrun the rotation interval,
+                # or freshly inserted directions (whose nu starts at 0) take a
+                # first step ~3.2x too large. See xse_adamw's docstring.
+                betas=(args.sgd_momentum, 0.99),
+                weight_decay=args.weight_decay,
+            )
+        else:
+            from opaque.optimizers import adamw
+
+            base_opt = adamw(
+                lr=lr_for_opt,
+                weight_decay=args.weight_decay,
+                noise_bias_correction=args.noise_bias_correction,
+            )
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
 
@@ -2023,8 +2126,12 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
+    # Must list every optimizer whose branch above can build a rotation-aware
+    # optimizer. This gate controls layer discovery (init needs frozen_params),
+    # the frozen= argument to update(), and the rotation/* diagnostics -- so
+    # omitting adamw here would construct xse_adamw and then never rotate.
     _xse_active = (
-        args.optimizer == "sgd"
+        args.optimizer in ("sgd", "adamw")
         and args.lora_method == "lora-xs"
         and getattr(args, "lora_xse_p_e", 0.0) > 0
     )
