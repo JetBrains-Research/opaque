@@ -2,6 +2,8 @@ import jetbrains.buildServer.configs.kotlin.*
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
+import jetbrains.buildServer.configs.kotlin.buildFeatures.PullRequests
+import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 version = "2026.1"
@@ -17,7 +19,7 @@ private data class TestLane(
     val name: String,
     val environmentName: String,
     val dependencyInstall: String,
-    val python: String,
+    val pythonVersion: String,
     val architecture: String,
     val hostedRunnerName: String,
     val timeoutMinutes: Int,
@@ -40,10 +42,10 @@ private val testShards = listOf(
 private val testLanes = listOf(
     TestLane(
         id = "LinuxAmd64",
-        name = "Linux amd64",
+        name = "Linux/amd64",
         environmentName = "linux-amd64",
         dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
-        python = "python3.11",
+        pythonVersion = "3.11",
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
         timeoutMinutes = 30,
@@ -56,7 +58,7 @@ private val testLanes = listOf(
             uv sync --upgrade --resolution lowest-direct \
                 --group dev --all-packages --extra all
         """.trimIndent(),
-        python = "python3.11",
+        pythonVersion = "3.11",
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
         timeoutMinutes = 30,
@@ -69,17 +71,17 @@ private val testLanes = listOf(
             uv sync --upgrade --resolution highest \
                 --group dev --all-packages --extra all
         """.trimIndent(),
-        python = "python3.12",
+        pythonVersion = "3.12",
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
         timeoutMinutes = 30,
     ),
     TestLane(
         id = "LinuxAarch64",
-        name = "Linux arm64",
+        name = "Linux/aarch64",
         environmentName = "linux-aarch64",
         dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
-        python = "python3.11",
+        pythonVersion = "3.11",
         architecture = "aarch64",
         hostedRunnerName = "Linux-Large-Arm64",
         timeoutMinutes = 30,
@@ -89,11 +91,11 @@ private val testLanes = listOf(
 private fun setupScript(lane: TestLane) = """
     set -euo pipefail
 
-    "${'$'}OPAQUE_PYTHON" --version
     rustc --version
     uv --version
 
-    uv venv --python "${'$'}OPAQUE_PYTHON"
+    uv python install ${lane.pythonVersion}
+    uv venv --python ${lane.pythonVersion}
     ${lane.dependencyInstall}
 """
 
@@ -103,7 +105,7 @@ private fun reportPath(kind: String, lane: TestLane, shard: String) =
 private fun testScript(lane: TestLane) = """
     set -euo pipefail
 
-    test_path="${'$'}OPAQUE_TEST_PATH"
+    test_path="${'$'}TEST_PATH"
     shard_name="${'$'}{test_path##*/}"
     if [[ "${'$'}shard_name" == "tests" ]]; then
         shard_name="integration"
@@ -134,7 +136,7 @@ project {
     testLanes.forEach { lane ->
         buildType {
             id("Opaque${lane.id}TestMatrix")
-            name = "Opaque ${lane.name} test matrix"
+            name = "Python ${lane.name} tests"
             artifactRules = """
                 ${reportPath("coverage", lane, "*")}
                 ${reportPath("junit", lane, "*")}
@@ -142,16 +144,19 @@ project {
 
             vcs {
                 root(DslContext.settingsRoot)
+                branchFilter = """
+                    +:main
+                    +:refs/pull/*
+                """.trimIndent()
             }
 
             triggers {
                 vcs {
-                    branchFilter = "+:*"
+                    branchFilter = """
+                        +:main
+                        +:refs/pull/*
+                    """.trimIndent()
                 }
-            }
-
-            params {
-                param("env.OPAQUE_PYTHON", lane.python)
             }
 
             requirements {
@@ -174,7 +179,7 @@ project {
             features {
                 matrix {
                     param(
-                        "env.OPAQUE_TEST_PATH",
+                        "env.TEST_PATH",
                         testShards.map { shard -> value(shard.path, label = shard.label) },
                     )
                     groupArtifactsByBuild = true
@@ -182,6 +187,14 @@ project {
                 xmlReport {
                     reportType = XmlReport.XmlReportType.JUNIT
                     rules = "+:${reportPath("junit", lane, "*")}"
+                }
+                pullRequests {
+                    vcsRootExtId = "${DslContext.settingsRoot.id}"
+                    provider = github {
+                        authType = vcsRoot()
+                        filterAuthorRole = PullRequests.GitHubRoleFilter.EVERYBODY
+                        filterTargetBranch = "+:refs/heads/main"
+                    }
                 }
             }
 
