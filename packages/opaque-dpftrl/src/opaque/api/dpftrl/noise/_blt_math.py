@@ -404,13 +404,41 @@ def inverse_as_streaming_matrix(
 ) -> streaming_matrix.StreamingMatrix:
     """Returns a StreamingMatrix representing C^{-1}.
 
+    The result carries a closed-form ``row_norms_squared``: C^{-1} is
+    lower-triangular Toeplitz, so its squared row norms are cumulative
+    sums of its squared first-column coefficients, recovered with a
+    single impulse pass through the same buffer recurrence the streaming
+    inverse runs — O(num_buffers * n) instead of the
+    O(num_buffers * n^2) generic probing, and numerically identical to
+    it. (An equivalent rational-transfer-function filter is not: its
+    monomial-basis polynomials are ill-conditioned for many
+    near-one decays.)
+
     Args:
         blt: The BLT.
 
     Returns:
         StreamingMatrix for C^{-1}.
     """
-    return _streaming_matrix_builder(blt).build_inverse()
+
+    def _row_norms_squared(n: int) -> torch.Tensor:
+        if n == 0:
+            return torch.zeros(0, dtype=torch.float64, device="cpu")
+        buf_decay = blt.buf_decay.detach().cpu().to(torch.float64).numpy()
+        output_scale = blt.output_scale.detach().cpu().to(torch.float64).numpy()
+        inv_coefs = np.zeros(n)
+        inv_coefs[0] = 1.0
+        state = np.ones_like(buf_decay)
+        for t in range(1, n):
+            value = -output_scale.dot(state)
+            state = buf_decay * state + value
+            inv_coefs[t] = value
+        return torch.cumsum(torch.from_numpy(inv_coefs).square(), dim=0)
+
+    return dataclasses.replace(
+        _streaming_matrix_builder(blt).build_inverse(),
+        row_norms_squared_fn=_row_norms_squared,
+    )
 
 
 # ── Helper functions (unchanged) ────────────────────────────────────────

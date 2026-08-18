@@ -1,5 +1,7 @@
 """Tests for Buffered Linear Toeplitz (BLT) mechanisms."""
 
+import dataclasses
+
 import pytest
 import torch
 
@@ -142,6 +144,39 @@ class TestBLTStreamingMatrix:
         torch.testing.assert_close(
             C_inv_streaming_dense, C_inv_dense, atol=1e-8, rtol=1e-8
         )
+
+    @pytest.mark.parametrize(
+        ("buf_decay", "output_scale"),
+        [([0.7, 0.3], [0.4, 0.2]), ([0.5], [0.3]), ([], [])],
+    )
+    def test_inverse_row_norms_closed_form_matches_probing_and_dense(
+        self, buf_decay, output_scale
+    ):
+        blt = BufferedToeplitz.build(buf_decay=buf_decay, output_scale=output_scale)
+        n = 6
+        C_inv = inverse_as_streaming_matrix(blt)
+        norms = C_inv.row_norms_squared(n)
+        probing = dataclasses.replace(
+            C_inv, row_norms_squared_fn=None
+        ).row_norms_squared(n)
+        torch.testing.assert_close(norms, probing, atol=1e-10, rtol=1e-10)
+        dense = torch.linalg.inv(materialize(blt, n))
+        torch.testing.assert_close(
+            norms, dense.square().sum(dim=1), atol=1e-8, rtol=1e-8
+        )
+
+    def test_inverse_row_norms_closed_form_high_buffer_near_one_decays(self):
+        # The default 10-buffer init has decays within 1e-6 of 1.0 — a
+        # regime where an expanded rational-transfer-function filter
+        # drifts from the truth by whole percents at long horizons.
+        blt = get_init_blt(10)
+        n = 1024
+        C_inv = inverse_as_streaming_matrix(blt)
+        norms = C_inv.row_norms_squared(n)
+        probing = dataclasses.replace(
+            C_inv, row_norms_squared_fn=None
+        ).row_norms_squared(n)
+        torch.testing.assert_close(norms, probing, atol=1e-10, rtol=1e-10)
 
 
 class TestGeometricSum:

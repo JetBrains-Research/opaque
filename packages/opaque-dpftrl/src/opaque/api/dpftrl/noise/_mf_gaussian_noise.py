@@ -258,8 +258,9 @@ def _make_raw_mf_noise(
         def row_l2_at(_step: int) -> float:
             return 1.0
     else:
-        # Generic streaming matrices materialize row norms in O(bands·n²).
-        # Measure construction cost for the target horizon.
+        # Toeplitz-derived strategies (BandMF, BSR, BLT, BISR) attach a
+        # closed-form ``row_norms_squared_fn`` (O(bands·n)); other
+        # streaming matrices fall back to generic probing (O(bands·n²)).
         row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
 
         def row_l2_at(step: int) -> float:
