@@ -1,5 +1,7 @@
 import jetbrains.buildServer.configs.kotlin.*
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
+import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
 import jetbrains.buildServer.configs.kotlin.pipelines.*
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
@@ -18,6 +20,7 @@ private data class TestLane(
     val dependencyInstall: String,
     val python: String,
     val architecture: String,
+    val hostedRunnerName: String,
     val timeoutMinutes: Int,
     val allowTestFailure: Boolean = false,
 )
@@ -44,6 +47,7 @@ private val testLanes = listOf(
         dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
         python = "python3.11",
         architecture = "amd64",
+        hostedRunnerName = "Linux-Large",
         timeoutMinutes = 30,
     ),
     TestLane(
@@ -56,6 +60,7 @@ private val testLanes = listOf(
         """.trimIndent(),
         python = "python3.11",
         architecture = "amd64",
+        hostedRunnerName = "Linux-Large",
         timeoutMinutes = 60,
         allowTestFailure = true,
     ),
@@ -69,6 +74,7 @@ private val testLanes = listOf(
         """.trimIndent(),
         python = "python3.12",
         architecture = "amd64",
+        hostedRunnerName = "Linux-Large",
         timeoutMinutes = 60,
     ),
     TestLane(
@@ -78,6 +84,7 @@ private val testLanes = listOf(
         dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
         python = "python3.11",
         architecture = "aarch64",
+        hostedRunnerName = "Linux-Large-Arm64",
         timeoutMinutes = 30,
     ),
 )
@@ -128,10 +135,6 @@ private fun testScript(lane: TestLane, shard: TestShard) = """
     status=${'$'}?
     set -e
 
-    if [[ -f "${'$'}junit_report" ]]; then
-        echo "##teamcity[importData type='junit' path='${'$'}junit_report']"
-    fi
-
     ${testResultScript(lane)}
 """
 
@@ -161,7 +164,8 @@ project {
                     }
 
                     requirements {
-                        equals("teamcity.agent.jvm.os.family", "Linux")
+                        equals("teamcity.agent.jbHosted", "true")
+                        startsWith("system.agent.name", lane.hostedRunnerName)
                         equals("teamcity.agent.jvm.os.arch", lane.architecture)
                     }
 
@@ -173,6 +177,13 @@ project {
                         script {
                             name = "Run tests"
                             scriptContent = testScript(lane, shard)
+                        }
+                    }
+
+                    features {
+                        xmlReport {
+                            reportType = XmlReport.XmlReportType.JUNIT
+                            rules = "+:${reportPath("junit", lane, shard)}"
                         }
                     }
 

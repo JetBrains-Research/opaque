@@ -13,12 +13,14 @@ path. The same VCS root must track the branches and pull requests that should
 run the pipeline; the pipeline uses `DslContext.settingsRoot` as its main
 repository and triggers on every tracked branch.
 
-The selected Linux agents must provide Python 3.11 and 3.12, Rust stable, GNU
-`timeout`, and `uv`. Each job creates its lane's Python environment, runs the
-same dependency resolution and pytest selection as its GitHub Actions
-counterpart, and publishes JUnit and coverage XML reports. The minimum
-dependency pipeline records test failures as warnings, matching the advisory
-GitHub Actions lane.
+The pipelines use JetBrains-hosted Linux-Large agents for amd64 lanes and
+Linux-Large-Arm64 agents for the arm64 lane. Each job creates its lane's Python
+environment, runs the same dependency resolution and pytest selection as its
+GitHub Actions counterpart, and publishes JUnit and coverage XML artifacts.
+TeamCity processes the JUnit reports through its XML Report Processing feature;
+coverage.py XML remains an artifact because it is not a TeamCity coverage-report
+format. The minimum dependency pipeline records test failures as warnings,
+matching the advisory GitHub Actions lane.
 
 To validate the generated TeamCity configuration locally:
 
