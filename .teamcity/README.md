@@ -1,7 +1,8 @@
 # TeamCity pipeline prototype
 
-This directory defines the TeamCity 2026.1 Kotlin DSL pipeline that replaces
-the GitHub Actions Linux amd64 test matrix. Kotlin expands the shard list in
+This directory defines TeamCity 2026.1 Kotlin DSL pipelines for the GitHub
+Actions CPU test lanes: locked Linux amd64, minimum dependencies, latest
+dependencies, and Linux arm64. Kotlin expands each lane's shard list in
 `settings.kts` into one pipeline job per package plus the integration suite
 when TeamCity imports versioned settings.
 
@@ -12,10 +13,12 @@ path. The same VCS root must track the branches and pull requests that should
 run the pipeline; the pipeline uses `DslContext.settingsRoot` as its main
 repository and triggers on every tracked branch.
 
-The selected Linux amd64 agents must provide `python3.11`, Rust stable, GNU
-`timeout`, and `uv`. Each job creates its own Python 3.11 environment, runs the
-same locked dependency installation and pytest command as the GitHub Actions
-Linux amd64 lane, and publishes JUnit and coverage XML reports.
+The selected Linux agents must provide Python 3.11 and 3.12, Rust stable, GNU
+`timeout`, and `uv`. Each job creates its lane's Python environment, runs the
+same dependency resolution and pytest selection as its GitHub Actions
+counterpart, and publishes JUnit and coverage XML reports. The minimum
+dependency pipeline records test failures as warnings, matching the advisory
+GitHub Actions lane.
 
 To validate the generated TeamCity configuration locally:
 

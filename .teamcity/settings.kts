@@ -11,6 +11,17 @@ private data class TestShard(
     val path: String,
 )
 
+private data class TestLane(
+    val id: String,
+    val name: String,
+    val environmentName: String,
+    val dependencyInstall: String,
+    val python: String,
+    val architecture: String,
+    val timeoutMinutes: Int,
+    val allowTestFailure: Boolean = false,
+)
+
 private val linuxAmd64TestShards = listOf(
     TestShard("Accounting", "opaque-accounting", "packages/opaque-accounting"),
     TestShard("Alignment", "opaque-alignment", "packages/opaque-alignment"),
@@ -25,7 +36,53 @@ private val linuxAmd64TestShards = listOf(
     TestShard("Integration", "integration", "tests"),
 )
 
-private val setupScript = """
+private val testLanes = listOf(
+    TestLane(
+        id = "LinuxAmd64",
+        name = "Linux amd64",
+        environmentName = "linux-amd64",
+        dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
+        python = "python3.11",
+        architecture = "amd64",
+        timeoutMinutes = 30,
+    ),
+    TestLane(
+        id = "MinimumDependencies",
+        name = "minimum dependencies",
+        environmentName = "minimum-dependencies",
+        dependencyInstall = """
+            uv sync --upgrade --resolution lowest-direct \
+                --group dev --all-packages --extra all
+        """.trimIndent(),
+        python = "python3.11",
+        architecture = "amd64",
+        timeoutMinutes = 60,
+        allowTestFailure = true,
+    ),
+    TestLane(
+        id = "LatestDependencies",
+        name = "latest dependencies",
+        environmentName = "latest-dependencies",
+        dependencyInstall = """
+            uv sync --upgrade --resolution highest \
+                --group dev --all-packages --extra all
+        """.trimIndent(),
+        python = "python3.12",
+        architecture = "amd64",
+        timeoutMinutes = 60,
+    ),
+    TestLane(
+        id = "LinuxAarch64",
+        name = "Linux arm64",
+        environmentName = "linux-aarch64",
+        dependencyInstall = "uv sync --locked --group dev --all-packages --extra all",
+        python = "python3.11",
+        architecture = "aarch64",
+        timeoutMinutes = 30,
+    ),
+)
+
+private fun setupScript(lane: TestLane) = """
     set -euo pipefail
 
     "${'$'}OPAQUE_PYTHON" --version
@@ -33,17 +90,33 @@ private val setupScript = """
     uv --version
 
     uv venv --python "${'$'}OPAQUE_PYTHON"
-    uv sync --locked --group dev --all-packages --extra all
+    ${lane.dependencyInstall}
 """
 
-private fun testScript(shard: TestShard) = """
+private fun reportPath(kind: String, lane: TestLane, shard: TestShard) =
+    "$kind-${lane.environmentName}-${shard.id.lowercase()}.xml"
+
+private fun testResultScript(lane: TestLane) =
+    if (lane.allowTestFailure) {
+        """
+            if [[ "${'$'}status" -ne 0 ]]; then
+                echo "##teamcity[message text='pytest exited with status ${'$'}status in advisory ${lane.environmentName} lane' status='WARNING']"
+            fi
+
+            exit 0
+        """.trimIndent()
+    } else {
+        "exit \"${'$'}status\""
+    }
+
+private fun testScript(lane: TestLane, shard: TestShard) = """
     set -euo pipefail
 
-    coverage_report="coverage-linux-amd64-${shard.id.lowercase()}.xml"
-    junit_report="junit-linux-amd64-${shard.id.lowercase()}.xml"
+    coverage_report="${reportPath("coverage", lane, shard)}"
+    junit_report="${reportPath("junit", lane, shard)}"
 
     set +e
-    timeout --preserve-status 30m \
+    timeout --preserve-status ${lane.timeoutMinutes}m \
         uv run --no-sync pytest ${shard.path} \
         -m "not cuda and not mps and not slow" \
         -n auto --dist loadscope \
@@ -59,52 +132,54 @@ private fun testScript(shard: TestShard) = """
         echo "##teamcity[importData type='junit' path='${'$'}junit_report']"
     fi
 
-    exit "${'$'}status"
+    ${testResultScript(lane)}
 """
 
 project {
-    pipeline {
-        id("OpaqueLinuxAmd64Tests")
-        name = "Opaque Linux amd64 tests"
+    testLanes.forEach { lane ->
+        pipeline {
+            id("Opaque${lane.id}Tests")
+            name = "Opaque ${lane.name} tests"
 
-        repositories {
-            repository(DslContext.settingsRoot)
-        }
-
-        triggers {
-            vcs {
-                branchFilter = "+:*"
+            repositories {
+                repository(DslContext.settingsRoot)
             }
-        }
 
-        linuxAmd64TestShards.forEach { shard ->
-            job {
-                id("LinuxAmd64${shard.id}")
-                name = shard.label
-
-                params {
-                    param("env.OPAQUE_PYTHON", "python3.11")
+            triggers {
+                vcs {
+                    branchFilter = "+:*"
                 }
+            }
 
-                requirements {
-                    equals("teamcity.agent.jvm.os.family", "Linux")
-                    equals("teamcity.agent.jvm.os.arch", "amd64")
-                }
+            linuxAmd64TestShards.forEach { shard ->
+                job {
+                    id("${lane.id}${shard.id}")
+                    name = shard.label
 
-                steps {
-                    script {
-                        name = "Set up test environment"
-                        scriptContent = setupScript
+                    params {
+                        param("env.OPAQUE_PYTHON", lane.python)
                     }
-                    script {
-                        name = "Run tests"
-                        scriptContent = testScript(shard)
-                    }
-                }
 
-                outputFiles {
-                    pipelineArtifacts("coverage-linux-amd64-${shard.id.lowercase()}.xml")
-                    pipelineArtifacts("junit-linux-amd64-${shard.id.lowercase()}.xml")
+                    requirements {
+                        equals("teamcity.agent.jvm.os.family", "Linux")
+                        equals("teamcity.agent.jvm.os.arch", lane.architecture)
+                    }
+
+                    steps {
+                        script {
+                            name = "Set up test environment"
+                            scriptContent = setupScript(lane)
+                        }
+                        script {
+                            name = "Run tests"
+                            scriptContent = testScript(lane, shard)
+                        }
+                    }
+
+                    outputFiles {
+                        pipelineArtifacts(reportPath("coverage", lane, shard))
+                        pipelineArtifacts(reportPath("junit", lane, shard))
+                    }
                 }
             }
         }
