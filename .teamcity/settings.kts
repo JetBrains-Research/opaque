@@ -2,7 +2,6 @@ import jetbrains.buildServer.configs.kotlin.*
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
-import jetbrains.buildServer.configs.kotlin.pipelines.*
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 version = "2026.1"
@@ -25,7 +24,7 @@ private data class TestLane(
     val allowTestFailure: Boolean = false,
 )
 
-private val linuxAmd64TestShards = listOf(
+private val testShards = listOf(
     TestShard("Accounting", "opaque-accounting", "packages/opaque-accounting"),
     TestShard("Alignment", "opaque-alignment", "packages/opaque-alignment"),
     TestShard("Auditing", "opaque-auditing", "packages/opaque-auditing"),
@@ -100,8 +99,8 @@ private fun setupScript(lane: TestLane) = """
     ${lane.dependencyInstall}
 """
 
-private fun reportPath(kind: String, lane: TestLane, shard: TestShard) =
-    "$kind-${lane.environmentName}-${shard.id.lowercase()}.xml"
+private fun reportPath(kind: String, lane: TestLane, shard: String) =
+    "$kind-${lane.environmentName}-$shard.xml"
 
 private fun testResultScript(lane: TestLane) =
     if (lane.allowTestFailure) {
@@ -116,15 +115,23 @@ private fun testResultScript(lane: TestLane) =
         "exit \"${'$'}status\""
     }
 
-private fun testScript(lane: TestLane, shard: TestShard) = """
+private fun testScript(lane: TestLane) = """
     set -euo pipefail
 
-    coverage_report="${reportPath("coverage", lane, shard)}"
-    junit_report="${reportPath("junit", lane, shard)}"
+    test_path="${'$'}OPAQUE_TEST_PATH"
+    shard_name="${'$'}{test_path##*/}"
+    if [[ "${'$'}shard_name" == "tests" ]]; then
+        shard_name="integration"
+    else
+        shard_name="${'$'}{shard_name#opaque-}"
+    fi
+
+    coverage_report="${reportPath("coverage", lane, "${'$'}shard_name")}"
+    junit_report="${reportPath("junit", lane, "${'$'}shard_name")}"
 
     set +e
     timeout --preserve-status ${lane.timeoutMinutes}m \
-        uv run --no-sync pytest ${shard.path} \
+        uv run --no-sync pytest "${'$'}test_path" \
         -m "not cuda and not mps and not slow" \
         -n auto --dist loadscope \
         --cov=opaque \
@@ -140,12 +147,16 @@ private fun testScript(lane: TestLane, shard: TestShard) = """
 
 project {
     testLanes.forEach { lane ->
-        pipeline {
-            id("Opaque${lane.id}Tests")
-            name = "Opaque ${lane.name} tests"
+        buildType {
+            id("Opaque${lane.id}TestMatrix")
+            name = "Opaque ${lane.name} test matrix"
+            artifactRules = """
+                ${reportPath("coverage", lane, "*")}
+                ${reportPath("junit", lane, "*")}
+            """.trimIndent()
 
-            repositories {
-                repository(DslContext.settingsRoot)
+            vcs {
+                root(DslContext.settingsRoot)
             }
 
             triggers {
@@ -154,44 +165,44 @@ project {
                 }
             }
 
-            linuxAmd64TestShards.forEach { shard ->
-                job {
-                    id("${lane.id}${shard.id}")
-                    name = shard.label
+            params {
+                param("env.OPAQUE_PYTHON", lane.python)
+            }
 
-                    params {
-                        param("env.OPAQUE_PYTHON", lane.python)
-                    }
+            requirements {
+                equals("teamcity.agent.jbHosted", "true")
+                startsWith("system.agent.name", lane.hostedRunnerName)
+                equals("teamcity.agent.jvm.os.arch", lane.architecture)
+            }
 
-                    requirements {
-                        equals("teamcity.agent.jbHosted", "true")
-                        startsWith("system.agent.name", lane.hostedRunnerName)
-                        equals("teamcity.agent.jvm.os.arch", lane.architecture)
-                    }
-
-                    steps {
-                        script {
-                            name = "Set up test environment"
-                            scriptContent = setupScript(lane)
-                        }
-                        script {
-                            name = "Run tests"
-                            scriptContent = testScript(lane, shard)
-                        }
-                    }
-
-                    features {
-                        xmlReport {
-                            reportType = XmlReport.XmlReportType.JUNIT
-                            rules = "+:${reportPath("junit", lane, shard)}"
-                        }
-                    }
-
-                    outputFiles {
-                        pipelineArtifacts(reportPath("coverage", lane, shard))
-                        pipelineArtifacts(reportPath("junit", lane, shard))
-                    }
+            steps {
+                script {
+                    name = "Set up test environment"
+                    scriptContent = setupScript(lane)
                 }
+                script {
+                    name = "Run tests"
+                    scriptContent = testScript(lane)
+                }
+            }
+
+            features {
+                matrix {
+                    param(
+                        "env.OPAQUE_TEST_PATH",
+                        testShards.map { shard -> value(shard.path, label = shard.label) },
+                    )
+                    groupArtifactsByBuild = true
+                }
+                xmlReport {
+                    reportType = XmlReport.XmlReportType.JUNIT
+                    rules = "+:${reportPath("junit", lane, "*")}"
+                }
+            }
+
+            failureConditions {
+                executionTimeoutMin = lane.timeoutMinutes
+                testFailure = !lane.allowTestFailure
             }
         }
     }
