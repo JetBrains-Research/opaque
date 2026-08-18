@@ -77,20 +77,39 @@ COMMON="--lora-r 16 --num-epochs 2 --weight-decay 0 --eval-bpb"
 
 # name | XSE env (or "-") | trainer --extra args
 #
-# Slot 3 is --lora-xs-orthonormal-a, which two independent lines of evidence
-# converged on. core/svd.py:106-112 builds the frozen encoder as
-# `U @ diag(S)` by default -- Sigma is ABSORBED into A -- and the flag switches
-# it to plain `U`. With Sigma absorbed, the effective per-direction step on R
-# scales as sigma_i^2, so direction 1 gets a vastly larger effective learning
-# rate than direction 16; svd.py's own comment says the flag "eliminates
-# gradient amplification from singular values". Verified from run configs: at
-# this operating point (7B, nz=0, r=16, lr 5e-2) it is False in 62/62 runs,
-# while in the eps=3 regime it is True in 112/191 -- including every one of the
-# best-ever runs. It has never once been tested in the non-DP regime.
+# Slot 3 is the plain p_e=0 frozen baseline, and it exists to expose a confound
+# in the project's biggest claimed effect.
+#
+# core/svd.py:106-112 builds the frozen encoder as `U @ diag(S)` unless
+# --lora-xs-orthonormal-a is set, so by default Sigma is ABSORBED into A and the
+# basis is not an isometry. But xse.py:813-815 calls _normalize_layer at the
+# FIRST ROTATION, which rescales A's rows and B's columns to unit length and
+# absorbs the scale into R -- its own comment says "orthonormalize A/B (absorb
+# Sigma into R)". _normalize_layer is reachable ONLY from xse_sgd, which
+# train_causal_lm.py:1949-1953 constructs only when p_e > 0.
+#
+# So the conditioning of the basis is not matched across arms, and never has
+# been: a ROTATING arm self-orthonormalizes after tau steps, while a FROZEN
+# (p_e=0) arm and a full-LoRA arm keep Sigma in A for the entire run. Every
+# "what rotation buys" number -- including the eps=3 figure of 103 floor units
+# -- therefore compares a normalized basis against an unnormalized one, and
+# some unknown part of it is basis normalization rather than rotation.
+#
+# This batch measures the confounded contrast as it has always been measured
+# (slot 2 vs slot 3), so the new-scale number is directly interpretable against
+# the historical one. Batch 2 then adds p_e=0 WITH --lora-xs-orthonormal-a,
+# which is the same frozen arm with a matched basis, and the difference between
+# that and slot 3 is the part of "rotation" that was actually normalization.
+#
+# Note for the record: applying --lora-xs-orthonormal-a to a ROTATING arm was
+# considered for this slot and rejected after reading _normalize_layer. On a
+# rotating arm the flag can only affect the first tau steps (tau=1 here) plus
+# R's initial column scaling, because the first rotation normalizes the basis
+# regardless. The flag matters where normalization never happens: p_e=0.
 QUEUE=(
   "ref-lora-r16-s42|-|--lora-method lora --lora-xse-p-e 0 $COMMON"
   "ref-xse-d5t1-s42|-|--lora-xse-p-e 0.3125 --lora-xse-rotation-step-interval 1 $COMMON"
-  "orthA-xse-d5t1-s42|-|--lora-xse-p-e 0.3125 --lora-xse-rotation-step-interval 1 --lora-xs-orthonormal-a $COMMON"
+  "ref-xs-norot-s42|-|--lora-xse-p-e 0 $COMMON"
 )
 
 # A fresh wandb.Api() per call, deliberately. Reusing one Api object caches run
