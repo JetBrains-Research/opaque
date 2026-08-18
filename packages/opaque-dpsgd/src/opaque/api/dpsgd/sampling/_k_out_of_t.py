@@ -10,7 +10,7 @@ from torch.utils.data import Sampler
 from opaque.random.types import RngKey
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sized
 
 
 class KOutOfTSampler(Sampler):
@@ -23,12 +23,12 @@ class KOutOfTSampler(Sampler):
 
     def __init__(
         self,
-        data_source: object,
+        data_source: Sized,
         *,
         total_participations: int,
         n_steps: int,
         key: RngKey,
-    ) -> None:
+    ):
         super().__init__()
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
@@ -39,7 +39,7 @@ class KOutOfTSampler(Sampler):
                 "total_participations must be in "
                 f"[1, n_steps={n_steps}], got {total_participations}"
             )
-        self.data_source = data_source
+        self.data_source: Sized = data_source
         self.total_participations = int(total_participations)
         self.n_steps = int(n_steps)
         self._num_samples = len(data_source)

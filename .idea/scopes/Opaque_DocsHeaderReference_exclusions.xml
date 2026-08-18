@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="Opaque_DocsHeaderReference_exclusions" pattern="file[opaque]:docs//*" />
+</component>

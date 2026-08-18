@@ -43,19 +43,28 @@ deps. `pip install opaque-accounting` alone is **torch-free** (only
 
 ## Architecture contracts
 
-`docs/development/architecture-contracts.md` is the single source of truth for
+`.junie/architecture-contracts.md` is the single source of truth for
 package boundaries, public API architecture, test placement, artifact
 guarantees, and advisory API-design rules. Read it before planning, implementing,
 or reviewing a change that affects those areas. Do not reproduce its full rule
 set in agent instructions or source-tree inventory tests.
+
+`.junie/differential-privacy-review.md` is the review protocol for
+privacy-sensitive and mathematical changes. Read it when work affects privacy
+mechanisms, sensitivity, clipping, noise, randomness, sampling, amplification,
+composition, accounting, matrix strategies, distributed equivalence,
+serialization of privacy state, auditing, or a mathematical privacy claim. Use
+its literature map to verify theorem-dependent claims against primary sources.
+
+For code review, also read and follow `.junie/review-guidelines.md`.
 
 
 ## Pull requests
 
 The repo squash-merges. The PR title becomes the commit subject; the
 PR body becomes the commit body (repo-level squash setting =
-`PR_TITLE` + `PR_BODY`). Both feed `git-cliff` when it builds the draft
-Release body on the next main merge.
+`PR_TITLE` + `PR_BODY`). Both feed `git-cliff` when release preparation builds
+the draft Release body from an exact tag-to-candidate range.
 
 **Title** — Conventional Commits form `<type>(scope): <imperative subject>`:
 
@@ -75,13 +84,14 @@ Release body on the next main merge.
 **Body** — short prose:
 
 - 2–4 sentences of "why" + what the change does. This text lands in
-  `git log` on main and feeds the AI release-note summary in
-  `ci.yml`'s `upsert-draft` job.
+  `git log` and feeds the AI summary for every release line containing the
+  commit.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow waits for TeamCity's Linux CPU Python
-and Rust tests, runs MPS and eligible CUDA tests on GitHub Actions, and runs
-the docs build, title validation, and autoformat checks. Preview wheels
+**Gate** — on every push the PR workflow waits for TeamCity's Linux amd64
+Python/Rust check, runs GitHub dependency-boundary, macOS arm64, Linux arm64,
+and eligible CUDA validation, plus the docs build, title validation, and
+autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -95,6 +105,7 @@ uv run pytest -m "slow"                           # slow tests (run on push to m
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
+cargo test --workspace --lib -- --ignored        # Rust slow tests
 ```
 
 Per-package tests:
@@ -220,30 +231,41 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
 - `cuda` — test needs CUDA; auto-skipped on non-CUDA hosts.
 - `mps` — test needs Apple Metal; auto-skipped on non-MPS hosts.
 - `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
-  and run on pushes to `main` (the TeamCity CPU lane strips the `and not slow`
-  clause there).
+  and run on pushes to `main` (the CI job strips the `and not slow`
+  clause conditionally).
+
+Rust tests above five seconds use `#[ignore = "slow"]`. TeamCity runs the
+default unit/doc-test set for PRs and additionally runs ignored library tests on
+`main`; release uses the reusable Rust workflow with the same policy.
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
-CI execution ownership and marker expressions:
+CI lane marker expressions and ownership:
 
-- TeamCity owns Linux CPU Python shards and accounting Rust tests for PRs and
-  `main`. Its `TeamCity Linux tests` Check Run uses
-  `-m "not cuda and not mps and not slow"` for PRs and
-  `-m "not cuda and not mps"` on `main`.
-- GitHub Actions owns MPS (`-m "not cuda and not slow"` on PRs and
-  `-m "not cuda"` on `main`) and self-hosted CUDA (`-m "cuda"`), plus docs,
-  formatting, distributions, artifact validation, publication, and releases.
-  Fork PRs never run untrusted code on the self-hosted CUDA runner.
-- GitHub polls the exact TeamCity check against the PR-head or `main` SHA and
-  accepts only `success`. Keep the stable aggregate names `Python tests` and
-  `Rust tests` (PR) / `Rust tests gate` (`main`) for branch rules.
-- The reusable Linux Python and Rust workflows remain for release and rollback.
-  To roll back this offload, restore their PR/main callers and make the stable
-  aggregate gates depend on those callers without renaming the checks.
+- TeamCity Linux/amd64: `-m "not cuda and not mps and not slow"` on PRs and
+  `-m "not cuda and not mps"` on `main`; it also owns accounting Rust tests.
+- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- PR macOS arm64: `-m "not cuda and not slow"`.
+- PR Linux arm64: `-m "not cuda and not mps and not slow"`.
+- PR CUDA (self-hosted): `-m "cuda and not slow"`.
+- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+  `-m "not cuda and not mps and not slow"`.
+- Main macOS arm64: `-m "not cuda"`.
+- Main Linux arm64: `-m "not cuda and not mps"`.
+- Main CUDA (self-hosted): `-m "cuda"`.
+- Dependency selection uses the committed lock or uv's `lowest-direct` /
+  `highest` strategies. Main platform lanes retain slow-test coverage.
+  Failures in the Minimum dependencies lane are currently advisory, while
+  setup and resolution failures remain blocking.
+- GitHub waits for the exact `TeamCity Linux tests` check on the PR-head or
+  `main` SHA and accepts only `success`. Keep `Python tests` and `Rust tests`
+  on PRs, plus `Python tests` and `Rust tests gate` on `main`, as the stable
+  required checks. The reusable Linux Python/Rust workflows remain available
+  for release and rollback.
 
 ### Supported HF model families
 

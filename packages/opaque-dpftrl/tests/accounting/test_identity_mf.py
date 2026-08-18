@@ -11,7 +11,7 @@ from opaque.api.accounting.core import _native
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.types import MfGaussian
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
-from opaque.dpftrl.noise.types import IdentityStrategy
+from opaque.dpftrl.noise.types import BandMfStrategy, IdentityStrategy
 
 _DELTA = 1e-5
 
@@ -65,6 +65,7 @@ class TestIdentityMfMechanism:
 
 
 class TestPoissonIdentity:
+    @pytest.mark.slow
     def test_pld_matches_self_composed_poisson_gaussian(self):
         nm, p, T = 1.1, 0.01, 500
         proc = ftrl_acc.poisson(
@@ -100,6 +101,38 @@ class TestPoissonIdentity:
 
 
 class TestPoissonBandMf:
+    def test_passes_amplification_context_to_sensitivity(self, monkeypatch):
+        captured = {}
+
+        def sensitivity(
+            _strategy,
+            *,
+            n_steps: int,
+            min_sep: int,
+            max_participations: int | None,
+        ) -> float:
+            captured.update(
+                n_steps=n_steps,
+                min_sep=min_sep,
+                max_participations=max_participations,
+            )
+            return 1.0
+
+        monkeypatch.setattr(BandMfStrategy, "sensitivity", sensitivity)
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(0.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=6,
+        )
+
+        proc.pld()
+
+        assert captured == {
+            "n_steps": 6,
+            "min_sep": 1,
+            "max_participations": 6,
+        }
+
     def test_pld_matches_self_composed_with_bands(self):
         """For BandMf: num_groups = ceil(n_steps / bands)."""
         nm, p = 1.1, 0.01
@@ -128,6 +161,7 @@ class TestPoissonBandMf:
 
 
 class TestBallsInBinsIdentity:
+    @pytest.mark.slow
     def test_pld_agrees_with_generic_bnb_mc(self):
         """The deterministic identity path must agree with the generic MC
         accountant on the same dominating pair.
@@ -161,6 +195,7 @@ class TestBallsInBinsIdentity:
             f"deterministic vs MC gap too large: det={det_eps}, mc={ref_eps}"
         )
 
+    @pytest.mark.slow
     def test_factory_path_finite(self):
         """The default ``balls_in_bins`` factory produces a finite, positive ε."""
         nm, k, E = 1.5, 32, 4
@@ -299,6 +334,7 @@ class TestTruncatedPoissonIdentity:
         assert eps > 0
 
 
+@pytest.mark.slow
 def test_identity_mf_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),

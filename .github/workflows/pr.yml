@@ -3,7 +3,7 @@ name: PR gate
 on:
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -47,10 +47,16 @@ jobs:
           subjectPatternError: |
             The subject after the colon should start with a lowercase letter.
 
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -59,9 +65,9 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  # TeamCity owns Linux CPU Python shards and accounting Rust tests. Wait for
-  # its exact PR-head check, including forks, without exposing TeamCity
-  # credentials to GitHub Actions.
+  # TeamCity owns the standard Linux amd64 Python shard matrix and accounting
+  # Rust tests. Wait for its exact PR-head check, including forks, without
+  # exposing TeamCity credentials to GitHub Actions.
   teamcity-linux-tests:
     name: TeamCity Linux tests waiter
     runs-on: ubuntu-latest
@@ -85,78 +91,165 @@ jobs:
           echo "TeamCity Linux tests conclusion: $conclusion"
           test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
 
-  # Stable aggregate check required by the main branch ruleset. Keep this
-  # caller-owned name while TeamCity supplies the Linux Rust result.
-  rust-tests:
-    name: Rust tests
-    if: always()
-    needs: [teamcity-linux-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Rust test result
-        run: |
-          result="${{ needs.teamcity-linux-tests.result }}"
-          echo "teamcity-linux-tests result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+  # Every GitHub-owned environment calls the same reusable workflow with
+  # explicit runner, Python, dependency, marker, parallelism, and shard
+  # settings. Slow tests stay on main; supported dependency and platform
+  # boundaries remain pre-merge.
 
-  # TeamCity owns CPU shards; this GitHub matrix is MPS only. The matrix fans
-  # shards across runners, and
-  # `pytest -n auto` fans across cores within a runner (`--dist loadscope` keeps
-  # each class/module on one worker so fixtures/order are preserved).
-  # The self-hosted GPU lane is a separate fork-guarded job below.
-  python-tests:
+  python-tests-minimum:
+    name: Minimum dependencies
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
-      devices: >-
-        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda and not slow","xdist":"-n auto --dist loadscope"}]
+      allow-test-failure: true
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: macOS arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: mps
+      pytest-marker: not cuda and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 30
+
+  python-tests-linux-arm64:
+    name: Linux arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
-  # self-hosted GPU runner. Keep this separate from the hosted-runner matrix so
-  # the job-level guard can prevent runner allocation entirely.
-  python-tests-gpu:
+  # self-hosted GPU runner. The job-level guard prevents allocation entirely.
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
-      devices: >-
-        [{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda and not slow","xdist":"-rs"}]
-      test-shards: '[{"name":"all","paths":"packages tests"}]'
+      allow-empty-test-selection: true
+      environment-name: cuda
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
 
-  # Single aggregating status check for Python tests — ensures all test legs pass.
-  # This is the check required in branch protection (alongside rust-tests).
-  # The GPU leg is required for repo PRs but skipped for fork PRs.
-  # `if: always()` makes the gate report a failure when a shard fails.
-  python-tests-gate:
+  # Keep a stable, matrix-independent check name for branch protection rules.
+  # CUDA is intentionally skipped for fork pull requests because the runner is
+  # self-hosted and must not execute untrusted code.
+  python-tests:
     name: Python tests
-    if: always()
-    needs: [python-tests, python-tests-gpu, teamcity-linux-tests]
+    if: ${{ always() }}
+    needs:
+      - teamcity-linux-tests
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     runs-on: ubuntu-latest
     steps:
-      - name: Check Python test results
+      - name: Verify test results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        shell: bash
         run: |
-          mps="${{ needs.python-tests.result }}"
-          gpu="${{ needs.python-tests-gpu.result }}"
-          teamcity="${{ needs.teamcity-linux-tests.result }}"
-          echo "python-tests MPS matrix result: $mps"
-          echo "python-tests-gpu result: $gpu"
-          echo "teamcity-linux-tests result: $teamcity"
-          test "$mps" = "success" || (echo "ERROR: MPS tests failed"; exit 1)
-          test "$teamcity" = "success" || (echo "ERROR: TeamCity Linux tests failed"; exit 1)
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            # Fork PRs never get GPU runner allocation — skipped is expected
-            if [[ "$gpu" != "skipped" ]]; then
-              echo "ERROR: GPU job should be skipped for fork PRs but got: $gpu"
-              exit 1
-            fi
-          else
-            # Repo PRs must have GPU tests pass
-            test "$gpu" = "success" || (echo "ERROR: GPU tests failed"; exit 1)
+          failures="$(
+            jq -r '
+              to_entries[]
+              | select(
+                  .value.result != "success"
+                  and (.key != "python-tests-cuda" or .value.result != "skipped")
+                )
+              | "\(.key): \(.value.result)"
+            ' <<< "$RESULTS"
+          )"
+
+          if [[ -n "$failures" ]]; then
+            echo "::error::Required Python test jobs did not succeed:"
+            echo "$failures"
+            exit 1
           fi
+
+  # Like the Python gate above, this is the stable check branch protection
+  # should require rather than the reusable workflow's implementation job.
+  rust-test-gate:
+    name: Rust tests
+    if: ${{ always() }}
+    needs: [teamcity-linux-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify test results
+        env:
+          RESULT: ${{ needs.teamcity-linux-tests.result }}
+        shell: bash
+        run: |
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::Rust tests finished with result: $RESULT"
+            exit 1
+          fi
+
+  qodana:
+    name: Qodana
+    if: >-
+      always() &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: write
+      security-events: write
+    uses: ./.github/workflows/qodana.yml
+    with:
+      checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      coverage-artifact-pattern: coverage-locked-*
+      fail-on-problems: true
+      pr-mode: true
+    secrets: inherit
 
   docs:
     name: Build documentation
@@ -168,10 +261,10 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
-      - name: uv sync
+      - name: Install documentation dependencies
         run: uv sync --group docs --all-packages
 
-      - name: mkdocs build --strict
+      - name: Build documentation
         run: uv run mkdocs build --strict
 
   # ---------------------------------------------------------------------------
@@ -212,18 +305,20 @@ jobs:
           echo "Preview version: $VERSION"
 
   build-preview-distributions:
-    name: Build preview distribution artifacts
-    needs: [compute-preview-version]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    name: Build
+    needs: [compute-preview-version, discover-packages]
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: preview-wheels
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 14
       version: ${{ needs.compute-preview-version.outputs.version }}
 
   validate-preview-distributions:
-    name: Validate preview distribution artifacts
+    name: Validate
     needs: [build-preview-distributions]
-    uses: ./.github/workflows/reusable-validate-distributions.yml
+    uses: ./.github/workflows/validate-distributions.yml
     with:
       artifact-prefix: preview-wheels
 

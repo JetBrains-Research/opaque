@@ -2,136 +2,168 @@
 
 This directory contains Opaque's CI/CD configuration. Workflow files define
 triggers, permissions, and pipeline policy; shared implementation lives in
-private reusable components described below.
+private callable workflows described below.
 
 ## Entry-point workflows
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Waits for TeamCity Linux CPU/Rust tests, runs GitHub MPS and fork-safe GPU tests, and builds preview-wheel artifacts. |
-| `ci.yml` | Pushes to `main`, manual dispatch | Waits for TeamCity Linux CPU/Rust tests, runs GitHub MPS/CUDA coverage, publishes development wheels, and updates draft releases. |
-| `release.yml` | Published GitHub Release | Tag protection, release tests, artifact validation, package publication, and Release assets. |
-| `docs.yml` | Pushes to `main` or `v*` tags, manual dispatch | Builds and deploys versioned documentation. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Waits for TeamCity Linux amd64 Python/Rust tests, runs dependency-boundary, macOS arm64, Linux arm64, and fork-safe CUDA checks, and builds preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main` | Waits for TeamCity Linux amd64 Python/Rust tests, runs dependency-boundary and platform validation, and publishes development wheels. |
+| `prepare-release.yml` | Manual dispatch from `main` or `release/X.Y` | Resolves a release line, runs the complete release test matrix, builds and validates its exact SHA, and either stops as a non-mutating dry run or creates the maintenance branch and complete draft Release. |
+| `release.yml` | Published GitHub Release, manual tag recovery | Verifies attached Release assets, publishes them idempotently to JetBrains Packages, and deploys immutable documentation. |
+| `docs.yml` | Pushes to `main`, manual dispatch, callable workflow | Builds rolling documentation or deploys a caller-selected immutable release version. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
-| `junie-review.yml` | Pull requests to `main` | Runs Junie code review using the repository architecture contracts and posts review feedback. |
+| `junie-review.yml` | Pull requests to `main` | Runs Junie as a repository reviewer using the branch's Junie guidance and architecture contracts. |
+| `junie.yml` | Trusted `@junie-agent` or `/junie` commands in issues and pull requests | Runs interactive Junie tasks, including code changes and pull-request updates. |
 | `build-devcontainer.yaml` | Devcontainer changes and manual dispatch | Builds, smoke-tests, and publishes the development container. |
 
-## Reusable components
+## Callable components
 
 ### `.github/actions/setup-python`
 
-This composite action installs the pinned Python version and optionally uv and
-its dependency cache. Use it in repository workflows that need Python; set
-`install-uv: "false"` for Python-only jobs and `enable-uv-cache: "true"` for
-dependency-heavy jobs. Release-capable reusable workflows keep their pinned
-external setup steps inline so checking out an older release tag cannot remove
-the local action implementation.
+This composite action installs the pinned Python version and optionally uv. Use
+`install-uv: "false"` for Python-only jobs. uv cache restore/save is disabled
+repository-wide: caching a full all-extras environment benefits only one
+platform/dependency combination, while the pruned cache omits the pre-built
+wheels that dominate installation time. Release-capable called workflows keep
+pinned external setup steps inline so checking out an older release tag cannot
+remove the local action implementation.
 
 ### `.github/actions/setup-rust`
 
 This composite action installs Rust stable, optional toolchain components, and
-the existing Cargo dependency cache. Use `components: clippy, rustfmt` for
-formatting jobs and `enable-cache: "true"` for Rust test jobs.
+a shared Cargo dependency cache. Use `components: clippy, rustfmt` for
+formatting jobs.
 
-### `.github/workflows/reusable-build-distributions.yml`
+### `.github/workflows/build-distributions.yml`
 
-This private `workflow_call` workflow discovers package matrices and builds all
-Python wheels, native wheels, the umbrella wheel, and the accounting sdist.
-`pr.yml`, `ci.yml`, and `release.yml` supply an artifact prefix, retention
-period, and (when necessary) an explicit build version or release tag.
+This private `workflow_call` workflow builds all Python wheels, native wheels,
+the umbrella wheel, and the accounting sdist from caller-supplied package
+matrices. `pr.yml`, `ci.yml`, and release preparation discover the matrices once
+and supply them with an artifact prefix, retention period, and, when necessary,
+an explicit build version. This renders checks as `Build / <distribution>`
+without an internal discovery child.
 
-The reusable workflow intentionally does not own credentials, environments,
-publication, validation, or pipeline gates. Its callers keep those
-responsibilities so trusted release behavior and PR protections remain
-explicit at the entry point.
+Each build job validates its own wheel metadata. Native artifact jobs also
+validate accounting policy, and the sdist job proves that the source artifact
+can rebuild a wheel. The callable workflow intentionally does not own
+credentials, publication, cross-package validation, or pipeline gates.
 
-### `.github/workflows/reusable-python-tests.yml`
+### `.github/workflows/python-tests.yml`
 
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
-Codecov upload. Callers provide their shard and device matrices, timeout, and
-optional CUDA assertion or duration reporting.
+Codecov upload. Each caller provides one runner environment plus its Python
+version, dependency selection, pytest marker filter, xdist arguments, and shard
+matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or
+`latest` (uv `highest`). Validation callers report every test phase taking at
+least five seconds, so newly slow tests cannot disappear behind a fixed-size
+duration table. Lower-bound pytest failures are advisory while dependency
+resolution and workflow failures remain blocking.
 
-PR and `main` callers use this workflow for GitHub-owned MPS and CUDA lanes;
-TeamCity owns their Linux CPU shard matrix. The reusable Linux path is retained
-for release and rollback. PR GPU calls stay separate and fork-guarded so
-untrusted code never receives the self-hosted runner.
+PR/main invoke the callable workflow for minimum and latest dependency
+boundaries plus macOS arm64, Linux arm64, and CUDA platform coverage. TeamCity
+owns their standard Linux amd64 shard matrix. Release preparation retains the
+reusable Linux path. Main and release include slow tests in platform lanes, and
+fork pull requests never receive the self-hosted CUDA runner.
 
-### `.github/workflows/reusable-rust-tests.yml`
+### `.github/workflows/rust-tests.yml`
 
-This private `workflow_call` workflow runs the accounting crate's Cargo tests,
-including doc-tests, with the shared Rust setup and dependency cache. PR and
-`main` receive this result from TeamCity; this reusable workflow remains
-available for release and rollback use.
-
-### `.github/workflows/reusable-validate-distributions.yml`
-
-This private `workflow_call` workflow downloads a caller-selected artifact
-family and validates both synchronized internal wheel pins and the accounting
-wheel/sdist policy. Preview and release pipelines differ only in artifact
-prefix and checkout ref; the validation implementation is shared.
+This private `workflow_call` workflow runs the accounting crate's unit and doc
+tests with the shared Rust setup and dependency cache. PR/main receive these
+results from TeamCity; release preparation retains this workflow. Tests above
+five seconds use `#[ignore = "slow"]`: TeamCity and release run the default
+set on PRs and additionally run ignored library tests on `main`.
 
 ## Test execution ownership and rollback
 
-TeamCity's GitHub Checks Webhook Trigger is the only TeamCity trigger for
-Linux tests. For each eligible PR-head or `main` SHA it publishes exactly one
-`TeamCity Linux tests` Check Run after its synchronized Python CPU shard matrix
-and accounting Rust tests succeed. The PR/main waiters poll that exact check
-and SHA with `checks: read`, and reject every conclusion except `success`.
+TeamCity's GitHub Checks Webhook Trigger publishes exactly one `TeamCity Linux
+tests` Check Run for each eligible PR-head or `main` SHA after the synchronized
+Linux amd64 Python shard matrix and accounting Rust tests succeed. PR/main
+waiters poll that exact check with `checks: read` and reject every conclusion
+except `success`.
 
-TeamCity runs the Linux CPU marker `not cuda and not mps and not slow` for
-pull requests and `not cuda and not mps` on `main`; therefore `slow` tests run
-only on `main`. GitHub Actions owns MPS, CUDA, documentation, formatting,
-distribution builds, artifact validation, publication, and releases. PR CUDA
-remains a separate fork-guarded job, so untrusted code never reaches the
-self-hosted runner and TeamCity credentials are never exposed through Actions.
+TeamCity runs `not cuda and not mps and not slow` for PR Python tests and `not
+cuda and not mps` on `main`. GitHub Actions owns dependency-boundary, macOS,
+Linux arm64, CUDA, documentation, builds, validation, publication, and releases.
+Fork PRs never receive the self-hosted CUDA runner or TeamCity credentials.
 
 Keep the stable aggregate checks named `Python tests` and `Rust tests` on PRs,
 and `Python tests` and `Rust tests gate` on `main`; branch rules rely on those
-names, not the TeamCity check name. The reusable Linux Python and Rust workflows
-remain available for release and rollback. To roll back the offload, restore
-their PR/main calls and switch the stable aggregate gates back to those results
-without renaming the required checks.
+names, not the TeamCity check. To roll back, restore the Linux Python/Rust
+callers in PR/main and switch these aggregate gates back without renaming them.
+
+### `.github/workflows/validate-distributions.yml`
+
+This private `workflow_call` workflow downloads a complete caller-selected
+artifact family, installs `opaque[all]` using only built Opaque wheels, and runs
+a representative DP-SGD + DP-FTRL cross-stack accounting scenario without
+checking out the source tree. PR, main, and release differ only in artifact
+prefix.
+
+### `.github/workflows/prepare-release-implementation.yml`
+
+`prepare-release.yml` is a stable branch-selected dispatcher. It calls the
+implementation on `main` while passing the selected branch and SHA explicitly,
+so workflow-only fixes do not need backports. The implementation rejects sources
+other than `main` and `release/X.Y`, creates a missing maintenance branch only
+after the candidate is green, and preserves handwritten release prose outside
+the three generated fences.
 
 ## Artifact contracts
 
-The reusable distribution workflow uploads artifacts named
-`<prefix>-<distribution>`. Callers preserve the existing prefixes:
+The distribution workflow uploads artifacts named `<prefix>-<distribution>`.
+Callers preserve the existing prefixes:
 
 | Caller | Prefix | Retention |
 |---|---|---|
 | PR previews | `preview-wheels` | 14 days |
 | Main development builds | `wheels` | 30 days |
-| Releases | `wheels` | 90 days |
+| Release preparation | `candidate` | 90 days |
 
-Downstream validation and merge jobs consume these prefixes, so update the
-caller and consumer together if a new artifact family is introduced.
+Release preparation merges the `candidate-*` family into a checksummed
+`release-candidate` Actions artifact and attaches its distributions plus
+`release-manifest.json` to the draft GitHub Release. The published-Release
+workflow consumes only those attached assets; it never rebuilds them.
 
 ## Security and maintenance
 
-Actions remain pinned to immutable commit SHAs. Entry-point workflows default
-to read-only permissions and elevate permissions only for trusted deployment
-or publishing jobs. Fork pull requests do not run untrusted code on the
-self-hosted GPU runner and never receive repository, package, or cloud
-credentials.
+Actions remain pinned to immutable commit SHAs. The maintenance-branch
+dispatcher deliberately calls this repository's current `main` release
+workflow; its selected source SHA remains immutable and is the only code tested
+or packaged. Entry-point workflows default to read-only permissions and
+elevate permissions only for trusted preparation or publishing jobs. Registry
+credentials exist only in `release.yml` after a maintainer publishes the draft.
+Fork pull requests do not run untrusted code on the self-hosted GPU runner and
+never receive repository, package, or cloud credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
-`Format Rust`, `Conventional Commits PR title`, `Python tests`, and `Rust
-tests`. Once this workflow change is on `main` and its first review has run,
-replace the retired `Cross-package import smoke test` ruleset requirement with
-`Junie architecture review`. The workflow uses the `JUNIE_API_KEY` Actions
-secret. Fork and Dependabot pull requests cannot receive the secret-backed Junie
-review; the job records that limitation and completes without invoking Junie.
-Normal Junie sessions read the current branch's
-`.junie/guidelines.md`; automated reviews use the base branch's trusted policy
-so a pull request cannot weaken its own review instructions.
+`Format Rust`, `Conventional Commits PR title`, `Python tests`, `Rust tests`,
+and `Junie review`.
+The review workflow uses the `JUNIE_API_KEY` Actions secret. Fork and Dependabot
+pull requests cannot receive the secret-backed Junie review; the job records
+that limitation and completes without invoking Junie.
 
-The policy-introduction pull request bootstraps review from the immutable commit
-that added the policy. Once the policy is on `main`, reviews always load it from
-the pull request's base commit.
+Interactive Junie sessions follow `.junie/guidelines.md`; automated reviews use
+`.junie/review-guidelines.md`. The review file is also the canonical policy for
+Copilot code review through `.github/instructions/code-review.instructions.md`.
+Reviewers must apply every relevant active architecture contract.
+Privacy-sensitive reviews trace the guarantee end to end and use read-only web
+search and URL fetching to verify primary literature before reporting
+theorem-dependent findings.
 
-The review workflow currently uses the organization fork of
-`JetBrains/junie-github-action` because v1.7.4 contains three tag-based
-transitive actions rejected by Opaque's immutable-action policy. The fork changes
-only those references to full commit SHAs; switch back to the upstream action
-after that fix is released.
+The automated review and interactive workflows use the same SHA-pinned upstream
+Junie action and `JUNIE_API_KEY`. Only non-bot authors with an `OWNER`,
+`MEMBER`, or `COLLABORATOR` association reach the action, which then verifies
+that the actor has repository write or admin access. The job grants `contents`,
+pull-request, and issue write access explicitly; repository-wide workflow
+permissions remain read-only. Repository Settings > Actions > General must also
+allow GitHub Actions to create and approve pull requests.
+
+Interactive Junie tasks use the default `GITHUB_TOKEN`, so comments and commits
+are attributed to `github-actions[bot]`. GitHub does not start new `push` or
+`pull_request` workflow runs for changes made with that token. After Junie
+changes a branch, a maintainer must trigger CI for the new head, for example by
+closing and reopening the pull request or by pushing a maintainer-authored
+commit. The automated repository review uses the same identity.

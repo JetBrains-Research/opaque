@@ -120,7 +120,8 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 # ... train with DP-SGD or DP-FTRL ...
 scores = auditing.loss_scores(
     loss_fn, trained_params,
-    batch_argnums=(1,), dataloader=canary_loader,
+    batch_argnums=(1,),
+    coin_flip=cf, dataset=dataset,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
 print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")

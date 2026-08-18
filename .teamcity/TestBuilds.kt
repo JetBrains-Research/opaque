@@ -84,7 +84,14 @@ object RustTests : BuildType({
     steps {
         script {
             name = "Run Rust tests and doctests"
-            scriptContent = "cargo test --manifest-path packages/opaque-accounting/Cargo.toml"
+            scriptContent = """
+                set -eu
+                cargo test --manifest-path packages/opaque-accounting/Cargo.toml
+                case '%teamcity.build.branch%' in
+                  pull/*) ;;
+                  *) cargo test --manifest-path packages/opaque-accounting/Cargo.toml --lib -- --ignored ;;
+                esac
+            """.trimIndent()
         }
     }
 })

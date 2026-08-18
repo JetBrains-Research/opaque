@@ -1028,7 +1028,6 @@ def main() -> int:
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    max_batch_size = args.max_batch_size or args.batch_size
 
     if args.wandb_run_name is None:
         model_short = args.model_name.split("/")[-1]

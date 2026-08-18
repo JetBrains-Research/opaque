@@ -457,6 +457,8 @@ class DPTrainer:
         self._compute_metrics = compute_metrics
         self._compute_loss_func = compute_loss_func
         self._preprocess_logits = preprocess_logits_for_metrics
+        self._warned_per_example_logits_only = False
+        self._warned_eval_on_train = False
         # Lazily-built per-example eval-loss closure (vmap'd).  Populated
         # by ``_get_eval_per_example_loss_fn`` on first use; reset to
         # ``None`` here so model rebinding can invalidate the cache.
@@ -578,7 +580,7 @@ class DPTrainer:
         # log row averages over the right window.  The tensor stays on
         # device so the DDP gather of ``tr_loss`` needs no
         # extra device migration.
-        self._tr_loss = torch.tensor(0.0, device=self._device)
+        self._tr_loss: Tensor = torch.tensor(0.0, device=self._device)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged: int = 0
         # Token-count bookkeeping.
@@ -1138,9 +1140,9 @@ class DPTrainer:
                         a.privacy_target_epsilon,
                     )
                     return TrainOutput(
-                        global_step=self.state.global_step,
-                        training_loss=0.0,
-                        metrics={
+                        self.state.global_step,
+                        0.0,
+                        {
                             "privacy_epsilon": resumed_eps,
                             "privacy_delta": ctx.target_delta,
                         },
@@ -1782,7 +1784,7 @@ class DPTrainer:
                     # the user sees the honest signal instead of a
                     # smoothed-over fake curve.
                     tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                    self._tr_loss = self._tr_loss + tr_loss_step
+                    self._tr_loss = torch.add(self._tr_loss, tr_loss_step)
                 # Token counting.
                 if batch_size != 0 and a.include_num_input_tokens_seen != "no":
                     main_input_name = getattr(
@@ -1868,7 +1870,7 @@ class DPTrainer:
                     break
                 if self._control.should_epoch_stop:
                     break
-                if a.max_steps > 0 and global_step >= a.max_steps:
+                if 0 < a.max_steps <= global_step:
                     break
                 # Hard ceiling at the calibrated horizon.  Noise was
                 # calibrated for exactly ``ctx.total_steps`` composed
@@ -1898,7 +1900,7 @@ class DPTrainer:
 
             if self._control.should_training_stop:
                 break
-            if a.max_steps > 0 and global_step >= a.max_steps:
+            if 0 < a.max_steps <= global_step:
                 break
             if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
@@ -1962,11 +1964,7 @@ class DPTrainer:
         if self.args.push_to_hub:
             _hub.push_to_hub(self, commit_message="End of training")
 
-        return TrainOutput(
-            global_step=global_step,
-            training_loss=train_loss,
-            metrics=metrics,
-        )
+        return TrainOutput(global_step, train_loss, metrics)
 
     # ------------------------------------------------------------------
     # training_step() — single DP-SGD step
@@ -3963,7 +3961,7 @@ class DPTrainer:
             smoothed_loss = tr_loss_scalar / window
             # HF parity: accumulate into _total_loss_scalar, then reset tr_loss.
             self._total_loss_scalar += tr_loss_scalar
-            self._tr_loss -= self._tr_loss  # zero in place
+            self._tr_loss = torch.zeros_like(self._tr_loss)
             self._globalstep_last_logged = global_step
             # HF parity: log the LR that was just applied to the optimizer
             # update we performed for ``global_step``.  Inside torchopt the

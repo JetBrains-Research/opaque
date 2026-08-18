@@ -3,7 +3,6 @@ name: CI (main)
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,10 +12,16 @@ concurrency:
   cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Package discovery
+  # ---------------------------------------------------------------------------
   discover-packages:
     name: Discover package matrices
     runs-on: ubuntu-latest
     outputs:
+      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
+      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -25,8 +30,8 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  # TeamCity owns Linux CPU Python shards and accounting Rust tests. Wait for
-  # its exact check on the pushed main revision.
+  # TeamCity owns the standard Linux amd64 Python shard matrix and accounting
+  # Rust tests. Wait for its exact check on the pushed main revision.
   teamcity-linux-tests:
     name: TeamCity Linux tests waiter
     runs-on: ubuntu-latest
@@ -50,56 +55,146 @@ jobs:
           echo "TeamCity Linux tests conclusion: $conclusion"
           test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
 
-  # ---------------------------------------------------------------------------
-  # GitHub owns accelerator tests. The MPS matrix includes `slow` tests and the
-  # GPU lane runs the complete CUDA marker; TeamCity owns Linux CPU tests.
-  # Test failures block publishing.
-  # ---------------------------------------------------------------------------
-  # This MPS lane keeps `slow` tests and the GPU leg runs the whole `cuda`
-  # marker. The GPU platform is a single unsharded, serial leg.
-  python-tests:
+  # Main repeats the GitHub-owned PR environments and includes slow tests in
+  # platform lanes. Every environment gates distribution publishing.
+
+  python-tests-minimum:
+    name: Minimum dependencies
     needs: [discover-packages]
-    uses: ./.github/workflows/reusable-python-tests.yml
+    uses: ./.github/workflows/python-tests.yml
     with:
-      assert-cuda: true
-      devices: >-
-        [{"name":"mps","label":"MPS","os":"macos-latest","marker":"not cuda","xdist":"-n auto --dist loadscope"}]
-      included-combinations: >-
-        [{"shard":{"name":"all","paths":"packages tests"},"device":{"name":"gpu","label":"CUDA","os":"GPU-runner-001","marker":"cuda","xdist":"-rs"}}]
+      allow-test-failure: true
+      dependency-selection: minimum
+      environment-name: minimum-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.11"
       report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-latest:
+    name: Latest dependencies
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      dependency-selection: latest
+      environment-name: latest-dependencies
+      pytest-marker: not cuda and not mps and not slow
+      pytest-xdist: -n auto --dist loadscope
+      python-version: "3.12"
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-macos-arm64:
+    name: macOS arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: mps
+      pytest-marker: not cuda
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: macos-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 40
 
-  # Aggregating gate for Python tests. This is an independent required check
-  # (alongside rust-tests-gate) that gates wheel builds and publishing.
+  python-tests-linux-arm64:
+    name: Linux arm64
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: linux-aarch64
+      pytest-marker: not cuda and not mps
+      pytest-xdist: -n auto --dist loadscope
+      report-durations: true
+      runner: ubuntu-24.04-arm
+      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda:
+    name: CUDA
+    needs: [discover-packages]
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      environment-name: cuda
+      pytest-marker: cuda
+      pytest-xdist: -rs
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 40
+
+  # Stable aggregate checks preserve branch rules while TeamCity supplies the
+  # Linux amd64 and Rust results.
   python-tests-gate:
     name: Python tests
-    if: always()
-    needs: [python-tests, teamcity-linux-tests]
+    if: ${{ always() }}
+    needs:
+      - teamcity-linux-tests
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
     runs-on: ubuntu-latest
     steps:
-      - name: Check Python test results
+      - name: Verify test results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        shell: bash
         run: |
-          mps="${{ needs.python-tests.result }}"
-          teamcity="${{ needs.teamcity-linux-tests.result }}"
-          echo "python-tests MPS matrix result: $mps"
-          echo "teamcity-linux-tests result: $teamcity"
-          test "$mps" = "success" || (echo "ERROR: MPS tests failed"; exit 1)
-          test "$teamcity" = "success" || (echo "ERROR: TeamCity Linux tests failed"; exit 1)
+          failures="$(
+            jq -r '
+              to_entries[]
+              | select(.value.result != "success")
+              | "\(.key): \(.value.result)"
+            ' <<< "$RESULTS"
+          )"
 
-  # Aggregating gate for Rust tests. This is an independent required check
-  # (alongside python-tests-gate) that gates wheel builds and publishing.
+          if [[ -n "$failures" ]]; then
+            echo "::error::Required Python test jobs did not succeed:"
+            echo "$failures"
+            exit 1
+          fi
+
   rust-tests-gate:
     name: Rust tests gate
-    if: always()
+    if: ${{ always() }}
     needs: [teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
-      - name: Check Rust test results
+      - name: Verify test results
+        env:
+          RESULT: ${{ needs.teamcity-linux-tests.result }}
+        shell: bash
         run: |
-          result="${{ needs.teamcity-linux-tests.result }}"
-          echo "teamcity-linux-tests result: $result"
-          test "$result" = "success" || (echo "ERROR: Rust tests failed"; exit 1)
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::Rust tests finished with result: $RESULT"
+            exit 1
+          fi
+
+  qodana:
+    name: Qodana
+    if: always() && github.ref == 'refs/heads/main'
+    needs:
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/qodana.yml
+    with:
+      coverage-artifact-pattern: coverage-locked-*
+      fail-on-problems: false
+      pr-mode: false
+    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
@@ -107,16 +202,25 @@ jobs:
   # Release builds live in release.yml (triggered on `v*` tag push).
   # ---------------------------------------------------------------------------
   build-distributions:
-    name: Build distribution artifacts
-    needs: [python-tests-gate, rust-tests-gate]
-    uses: ./.github/workflows/reusable-build-distributions.yml
+    name: Build
+    needs: [discover-packages, python-tests-gate, rust-tests-gate]
+    uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
+      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
+      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 30
+
+  validate-distributions:
+    name: Validate
+    needs: [build-distributions]
+    uses: ./.github/workflows/validate-distributions.yml
+    with:
+      artifact-prefix: wheels
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-distributions]
+    needs: [build-distributions, validate-distributions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -129,7 +233,10 @@ jobs:
   publish-dev-wheels:
     name: Publish dev wheels to JetBrains Packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [merge-wheels, python-tests-gate, rust-tests-gate]
+    needs:
+      - merge-wheels
+      - python-tests-gate
+      - rust-tests-gate
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -158,205 +265,3 @@ jobs:
             python .github/scripts/twine_upload.py upload \
             --repository-url https://packages.jetbrains.team/pypi/p/fed/python/legacy/ \
             dist/*.whl dist/*.tar.gz
-
-  # ---------------------------------------------------------------------------
-  # Upsert the draft GitHub Release for the next version. The draft is the
-  # preparation surface — maintainers edit title, tag, Highlights, etc. in
-  # the GH UI. This job refreshes only the `<!-- auto:* -->`-fenced section
-  # with git-cliff output so hand edits outside the fence are preserved.
-  # Publishing the draft triggers `release.yml`.
-  # ---------------------------------------------------------------------------
-  upsert-draft:
-    name: Upsert draft Release for next version
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      models: read
-
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-
-      - name: Compute next version (bump patch from last stable)
-        id: next
-        run: |
-          set -euo pipefail
-          LAST=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort --version-sort --reverse | head -1 || true)
-          if [[ -z "$LAST" ]]; then
-            NEXT_TAG="v0.0.1"
-          else
-            BASE="${LAST#v}"
-            IFS=. read -r MAJOR MINOR PATCH <<< "$BASE"
-            NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
-          fi
-          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
-          echo "last=$LAST" >> "$GITHUB_OUTPUT"
-          echo "Computed next version tag: $NEXT_TAG (from last: ${LAST:-<none>})"
-
-      - name: Generate auto-section with git-cliff
-        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4
-        with:
-          config: cliff.toml
-          args: --unreleased --tag ${{ steps.next.outputs.tag }} --strip header
-        env:
-          OUTPUT: AUTO_SECTION.md
-
-      - name: Install gh models extension
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh extension install github/gh-models
-
-      - name: Generate AI highlights
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LAST_TAG: ${{ steps.next.outputs.last }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "$LAST_TAG" ]]; then
-            git log "${LAST_TAG}..HEAD" --format='- %s' --no-merges > /tmp/commits.txt
-          else
-            git log --format='- %s' --no-merges > /tmp/commits.txt
-          fi
-
-          if [[ ! -s /tmp/commits.txt ]]; then
-            echo "<!-- No unreleased commits yet. -->" > /tmp/ai_highlights.md
-            exit 0
-          fi
-
-          cat > /tmp/prompt.md <<EOF
-          You are summarizing release changes for Opaque, a PyTorch
-          differential-privacy library (DP-SGD, DP-FTRL, privacy accounting).
-
-          Below are the commits landed on main since the last release
-          (${LAST_TAG:-initial}). Produce 3–7 release highlights for library users.
-
-          Rules:
-          - Return only a markdown bulleted list. No preamble, no headers, no code fences.
-          - Group related commits into one bullet; deduplicate overlap.
-          - Emphasize user-facing impact (APIs, behavior, correctness).
-          - Skip pure refactors, chore, test, or ci commits unless they change user-visible behavior.
-          - Use imperative present tense ("Add", "Fix", "Document").
-
-          Commits:
-
-          $(cat /tmp/commits.txt)
-          EOF
-
-          if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_highlights.md 2>/tmp/ai_err; then
-            echo "AI summary failed: $(cat /tmp/ai_err)" >&2
-            echo "<!-- AI summary unavailable. -->" > /tmp/ai_highlights.md
-          fi
-
-          echo "--- AI highlights ---"
-          cat /tmp/ai_highlights.md
-
-      - name: Extract contributors
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LAST_TAG: ${{ steps.next.outputs.last }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "$LAST_TAG" ]]; then
-            BASE_REF=$(git rev-list --max-parents=0 HEAD | head -1)
-          else
-            BASE_REF="$LAST_TAG"
-          fi
-
-          gh api --paginate "/repos/$GITHUB_REPOSITORY/compare/${BASE_REF}...HEAD" \
-            --jq '[.commits[].author | select(. != null) | .login]' \
-            > /tmp/contributors_raw.json || echo '[]' > /tmp/contributors_raw.json
-
-          python3 - <<'PY' > /tmp/contributors.md
-          import json, pathlib
-          logins = json.loads(pathlib.Path("/tmp/contributors_raw.json").read_text() or "[]")
-          # Dedup preserving first-seen order; drop bots.
-          seen, unique = set(), []
-          for login in logins:
-              if not login or login in seen or login.endswith("[bot]"):
-                  continue
-              seen.add(login)
-              unique.append(login)
-          if not unique:
-              print("<!-- No contributors to credit. -->")
-          else:
-              handles = ", ".join(f"@{u}" for u in unique)
-              print(f"Thanks to {handles} for contributions to this release.")
-          PY
-
-          echo "--- Contributors ---"
-          cat /tmp/contributors.md
-
-      - name: Upsert draft Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXT_TAG: ${{ steps.next.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          # Find any open draft Release. One draft at a time; matching on
-          # the draft flag (not tag_name) preserves the maintainer's
-          # version/title/prose edits.
-          DRAFT_ID=$(gh api "/repos/$GITHUB_REPOSITORY/releases" \
-            --jq '[.[] | select(.draft == true)] | first | .id // empty')
-
-          if [[ -z "$DRAFT_ID" ]]; then
-            echo "No open draft — creating one for $NEXT_TAG."
-            python3 - <<'PY' > /tmp/body.md
-          import pathlib
-          ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
-          auto = pathlib.Path("AUTO_SECTION.md").read_text()
-          contributors = pathlib.Path("/tmp/contributors.md").read_text().rstrip()
-          print(f"""<!-- ai:begin -->
-          {ai}
-          <!-- ai:end -->
-
-          ## What's changed
-
-          <!-- auto:begin -->
-          {auto}
-          <!-- auto:end -->
-
-          ## Contributors
-
-          <!-- contributors:begin -->
-          {contributors}
-          <!-- contributors:end -->
-          """)
-          PY
-            gh api --method POST "/repos/$GITHUB_REPOSITORY/releases" \
-              -f tag_name="$NEXT_TAG" \
-              -f target_commitish="main" \
-              -f name="$NEXT_TAG" \
-              -f body="$(cat /tmp/body.md)" \
-              -F draft=true \
-              -F prerelease=false
-          else
-            echo "Refreshing fenced sections of existing draft (id=$DRAFT_ID)."
-            gh api "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" --jq .body > /tmp/body_existing.md
-            python3 - <<'PY' > /tmp/body.md
-          import pathlib, re
-          body = pathlib.Path("/tmp/body_existing.md").read_text()
-          auto = pathlib.Path("AUTO_SECTION.md").read_text()
-          ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
-          contributors = pathlib.Path("/tmp/contributors.md").read_text().rstrip()
-
-          def splice(body, begin, end, content):
-              fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
-              replacement = f"{begin}\n{content}\n{end}"
-              if fenced.search(body):
-                  return fenced.sub(replacement, body)
-              return body.rstrip() + "\n\n" + replacement + "\n"
-
-          body = splice(body, "<!-- auto:begin -->", "<!-- auto:end -->", auto)
-          body = splice(body, "<!-- ai:begin -->", "<!-- ai:end -->", ai)
-          body = splice(body, "<!-- contributors:begin -->", "<!-- contributors:end -->", contributors)
-          print(body, end="")
-          PY
-            gh api --method PATCH \
-              "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" \
-              -f body="$(cat /tmp/body.md)"
-          fi

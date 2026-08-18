@@ -7,6 +7,7 @@ import torch.distributed as dist
 from engine_ddp_helpers import _spawn_gloo, _worker_sync_schema_contracts_gloo
 
 
+@pytest.mark.slow
 def test_sync_schema_contracts_preserve_collective_parity() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")

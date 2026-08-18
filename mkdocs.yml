@@ -145,7 +145,6 @@ nav:
       - Distributed Training: tutorials/distributed_training.ipynb
   - Development:
     - Overview: development/index.md
-    - Architecture contracts: development/architecture-contracts.md
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md

@@ -74,6 +74,7 @@ def test_grouped_moe_parity_cpu():
 
 
 @pytest.mark.mps
+@pytest.mark.slow
 def test_grouped_moe_parity_mps():
     _check_parity("mps")
 
@@ -118,6 +119,7 @@ def test_grouped_moe_bf16_cpu():
 
 
 @pytest.mark.mps
+@pytest.mark.slow
 def test_grouped_moe_bf16_mps():
     _check_bf16_within_floor("mps")
 

@@ -163,7 +163,11 @@ class CyclicPoisson(DpHorizonProcess):
 
         s = self.inner.strategy
         if isinstance(s, BandMfStrategy):
-            sensitivity = s.sensitivity(n_steps=self.n_steps)
+            sensitivity = s.sensitivity(
+                n_steps=self.n_steps,
+                min_sep=self.min_sep,
+                max_participations=self.max_participations,
+            )
             effective_nm = self.inner.noise_multiplier / sensitivity
             bands = s.bands
             rounded = min(-(-n_steps // bands) * bands, self.n_steps)

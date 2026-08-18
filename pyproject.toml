@@ -90,10 +90,11 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep the shared workspace lock within the integration versions exercised by
-# CI. Published packages retain their broader runtime requirements.
+# Keep the shared workspace lock on patched build and PyTorch releases.
+# Published packages retain their broader runtime requirements.
 constraint-dependencies = [
-    "torch>=2.9,<2.13",
+    "setuptools>=83",
+    "torch>=2.13,<2.14",
     "transformers<5.12",
     "trl<1.7",
     "peft<0.19",
@@ -227,6 +228,16 @@ src = [
 #   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
 #   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
+# Keep editor diagnostics aligned with the CI lint gate. Ruff still formats
+# these paths, while pytest and Qodana own their behavioral and semantic checks.
+exclude = [
+  ".github/scripts/**",
+  "benchmarks/**",
+  "conftest.py",
+  "docs/**",
+  "examples/**",
+  "tests/**",
+]
 select = [
   "E", "F", "W",
   "I",

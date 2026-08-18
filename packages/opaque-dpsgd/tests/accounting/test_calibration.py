@@ -321,6 +321,7 @@ class TestCalibratePrefix:
     def _prefix(self):
         return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 12
 
+    @pytest.mark.slow
     def test_matches_manual_closure(self):
         """prefix= is equivalent to composing inside the objective."""
         prefix = self._prefix()
@@ -333,6 +334,7 @@ class TestCalibratePrefix:
         assert via_param.param == pytest.approx(via_closure.param)
         assert via_param.achieved == pytest.approx(via_closure.achieved)
 
+    @pytest.mark.slow
     def test_total_hits_budget(self):
         """The composed total (prefix | stage) achieves the target."""
         prefix = self._prefix()
@@ -346,6 +348,7 @@ class TestCalibratePrefix:
         assert achieved <= 6.0
         assert math.isclose(achieved, 6.0, rel_tol=1e-6, abs_tol=0.0)
 
+    @pytest.mark.slow
     def test_prefix_demands_more_noise(self):
         """Same budget with a prefix → larger noise multiplier."""
         budget = cal.epsilon_budget(6.0, delta=1e-5)
@@ -355,6 +358,7 @@ class TestCalibratePrefix:
         )
         assert with_prefix.param > without.param
 
+    @pytest.mark.slow
     def test_prefix_exhausting_budget_raises(self):
         """Prefix alone above the target → bounds can't bracket."""
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps

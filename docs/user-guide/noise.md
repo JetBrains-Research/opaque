@@ -196,7 +196,7 @@ budget.
 
 MF noise implements the DP-FTRL framework (Kairouz et al. 2021, Denisov et al.
 2022). Instead of adding independent noise z_t at each step, the mechanism
-adds correlated noise n_t = sum_i C_inv[t,i] * z_i, where C_inv is the
+adds correlated noise n_t = sum_i C_inv(t, i) * z_i, where C_inv is the
 inverse of a strategy matrix chosen to minimize cumulative error.
 
 The mechanism factors a **workload matrix** A (what the optimizer computes,

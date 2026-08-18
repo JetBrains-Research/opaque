@@ -138,7 +138,7 @@ Useful for prototyping and experiments. For reproducible training, use `key()` w
 
 ---
 
-#### split(rng_key: RngKey, num: int = 2) → tuple[RngKey, ...]
+#### split(rng_key: RngKey, num: int = 2) → tuple of RngKey values
 
 Split a key into `num` independent child keys.
 

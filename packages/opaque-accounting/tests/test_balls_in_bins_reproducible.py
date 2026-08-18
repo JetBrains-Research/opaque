@@ -6,8 +6,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 _THREAD_COUNTS = ("1", "2", "8")
 
 _SCRIPT = """
@@ -45,7 +43,6 @@ def _epsilons(num_threads: str) -> str:
     return proc.stdout.strip()
 
 
-@pytest.mark.slow
 def test_pld_is_bit_identical_across_thread_counts():
     results = {n: _epsilons(n) for n in _THREAD_COUNTS}
     baseline = results[_THREAD_COUNTS[0]]

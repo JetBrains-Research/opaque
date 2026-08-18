@@ -5,7 +5,7 @@ import pytest
 
 import opaque.auditing as auditing
 from opaque.auditing import one_run
-from opaque.auditing.types import CoinFlip, OneRunEstimate
+from opaque.auditing.types import CanaryScores, CoinFlip, OneRunEstimate
 from opaque.random import fold_in, key
 from opaque.random.types import RngKey
 
@@ -42,7 +42,7 @@ def _make_estimate(in_scores, out_scores):
     scores = np.empty(n_in + n_out)
     scores[mask] = in_scores
     scores[~mask] = out_scores
-    return one_run(scores, coin_flip=cf)
+    return one_run(CanaryScores(scores, canary_indices=canary_indices), coin_flip=cf)
 
 
 class TestConstruction:
@@ -68,8 +68,9 @@ class TestConstruction:
             in_indices=canary_indices[mask],
             out_indices=canary_indices[~mask],
         )
+        scores = CanaryScores(np.array([1.0, 2.0, 3.0]), canary_indices=canary_indices)
         with pytest.raises(ValueError, match="non-empty"):
-            one_run(np.array([1.0, 2.0, 3.0]), coin_flip=cf)
+            one_run(scores, coin_flip=cf)
 
     def test_empty_out_scores(self):
         """Test that empty out_scores raises ValueError."""
@@ -82,8 +83,9 @@ class TestConstruction:
             in_indices=canary_indices[mask],
             out_indices=canary_indices[~mask],
         )
+        scores = CanaryScores(np.array([1.0, 2.0, 3.0]), canary_indices=canary_indices)
         with pytest.raises(ValueError, match="non-empty"):
-            one_run(np.array([1.0, 2.0, 3.0]), coin_flip=cf)
+            one_run(scores, coin_flip=cf)
 
     @pytest.mark.parametrize("invalid_score", [np.nan, np.inf, -np.inf])
     @pytest.mark.parametrize("partition", ["in", "out"])
@@ -318,17 +320,26 @@ class TestCoinFlip:
         scores = np.zeros(100)
         scores[cf._in_mask] = 10.0
         scores[~cf._in_mask] = 0.0
-        in_scores, out_scores = cf.split_scores(scores)
+        in_scores, out_scores = cf.split_scores(
+            CanaryScores(scores, canary_indices=canary_idx)
+        )
         assert len(in_scores) == len(cf.in_indices)
         assert len(out_scores) == len(cf.out_indices)
         np.testing.assert_array_equal(in_scores, 10.0)
         np.testing.assert_array_equal(out_scores, 0.0)
 
-    def test_split_scores_wrong_length_raises(self):
+    def test_split_scores_bare_array_raises(self):
         canary_idx = np.arange(100)
         cf = _flip(canary_idx, key=key(42))
-        with pytest.raises(ValueError, match="Expected 100 scores"):
-            cf.split_scores(np.zeros(50))
+        with pytest.raises(TypeError, match="requires CanaryScores"):
+            cf.split_scores(np.zeros(100))
+
+    def test_split_scores_missing_ids_raise(self):
+        canary_idx = np.arange(100)
+        cf = _flip(canary_idx, key=key(42))
+        partial = CanaryScores(np.zeros(50), canary_indices=np.arange(50))
+        with pytest.raises(ValueError, match="missing"):
+            cf.split_scores(partial)
 
     def test_empty_canaries_raises(self):
         with pytest.raises(ValueError, match="non-empty"):
@@ -353,7 +364,9 @@ class TestOneRunFunction:
         scores[cf._in_mask] = 10.0
         scores[~cf._in_mask] = 0.0
 
-        estimate = one_run(scores, coin_flip=cf)
+        estimate = one_run(
+            CanaryScores(scores, canary_indices=canary_idx), coin_flip=cf
+        )
 
         assert isinstance(estimate, OneRunEstimate)
         assert estimate.n_in == len(cf.in_indices)
@@ -369,7 +382,9 @@ class TestOneRunFunction:
         scores[cf._in_mask] = rng.normal(loc=0.7, scale=0.3, size=cf._in_mask.sum())
         scores[~cf._in_mask] = rng.normal(loc=0.3, scale=0.3, size=(~cf._in_mask).sum())
 
-        estimate = one_run(scores, coin_flip=cf)
+        estimate = one_run(
+            CanaryScores(scores, canary_indices=canary_idx), coin_flip=cf
+        )
         assert estimate.attack_auc() > 0.6
         assert estimate.eps_delta().epsilon_at(significance=0.05, delta=1e-5) > 0
 
@@ -422,3 +437,119 @@ class TestCoinFlipFunction:
         np.testing.assert_array_equal(first._in_mask, expected_mask)
         np.testing.assert_array_equal(first.canary_indices, second.canary_indices)
         np.testing.assert_array_equal(first._in_mask, second._in_mask)
+
+
+class TestScoreIdentifierJoin:
+    """#371: scores join to membership by identifier, not by position."""
+
+    def _cf(self):
+        return auditing.coin_flip(list(range(200)), num_canaries=100, key=key(42))
+
+    def _signal_scores(self, cf):
+        rng = np.random.default_rng(0)
+        scores = rng.normal(size=100)
+        scores[cf._in_mask] += 2.0  # genuine signal
+        return CanaryScores(scores, canary_indices=cf.canary_indices)
+
+    def test_shuffled_scores_realign_to_same_estimate(self):
+        """An intentionally shuffled scoring pass yields the same audit."""
+        cf = self._cf()
+        ordered = self._signal_scores(cf)
+        perm = np.random.default_rng(1).permutation(100)
+        shuffled = CanaryScores(
+            ordered.scores[perm], canary_indices=ordered.canary_indices[perm]
+        )
+        baseline = one_run(ordered, coin_flip=cf)
+        realigned = one_run(shuffled, coin_flip=cf)
+        assert realigned.attack_auc() == baseline.attack_auc()
+        assert realigned.epsilon_at(delta=1e-5) == baseline.epsilon_at(delta=1e-5)
+
+    def test_bare_scores_raise(self):
+        cf = self._cf()
+        with pytest.raises(TypeError, match="requires CanaryScores"):
+            one_run(np.arange(100.0), coin_flip=cf)
+
+    def test_unexpected_identifiers_raise(self):
+        cf = self._cf()
+        foreign = CanaryScores(np.arange(100.0), canary_indices=np.arange(1000, 1100))
+        with pytest.raises(ValueError, match="not canaries of this partition"):
+            one_run(foreign, coin_flip=cf)
+
+    def test_missing_identifiers_raise(self):
+        cf = self._cf()
+        partial = CanaryScores(np.arange(60.0), canary_indices=cf.canary_indices[:60])
+        with pytest.raises(ValueError, match="missing"):
+            one_run(partial, coin_flip=cf)
+
+    def test_duplicate_identifiers_rejected_at_construction(self):
+        ids = np.zeros(10, dtype=int)
+        with pytest.raises(ValueError, match="unique"):
+            CanaryScores(np.arange(10.0), canary_indices=ids)
+
+    def test_estimate_carries_identifiers(self):
+        cf = self._cf()
+        est = one_run(self._signal_scores(cf), coin_flip=cf)
+        np.testing.assert_array_equal(est.canary_indices, cf.canary_indices)
+
+
+class TestCanaryScores:
+    """Validation and immutability of the CanaryScores carrier."""
+
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="equal length"):
+            CanaryScores(np.arange(3.0), canary_indices=np.arange(5))
+
+    def test_non_integer_identifiers_raise(self):
+        with pytest.raises(ValueError, match="integer"):
+            CanaryScores(np.arange(3.0), canary_indices=np.arange(3.0))
+
+    def test_non_1d_scores_raise(self):
+        with pytest.raises(ValueError, match="1-D"):
+            CanaryScores(np.zeros((2, 2)), canary_indices=np.arange(4))
+
+    def test_arrays_are_read_only(self):
+        scores = CanaryScores(np.arange(3.0), canary_indices=np.arange(3))
+        with pytest.raises(ValueError, match="read-only"):
+            scores.scores[0] = 99.0
+        with pytest.raises(ValueError, match="read-only"):
+            scores.canary_indices[0] = 99
+
+    def test_array_conversion_and_len(self):
+        scores = CanaryScores(np.arange(3.0), canary_indices=np.arange(3))
+        assert len(scores) == 3
+        np.testing.assert_array_equal(np.asarray(scores), np.arange(3.0))
+
+    def test_repr(self):
+        scores = CanaryScores(np.arange(3.0), canary_indices=np.arange(3))
+        assert repr(scores) == "CanaryScores(num_canaries=3)"
+
+
+class TestCanaryScoresFactory:
+    """Tests for auditing.canary_scores() module-level function."""
+
+    def test_basic_canary_scores(self):
+        scores = auditing.canary_scores(np.arange(3.0), canary_indices=np.arange(3))
+        assert isinstance(scores, CanaryScores)
+        assert len(scores) == 3
+        np.testing.assert_array_equal(np.asarray(scores), np.arange(3.0))
+
+    def test_canary_scores_validates_identifiers(self):
+        with pytest.raises(ValueError, match="unique"):
+            auditing.canary_scores(np.arange(3.0), canary_indices=np.array([0, 1, 1]))
+
+    def test_attested_scores_join_in_any_order(self):
+        dataset = list(range(100))
+        cf = auditing.coin_flip(dataset, num_canaries=20, key=key(7))
+        values = np.arange(20.0)
+
+        reordered = np.argsort(-cf.canary_indices)
+        attested = auditing.canary_scores(
+            values[reordered], canary_indices=cf.canary_indices[reordered]
+        )
+
+        expected_in, expected_out = cf.split_scores(
+            CanaryScores(values, canary_indices=cf.canary_indices)
+        )
+        in_scores, out_scores = cf.split_scores(attested)
+        np.testing.assert_array_equal(in_scores, expected_in)
+        np.testing.assert_array_equal(out_scores, expected_out)

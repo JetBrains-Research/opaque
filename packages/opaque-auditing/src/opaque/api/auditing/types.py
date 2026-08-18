@@ -7,7 +7,7 @@ in the package init.
 
 from __future__ import annotations
 
-from opaque.api.auditing._coin_flip import CoinFlip
+from opaque.api.auditing._coin_flip import CanaryScores, CoinFlip
 from opaque.api.auditing.one_run._estimate import OneRunEstimate
 
-__all__ = ["CoinFlip", "OneRunEstimate"]
+__all__ = ["CanaryScores", "CoinFlip", "OneRunEstimate"]

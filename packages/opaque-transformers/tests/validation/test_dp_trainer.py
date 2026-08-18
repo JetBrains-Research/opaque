@@ -928,6 +928,7 @@ class TestDPTrainerLRScheduling:
         for got, exp in zip(lrs, expected, strict=False):
             assert got == pytest.approx(exp, abs=1e-9)
 
+    @pytest.mark.slow
     def test_warmup_changes_param_trajectory(self, gpt2_with_lora, tiny_lm_dataset):
         """Trainers with constant vs warmup LR diverge on identical seed/data."""
         model_const, tok = gpt2_with_lora
@@ -2395,16 +2396,14 @@ class TestDeepJsonRecursionGuard:
         d: dict = {"leaf": 1}
         for _ in range(5000):
             d = {"inner": d}
-        original_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(1_000)
-        try:
-            with _deep_json_recursion():
-                assert sys.getrecursionlimit() == 30_000
-                back = json.loads(json.dumps(d))
-                assert back == d
-            assert sys.getrecursionlimit() == 1_000
-        finally:
-            sys.setrecursionlimit(original_limit)
+
+        old_limit = sys.getrecursionlimit()
+        raised_limit = max(10_000, old_limit + 5_000)
+        with _deep_json_recursion(raised_limit):
+            assert sys.getrecursionlimit() == raised_limit
+            back = json.loads(json.dumps(d))
+            assert back == d  # dict __eq__ recurses too; compare under the guard
+        assert sys.getrecursionlimit() == old_limit
 
 
 class TestPredictStopStep:

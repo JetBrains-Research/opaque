@@ -172,6 +172,10 @@ class TestAliasedSubDicts:
 class TestWrapperLoadErrors:
     """#334 review F5: wrapper-path error behavior is explicit."""
 
+    def test_missing_type_raises_with_clear_message(self):
+        with pytest.raises(ValueError, match="missing required field 'type'"):
+            _load_dp_process({})
+
     def test_missing_child_field_raises(self):
         left = _serialize_dp_process(acc.eps_delta(0.1, 1e-9))
         with pytest.raises(ValueError, match="missing required field 'right'"):
