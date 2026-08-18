@@ -117,7 +117,6 @@ object HttpsGithubComJetBrainsResearchOpaqueRefsHeadsMain : GitVcsRoot({
         userName = "oauth2"
         tokenId = "tc_token_id:CID_8f0b5e59348f7f723191b83227c8a1e1:-1:92908327-48e1-4c13-b5ca-b4f0f7e6e947"
     }
-    param("secure:password", "credentialsJSON:b5969cfb-b453-45e1-b5c6-02690cef6977")
 })
 
 
