@@ -9,19 +9,27 @@
 # new scale, the sentence "LoRA-XSe matches/beats LoRA" cannot be evaluated at
 # all. Everything downstream is measured against these three.
 #
-#   1. full LoRA r=16      — the target. This is the preset's own tuned config
-#                            (comment at train_causal_lm.py:1035 records its
-#                            pre-fix best as eval 0.3449 @ step 520).
-#   2. LoRA-XS, p_e=0      — no rotation at all. Isolates what rotation buys.
-#   3. LoRA-XSe d5, tau=2  — the current best-known config. Doubles as the
-#                            matched CONTROL for the reset-in-place arm in
-#                            batch 2, so that comparison stays internal.
+#   1. full LoRA r=16          — the TARGET. Verified absent: at this operating
+#                                point (7B, nz=0, r=16, lr 5e-2) lora_method is
+#                                'lora-xs' in 62/62 runs, so a non-DP full-LoRA
+#                                baseline has never been run. Three independent
+#                                analyses reached this same n=0 conclusion.
+#   2. LoRA-XSe d5, tau=1      — the current best-known config, and the matched
+#                                CONTROL for every mechanism arm in batch 2.
+#   3. the same + orthonormal-A — the conditioning test. See the QUEUE note.
 #
-# All three: r=16, 2 epochs, seed 42, 520 steps, --eval-bpb.
+# All three: r=16, 2 epochs, seed 42, 520 steps, weight-decay 0, --eval-bpb.
 #
-# tau=2 because the tau sweep saturates there: tau=1 vs tau=2 differed 9.1e-6
-# (0.14x the 6.5e-5 floor -- a tie) while tau=1 vs tau=10 spanned 27x the floor.
-# There is no reason to pay for tau=1.
+# tau=1 rather than tau=2: they differ by 9.1e-6 (0.14x the 6.5e-5 floor, a
+# statistical tie) so there is no accuracy reason to prefer either, but tau=1 is
+# what the best on-disk run used and what the batch-2 mechanism tests need, and
+# a shared control across batches is worth more than a marginal compute saving.
+# Rotation cost is ~4ms against a ~15s step, so doubling rotation count is free.
+#
+# NOT in this batch, deliberately: the p_e=0 no-rotation arm (which quantifies
+# what rotation buys) and the reset-in-place ablation. Both are batch 2. Slot 3
+# goes to orthonormal-A instead because it is the only candidate that might
+# IMPROVE on the current best, and it costs no code change.
 #
 # --eval-bpb is on because bits-per-byte carries ~20x the SNR of aggregate eval
 # loss on code (arXiv 2508.13144) and yields PER-EXAMPLE values, which allows a
@@ -57,13 +65,32 @@ MAXCONC="${MAXCONC:-3}"
 LOGDIR=campaign_logs/queue
 mkdir -p "$LOGDIR"
 
-COMMON="--lora-r 16 --num-epochs 2 --eval-bpb"
+# --weight-decay 0 is MANDATORY here, not a preference. Default is 0.01 and all
+# 62 operating-point runs used it, but xse_sgd() (xse.py:901) takes no
+# weight_decay parameter at all, while the non-XSe branch does pass it
+# (train_causal_lm.py:1975). So at defaults, LoRA/frozen-XS train WITH decay and
+# XSe trains WITHOUT it, and any "LoRA vs XSe" number is partly a weight-decay
+# comparison. Setting 0 everywhere makes the arms actually matched. This
+# confound is baked into every historical LoRA-vs-XSe contrast, including the
+# eps=3 "rotation buys 103 floor units" figure.
+COMMON="--lora-r 16 --num-epochs 2 --weight-decay 0 --eval-bpb"
 
 # name | XSE env (or "-") | trainer --extra args
+#
+# Slot 3 is --lora-xs-orthonormal-a, which two independent lines of evidence
+# converged on. core/svd.py:106-112 builds the frozen encoder as
+# `U @ diag(S)` by default -- Sigma is ABSORBED into A -- and the flag switches
+# it to plain `U`. With Sigma absorbed, the effective per-direction step on R
+# scales as sigma_i^2, so direction 1 gets a vastly larger effective learning
+# rate than direction 16; svd.py's own comment says the flag "eliminates
+# gradient amplification from singular values". Verified from run configs: at
+# this operating point (7B, nz=0, r=16, lr 5e-2) it is False in 62/62 runs,
+# while in the eps=3 regime it is True in 112/191 -- including every one of the
+# best-ever runs. It has never once been tested in the non-DP regime.
 QUEUE=(
   "ref-lora-r16-s42|-|--lora-method lora --lora-xse-p-e 0 $COMMON"
-  "ref-xs-norot-s42|-|--lora-xse-p-e 0 $COMMON"
-  "ref-xse-d5t2-s42|-|--lora-xse-p-e 0.3125 --lora-xse-rotation-step-interval 2 $COMMON"
+  "ref-xse-d5t1-s42|-|--lora-xse-p-e 0.3125 --lora-xse-rotation-step-interval 1 $COMMON"
+  "orthA-xse-d5t1-s42|-|--lora-xse-p-e 0.3125 --lora-xse-rotation-step-interval 1 --lora-xs-orthonormal-a $COMMON"
 )
 
 # A fresh wandb.Api() per call, deliberately. Reusing one Api object caches run
