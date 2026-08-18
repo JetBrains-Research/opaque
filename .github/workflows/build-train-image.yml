@@ -108,9 +108,43 @@ jobs:
           # over SSH authenticates the clone directly — no org/SAML/PAT approval.
           DEPLOY_KEY: ${{ secrets.LORA_PRIVACY_DEPLOY_KEY }}
         run: |
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_KEY:-}" ]; then
+            echo "::error::LORA_PRIVACY_DEPLOY_KEY is empty or not visible to this job."
+            echo "It must be an Actions secret on this repo (or on the 'devcontainer'"
+            echo "environment this job declares), holding a PASSPHRASE-FREE private key"
+            echo "whose public half is a read-only deploy key on"
+            echo "JetBrains-Research/LoRA-Privacy."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/lora_privacy
+          # tr -d '\r': a key pasted with Windows line endings keeps its CRs through
+          # the secret store, and ssh rejects it as "error in libcrypto" -- an opaque
+          # message that reads like a permissions problem but is a parse failure.
+          printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' > ~/.ssh/lora_privacy
           chmod 600 ~/.ssh/lora_privacy
+
+          # Validate the key here, where the diagnosis is legible, rather than
+          # letting git clone report it as "Permission denied (publickey)".
+          # -P '' and </dev/null: without both, an encrypted key makes ssh-keygen
+          # prompt for a passphrase and hang until the job's 120-minute timeout.
+          if ! ssh-keygen -y -P '' -f ~/.ssh/lora_privacy >/dev/null 2>/tmp/keyerr </dev/null; then
+            echo "::error::LORA_PRIVACY_DEPLOY_KEY is not a parseable private key."
+            echo "ssh-keygen: $(cat /tmp/keyerr)"
+            echo "lines in secret: $(wc -l < ~/.ssh/lora_privacy)"
+            # Shape only -- never echo key material, masked or not.
+            if head -1 ~/.ssh/lora_privacy | grep -q 'BEGIN .*PRIVATE KEY'; then
+              echo "The PEM header is present, so the body is truncated or re-wrapped."
+            else
+              echo "The first line is not a PEM header, so the secret is empty or mangled."
+            fi
+            echo "Fix: ssh-keygen -t ed25519 -N '' -f ./k, register ./k.pub on"
+            echo "LoRA-Privacy as a deploy key, then paste ALL of ./k into the secret."
+            exit 1
+          fi
+
           ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/lora_privacy -o IdentitiesOnly=yes"
           git submodule sync --recursive
