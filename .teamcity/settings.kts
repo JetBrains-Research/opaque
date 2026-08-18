@@ -1,15 +1,21 @@
 import jetbrains.buildServer.configs.kotlin.*
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
+import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
 import jetbrains.buildServer.configs.kotlin.pipelines.*
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 version = "2026.1"
+
+private val pipelineId = "Opaque_LinuxAmd64Tests"
 
 private data class TestShard(
     val id: String,
     val label: String,
     val path: String,
 )
+
+private fun jobId(shard: TestShard) = "LinuxAmd64_${shard.id}"
 
 private val linuxAmd64TestShards = listOf(
     TestShard("Accounting", "opaque-accounting", "packages/opaque-accounting"),
@@ -55,16 +61,12 @@ private fun testScript(shard: TestShard) = """
     status=${'$'}?
     set -e
 
-    if [[ -f "${'$'}junit_report" ]]; then
-        echo "##teamcity[importData type='junit' path='${'$'}junit_report']"
-    fi
-
     exit "${'$'}status"
 """
 
 project {
     pipeline {
-        id("OpaqueLinuxAmd64Tests")
+        id(pipelineId)
         name = "Opaque Linux amd64 tests"
 
         repositories {
@@ -79,7 +81,7 @@ project {
 
         linuxAmd64TestShards.forEach { shard ->
             job {
-                id("LinuxAmd64${shard.id}")
+                id(jobId(shard))
                 name = shard.label
 
                 params {
@@ -87,16 +89,26 @@ project {
                 }
 
                 requirements {
-                    equals("teamcity.agent.jvm.os.family", "Linux")
-                    equals("teamcity.agent.jvm.os.arch", "amd64")
+                    equals("teamcity.agent.jbHosted", "true")
+                    startsWith("system.agent.name", "Linux-Large")
+                }
+
+                features {
+                    xmlReport {
+                        id = "JUnitResults"
+                        reportType = XmlReport.XmlReportType.JUNIT
+                        rules = "+:junit-linux-amd64-${shard.id.lowercase()}.xml"
+                    }
                 }
 
                 steps {
                     script {
+                        id = "SetupTestEnvironment"
                         name = "Set up test environment"
                         scriptContent = setupScript
                     }
                     script {
+                        id = "RunTests"
                         name = "Run tests"
                         scriptContent = testScript(shard)
                     }
