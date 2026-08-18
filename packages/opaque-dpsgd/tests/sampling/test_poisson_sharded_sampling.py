@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import numpy as np
+import scipy.stats
 import torch
 from torch.utils.data import TensorDataset
 
 from opaque.distributed import local_shard
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import fold_in, key
+
+# Tail mass a statistical assertion may spend, split across shards.
+_FALSE_FAILURE_PROB = 1e-9
 
 
 class TestSingleDeviceMode:
@@ -66,22 +69,27 @@ class TestShardedSampling:
             assert all(0 <= idx < shard_size for idx in batch)
 
     def test_statistical_properties_per_shard(self) -> None:
+        """Each shard samples at the declared rate, within an exact band."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sample_rate = 0.1
         world_size = 4
+        n_steps = 2000
 
         for rank in range(world_size):
             shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = PoissonSampler(
                 shard,
                 sample_rate=sample_rate,
-                n_steps=100,
+                n_steps=n_steps,
                 key=fold_in(key(100), rank),
             )
-            batch_sizes = [len(b) for b in sampler]
-            expected_mean = len(shard) * sample_rate
-            actual_mean = np.mean(batch_sizes)
-            assert abs(actual_mean - expected_mean) < expected_mean * 0.5 + 3
+            included = sum(len(b) for b in sampler)
+            low, high = scipy.stats.binom.interval(
+                1 - _FALSE_FAILURE_PROB / world_size,
+                len(shard) * n_steps,
+                sample_rate,
+            )
+            assert low <= included <= high
 
     def test_different_ranks_independent(self) -> None:
         dataset = TensorDataset(torch.randn(1000, 10))
