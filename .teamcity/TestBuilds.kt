@@ -1,5 +1,7 @@
 import jetbrains.buildServer.configs.kotlin.BuildType
+import jetbrains.buildServer.configs.kotlin.buildFeatures.PullRequests
 import jetbrains.buildServer.configs.kotlin.buildFeatures.perfmon
+import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.matrix
 
@@ -16,6 +18,13 @@ object PythonTests : BuildType({
         param("opaque.pytest.xdist", "-n auto --dist loadscope")
     }
     features {
+        pullRequests {
+            provider = github {
+                authType = vcsRoot()
+                filterTargetBranch = "+:main"
+                filterAuthorRole = PullRequests.GitHubRoleFilter.EVERYBODY
+            }
+        }
         matrix {
             param(
                 "opaque.pytest.path",
@@ -80,7 +89,16 @@ object RustTests : BuildType({
     failureConditions {
         executionTimeoutMin = CiModel.TEST_TIMEOUT_MINUTES
     }
-    features { perfmon { } }
+    features {
+        perfmon { }
+        pullRequests {
+            provider = github {
+                authType = vcsRoot()
+                filterTargetBranch = "+:main"
+                filterAuthorRole = PullRequests.GitHubRoleFilter.EVERYBODY
+            }
+        }
+    }
     steps {
         script {
             name = "Run Rust tests and doctests"
