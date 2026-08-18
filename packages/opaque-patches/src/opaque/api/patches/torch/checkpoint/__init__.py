@@ -4,9 +4,9 @@
 
 ``apply_checkpoint_patch`` installs only the patches the running PyTorch needs.
 When torch supports the composition natively, only the HuggingFace glue is
-applied; the torch-core patches are skipped (and several would be harmful, e.g.
-stripping the now-scoped higher-order guard). Each patch lives in its own module
-named for the surface it patches:
+applied; the torch-core patches are skipped (and several would be redundant, e.g.
+re-scoping the already-scoped higher-order guard). Each patch lives in its own
+module named for the surface it patches:
 
 - ``saved_tensor_hooks_guard`` / ``save_on_cpu``  -- gated on the guard scoping
 - ``noop_save_inputs``                            -- old-arch only (self-skips)

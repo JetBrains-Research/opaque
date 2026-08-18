@@ -97,7 +97,12 @@ def my_model(x):
     h = checkpoint(block2, h, use_reentrant=False)
     return h.sum()
 
-grads = vmap(grad(my_model))(batch_x)
+# no_grad states that the per-example gradients are values, not a graph to
+# differentiate again; `grad` ignores it for the gradient itself. Without it the
+# transform keeps an internal backward graph that pins the recomputed
+# activations, and checkpointing saves nothing.
+with torch.no_grad():
+    grads = vmap(grad(my_model))(batch_x)
 ```
 
 **With Hugging Face models:**
@@ -123,10 +128,14 @@ with functorch). No special kwargs needed.
 
 - Requires `use_reentrant=False` (the non-reentrant checkpoint path).
   The legacy reentrant path is not supported.
-- Only safe for first-order differentiation (grad, vjp, jacrev). Not
-  compatible with higher-order transforms (hessian, jacrev(jacrev)).
-  Opaque only uses first-order differentiation, so this is not an issue
-  in practice.
+- Only first-order differentiation is checkpointed. Higher-order transforms
+  (`hessian`, `jacrev(grad(...))`) keep upstream behaviour and still refuse
+  saved-tensor hooks, so they cannot be combined with checkpointing.
+- The saving requires entering the transform under `torch.no_grad()`. With grad
+  mode on, the result stays differentiable by `.backward()` and the activations
+  stay pinned. `clipped_grad` does this for you — the trainers inherit it — and
+  skips it when an outer `torch.func` transform still has to differentiate the
+  clipped gradients.
 - Opt out at the API layer (no env-var kill switches): pass
   `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
   `apply_model_patches(...)`, or `performance_kernels_config={"vmap_checkpointing": False}`
