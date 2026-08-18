@@ -36,6 +36,14 @@ python .github/scripts/discover_package_matrices.py \
   --teamcity-shards .teamcity/test-shards.tsv
 ```
 
+`test-shards.tsv` is the matrix source. Regenerate it whenever package
+`pyproject.toml` files change:
+
+```bash
+python .github/scripts/discover_package_matrices.py \
+  --teamcity-shards .teamcity/test-shards.tsv
+```
+
 To validate the generated TeamCity configuration locally:
 
 ```bash
