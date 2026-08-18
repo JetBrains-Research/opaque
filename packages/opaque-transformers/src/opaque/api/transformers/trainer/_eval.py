@@ -11,9 +11,6 @@ by the eval loop:
   labels, and (optionally) inputs across an eval loop, with a hot/cold
   buffer split that keeps CPU-offload flushes O(K·N) (one move per batch
   group, no re-flush of already-frozen chunks).
-- :func:`should_run_eval_at_step` — pure decision helper for the
-  training-loop-driven eval trigger; encodes ``eval_strategy`` × ``eval_delay``
-  semantics.
 - :func:`with_metric_prefix` — adds ``{prefix}_`` to keys that don't already
   start with it (HF parity).
 - :func:`speed_metrics` — pure helper mirroring HF's
@@ -29,7 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from torch import Tensor
@@ -48,10 +45,6 @@ from transformers.trainer_utils import (
 
 from .types import EvaluationResult  # re-export; canonical home is types.py
 
-if TYPE_CHECKING:
-    from ._training_arguments import TrainingArguments
-
-
 __all__ = [
     "EvalPrediction",
     "EvaluationResult",
@@ -61,7 +54,6 @@ __all__ = [
     "nested_numpify",
     "nested_truncate",
     "resolve_eval_num_samples",
-    "should_run_eval_at_step",
     "speed_metrics",
     "with_metric_prefix",
 ]
@@ -402,55 +394,8 @@ def _freeze_hot_chunk(
 
 
 # ---------------------------------------------------------------------------
-# Trigger / formatting helpers
+# Reporting helpers
 # ---------------------------------------------------------------------------
-
-
-def should_run_eval_at_step(
-    args: TrainingArguments,
-    global_step: int,
-    epoch: float,
-    eval_steps_resolved: int,
-) -> bool:
-    """Return ``True`` if the training loop should fire eval at this step.
-
-    Encodes HF's ``eval_strategy`` × ``eval_delay`` semantics:
-
-    - ``eval_strategy="no"`` always returns ``False`` (the per-loop trigger
-      never fires; ``eval_on_start`` is handled separately by the caller).
-    - ``eval_strategy="steps"``: fires every ``eval_steps_resolved`` steps,
-      with ``eval_delay`` interpreted in **steps** (skip until
-      ``global_step >= eval_delay``).
-    - ``eval_strategy="epoch"``: fires only at integer epoch boundaries (the
-      caller is expected to invoke this helper at the end of each epoch),
-      with ``eval_delay`` interpreted in **epochs** (skip until
-      ``epoch >= eval_delay``).
-
-    This helper is intentionally pure so it can be unit-tested without a
-    model.
-    """
-    strategy = args.eval_strategy
-    if strategy == "no":
-        return False
-
-    delay = float(args.eval_delay or 0)
-
-    if strategy == "steps":
-        if global_step < delay:
-            return False
-        if eval_steps_resolved <= 0:
-            return False
-        return global_step > 0 and global_step % eval_steps_resolved == 0
-
-    if strategy == "epoch":
-        # Only at integer-epoch boundaries.  The caller passes the running
-        # ``epoch`` value; we accept floats and require integer-equality.
-        if not float(epoch).is_integer():
-            return False
-        return epoch > 0 and epoch >= delay
-
-    # Unknown strategy — be conservative.
-    return False
 
 
 def speed_metrics(
