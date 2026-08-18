@@ -25,7 +25,8 @@ selection as its GitHub Actions counterpart, and publishes JUnit and coverage
 XML artifacts. Matrix artifacts are grouped by shard. TeamCity processes the
 JUnit reports through its XML Report Processing feature; coverage.py XML remains
 an artifact because it is not a TeamCity coverage-report format. Every matrix
-leg fails on reported test failures.
+leg fails on reported test failures. Linux/amd64 and Linux/aarch64 include slow
+tests only on the default branch; dependency-boundary lanes always exclude them.
 
 `test-shards.tsv` is the matrix source. Regenerate it whenever package
 `pyproject.toml` files change:

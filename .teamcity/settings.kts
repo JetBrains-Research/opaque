@@ -24,6 +24,8 @@ private data class TestLane(
     val architecture: String,
     val hostedRunnerName: String,
     val timeoutMinutes: Int,
+    val pytestMarker: String = "not cuda and not mps and not slow",
+    val defaultBranchPytestMarker: String = pytestMarker,
 )
 
 private fun testShards() =
@@ -50,6 +52,7 @@ private val testLanes = listOf(
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
         timeoutMinutes = 30,
+        defaultBranchPytestMarker = "not cuda and not mps",
     ),
     TestLane(
         id = "MinimumDependencies",
@@ -86,6 +89,7 @@ private val testLanes = listOf(
         architecture = "aarch64",
         hostedRunnerName = "Linux-Large-Arm64",
         timeoutMinutes = 30,
+        defaultBranchPytestMarker = "not cuda and not mps",
     ),
 )
 
@@ -117,10 +121,15 @@ private fun testScript(lane: TestLane) = """
     coverage_report="${reportPath("coverage", lane, "${'$'}shard_name")}"
     junit_report="${reportPath("junit", lane, "${'$'}shard_name")}"
 
+    pytest_marker="${lane.pytestMarker}"
+    if [[ "%teamcity.build.branch.is_default%" == "true" ]]; then
+        pytest_marker="${lane.defaultBranchPytestMarker}"
+    fi
+
     set +e
     timeout --preserve-status ${lane.timeoutMinutes}m \
         uv run --no-sync pytest "${'$'}test_path" \
-        -m "not cuda and not mps and not slow" \
+        -m "${'$'}pytest_marker" \
         -n auto --dist loadscope \
         --cov=opaque \
         --cov-report=xml:"${'$'}coverage_report" \
