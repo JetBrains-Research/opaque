@@ -10,7 +10,7 @@ these settings, then enable versioned settings for the Opaque TeamCity project
 with this repository as the settings VCS root and `.teamcity` as its settings
 path. The same VCS root must track the branches and pull requests that should
 run the configurations; each configuration uses `DslContext.settingsRoot` and
-builds only `main` and pull requests targeting `main`. The GitHub Checks
+builds the default branch and pull requests targeting `main`. The GitHub Checks
 webhook trigger publishes each run's result to GitHub without a separate commit
 status publisher. The VCS root must use a refreshable GitHub App token with
 webhooks enabled; the App needs `Checks: Read and write` plus the `Check run`
@@ -27,14 +27,6 @@ JUnit reports through its XML Report Processing feature; coverage.py XML remains
 an artifact because it is not a TeamCity coverage-report format. Every matrix
 leg fails on reported test failures. Linux/amd64 and Linux/aarch64 include slow
 tests only on the default branch; dependency-boundary lanes always exclude them.
-
-`test-shards.tsv` is the matrix source. Regenerate it whenever package
-`pyproject.toml` files change:
-
-```bash
-python .github/scripts/discover_package_matrices.py \
-  --teamcity-shards .teamcity/test-shards.tsv
-```
 
 `test-shards.tsv` is the matrix source. Regenerate it whenever package
 `pyproject.toml` files change:

@@ -155,8 +155,8 @@ project {
             vcs {
                 root(DslContext.settingsRoot)
                 branchFilter = """
-                    +:main
-                    +:refs/pull/*
+                    +:<default>
+                    +pr:target=main
                 """.trimIndent()
             }
 
