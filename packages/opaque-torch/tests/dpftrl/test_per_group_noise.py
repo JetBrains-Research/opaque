@@ -1,4 +1,4 @@
-"""Tests for mf_gaussian_noise with PerGroup clipping bounds."""
+"""Torch tests for mf_gaussian_noise with PerGroup clipping bounds."""
 
 from __future__ import annotations
 
@@ -40,10 +40,10 @@ def _row_l2_at_zero(strategy, *, n_steps: int, min_sep: int = 1) -> float:
     """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
     realized σ that :class:`NoisedPytree.noise_stddev` now publishes.
     """
-    streaming = strategy.streaming_matrix(
+    plan = strategy.execution_plan(
         n_steps=n_steps, min_sep=min_sep, max_participations=1
     )
-    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+    return plan.row_l2[0]
 
 
 def _assert_per_group_stddev_matches_expected(grad_template, *, key_seed: int) -> None:

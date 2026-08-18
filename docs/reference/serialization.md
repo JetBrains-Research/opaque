@@ -52,6 +52,12 @@ Use `torch_backend()` or `mlx_backend()` for the corresponding provider. The
 pure-Python `opaque-base` registry does not import frameworks or provider
 wheels on its own. Repeated provider activation is safe.
 
+For DP-FTRL, serialize the complete `MFNoiseState` or
+`SecondMomentMFNoiseState`, not only its key or step counter. Restoring against
+a freshly constructed state template from the same mechanism configuration and
+provider preserves native correlation buffers; the next eager noise call
+matches uninterrupted execution within that provider.
+
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
 ## API surface (no per-type `state_dict()`)

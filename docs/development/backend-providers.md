@@ -124,6 +124,38 @@ functions are the portable conformance surface; Opaque does not define cross-pro
 for hidden model RNG. `normal(rng_key, shape, ...)` must derive its result from
 the immutable key without mutating hidden generator state.
 
+## DP-FTRL provider behavior
+
+`opaque.dpftrl` uses the portable core for eager clipping and
+matrix-factorization noise on all three first-party providers. The gradient
+template passed to `mf_gaussian_noise` participates in normal backend
+inference, so a Torch tensor, JAX array, or MLX array activates the matching
+installed provider. Inputs, outputs, correlation buffers, and private
+second-moment streams remain native arrays on that provider; Opaque does not
+wrap or convert them through Torch or NumPy.
+
+MF strategy recipes are host-side objects. Their `coefficients(...)` methods
+return NumPy arrays, and strategy construction produces a provider-independent
+execution plan of numeric coefficients. The active provider performs Gaussian
+sampling and linear combinations over native array leaves. Scalar and
+`PerGroup` clipping bounds use the same path.
+
+When `mf_gaussian_noise(..., compute_dtype=None)` is constructed, the compute
+dtype resolves to the active provider's `float32`. Noise sampling, correlation
+buffers, and linear-combination arithmetic use that dtype; each result leaf is
+cast back to its input dtype at the public boundary. Passing an explicit native
+dtype overrides the compute dtype.
+
+The immutable MF state contains its keyed cursor and provider-native correlation
+buffers. Saving and restoring the complete state with `opaque.serialization`
+continues the same stream within that provider. Reconstruction from the same
+key and inputs also replays within a provider, but provider-native PRNGs do not
+produce a shared Torch/JAX/MLX bitstream.
+
+This is an eager execution contract. The optional compilation profile does not
+by itself establish that a complete DP-FTRL training loop or its state objects
+are safe to stage under a provider's JIT/compiler.
+
 ## Keyed random sampling
 
 `opaque.random` separates portable key derivation from provider-native samples.

@@ -1,7 +1,6 @@
 """Tests for CyclicPoissonSampler with DDP support."""
 
 import pytest
-import torch
 
 from opaque.api.dpftrl.sampling._partitions import PartitionType
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -450,87 +449,6 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         # Check all indices are local: [0, 50)
         for batch in batches0:
             assert all(0 <= idx < 50 for idx in batch)
-
-
-class TestCyclicPoissonSamplerDataLoader:
-    """Test integration with PyTorch DataLoader."""
-
-    def test_dataloader_integration(self):
-        """Works with PyTorch DataLoader."""
-        dataset = list(range(100))
-        sampler = CyclicPoissonSampler(
-            dataset,
-            sample_rate=0.5,
-            bands=2,
-            n_steps=10,
-            key=key(42),
-        )
-
-        loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_sampler=sampler,
-        )
-
-        batches = list(loader)
-        assert len(batches) == 10
-
-        # Each batch should be a tensor of valid indices
-        for batch in batches:
-            assert isinstance(batch, torch.Tensor)
-            assert all(0 <= x < 100 for x in batch)
-
-    def test_dataloader_variable_batch_sizes(self):
-        """DataLoader handles variable batch sizes."""
-        dataset = list(range(200))
-        sampler = CyclicPoissonSampler(
-            dataset,
-            sample_rate=0.3,
-            bands=1,
-            n_steps=20,
-            key=key(42),
-        )
-
-        loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_sampler=sampler,
-        )
-
-        batch_sizes = [len(batch) for batch in loader]
-        # Poisson property: sizes should vary
-        assert len(set(batch_sizes)) > 1
-
-
-class TestCyclicPoissonSamplerRangeDataset:
-    """Test with actual Dataset objects."""
-
-    def test_with_torch_dataset(self):
-        """Works with torch.utils.data.Dataset."""
-
-        class SimpleDataset(torch.utils.data.Dataset):
-            def __init__(self, size):
-                self.size = size
-
-            def __len__(self):
-                return self.size
-
-            def __getitem__(self, idx):
-                return idx
-
-        dataset = SimpleDataset(100)
-        sampler = CyclicPoissonSampler(
-            dataset,
-            sample_rate=0.5,
-            bands=3,
-            n_steps=9,
-            key=key(42),
-        )
-
-        batches = list(sampler)
-        assert len(batches) == 9
-
-        # All indices valid
-        for batch in batches:
-            assert all(0 <= idx < 100 for idx in batch)
 
 
 class TestCyclicPoissonSamplerTruncated:

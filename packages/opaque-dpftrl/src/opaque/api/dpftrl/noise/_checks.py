@@ -6,40 +6,54 @@ ensuring they satisfy expected properties (lower-triangular, symmetric, finite, 
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike, NDArray
 
 
 def _pad(s: str) -> str:
     return s + " " if s else ""
 
 
-def check_lower_triangular(M: torch.Tensor, name: str = "", **allclose_kwargs) -> None:
+def _array(M: ArrayLike) -> NDArray[np.float64]:
+    return np.asarray(M, dtype=np.float64)
+
+
+def check_lower_triangular(M: ArrayLike, name: str = "", **allclose_kwargs) -> None:
     """Check that M is lower-triangular."""
-    if not torch.allclose(M, torch.tril(M), **allclose_kwargs):
+    M = _array(M)
+    if not np.allclose(M, np.tril(M), **allclose_kwargs):
         raise ValueError(f"Matrix {_pad(name)}should be lower-triangular, found\n{M}")
 
 
-def check_is_matrix(M: torch.Tensor, name: str = "") -> None:
+def check_is_matrix(M: ArrayLike, name: str = "") -> None:
     """Check that M is a 2D tensor."""
+    M = _array(M)
     if M.ndim != 2:
         raise ValueError(f"Matrix {_pad(name)}has unexpected shape {M.shape}")
 
 
-def check_square(M: torch.Tensor, name: str = "") -> None:
+def check_square(M: ArrayLike, name: str = "") -> None:
     """Check that M is a square matrix."""
+    M = _array(M)
     if M.ndim != 2 or M.shape[0] != M.shape[1]:
         raise ValueError(f"Matrix {_pad(name)}should be square, found shape {M.shape}")
 
 
-def check_finite(M: torch.Tensor, name: str = "") -> None:
+def check_finite(M: ArrayLike, name: str = "") -> None:
     """Check that all elements of M are finite."""
-    if not torch.all(torch.isfinite(M)):
+    M = _array(M)
+    if not np.all(np.isfinite(M)):
         raise ValueError(f"Matrix {_pad(name)}is not finite, found\n{M}")
 
 
-def check_symmetric(M: torch.Tensor, name: str = "", **allclose_kwargs) -> None:
+def check_symmetric(M: ArrayLike, name: str = "", **allclose_kwargs) -> None:
     """Check that M is symmetric."""
-    if not torch.allclose(M, M.T, **allclose_kwargs):
+    M = _array(M)
+    if not np.allclose(M, M.T, **allclose_kwargs):
         raise ValueError(f"Matrix {_pad(name)}should be symmetric, found\n{M}")
 
 
@@ -65,10 +79,10 @@ def check_exactly_one(**kwargs) -> str:
 
 def check(
     *,
-    A: torch.Tensor | None = None,
-    B: torch.Tensor | None = None,
-    C: torch.Tensor | None = None,
-    X: torch.Tensor | None = None,
+    A: ArrayLike | None = None,
+    B: ArrayLike | None = None,
+    C: ArrayLike | None = None,
+    X: ArrayLike | None = None,
     **allclose_kwargs,
 ) -> None:
     """Apply checks to matrices A = B @ C and X = C.T @ C.
@@ -80,15 +94,16 @@ def check(
         B: The decoder matrix, such that A = B @ C.
         C: The encoder (strategy) matrix.
         X: Symmetric Gram matrix C.T @ C.
-        **allclose_kwargs: kwargs to pass to torch.allclose.
+        **allclose_kwargs: kwargs to pass to numpy.allclose.
 
     Raises:
         ValueError: if matrices do not satisfy expected properties.
     """
-    not_none: dict[str, torch.Tensor] = {}
+    not_none: dict[str, NDArray[np.float64]] = {}
     n: int | None = None
 
     if A is not None:
+        A = _array(A)
         check_finite(A, "A")
         check_square(A, "A")
         check_lower_triangular(A, "A", **allclose_kwargs)
@@ -96,6 +111,7 @@ def check(
         n = A.shape[0]
 
     if B is not None:
+        B = _array(B)
         check_finite(B, "B")
         check_is_matrix(B, "B")
         if B.shape[0] == B.shape[1]:
@@ -104,6 +120,7 @@ def check(
         n = B.shape[0]
 
     if C is not None:
+        C = _array(C)
         check_finite(C, "C")
         check_is_matrix(C, "C")
         if C.shape[0] == C.shape[1]:
@@ -112,6 +129,7 @@ def check(
         n = C.shape[1]
 
     if X is not None:
+        X = _array(X)
         check_finite(X, "X")
         check_square(X, "X")
         check_symmetric(X, "X", **allclose_kwargs)

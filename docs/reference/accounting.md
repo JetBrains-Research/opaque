@@ -469,8 +469,7 @@ transform — deterministic, no sampling. For correlated-noise strategies
 ```python
 # With DP-λCGD
 strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
+    lambda_=0.9,
 )
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),

@@ -1,4 +1,4 @@
-"""Checkpoint continuation contracts for RNG-bearing MF noise state."""
+"""Torch checkpoint continuation contracts for RNG-bearing MF noise state."""
 
 from __future__ import annotations
 

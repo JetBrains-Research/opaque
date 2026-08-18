@@ -2553,11 +2553,10 @@ source = { editable = "packages/opaque-base" }
 name = "opaque-dpftrl"
 source = { editable = "packages/opaque-dpftrl" }
 dependencies = [
+    { name = "numpy" },
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
     { name = "scipy" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -2567,12 +2566,11 @@ optimizers = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=1.26.0" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 
@@ -2623,6 +2621,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+dpftrl = [
+    { name = "opaque-dpftrl" },
+]
 dpsgd = [
     { name = "opaque-dpsgd" },
 ]
@@ -2630,10 +2631,11 @@ dpsgd = [
 [package.metadata]
 requires-dist = [
     { name = "jax", specifier = ">=0.4.30" },
+    { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
-provides-extras = ["dpsgd"]
+provides-extras = ["dpsgd", "dpftrl"]
 
 [[package]]
 name = "opaque-mlx"
@@ -2644,6 +2646,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+dpftrl = [
+    { name = "opaque-dpftrl" },
+]
 dpsgd = [
     { name = "opaque-dpsgd" },
 ]
@@ -2651,10 +2656,11 @@ dpsgd = [
 [package.metadata]
 requires-dist = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.22.0" },
+    { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
-provides-extras = ["dpsgd"]
+provides-extras = ["dpsgd", "dpftrl"]
 
 [[package]]
 name = "opaque-optimizers"
@@ -2700,17 +2706,21 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+dpftrl = [
+    { name = "opaque-dpftrl" },
+]
 dpsgd = [
     { name = "opaque-dpsgd" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
-provides-extras = ["dpsgd"]
+provides-extras = ["dpsgd", "dpftrl"]
 
 [[package]]
 name = "opaque-transformers"

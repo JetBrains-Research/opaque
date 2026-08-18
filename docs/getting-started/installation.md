@@ -49,16 +49,45 @@ until `opaque.backend.clear_backend()` is called. See [Backend providers and
 primitives](../development/backend-providers.md) for explicit and temporary
 selection.
 
+For DP-FTRL without the default Torch bundle, install `opaque-dpftrl` with the
+provider wheel used by the training loop:
+
+```bash
+pip install opaque-dpftrl opaque-torch
+pip install opaque-dpftrl opaque-jax
+pip install opaque-dpftrl opaque-mlx
+```
+
+The first Torch tensor, JAX array, or MLX array passed as the gradient template
+to `mf_gaussian_noise` activates the matching provider. If setup needs a
+provider before any native array is available, activate it explicitly:
+
+```python
+from opaque.jax import jax_backend
+
+jax_backend()
+```
+
+Use `torch_backend()` or `mlx_backend()` for the other first-party providers.
+Provider activation also registers native-array serialization handlers.
+
 ### Extras
 
 ```bash
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
-pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
-pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
+pip install "opaque[dpftrl]"        # + opaque-dpftrl with default Torch
+pip install "opaque[dpftrl,jax]"    # + opaque-dpftrl and JAX provider
+pip install "opaque[dpftrl,mlx]"    # + opaque-dpftrl and MLX provider
+pip install "opaque[transformers]"  # + Torch-only Transformers integration
 pip install "opaque[jax]"           # + opaque-jax (JAX provider)
 pip install "opaque[mlx]"           # + opaque-mlx (MLX provider)
 pip install "opaque[all]"           # everything above
 ```
+
+`opaque.transformers`, Hugging Face model patches, and the Triton kernel path
+are Torch-only. Installing a JAX or MLX provider enables Opaque's eager
+provider-neutral functional APIs, including DP-FTRL, but does not add a JAX or
+MLX Transformers trainer.
 
 ## From Source
 

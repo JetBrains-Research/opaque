@@ -4,7 +4,7 @@ Computes optimized banded Toeplitz coefficients on demand from the
 strategy's recipe (``bands``, ``momentum``, ``lr_schedule``) and the
 amplifier-supplied ``n_steps``.  ``lr_schedule`` is an
 :data:`opaque.scheduling.types.Schedule` (``Callable[[int], float]``) materialised
-to a tensor at workload-coefficient build time.
+to a host array at workload-coefficient build time.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-import torch
+import numpy as np
 
+from opaque.api.dpftrl.noise._plan import MfExecutionPlan, toeplitz_execution_plan
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._toeplitz import inverse_as_streaming_matrix
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 def _momentum_workload_coef(
     momentum: float,
     n: int,
-) -> torch.Tensor:
+) -> np.ndarray:
     """Compute Toeplitz workload coefficients for momentum-SGD.
 
     For momentum β, the workload matrix has entries
@@ -51,11 +52,11 @@ def _momentum_workload_coef(
             "production training.",
             stacklevel=3,
         )
-        coef = torch.zeros(n, dtype=torch.float64)
+        coef = np.zeros(n, dtype=np.float64)
         coef[0] = 1.0
         return coef
 
-    return torch.tensor([momentum**i for i in range(n)], dtype=torch.float64)
+    return np.asarray([momentum**i for i in range(n)], dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -76,13 +77,13 @@ def _band_mf_coefficients_cached(
     bands: int,
     momentum: float,
     lr_key: tuple[float, ...] | None,
-) -> torch.Tensor:
+) -> np.ndarray:
     """Run the BandMF Toeplitz optimization for the given recipe + horizon."""
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if bands < 1 or bands > n_steps:
         raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
-    lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
+    lr = np.asarray(lr_key, dtype=np.float64) if lr_key is not None else None
     workload_coef = _momentum_workload_coef(momentum, n_steps)
     return optimize_toeplitz(
         n_steps,
@@ -112,10 +113,18 @@ class BandMfStrategy:
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
 
-    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
-        return _band_mf_coefficients_cached(
+    def execution_plan(self, *, n_steps: int, **_) -> MfExecutionPlan:
+        coefficients = _band_mf_coefficients_cached(
             n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule, n_steps)
         )
+        padded = np.zeros(n_steps, dtype=np.float64)
+        padded[: len(coefficients)] = coefficients
+        return toeplitz_execution_plan(padded)
+
+    def coefficients(self, *, n_steps: int, **_) -> np.ndarray:
+        return _band_mf_coefficients_cached(
+            n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule, n_steps)
+        ).copy()
 
     def gram_matrix(self, **_) -> tuple[float, ...]:
         # BandMF uses Poisson / b-min-sep amplification, not BnB.
@@ -130,7 +139,7 @@ class BandMfStrategy:
 
     def sensitivity(self, *, n_steps: int, **_) -> float:
         coefs = self.coefficients(n_steps=n_steps)
-        return float(coefs.norm())
+        return float(np.linalg.norm(coefs))
 
 
 def band_mf_strategy(

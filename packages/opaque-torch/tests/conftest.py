@@ -9,6 +9,8 @@ from pathlib import Path
 _DDP_PATHS = (
     Path(__file__).resolve().parent / "ddp",
     Path(__file__).resolve().parent / "dpsgd" / "ddp",
+    Path(__file__).resolve().parent / "dpftrl",
+    Path(__file__).resolve().parent / "dpftrl" / "ddp",
 )
 for _ddp_path in _DDP_PATHS:
     _ddp = str(_ddp_path)

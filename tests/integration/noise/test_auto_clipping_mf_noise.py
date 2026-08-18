@@ -108,23 +108,13 @@ def _row_l2_at_zero(strategy, *, n_steps, min_sep=1, max_participations=None) ->
     """First-step ``‖row_0(C^-1)‖`` — used to back out base σ from the
     realized σ that :class:`NoisedPytree.noise_stddev` publishes.
 
-    Identity / λ-CGD step-0 / λ=0 cases all return 1.  λ-CGD has a
-    PRNG-replay path (no ``streaming_matrix``); we synthesize the
-    expected factor from the strategy's closed-form column norm.
+    The immutable execution plan is the shared source for runtime and
+    accounting row metadata across every strategy mode.
     """
-    from opaque.dpftrl.noise.types import IdentityStrategy, LambdaCgdStrategy
-
-    if isinstance(strategy, IdentityStrategy):
-        return 1.0
-    if isinstance(strategy, LambdaCgdStrategy):
-        from opaque.api.dpftrl.noise._lambda_cgd import _column_norm
-
-        col = _column_norm(strategy.lambda_, n_steps, 0) if strategy.normalized else 1.0
-        return col  # step-0 short-circuit: no z_{t-1} term so no sqrt(1+λ²) factor
-    streaming = strategy.streaming_matrix(
+    plan = strategy.execution_plan(
         n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
     )
-    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+    return plan.row_l2[0]
 
 
 _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd")

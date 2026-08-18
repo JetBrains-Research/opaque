@@ -1,12 +1,13 @@
 # Opaque
 
-Functional DP-SGD and DP-FTRL for PyTorch.
+Functional DP-SGD and DP-FTRL for Torch, JAX, and MLX.
 
 Opaque provides composable primitives for differentially private model
-training in PyTorch: per-example gradient clipping, calibrated noise
-injection, privacy accounting, and Poisson sampling. Built on `torch.func`,
-it uses a functional API with explicit state — no hooks, no subclassing, no
-hidden mutation.
+training: per-example gradient clipping, calibrated noise injection, privacy
+accounting, and sampling. Its backend-neutral functional API uses explicit
+state and provider-native arrays — no hooks, no subclassing, no hidden
+mutation. DP-FTRL matrix-factorization noise runs eagerly with Torch, JAX,
+and MLX.
 
 > **Work in progress:** Opaque is research software under active development.
 > Its differential-privacy mechanisms, accounting, and privacy guarantees are
@@ -82,8 +83,10 @@ Extras:
 
 ```bash
 pip install "opaque[auditing]"      # empirical privacy auditing
-pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
-pip install "opaque[transformers]"  # Hugging Face + patching components
+pip install "opaque[dpftrl]"        # DP-FTRL with the default Torch provider
+pip install "opaque[dpftrl,jax]"    # also install the JAX provider
+pip install "opaque[dpftrl,mlx]"    # also install the MLX provider
+pip install "opaque[transformers]"  # Torch-only Hugging Face integration
 pip install "opaque[jax]"           # JAX backend provider
 pip install "opaque[mlx]"           # MLX backend provider
 pip install "opaque[all]"           # all optional components
@@ -95,6 +98,13 @@ instead install `opaque-engine` with `opaque-torch`, `opaque-jax`, or
 array passed to an Opaque execution API selects the matching provider; that
 selection remains active until `opaque.backend.clear_backend()` is called.
 Use `opaque.backend.use_backend(...)` for a temporary, context-local switch.
+For a provider-neutral DP-FTRL installation without the default bundle, pair
+`opaque-dpftrl` with exactly the provider wheel the application uses.
+
+`opaque.transformers` and `opaque.patches` model integration remain Torch-only.
+Provider-neutral DP-FTRL covers the eager functional clipping, noise, optimizer,
+state, and serialization paths; it does not make Hugging Face models portable
+to JAX or MLX.
 
 ### Patching
 
@@ -168,7 +178,7 @@ for batch_x, batch_y in dataloader:
 
 ## Features
 
-- **Per-example gradient clipping** via `torch.func.vmap` + `torch.func.grad`,
+- **Per-example gradient clipping** via provider-dispatched `vmap` + `grad`,
   with fixed, adaptive (Andrew et al. 2021), and AUTO-S (Bu et al. 2023) variants.
 - **Noise injection**: Gaussian, truncated Gaussian, and correlated
   matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD), including
@@ -181,7 +191,7 @@ for batch_x, batch_y in dataloader:
 - **Privacy auditing**: empirical privacy validation via membership inference.
 - **Distributed training**: DDP-compatible with synchronized noise and
   gradient aggregation via `opaque.distributed`.
-- **Hugging Face compatibility**: automatic `vmap` patching for LLaMA, Mistral,
+- **Torch-only Hugging Face compatibility**: automatic `vmap` patching for LLaMA, Mistral,
   Qwen2/3, Phi-3, Gemma/Gemma2, Granite, Cohere/Cohere2, plus fused Triton
   kernels via `opaque.patches`.
 

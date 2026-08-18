@@ -1,8 +1,8 @@
 """Public MF noise factory — ``mf_gaussian_noise``.
 
-The strategy + amplification-context tuple selects a streaming matrix
-via the polymorphic :meth:`MfStrategy.streaming_matrix` query.  This
-file is a thin shell over that polymorphism, the engine's input
+The strategy + amplification-context tuple selects an immutable execution
+plan via the polymorphic :meth:`MfStrategy.execution_plan` query.  This
+file is a thin shell over that plan, the engine's input
 validation, and the second-moment dispatch — all heavy lifting lives in
 :mod:`_engine`, :mod:`_second_moment`, :mod:`_distributed`, and the
 per-strategy files.
@@ -10,8 +10,7 @@ per-strategy files.
 Realized per-step σ (bug fix): under correlated MF noise the actual
 per-coordinate noise variance at step ``t`` is
 ``base_σ² · ‖row_t(C^-1)‖²``, not ``base_σ²``.  The factory
-precomputes the per-step row-L2 of the streaming matrix at noise
-function build time and publishes
+reads the per-step row-L2 from the host execution plan and publishes
 ``noise_stddev = base_σ · row_l2(t)`` on each :class:`NoisedPytree`,
 so Adam-family optimizers' ``noise_bias_correction`` EMA subtracts the
 true variance contribution.  ``row_l2_at`` is a callable returned by
@@ -26,9 +25,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-import torch
-from torch.autograd.profiler import record_function
-
+from opaque.api.engine import runtime
+from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.random.types import RngKey
 from opaque.types import NoisedPytree, PerGroup, SecondMomentClippingOutput
@@ -39,10 +37,10 @@ from ._engine import (
     _check_mf_horizon,
     _expect_clipped,
     _matrix_factorization_noise,
+    _require_positive_int_horizon,
     _resolve_noise_multiplier,
     _validate_constant_max_norm,
 )
-from ._identity import IdentityStrategy
 from ._second_moment import SecondMomentMFNoiseState, make_second_moment_mf_noise
 
 if TYPE_CHECKING:
@@ -60,7 +58,7 @@ def mf_gaussian_noise(
     max_participations: int | None = None,
     noise_multiplier: float,
     key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
     second_moment_strategy: MfStrategy | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState | SecondMomentMFNoiseState]],
@@ -98,9 +96,9 @@ def mf_gaussian_noise(
         noise_multiplier: Gaussian noise multiplier.  The clipped-gradient
             ``max_norm`` is read from each ``ClippedPytree`` input.
         key: Explicit RNG key for deterministic randomness.
-        compute_dtype: Dtype used for the underlying ``torch.randn`` and the
-            linear-combination arithmetic.  Defaults to ``torch.float32`` to
-            match :func:`opaque.dpsgd.noise.gaussian_noise` — sampling
+        compute_dtype: Provider-native dtype used for normal sampling and
+            linear-combination arithmetic. Defaults to the active provider's
+            ``float32`` — sampling
             Gaussians in bf16/fp16 introduces discretization that distorts
             the noise distribution. Type stability on the public boundary is
             preserved: the input pytree's dtype is matched on output (input
@@ -112,6 +110,7 @@ def mf_gaussian_noise(
         A tuple ``(noise_fn, state)`` for the training loop.
     """
     resolved_noise_multiplier = _resolve_noise_multiplier(noise_multiplier)
+    n_steps = _require_positive_int_horizon(n_steps)
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
 
@@ -142,8 +141,12 @@ def mf_gaussian_noise(
         clipped_grads: Any,
         st: MFNoiseState,
     ) -> tuple[NoisedPytree, MFNoiseState]:
-        with record_function("opaque::mf_gaussian_noise"):
-            return _noise_fn_impl(clipped_grads, st)
+        if hasattr(clipped_grads, "pytree"):
+            backend = ensure_backend(clipped_grads.pytree)
+            if runtime.trace_scope.supports(backend):
+                with runtime.trace_scope("opaque::mf_gaussian_noise"):
+                    return _noise_fn_impl(clipped_grads, st)
+        return _noise_fn_impl(clipped_grads, st)
 
     def _noise_fn_impl(
         clipped_grads: Any,
@@ -208,7 +211,7 @@ def _make_raw_mf_noise(
     min_sep: int,
     max_participations: int | None,
     key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -216,57 +219,30 @@ def _make_raw_mf_noise(
 ]:
     """Build the underlying noise function + per-step row-L2 lookup.
 
-    Strategies may optionally provide a dedicated runtime noise builder
-    via ``raw_noise_factory(...)`` when the runtime operator is not best
-    expressed by generic ``streaming_matrix(...)`` dispatch.  The generic
-    streaming-matrix path remains the default.
+    Every strategy projects its host recipe into the same portable execution
+    plan contract, preventing accounting/runtime coefficient drift.
 
     The third return value, ``row_l2_at(step) -> float``, exposes the
     per-step L2 norm of ``C^{-1}``'s row so the wrapping factory can
     publish realized σ on :class:`NoisedPytree.noise_stddev`.
-    Identity: constant 1.  Streaming matrix: precomputed via
-    ``streaming.row_norms_squared(n_steps)`` once at build time.  λ-CGD:
-    closed-form via :func:`_lambda_cgd_row_l2`.
+    The row norms are precomputed by the host plan at construction time.
     """
-    if hasattr(strategy, "raw_noise_factory"):
-        raw = strategy.raw_noise_factory(
-            grad_template,
-            n_steps=n_steps,
-            min_sep=min_sep,
-            max_participations=max_participations,
-            key=key,
-            compute_dtype=compute_dtype,
-        )
-        if raw is not None:
-            return raw
-    streaming = strategy.streaming_matrix(
+    plan = strategy.execution_plan(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
     )
     noise_fn, state = _matrix_factorization_noise(
         grad_template,
-        streaming,
+        plan,
         key=key,
         compute_dtype=compute_dtype,
         n_steps=n_steps,
     )
-    if isinstance(strategy, IdentityStrategy):
-        # C^{-1} is the identity, every row has L2 = 1; skip the
-        # ``row_norms_squared`` precomputation (it would walk n unit
-        # vectors only to return all-ones).
-        def row_l2_at(_step: int) -> float:
-            return 1.0
-    else:
-        # Generic streaming matrices materialize row norms in O(bands·n²).
-        # Measure construction cost for the target horizon.
-        row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
 
-        def row_l2_at(step: int) -> float:
-            # Mirror the noise_fn horizon guard so a direct lookup past
-            # ``n_steps`` raises ValueError rather than IndexError.
-            _check_mf_horizon(step, n_steps)
-            return float(row_norms[step])
+    def row_l2_at(step: int) -> float:
+        _check_mf_horizon(step, n_steps)
+        return plan.row_l2[step]
 
     return noise_fn, state, row_l2_at
 

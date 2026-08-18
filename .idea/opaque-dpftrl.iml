@@ -8,7 +8,6 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-engine" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
-    <orderEntry type="module" module-name="opaque-torch" exported="" />
     <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>

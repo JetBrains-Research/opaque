@@ -14,7 +14,6 @@ TORCH_CONSUMERS = frozenset(
     {
         "opaque-alignment",
         "opaque-auditing",
-        "opaque-dpftrl",
         "opaque-patches",
         "opaque-transformers",
     }
@@ -79,7 +78,11 @@ def test_provider_metadata_declares_only_its_native_framework() -> None:
             assert _requirement_names(project["optional-dependencies"]["dpsgd"]) == {
                 "opaque-dpsgd"
             }
+            assert _requirement_names(project["optional-dependencies"]["dpftrl"]) == {
+                "opaque-dpftrl"
+            }
             expected_sources["opaque-dpsgd"] = {"workspace": True}
+            expected_sources["opaque-dpftrl"] = {"workspace": True}
         assert sources == expected_sources
         assert metadata["tool"]["setuptools"]["packages"]["find"]["include"] == [
             f"opaque.api.{provider.removeprefix('opaque-')}*",

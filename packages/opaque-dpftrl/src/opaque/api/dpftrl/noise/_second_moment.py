@@ -13,8 +13,8 @@ import dataclasses
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-import torch
-
+from opaque.api.engine import runtime
+from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.random import fold_in as rng_fold_in
 from opaque.types import (
@@ -60,7 +60,7 @@ def make_second_moment_mf_noise(
     max_participations: int | None,
     noise_multiplier: float,
     key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
 ) -> tuple[
     Callable[
         [Any, SecondMomentMFNoiseState],
@@ -103,7 +103,7 @@ def make_second_moment_mf_noise(
         _second_state=second_state,
     )
 
-    def noise_fn(
+    def _noise_fn_impl(
         clipped_input: Any,
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
@@ -189,6 +189,20 @@ def make_second_moment_mf_noise(
                 ),
             ),
         )
+
+    def noise_fn(
+        clipped_input: Any,
+        st: SecondMomentMFNoiseState,
+    ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
+        if isinstance(clipped_input, SecondMomentClippingOutput):
+            backend = ensure_backend(
+                clipped_input.grads.pytree,
+                clipped_input.squared_grads.pytree,
+            )
+            if runtime.trace_scope.supports(backend):
+                with runtime.trace_scope("opaque::mf_gaussian_noise"):
+                    return _noise_fn_impl(clipped_input, st)
+        return _noise_fn_impl(clipped_input, st)
 
     return noise_fn, init_state
 

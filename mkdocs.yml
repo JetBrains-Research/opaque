@@ -149,6 +149,7 @@ nav:
   - Development:
     - Overview: development/index.md
     - Backend providers and primitives: development/backend-providers.md
+    - DP-FTRL NumPy planner evaluation: development/dp-ftrl-numpy-planner-evaluation.md
   - API Reference:
     - Overview: reference/index.md
     - Serialization: reference/serialization.md

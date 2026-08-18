@@ -1,6 +1,6 @@
+from collections.abc import Iterable
+
 import pytest
-import torch
-from torch.utils.data import DataLoader, TensorDataset
 
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
@@ -24,8 +24,10 @@ from opaque.sampling import Sampler
     ],
 )
 def test_sampler_uses_shared_contract(sampler: Sampler[list[int]]) -> None:
-    dataset = TensorDataset(torch.arange(8))
-    loader = DataLoader(dataset, batch_sampler=sampler, collate_fn=lambda batch: batch)
+    batches = list(sampler)
 
     assert isinstance(sampler, Sampler)
-    assert all(isinstance(batch, list) for batch in loader)
+    assert isinstance(sampler, Iterable)
+    assert len(batches) == 2
+    assert all(isinstance(batch, list) for batch in batches)
+    assert all(isinstance(index, int) for batch in batches for index in batch)
