@@ -180,7 +180,21 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # Two attempts, deliberately. This step pulls buildx's own builder image
+      # (moby/buildkit:buildx-stable-1) from Docker Hub, so it fails whenever
+      # Docker Hub has a bad minute -- observed as:
+      #   Head ".../moby/buildkit/manifests/buildx-stable-1": 502 Bad Gateway
+      # That is upstream infrastructure, unrelated to this repo, and it wasted a
+      # full build. One retry converts the common single-blip case into a delay
+      # instead of a red run. If BOTH attempts fail it is a real outage and the
+      # second step surfaces the error normally.
       - name: Set up Docker Buildx
+        id: buildx
+        continue-on-error: true
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Docker Buildx (retry after upstream failure)
+        if: steps.buildx.outcome == 'failure'
         uses: docker/setup-buildx-action@v3
 
       - name: Authenticate to Google Cloud
