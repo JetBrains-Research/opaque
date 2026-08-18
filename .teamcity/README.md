@@ -10,10 +10,12 @@ these settings, then enable versioned settings for the Opaque TeamCity project
 with this repository as the settings VCS root and `.teamcity` as its settings
 path. The same VCS root must track the branches and pull requests that should
 run the configurations; each configuration uses `DslContext.settingsRoot` and
-triggers only on `main` and pull requests targeting `main`. The VCS root must
-use GitHub HTTP or GitHub App credentials so TeamCity can query pull requests;
-do not add pull-request refs to its branch specification because the Pull
-Requests build feature discovers them.
+builds only `main` and pull requests targeting `main`. The GitHub Checks
+webhook trigger publishes each run's result to GitHub without a separate commit
+status publisher. The VCS root must use a refreshable GitHub App token with
+webhooks enabled; the App needs `Checks: Read and write` plus the `Check run`
+and `Check suite` webhook events. Do not add pull-request refs to the root's
+branch specification because the Pull Requests build feature discovers them.
 
 The pipelines use JetBrains-hosted Linux-Large agents for amd64 lanes and
 Linux-Large-Arm64 agents for the arm64 lane. uv installs each lane's requested

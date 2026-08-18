@@ -4,7 +4,7 @@ import jetbrains.buildServer.configs.kotlin.buildFeatures.XmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.PullRequests
 import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
-import jetbrains.buildServer.configs.kotlin.triggers.vcs
+import jetbrains.buildServer.configs.kotlin.triggers.gitHubChecks
 
 version = "2026.1"
 
@@ -151,12 +151,7 @@ project {
             }
 
             triggers {
-                vcs {
-                    branchFilter = """
-                        +:main
-                        +:refs/pull/*
-                    """.trimIndent()
-                }
+                gitHubChecks {}
             }
 
             requirements {
