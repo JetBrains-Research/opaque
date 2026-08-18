@@ -1,5 +1,6 @@
 """Tests for Toeplitz matrix operations."""
 
+import dataclasses
 import warnings
 
 import pytest
@@ -104,6 +105,114 @@ class TestInverseAsStreamingMatrix:
         M = streaming.materialize(3)
 
         torch.testing.assert_close(M, C_inv, atol=1e-10, rtol=1e-10)
+
+
+def _probing_row_norms_squared(matrix, n):
+    """Reference row norms via the generic probing implementation."""
+    return dataclasses.replace(matrix, row_norms_squared_fn=None).row_norms_squared(n)
+
+
+class TestRowNormsClosedForm:
+    """Closed-form row_norms_squared attached by inverse_as_streaming_matrix."""
+
+    def test_banded_matches_probing_and_dense(self):
+        coef = torch.tensor([1.0, 0.7, 0.3], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef)
+        n = 6
+        norms = streaming.row_norms_squared(n)
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, n), atol=1e-12, rtol=1e-12
+        )
+        dense = streaming.materialize(n)
+        torch.testing.assert_close(
+            norms, dense.square().sum(dim=1), atol=1e-12, rtol=1e-12
+        )
+
+    def test_column_normalized_matches_probing(self):
+        coef = torch.tensor([1.0, 0.7, 0.3], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef, column_normalize_for_n=6)
+        norms = streaming.row_norms_squared(6)
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, 6), atol=1e-12, rtol=1e-12
+        )
+
+    def test_n_beyond_normalization_clamps_like_probing(self):
+        coef = torch.tensor([1.0, 0.5], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef, column_normalize_for_n=4)
+        norms = streaming.row_norms_squared(7)
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, 7), atol=1e-12, rtol=1e-12
+        )
+
+    def test_n_smaller_than_bands(self):
+        coef = torch.tensor([1.0, 0.5, 0.25, 0.125, 0.0625], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef)
+        norms = streaming.row_norms_squared(3)
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, 3), atol=1e-12, rtol=1e-12
+        )
+
+    def test_inverse_coefficients_hint(self):
+        # C^{-1} = toeplitz([1, -0.5]) is banded, so C is the dense
+        # geometric strategy toeplitz([1, 0.5, 0.25, ...]).
+        n = 8
+        inv_hint = torch.tensor([1.0, -0.5], dtype=torch.float64)
+        coef = inverse_coef(inv_hint, n)
+        with_hint = inverse_as_streaming_matrix(coef, inverse_coefficients=inv_hint)
+        norms = with_hint.row_norms_squared(n)
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(with_hint, n), atol=1e-12, rtol=1e-12
+        )
+
+    def test_hint_not_used_past_validated_horizon(self):
+        # coef=[1, 0.5] with inv_hint=[1, -0.5] passes validation: the full
+        # convolution is [1, 0, -0.25] and only its first
+        # max(len(coef), len(inv_hint)) = 2 terms are checked. The hint is
+        # not the whole inverse though -- the true one continues
+        # [..., 0.25, -0.125] -- so zero-padding it past that horizon
+        # terminates the inverse early and under-reports the third squared
+        # row norm as 1.25 instead of 1.3125.
+        coef = torch.tensor([1.0, 0.5], dtype=torch.float64)
+        inv_hint = torch.tensor([1.0, -0.5], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef, inverse_coefficients=inv_hint)
+        norms = streaming.row_norms_squared(3)
+        torch.testing.assert_close(
+            norms,
+            torch.tensor([1.0, 1.25, 1.3125], dtype=torch.float64),
+            atol=1e-12,
+            rtol=1e-12,
+        )
+        torch.testing.assert_close(
+            norms, _probing_row_norms_squared(streaming, 3), atol=1e-12, rtol=1e-12
+        )
+
+    def test_inconsistent_inverse_coefficients_raise(self):
+        coef = torch.tensor([1.0, 0.7, 0.3], dtype=torch.float64)
+        with pytest.raises(ValueError, match="not the Toeplitz inverse"):
+            inverse_as_streaming_matrix(
+                coef,
+                inverse_coefficients=torch.tensor([5.0, 5.0], dtype=torch.float64),
+            )
+
+    def test_requires_grad_uses_differentiable_path(self):
+        coef = torch.tensor([1.0, 0.5, 0.25], dtype=torch.float64, requires_grad=True)
+        streaming = inverse_as_streaming_matrix(coef)
+        norms = streaming.row_norms_squared(4)
+        assert norms.requires_grad
+        norms.sum().backward()
+        assert coef.grad is not None
+        assert torch.all(torch.isfinite(coef.grad))
+        torch.testing.assert_close(
+            norms.detach(),
+            inverse_as_streaming_matrix(coef.detach()).row_norms_squared(4),
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
+    def test_n_zero(self):
+        coef = torch.tensor([1.0, 0.5], dtype=torch.float64)
+        streaming = inverse_as_streaming_matrix(coef)
+        assert streaming.row_norms_squared(0).shape == (0,)
 
 
 class TestOptimalCoefs:

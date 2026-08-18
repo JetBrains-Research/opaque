@@ -9,6 +9,7 @@ from opaque.api.dpftrl.noise._streaming_matrix import (
     multiply_array,
     multiply_streaming_matrices,
     prefix_sum,
+    scale_rows_and_columns,
 )
 
 
@@ -92,6 +93,35 @@ class TestMatMul:
         result = P @ x
         expected = torch.tensor([[1.0], [3.0], [6.0]], dtype=torch.float64)
         torch.testing.assert_close(result, expected)
+
+
+class TestRowNormsOverride:
+    def test_override_dispatches(self):
+        sentinel = torch.tensor([42.0], dtype=torch.float64)
+        M = StreamingMatrix(
+            lambda _: (),
+            lambda value, state: (value, state),
+            row_norms_squared_fn=lambda n: sentinel,
+        )
+        assert M.row_norms_squared(1) is sentinel
+
+    def test_composition_drops_override(self):
+        M = StreamingMatrix(
+            lambda _: (),
+            lambda value, state: (value, state),
+            row_norms_squared_fn=lambda n: torch.ones(n, dtype=torch.float64),
+        )
+        composed = multiply_streaming_matrices(M, prefix_sum())
+        assert composed.row_norms_squared_fn is None
+
+    def test_scaling_drops_override(self):
+        M = StreamingMatrix(
+            lambda _: (),
+            lambda value, state: (value, state),
+            row_norms_squared_fn=lambda n: torch.ones(n, dtype=torch.float64),
+        )
+        scaled = scale_rows_and_columns(M, row_scale=torch.ones(4, dtype=torch.float64))
+        assert scaled.row_norms_squared_fn is None
 
 
 class TestFromArrayImplementation:
