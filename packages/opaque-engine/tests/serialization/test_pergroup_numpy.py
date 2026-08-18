@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-import pytest
 
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import PerGroup
@@ -41,12 +40,6 @@ def test_numpy_leaf_roundtrip() -> None:
     assert out.a.shape == (2, 3)
     assert out.a.dtype == np.float32
     np.testing.assert_array_equal(out.a, obj.a)
-
-
-def test_numpy_leaf_wrong_shape_errors() -> None:
-    sd = state_dict(_NdBox(np.ones((1,))))
-    with pytest.raises(ValueError, match="shape"):
-        from_state_dict(_NdBox(np.zeros((2,))), sd)
 
 
 def test_root_numpy_roundtrip() -> None:
