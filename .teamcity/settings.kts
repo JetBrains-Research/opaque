@@ -113,11 +113,11 @@ object HttpsGithubComJetBrainsResearchOpaqueRefsHeadsMain : GitVcsRoot({
     url = "https://github.com/JetBrains-Research/opaque"
     branch = "refs/heads/teamcity-prototype-stabilization"
     branchSpec = "+:refs/heads/*"
-    authMethod = password {
+    authMethod = token {
         userName = "oauth2"
-        password = "credentialsJSON:b5969cfb-b453-45e1-b5c6-02690cef6977"
+        tokenId = "tc_token_id:CID_8f0b5e59348f7f723191b83227c8a1e1:-1:92908327-48e1-4c13-b5ca-b4f0f7e6e947"
     }
-    param("tokenId", "tc_token_id:CID_8f0b5e59348f7f723191b83227c8a1e1:-1:92908327-48e1-4c13-b5ca-b4f0f7e6e947")
+    param("secure:password", "credentialsJSON:b5969cfb-b453-45e1-b5c6-02690cef6977")
 })
 
 
