@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <project>
   <modelVersion>4.0.0</modelVersion>
-  <name>Opaque Config DSL Script</name>
-  <groupId>Opaque</groupId>
-  <artifactId>Opaque_dsl</artifactId>
+  <name>JbrFed_Opaque Config DSL Script</name>
+  <groupId>JbrFed_Opaque</groupId>
+  <artifactId>JbrFed_Opaque_dsl</artifactId>
   <version>1.0-SNAPSHOT</version>
 
   <parent>
