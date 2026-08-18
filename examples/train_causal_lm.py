@@ -1532,8 +1532,30 @@ def main():
         return {**frozen_params, **trainable}
 
     # Define per-example loss
+    _pad_id = tokenizer.pad_token_id
+
     def per_example_loss_fn(trainable, input_ids):
-        output = fmodel(merged_params(trainable), input_ids, labels=input_ids)
+        # Mask padding out of the loss.
+        #
+        # `collate` returns only input_ids and drops the collator's `labels`,
+        # which is where DataCollatorForLanguageModeling puts the -100 pad mask.
+        # Passing labels=input_ids therefore scored the pad positions, and since
+        # pad_token == eos_token that is the model predicting <eos> after <eos>:
+        # near-zero loss on ~49.5% of scored positions (mean real length 520 of
+        # 1024). It made eval/loss ~half of the true value -- reported 0.3435
+        # implies perplexity 1.41 on source code, where the real figure is ~1.98.
+        #
+        # Reconstructed here rather than threaded through the signature: the
+        # vmap'd clipped_grad / auto_clipped_grad / adaptive_clipped_grad call
+        # sites bind this as f(trainable, batch_elem), so adding an argument
+        # would ripple into the opaque library. This rule is byte-identical to
+        # the collator's own (`labels[labels == pad_token_id] = -100`).
+        labels = (
+            input_ids.masked_fill(input_ids == _pad_id, -100)
+            if _pad_id is not None
+            else input_ids
+        )
+        output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
 
     # Build canary DataLoader for auditing
@@ -1932,7 +1954,16 @@ def main():
             from lora_privacy.peft_lora_xs import xse_sgd
 
             base_opt = xse_sgd(
-                lr=args.learning_rate,
+                # lr_for_opt, not args.learning_rate. Every other optimizer branch
+                # below takes lr_for_opt (the schedule + warmup wrapper built at
+                # ~L1868-1905); this branch took the raw scalar, so --lr-schedule
+                # and --lr-warmup-steps were silently inert on the LoRA-XSe path.
+                # All 297 runs to date therefore trained at a constant LR.
+                # torchopt.sgd takes `lr: ScalarOrSchedule` and _XSeSGD passes it
+                # straight through (xse.py:674), so a schedule just works.
+                # Default --lr-schedule is still "none", so this changes nothing
+                # unless the flag is set: existing runs stay comparable.
+                lr=lr_for_opt,
                 momentum=args.sgd_momentum,
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
@@ -2476,6 +2507,27 @@ def main():
                                 _v = _agg("r_cross_norm")
                                 if _v is not None:
                                     wb_metrics["rotation/r_cross_norm"] = _v
+                                # Momentum spectrum, layer-mean of each index.
+                                # sv0..sv7 make the signal/noise cut point
+                                # locatable: pure iid noise of per-entry std s
+                                # fills [0, 2*s*sqrt(r)], so the bulk edge can be
+                                # read off the tail instead of assumed.
+                                for _i in range(8):
+                                    _v = _agg(f"sv{_i}")
+                                    if _v is not None:
+                                        wb_metrics[f"rotation/sv{_i}"] = _v
+                                # min/max of r_e ACROSS layers. The mean alone
+                                # hides clamping (r_e clipped to 1 when
+                                # floor(N_alpha)+margin >= r); r_e_min == 1 with a
+                                # mean well above 1 is the clamping signature.
+                                _re = [e["r_e_layer"] for e in per_layer.values()
+                                       if "r_e_layer" in e]
+                                if _re:
+                                    wb_metrics["rotation/r_e_min"] = min(_re)
+                                    wb_metrics["rotation/r_e_max"] = max(_re)
+                                    wb_metrics["rotation/r_e_frac_clamped"] = (
+                                        sum(1 for _x in _re if _x <= 1.0) / len(_re)
+                                    )
                                 # Rényi entropy diagnostics (alpha set by
                                 # XSE_ADAPTIVE_DEPTH_ALPHA env var; at α=1
                                 # these equal the Shannon-based metrics).

@@ -163,6 +163,7 @@ def training_settings(
         "XSE_MP_SHRINKAGE",
         "XSE_MP_SHRINKAGE_END",
         "XSE_MP_SHRINKAGE_DECAY_STEPS",
+        "XSE_RESET_IN_PLACE",
     )
     extra_envs += [
         {"name": _k, "value": os.environ[_k]}

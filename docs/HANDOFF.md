@@ -89,6 +89,20 @@ noise floor** (§3.3). Refreshing ~1 direction is nearly as bad as not rotating.
 
 ## 3. The α question — RESOLVED (refuted), and how
 
+> **SUPERSEDED 2026-08-14 by `docs/renyi-alpha-theory-final.md`.** The verdict below (α refuted) is
+> correct, but the route is weaker than it needed to be and two numbers here are now wrong:
+> - §3.1–3.2 treat α ∈ {∞,1,2} at m=1 as three *conditions*. They are **replicates**: α enters only
+>   via `⌊N_α⌋`, which is 1 on ≥98.1 % of matrix-steps for all three, so the runs execute the same
+>   algorithm. Their 5.7e-4 spread is the **noise floor**, not an effect that "vanished".
+> - §3.3's framing "adaptive runs are ~20× noisier" is **confounded**: the floor tracks *depth*
+>   (3.0e-5 at depth 5, 1.8e-4 at 13, 3.0e-4 at 14), and every adaptive run here is deep. Untangling
+>   it needs a `fixed-re13` seed triple — the one experiment still worth buying.
+> - §3.4's "adaptive depth buys nothing" is true for a stronger reason: at α ≥ 1 the rule assigns the
+>   *same* depth to all 196 matrices, so there was no adaptivity to buy anything.
+>
+> Read the new doc for the theorems (quantization ⇒ ≤ r distinguishable α; scale-blindness ⇒ wrong
+> sign of response to noise) and the mediation bound (max possible α effect 2.8e-5 vs 3.0e-4 floor).
+
 This went through three stages. The full history matters because the first two were
 wrong in *different* ways.
 

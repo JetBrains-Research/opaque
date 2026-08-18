@@ -1,5 +1,13 @@
 # Does the Rényi order α affect utility? — audit, metrics, and the decisive test
 
+> **SUPERSEDED 2026-08-14 by `docs/renyi-alpha-theory-final.md`** for everything about α and depth
+> (§§6–12 here). Keep this file for the code-defect audit (§2) and the metrics/statistics plan (§3),
+> which still stand. The α sections chased a noise floor through four revisions; the new doc replaces
+> the statistical argument with an identifiability one — α enters the algorithm through a single
+> integer `⌊N_α⌋`, which is provably 1 for all α ≥ 2 in **36/36** non-DP runs, so those arms were
+> never separable by any experiment. §1's observation that "the non-DP α arms are arithmetically
+> vacuous" was the right instinct; the new doc turns it into a theorem with certificates.
+
 **Date:** 2026-08-11. Sources: 3 independent agents (adversarial theory review, full W&B
 data audit over 256 runs, metrics/literature research). This supersedes looser claims
 in `renyi-campaign-results.md` and Part VIII of the theory doc.

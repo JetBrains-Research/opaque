@@ -1,0 +1,923 @@
+<title>Is α a Tuning Knob?</title>
+<style>
+  /* ---- tokens: complete light palette on bare :root ---- */
+  :root {
+    --ground:      #F2F5F6;
+    --surface:     #FFFFFF;
+    --surface-sunk:#EAEFF1;
+    --ink:         #101A1E;
+    --ink-muted:   #5A6C72;
+    --ink-faint:   #84969C;
+    --hairline:    #D5DEE0;
+    --hairline-soft:#E4EBEC;
+    --accent:      #00719B;
+    --accent-soft: #E2EEF3;
+    --flag:        #BF5A24;
+    --flag-soft:   #F7E9E0;
+    --band-flat:   #E7EFF2;
+    --band-steep:  #F6ECE4;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0D1417;
+      --surface:     #141C20;
+      --surface-sunk:#101819;
+      --ink:         #E4EBEC;
+      --ink-muted:   #8FA1A7;
+      --ink-faint:   #6B7C82;
+      --hairline:    #263238;
+      --hairline-soft:#1E282C;
+      --accent:      #2E9AC0;
+      --accent-soft: #10262F;
+      --flag:        #D9773C;
+      --flag-soft:   #2A1D14;
+      --band-flat:   #16262D;
+      --band-steep:  #241A13;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0D1417;
+    --surface:     #141C20;
+    --surface-sunk:#101819;
+    --ink:         #E4EBEC;
+    --ink-muted:   #8FA1A7;
+    --ink-faint:   #6B7C82;
+    --hairline:    #263238;
+    --hairline-soft:#1E282C;
+    --accent:      #2E9AC0;
+    --accent-soft: #10262F;
+    --flag:        #D9773C;
+    --flag-soft:   #2A1D14;
+    --band-flat:   #16262D;
+    --band-steep:  #241A13;
+    color-scheme: dark;
+  }
+
+  /* ---- type roles ---- */
+  :root {
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans:  ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 28px 96px; }
+
+  /* ---- the numbered rail: grid whose first column carries real structure ---- */
+  .row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 0 22px; }
+  .rail {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-top: 0.55em;
+    font-variant-numeric: tabular-nums;
+  }
+  .rail b { display: block; font-size: 15px; letter-spacing: 0.02em; color: var(--accent); font-weight: 600; }
+  @media (max-width: 720px) {
+    .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .rail { padding-top: 0; margin-bottom: 6px; }
+    .rail b { display: inline; margin-right: 8px; }
+  }
+
+  .measure { max-width: 68ch; }
+
+  /* ---- masthead ---- */
+  header { padding: 72px 0 30px; }
+  .eyebrow {
+    font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-muted); margin: 0 0 20px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(34px, 5.6vw, 58px);
+    line-height: 1.06; letter-spacing: -0.018em; margin: 0 0 22px; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 20px; line-height: 1.52; color: var(--ink-muted);
+    margin: 0 0 28px; max-width: 60ch; text-wrap: pretty;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .metaline {
+    font-family: var(--sans); font-size: 12.5px; color: var(--ink-muted);
+    display: flex; flex-wrap: wrap; gap: 6px 20px;
+    border-top: 1px solid var(--hairline); padding-top: 16px;
+  }
+  .metaline span b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---- headings ---- */
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: 27px; line-height: 1.2;
+    letter-spacing: -0.01em; margin: 0 0 8px; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--sans); font-weight: 650; font-size: 13px; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--ink-muted); margin: 34px 0 10px;
+  }
+  section { padding: 44px 0; border-top: 1px solid var(--hairline); }
+  p { margin: 0 0 15px; text-wrap: pretty; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px;
+  }
+  code, .m { font-family: var(--mono); font-size: 0.88em; font-variant-numeric: tabular-nums; }
+  code { background: var(--surface-sunk); padding: 0.12em 0.36em; border-radius: 3px; }
+  strong { font-weight: 650; }
+
+  /* ---- verdict claims ---- */
+  .claims { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .claims li {
+    display: grid; grid-template-columns: 30px minmax(0,1fr) auto; gap: 4px 18px;
+    align-items: start; padding: 18px 0; border-bottom: 1px solid var(--hairline-soft);
+  }
+  .claims li:first-child { border-top: 1px solid var(--hairline-soft); }
+  .cnum {
+    font-family: var(--mono); font-size: 13px; color: var(--ink-faint);
+    padding-top: 0.34em; font-variant-numeric: tabular-nums;
+  }
+  .ctext { font-size: 16.5px; line-height: 1.55; }
+  .ctext em { color: var(--ink-muted); font-style: normal; display: block; font-size: 15px; margin-top: 4px; }
+  .chip {
+    font-family: var(--sans); font-size: 10.5px; font-weight: 650; letter-spacing: 0.09em;
+    text-transform: uppercase; padding: 4px 9px; border-radius: 3px; white-space: nowrap;
+    margin-top: 0.3em;
+  }
+  .chip-refuted { background: var(--flag-soft); color: var(--flag); box-shadow: inset 0 0 0 1px currentColor; }
+  .chip-proved  { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px currentColor; }
+  @media (max-width: 620px) {
+    .claims li { grid-template-columns: 30px minmax(0,1fr); }
+    .chip { grid-column: 2; justify-self: start; }
+  }
+
+  /* ---- display math ---- */
+  .eq {
+    font-family: var(--mono); font-size: 15px; line-height: 1.9;
+    background: var(--surface); border-left: 2px solid var(--accent);
+    padding: 16px 20px; margin: 20px 0; overflow-x: auto;
+    border-radius: 0 3px 3px 0;
+  }
+  .eq.boxed { border: 1px solid var(--accent); border-left-width: 2px; font-size: 17px; text-align: center; }
+  .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 0.25em; line-height: 1.25; }
+  .frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 0.3em 1px; }
+  .frac > span:last-child { padding: 1px 0.3em 0; }
+  .eq sub, .eq sup { font-size: 0.72em; }
+
+  /* ---- theorem blocks ---- */
+  .thm {
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-top: 2px solid var(--accent); padding: 20px 24px; margin: 22px 0; border-radius: 0 0 3px 3px;
+  }
+  .thm-label {
+    font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  .thm p:last-child { margin-bottom: 0; }
+  .proof { font-size: 15.5px; color: var(--ink-muted); }
+  .proof b { font-family: var(--sans); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+
+  .aside {
+    background: var(--surface-sunk); padding: 16px 20px; margin: 22px 0;
+    font-size: 15.5px; color: var(--ink-muted); border-radius: 3px;
+  }
+  .aside b { color: var(--ink); }
+  .aside p:last-child { margin-bottom: 0; }
+
+  /* ---- tables ---- */
+  .tw { overflow-x: auto; margin: 22px 0; border: 1px solid var(--hairline); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  caption {
+    font-family: var(--sans); font-size: 12px; color: var(--ink-muted); text-align: left;
+    padding: 12px 16px; border-bottom: 1px solid var(--hairline-soft); caption-side: top;
+  }
+  caption b { color: var(--ink); font-weight: 650; }
+  th, td { padding: 8px 14px; text-align: right; border-bottom: 1px solid var(--hairline-soft); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  /* deliberately NOT uppercased: these labels carry α / N_α / ⌊·⌋, and
+     text-transform maps α to Greek capital Alpha, which reads as a Latin A. */
+  thead th {
+    font-family: var(--sans); font-size: 11px; font-weight: 650; letter-spacing: 0.035em;
+    color: var(--ink-muted); border-bottom: 1px solid var(--hairline);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13.5px; }
+  tr.hl td { background: var(--accent-soft); font-weight: 650; }
+  td .yes { color: var(--accent); font-weight: 650; }
+  td .no  { color: var(--flag); }
+  .foot { font-family: var(--sans); font-size: 12px; color: var(--ink-muted); padding: 10px 16px; border-top: 1px solid var(--hairline-soft); }
+
+  /* ---- figures ---- */
+  figure { margin: 26px 0; background: var(--surface); border: 1px solid var(--hairline); border-radius: 3px; }
+  .figbody { padding: 18px 14px 6px; overflow-x: auto; }
+  figcaption {
+    font-family: var(--sans); font-size: 12.5px; line-height: 1.5; color: var(--ink-muted);
+    padding: 12px 18px 16px; border-top: 1px solid var(--hairline-soft);
+  }
+  figcaption b { color: var(--ink); font-weight: 650; }
+  svg { display: block; max-width: 100%; height: auto; }
+  .ax { stroke: var(--hairline); stroke-width: 1; }
+  .grid { stroke: var(--hairline-soft); stroke-width: 1; }
+  .tick { font-family: var(--sans); font-size: 11px; fill: var(--ink-muted); }
+  .axlab { font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.02em; fill: var(--ink-faint); }
+  .bandlab { font-family: var(--sans); font-size: 11.5px; font-weight: 650; letter-spacing: 0.04em; }
+  .refline { stroke-dasharray: 4 4; stroke-width: 1.5; fill: none; }
+  .note { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-muted); }
+  .dot { stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+  .hitbox { fill: transparent; cursor: pointer; }
+
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .12s;
+    background: var(--ink); color: var(--ground); font-family: var(--sans); font-size: 12px;
+    line-height: 1.45; padding: 7px 10px; border-radius: 3px; z-index: 20; max-width: 240px;
+  }
+  .tip b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { .tip { transition: none; } * { animation: none !important; } }
+
+  ul.plain { margin: 0 0 15px; padding-left: 1.15em; }
+  ul.plain li { margin-bottom: 8px; }
+  .kicker { font-family: var(--sans); font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--flag); font-weight: 650; margin: 0 0 10px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">LoRA-XSe · non-DP · internal finding, paper-ready</p>
+  <h1>Is α a tuning knob?</h1>
+  <p class="standfirst">No — and not because we failed to measure an effect. The Rényi order
+  <span class="m">α</span> reaches the optimizer through <strong>exactly one integer</strong>, and in
+  the non-DP regime that integer is <strong>1</strong> for every <span class="m">α ≥ 1</span>. The whole
+  half-line is one algorithm. Every α "effect" this project ever reported is GPU nondeterminism.</p>
+  <div class="metaline">
+    <span><b>36</b> verified non-DP runs</span>
+    <span><b>0</b> new GPU hours needed for the verdict</span>
+    <span>r = <b>16</b>, 196 matrices, 260 steps</span>
+    <span>Qwen2.5-Coder-7B / KStack</span>
+    <span>2026-08-14</span>
+  </div>
+</header>
+
+<section style="border-top:none;padding-top:8px">
+  <div class="row">
+    <div class="rail"><b>§0</b>Verdict</div>
+    <div>
+      <h2>Four claims, and what each rests on</h2>
+      <ol class="claims">
+        <li>
+          <span class="cnum">01</span>
+          <span class="ctext">α is <strong>unidentifiable</strong>, not merely inert.
+            <em>α enters only via ⌊N<sub>α</sub>⌋. Certified from one logged scalar in 36/36 runs
+            (Thm 2), and confirmed exactly by realised depth: ≤ 1.9 % of matrix-steps differ, by ≤ 1 slot.</em></span>
+          <span class="chip chip-proved">Proved</span>
+        </li>
+        <li>
+          <span class="cnum">02</span>
+          <span class="ctext">Every reported α effect is <strong>nondeterminism</strong>.
+            <em>Maximum effect α can mediate: 1.1e-6 – 2.8e-5. Replicate floor at that depth: 3.0e-4.
+            Observed differences run 6× – 529× larger than α could possibly cause.</em></span>
+          <span class="chip chip-refuted">Refuted</span>
+        </li>
+        <li>
+          <span class="cnum">03</span>
+          <span class="ctext">The "per-matrix adaptive depth" <strong>was never adaptive</strong>.
+            <em>At α ≥ 1 the rule assigns the same depth to all 196 matrices at all 260 rotations.
+            "Heterogeneity contributes nothing" is true because no heterogeneity occurred.</em></span>
+          <span class="chip chip-refuted">Retired</span>
+        </li>
+        <li>
+          <span class="cnum">04</span>
+          <span class="ctext">No entropy order can work — the statistic is <strong>scale-blind</strong>.
+            <em>N<sub>α</sub> is invariant to the momentum's scale, so it cannot see signal-to-noise.
+            It responds to added noise with the <span style="color:var(--flag)">wrong sign</span>. This is the theory contribution.</em></span>
+          <span class="chip chip-proved">Proved</span>
+        </li>
+      </ol>
+      <p style="margin-top:22px" class="measure">Operationally nothing changes: Shannon (α = 1) sits
+      <em>inside</em> the equivalence class. What changes is what the paper claims. Ship the constant
+      the rule degenerates to, and ship the impossibility theorem as the result.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§1</b>The map</div>
+    <div>
+      <h2>α buys you nine tenths of nothing</h2>
+      <p class="measure">Sweeping α over its full useful range at fixed margin m = 2 moves realised
+      exploration depth from 2.8 to 13.0 of 16. But the depth response is monotone-saturating, and
+      <strong>everything from α = 0.2 upward lands inside the flat plateau</strong> — where loss varies
+      by less than one replicate spread.</p>
+
+      <figure>
+        <div class="figbody">
+          <svg viewBox="0 0 780 348" role="img" aria-labelledby="f1t">
+            <title id="f1t">Realised exploration depth against Rényi order alpha, showing the flat plateau</title>
+            <rect x="56" y="36.6" width="644" height="99.8" fill="var(--band-flat)"></rect>
+            <rect x="56" y="136.4" width="644" height="149.6" fill="var(--band-steep)"></rect>
+            <line class="grid" x1="56" y1="286" x2="700" y2="286"></line>
+            <line class="grid" x1="56" y1="219.5" x2="700" y2="219.5"></line>
+            <line class="grid" x1="56" y1="153" x2="700" y2="153"></line>
+            <line class="grid" x1="56" y1="86.5" x2="700" y2="86.5"></line>
+            <line class="grid" x1="56" y1="20" x2="700" y2="20"></line>
+            <text class="bandlab" fill="var(--accent)" x="66" y="52">FLAT PLATEAU · depth 9–15 · loss constant within noise</text>
+            <text class="bandlab" fill="var(--flag)" x="66" y="278">STEEP · every slot here costs real loss</text>
+            <line class="ax" x1="56" y1="20" x2="56" y2="286"></line>
+            <line class="ax" x1="56" y1="286" x2="700" y2="286"></line>
+            <line class="ax" x1="637" y1="292" x2="645" y2="280"></line>
+            <line class="ax" x1="643" y1="292" x2="651" y2="280"></line>
+            <text class="tick" x="48" y="290" text-anchor="end">0</text>
+            <text class="tick" x="48" y="223.5" text-anchor="end">4</text>
+            <text class="tick" x="48" y="157" text-anchor="end">8</text>
+            <text class="tick" x="48" y="90.5" text-anchor="end">12</text>
+            <text class="tick" x="48" y="24" text-anchor="end">16</text>
+            <text class="axlab" x="16" y="150" transform="rotate(-90 16 150)" text-anchor="middle">Realised depth r_e</text>
+            <text class="tick" x="72.2" y="305" text-anchor="middle">0.05</text>
+            <text class="tick" x="172.1" y="305" text-anchor="middle">0.1</text>
+            <text class="tick" x="271.9" y="305" text-anchor="middle">0.2</text>
+            <text class="tick" x="403.9" y="305" text-anchor="middle">0.5</text>
+            <text class="tick" x="503.9" y="305" text-anchor="middle">1</text>
+            <text class="tick" x="603.8" y="305" text-anchor="middle">2</text>
+            <text class="tick" x="676" y="305" text-anchor="middle" style="font-size:14px">∞</text>
+            <text class="axlab" x="378" y="330" text-anchor="middle">Rényi order α  ·  log scale, axis break before ∞</text>
+            <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"
+              points="72.2,238.7 172.1,178 230.5,138.1 271.9,114.2 304.1,99.8 403.9,77 503.9,72.3 603.8,70.8"></polyline>
+            <line stroke="var(--accent)" stroke-width="2" stroke-dasharray="3 3" x1="603.8" y1="70.8" x2="676" y2="69.9"></line>
+            <g id="f1pts"></g>
+            <text class="note" x="690" y="60" text-anchor="end">α ≥ 0.2 is all here →</text>
+          </svg>
+        </div>
+        <figcaption><b>α → realised exploration depth</b>, non-DP, margin m = 2, seed 42, trajectory
+        means of <code>rotation/r_e_dyn</code>. Hover a point for its loss. The plateau band is the
+        region where the fixed-depth curve is flat to within run-to-run noise; the entire span
+        α ∈ [0.2, ∞] — six settings — lands inside it, spanning 1.6e-4 in loss against a replicate
+        spread of 1.8e-4 – 5.7e-4. Below α ≈ 0.2 α does something, and it is bad.</figcaption>
+      </figure>
+
+      <div class="tw">
+        <table>
+          <caption><b>The α sweep in full</b> · m = 2, non-DP, seed 42. <code>loss_min</code> is the
+          operative metric (the trainer restores the best checkpoint).</caption>
+          <thead><tr>
+            <th>α</th><th class="num">mean depth</th><th class="num">mean ⌊N<sub>α</sub>⌋</th>
+            <th class="num">d(depth)/dα</th><th class="num">drift over run</th><th class="num">loss_min</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="num">0.05</td><td class="num">2.85</td><td class="num">11.16</td><td class="num">—</td><td class="num">+0.29</td><td class="num">0.34537</td></tr>
+            <tr><td class="num">0.10</td><td class="num">6.50</td><td class="num">7.51</td><td class="num">+73.0</td><td class="num">+1.07</td><td class="num">0.34405</td></tr>
+            <tr><td class="num">0.15</td><td class="num">8.90</td><td class="num">5.10</td><td class="num">+48.1</td><td class="num">+1.35</td><td class="num">0.34372</td></tr>
+            <tr><td class="num">0.20</td><td class="num">10.33</td><td class="num">3.67</td><td class="num">+28.7</td><td class="num">+1.28</td><td class="num">0.34353</td></tr>
+            <tr class="hl"><td class="num">0.25</td><td class="num">11.20</td><td class="num">2.80</td><td class="num">+17.4</td><td class="num">+1.02</td><td class="num">0.34346</td></tr>
+            <tr class="hl"><td class="num">0.50</td><td class="num">12.57</td><td class="num">1.43</td><td class="num">+5.5</td><td class="num">+0.37</td><td class="num">0.34346</td></tr>
+            <tr class="hl"><td class="num">1 <span style="font-family:var(--sans);font-size:11px;color:var(--ink-muted)">Shannon</span></td><td class="num">12.85</td><td class="num">1.15</td><td class="num">+0.56</td><td class="num">+0.10</td><td class="num">0.34346</td></tr>
+            <tr class="hl"><td class="num">2</td><td class="num">12.95</td><td class="num">1.05</td><td class="num">+0.09</td><td class="num">+0.03</td><td class="num">0.34349</td></tr>
+            <tr class="hl"><td class="num">∞</td><td class="num">13.00</td><td class="num">1.00</td><td class="num">~0</td><td class="num">0.00</td><td class="num">0.34362</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Shaded rows span 1.6e-4 in loss — smaller than a single replicate spread.
+        Note the last three columns move together: <b>α is inert exactly where it is stable, and
+        unstable exactly where it is live.</b> There is no operating point where it is both
+        controllable and consequential.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§2</b>Thm 1</div>
+    <div>
+      <h2>α collapses onto one integer</h2>
+      <p class="measure">LoRA-XS trains only the tiny core <span class="m">R ∈ ℝ<sup>r×r</sup></span>
+      inside a frozen <span class="m">B R A</span>. LoRA-XSe re-draws part of that frozen basis every
+      few steps. Which part is decided from the momentum spectrum:</p>
+
+      <div class="eq">
+        p<sub>i</sub> =
+        <span class="frac"><span>σ<sub>i</sub>²</span><span>Σ<sub>j</sub> σ<sub>j</sub>²</span></span>
+        &nbsp;&nbsp;·&nbsp;&nbsp;
+        H<sub>α</sub>(p) =
+        <span class="frac"><span>1</span><span>1 − α</span></span>
+        log Σ<sub>i</sub> p<sub>i</sub><sup>α</sup>
+        &nbsp;&nbsp;·&nbsp;&nbsp;
+        N<sub>α</sub> = e<sup>H<sub>α</sub></sup>
+        <br>
+        k = ⌊N<sub>α</sub>(p)⌋ + m &nbsp;·&nbsp; r<sub>e</sub> = clip(r − k, 1, r−1) &nbsp;·&nbsp; r<sub>keep</sub> = r − r<sub>e</sub>
+      </div>
+
+      <p class="measure">Keep the top <span class="m">r<sub>keep</sub></span> singular directions of the
+      momentum; resample the other <span class="m">r<sub>e</sub></span> from the orthogonal complement.
+      A <code>grep</code> for the α variable in <code>xse.py</code> returns exactly three live uses:
+      compute <span class="m">H</span>, compute <span class="m">r<sub>e</sub></span>, and log it.
+      <strong>That is the entire attack surface of α.</strong></p>
+
+      <div class="thm">
+        <p class="thm-label">Theorem 1 · exact equivalence</p>
+        <p>The trajectory depends on <span class="m">(α, m)</span> only through the integer field
+        <span class="m">k<sup>(ℓ)</sup><sub>t</sub> = ⌊N<sub>α</sub>(p<sup>(ℓ)</sup><sub>t</sub>)⌋ + m</span>.
+        So if two settings satisfy
+        <span class="m">⌊N<sub>α</sub>⌋ + m = ⌊N<sub>α′</sub>⌋ + m′</span> for every matrix ℓ and every
+        rotation t along the coupled trajectory, the two runs are <strong>the same stochastic
+        algorithm</strong>: identical trajectory law, identical realisations under a shared random stream.</p>
+        <p class="proof"><b>Proof</b> — Induction on t. States coincide at t = 0. Given identical state at
+        rotation t, the momenta coincide, hence p, hence k, hence r<sub>keep</sub> and r<sub>e</sub>.
+        The update is a deterministic function of (state, r<sub>keep</sub>, random draw): the kept slices
+        are taken at index r<sub>keep</sub>, the explore block is a draw of r<sub>e</sub> directions from
+        the complement, and R is re-expressed by the 2×2 block projection. Same state + same integer +
+        same draw ⇒ same next state. ∎</p>
+      </div>
+
+      <h3>Three corollaries that each kill a line of enquiry</h3>
+      <ul class="plain measure">
+        <li><strong>Identifiability.</strong> <span class="m">N<sub>α</sub> ∈ [1, r]</span> and is
+        non-increasing in α, so α ↦ ⌊N<sub>α</sub>⌋ is a step function with at most r−1 jumps.
+        <strong>α has at most r distinguishable values no matter how finely you sweep it.</strong>
+        It is not a continuous hyperparameter; it is a selector among ≤ r integers.</li>
+        <li><strong>The margin is an exact offset.</strong> <span class="m">k = ⌊N<sub>α</sub>⌋ + m</span>
+        is additively separable, so <span class="m">r<sub>e</sub>(α,m) − r<sub>e</sub>(α′,m)</span> is
+        independent of m. <strong>A margin sweep can never break an α-degeneracy</strong> — which is why
+        the m = 0 test did not decollapse α, and why m and α proved interchangeable.</li>
+        <li><strong>The old α comparison was a replicate set.</strong> The three depth-14 runs used as the
+        project's α test execute the same algorithm. Their 5.7e-4 spread is the <em>noise floor</em>,
+        not an effect that later "vanished". Theorem 1 is the licence the earlier analysis was missing —
+        it is what makes those runs a valid floor rather than a circular one.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§3</b>Thm 2</div>
+    <div>
+      <h2>Certified from a single logged scalar</h2>
+      <p class="measure">Let <span class="m">δ = 1 − p<sub>1</sub></span> be the energy leaking out of
+      the dominant momentum direction. Then the collapse is checkable a priori, without running
+      anything.</p>
+
+      <div class="thm">
+        <p class="thm-label">Theorem 2 · collapse certificates</p>
+        <p><strong>(a) α ≥ 2.</strong> For α &gt; 1, <span class="m">Σ<sub>i</sub> p<sub>i</sub><sup>α</sup> ≥ p<sub>1</sub><sup>α</sup></span>
+        and <span class="m">x ↦ x<sup>1/(1−α)</sup></span> is decreasing, so
+        <span class="m">N<sub>α</sub> ≤ p<sub>1</sub><sup>−α/(α−1)</sup> ≤ p<sub>1</sub><sup>−2</sup></span>
+        for all α ≥ 2. Hence</p>
+        <div class="eq" style="margin:14px 0">p<sub>1</sub> &gt; 2<sup>−1/2</sup> ≈ 0.7071 &nbsp;⟹&nbsp; ⌊N<sub>α</sub>⌋ = 1 &nbsp;for all α ≥ 2.</div>
+        <p><strong>(b) α = 1.</strong> The grouping identity <span class="m">H<sub>1</sub>(p) = H<sub>b</sub>(δ) + δ·H(p̃)</span>
+        with <span class="m">H(p̃) ≤ log(r−1)</span> gives
+        <span class="m">exp(H<sub>b</sub>(δ) + δ log(r−1)) &lt; 2 ⟹ ⌊N<sub>1</sub>⌋ = 1</span>.</p>
+        <p><strong>(c) α ∈ (0,1).</strong> Hölder on the tail:
+        <span class="m">N<sub>α</sub> ≤ [(1−δ)<sup>α</sup> + (r−1)<sup>1−α</sup>δ<sup>α</sup>]<sup>1/(1−α)</sup></span>,
+        with equality iff the tail is uniform. This defines the threshold α*(δ, r) below which α becomes live.</p>
+        <p><strong>(d) Exact, no bound.</strong> By monotonicity in α: if <span class="m">N<sub>β</sub> &lt; 2</span>
+        for any β, then <span class="m">⌊N<sub>α</sub>⌋ = 1</span> for all α ≥ β.</p>
+      </div>
+
+      <div class="tw">
+        <table>
+          <caption><b>The certificate on our data.</b> <span class="m">p<sub>1</sub> = 1/N<sub>∞</sub></span>,
+          and both are already logged every rotation.</caption>
+          <thead><tr><th>runs</th><th class="num">p<sub>1</sub> range</th><th class="num">certifies α ≥ 2?</th><th class="num">bound on N<sub>1</sub></th><th class="num">certifies α = 1?</th></tr></thead>
+          <tbody>
+            <tr><td>all 36 non-DP runs</td><td class="num">0.801 – 0.998</td><td class="num"><span class="yes">36 / 36 yes</span></td><td class="num">1.02 – 2.82</td><td class="num">9 / 36</td></tr>
+            <tr class="hl"><td>the depth-14 α family</td><td class="num">0.900 – 0.906</td><td class="num"><span class="yes">yes</span></td><td class="num">1.76 – 1.81</td><td class="num"><span class="yes">yes</span></td></tr>
+          </tbody>
+        </table>
+        <p class="foot">For the exact configuration the project ran its α comparison in, Theorem 2
+        certifies <b>a priori, from one number, that α ∈ [1, ∞] is a single algorithm.</b> No experiment
+        was ever capable of separating those arms. <em>Caveat:</em> N<sub>∞</sub> is logged as a mean over
+        the 196 matrices, so p<sub>1</sub> here is a mean; a per-matrix certificate needs one extra logged
+        scalar (min<sub>ℓ</sub> p<sub>1</sub>, one line). The empirical version below needs nothing.</p>
+      </div>
+
+      <h3>The empirical version — exact, no modelling</h3>
+      <p class="measure">The clip is inactive here and <span class="m">⌊N<sub>α</sub>⌋ ≥ 1</span> always,
+      so <span class="m">mean<sub>ℓ</sub>⌊N<sub>α</sub>⌋ = r − d̄ − m</span> exactly, where d̄ is the logged
+      mean depth. And <span class="m">mean(⌊N⌋−1) ≥ P(⌊N⌋ ≥ 2)</span> — so that quantity is an
+      <strong>upper bound on the fraction of matrix-steps that got anything other than "keep exactly one
+      direction"</strong>:</p>
+
+      <div class="tw">
+        <table>
+          <caption><b>Heterogeneity audit</b> · upper bound on the share of the 196 × 260 matrix-steps
+          where the rule deviated from the constant.</caption>
+          <thead><tr><th>α</th><th class="num">m = 1</th><th class="num">m = 2</th><th class="num">m = 3</th></tr></thead>
+          <tbody>
+            <tr><td class="num">∞</td><td class="num"><span class="yes">≤ 0.02 %</span></td><td class="num">≤ 0.18 %</td><td class="num">≤ 0.45 %</td></tr>
+            <tr><td class="num">2</td><td class="num">≤ 0.33 %</td><td class="num">≤ 5.4 %</td><td class="num">≤ 7.8 %</td></tr>
+            <tr><td class="num">1 &nbsp;<span style="font-family:var(--sans);font-size:11px;color:var(--ink-muted)">Shannon</span></td><td class="num">≤ 1.9 %</td><td class="num">≤ 14.7 %</td><td class="num">≤ 23.3 %</td></tr>
+            <tr><td class="num">0.5</td><td class="num">≤ 19.2 %</td><td class="num">≤ 42.9 %</td><td class="num">≤ 67.1 %</td></tr>
+            <tr><td class="num">0.25</td><td class="num">—</td><td class="num"><span class="no">180 %</span></td><td class="num">—</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Above 100 % means ⌊N⌋ genuinely exceeds 2 — <b>real heterogeneity appears only
+        at α ≤ 0.25</b>, exactly where depth falls out of the plateau and loss degrades.</p>
+      </div>
+
+      <div class="aside">
+        <p><b>So the headline negative is stronger than "adaptivity didn't help".</b> At every α ≥ 1 the
+        "per-matrix adaptive depth" of LoRA-XSe is the constant <span class="m">r<sub>e</sub> = r − 1 − m</span>
+        on all 196 matrices at all 260 rotations. It is not adaptive. The repeated finding that
+        per-layer tailoring adds nothing is true because no tailoring occurred.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§4</b>Thm 3</div>
+    <div>
+      <h2>The effect is 529× larger than α could cause</h2>
+      <p class="measure">α acts only through depth, so bound it through depth. The mediator curve comes
+      from fixed-<span class="m">p<sub>e</sub></span> runs with adaptivity off — no feedback loop, clean
+      dose:</p>
+
+      <div class="tw">
+        <table>
+          <caption><b>Mediator curve L(depth)</b> · non-DP, seed 42, adaptivity OFF.</caption>
+          <thead><tr><th class="num">depth</th><th class="num">eval loss</th><th class="num">marginal slope / slot</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1</td><td class="num">0.34700</td><td class="num">—</td></tr>
+            <tr><td class="num">5</td><td class="num">0.34429</td><td class="num">−6.78e-4</td></tr>
+            <tr><td class="num">9</td><td class="num">0.34368</td><td class="num">−1.52e-4</td></tr>
+            <tr><td class="num">13</td><td class="num">0.34354</td><td class="num"><span class="yes">−3.52e-5</span></td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Total 1 → 13: <b>−3.46e-3</b>, with the slope decaying <b>19×</b> across the
+        range. The plateau slope −3.52e-5 per slot is the sensitivity Λ used by every α bound below.</p>
+      </div>
+
+      <h3>Replicate floors, each from runs that are provably the same algorithm</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>group</th><th class="num">n</th><th class="num">sd</th><th class="num">spread</th></tr></thead>
+          <tbody>
+            <tr><td>depth 5, non-adaptive, identical config <em>and</em> seed</td><td class="num">2</td><td class="num">3.43e-5</td><td class="num">4.85e-5</td></tr>
+            <tr><td>depth 5, non-adaptive, seeds 42/43/44</td><td class="num">4</td><td class="num">3.00e-5</td><td class="num">7.26e-5</td></tr>
+            <tr><td>depth 13, adaptive, two submissions of one config</td><td class="num">2</td><td class="num">1.26e-4</td><td class="num">1.78e-4</td></tr>
+            <tr class="hl"><td>depth 14, adaptive, α ∈ {1,2,∞} — replicates by Thm 1</td><td class="num">3</td><td class="num">3.03e-4</td><td class="num">5.71e-4</td></tr>
+            <tr><td>depth 14, adaptive, {2,∞} × seeds {42,43}</td><td class="num">4</td><td class="num">3.27e-4</td><td class="num">7.09e-4</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Two corrections to the existing handoff notes. <b>The floor tracks depth, not
+        adaptivity</b> — 3.0e-5 at depth 5, 1.8e-4 at 13, 3.0e-4 at 14 — and every adaptive run here
+        happens to be deep, so "adaptive runs are 20× noisier" is confounded. And same-seed
+        nondeterminism (3.4e-5) is as large as the across-seed sd (3.0e-5): the "seed sd" quoted
+        elsewhere is not a seed effect at all, it is GPU nondeterminism.</p>
+      </div>
+
+      <figure>
+        <div class="figbody">
+          <svg viewBox="0 0 780 348" role="img" aria-labelledby="f2t">
+            <title id="f2t">Observed loss difference against alpha dose, with the maximum mediated effect line</title>
+            <line class="grid" x1="64" y1="286" x2="700" y2="286"></line>
+            <line class="grid" x1="64" y1="178.6" x2="700" y2="178.6"></line>
+            <line class="grid" x1="64" y1="71.2" x2="700" y2="71.2"></line>
+            <line class="ax" x1="64" y1="20" x2="64" y2="286"></line>
+            <line class="ax" x1="64" y1="286" x2="700" y2="286"></line>
+            <text class="tick" x="56" y="290" text-anchor="end">1e-5</text>
+            <text class="tick" x="56" y="182.6" text-anchor="end">1e-4</text>
+            <text class="tick" x="56" y="75.2" text-anchor="end">1e-3</text>
+            <text class="axlab" x="14" y="150" transform="rotate(-90 14 150)" text-anchor="middle">Observed |ΔL| (log)</text>
+            <text class="tick" x="64" y="305" text-anchor="middle">0</text>
+            <text class="tick" x="205.3" y="305" text-anchor="middle">0.2</text>
+            <text class="tick" x="346.7" y="305" text-anchor="middle">0.4</text>
+            <text class="tick" x="488" y="305" text-anchor="middle">0.6</text>
+            <text class="tick" x="629.3" y="305" text-anchor="middle">0.8</text>
+            <text class="axlab" x="382" y="330" text-anchor="middle">α dose  ·  max separation of the realised depth field, in slots of 16</text>
+            <line class="refline" stroke="var(--ink-muted)" x1="64" y1="127.4" x2="700" y2="127.4"></line>
+            <text class="note" x="696" y="121" text-anchor="end">replicate floor 3.0e-4</text>
+            <polyline class="refline" stroke="var(--flag)" points="264.7,286 382,264.6 523.3,247.4 700,232.3"></polyline>
+            <text class="note" fill="var(--flag)" x="696" y="222" text-anchor="end">max effect α can mediate = Λ × dose</text>
+            <g id="f2pts"></g>
+          </svg>
+        </div>
+        <figcaption><b>The dose–response is negative.</b> Eleven α contrasts. Every observed difference
+        sits far above the sienna line — the most α could possibly cause at that dose. Worse for the α
+        hypothesis: the three <em>largest</em>-dose contrasts produced the three <em>smallest</em>
+        differences, and the two smallest-dose contrasts (algorithmically near-identical runs) produced
+        the largest. Spearman ρ(dose, |ΔL|) = <b>−0.482</b>, Pearson r = −0.466, n = 11. Hover for
+        the contrast.</figcaption>
+      </figure>
+
+      <div class="thm">
+        <p class="thm-label">Theorem 3 · first-order mediation bound</p>
+        <p>Under (A1) — <em>the loss responds to the depth schedule to first order, with sensitivity
+        measured by uniform depth perturbations</em> — <span class="m">|L(α) − L(α′)| ≲ Λ · D</span>.
+        With <span class="m">Λ = 3.52e-5</span> per slot and all contrasts living at depth ≥ 11.3:
+        the largest effect α can mediate anywhere in the sweep is <strong>2.8e-5</strong>, against a
+        <strong>3.0e-4</strong> replicate floor. α is not "flat" — it is below the resolution of the
+        apparatus by more than an order of magnitude, and buying seeds cannot change that.</p>
+        <p class="proof">(A1) is an assumption — it is the honest pairing, since a uniform 1-slot shift
+        <em>is</em> dose 1, and it is supported by the matched-depth residual audits (7 arms, |residual|
+        ≤ 1.9e-4, random sign). The dose–response test in the figure needs no assumption at all: whatever
+        generates those differences, it is not α.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§5</b>Thm 4</div>
+    <div>
+      <h2>The no-go: an entropy rank cannot see signal-to-noise</h2>
+      <p class="measure">This is the part that outlives the paper. The question "is direction i signal or
+      noise?" is intrinsically about <span class="m">σ<sub>i</sub></span> <em>relative to the noise
+      scale</em>. A scale-invariant statistic cannot express it — and <span class="m">N<sub>α</sub></span>
+      is computed on a normalised spectrum, so it is scale-invariant for every α.</p>
+
+      <div class="thm">
+        <p class="thm-label">Theorem 4 · scale-blindness, and the wrong sign</p>
+        <p><strong>(i)</strong> <span class="m">N<sub>α</sub>(p(cM)) = N<sub>α</sub>(p(M))</span> for every
+        c &gt; 0 and every α.</p>
+        <p><strong>(ii)</strong> In the spiked model
+        <span class="m">M = Σ<sub>j≤s</sub> θ<sub>j</sub>u<sub>j</sub>v<sub>j</sub><sup>T</sup> + ς r<sup>−1/2</sup>G</span>,
+        the BBP transition makes spike j detectable iff <span class="m">θ<sub>j</sub> &gt; ς</span>, so the
+        oracle keep-set <span class="m">K*= {j : θ<sub>j</sub> &gt; ς}</span> has |K*| <strong>non-increasing</strong> in ς.</p>
+        <p><strong>(iii)</strong> With the mean-field spectrum <span class="m">σ<sub>i</sub>² = θ<sub>i</sub>² + ς²</span>,
+        every ratio <span class="m">p<sub>i</sub>/p<sub>j</sub> = (θ<sub>i</sub>²+ς²)/(θ<sub>j</sub>²+ς²)</span>
+        compresses toward 1 as ς grows, so p(ς) is <em>majorised</em> by p(ς′) for ς &gt; ς′. H<sub>α</sub>
+        is Schur-concave for every α ≥ 0, hence <span class="m">N<sub>α</sub></span> is
+        <strong>non-decreasing</strong> in ς, with <span class="m">N<sub>α</sub> → r</span>.</p>
+        <p><strong>(iv)</strong> Therefore <span class="m">r<sub>e</sub> = r − ⌊N<sub>α</sub>⌋ − m</span>
+        is non-increasing in noise while the correct <span class="m">r − |K*|</span> is non-decreasing.
+        <strong>The signs are opposite, for every α.</strong> No order repairs this: the defect is in the
+        functional, not the order — which is why the α programme was doomed before the first run.</p>
+      </div>
+
+      <div class="tw">
+        <table>
+          <caption><b>Coarse empirical check.</b> DP is shown only as contrast — it is outside this
+          document's scope, and the fine-grained ε = 3 vs ε = 1 comparison is <em>not</em> resolved
+          here (noise stds differ by only 1.3×, run sets unmatched).</caption>
+          <thead><tr><th>regime</th><th class="num">noise std</th><th class="num">p<sub>1</sub></th><th class="num">N<sub>1</sub></th><th class="num">⌊N<sub>1</sub>⌋</th><th class="num">spike count</th></tr></thead>
+          <tbody>
+            <tr><td>non-DP</td><td class="num">0</td><td class="num">0.847</td><td class="num">1.55</td><td class="num"><span class="yes">1</span></td><td class="num">6.1</td></tr>
+            <tr><td>ε = 3, r = 16</td><td class="num">0.0031</td><td class="num">0.418</td><td class="num">4.81</td><td class="num"><span class="no">4</span></td><td class="num">3.1</td></tr>
+            <tr><td>ε = 1, r = 16</td><td class="num">0.0040</td><td class="num">0.428</td><td class="num">4.55</td><td class="num"><span class="no">4</span></td><td class="num">4.9</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Turning noise on inflates N<sub>1</sub> by <b>3.1×</b> and therefore <em>removes</em>
+        ~3.5 slots of exploration — exactly when more of the spectrum has become noise. Note the last
+        column: the noise-aware spike count <span class="m">#{σ<sub>i</sub> &gt; 2·median}</span> says
+        ≈ 6 directions carry signal where the Rényi rank at usable α says <b>1</b>. It is also the
+        statistic with genuine per-matrix spread (sd 0.70, range 4.2–8.0, versus identically 1).</p>
+      </div>
+
+      <div class="aside">
+        <p><b>What the margin was actually doing.</b> In <span class="m">k = ⌊N<sub>α</sub>⌋ + m</span>,
+        m is the only term that <em>can</em> encode an SNR correction, since ⌊N<sub>α</sub>⌋ cannot.
+        That is why m was as load-bearing as α, and why the two proved interchangeable. The paper should
+        stop calling m a "safety buffer" and call it what it is: the rule's only noise-aware term, an
+        uncalibrated constant standing in for a threshold.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§6</b>Paper</div>
+    <div>
+      <h2>What to write</h2>
+
+      <h3>Keep — this is still the result</h3>
+      <p class="measure">Rotating the frozen LoRA-XS basis recovers full-LoRA quality at 201× fewer
+      trainable parameters, ε-free by post-processing. Multi-seed, paired, at both ε = 1 and ε = 3.
+      Unaffected by anything here.</p>
+
+      <h3>Keep — the mechanism, quoted against the right floor</h3>
+      <p class="measure">The depth curve: <strong>−3.46e-3</strong> from depth 1 → 13,
+      monotone-saturating, slope decaying 19×. The rule: <strong>refresh at least ~55 % of the rank;
+      above that it is one flat plateau.</strong> Going shallow is the only mistake, and it costs a
+      quarter of the entire rotation benefit — <strong>11×</strong> the depth-matched floor of 3.0e-4.</p>
+
+      <h3>Reframe — ship the constant, not the knob</h3>
+      <div class="eq boxed">r<sub>e</sub> = r − 1 − m</div>
+      <p class="measure">"Keep the dominant momentum direction, refresh the rest." Then prove
+      (Thm 2a, 36/36 runs certified) that this is what <em>every</em> α ≥ 2 realises in this regime, and
+      (Thm 2b) what Shannon realises too at the depths we use. The Rényi machinery becomes what it
+      actually is: <strong>the diagnostic that establishes rank-1 dominance</strong> — pooled
+      <span class="m">p<sub>1</sub> = 0.847</span>, <span class="m">N<sub>1</sub> = 1.55</span>; in the
+      depth-14 family <span class="m">p<sub>1</sub> = 0.900</span> with the top <em>two</em> directions
+      carrying <strong>98.8 %</strong> of momentum energy — and therefore <em>derives</em> the constant.
+      Correct by construction rather than tuned: a stronger claim than a tuned α, and one no reviewer
+      can ask you to sweep.</p>
+
+      <h3>New contribution — the negative, stated as theory</h3>
+      <p class="measure">Theorems 1–4 are self-contained: <em>spectral-entropy effective-rank statistics
+      cannot implement capacity selection, for two independent reasons — quantization destroys
+      identifiability (≤ r distinguishable settings; here exactly one), and scale-invariance gives the
+      wrong sign of response to noise.</em> This is not a story about our optimizer. Entropy and
+      effective-rank statistics on normalised spectra are used for rank allocation across the PEFT
+      literature, and both objections apply verbatim. That is the section a reviewer will remember.</p>
+
+      <h3>Retire explicitly</h3>
+      <ul class="plain measure">
+        <li>α as a tuning knob.</li>
+        <li>Per-matrix adaptive depth as a <em>benefit</em> — there was no per-matrix variation to benefit from.</li>
+        <li>The margin as a "safety buffer".</li>
+      </ul>
+
+      <p class="kicker">And do not repeat these two errors — they are in the doc history</p>
+      <p class="measure">A noise floor taken from a <em>contrast between configurations</em> (circular:
+      it assumes α has no effect in order to conclude α has no effect), and a floor taken from a
+      <em>different depth or family</em> than the comparison. Theorem 1 is what licenses the depth-14
+      group as a genuine replicate set — the argument the earlier passes were missing.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§7</b>GPU</div>
+    <div>
+      <h2>Three runs worth buying</h2>
+      <p class="measure">The α verdict needs nothing. These close real gaps.</p>
+
+      <h3>#1 — worth it · 3 runs · decouple depth from adaptivity in the noise floor</h3>
+      <p class="measure"><code>med-nodp-fixed-re13</code> (non-adaptive, <code>p_e = 0.8125</code>,
+      depth 13) × seeds {42, 43, 44}. Right now every floor in the paper is confounded: all deep runs
+      are adaptive, all shallow ones are not. If the triple lands at ~3e-4, the floor is a
+      <strong>depth</strong> effect and "adaptive runs are 20× noisier" is withdrawn. If it lands at
+      ~3e-5, adaptivity genuinely costs variance and that is a reportable cost. Either answer is
+      load-bearing for every effect size you quote. <strong>This is the one I would actually run.</strong></p>
+
+      <h3>#2 — worth it if the theorem should be general · 4 runs · escape the null space</h3>
+      <p class="measure">Non-DP, <strong>r = 64</strong>, α ∈ {0.5, 1, 2, ∞}, m = 2, seed 42. Theorem 2
+      says the collapse is a property of <span class="m">(r, p<sub>1</sub>)</span>, not of α — and the DP
+      data already shows the statistic escaping the floor as r grows (⌊N<sub>1</sub>⌋ = 1 at r = 2, 4 →
+      <strong>4</strong> at r = 16 under ε = 3). Prediction: at r = 64 non-DP, ⌊N<sub>α</sub>⌋ separates
+      across α and genuine per-matrix heterogeneity appears for the first time. Then either loss is
+      <em>still</em> flat — the strongest possible negative, "α identifiable and still inert" — or it is
+      not, and you have found the regime where α matters. Both are publishable.
+      <strong>The only experiment that can still surprise you.</strong></p>
+
+      <h3>#3 — free, do it anyway · 0 runs</h3>
+      <p class="measure">Log <span class="m">min<sub>ℓ</sub> p<sub>1</sub></span> and
+      <span class="m">max<sub>ℓ</sub> N<sub>0.5</sub></span> per rotation (one line near
+      <code>xse.py:466</code>). That makes the Theorem 2 certificate checkable <em>per matrix</em>
+      instead of on a layer mean. It rides along on #1 and #2.</p>
+
+      <h3>Do not run</h3>
+      <p class="measure">More α sweeps at r = 16 non-DP (unidentifiable, 36/36 certified). More margin
+      sweeps (exact offset — cannot decollapse α). More seeds at depth 14 (they are replicates: useful
+      for the floor, worthless for α). The two <code>seedrep-*-s44</code> runs in flight are fine to let
+      finish — they take the replicate group to n = 6 and sharpen the floor. They cannot reopen α.</p>
+
+      <h3>If you want a genuinely adaptive rule — and a positive result</h3>
+      <p class="measure">The replacement must be <strong>scale-aware</strong>, or Theorem 4 kills it on
+      arrival.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>candidate</th><th class="num">fixes Thm 1?</th><th class="num">fixes Thm 4?</th><th>status</th></tr></thead>
+          <tbody>
+            <tr class="hl">
+              <td>Noise-thresholded count <span class="m">#{σ<sub>i</sub> &gt; c·ς̂}</span> — BBP / Donoho–Gavish</td>
+              <td class="num"><span class="yes">yes</span></td><td class="num"><span class="yes">yes</span></td>
+              <td style="white-space:normal">already implemented (<code>XSE_MP_SHRINKAGE</code>) and already logged every run as <code>xs_spread/rec_rank_*</code></td>
+            </tr>
+            <tr>
+              <td>Energy threshold <span class="m">min{k : Σ<sub>i≤k</sub> p<sub>i</sub> ≥ τ}</span></td>
+              <td class="num">partly</td><td class="num"><span class="no">no</span> — still normalised</td>
+              <td style="white-space:normal">not a fix; only a smoother knob</td>
+            </tr>
+            <tr>
+              <td>De-quantized N<sub>α</sub> (randomised rounding)</td>
+              <td class="num"><span class="yes">yes</span></td><td class="num"><span class="no">no</span></td>
+              <td style="white-space:normal">makes α identifiable, but the depth it unlocks is inside the plateau ⇒ predicted null. Not worth GPU</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="foot">The thresholded count is the right object: it responds to noise with the correct
+        sign, and under DP the noise scale ς is <b>known exactly</b> (multiplier × clipping norm / batch,
+        already logged), so the rule has <b>no free parameter at all</b> — strictly stronger than "we
+        tuned α".</p>
+      </div>
+
+      <div class="aside">
+        <p><b>But be honest about where it can be validated.</b> In non-DP the loss is flat over depth
+        9–15 within the floor, and every sensible rule lands in that band — the spike count puts depth
+        at ≈ 8, the plateau edge. <b>Non-DP is structurally incapable of discriminating between
+        depth-selection rules.</b> A positive adaptive result has to come from a regime with curvature
+        in the depth response: DP, larger r, or a tighter step budget. State that as a design
+        constraint up front, not a failure to apologise for.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="row">
+    <div class="rail"><b>§8</b>Repro</div>
+    <div>
+      <h2>Every number, reproducible offline</h2>
+      <p class="measure">Scripts are committed at <code>campaign_logs/alpha_analysis/</code>; the full
+      write-up with proofs is <code>docs/renyi-alpha-theory-final.md</code>.</p>
+      <div class="eq" style="font-size:13.5px;line-height:1.8">
+        cd campaign_logs/alpha_analysis<br>
+        export WANDB_BASE_URL=https://jetbrains.wandb.io<br>
+        <br>
+        uv run python fetch_cache.py &nbsp;&nbsp;<span style="color:var(--ink-faint)"># 297 runs + histories for the 82 with the Rényi grid</span><br>
+        uv run python an2.py &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--ink-faint)"># depth trajectories, N_α grid, α dose</span><br>
+        uv run python an3.py &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--ink-faint)"># mediator curve, replicate floors, bound table</span><br>
+        uv run python an4.py &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--ink-faint)"># dose–response ρ, noise response, heterogeneity</span><br>
+        uv run python an5.py &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--ink-faint)"># drift, r-dependence, Thm 2 certificates</span>
+      </div>
+      <p class="measure">The analysis leans on one lucky property of the instrumentation:
+      <code>rotation/r_eff_{a0,a0p5,a1,a2,ainf}</code> is logged <strong>every rotation regardless of the
+      α the run was configured with</strong>. A single run therefore yields the whole α curve — which is
+      why the question could be settled from runs already on disk.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  var tip = document.getElementById("tip");
+  function show(html, x, y) {
+    tip.innerHTML = html;
+    tip.style.opacity = "1";
+    var r = tip.getBoundingClientRect();
+    var lx = Math.min(Math.max(8, x - r.width / 2), window.innerWidth - r.width - 8);
+    var ly = y - r.height - 14;
+    if (ly < 8) ly = y + 18;
+    tip.style.left = lx + "px";
+    tip.style.top = ly + "px";
+  }
+  function hide() { tip.style.opacity = "0"; }
+
+  var NS = "http://www.w3.org/2000/svg";
+  function plot(hostId, pts) {
+    var g = document.getElementById(hostId);
+    if (!g) return;
+    pts.forEach(function (p) {
+      var c = document.createElementNS(NS, "circle");
+      c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 5);
+      c.setAttribute("fill", "var(--accent)");
+      c.setAttribute("class", "dot");
+      var hit = document.createElementNS(NS, "circle");
+      hit.setAttribute("cx", p.x); hit.setAttribute("cy", p.y); hit.setAttribute("r", 15);
+      hit.setAttribute("class", "hitbox");
+      hit.setAttribute("tabindex", "0");
+      hit.setAttribute("role", "img");
+      hit.setAttribute("aria-label", p.aria);
+      function on(e) {
+        var b = hit.getBoundingClientRect();
+        show(p.tip, b.left + b.width / 2, b.top);
+        c.setAttribute("r", 7);
+      }
+      function off() { hide(); c.setAttribute("r", 5); }
+      hit.addEventListener("mouseenter", on);
+      hit.addEventListener("focus", on);
+      hit.addEventListener("mouseleave", off);
+      hit.addEventListener("blur", off);
+      g.appendChild(c); g.appendChild(hit);
+    });
+  }
+
+  plot("f1pts", [
+    { x: 72.2,  y: 238.7, tip: "<b>α = 0.05</b><br>depth 2.85 · loss_min 0.34537<br>+1.9e-3 vs best",  aria: "alpha 0.05, depth 2.85, loss 0.34537" },
+    { x: 172.1, y: 178.0, tip: "<b>α = 0.10</b><br>depth 6.50 · loss_min 0.34405",                     aria: "alpha 0.10, depth 6.50, loss 0.34405" },
+    { x: 230.5, y: 138.1, tip: "<b>α = 0.15</b><br>depth 8.90 · loss_min 0.34372",                     aria: "alpha 0.15, depth 8.90, loss 0.34372" },
+    { x: 271.9, y: 114.2, tip: "<b>α = 0.20</b><br>depth 10.33 · loss_min 0.34353",                    aria: "alpha 0.20, depth 10.33, loss 0.34353" },
+    { x: 304.1, y: 99.8,  tip: "<b>α = 0.25</b><br>depth 11.20 · loss_min 0.34346<br>in the plateau",  aria: "alpha 0.25, depth 11.20, loss 0.34346" },
+    { x: 403.9, y: 77.0,  tip: "<b>α = 0.5</b><br>depth 12.57 · loss_min 0.34346",                     aria: "alpha 0.5, depth 12.57, loss 0.34346" },
+    { x: 503.9, y: 72.3,  tip: "<b>α = 1 · Shannon</b><br>depth 12.85 · loss_min 0.34346",             aria: "alpha 1, Shannon, depth 12.85, loss 0.34346" },
+    { x: 603.8, y: 70.8,  tip: "<b>α = 2</b><br>depth 12.95 · loss_min 0.34349",                       aria: "alpha 2, depth 12.95, loss 0.34349" },
+    { x: 676,   y: 69.9,  tip: "<b>α = ∞</b><br>depth 13.00 · loss_min 0.34362",                       aria: "alpha infinity, depth 13.00, loss 0.34362" }
+  ]);
+
+  plot("f2pts", [
+    { x: 85.9,  y: 97.4,  tip: "<b>α=2 vs ∞, m=1</b><br>dose 0.031 · |ΔL| 5.71e-4<br><b>529×</b> the max α could cause", aria: "alpha 2 versus infinity at margin 1, dose 0.031, delta L 5.71e-4" },
+    { x: 132.5, y: 69.0,  tip: "<b>α=2 vs ∞, m=2</b><br>dose 0.097 · |ΔL| 1.05e-3<br><b>307×</b>", aria: "alpha 2 versus infinity at margin 2, dose 0.097, delta L 1.05e-3" },
+    { x: 136.1, y: 233.1, tip: "<b>α=2 vs ∞, m=3</b><br>dose 0.102 · |ΔL| 3.11e-5<br>9×", aria: "alpha 2 versus infinity at margin 3, dose 0.102, delta L 3.11e-5" },
+    { x: 139.6, y: 175.0, tip: "<b>α=1 vs 2, m=1</b><br>dose 0.107 · |ΔL| 1.08e-4<br>29×", aria: "alpha 1 versus 2 at margin 1, dose 0.107, delta L 1.08e-4" },
+    { x: 161.5, y: 107.3, tip: "<b>α=1 vs ∞, m=1</b><br>dose 0.138 · |ΔL| 4.62e-4<br>95×", aria: "alpha 1 versus infinity at margin 1, dose 0.138, delta L 4.62e-4" },
+    { x: 211.7, y: 168.2, tip: "<b>α=1 vs ∞, m=2</b><br>dose 0.209 · |ΔL| 1.25e-4<br>17×", aria: "alpha 1 versus infinity at margin 2, dose 0.209, delta L 1.25e-4" },
+    { x: 290.8, y: 135.7, tip: "<b>α=1 vs ∞, m=3</b><br>dose 0.321 · |ΔL| 2.51e-4<br>22×", aria: "alpha 1 versus infinity at margin 3, dose 0.321, delta L 2.51e-4" },
+    { x: 367.2, y: 223.5, tip: "<b>α=0.5 vs 2, m=0</b><br>dose 0.429 · |ΔL| 3.82e-5<br>3×", aria: "alpha 0.5 versus 2 at margin 0, dose 0.429, delta L 3.82e-5" },
+    { x: 507.8, y: 139.6, tip: "<b>α=0.5 vs ∞, m=1</b><br>dose 0.628 · |ΔL| 2.31e-4<br>10×", aria: "alpha 0.5 versus infinity at margin 1, dose 0.628, delta L 2.31e-4" },
+    { x: 554.4, y: 159.1, tip: "<b>α=0.5 vs ∞, m=2</b><br>dose 0.694 · |ΔL| 1.52e-4<br>6×", aria: "alpha 0.5 versus infinity at margin 2, dose 0.694, delta L 1.52e-4" },
+    { x: 633.6, y: 270.6, tip: "<b>α=0.5 vs ∞, m=3</b><br>dose 0.806 · |ΔL| 1.39e-5<br><b>0.5×</b> — within the bound", aria: "alpha 0.5 versus infinity at margin 3, dose 0.806, delta L 1.39e-5" }
+  ]);
+
+  window.addEventListener("scroll", hide, { passive: true });
+})();
+</script>
