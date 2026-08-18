@@ -18,9 +18,8 @@ environment, runs the same dependency resolution and pytest selection as its
 GitHub Actions counterpart, and publishes JUnit and coverage XML artifacts.
 Matrix artifacts are grouped by shard. TeamCity processes the JUnit reports
 through its XML Report Processing feature; coverage.py XML remains an artifact
-because it is not a TeamCity coverage-report format. The minimum dependency
-configuration does not fail on reported test failures, matching the advisory
-GitHub Actions lane.
+because it is not a TeamCity coverage-report format. Every matrix leg fails on
+reported test failures.
 
 To validate the generated TeamCity configuration locally:
 

@@ -21,7 +21,6 @@ private data class TestLane(
     val architecture: String,
     val hostedRunnerName: String,
     val timeoutMinutes: Int,
-    val allowTestFailure: Boolean = false,
 )
 
 private val testShards = listOf(
@@ -60,8 +59,7 @@ private val testLanes = listOf(
         python = "python3.11",
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
-        timeoutMinutes = 60,
-        allowTestFailure = true,
+        timeoutMinutes = 30,
     ),
     TestLane(
         id = "LatestDependencies",
@@ -74,7 +72,7 @@ private val testLanes = listOf(
         python = "python3.12",
         architecture = "amd64",
         hostedRunnerName = "Linux-Large",
-        timeoutMinutes = 60,
+        timeoutMinutes = 30,
     ),
     TestLane(
         id = "LinuxAarch64",
@@ -101,19 +99,6 @@ private fun setupScript(lane: TestLane) = """
 
 private fun reportPath(kind: String, lane: TestLane, shard: String) =
     "$kind-${lane.environmentName}-$shard.xml"
-
-private fun testResultScript(lane: TestLane) =
-    if (lane.allowTestFailure) {
-        """
-            if [[ "${'$'}status" -ne 0 ]]; then
-                echo "##teamcity[message text='pytest exited with status ${'$'}status in advisory ${lane.environmentName} lane' status='WARNING']"
-            fi
-
-            exit 0
-        """.trimIndent()
-    } else {
-        "exit \"${'$'}status\""
-    }
 
 private fun testScript(lane: TestLane) = """
     set -euo pipefail
@@ -142,7 +127,7 @@ private fun testScript(lane: TestLane) = """
     status=${'$'}?
     set -e
 
-    ${testResultScript(lane)}
+    exit "${'$'}status"
 """
 
 project {
@@ -202,7 +187,7 @@ project {
 
             failureConditions {
                 executionTimeoutMin = lane.timeoutMinutes
-                testFailure = !lane.allowTestFailure
+                testFailure = true
             }
         }
     }
