@@ -91,6 +91,13 @@ def _outputs() -> dict[str, object]:
     }
 
 
+def _teamcity_shards(outputs: dict[str, object]) -> str:
+    return "".join(
+        "\t".join(str(shard[key]) for key in ("name", "label", "paths")) + "\n"
+        for shard in outputs["test_shards"]
+    )
+
+
 def main() -> int:
     """Print or export the discovered package matrices."""
     parser = argparse.ArgumentParser()
@@ -99,6 +106,11 @@ def main() -> int:
         type=Path,
         help="Write GitHub Actions step outputs to this file.",
     )
+    parser.add_argument(
+        "--teamcity-shards",
+        type=Path,
+        help="Write TeamCity test shards as a tab-separated manifest.",
+    )
     args = parser.parse_args()
 
     outputs = _outputs()
@@ -106,7 +118,9 @@ def main() -> int:
         with args.github_output.open("a", encoding="utf-8") as fh:
             for key, value in outputs.items():
                 fh.write(f"{key}={json.dumps(value, separators=(',', ':'))}\n")
-    else:
+    if args.teamcity_shards is not None:
+        args.teamcity_shards.write_text(_teamcity_shards(outputs), encoding="utf-8")
+    if args.github_output is None and args.teamcity_shards is None:
         print(json.dumps(outputs, indent=2, sort_keys=True))
     return 0
 

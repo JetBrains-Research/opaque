@@ -27,6 +27,14 @@ JUnit reports through its XML Report Processing feature; coverage.py XML remains
 an artifact because it is not a TeamCity coverage-report format. Every matrix
 leg fails on reported test failures.
 
+`test-shards.tsv` is the matrix source. Regenerate it whenever package
+`pyproject.toml` files change:
+
+```bash
+python .github/scripts/discover_package_matrices.py \
+  --teamcity-shards .teamcity/test-shards.tsv
+```
+
 To validate the generated TeamCity configuration locally:
 
 ```bash

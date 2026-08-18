@@ -5,6 +5,7 @@ import jetbrains.buildServer.configs.kotlin.buildFeatures.xmlReport
 import jetbrains.buildServer.configs.kotlin.buildFeatures.PullRequests
 import jetbrains.buildServer.configs.kotlin.buildFeatures.pullRequests
 import jetbrains.buildServer.configs.kotlin.triggers.gitHubChecks
+import java.io.File
 
 version = "2026.1"
 
@@ -25,19 +26,19 @@ private data class TestLane(
     val timeoutMinutes: Int,
 )
 
-private val testShards = listOf(
-    TestShard("Accounting", "opaque-accounting", "packages/opaque-accounting"),
-    TestShard("Alignment", "opaque-alignment", "packages/opaque-alignment"),
-    TestShard("Auditing", "opaque-auditing", "packages/opaque-auditing"),
-    TestShard("Base", "opaque-base", "packages/opaque-base"),
-    TestShard("Dpftrl", "opaque-dpftrl", "packages/opaque-dpftrl"),
-    TestShard("Dpsgd", "opaque-dpsgd", "packages/opaque-dpsgd"),
-    TestShard("Engine", "opaque-engine", "packages/opaque-engine"),
-    TestShard("Optimizers", "opaque-optimizers", "packages/opaque-optimizers"),
-    TestShard("Patches", "opaque-patches", "packages/opaque-patches"),
-    TestShard("Transformers", "opaque-transformers", "packages/opaque-transformers"),
-    TestShard("Integration", "integration", "tests"),
-)
+private fun testShards() =
+    File(DslContext.baseDir, "test-shards.tsv")
+        .readLines()
+        .filter { it.isNotBlank() }
+        .mapIndexed { index, line ->
+            val fields = line.split("\t")
+            require(fields.size == 3) {
+                "test-shards.tsv line ${index + 1} must contain id, label, and path"
+            }
+            TestShard(fields[0], fields[1], fields[2])
+        }
+
+private val testShards = testShards()
 
 private val testLanes = listOf(
     TestLane(
