@@ -8,8 +8,8 @@ private callable workflows described below.
 
 | Workflow | Trigger | Responsibility |
 |---|---|---|
-| `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
-| `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation plus development-wheel publication. |
+| `pr.yml` | Pull requests to `main`, manual dispatch | Waits for TeamCity Linux amd64 Python/Rust tests, runs dependency-boundary, macOS arm64, Linux arm64, and fork-safe CUDA checks, and builds preview-wheel artifacts. |
+| `ci.yml` | Pushes to `main` | Waits for TeamCity Linux amd64 Python/Rust tests, runs dependency-boundary and platform validation, and publishes development wheels. |
 | `prepare-release.yml` | Manual dispatch from `main` or `release/X.Y` | Resolves a release line, runs the complete release test matrix, builds and validates its exact SHA, and either stops as a non-mutating dry run or creates the maintenance branch and complete draft Release. |
 | `release.yml` | Published GitHub Release, manual tag recovery | Verifies attached Release assets, publishes them idempotently to JetBrains Packages, and deploys immutable documentation. |
 | `docs.yml` | Pushes to `main`, manual dispatch, callable workflow | Builds rolling documentation or deploys a caller-selected immutable release version. |
@@ -62,18 +62,37 @@ least five seconds, so newly slow tests cannot disappear behind a fixed-size
 duration table. Lower-bound pytest failures are advisory while dependency
 resolution and workflow failures remain blocking.
 
-`pr.yml`, `ci.yml`, and release preparation invoke the callable workflow for
-Linux amd64 tests, minimum and latest dependency boundaries, and macOS arm64,
-Linux arm64, and CUDA platform coverage. Main and release include slow tests in
-platform lanes. Fork pull requests never receive the self-hosted CUDA runner.
+PR/main invoke the callable workflow for minimum and latest dependency
+boundaries plus macOS arm64, Linux arm64, and CUDA platform coverage. TeamCity
+owns their standard Linux amd64 shard matrix. Release preparation retains the
+reusable Linux path. Main and release include slow tests in platform lanes, and
+fork pull requests never receive the self-hosted CUDA runner.
 
 ### `.github/workflows/rust-tests.yml`
 
 This private `workflow_call` workflow runs the accounting crate's unit and doc
-tests with the shared Rust setup and dependency cache. Entry workflows call it
-as `Rust`, so checks render as `Rust / opaque-accounting`. Tests above five
-seconds use `#[ignore = "slow"]`: PRs run the default set, while main and
-release add `cargo test --lib -- --ignored` after the default unit/doc-test run.
+tests with the shared Rust setup and dependency cache. PR/main receive these
+results from TeamCity; release preparation retains this workflow. Tests above
+five seconds use `#[ignore = "slow"]`: TeamCity and release run the default
+set on PRs and additionally run ignored library tests on `main`.
+
+## Test execution ownership and rollback
+
+TeamCity's GitHub Checks Webhook Trigger publishes exactly one `TeamCity Linux
+tests` Check Run for each eligible PR-head or `main` SHA after the synchronized
+Linux amd64 Python shard matrix and accounting Rust tests succeed. PR/main
+waiters poll that exact check with `checks: read` and reject every conclusion
+except `success`.
+
+TeamCity runs `not cuda and not mps and not slow` for PR Python tests and `not
+cuda and not mps` on `main`. GitHub Actions owns dependency-boundary, macOS,
+Linux arm64, CUDA, documentation, builds, validation, publication, and releases.
+Fork PRs never receive the self-hosted CUDA runner or TeamCity credentials.
+
+Keep the stable aggregate checks named `Python tests` and `Rust tests` on PRs,
+and `Python tests` and `Rust tests gate` on `main`; branch rules rely on those
+names, not the TeamCity check. To roll back, restore the Linux Python/Rust
+callers in PR/main and switch these aggregate gates back without renaming them.
 
 ### `.github/workflows/validate-distributions.yml`
 
@@ -120,8 +139,8 @@ Fork pull requests do not run untrusted code on the self-hosted GPU runner and
 never receive repository, package, or cloud credentials.
 
 The active `main` ruleset requires `Build documentation`, `Format Python`,
-`Format Rust`, `Conventional Commits PR title`, the selected individual Python
-environment/package checks, `Rust / opaque-accounting`, and `Junie review`.
+`Format Rust`, `Conventional Commits PR title`, `Python tests`, `Rust tests`,
+and `Junie review`.
 The review workflow uses the `JUNIE_API_KEY` Actions secret. Fork and Dependabot
 pull requests cannot receive the secret-backed Junie review; the job records
 that limitation and completes without invoking Junie.

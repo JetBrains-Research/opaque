@@ -65,32 +65,36 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  # ---------------------------------------------------------------------------
-  # Rust tests
-  # ---------------------------------------------------------------------------
-  rust-tests:
-    name: Rust
-    uses: ./.github/workflows/rust-tests.yml
+  # TeamCity owns the standard Linux amd64 Python shard matrix and accounting
+  # Rust tests. Wait for its exact PR-head check, including forks, without
+  # exposing TeamCity credentials to GitHub Actions.
+  teamcity-linux-tests:
+    name: TeamCity Linux tests waiter
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for TeamCity Linux tests
+        id: wait-for-teamcity
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: TeamCity Linux tests
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          timeoutSeconds: 5400
+          intervalSeconds: 15
 
-  # ---------------------------------------------------------------------------
-  # Python tests
-  #
-  # Every environment calls the same reusable workflow with explicit runner,
-  # Python, dependency, marker, parallelism, and shard settings. Slow tests stay
-  # on main; supported dependency and platform boundaries remain pre-merge.
-  # ---------------------------------------------------------------------------
-  python-tests-linux-amd64:
-    name: Linux amd64
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      environment-name: linux-amd64
-      pytest-marker: not cuda and not mps and not slow
-      pytest-xdist: -n auto --dist loadscope
-      report-durations: true
-      runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 30
+      - name: Require a successful TeamCity conclusion
+        run: |
+          conclusion="${{ steps.wait-for-teamcity.outputs.conclusion }}"
+          echo "TeamCity Linux tests conclusion: $conclusion"
+          test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
+
+  # Every GitHub-owned environment calls the same reusable workflow with
+  # explicit runner, Python, dependency, marker, parallelism, and shard
+  # settings. Slow tests stay on main; supported dependency and platform
+  # boundaries remain pre-merge.
 
   python-tests-minimum:
     name: Minimum dependencies
@@ -175,7 +179,7 @@ jobs:
     name: Python tests
     if: ${{ always() }}
     needs:
-      - python-tests-linux-amd64
+      - teamcity-linux-tests
       - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64
@@ -210,12 +214,12 @@ jobs:
   rust-test-gate:
     name: Rust tests
     if: ${{ always() }}
-    needs: [rust-tests]
+    needs: [teamcity-linux-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Verify test results
         env:
-          RESULT: ${{ needs.rust-tests.result }}
+          RESULT: ${{ needs.teamcity-linux-tests.result }}
         shell: bash
         run: |
           if [[ "$RESULT" != "success" ]]; then
@@ -230,7 +234,6 @@ jobs:
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs:
-      - python-tests-linux-amd64
       - python-tests-macos-arm64
       - python-tests-linux-arm64
       - python-tests-cuda

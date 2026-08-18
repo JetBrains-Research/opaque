@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "transformers>=4.57.0,<6",
+    "transformers>=4.57.1,<6",
     "peft>=0.13.0",
     "datasets>=2.0.0",
     "opaque-engine>=0.0.0.dev0",

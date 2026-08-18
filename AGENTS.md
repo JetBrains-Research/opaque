@@ -88,9 +88,10 @@ the draft Release body from an exact tag-to-candidate range.
   commit.
 - Keep it readable for a future spelunker; avoid checklist-only bodies.
 
-**Gate** — on every push the PR workflow runs Linux amd64, dependency-boundary,
-macOS arm64, Linux arm64, and CUDA validation, plus Rust tests, the docs build, title
-validation, and autoformat checks. Preview wheels
+**Gate** — on every push the PR workflow waits for TeamCity's Linux amd64
+Python/Rust check, runs GitHub dependency-boundary, macOS arm64, Linux arm64,
+and eligible CUDA validation, plus the docs build, title validation, and
+autoformat checks. Preview wheels
 (`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
 downloadable workflow artifacts on the run page (14-day retention).
 
@@ -233,23 +234,24 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   and run on pushes to `main` (the CI job strips the `and not slow`
   clause conditionally).
 
-Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
-unit/doc-test set; main and release additionally run the ignored library tests.
+Rust tests above five seconds use `#[ignore = "slow"]`. TeamCity runs the
+default unit/doc-test set for PRs and additionally runs ignored library tests on
+`main`; release uses the reusable Rust workflow with the same policy.
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
 `packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
-CI lane marker expressions:
+CI lane marker expressions and ownership:
 
-- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- TeamCity Linux/amd64: `-m "not cuda and not mps and not slow"` on PRs and
+  `-m "not cuda and not mps"` on `main`; it also owns accounting Rust tests.
 - PR dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow"`.
 - PR macOS arm64: `-m "not cuda and not slow"`.
 - PR Linux arm64: `-m "not cuda and not mps and not slow"`.
 - PR CUDA (self-hosted): `-m "cuda and not slow"`.
-- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
 - Main dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow"`.
 - Main macOS arm64: `-m "not cuda"`.
@@ -259,6 +261,11 @@ CI lane marker expressions:
   `highest` strategies. Main platform lanes retain slow-test coverage.
   Failures in the Minimum dependencies lane are currently advisory, while
   setup and resolution failures remain blocking.
+- GitHub waits for the exact `TeamCity Linux tests` check on the PR-head or
+  `main` SHA and accepts only `success`. Keep `Python tests` and `Rust tests`
+  on PRs, plus `Python tests` and `Rust tests gate` on `main`, as the stable
+  required checks. The reusable Linux Python/Rust workflows remain available
+  for release and rollback.
 
 ### Supported HF model families
 

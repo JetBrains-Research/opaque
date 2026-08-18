@@ -30,33 +30,33 @@ jobs:
         id: discover
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
-  # ---------------------------------------------------------------------------
-  # Rust tests
-  # ---------------------------------------------------------------------------
-  rust-tests:
-    name: Rust
-    uses: ./.github/workflows/rust-tests.yml
-    with:
-      include-slow: true
+  # TeamCity owns the standard Linux amd64 Python shard matrix and accounting
+  # Rust tests. Wait for its exact check on the pushed main revision.
+  teamcity-linux-tests:
+    name: TeamCity Linux tests waiter
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for TeamCity Linux tests
+        id: wait-for-teamcity
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: TeamCity Linux tests
+          ref: ${{ github.sha }}
+          timeoutSeconds: 5400
+          intervalSeconds: 15
 
-  # ---------------------------------------------------------------------------
-  # Python tests
-  #
-  # Main repeats every PR environment and includes slow tests in platform lanes.
-  # Every environment gates distribution publishing.
-  # ---------------------------------------------------------------------------
-  python-tests-linux-amd64:
-    name: Linux amd64
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      environment-name: linux-amd64
-      pytest-marker: not cuda and not mps
-      pytest-xdist: -n auto --dist loadscope
-      report-durations: true
-      runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 40
+      - name: Require a successful TeamCity conclusion
+        run: |
+          conclusion="${{ steps.wait-for-teamcity.outputs.conclusion }}"
+          echo "TeamCity Linux tests conclusion: $conclusion"
+          test "$conclusion" = "success" || (echo "ERROR: TeamCity Linux tests did not succeed"; exit 1)
+
+  # Main repeats the GitHub-owned PR environments and includes slow tests in
+  # platform lanes. Every environment gates distribution publishing.
 
   python-tests-minimum:
     name: Minimum dependencies
@@ -128,11 +128,59 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
 
+  # Stable aggregate checks preserve branch rules while TeamCity supplies the
+  # Linux amd64 and Rust results.
+  python-tests-gate:
+    name: Python tests
+    if: ${{ always() }}
+    needs:
+      - teamcity-linux-tests
+      - python-tests-minimum
+      - python-tests-latest
+      - python-tests-macos-arm64
+      - python-tests-linux-arm64
+      - python-tests-cuda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify test results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          failures="$(
+            jq -r '
+              to_entries[]
+              | select(.value.result != "success")
+              | "\(.key): \(.value.result)"
+            ' <<< "$RESULTS"
+          )"
+
+          if [[ -n "$failures" ]]; then
+            echo "::error::Required Python test jobs did not succeed:"
+            echo "$failures"
+            exit 1
+          fi
+
+  rust-tests-gate:
+    name: Rust tests gate
+    if: ${{ always() }}
+    needs: [teamcity-linux-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify test results
+        env:
+          RESULT: ${{ needs.teamcity-linux-tests.result }}
+        shell: bash
+        run: |
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::Rust tests finished with result: $RESULT"
+            exit 1
+          fi
+
   qodana:
     name: Qodana
     if: always() && github.ref == 'refs/heads/main'
     needs:
-      - python-tests-linux-amd64
       - python-tests-macos-arm64
       - python-tests-linux-arm64
       - python-tests-cuda
@@ -155,7 +203,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-distributions:
     name: Build
-    needs: [discover-packages]
+    needs: [discover-packages, python-tests-gate, rust-tests-gate]
     uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
@@ -187,13 +235,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - merge-wheels
-      - python-tests-linux-amd64
-      - python-tests-minimum
-      - python-tests-latest
-      - python-tests-macos-arm64
-      - python-tests-linux-arm64
-      - python-tests-cuda
-      - rust-tests
+      - python-tests-gate
+      - rust-tests-gate
     runs-on: ubuntu-latest
     environment: release
     permissions:
