@@ -1564,7 +1564,13 @@ def main():
         _pad = tokenizer.pad_token_id
 
         def _probe_loss(batch):
-            ids = batch["input_ids"].to(device)
+            # collate() returns a 1-tuple (input_ids,), ALREADY on device -- not a
+            # dict. Indexing it with a string raised
+            #   TypeError: tuple indices must be integers or slices, not str
+            # and killed sb-xse-d5t1-s42 52s in. Same -100 pad masking as
+            # per_example_loss_fn, so the probe measures the gradient of the real
+            # objective rather than of predicting <eos> after <eos>.
+            (ids,) = batch
             labels = ids.masked_fill(ids == _pad, -100) if _pad is not None else ids
             return model(ids, labels=labels).loss
 
