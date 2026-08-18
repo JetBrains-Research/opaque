@@ -1,0 +1,11 @@
+accounting	opaque-accounting	packages/opaque-accounting
+alignment	opaque-alignment	packages/opaque-alignment
+auditing	opaque-auditing	packages/opaque-auditing
+base	opaque-base	packages/opaque-base
+dpftrl	opaque-dpftrl	packages/opaque-dpftrl
+dpsgd	opaque-dpsgd	packages/opaque-dpsgd
+engine	opaque-engine	packages/opaque-engine
+optimizers	opaque-optimizers	packages/opaque-optimizers
+patches	opaque-patches	packages/opaque-patches
+transformers	opaque-transformers	packages/opaque-transformers
+integration	integration	tests
