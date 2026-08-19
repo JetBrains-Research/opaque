@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "privacy-auditing", "pytorch"]
+keywords = ["differential-privacy", "privacy-auditing", "membership-inference"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -24,11 +24,9 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.9.0",
     "scipy>=1.11.0",
+    "numpy>=1.22",
     "opaque-engine>=0.0.0.dev0",
-    "opaque-torch>=0.0.0.dev0",
-    "opaque-accounting>=0.0.0.dev0",
 ]
 
 [tool.setuptools.packages.find]
@@ -49,5 +47,3 @@ package = true
 
 [tool.uv.sources]
 opaque-engine = { workspace = true }
-opaque-torch = { workspace = true }
-opaque-accounting = { workspace = true }

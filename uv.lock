@@ -2517,21 +2517,17 @@ provides-extras = ["patches"]
 name = "opaque-auditing"
 source = { editable = "packages/opaque-auditing" }
 dependencies = [
-    { name = "opaque-accounting" },
+    { name = "numpy" },
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "torch" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "opaque-accounting", editable = "packages/opaque-accounting" },
+    { name = "numpy", specifier = ">=1.22" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 
 [[package]]
@@ -2647,6 +2643,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+auditing = [
+    { name = "opaque-auditing" },
+]
 dpftrl = [
     { name = "opaque-dpftrl" },
 ]
@@ -2657,13 +2656,14 @@ dpsgd = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.22" },
+    { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "optree", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
-provides-extras = ["dpsgd", "dpftrl"]
+provides-extras = ["dpsgd", "dpftrl", "auditing"]
 
 [[package]]
 name = "opaque-transformers"

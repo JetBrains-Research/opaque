@@ -151,6 +151,11 @@ def finfo_smallest_normal(value_dtype: Any) -> float:
     return float(torch.finfo(value_dtype).smallest_normal)
 
 
+@_TORCH.implements(ops.to_host)
+def to_host(value: Any) -> Any:
+    return value.detach().cpu().numpy()
+
+
 @_TORCH.implements(ops.rsqrt)
 def rsqrt(value: Any) -> torch.Tensor:
     return torch.rsqrt(value)

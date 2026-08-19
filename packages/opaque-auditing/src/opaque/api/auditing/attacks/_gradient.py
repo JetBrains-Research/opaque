@@ -18,11 +18,15 @@ import numpy as np
 
 from opaque.api.auditing.attacks._helpers import (
     _bind_scores,
+    _detach_tree,
     _extract_batch_tensors,
     _merge_args,
     _scoring_loader,
     _validate_batch_argnums,
 )
+from opaque.autodiff import grad_and_value
+from opaque.ops import scalar_item, shape, slice_array, square
+from opaque.pytree import global_norm
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,11 +62,11 @@ def gradient_scores(
     other pipeline, attest their identifiers with
     :func:`~opaque.auditing.canary_scores` instead.
 
-    Processes one sample at a time to keep peak GPU memory at 2× model
-    size regardless of model or batch size.  ``torch.func.grad`` is a
-    functional transform that operates independently of the standard
-    autograd context, so the loop runs inside ``torch.no_grad()`` for
-    efficiency (same as :func:`~opaque.api.auditing.attacks._loss.loss_scores`).
+    Processes one sample at a time to keep peak accelerator memory at
+    2× model size regardless of model or batch size.  The gradient comes
+    from the provider's functional transform, and every input is detached
+    first, so no autograd graph accumulates across the loop (same as
+    :func:`~opaque.api.auditing.attacks._loss.loss_scores`).
 
     When ``reference_scores`` are provided, the returned scores are
     ``current - reference``, which equals
@@ -87,8 +91,10 @@ def gradient_scores(
             ``scores - reference_scores``.  Typically obtained by calling
             ``gradient_scores`` on the untrained model before training.
         batch_size: Batch size of the internal loader. Defaults to 32.
-        collate_fn: Collation for the internal loader. Defaults to
-            ``torch.utils.data.default_collate``.
+        collate_fn: Collation for the internal loader. By default, native
+            arrays are stacked along a new leading axis and mappings and
+            sequences are recursed; other example types need an explicit
+            collate.
 
     Returns:
         A :class:`~opaque.auditing.types.CanaryScores`, shape ``(n,)``:
@@ -117,10 +123,6 @@ def gradient_scores(
             reference_scores=ref,
         )
     """
-    import torch
-
-    from opaque.api.engine.pytree import global_norm
-
     _validate_batch_argnums(batch_argnums, len(args))
 
     if 0 in batch_argnums:
@@ -138,24 +140,30 @@ def gradient_scores(
         reference_scores=reference_scores,
     )
 
-    grad_fn = torch.func.grad(loss_fn)
+    grad_fn = grad_and_value(loss_fn)
+
+    # Scoring wants values, not graphs: detached inputs keep the provider
+    # from recording gradients outside the functional transform.
+    args = tuple(_detach_tree(arg) for arg in args)
 
     all_positions: list[int] = []
     all_scores: list[float] = []
-    with torch.no_grad():
-        for positions, batch in loader:
-            all_positions.extend(int(position) for position in positions)
-            batch_tensors = _extract_batch_tensors(batch, batch_argnums)
-            n_in_batch = batch_tensors[0].shape[0]
+    for positions, batch in loader:
+        all_positions.extend(int(position) for position in positions)
+        batch_tensors = tuple(
+            _detach_tree(tensor)
+            for tensor in _extract_batch_tensors(batch, batch_argnums)
+        )
+        n_in_batch = shape(batch_tensors[0])[0]
 
-            for j in range(n_in_batch):
-                single_tensors = tuple(t[j] for t in batch_tensors)
-                full_args = _merge_args(args, single_tensors, batch_argnums)
+        for j in range(n_in_batch):
+            single_tensors = tuple(slice_array(t, j) for t in batch_tensors)
+            full_args = _merge_args(args, single_tensors, batch_argnums)
 
-                grad_pytree = grad_fn(*full_args)
-                norm = global_norm(grad_pytree)
-                all_scores.append(-norm.pow(2).item())
-                del grad_pytree
+            grad_pytree, _ = grad_fn(*full_args)
+            norm = global_norm(grad_pytree)
+            all_scores.append(-float(scalar_item(square(norm))))
+            del grad_pytree
 
     scores = np.array(all_scores)
 
