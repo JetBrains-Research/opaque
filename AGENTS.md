@@ -244,18 +244,26 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 CI lane marker expressions:
 
 - PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- PR CPU dependency boundaries (Ubuntu, Python 3.11/3.13):
+- PR Linux amd64 dependency boundaries (Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
-- PR macOS arm64: `-m "not cuda and not slow"`.
-- PR Linux arm64: `-m "not cuda and not mps and not slow"`.
+- PR macOS arm64 locked: `-m "not cuda and not slow"`.
+- PR macOS arm64 dependency boundaries (Python 3.11/3.13):
+  `-m "not cuda and not slow"`.
+- PR Linux arm64 locked: `-m "not cuda and not mps and not slow"`.
+- PR Linux arm64 dependency boundaries (Python 3.11/3.13):
+  `-m "not cuda and not mps and not slow"`.
 - PR CUDA locked (self-hosted): `-m "cuda and not slow"`.
 - PR CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
   `-m "cuda and not slow"`.
 - Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
-- Main CPU dependency boundaries (Ubuntu, Python 3.11/3.13):
+- Main Linux amd64 dependency boundaries (Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
-- Main macOS arm64: `-m "not cuda"`.
-- Main Linux arm64: `-m "not cuda and not mps"`.
+- Main macOS arm64 locked: `-m "not cuda"`.
+- Main macOS arm64 dependency boundaries (Python 3.11/3.13):
+  `-m "not cuda and not slow"`.
+- Main Linux arm64 locked: `-m "not cuda and not mps"`.
+- Main Linux arm64 dependency boundaries (Python 3.11/3.13):
+  `-m "not cuda and not mps and not slow"`.
 - Main CUDA locked (self-hosted): `-m "cuda"`.
 - Main CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
   `-m "cuda and not slow"`.
