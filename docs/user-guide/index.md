@@ -49,7 +49,7 @@ combines them.
 
 ### Integration
 
-- **[Optimizers](optimizers.md)** — TorchOpt functional optimizers
+- **[Optimizers](optimizers.md)** — backend-neutral functional optimizers
   with DP-SGD bias correction and the private second-moment story
   for DP-FTRL.
 - **[Serialization (API reference)](../reference/serialization.md)** —

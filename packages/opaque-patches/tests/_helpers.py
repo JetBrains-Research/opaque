@@ -27,8 +27,8 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
+from opaque.torch.functional import make_functional
 
 
 def has_hf_token() -> bool:

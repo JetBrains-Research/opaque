@@ -2,13 +2,38 @@
 
 This guide walks through the full DP-FTRL pipeline: pick a
 matrix-factorization strategy, calibrate the noise multiplier for the
-*whole training run*, clip gradients, add correlated MF noise, run a
-torchopt step, and checkpoint state. Every import on this page comes
-from the `opaque.dpftrl.*` public façade.
+*whole training run*, clip gradients, add correlated MF noise, run an
+explicit-state optimizer step, and checkpoint state. DP-FTRL-specific imports
+on this page come from the `opaque.dpftrl.*` public façade; shared state,
+optimizer, RNG, and accounting APIs use their own public namespaces.
 
 For DP-FTRL theory and a side-by-side comparison of mechanisms, see
 [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md). For the DP-SGD
 counterpart, see [DP-SGD end-to-end](dp-sgd.md).
+
+## Providers and execution model
+
+The functional DP-FTRL path runs eagerly with Torch, JAX, and MLX. Install
+`opaque-dpftrl` with the provider wheel used by the application, or use the
+root extras `opaque[dpftrl]`, `opaque[dpftrl,jax]`, or
+`opaque[dpftrl,mlx]`. The first provider-native gradient template passed to
+`mf_gaussian_noise` activates its provider; explicit activation through
+`torch_backend()`, `jax_backend()`, or `mlx_backend()` is also available.
+
+Gradient pytrees, noised outputs, streaming correlation buffers, and paired
+private second-moment streams remain provider-native. Opaque preserves each
+leaf's dtype and device at the public boundary. Unless overridden,
+`compute_dtype=None` uses the active provider's `float32` internally for
+normal sampling and linear-combination arithmetic.
+
+Opaque's immutable keys give deterministic replay for the same configuration,
+inputs, and state within one provider. Torch, JAX, and MLX use different native
+random implementations, so samples are not required to be bit-identical across
+providers. DP-FTRL is documented as an eager path; do not infer full-loop JIT
+safety from a provider's optional compilation capability.
+
+Hugging Face `DPTrainer`, model patches, and Triton kernels remain Torch-only.
+JAX and MLX users compose the provider-neutral functional primitives directly.
 
 ## Why DP-FTRL
 
@@ -52,6 +77,12 @@ from opaque.dpftrl.noise import (
 
 strategy = band_mf_strategy(bands=10)
 ```
+
+Strategies are provider-independent host recipes. Their
+`coefficients(n_steps=..., min_sep=..., max_participations=...)` queries return
+NumPy arrays for inspection and accounting, while `mf_gaussian_noise` projects
+the recipe into an immutable numeric execution plan and applies that plan to
+native Torch, JAX, or MLX arrays.
 
 See [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) for the
 choice criteria.
@@ -173,8 +204,15 @@ noise_fn, noise_state = mf_gaussian_noise(
     n_steps=1000,                   # total training steps
     noise_multiplier=noise_multiplier,
     key=key(0),
+    compute_dtype=None,              # active provider's float32
 )
 ```
+
+The `grad_template` and each later clipped pytree must contain native arrays
+from the same provider. Internal noise and correlation state use
+`compute_dtype`; `None` deliberately resolves to provider `float32`, while the
+returned leaves are cast back to their input dtypes and remain on their input
+devices.
 
 `mf_gaussian_noise` reads the per-step contribution bound from the
 `ClippedPytree` input on the **first call** and latches it for the
@@ -214,8 +252,7 @@ Same surface as DP-SGD:
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1e-3, noise_bias_correction=True)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = adamw(params, lr=1e-3, noise_bias_correction=True)
 ```
 
 Private second-moment AdamW pairs with `mf_gaussian_noise(...,
@@ -230,26 +267,36 @@ the learning rate or using suitable per-group bounds can help.
 ## 7. End-to-end loop
 
 ```python
-import torch
+from opaque.optimizers import apply_updates
 from opaque.serialization import state_dict
-from opaque.functional import make_functional
 
-fmodel, params = make_functional(model)
 for step, batch in enumerate(sampler):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noised, opt_state, params=params)
+    params = apply_updates(params, updates)
 
-# Checkpoint:
-ckpt = {
+# Hand this flat mapping to the application's checkpoint writer.
+checkpoint = state_dict({
     "params": params,
     "opt_state": opt_state,
     "clip_state": clip_state,
-    "noise_state": noise_state,  # carries MF streaming-matrix state
-}
-torch.save(state_dict(ckpt), "step.pt")
+    "noise_state": noise_state,
+})
 ```
+
+Torch users can obtain functional `params` with
+`opaque.torch.functional.make_functional`. JAX and MLX users pass their native
+functional parameter pytrees directly; the loop and Opaque state threading are
+otherwise the same.
+
+To resume, reconstruct the clipping, optimizer, and MF noise mechanisms with
+the same configuration, assemble a matching state template, and call
+`from_state_dict(template, checkpoint)`. Native-array handlers preserve Torch,
+JAX, or MLX state leaves when restored against a matching provider template.
+The restored `MFNoiseState` or `SecondMomentMFNoiseState` carries the saved key,
+step counter, and provider-native correlation buffers, so the next noise call
+matches uninterrupted execution within that provider.
 
 ## Runnable references
 

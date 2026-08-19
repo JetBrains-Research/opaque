@@ -80,7 +80,7 @@ clipper sums). Pick `nll_loss` (standard cross-entropy) or `dft_loss`
 each target token):
 
 ```python
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.alignment.sft.loss import nll_loss  # or dft_loss
 
 fmodel, trainable, frozen = make_functional(
@@ -122,11 +122,10 @@ eager path.
 sums. The remaining steps are exactly the DP-SGD pipeline:
 
 ```python
-import torchopt
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 from opaque.random import key, fold_in
 
 grad_fn, clip_state = clipped_grad(
@@ -138,8 +137,7 @@ grad_fn, clip_state = clipped_grad(
     return_aux=True,
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=nm, key=key(seed))
-opt = adamw(lr=1e-4)
-opt_state = opt.init(trainable)
+optimizer_step, opt_state = adamw(trainable, lr=1e-4)
 ```
 
 ## 4. End-to-end loop
@@ -158,8 +156,8 @@ for indices in sampler:
         continue
     (grads, aux), clip_state = grad_fn(trainable, *batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
-    trainable = torchopt.apply_updates(trainable, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=trainable)
+    trainable = apply_updates(trainable, updates)
 ```
 
 `return_aux=True` surfaces per-example diagnostics on `aux` (e.g.

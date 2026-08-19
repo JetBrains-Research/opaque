@@ -2,13 +2,23 @@
 
 This guide covers the DP-SGD pipeline: calibrate a noise multiplier,
 clip per-example gradients, add Gaussian noise, update parameters, and
-checkpoint state.
+checkpoint state. DP-SGD mechanism imports use the `opaque.dpsgd.*` public
+façade — no engine paths or internal `opaque.api.*` paths.
 
 For the conceptual deep-dives on each component, see the topic pages
 under [User Guide](index.md): [clipping](clipping.md),
 [noise](noise.md), [sampling](sampling.md), [accounting](accounting.md),
 [optimizers](optimizers.md). For the full DP-FTRL counterpart, see
 [DP-FTRL end-to-end](dp-ftrl.md).
+
+## Backend selection
+
+Install `opaque-dpsgd` together with the provider for your array runtime
+(`opaque-torch` today; JAX and MLX providers are planned). Passing native
+parameter and batch arrays to the clipping or noise function selects that
+provider automatically. To choose a provider before the first array-bearing
+call, use `opaque.backend.set_backend()` with the provider factory, such as
+`opaque.torch.torch_backend()`, or its name: `set_backend("torch")`.
 
 ## Why DP-SGD
 
@@ -119,33 +129,32 @@ to match.
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(
+optimizer_step, opt_state = adamw(
+    params,
     lr=1e-3,
     weight_decay=0.0,
     noise_bias_correction=True,  # DP-aware second-moment correction
 )
-opt_state = optimizer.init(params)
 ```
 
 `opaque.optimizers` ships `adamw`, `adam`, `sgd`, `radam`,
-`adafactor`, `lion`, `ademamix`, `schedule_free`, plus a few torchopt
-re-exports. The `noise_bias_correction=True` flag corrects the
+`adafactor`, `lion`, `ademamix`, and `schedule_free`. The
+`noise_bias_correction=True` flag corrects the
 biased second moment that arises when the optimizer sees noised
 gradients.
 
 ## 6. End-to-end loop
 
 ```python
-import torch
-from opaque.functional import make_functional
 from opaque.serialization import state_dict
+from opaque.optimizers import apply_updates
 
-fmodel, params = make_functional(model)
-for step, batch in enumerate(sampler):
+# ``params`` and ``batches`` contain native arrays from the selected provider.
+for batch in batches:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noised, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 # Checkpoint at the end (or any step):
 ckpt = {
@@ -154,16 +163,17 @@ ckpt = {
     "clip_state": clip_state,
     "noise_state": noise_state,
 }
-torch.save(state_dict(ckpt), "step.pt")
+checkpoint = state_dict(ckpt)
 ```
 
-Restore from the same flat state dict with
+Persist the resulting flat state dict with the selected provider's checkpoint
+facility (or your application's storage layer), then restore it with
 `opaque.serialization.from_state_dict`.
 
 ## Runnable references
 
 - [`examples/train_dpsgd.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py)
-  — full causal-LM training script.
+  — full Torch causal-LM training script.
 - `tests/integration/test_dpsgd_pipeline.py` — minimal smoke test
   exercising the same flow on a tiny LlamaConfig + LoRA model
   (and the Qwen2 variant for the real-HF case).

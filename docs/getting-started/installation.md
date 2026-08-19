@@ -9,7 +9,8 @@
 ## Requirements
 
 - Python 3.11 through 3.13
-- PyTorch 2.9 or later
+- PyTorch 2.9 or later for the default Torch bundle; install JAX or MLX when
+  selecting those provider wheels
 
 ## From JetBrains Packages
 
@@ -27,14 +28,56 @@ uv add opaque \
   --index https://packages.jetbrains.team/pypi/p/fed/python/simple/
 ```
 
+The default `opaque` bundle includes `opaque-torch`. Torch tensors and
+`torch.nn.Module` instances therefore select the Torch provider automatically
+on the first backend-bearing execution call.
+
+### Backend-specific installations
+
+`opaque-engine` contains backend-neutral primitives and can be installed and
+imported without PyTorch. Install it with only the providers an application
+uses:
+
+```bash
+pip install opaque-engine opaque-torch  # PyTorch (the only provider today)
+```
+
+Provider selection is inferred from execution arguments and remains active
+until `opaque.backend.clear_backend()` is called. See [Backend providers and
+primitives](../development/backend-providers.md) for explicit and temporary
+selection. JAX and MLX providers are planned; the engine's dispatch layer,
+`KnownBackend` names, and install guidance already reserve their slots.
+
+For DP-FTRL, install `opaque-dpftrl` with the provider wheel used by the
+training loop:
+
+```bash
+pip install opaque-dpftrl opaque-torch
+```
+
+The first Torch tensor passed as the gradient template to
+`mf_gaussian_noise` activates the provider. If setup needs a provider
+before any native array is available, activate it explicitly:
+
+```python
+from opaque.torch import torch_backend
+
+torch_backend()
+```
+
+Provider activation also registers native-array serialization handlers.
+
 ### Extras
 
 ```bash
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
-pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
-pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
+pip install "opaque[dpftrl]"        # + opaque-dpftrl with default Torch
+pip install "opaque[transformers]"  # + Torch-only Transformers integration
 pip install "opaque[all]"           # everything above
 ```
+
+`opaque.transformers`, Hugging Face model patches, and the Triton kernel path
+are Torch-only.
 
 ## From Source
 
@@ -80,6 +123,7 @@ from importlib.metadata import version
 
 print("opaque-base version:", version("opaque-base"))
 print("opaque-engine version:", version("opaque-engine"))
+print("opaque-torch version:", version("opaque-torch"))
 print("opaque-dpsgd version:", version("opaque-dpsgd"))
 ```
 

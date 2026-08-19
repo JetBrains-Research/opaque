@@ -9,8 +9,8 @@ import pytest
 import torch
 from transformers import AutoModelForCausalLM, Qwen2Config
 
-from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
+from opaque.torch.functional import make_functional
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),

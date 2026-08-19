@@ -32,7 +32,7 @@ from transformers import (  # noqa: E402
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.patches import apply_model_patches
 from opaque.random import key
 

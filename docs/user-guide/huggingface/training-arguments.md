@@ -309,7 +309,7 @@ these for you). For reference, the notable ones:
 | `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
 | `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
 | `fp16`, `fp16_full_eval`, `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | fp16 dynamic loss scaling adds a per-example unscale-before-clip step for no benefit on bf16-capable hardware | `bf16=True` (native bf16 autocast; no loss scaler) |
-| `optim="adamw_8bit"` / paged / Apex-fused | No functional torchopt equivalent | A supported `optim` name (see the optimizer table) |
+| `optim="adamw_8bit"` / paged / Apex-fused | No backend-neutral functional equivalent | A supported `optim` name (see the optimizer table) |
 | `batch_eval_metrics` | Streaming metric reduction not implemented | Use `eval_accumulation_steps` to bound eval memory |
 
 `per_gpu_*` and the deprecated `push_to_hub_*` aliases are *renamed* to their

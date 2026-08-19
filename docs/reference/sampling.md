@@ -1,6 +1,7 @@
 # Sampling
 
-Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation)
+The backend-neutral generic sampler contract lives at `opaque.sampling.Sampler`.
+Concrete primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation)
 and `opaque.dpftrl.sampling` (cyclic Poisson with optional `bands`, b-min-sep,
 balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
@@ -44,6 +45,13 @@ Opaque provides these sampling strategies:
 
 6. **b-min-sep** (`BMinSepSampler`): warm-start minimum-separation Poisson
    subsampling for BandMF (arXiv:2602.09338). Use with `dpftrl_acc.b_min_sep`.
+
+All Opaque samplers inherit the backend-neutral generic
+`opaque.sampling.Sampler[list[int]]` contract. The contract requires iteration
+and leaves length optional, matching the useful shape of PyTorch's sampler base
+without importing a backend. Concrete samplers work with native-array data
+pipelines directly and can be supplied to a Torch `DataLoader` as structural
+`batch_sampler` objects.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -211,17 +219,17 @@ Poisson draws only.
 
 ### `local_shard`
 
-Partition a dataset for DDP training. Returns a `Subset` containing the
-contiguous shard for the given rank.
+Partition a dataset for the active provider's distributed runtime. Returns an
+engine-owned index view containing the contiguous shard for the given rank.
 
 ```python
-from opaque.distributed import local_shard
-import torch.distributed as dist
+from opaque.distributed import get_rank, get_world_size, local_shard
 
+rank = get_rank()
 shard = local_shard(
     dataset,
-    rank=dist.get_rank(),
-    world_size=dist.get_world_size(),
+    rank=rank,
+    world_size=get_world_size(),
 )
 sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
 loader = DataLoader(shard, batch_sampler=sampler)
@@ -233,7 +241,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
 | `rank` | `int` | `0` | Current device rank |
 | `world_size` | `int` | `1` | Total number of devices |
 
-**Returns:** `torch.utils.data.Subset` containing the local shard.
+**Returns:** An engine-owned index view containing the local shard.
 
 ::: opaque.distributed.local_shard
     options:
