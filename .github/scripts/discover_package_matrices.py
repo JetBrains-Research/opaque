@@ -32,6 +32,9 @@ def _package_entries() -> list[dict[str, object]]:
                 "path": package_dir.relative_to(REPO_ROOT).as_posix(),
                 "native": build_backend == "maturin",
                 "cuda_tests": _has_pytest_marker(package_dir / "tests", "cuda"),
+                "distributed_tests": _has_pytest_marker(
+                    package_dir / "tests", "distributed"
+                ),
             }
         )
     return entries
@@ -39,6 +42,11 @@ def _package_entries() -> list[dict[str, object]]:
 
 def _outputs() -> dict[str, object]:
     packages = _package_entries()
+    distributed_paths = [
+        package["path"] for package in packages if package["distributed_tests"]
+    ]
+    if _has_pytest_marker(REPO_ROOT / "tests", "distributed"):
+        distributed_paths.append("tests")
     return {
         "test_shards": [
             *(
@@ -67,6 +75,17 @@ def _outputs() -> dict[str, object]:
                 else []
             ),
         ],
+        "distributed_test_shards": (
+            [
+                {
+                    "label": "Linux amd64",
+                    "name": "distributed",
+                    "paths": " ".join(distributed_paths),
+                }
+            ]
+            if distributed_paths
+            else []
+        ),
         "python_build_packages": [
             {"dir": ".", "dist": "opaque", "path": "."},
             *(
