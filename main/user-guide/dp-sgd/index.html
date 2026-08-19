@@ -3250,11 +3250,9 @@
 
 
 <h1 id="dp-sgd-end-to-end">DP-SGD end-to-end<a class="headerlink" href="#dp-sgd-end-to-end" title="Permanent link">&para;</a></h1>
-<p>This guide walks through the full DP-SGD pipeline: calibrate the noise
-multiplier for a target privacy budget, clip per-example gradients,
-add Gaussian noise, run a torchopt optimizer step, and checkpoint
-state. Every import on this page comes from the <code>opaque.dpsgd.*</code>
-public façade — no engine paths, no internal <code>opaque.api.*</code> paths.</p>
+<p>This guide covers the DP-SGD pipeline: calibrate a noise multiplier,
+clip per-example gradients, add Gaussian noise, update parameters, and
+checkpoint state.</p>
 <p>For the conceptual deep-dives on each component, see the topic pages
 under <a href="../">User Guide</a>: <a href="../clipping/">clipping</a>,
 <a href="../noise/">noise</a>, <a href="../sampling/">sampling</a>, <a href="../accounting/">accounting</a>,
@@ -3265,10 +3263,8 @@ under <a href="../">User Guide</a>: <a href="../clipping/">clipping</a>,
 training step. The privacy accountant composes per-step costs into a
 total budget: each call to the noise mechanism is a separate
 <code>DpProcess</code>, multiplied by the number of training steps.</p>
-<p>Compared to DP-FTRL (which adds correlated noise across the run),
-DP-SGD is simpler — no strategy selection, no whole-process
-calibration, the training length isn't fixed at calibration time. The
-trade-off is that independent noise compounds linearly across cumulative
+<p>Compared with DP-FTRL, DP-SGD needs no fixed training horizon or
+matrix strategy; its independent noise can be less useful on cumulative
 updates.</p>
 <h2 id="1-calibration">1. Calibration<a class="headerlink" href="#1-calibration" title="Permanent link">&para;</a></h2>
 <p>Calibrate the noise multiplier to your privacy budget before training:</p>

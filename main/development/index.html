@@ -3170,14 +3170,10 @@ checks before opening a pull request:</p>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>docs<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>cargo<span class="w"> </span><span class="nb">test</span><span class="w"> </span>--workspace
 </code></pre></div>
-<p>CUDA, MPS, and slow tests have separate pytest markers. Tests that require a
-hardware backend automatically skip when it is unavailable; see the
+<p>CUDA, MPS, and slow tests have separate pytest markers; hardware-specific tests
+skip when their backend is unavailable. See the
 <a href="https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md#test-markers-and-filtering">test-marker reference</a>
 for the available selections.</p>
-<p>Known audit findings and deferred code-quality work are tracked in
-<a href="https://github.com/JetBrains-Research/opaque/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22source%3A%20audit%22">GitHub Issues with the <code>source: audit</code> label</a>.
-Use each issue's package, impact, and severity labels to find the relevant
-workstream before changing repository-wide policy.</p>
 <h2 id="submit-a-pull-request">Submit a pull request<a class="headerlink" href="#submit-a-pull-request" title="Permanent link">&para;</a></h2>
 <p>Use a focused branch from your fork, add regression coverage for behavior
 changes, and ensure public API additions include type annotations and

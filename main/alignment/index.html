@@ -3110,35 +3110,21 @@
 
 
 <h1 id="alignment-opaquealignment">Alignment (<code>opaque.alignment</code>)<a class="headerlink" href="#alignment-opaquealignment" title="Permanent link">&para;</a></h1>
-<p><code>opaque-alignment</code> ships <strong>functional, mechanism-agnostic primitives for
-DP-safe preference learning and supervised fine-tuning</strong>: per-example loss
-functions (SFT and DPO), per-sequence log-probability helpers, batch
-collators, dataset transforms, reference-model helpers, and reward metrics.
-Every public symbol is a pure function or a factory returning a callable, so
-each composes cleanly under <code>vmap(grad(...))</code> — the per-example differentiation
-that DP-SGD and DP-FTRL clipping is built on.</p>
-<p>The package builds only on the engine (clipping, functional conversion,
-distributed) and base (serialization) layers. It does <strong>not</strong> depend on a DP
-mechanism or an optimizer: the noise mechanism and optimizer are chosen at the
-call site, so a researcher can assemble a DP-SGD or DP-FTRL alignment run from
-<code>opaque.alignment</code> primitives plus a mechanism plus an optimizer — no trainer
-subclass required. The same loss closure runs under either mechanism; only the
-two noise/sampling imports change.</p>
+<p><code>opaque-alignment</code> provides functional, mechanism-agnostic primitives for
+DP-safe preference learning and supervised fine-tuning: per-example SFT and
+DPO losses, log-probability helpers, collators, data transforms,
+reference-model helpers, and reward metrics. They compose under <code>vmap(grad(...))</code>
+with either DP-SGD or DP-FTRL.</p>
 <h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Functional, no hidden state.</strong> Losses are pure functions of per-example
-  tensors; collators and reference helpers are factories returning callables.
-  The DP-SGD/DP-FTRL pipeline supplies its own clip and noise state.</li>
+<li><strong>Functional.</strong> Losses are pure functions of per-example tensors; collators
+  and reference helpers return callables.</li>
 <li><strong>Per-example by construction.</strong> Each loss output for example <code>i</code> depends
   only on example <code>i</code>'s data, so per-example sensitivity stays <code>O(C)</code> after
   clipping. SFT divisors are per-example token counts (not a batch aggregate),
   and the DPO collator keeps chosen/rejected as separate <code>(B, ...)</code> tensors so
   one preference pair maps to one clipped gradient.</li>
-<li><strong>Mechanism-agnostic.</strong> No mechanism or optimizer is imported in the
-  package source; the mechanism is a call-site choice.</li>
-<li><strong>Direct functions, no registries.</strong> Losses are exposed by name as plain
-  functions. Mapping a config string to one of them is the caller's concern —
-  the example scripts keep that tiny <code>name -&gt; fn</code> map at the CLI boundary.</li>
+<li><strong>Mechanism-agnostic.</strong> Choose the mechanism and optimizer at the call site.</li>
 </ul>
 <h2 id="module-map">Module map<a class="headerlink" href="#module-map" title="Permanent link">&para;</a></h2>
 <table>
@@ -3159,7 +3145,7 @@ two noise/sampling imports change.</p>
 </tr>
 <tr>
 <td><code>opaque.alignment.dpo.loss</code></td>
-<td>per-sequence logp (<code>sequence_logp</code>, <code>fused_sequence_logp</code>), 15 exported loss heads (13 per-pair + 2 reference-free, <code>simpo_loss</code> / <code>odds_ratio_loss</code>), and the 5 log-ratio combinators</td>
+<td>per-sequence logp, DPO loss heads, and log-ratio combinators</td>
 </tr>
 <tr>
 <td><code>opaque.alignment.dpo.collator</code></td>
@@ -3179,13 +3165,8 @@ two noise/sampling imports change.</p>
 </tr>
 </tbody>
 </table>
-<p>The <code>DPOTrainer</code> dispatcher (<code>opaque.transformers.trl</code>) maps <strong>15</strong>
-<code>loss_type</code> names to these exported heads — the 13 per-pair heads, plus <code>simpo</code>
-(added to the dispatcher) and <code>chosen_nll</code> (opaque's name for TRL's <code>sft</code>,
-reusing <code>chosen_nll_loss</code>). The
-reference-free composites <code>cpo</code> / <code>orpo</code> are assembled in the trainer from
-existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
-they are <strong>not</strong> separate exported heads.</p>
+<p><code>DPOTrainer</code> maps its supported <code>loss_type</code> values to these functions; see the
+<a href="trainers/#the-loss_type-menu">trainer guide</a> for the available objectives.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="sft/">SFT end-to-end</a> — build a DP-SGD supervised fine-tuning run from

@@ -3390,19 +3390,9 @@ unchanged.</p>
 provides via <a href="../../reference/schedules/"><code>opaque.scheduling</code></a>, and the
 pattern for using them with TorchOpt functional optimizers.</p>
 <h2 id="why-warmup-matters-under-dp-sgd">Why warmup matters under DP-SGD<a class="headerlink" href="#why-warmup-matters-under-dp-sgd" title="Permanent link">&para;</a></h2>
-<p>The first few hundred steps of DP-SGD update parameters using a
-gradient direction that's heavily contaminated by Gaussian noise — at
-typical noise multipliers, the signal-to-noise ratio per step is
-small even when the average over many steps is informative. A high
-LR early in training amplifies that noise into the parameters. A
-short linear ramp from <code>0</code> to <code>base_lr</code> over the first few percent of
-total steps gives the optimizer's moment estimators time to average
-the noise out before they're scaled by the full step size. The same
-schedule that's a nice-to-have for non-private fine-tuning becomes
-load-bearing under DP.</p>
-<p>Empirically, anywhere from <strong>3% to 10% of total steps</strong> as warmup is
-typical for fine-tuning under DP — closer to 10% when the noise
-multiplier is large.</p>
+<p>Early DP-SGD updates can be noise-dominated. A short warmup can improve
+stability by gradually increasing the learning rate; tune its length
+with the optimizer and noise multiplier.</p>
 <h2 id="constant-lr">Constant LR<a class="headerlink" href="#constant-lr" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>

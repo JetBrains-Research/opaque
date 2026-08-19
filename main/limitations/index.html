@@ -3288,18 +3288,11 @@ should work but is not extensively tested. First-class distributed backends are
 NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
 and are not covered by default CI.</p>
 <h2 id="kernel-patching-lives-in-opaquepatches">Kernel patching lives in <code>opaque.patches</code><a class="headerlink" href="#kernel-patching-lives-in-opaquepatches" title="Permanent link">&para;</a></h2>
-<p>Kernel optimization and patching for Hugging Face models are part of
-<code>opaque.patches</code> and are available only with CUDA and Triton.</p>
-<p>Low-level Triton-backed autograd primitives are internal
-implementation details and should not be imported directly in user
-code.</p>
-<p>On CPU/MPS (or without Triton), the kernel group is auto-disabled —
-the router forces <code>kernels=False</code> when CUDA + Triton cannot be
-imported, so <code>performance=True</code> keeps the pure-Python <code>kv_cache</code>
-patch on those hosts. Configure the patch surface via the explicit
-flags (see
-<a href="../user-guide/huggingface/model-patches/#dptrainer-integration">Model Patches — DPTrainer integration</a>);
-opaque-patches has no environment-variable kill switches.</p>
+<p>Kernel optimization and Hugging Face model patches are provided by
+<code>opaque.patches</code>. Triton kernels require CUDA; on CPU, MPS, or without
+Triton, compatible non-kernel patches remain available. Configure them with
+the explicit flags described in <a href="../user-guide/huggingface/model-patches/#dptrainer-integration">Model Patches — DPTrainer
+integration</a>.</p>
 <p>Public standalone kernels (<code>opaque_swiglu</code>, <code>opaque_cross_entropy_loss</code>,
 <code>opaque_lora_w</code>, <code>opaque_lora_qkv</code>, <code>opaque_lora_mlp</code>) are importable
 from <code>opaque.patches.kernels</code>.</p>

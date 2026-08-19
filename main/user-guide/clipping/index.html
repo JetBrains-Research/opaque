@@ -1252,17 +1252,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cli-usage-in-train_dpsgdpy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI usage in train_dpsgd.py
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#when-to-choose-auto-s-vs-fixed-or-adaptive-clipping" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3768,17 +3757,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cli-usage-in-train_dpsgdpy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI usage in train_dpsgd.py
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#when-to-choose-auto-s-vs-fixed-or-adaptive-clipping" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4097,18 +4075,10 @@ that state after every step, before the next adaptive-clipping call:</p>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">clip_state</span> <span class="o">=</span> <span class="n">sync</span><span class="p">(</span><span class="n">clip_state</span><span class="p">)</span>  <span class="c1"># required: aggregate counts and update next threshold</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
 </code></pre></div>
-<p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally. For
-<code>AdaptiveClipState</code> it:</p>
-<ol>
-<li>sums each rank's local <code>num_clipped</code> and local batch size,</li>
-<li>recomputes the global clipping rate from those aggregated totals, and</li>
-<li>updates the internal next threshold so every rank uses the same adaptive
-   clip norm on the following step.</li>
-</ol>
-<p>This is what makes distributed adaptive clipping correct even when local
-batches are uneven, such as under Poisson sampling. The clipped output's
-current DP bound still lives on <code>grads.max_norm</code>; the synchronized state only
-controls the next step's threshold.</p>
+<p>For <code>AdaptiveClipState</code>, <code>sync()</code> aggregates clipping counts and batch
+sizes, then updates the same next threshold on every rank. This is
+required with uneven local batches; the current bound remains
+<code>grads.max_norm</code>.</p>
 <h2 id="loss-function-requirements">Loss function requirements<a class="headerlink" href="#loss-function-requirements" title="Permanent link">&para;</a></h2>
 <p>The loss function passed to <code>clipped_grad</code> must:</p>
 <ol>
@@ -4166,22 +4136,9 @@ are treated as constants by <code>vmap</code>.</p>
 groups. Instead of a single global L2 norm bound, each group is clipped
 independently. This can better match the natural gradient scale of different
 layers or module types (e.g., attention vs. MLP).</p>
-<p><strong>When to reach for it.</strong> Per-group clipping is most useful when one or
-more parameter groups have substantially different gradient magnitudes
-than the rest — a freshly initialised classifier head over frozen
-pretrained layers, or a LoRA target whose gradients sit far below its
-siblings. With <code>Cᵢ</code> near per-group typical gradient magnitudes, the
-non-uniform <code>σᵢ ∝ √Cᵢ</code> noise allocation concentrates less noise on
-small-gradient groups without sacrificing much sensitivity on the
-dominant ones, and on heterogeneous workloads this recovers a small
-eval-loss improvement over scalar clipping at the same joint budget.
-Setting <code>Cᵢ</code> substantially tighter than the per-group typical magnitudes
-(e.g. half the per-group median) regresses below scalar — clipping bias
-dominates the noise-redistribution benefit. When groups are
-near-homogeneous the joint sensitivity <code>√(ΣCᵢ²)</code> is <code>√K</code>-times the per
-group bound, so uniform <code>Cᵢ = c</code> is strictly worse than scalar at <code>c</code>;
-either pick scalar or assign asymmetric <code>Cᵢ</code> that exploit the
-heterogeneity.</p>
+<p>Use per-group clipping when groups have materially different gradient
+scales. Set each bound near that group's typical norm; scalar clipping
+is usually preferable for homogeneous groups.</p>
 <h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
 <p>Use <code>per_group</code> to construct a <code>PerGroup</code> from parameter keys and substring
 patterns:</p>
@@ -4247,17 +4204,10 @@ tensors keyed like your parameters, then use <code>noise_stddev_for</code> as ab
 <p>The optimal allocation sets <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span> instead of a
 uniform σ.  Privacy accounting remains <code>gaussian(nm)</code> — the allocation
 satisfies the same Mahalanobis constraint, just with better MSE.</p>
-<p>The same joint allocation extends to a paired first/second-moment
-release (Adam-family optimizers via the private second-moment release).
-With a single shared noise multiplier, the first-moment σ picks up a
-<span class="arithmatex">\(\sqrt{1+C}\)</span> factor over the no-paired baseline (where <code>C</code> is the
-per-record clipping bound — scalar for <code>clipped_grad</code>, the joint
-<code>√(ΣCᵢ²)</code> for per-group). At <code>C=0.1</code> the inflation is +5%; at <code>C=1</code> it
-is +40%. Use the smallest <code>C</code> the optimizer tolerates when running with
-the paired release. The two compose: stacked, per-group clipping plus
-the paired release carry the same <code>C</code>-dependent σ cost as the paired
-release alone and the same per-group thresholding as per-group clipping
-alone — no additional accounting cost from the combination.</p>
+<p>The same joint allocation supports paired first/second-moment releases.
+With a shared noise multiplier, the first-moment standard deviation is
+increased by <span class="arithmatex">\(\sqrt{1+C}\)</span>, where <code>C</code> is the per-record clipping
+bound. Use the smallest bound the optimizer tolerates.</p>
 <h3 id="diagnostics_1">Diagnostics<a class="headerlink" href="#diagnostics_1" title="Permanent link">&para;</a></h3>
 <p>With <code>return_aux=True</code>, the returned auxiliary data includes per-group norms:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
@@ -4383,25 +4333,11 @@ introduces no extra data-dependent query:</p>
 <a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="p">)</span>
 <a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="c1"># grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by</span>
 </code></pre></div>
-<h3 id="cli-usage-in-train_dpsgdpy">CLI usage in <code>train_dpsgd.py</code><a class="headerlink" href="#cli-usage-in-train_dpsgdpy" title="Permanent link">&para;</a></h3>
-<p>The training script exposes clipping mode through <code>--clipping-mode</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Flat AUTO-S (default R=1, γ=0.01)</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>python<span class="w"> </span>examples/train_dpsgd.py<span class="w"> </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span>--clipping-norm<span class="w"> </span><span class="m">1</span>.0
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>python<span class="w"> </span>examples/train_dpsgd.py<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">    </span>--clipping-mode<span class="w"> </span>auto<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">    </span>--per-group-clipping<span class="w"> </span><span class="nv">q_proj</span><span class="o">=</span><span class="m">0</span>.1<span class="w"> </span><span class="nv">fallback</span><span class="o">=</span><span class="m">0</span>.9<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">    </span>--auto-clipping-gamma<span class="w"> </span><span class="m">0</span>.01
-</code></pre></div>
-<p>Mode choices: <code>fixed</code>, <code>adaptive</code> (Andrew et al.), <code>auto</code> (AUTO-S). The
-<code>--clipping-norm</code> flag is reinterpreted by mode: threshold <code>C</code> for fixed,
-starting threshold for adaptive, sensitivity bound <code>R</code> for auto.</p>
 <h3 id="when-to-choose-auto-s-vs-fixed-or-adaptive-clipping">When to choose AUTO-S vs. fixed or adaptive clipping<a class="headerlink" href="#when-to-choose-auto-s-vs-fixed-or-adaptive-clipping" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Fixed (<code>clipped_grad</code>): best when you have a tuned clip norm already.</li>
-<li>AUTO-S (<code>auto_clipped_grad</code>): zero hyperparameter tuning; competitive
-  accuracy on standard benchmarks and no extra privacy cost.</li>
+<li>AUTO-S (<code>auto_clipped_grad</code>): avoids tuning a clip threshold and adds
+  no data-dependent accounting query.</li>
 <li>Adaptive (<code>adaptive_clipped_grad</code>): when you want the clip threshold to
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.</li>

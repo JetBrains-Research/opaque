@@ -3266,21 +3266,12 @@
 
 
 <h1 id="sft-end-to-end">SFT end-to-end<a class="headerlink" href="#sft-end-to-end" title="Permanent link">&para;</a></h1>
-<p>This guide walks through a full DP-SGD supervised fine-tuning (SFT) run
-built from <code>opaque.alignment</code> primitives: collate a causal-LM batch,
-compute a per-example loss, differentiate it under <code>vmap(grad(...))</code>,
-clip, noise, and step the optimizer. Every alignment import on this page
-comes from the <code>opaque.alignment.sft.*</code> public façade; the DP plumbing
-comes from the same <code>opaque.dpsgd.*</code> façades the
-<a href="../../user-guide/dp-sgd/">DP-SGD end-to-end</a> guide uses.</p>
+<p>This guide builds a DP-SGD supervised fine-tuning (SFT) run: collate a
+causal-LM batch, compute a per-example loss, then clip, noise, and optimize it.</p>
 <h2 id="why-sft-here">Why SFT here<a class="headerlink" href="#why-sft-here" title="Permanent link">&para;</a></h2>
-<p>SFT is ordinary causal-LM fine-tuning, so the only alignment-specific
-pieces are the <strong>collator</strong> and the <strong>per-example loss</strong>. Everything
-downstream — clipping, noise, optimizer, sampler — is the standard
-<a href="../../user-guide/dp-sgd/">DP-SGD pipeline</a>. The loss is mechanism-agnostic:
-swap the two <code>opaque.dpsgd</code> noise/sampling imports for their
-<code>opaque.dpftrl</code> counterparts to run <a href="../../user-guide/dp-ftrl/">DP-FTRL</a>
-instead and the loss closure does not change.</p>
+<p>SFT adds an alignment collator and per-example loss to the standard
+<a href="../../user-guide/dp-sgd/">DP-SGD pipeline</a>. The same loss closure also works
+with <a href="../../user-guide/dp-ftrl/">DP-FTRL</a>.</p>
 <p>The one DP-relevant subtlety is the loss divisor. Both SFT losses divide
 by <em>this example's</em> non-ignored token count, not a batch-level aggregate
 like TRL's <code>num_items_in_batch</code>. A batch aggregate would couple
@@ -3354,11 +3345,8 @@ each target token):</p>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="k">return</span> <span class="n">nll_loss</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
 </code></pre></div>
 <p>Both <code>nll_loss(logits, labels)</code> and <code>dft_loss(logits, labels)</code> apply the
-causal-LM shift internally, ignore <code>-100</code> positions, and divide by the
-per-example token count (DP-safe, pre-clip). Mapping a config string such
-as <code>--loss-type</code> to one of them is the caller's concern — keep a tiny
-<code>{"nll": nll_loss, "dft": dft_loss}</code> map at the CLI boundary; the library
-exposes the direct functions, not a registry.</p>
+causal-LM shift, ignore <code>-100</code> positions, and divide by the per-example token
+count.</p>
 <h3 id="fused-vs-eager">Fused vs eager<a class="headerlink" href="#fused-vs-eager" title="Permanent link">&para;</a></h3>
 <p><code>nll_loss</code>/<code>dft_loss</code> take <code>logits</code> <code>(..., T, V)</code>. On large vocabularies
 the <code>(T, V)</code> logits dominate memory. The fused twins <code>fused_nll_loss</code> /
