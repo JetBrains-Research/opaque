@@ -13,9 +13,9 @@ import torch.nn as nn
 from opaque.distributed import sum_gradients, sync
 from opaque.dpsgd.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.pytree import tree_leaves
-from opaque.random import key
+from opaque.random import fold_in, key
+from opaque.torch.functional import make_functional
 from opaque.types import clipped
 
 
@@ -182,7 +182,10 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             _current_clipping_norm=float(rank + 1),
             _next_clipping_norm=float(rank + 1),
             _step=100,
-            _rng_key=key(42),
+            # A derived key whose seed exceeds 2**63 - 1: the cross-rank
+            # seed-equality assert must survive the full uint64 range,
+            # not just small literal seeds.
+            _rng_key=fold_in(key(42), "clipping"),
             _fraction_noise_std=0.05,
             _learning_rate=0.2,
             _target_quantile=0.5,
@@ -307,8 +310,8 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
             (aux.grad_norms > new_state._current_clipping_norm).sum().item()
         )
         local_total = float(aux.grad_norms.numel())
-        global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
-        global_total = reduce_scalar(local_total, op="sum", device=device)
+        global_clipped = reduce_scalar(local_clipped, op="sum")
+        global_total = reduce_scalar(local_total, op="sum")
         expected_rate = global_clipped / max(1.0, global_total)
         assert abs(synced_aux.clipping_rate - expected_rate) < 1e-6
     finally:

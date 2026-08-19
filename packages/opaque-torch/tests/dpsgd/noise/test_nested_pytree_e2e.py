@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
-
-pytest.importorskip("torchopt")
 
 from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping.fun import clip_pytree

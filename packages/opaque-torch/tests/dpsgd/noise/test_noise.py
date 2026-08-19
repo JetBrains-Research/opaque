@@ -9,6 +9,7 @@ import torch
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.noise.types import GaussianNoiseState
 from opaque.random import key
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import ClippedPytree, NoisedPytree, PerGroup, clipped, noised
 
 
@@ -45,6 +46,42 @@ class TestGaussian:
         assert output.pytree["weight"].shape == grads["weight"].shape
         assert output.pytree["bias"].shape == grads["bias"].shape
         assert not torch.allclose(output.pytree["weight"], grads["weight"])
+
+    def test_pytree_leaves_use_independent_streams(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
+        grads = {"first": torch.zeros(10), "second": torch.zeros(10)}
+
+        output, _ = noise_fn(clipped(grads, max_norm=1.0), state)
+
+        assert not torch.equal(output.pytree["first"], output.pytree["second"])
+
+    def test_keyed_noise_ignores_global_torch_rng_draws(self):
+        grads = clipped(torch.zeros(10), max_norm=1.0)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(63))
+        expected, _ = noise_fn(grads, state)
+
+        torch.manual_seed(999)
+        torch.randn(1000)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(63))
+        actual, _ = noise_fn(grads, state)
+
+        torch.testing.assert_close(actual.pytree, expected.pytree)
+
+    def test_state_dict_continues_at_the_saved_step(self):
+        grads = clipped({"w": torch.zeros(10)}, max_norm=1.0)
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
+
+        _, state = noise_fn(grads, state)
+        snapshot = state_dict(state)
+
+        _, restore_template = gaussian_noise(noise_multiplier=1.0, key=key(99))
+        restored = from_state_dict(restore_template, snapshot)
+
+        expected, expected_state = noise_fn(grads, state)
+        actual, actual_state = noise_fn(grads, restored)
+
+        torch.testing.assert_close(actual.pytree["w"], expected.pytree["w"])
+        assert actual_state._step_counter == expected_state._step_counter
 
     def test_zero_noise_multiplier(self):
         noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
