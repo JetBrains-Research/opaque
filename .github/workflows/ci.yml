@@ -59,7 +59,7 @@ jobs:
       timeout-minutes: 40
 
   python-tests-distributed:
-    name: Linux distributed
+    name: Distributed
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -68,7 +68,7 @@ jobs:
       report-durations: true
       runner: ubuntu-latest
       test-shards: >-
-        [{"label":"distributed","name":"distributed","paths":"packages/opaque-engine/tests/ddp packages/opaque-alignment/tests/ddp packages/opaque-dpsgd/tests/ddp packages/opaque-dpftrl/tests/ddp packages/opaque-transformers/tests/distributed"}]
+        [{"label":"Linux amd64","name":"distributed","paths":"packages/opaque-engine/tests/ddp packages/opaque-alignment/tests/ddp packages/opaque-dpsgd/tests/ddp packages/opaque-dpftrl/tests/ddp packages/opaque-transformers/tests/distributed"}]
       timeout-minutes: 30
 
   python-tests-minimum:

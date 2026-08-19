@@ -246,14 +246,14 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 CI lane marker expressions:
 
 - PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow and not distributed"`.
-- PR Linux distributed (Ubuntu): `-m "distributed and not cuda"`.
+- PR Distributed / Linux amd64: `-m "distributed and not cuda"`.
 - PR dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow and not distributed"`.
 - PR macOS arm64: `-m "not cuda and not slow and not distributed"`.
 - PR Linux arm64: `-m "not cuda and not mps and not slow and not distributed"`.
 - PR CUDA (self-hosted): `-m "cuda and not slow"`.
 - Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not distributed"`.
-- Main Linux distributed (Ubuntu): `-m "distributed and not cuda"`.
+- Main Distributed / Linux amd64: `-m "distributed and not cuda"`.
 - Main dependency boundaries (Ubuntu, Python 3.11/3.12):
   `-m "not cuda and not mps and not slow and not distributed"`.
 - Main macOS arm64: `-m "not cuda and not distributed"`.
