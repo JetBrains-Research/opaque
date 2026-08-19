@@ -58,8 +58,3 @@ building block, `entropy_from_logits` / `mean_token_accuracy` (token metrics), a
 chat-template helpers stay internal impl under `opaque.api.alignment.*`, surfaced
 through the method that consumes them, following the shared-impl re-import pattern of
 `opaque.dpsgd.clipping`.
-
-## Status
-
-Planning and early implementation. See `docs/development/opaque-alignment-plan.md`
-for the full package plan and phase breakdown.

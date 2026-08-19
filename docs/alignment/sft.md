@@ -1,22 +1,13 @@
 # SFT end-to-end
 
-This guide walks through a full DP-SGD supervised fine-tuning (SFT) run
-built from `opaque.alignment` primitives: collate a causal-LM batch,
-compute a per-example loss, differentiate it under `vmap(grad(...))`,
-clip, noise, and step the optimizer. Every alignment import on this page
-comes from the `opaque.alignment.sft.*` public façade; the DP plumbing
-comes from the same `opaque.dpsgd.*` façades the
-[DP-SGD end-to-end](../user-guide/dp-sgd.md) guide uses.
+This guide builds a DP-SGD supervised fine-tuning (SFT) run: collate a
+causal-LM batch, compute a per-example loss, then clip, noise, and optimize it.
 
 ## Why SFT here
 
-SFT is ordinary causal-LM fine-tuning, so the only alignment-specific
-pieces are the **collator** and the **per-example loss**. Everything
-downstream — clipping, noise, optimizer, sampler — is the standard
-[DP-SGD pipeline](../user-guide/dp-sgd.md). The loss is mechanism-agnostic:
-swap the two `opaque.dpsgd` noise/sampling imports for their
-`opaque.dpftrl` counterparts to run [DP-FTRL](../user-guide/dp-ftrl.md)
-instead and the loss closure does not change.
+SFT adds an alignment collator and per-example loss to the standard
+[DP-SGD pipeline](../user-guide/dp-sgd.md). The same loss closure also works
+with [DP-FTRL](../user-guide/dp-ftrl.md).
 
 The one DP-relevant subtlety is the loss divisor. Both SFT losses divide
 by *this example's* non-ignored token count, not a batch-level aggregate
@@ -106,11 +97,8 @@ def per_example_loss(trainable_params, input_ids, attention_mask, labels):
 ```
 
 Both `nll_loss(logits, labels)` and `dft_loss(logits, labels)` apply the
-causal-LM shift internally, ignore `-100` positions, and divide by the
-per-example token count (DP-safe, pre-clip). Mapping a config string such
-as `--loss-type` to one of them is the caller's concern — keep a tiny
-`{"nll": nll_loss, "dft": dft_loss}` map at the CLI boundary; the library
-exposes the direct functions, not a registry.
+causal-LM shift, ignore `-100` positions, and divide by the per-example token
+count.
 
 ### Fused vs eager
 

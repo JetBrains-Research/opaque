@@ -1,10 +1,8 @@
 # DP-SGD end-to-end
 
-This guide walks through the full DP-SGD pipeline: calibrate the noise
-multiplier for a target privacy budget, clip per-example gradients,
-add Gaussian noise, run a torchopt optimizer step, and checkpoint
-state. Every import on this page comes from the `opaque.dpsgd.*`
-public façade — no engine paths, no internal `opaque.api.*` paths.
+This guide covers the DP-SGD pipeline: calibrate a noise multiplier,
+clip per-example gradients, add Gaussian noise, update parameters, and
+checkpoint state.
 
 For the conceptual deep-dives on each component, see the topic pages
 under [User Guide](index.md): [clipping](clipping.md),
@@ -19,10 +17,8 @@ training step. The privacy accountant composes per-step costs into a
 total budget: each call to the noise mechanism is a separate
 `DpProcess`, multiplied by the number of training steps.
 
-Compared to DP-FTRL (which adds correlated noise across the run),
-DP-SGD is simpler — no strategy selection, no whole-process
-calibration, the training length isn't fixed at calibration time. The
-trade-off is that independent noise compounds linearly across cumulative
+Compared with DP-FTRL, DP-SGD needs no fixed training horizon or
+matrix strategy; its independent noise can be less useful on cumulative
 updates.
 
 ## 1. Calibration

@@ -56,15 +56,10 @@ uv run --group docs mkdocs build --strict
 cargo test --workspace
 ```
 
-CUDA, MPS, and slow tests have separate pytest markers. Tests that require a
-hardware backend automatically skip when it is unavailable; see the
+CUDA, MPS, and slow tests have separate pytest markers; hardware-specific tests
+skip when their backend is unavailable. See the
 [test-marker reference](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md#test-markers-and-filtering)
 for the available selections.
-
-Known audit findings and deferred code-quality work are tracked in
-[GitHub Issues with the `source: audit` label](https://github.com/JetBrains-Research/opaque/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22source%3A%20audit%22).
-Use each issue's package, impact, and severity labels to find the relevant
-workstream before changing repository-wide policy.
 
 ## Submit a pull request
 
