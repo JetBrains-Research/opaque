@@ -432,7 +432,7 @@ satisfies the same Mahalanobis constraint, just with better MSE.
 
 The same joint allocation supports paired first/second-moment releases.
 With a shared noise multiplier, the first-moment standard deviation is
-increased by \(\sqrt{1+C}\), where `C` is the per-record clipping
+increased by $\sqrt{1+C}$, where `C` is the per-record clipping
 bound. Use the smallest bound the optimizer tolerates.
 
 ### Diagnostics
