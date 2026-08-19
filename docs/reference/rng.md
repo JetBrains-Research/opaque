@@ -5,14 +5,40 @@ threading for deterministic and reproducible DP training.
 
 ## Overview
 
-The `opaque.random` module provides:
+The backend-neutral `opaque.random` module provides:
 
 - **Core primitives**: `RngKey`, `split()`, `fold_in()` — Functional RNG with immutable keys
+- **Sampling**: `normal(rng_key, shape, *, dtype=None, like=None)` — Backend-native
+  normal sampling determined solely by an immutable key
 - **Convenience helpers**:
   - `key()` — Create an RngKey from an integer seed
   - `random_key()` — Nondeterministic key from system entropy
-  - `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
-- **Bridge function**: `generator_from_key()` — Create a `torch.Generator` from an RngKey
+
+The `opaque-torch` provider adds `opaque.torch.random` helpers:
+
+- `set_reproducible_pytorch_seed()` — Configure PyTorch/cuDNN reproducibility
+- `generator_from_key()` — Create a `torch.Generator` from an RngKey for
+  Torch compatibility APIs
+
+## Contract and portability
+
+`RngKey` is immutable, and `key`, `split`, and `fold_in` derive from it with
+backend-neutral semantics. `normal()` is native sampling: the same key and
+arguments replay within the active provider, without consuming the framework's
+global RNG state, but providers are not required to agree on the values. It
+honors the requested shape and dtype and takes placement from `like`;
+unsupported dtype or device requests raise the provider's own error rather than
+moving the draw elsewhere.
+
+`random_key()` is the explicit system-entropy boundary — deterministic APIs
+never reach for entropy implicitly. Host-side sampling (sampler index selection,
+auditing) uses a private NumPy generator built from an explicit key, which
+replays for the installed NumPy but is not a bitstream promise across versions.
+
+Noise mechanisms domain-separate pytree leaves by their current flattening
+index, and adaptive per-group clipping uses sorted group order. Preserve that
+structure across a checkpoint: reordering or inserting leaves/groups can
+change the substream assigned to an existing leaf/group.
 
 ## Quick Reference
 
@@ -20,11 +46,11 @@ The `opaque.random` module provides:
 
 ```python
 # Core primitives
-from opaque.random import split, fold_in, key, generator_from_key
+from opaque.random import fold_in, key, random_key, split
 from opaque.random.types import RngKey
 
-# Convenience helpers
-from opaque.random import random_key, set_reproducible_pytorch_seed
+# Torch-specific helpers (provided by opaque-torch)
+from opaque.torch.random import generator_from_key, set_reproducible_pytorch_seed
 ```
 
 ### Creating Keys
@@ -71,7 +97,8 @@ step_rank_key = fold_in(base_key, step, rank)
 
 ```python
 # Set all PyTorch/CUDNN seeds from RngKey
-from opaque.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))
 
@@ -132,7 +159,8 @@ from opaque.random import random_key
 k = random_key()  # Each call returns different key
 ```
 
-Useful for prototyping and experiments. For reproducible training, use `key()` with an explicit seed.
+Useful for prototyping and experiments. This is the explicit system-entropy
+boundary; for reproducible training, use `key()` with an explicit seed.
 
 **Returns:** RngKey with seed from `secrets.randbits(64)`
 
@@ -208,13 +236,27 @@ key_v2 = fold_in(base_key, "v2")
 
 ---
 
+#### normal(rng_key: RngKey, shape, *, dtype=None, like=None) → native array
+
+Draw a backend-native standard-normal array from an immutable key. Reusing the
+same key and arguments returns the same result within the active backend and
+does not advance the backend's global generator.
+
+`dtype` selects the output dtype; when omitted, `like.dtype` or the provider
+default is used. `like` also supplies supported provider placement. Native
+algorithms and device support differ across providers, so this function does
+not promise cross-backend equality or support for every dtype/device pair.
+
+---
+
 #### generator_from_key(rng_key: RngKey) → torch.Generator
 
 Create a deterministic `torch.Generator` from an RngKey.
 
 ```python
-from opaque.random import generator_from_key, key
 import torch
+from opaque.random import key
+from opaque.torch.random import generator_from_key
 
 k = key(42)
 gen = generator_from_key(k)
@@ -237,7 +279,8 @@ tensor = torch.randn(10, generator=gen)
 Configure PyTorch and cuDNN for reproducible training from a single RngKey.
 
 ```python
-from opaque.random import key, fold_in, set_reproducible_pytorch_seed
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 # At training start
 set_reproducible_pytorch_seed(key(42))
@@ -268,9 +311,10 @@ your workload.
 **Example:**
 
 ```python
-from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
+from opaque.random import fold_in, key, split
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 # Setup framework reproducibility once
 set_reproducible_pytorch_seed(key(42))
@@ -307,7 +351,7 @@ sampling_key, noise_key, init_key = split(master, num=3)
 
 sampler = PoissonSampler(..., key=sampling_key)
 noise_fn, _ = gaussian_noise(..., key=noise_key)
-model = initialize_model(init_key)  # If using jax
+model = initialize_model(init_key)  # keyed model initialization
 ```
 
 ### Sequential Splitting (Loop Pattern)
@@ -328,19 +372,23 @@ for step in range(100):
 **Using fold_in()** (recommended):
 
 ```python
-import torch.distributed as dist
+from opaque.distributed import get_rank
 from opaque.random import key, fold_in
 
-rank = dist.get_rank()
+rank = get_rank()
 base = key(42)
 
 for step in range(steps):
     # Synchronized noise — same key on all ranks (no rank folded in)
     noise_key = fold_in(base, step)
 
-    # Per-rank noise — fold in rank for diversity
-    sample_key = fold_in(base, step, rank)
+    # Independent local sampling — derive a separate rank domain.
+    sample_key = fold_in(base, "sampler", rank, step)
 ```
+
+Use the synchronized key for mechanisms that must add identical noise on every
+rank. Fold in the rank only for independently randomized components, such as
+per-rank sampling. Split component keys before either derivation.
 
 **Manual approach** (for reference):
 
@@ -348,24 +396,27 @@ for step in range(steps):
 from opaque.random import split, key
 
 master = key(42)
-sampling_key, noise_master = split(master, num=2)
+sampling_key, _noise_key = split(master, num=2)
 
-# Noise: per-rank keys
-rank_keys = split(noise_master, num=world_size)
-my_noise_key = rank_keys[rank]
+# Independent local component: per-rank keys
+rank_keys = split(sampling_key, num=world_size)
+my_sampler_key = rank_keys[rank]
 
-noise_fn = gaussian_noise(..., key=my_noise_key)
+sampler = PoissonSampler(..., key=my_sampler_key)
 ```
 
 ## Troubleshooting
 
 ### Results not reproducible?
 
-Ensure all randomness uses RngKey:
+Opaque keyed operations are isolated from global RNG draws. To reproduce an
+application, also explicitly configure randomness in user models and framework
+transforms:
 
 ```python
 # Correct: Use RngKey throughout
-from opaque.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import fold_in, key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))  # Framework
 base = key(42)
@@ -373,45 +424,47 @@ for step in range(n):
     k = fold_in(base, step)  # DP operations
     # ... training ...
 
-# Incorrect: Mixing with global seeds
-torch.manual_seed(42)  # Framework
-noise_fn = gaussian_noise(..., key=some_key)  # DP
-# Different RNG sources can cause issues
+# Keyed DP noise remains independent of framework-global draws.
+noise_fn = gaussian_noise(..., key=some_key)
 ```
 
 ### Distributed ranks have correlated noise?
 
-Ensure rank-specific keys:
+That is correct for centralized DP mechanisms that must add the same noise on
+every rank. Use a rank-derived key only for components that require independent
+local streams:
 
 ```python
-# Incorrect: All ranks share the same key
+# Synchronized centralized noise
 k = key(42)
 noise_fn = gaussian_noise(..., key=k)  # All ranks get identical noise
 
-# Correct: Per-rank keys via fold_in
-noise_fn = gaussian_noise(..., key=fold_in(key(42), rank))
+# Independent local sampler stream
+sampler = PoissonSampler(..., key=fold_in(key(42), "sampler", rank))
 
-# Also correct: Per-rank keys via split
-rank_keys = split(key(42), num=world_size)
-noise_fn = gaussian_noise(..., key=rank_keys[rank])
+# Also valid: split a dedicated sampler component first.
+sampler_root, _ = split(key(42))
+sampler = PoissonSampler(..., key=split(sampler_root, num=world_size)[rank])
 ```
 
 ### Need to resume from checkpoint?
 
-Use `fold_in()` for deterministic resume:
+Save and restore the complete functional state rather than recreating a
+stateful mechanism from a step-derived key:
 
 ```python
-from opaque.random import fold_in, key
+from opaque.random import key
+from opaque.serialization import from_state_dict, state_dict
 
-base_key = key(42)
+# Save the state returned by the latest noise call.
+checkpoint = state_dict(noise_state)
 
-# Save checkpoint
-checkpoint = {"step": 500, ...}
+# Rebuild the same mechanism configuration and restore its key, cursor, and
+# any streaming state from the snapshot.
+noise_fn, template_state = gaussian_noise(..., key=key(0))
+noise_state = from_state_dict(template_state, checkpoint)
 
-# Resume
-for step in range(checkpoint["step"], total_steps):
-    step_key = fold_in(base_key, step)
-    # ... training ...
+# The next noise_fn call matches the uninterrupted sequence in this backend.
 ```
 
 ## Further Reading

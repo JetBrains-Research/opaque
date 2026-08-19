@@ -15,18 +15,14 @@ For a standalone installation, install `opaque-dpsgd` with the provider that
 owns your native arrays:
 
 ```bash
-pip install opaque-dpsgd opaque-torch  # Torch
-pip install opaque-dpsgd opaque-jax    # JAX
-pip install opaque-dpsgd opaque-mlx    # MLX
+pip install opaque-dpsgd opaque-torch
 ```
 
 ## Backends
 
 The mechanisms operate on native arrays and select the matching installed
-provider from their first array-bearing call. Applications that need to select
-a provider before supplying arrays can use `opaque.backend.set_backend()` with
-`opaque.torch.torch_backend()`, `opaque.jax.jax_backend()`, or
-`opaque.mlx.mlx_backend()`.
+provider from their first array-bearing call. Applications that need a provider
+before any array is available can call `opaque.backend.set_backend("torch")`.
 
 ## Quick start
 

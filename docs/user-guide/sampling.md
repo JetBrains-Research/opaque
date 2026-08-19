@@ -6,8 +6,11 @@ Poisson subsampling provides privacy amplification, meaning you need less
 noise for the same epsilon when each example is included independently with
 small probability.
 
-Opaque provides sampler classes designed to work with PyTorch's
-`DataLoader` via the `batch_sampler` parameter.
+Opaque's DP-SGD and DP-FTRL samplers inherit the backend-neutral
+`opaque.sampling.Sampler[list[int]]` contract. It requires iteration and leaves
+length optional. Use these samplers with any native-array data pipeline;
+PyTorch's `DataLoader` also accepts them through its `batch_sampler` parameter
+without an adapter or a PyTorch sampler base.
 
 ## Poisson sampling
 
@@ -339,11 +342,11 @@ for batch in loader:
 |----------|---------|-------------|
 | `expected_batch_size` | `float` | Always equals `batch_size` (exact, not statistical) |
 
-## DataLoader integration
+## DP-SGD DataLoader integration
 
-All samplers are PyTorch `Sampler` subclasses that yield lists of
-indices (i.e., they are batch samplers). Pass them to `DataLoader` via the
-`batch_sampler` parameter:
+`PoissonSampler`, `KOutOfTSampler`, and `RandomAllocationSampler` yield
+Python lists of indices and satisfy PyTorch's structural batch-sampler
+protocol. Pass them to `DataLoader` via the `batch_sampler` parameter:
 
 ```python
 loader = data.DataLoader(dataset, batch_sampler=sampler)
@@ -355,6 +358,8 @@ Do not pass `batch_size`, `shuffle`, or `sampler` when using
 Because Poisson sampling produces variable-size batches, your training code
 should handle batches of different sizes. In practice this is rarely a
 problem since `clipped_grad` and `gaussian_noise` work with any batch size.
+`RandomAllocationSampler` may emit empty batches; provide a collate function
+that handles them when using a PyTorch `DataLoader`.
 
 ## Distributed sampling
 
@@ -370,12 +375,11 @@ and derive a per-rank key via `fold_in(key, rank)`:
    own partition.
 
 ```python
-from opaque.distributed import local_shard
+from opaque.distributed import get_rank, get_world_size, local_shard
 from opaque.random import key, fold_in
-import torch.distributed as dist
 
-rank = dist.get_rank()
-world_size = dist.get_world_size()
+rank = get_rank()
+world_size = get_world_size()
 
 shard = local_shard(dataset, rank=rank, world_size=world_size)
 sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
@@ -391,13 +395,14 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), global_sample_rat
 
 ### Distributed helpers
 
-The `opaque.distributed` submodule provides two utilities used
-internally by the samplers:
+The `opaque.distributed` submodule provides provider-neutral helpers for
+sharding and rank-aware sampling:
 
 | Function | Description |
 |----------|-------------|
-| `local_shard_bounds(dataset_size)` | Returns `(start, end)` index range for the current rank |
-| `rank_key(key)` | Returns `fold_in(key, rank)` for rank > 0, unchanged for rank 0 |
+| `local_shard(dataset, rank, world_size)` | Returns an indexable local view of a dataset |
+| `get_rank()` | Returns the active provider's current process rank |
+| `get_world_size()` | Returns the active provider's number of processes |
 
 These are available for advanced use cases but most users do not need them
 directly.

@@ -6,12 +6,9 @@ common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `radam`, `lion`,
 `ademamix`, `adafactor`, `rmsprop`, `adagrad`, `adadelta`, `schedule_free`).
 Every factory carries DP-aware behaviour selectable at construction time and
 activated by the metadata wrappers (`NoisedPytree`, `SecondMomentNoiseOutput`)
-landing in `update()`.
-
-All factories return [TorchOpt](https://torchopt.readthedocs.io/)
-`GradientTransformation`s, so they compose with TorchOpt's lower-level
-transforms and `torchopt.apply_updates`. DP-aware paths (DP-AdamW-BC, private
-second moments, Adagrad's mandatory variance subtraction) are selected by
+landing in `optimizer_step()`. Factories run with the active engine provider
+(Torch) and return an explicit `optimizer_step` callable and state. DP-aware paths
+(DP-AdamW-BC, private second moments, Adagrad's mandatory variance subtraction) are selected by
 passing `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
 ## Why functional optimizers
@@ -21,15 +18,13 @@ in and returns new state out.  The optimizer factories follow the same
 pattern:
 
 ```python
-import torchopt
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 
-optimizer = adamw(lr=1e-3, weight_decay=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, state = adamw(params, lr=1e-3, weight_decay=0.01)
 
 # Explicit state in -> state out
-updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-params = torchopt.apply_updates(params, updates)
+updates, state = optimizer_step(noisy_grads, state, params=params)
+params = apply_updates(params, updates)
 ```
 
 No hidden mutable state.  Every piece of the training loop is explicit.
@@ -37,10 +32,9 @@ No hidden mutable state.  Every piece of the training loop is explicit.
 ## Complete training loop
 
 ```python
-import torchopt
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 from opaque.random import key
 
 # Gradient pipeline
@@ -51,14 +45,13 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=ke
 
 # DP-aware AdamW; pass `noise_bias_correction=True` to enable the
 # φ-EMA subtraction once the LR is tuned for the workload.
-optimizer = adamw(lr=1e-3, weight_decay=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = adamw(params, lr=1e-3, weight_decay=0.01)
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 ```
 
 ## Choosing an optimizer
@@ -73,7 +66,7 @@ below). Pass `NoisedPytree` updates from a DP noise mechanism:
 ```python
 from opaque.optimizers import adafactor
 
-optimizer = adafactor(lr=5e-4, weight_decay=0.01)
+optimizer_step, state = adafactor(params, lr=5e-4, weight_decay=0.01)
 # `update_rms_clip=1.0` (the default) clips one model-wide/global RMS,
 # rather than clipping each parameter leaf independently.
 ```
@@ -86,8 +79,8 @@ the workload (see [Choosing from measurements](#choosing-from-measurements)):
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1.5e-4, weight_decay=0.01)
-# Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
+optimizer_step, state = adamw(params, lr=1.5e-4, weight_decay=0.01)
+# Plain Adam (no decoupled WD): adamw(params, decoupled_weight_decay=False).
 # StableAdamW (model-wide/global RMS-clipped update, not per-leaf):
 # adamw(..., update_rms_clip=1.0).
 ```
@@ -99,7 +92,7 @@ bounded. Good debugging baseline:
 
 ```python
 from opaque.optimizers import sgd
-optimizer = sgd(lr=0.01, momentum=0.9)
+optimizer_step, state = sgd(params, lr=0.01, momentum=0.9)
 ```
 
 **RMSprop** (`rmsprop`) is adaptive but cheaper
@@ -109,7 +102,9 @@ Enable it to ablate:
 
 ```python
 from opaque.optimizers import rmsprop
-optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_bias_correction=True)
+optimizer_step, state = rmsprop(
+    params, lr=1e-2, alpha=0.99, noise_bias_correction=True
+)
 ```
 
 **Adagrad** (`adagrad`) is for sparse-gradient
@@ -119,7 +114,7 @@ subtracts a matching cumulative term:
 
 ```python
 from opaque.optimizers import adagrad
-optimizer = adagrad(lr=1e-2, noise_bias_correction=True)
+optimizer_step, state = adagrad(params, lr=1e-2, noise_bias_correction=True)
 ```
 
 Whether the correction helps in practice depends on the workload —
@@ -179,11 +174,13 @@ math. `NoisedPytree` updates supply the realized per-step σ metadata.
 from opaque.optimizers import adamw
 
 # Without correction — standard AdamW math.
-optimizer = adamw(lr=1e-3, weight_decay=0.01)
+optimizer_step, state = adamw(params, lr=1e-3, weight_decay=0.01)
 
 # With correction — pass NoisedPytree updates from gaussian_noise().
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
-updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+optimizer_step, state = adamw(
+    params, lr=1e-3, weight_decay=0.01, noise_bias_correction=True
+)
+updates, state = optimizer_step(noisy_grads, state, params=params)
 ```
 
 ### `noisy_squared_grads`: privately-estimated second moments
@@ -254,8 +251,9 @@ noise_fn, noise_state = mf_gaussian_noise(
 )
 
 # Optimizer: decoupled weight decay, callable LR schedule.
-optimizer = adamw(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = adamw(
+    params, lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01
+)
 ```
 
 ### Training loop
@@ -264,11 +262,11 @@ opt_state = optimizer.init(params)
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(
+    updates, opt_state = optimizer_step(
         noisy_grads, opt_state,
         params=params,
     )
-    params = torchopt.apply_updates(params, updates)
+    params = apply_updates(params, updates)
 ```
 
 ### Accounting
@@ -372,7 +370,7 @@ operator absorbs the half-normal noise mean ($\sigma\sqrt{2/\pi} \approx
 0.8\sigma$) and never releases it — even when the true gradient is
 tiny, the per-coordinate denominator is permanently floored by
 accumulated noise magnitude.  No clean DP-aware variant exists.
-For non-DP use, `from torchopt import adamax` directly.
+No Adamax implementation is provided.
 
 ### Schedule-free under DP
 
@@ -380,18 +378,17 @@ Schedule-free averages optimizer iterates. Its DP variance reduction depends
 on their covariance, so there is no universal $\sqrt{n}$ reduction.
 
 ```python
-from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers import adamw, apply_updates, schedule_free
 
-optimizer = schedule_free(
-    adamw(lr=1e-3, noise_bias_correction=True), beta=0.9
+optimizer_step, opt_state = schedule_free(
+    params, adamw, lr=1e-3, noise_bias_correction=True, beta=0.9
 )
-opt_state = optimizer.init(params)
 
 # Train as usual: trainer treats `params` as y_t.
 for batch in dataloader:
     ...
-    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 # At save / eval time, read the published x_t directly off the state:
 eval_params = opt_state.x
@@ -428,7 +425,9 @@ decay = cosine_schedule(
     transition_steps=900, transition_begin=100,
 )
 schedule = with_warmup(decay, transition_steps=100)
-optimizer = adamw(lr=schedule, weight_decay=0.01, noise_bias_correction=True)
+optimizer_step, state = adamw(
+    params, lr=schedule, weight_decay=0.01, noise_bias_correction=True
+)
 ```
 
 A typical warmup is 5-10% of total training steps.  The warmup helps
@@ -440,22 +439,21 @@ the wrapper's averaging is the implicit schedule.
 
 ## Checkpoint round-tripping
 
-The optimizer state is a `torchopt` chain tuple of dataclasses; flatten
-it to a serializable dict via `opaque.serialization`:
+Optimizer state is an immutable optimizer dataclass; flatten it to a
+serializable dict via `opaque.serialization`:
 
 ```python
 from opaque.optimizers import adamw
 from opaque.serialization import from_state_dict, state_dict
 
-opt = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
-state = opt.init(params)
+_, state = adamw(params, lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 # ... train ...
 
 # Save
 torch.save(state_dict(state), "opt.pt")
 
-# Restore: re-init a template, then build a new state from the saved dict.
-template = opt.init(params)
+# Restore: create a template, then build a new state from the saved dict.
+_, template = adamw(params, lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
 state = from_state_dict(template, torch.load("opt.pt"))
 ```
 
@@ -470,7 +468,7 @@ optimizer sees them.  Clipping after the optimizer would distort the
 adaptive state.
 
 **DDP compatibility.** In distributed training, optimizer states stay
-synchronized automatically because `optimizer.update` is a pure
+synchronized automatically because `optimizer_step` is a pure
 function and all ranks receive identical noisy gradients after
 `sum_gradients` and noise addition (using the same key on all ranks).
 No explicit state synchronization is needed.
@@ -478,7 +476,7 @@ No explicit state synchronization is needed.
 **`NoisedPytree` is the unified contract.** Every optimizer that has a
 noise-aware path reads realized `noise_stddev` metadata from `NoisedPytree`
 updates. The trainer does not pass per-step optimizer kwargs; it just feeds
-the output of the DP noise mechanism into `optimizer.update()`.
+the output of the DP noise mechanism into `optimizer_step()`.
 
 ## API reference
 

@@ -20,9 +20,6 @@ import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 strategy = bsr_strategy(
     bandwidth=8,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
     alpha=1.0,
     beta=0.95,
 )
@@ -40,11 +37,12 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `bandwidth` | Bandwidth \(p\) (≥ 1). Coefficients \(c_j\) for \(j \ge p\) are zero. |
-| `n_steps` | Total training steps |
-| `min_sep` | Minimum separation between participations (typically steps per epoch) |
-| `max_participations` | Maximum number of participations per user (epochs) |
 | `alpha` | Paper \(\alpha \in (0, 1]\) |
 | `beta` | Paper \(\beta \in [0, 1)\); must satisfy \(\alpha > \beta\) |
+
+`n_steps`, `min_sep`, and `max_participations` describe the participation
+context. Pass them to `mf_gaussian_noise` and the matching accounting amplifier,
+not to `bsr_strategy`.
 
 ### Accounting parameters
 
@@ -55,6 +53,10 @@ eps = training.epsilon_at(1e-5)
 | `gram_matrix` | From `strategy.gram_matrix` for BnB Monte Carlo |
 
 ## Noise generation
+
+BSR coefficients are NumPy host data. The eager noise function applies the
+resulting plan to native Torch arrays and retains provider-native
+correlation state.
 
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, bsr_strategy

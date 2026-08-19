@@ -11,8 +11,8 @@ from transformers import (
 )
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.functional import make_functional
 from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.torch.functional import make_functional
 
 from .._helpers import requires_hf_auth
 

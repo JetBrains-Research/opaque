@@ -7,7 +7,7 @@ batches). Functional optimizers (including the universal `adamw`
 that consumes private `noisy_squared_grads` streams) live in
 [`opaque.optimizers`](../opaque-optimizers/README.md).
 
-The noise and clipping paths execute eagerly on Torch, JAX, and MLX. They
+The noise and clipping paths execute eagerly on the active provider. They
 accept and return provider-native arrays, retain provider-native streaming
 state, and support scalar or `PerGroup` clipping bounds and optional private
 second-moment streams. Strategy construction and accounting stay on the host:
@@ -17,28 +17,22 @@ provider-independent execution plans before native array computation begins.
 ## Install
 
 Install the root package as described in the [repository installation guide](https://github.com/JetBrains-Research/opaque#installation),
-using its `dpftrl` extra to include this component. The root bundle includes
-Torch by default; add `jax` or `mlx` when those providers are needed:
+using its `dpftrl` extra to include this component:
 
 ```bash
-pip install "opaque[dpftrl]"      # default Torch provider
-pip install "opaque[dpftrl,jax]"  # Torch + JAX providers
-pip install "opaque[dpftrl,mlx]"  # Torch + MLX providers
+pip install "opaque[dpftrl]"      # includes the Torch provider
 ```
 
 Libraries that do not want the default bundle can install the mechanism wheel
-with only their chosen provider:
+with only their provider:
 
 ```bash
 pip install opaque-dpftrl opaque-torch
-pip install opaque-dpftrl opaque-jax
-pip install opaque-dpftrl opaque-mlx
 ```
 
-The first provider-native gradient template or clipped pytree activates the
-matching installed provider. Applications can instead activate one explicitly
-with `torch_backend()`, `jax_backend()`, or `mlx_backend()` before constructing
-the mechanism.
+The first gradient template or clipped pytree activates the matching installed
+provider. Applications can instead select one explicitly with
+`opaque.backend.set_backend("torch")` before constructing the mechanism.
 
 ## Quick start
 
@@ -51,9 +45,8 @@ from opaque.dpftrl.sampling import BMinSepSampler
 `mf_gaussian_noise(..., compute_dtype=None)` resolves internal sampling and
 linear-combination arithmetic to the active provider's `float32`; outputs are
 cast back to each input leaf's dtype. A fixed `RngKey` and the same state replay
-deterministically within one provider. Torch, JAX, and MLX use their native
-random implementations, so Opaque does not promise identical samples across
-providers.
+deterministically within one provider; providers use their own native random
+implementations, so samples are not promised to agree across them.
 
 Checkpoint `MFNoiseState` or `SecondMomentMFNoiseState` through
 `opaque.serialization.state_dict` and restore it against a freshly constructed

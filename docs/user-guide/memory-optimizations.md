@@ -80,26 +80,26 @@ def try_microbatch(candidate_mb: int) -> float:
 
 ## Gradient checkpointing
 
-PyTorch's `torch.utils.checkpoint.checkpoint` is supported under
-`vmap(grad(...))`. Enable the runtime patch once with
-`opaque.patches.apply_runtime_patches()`.
-
-**With PyTorch directly** (non-reentrant checkpoint only):
+`opaque.execution.checkpoint(fn)` wraps a callable in backend-native
+activation checkpointing. The wrapper is lazy: it resolves to the backend
+of its first call and caches one transformed callable per backend.
 
 ```python
-from opaque.patches import apply_runtime_patches
-from torch.utils.checkpoint import checkpoint
+from opaque.execution import checkpoint
+from opaque.autodiff import grad_and_value, vmap
 
-apply_runtime_patches()
-
-def my_model(x):
-    h = checkpoint(block1, x, use_reentrant=False)
-    h = checkpoint(block2, h, use_reentrant=False)
-    return h.sum()
-
-with torch.no_grad():
-    grads = vmap(grad(my_model))(batch_x)
+checkpointed_block = checkpoint(block)
+grads, values = vmap(grad_and_value(checkpointed_block))(batch_x)
 ```
+
+The portable first version of each transform accepts only `fn`;
+backend-specific compile flags, checkpoint policies, buffer donation, or
+static-argument lists are intentionally not part of the portable contract.
+
+**Torch** maps to `torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`.
+Opaque applies the required Torch/functorch compatibility patches once and
+idempotently, so you do not need to call `opaque.patches.apply_runtime_patches()`
+just to use `checkpoint`.
 
 **With Hugging Face models:**
 
@@ -109,42 +109,83 @@ model.gradient_checkpointing_enable()
 # Then proceed with make_functional, clipped_grad, etc.
 ```
 
-Opaque automatically forces `use_reentrant=False` (the only path compatible
-with functorch). No special kwargs needed.
+`model.gradient_checkpointing_enable()` remains a Torch integration
+convenience; Opaque still forces the non-reentrant path under the hood.
+
+**Limitations:**
+
+- Only safe for first-order differentiation (`grad`, `vjp`, `jacrev`).
+  Higher-order transforms (`hessian`, `jacrev(jacrev)`) are not supported.
+  Opaque only uses first-order differentiation.
+- `torch.compile` does not support checkpointed functional transforms, and
+  a direct `vmap(grad(...))` call should run under `torch.no_grad()`.
+  `clipped_grad` already evaluates without building a graph unless an
+  outer transform differentiates its result.
+- Opt out at the API layer (there are no env-var kill switches): pass
+  `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
+  `apply_model_patches(...)`, or
+  `performance_kernels_config={"vmap_checkpointing": False}` to
+  `TrainingArguments`.
 
 **Memory comparison:**
 
 | Technique | Memory | Compute | Notes |
-|-----------|--------|---------|-------|
+|---|---|---|---|
 | No optimization | O(batch_size) | 1x | |
-| Gradient checkpointing | Workload-dependent | Recomputation overhead | Measure on the target model |
-| Microbatching (size m) | O(m) gradient term | More sequential passes | Measure on the target device |
+| Gradient checkpointing | Workload-dependent | Recomputation overhead | Best for long chains; measure on target model |
+| Microbatching (size m) | O(m) gradient term | More sequential passes | Measure on target device |
 
-**Limitations:**
+### Saved-activation optimization
 
-- Requires `use_reentrant=False` (the non-reentrant checkpoint path).
-  The legacy reentrant path is not supported.
-- Supports first-order differentiation only; higher-order transforms still
-  reject saved-tensor hooks.
-- `torch.compile` is not supported with checkpointed functional transforms.
-- Use `torch.no_grad()` for direct `vmap(grad(...))` calls. `clipped_grad` does
-  this automatically unless an outer transform differentiates its result.
-- Opt out at the API layer (no env-var kill switches): pass
-  `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
-  `apply_model_patches(...)`, or `performance_kernels_config={"vmap_checkpointing": False}`
-  to `TrainingArguments`.
-
-### CPU offloading of saved tensors
-
-`torch.autograd.graph.save_on_cpu` moves tensors saved for backward to
-pinned CPU memory during forward and reloads them during backward. When
-combined with gradient checkpointing, it offloads the checkpoint inputs
-(inter-layer hidden states); checkpoint handles intermediates separately.
+`opaque.execution.optimize_saved_activations(fn)` reduces separate
+accelerator-memory pressure by offloading activations saved for backward.
 
 ```python
-with torch.autograd.graph.save_on_cpu(pin_memory=True):
-    grads, aux = grad_fn(params, batch)
+from opaque.execution import optimize_saved_activations
+
+optimized_block = optimize_saved_activations(block)
 ```
+
+**Torch** enters `torch.autograd.graph.save_on_cpu(pin_memory=True)` for
+each call, moving tensors saved for backward to pinned CPU memory during
+forward and reloading them during backward. Combined with gradient
+checkpointing, this offloads checkpoint inputs while checkpoint handles
+intermediates separately.
+
+### Recommended transform order
+
+Apply execution transforms in this order:
+
+```
+checkpoint / optimize_saved_activations → grad / vmap / clip → compile
+```
+
+1. **Select a region** and wrap it with `checkpoint` or
+   `optimize_saved_activations`.
+2. **Build autodiff and clipping** around that region with `grad`,
+   `vmap`, and `clipped_grad`.
+3. **Compile the outermost stable transform** with `compile` so the
+   compiler sees fixed shapes and dtypes.
+
+For example:
+
+```python
+from opaque.execution import compile, checkpoint
+from opaque.autodiff import grad_and_value, vmap
+from opaque.dpsgd.clipping import clipped_grad
+
+core = checkpoint(selected_region)
+grad_fn, _ = clipped_grad(
+    lambda p, x, y: loss_fn(core(p, x), y),
+    clipping_norm=1.0,
+    argnums=0,
+    batch_argnums=(1, 2),
+)
+compiled_step = compile(grad_fn)
+```
+
+Compilation is the outermost layer because it specializes on the stable
+shapes and dtypes produced by the already-differentiated transform.
 
 ## Fused Triton kernels
 

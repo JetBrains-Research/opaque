@@ -10,6 +10,11 @@ AUTO-S helpers from `opaque.dpftrl.clipping`; DP-SGD users use
 Per-sample gradient clipping bounds the influence that any single training
 example can have on the model, enabling differential privacy.
 
+DP-SGD clipping consumes and returns the active provider's native arrays,
+dtypes, and devices. Torch tensors select their provider on the
+first clipping call; use `opaque.backend.set_backend()` only for earlier
+explicit selection.
+
 ### Clipping functions
 
 1. **[`clipped_grad()`](../user-guide/clipping.md#clipped_grad-recommended-api)** — High-level API: differentiates, clips, and sums gradients.

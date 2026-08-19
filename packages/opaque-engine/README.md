@@ -1,8 +1,8 @@
 # opaque-engine
 
-Backend-neutral execution substrate for Opaque. Install it with the provider
-wheel an application uses: `opaque-torch`, `opaque-jax`, or `opaque-mlx`.
-`opaque-engine` itself neither installs nor imports those frameworks.
+Backend-neutral execution substrate for Opaque. Install it with a provider
+wheel — `opaque-torch` is the one shipped today. `opaque-engine` itself neither
+installs nor imports a framework.
 
 The engine owns portable primitive declarations and algorithms: `opaque.ops`,
 `opaque.autodiff`, `opaque.pytree`, `opaque.random`, and the backend lifecycle
@@ -20,6 +20,5 @@ provider; for example, PyTorch module conversion is
 Use the public façades `opaque.types`, `opaque.pytree`, `opaque.random`,
 `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, and
 `opaque.profiling`. Clipping is exposed by stack façades
-(`opaque.dpsgd.clipping`, `opaque.dpftrl.clipping`). See the
-[provider guide](../../docs/development/backend-providers.md) for registration,
-activation, and optional-capability details.
+(`opaque.dpsgd.clipping`, `opaque.dpftrl.clipping`). `opaque.backend` covers
+provider selection and activation.

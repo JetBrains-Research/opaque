@@ -14,10 +14,10 @@ multi-process DP orchestration:
   states and registered DP runtime objects)
 - **Sharding**: `local_shard()`
 
-Torch, JAX, and MLX implement the shared eager distributed profile. Opaque does
-not initialize or launch distributed runtimes; use `torchrun`, JAX distributed
-initialization, or an MLX launcher as appropriate. Collectives inside `jit`,
-`pmap`, or `shard_map` are outside this process-level contract.
+The Torch provider implements the shared eager distributed profile. Opaque does
+not initialize or launch distributed runtimes; use `torchrun` or another
+framework launcher. The collectives are eager process-level calls;
+compiler-staged or sharded execution is outside this process-level contract.
 See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
 
 ## Core Utilities

@@ -29,7 +29,12 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
 - **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
+- **`bsr_strategy()`** — BSR (Banded Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
+
+Every mechanism preserves each leaf's native array type, dtype, and device.
+See [Providers, dtype, and state](../user-guide/noise.md#providers-dtype-and-state)
+for how MF noise allocates and checkpoints its correlation buffers.
 
 All noise functions return `(noise_fn, state)`, where
 `noise_fn(grads, state) -> (noisy_grads, new_state)`.
@@ -132,6 +137,10 @@ Bounds are absolute, in the same units as the gradient / clip norm.
       heading_level: 4
 
 ::: opaque.dpftrl.noise.bisr_strategy
+    options:
+      heading_level: 4
+
+::: opaque.dpftrl.noise.bsr_strategy
     options:
       heading_level: 4
 
