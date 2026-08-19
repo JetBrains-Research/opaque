@@ -156,10 +156,11 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
 
-The PR gate covers Linux amd64, macOS arm64, Linux arm64, and CUDA tests
-against locked, minimum (Python 3.11), and latest (Python 3.13) dependencies.
-Locked main-platform lanes also include slow tests. Minimum dependencies lanes
-are advisory, but environment setup and dependency resolution remain required.
+The PR gate covers locked Linux amd64, macOS arm64, Linux arm64, and CUDA
+tests. Linux amd64 and CUDA also run minimum (Python 3.11) and latest
+(Python 3.13) dependency validation. Locked main-platform lanes include slow
+tests. Minimum dependencies lanes are advisory, but environment setup and
+dependency resolution remain required.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)

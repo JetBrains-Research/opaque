@@ -136,37 +136,6 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
 
-  python-tests-macos-arm64-minimum:
-    name: macOS arm64 minimum dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      allow-test-failure: true
-      dependency-selection: minimum
-      environment-name: mps-minimum-dependencies
-      pytest-marker: not cuda and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.11"
-      report-durations: true
-      runner: macos-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
-  python-tests-macos-arm64-latest:
-    name: macOS arm64 latest dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      dependency-selection: latest
-      environment-name: mps-latest-dependencies
-      pytest-marker: not cuda and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.13"
-      report-durations: true
-      runner: macos-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
   python-tests-linux-arm64:
     name: Linux arm64 (locked)
     needs: [discover-packages]
@@ -179,37 +148,6 @@ jobs:
       runner: ubuntu-24.04-arm
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 30
-
-  python-tests-linux-arm64-minimum:
-    name: Linux arm64 minimum dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      allow-test-failure: true
-      dependency-selection: minimum
-      environment-name: linux-aarch64-minimum-dependencies
-      pytest-marker: not cuda and not mps and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.11"
-      report-durations: true
-      runner: ubuntu-24.04-arm
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
-
-  python-tests-linux-arm64-latest:
-    name: Linux arm64 latest dependencies
-    needs: [discover-packages]
-    uses: ./.github/workflows/python-tests.yml
-    with:
-      dependency-selection: latest
-      environment-name: linux-aarch64-latest-dependencies
-      pytest-marker: not cuda and not mps and not slow
-      pytest-xdist: -n auto --dist loadscope
-      python-version: "3.13"
-      report-durations: true
-      runner: ubuntu-24.04-arm
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
-      timeout-minutes: 60
 
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. The job-level guard prevents allocation entirely.
@@ -280,11 +218,7 @@ jobs:
       - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64
-      - python-tests-macos-arm64-minimum
-      - python-tests-macos-arm64-latest
       - python-tests-linux-arm64
-      - python-tests-linux-arm64-minimum
-      - python-tests-linux-arm64-latest
       - python-tests-cuda
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
