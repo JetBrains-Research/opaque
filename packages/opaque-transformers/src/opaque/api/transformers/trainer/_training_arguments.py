@@ -39,7 +39,7 @@ DP-correct invariants worth flagging:
 - ``clipping_norm`` is the **per-example DP clipping bound**. Pass a
   positive scalar for a single global clip, or a ``dict`` / JSON object
   with a required ``"fallback"`` key (default clip) plus substring
-  pattern keys for :func:`opaque.api.engine.clipping.per_group` semantics. Adaptive /
+  pattern keys for :func:`opaque.dpsgd.clipping.per_group` semantics. Adaptive /
   auto clipping hyperparameters stay in ``clipping_mode`` and
   ``clipping_kwargs`` (not per-group norms). Pass ``math.inf`` to
   **disable clipping** entirely (the single canonical no-clip bound) —

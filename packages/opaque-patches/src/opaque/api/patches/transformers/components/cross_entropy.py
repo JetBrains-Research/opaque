@@ -261,7 +261,7 @@ def _make_fused_ce_causal_lm_forward(original):
 
                 ce_loss_fn = Opaque_LinearCrossEntropyLoss.apply
             else:
-                from opaque.api.patches.kernels._linear_ce_chunked import (
+                from opaque.api.patches.kernels.linear_ce_chunked import (
                     linear_nll_sum_chunked as ce_loss_fn,
                 )
 

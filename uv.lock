@@ -2677,7 +2677,9 @@ dependencies = [
     { name = "opaque-engine" },
     { name = "opaque-optimizers" },
     { name = "opaque-patches" },
+    { name = "opaque-torch" },
     { name = "peft" },
+    { name = "torch" },
     { name = "transformers" },
 ]
 
@@ -2696,7 +2698,9 @@ requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "peft", specifier = ">=0.13.0" },
+    { name = "torch", specifier = ">=2.9.0" },
     { name = "transformers", specifier = ">=4.57.0,<6" },
     { name = "trl", marker = "extra == 'trl'", specifier = ">=1.0,<2.0" },
 ]

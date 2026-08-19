@@ -34,7 +34,7 @@ import torch
 _LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
 _CE_KERNEL_PATH = "opaque.api.patches.kernels.cross_entropy"
 # Pure-PyTorch chunked kernel (Triton-free): the fused-CE path on MPS/CPU.
-_LCE_CHUNKED_PATH = "opaque.api.patches.kernels._linear_ce_chunked"
+_LCE_CHUNKED_PATH = "opaque.api.patches.kernels.linear_ce_chunked"
 
 
 def lce_available(hidden: torch.Tensor) -> bool:

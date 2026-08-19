@@ -64,19 +64,17 @@ from safetensors.torch import load_file as _safetensors_load
 from safetensors.torch import save_file as _safetensors_save
 from torch.utils.data import DataLoader
 
-from opaque.api.engine.distributed._state import (
+from opaque.backend import ensure_backend
+from opaque.distributed import (
     assert_scalar_equal,
     assert_string_equal,
     gather_pytree,
-    reduce_scalar,
-)
-from opaque.backend import ensure_backend
-from opaque.distributed import (
     get_rank,
     get_world_size,
     is_distributed,
     is_main_process,
     local_shard,
+    reduce_scalar,
     wait_for_everyone,
 )
 from opaque.serialization import from_state_dict, state_dict
