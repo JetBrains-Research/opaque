@@ -131,14 +131,19 @@ def test_reject_router_aux_loss(tmp_path):
         )
 
 
-def test_trust_remote_code_carries_through(tmp_path):
+def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):
     cfg = DPOConfig.from_trl(
-        _trl_dpo_args(tmp_path, trust_remote_code=True),
+        _trl_dpo_args(
+            tmp_path,
+            trust_remote_code=True,
+            model_init_kwargs={"trust_remote_code": False, "revision": "main"},
+        ),
         privacy_noise_multiplier=0.8,
         clipping_norm=1.0,
     )
     assert cfg.trust_remote_code is True
     assert cfg.model_init_kwargs["trust_remote_code"] is True
+    assert cfg.model_init_kwargs["revision"] == "main"
 
 
 def test_loss_type_aot_unpaired_rejected(tmp_path):

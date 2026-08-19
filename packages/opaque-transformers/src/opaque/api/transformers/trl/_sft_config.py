@@ -121,7 +121,7 @@ class SFTConfig(TrainingArguments):
                 self.bf16 = True
         if self.trust_remote_code:
             self.model_init_kwargs = dict(self.model_init_kwargs or {})
-            self.model_init_kwargs.setdefault("trust_remote_code", True)
+            self.model_init_kwargs["trust_remote_code"] = True
         super().__post_init__()
 
     @classmethod

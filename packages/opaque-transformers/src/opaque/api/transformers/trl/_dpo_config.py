@@ -142,7 +142,7 @@ class DPOConfig(TrainingArguments):
             self.loss_weights = [1.0] * len(self.loss_type)
         if self.trust_remote_code:
             self.model_init_kwargs = dict(self.model_init_kwargs or {})
-            self.model_init_kwargs.setdefault("trust_remote_code", True)
+            self.model_init_kwargs["trust_remote_code"] = True
         super().__post_init__()
 
         # TRL's own validations, not DP-driven rejections.
