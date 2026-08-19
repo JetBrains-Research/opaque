@@ -7,7 +7,11 @@ import math
 import pytest
 import torch
 
-from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
+from opaque.api.dpftrl.noise._distributed import (
+    fingerprint_per_group_max_norm,
+    mf_per_group_sync_fingerprint_for_latch,
+)
+from opaque.api.dpftrl.noise._engine import MFNoiseState
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import (
@@ -29,6 +33,18 @@ def _make_pg_two_groups() -> PerGroup:
         groups={"w": "attn", "b": "mlp"},
         values={"attn": 1.0, "mlp": 2.0},
     )
+
+
+def test_legacy_unsigned_sync_fingerprint_is_normalized() -> None:
+    state = MFNoiseState(
+        _inner_state=None,
+        _step_counter=1,
+        _rng_key=key(5),
+        _first_max_norm=1.0,
+        _first_max_norm_sync_fingerprint=(1 << 64) - 1,
+    )
+
+    assert mf_per_group_sync_fingerprint_for_latch(state, 1.0) == -1
 
 
 def _max_column_norm(strategy, *, n_steps: int) -> float:

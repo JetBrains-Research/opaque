@@ -40,12 +40,26 @@ def _setup_ddp(rank: int, world_size: int, port: int) -> None:
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 
+def _setup_gloo(rank: int, world_size: int, port: int) -> None:
+    """Initialize a CPU process group for backend-neutral DDP coverage."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+
+
 def _cleanup_ddp() -> None:
     if dist.is_initialized():
         dist.destroy_process_group()
 
 
 def _spawn(world_size: int, fn, *args) -> None:
+    port = _find_free_port()
+    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _spawn_gloo(world_size: int, fn, *args) -> None:
     port = _find_free_port()
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
 
@@ -297,5 +311,44 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
         global_total = reduce_scalar(local_total, op="sum", device=device)
         expected_rate = global_clipped / max(1.0, global_total)
         assert abs(synced_aux.clipping_rate - expected_rate) < 1e-6
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) -> None:
+    """Exercise the adaptive-clip -> reduction -> Gaussian-noise chain on CPU."""
+    _setup_gloo(rank, world_size, port)
+    try:
+        torch.manual_seed(123)
+        model = SimpleModel()
+        func_model, params = make_functional(model)
+
+        def loss_fn(params, x, y):
+            prediction = func_model(params, x)
+            return ((prediction - y) ** 2).mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            batch_argnums=(1, 2),
+            initial_clipping_norm=0.1,
+            key=key(17),
+        )
+        local_batch_size = 3 if rank == 0 else 5
+        x = torch.randn(local_batch_size, 10)
+        y = torch.randn(local_batch_size, 1)
+        grads, clip_state = grad_fn(params, x, y, state=clip_state)
+        synced_clip_state = sync(clip_state)
+        assert synced_clip_state._batch_size == 8
+
+        summed_grads = sum_gradients(grads)
+        noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(23))
+        noised_grads, noise_state = noise_fn(summed_grads, noise_state)
+        synced_noise_state = sync(noise_state)
+        assert synced_noise_state._step_counter == 1
+
+        first_leaf = tree_leaves(noised_grads.pytree)[0]
+        gathered = [torch.zeros_like(first_leaf) for _ in range(world_size)]
+        dist.all_gather(gathered, first_leaf)
+        assert all(torch.equal(gathered[0], value) for value in gathered[1:])
     finally:
         _cleanup_ddp()

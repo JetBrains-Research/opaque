@@ -225,13 +225,15 @@ no dedicated regression test when neither is available.
 
 ### Test markers
 
-Three orthogonal markers, declared in the root `pyproject.toml`:
+Four orthogonal markers, declared in the root `pyproject.toml`:
 
 - `cuda` — test needs CUDA; auto-skipped on non-CUDA hosts.
 - `mps` — test needs Apple Metal; auto-skipped on non-MPS hosts.
 - `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
   and run on pushes to `main` (the CI job strips the `and not slow`
   clause conditionally).
+- `distributed` — test launches multiple CPU/Gloo ranks; selected by the
+  dedicated Linux distributed lane rather than general platform lanes.
 
 Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
 unit/doc-test set; main and release additionally run the ignored library tests.
@@ -243,17 +245,19 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 
 CI lane marker expressions:
 
-- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow and not distributed"`.
+- PR Distributed / Linux amd64: `-m "distributed and not cuda"`.
 - PR dependency boundaries (Ubuntu, Python 3.11/3.12):
-  `-m "not cuda and not mps and not slow"`.
-- PR macOS arm64: `-m "not cuda and not slow"`.
-- PR Linux arm64: `-m "not cuda and not mps and not slow"`.
+  `-m "not cuda and not mps and not slow and not distributed"`.
+- PR macOS arm64: `-m "not cuda and not slow and not distributed"`.
+- PR Linux arm64: `-m "not cuda and not mps and not slow and not distributed"`.
 - PR CUDA (self-hosted): `-m "cuda and not slow"`.
-- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
+- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not distributed"`.
+- Main Distributed / Linux amd64: `-m "distributed and not cuda"`.
 - Main dependency boundaries (Ubuntu, Python 3.11/3.12):
-  `-m "not cuda and not mps and not slow"`.
-- Main macOS arm64: `-m "not cuda"`.
-- Main Linux arm64: `-m "not cuda and not mps"`.
+  `-m "not cuda and not mps and not slow and not distributed"`.
+- Main macOS arm64: `-m "not cuda and not distributed"`.
+- Main Linux arm64: `-m "not cuda and not mps and not distributed"`.
 - Main CUDA (self-hosted): `-m "cuda"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
