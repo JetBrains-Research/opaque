@@ -662,6 +662,21 @@ def parse_args():
         default=False,
         help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
     )
+    train_group.add_argument(
+        "--adam-beta2",
+        type=float,
+        default=0.99,
+        help=(
+            "Adam/AdamW second-moment decay. Applies to BOTH the plain adamw path "
+            "and xse_adamw, which previously disagreed: opaque.optimizers.adamw "
+            "defaulted to 0.999 while xse_adamw hard-coded 0.99, so frozen and "
+            "rotating AdamW arms were not comparable. Default 0.99. "
+            "The quantity that matters when rotating is tau*(1-beta2), the rotation "
+            "interval divided by Adam's second-moment timescale 1/(1-beta2): below 1 "
+            "the basis is rewritten before Adam can estimate a direction's typical "
+            "gradient size. At tau=1 and beta2=0.99 it is 0.01."
+        ),
+    )
     lora_group.add_argument(
         "--lora-xs-init",
         type=str,
@@ -2079,14 +2094,18 @@ def main():
                 # timescale 1/(1-beta2) must not outrun the rotation interval,
                 # or freshly inserted directions (whose nu starts at 0) take a
                 # first step ~3.2x too large. See xse_adamw's docstring.
-                betas=(args.sgd_momentum, 0.99),
+                betas=(args.sgd_momentum, args.adam_beta2),
                 weight_decay=args.weight_decay,
             )
         else:
             from opaque.optimizers import adamw
 
+            # betas passed explicitly: this path defaulted to (0.9, 0.999) while
+            # xse_adamw used (beta1, 0.99), so a frozen-vs-rotating AdamW
+            # comparison was silently beta2-mismatched.
             base_opt = adamw(
                 lr=lr_for_opt,
+                betas=(args.sgd_momentum, args.adam_beta2),
                 weight_decay=args.weight_decay,
                 noise_bias_correction=args.noise_bias_correction,
             )
