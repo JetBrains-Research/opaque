@@ -160,9 +160,30 @@ def ensure_backend(*values: object) -> Backend:
     return active
 
 
-def set_backend(backend: Backend) -> None:
-    """Activate ``backend`` in the current execution context."""
+def _coerce_backend(backend: Backend | str) -> Backend:
+    """Resolve a known backend name to a loaded provider instance.
+
+    Strings must name a :class:`KnownBackend`; the provider factory runs
+    (importing and registering its implementations) before activation.
+    Custom providers pass their :class:`Backend` instance directly.
+    """
+    if not isinstance(backend, str):
+        return backend
+    try:
+        kind = KnownBackend(backend)
+    except ValueError:
+        known = ", ".join(repr(kind.value) for kind in KnownBackend)
+        raise BackendProviderError(
+            f"Unknown backend name {backend!r}; known names are {known}. "
+            "Pass a Backend instance to activate a custom provider."
+        ) from None
+    return _load_backend(kind)
+
+
+def set_backend(backend: Backend | str) -> None:
+    """Activate ``backend`` — an instance or a known name — in this context."""
     global _ACTIVE_HINT
+    backend = _coerce_backend(backend)
     validate_core_primitives(backend)
     _note_backend_loaded(backend.name)
     _ACTIVE.set(backend)
@@ -177,9 +198,10 @@ def clear_backend() -> None:
 
 
 @contextmanager
-def use_backend(backend: Backend) -> Iterator[Backend]:
+def use_backend(backend: Backend | str) -> Iterator[Backend]:
     """Temporarily activate ``backend`` and restore the context token on exit."""
     global _ACTIVE_HINT
+    backend = _coerce_backend(backend)
     validate_core_primitives(backend)
     _note_backend_loaded(backend.name)
     token = _ACTIVE.set(backend)

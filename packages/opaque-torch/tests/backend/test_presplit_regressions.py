@@ -163,3 +163,37 @@ def test_eager_dispatch_is_context_local() -> None:
 
     with pytest.raises(BackendNotSelectedError):
         pristine.run(float32)
+
+
+def test_backend_activates_by_name_before_any_provider_import() -> None:
+    """``use_backend("torch")`` loads the provider factory on demand.
+
+    Regression: with only engine facades imported, the ``normal`` CORE
+    primitive was declared but had no registration, so activating by name
+    failed core-profile validation instead of loading the Torch provider.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import torch\n"
+        "from opaque.backend import set_backend, use_backend, clear_backend\n"
+        "from opaque.random import key, normal\n"
+        "with use_backend('torch'):\n"
+        "    sample = normal(key(42), (3,))\n"
+        "assert sample.dtype == torch.float32\n"
+        "set_backend('torch')\n"
+        "sample = normal(key(42), (3,))\n"
+        "assert sample.shape == (3,)\n"
+        "clear_backend()\n"
+        "print('ok')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
