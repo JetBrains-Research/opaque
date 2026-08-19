@@ -72,7 +72,10 @@ has no bf16 column type.
 ```python
 import hashlib
 
-from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+from opaque.alignment.dpo.reference import (
+    compute_ref_logprobs_for_dataset,
+    with_disabled_adapter,
+)
 
 
 def ref_state_digest(model) -> str:
@@ -91,21 +94,22 @@ def ref_state_digest(model) -> str:
     return hasher.hexdigest()
 
 
-dataset = compute_ref_logprobs_for_dataset(
-    dataset,
-    ref,                                  # batch -> ref_*_logps dict
-    collator=collate,                     # the preference collator (below)
-    output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-    batch_size=8,
-    cache_identity={
-        "kind": "dpo-reference-logprobs",
-        "reference": {
-            "adapter_mode": "disabled",
-            "state_sha256": ref_state_digest(model),
+with with_disabled_adapter(model):
+    dataset = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,                                  # batch -> ref_*_logps dict
+        collator=collate,                     # the preference collator (below)
+        output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+        batch_size=8,
+        cache_identity={
+            "kind": "dpo-reference-logprobs",
+            "reference": {
+                "adapter_mode": "disabled",
+                "state_sha256": ref_state_digest(model),
+            },
         },
-    },
-    cache_dir=cache_dir,
-)
+        cache_dir=cache_dir,
+    )
 ```
 
 `cache_identity` must be JSON-like — scalars, string-keyed mappings, and
@@ -125,15 +129,17 @@ cheaper and equally safe when the reference is loaded straight from the Hub and
 never mutated in-process. `examples/train_dpo.py` builds the same identity for
 its manual precompute path.
 
-When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
-enter `null_ref_context(model)` (or `with_disabled_adapter(model)`) around
-the reference forward to disable the adapter, so no second model is
-needed. `null_ref_context` dispatches over the reference configurations —
-separate `ref_model`, a LoRA `"ref"` adapter clone, a disabled adapter, or
-a no-op for an explicit callable. Both helpers run **outside vmap** (they
-mutate `nn.Module` adapter state). For TR-DPO, periodically move the
-reference toward the policy with `ema_update_reference(ref_params,
-policy_params, alpha)` between steps.
+For a PEFT/LoRA policy where the *base* model is the reference, use
+`with_disabled_adapter(model)` around the reference forward as above, so no
+second model is needed. `null_ref_context` instead dispatches over the
+reference configurations — separate `ref_model`, a LoRA `"ref"` adapter clone,
+a disabled adapter, or a no-op for an explicit callable. If it selects a
+separate model or `"ref"` adapter clone, derive the cache identity from that
+selected reference: its adapter mode must be accurate and its adapter weights
+must be included in the digest. Both helpers run **outside vmap** (they mutate
+`nn.Module` adapter state). For TR-DPO, periodically move the reference toward
+the policy with `ema_update_reference(ref_params, policy_params, alpha)`
+between steps.
 
 ## 2. Preference collator
 
