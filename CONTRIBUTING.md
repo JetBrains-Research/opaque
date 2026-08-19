@@ -156,12 +156,10 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
 
-The PR gate runs the non-slow Linux amd64, macOS arm64, Linux arm64, and CUDA
-suites together with the minimum dependencies on Python 3.11 and the
-latest supported dependencies on Python 3.12. Main repeats these boundaries and adds
-slow-test coverage to platform lanes. Dependency validation
-excludes slow and hardware-marked tests. Failures in the Minimum dependencies
-lane are currently advisory; environment setup and dependency resolution still gate.
+The PR gate covers non-slow Linux amd64, macOS arm64, Linux arm64, CUDA, and
+minimum/latest dependency validation. Main adds slow-test coverage. The minimum
+dependencies lane is advisory, but environment setup and dependency resolution
+remain required.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)
@@ -186,11 +184,10 @@ Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 
-Other tests use `pytest.importorskip()` for automatic dependency handling:
-- Hugging Face tests: Skip if `transformers` is not installed (install via `opaque[transformers]`)
-- Cross-validation: Skip if `dp-accounting` is not installed (install via `opaque-accounting[cross-validation]`)
-
-No manual marker exclusion is needed—tests skip automatically when dependencies are missing.
+Other tests use `pytest.importorskip()` when optional dependencies are absent:
+install `opaque[transformers]` for Hugging Face tests or
+`opaque-accounting[cross-validation]` for cross-validation. No manual marker
+exclusion is needed.
 
 ### GPU and Multi-GPU Tests
 
@@ -241,16 +238,6 @@ uv run ruff check --fix packages/
 2. **Format code**: `uv run ruff format --check packages/`
 3. **Check linting**: `uv run ruff check packages/`
 4. **Update docs**: Ensure docstrings are complete
-
-### PR Checklist
-
-- [ ] Tests pass locally
-- [ ] Code is formatted with Ruff
-- [ ] Docstrings follow Google style
-- [ ] Type hints added for public APIs
-- [ ] Linked to relevant issue(s)
-
----
 
 ## Commit Messages
 
@@ -381,10 +368,8 @@ active.
 
 ### Release-note conventions
 
-The draft body is generated from Conventional Commit messages in the resolved
-release range via `git-cliff`; keeping PR titles conventional is what makes
-this pipeline work. See the [Commit Messages](#commit-messages) section above
-for the accepted types and their mapping to release-note sections.
+`git-cliff` generates the draft body from Conventional Commit messages in the
+resolved release range.
 
 ### Recovering a failed release
 

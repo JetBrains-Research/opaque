@@ -37,9 +37,6 @@ and Bayes risk — all from a single PLD computation.
 | Basic composition | Loose | O(k) additive | Fast |
 | **PLD (this crate)** | **Tight** | **FFT convolution** | **O(n log n)** |
 
-PLD gives the tightest known bounds for composed mechanisms via
-FFT-based convolution in O(n log n) time.
-
 ## Building
 
 ### As part of Opaque (recommended)
@@ -106,14 +103,10 @@ Release builds publish:
 - `manylinux_2_28` wheels for Linux `x86_64` and `aarch64`;
 - a macOS 11+ `arm64` wheel.
 
-Unsupported platforms are explicit today: Windows, macOS `x86_64`, and
-non-`manylinux_2_28` / `musllinux` Linux wheels are not published for
-`opaque-accounting`.
+Wheels are not published for Windows, macOS `x86_64`, or
+non-`manylinux_2_28` / `musllinux` Linux.
 
 ## Architecture
-
-Rust is a PLD computation engine: flat functions that take scalar
-parameters and return opaque `Pld` handles.
 
 ```
 opaque_accounting (Rust crate)

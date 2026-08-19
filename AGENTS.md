@@ -279,9 +279,7 @@ Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
   when `transformers` / `peft` aren't installed.
 - CI guardrail: a single shell step in `.github/workflows/ci.yml`
   enforces that no sub-package ships `src/opaque/__init__.py` (the
-  PEP 420 invariant). Legacy-token and negative-import checks were
-  refactor-diary guards and have been removed now that the migration
-  is complete.
+  PEP 420 invariant).
 
 ## Training examples
 

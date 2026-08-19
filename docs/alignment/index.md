@@ -1,36 +1,21 @@
 # Alignment (`opaque.alignment`)
 
-`opaque-alignment` ships **functional, mechanism-agnostic primitives for
-DP-safe preference learning and supervised fine-tuning**: per-example loss
-functions (SFT and DPO), per-sequence log-probability helpers, batch
-collators, dataset transforms, reference-model helpers, and reward metrics.
-Every public symbol is a pure function or a factory returning a callable, so
-each composes cleanly under `vmap(grad(...))` — the per-example differentiation
-that DP-SGD and DP-FTRL clipping is built on.
-
-The package builds only on the engine (clipping, functional conversion,
-distributed) and base (serialization) layers. It does **not** depend on a DP
-mechanism or an optimizer: the noise mechanism and optimizer are chosen at the
-call site, so a researcher can assemble a DP-SGD or DP-FTRL alignment run from
-`opaque.alignment` primitives plus a mechanism plus an optimizer — no trainer
-subclass required. The same loss closure runs under either mechanism; only the
-two noise/sampling imports change.
+`opaque-alignment` provides functional, mechanism-agnostic primitives for
+DP-safe preference learning and supervised fine-tuning: per-example SFT and
+DPO losses, log-probability helpers, collators, data transforms,
+reference-model helpers, and reward metrics. They compose under `vmap(grad(...))`
+with either DP-SGD or DP-FTRL.
 
 ## Design
 
-- **Functional, no hidden state.** Losses are pure functions of per-example
-  tensors; collators and reference helpers are factories returning callables.
-  The DP-SGD/DP-FTRL pipeline supplies its own clip and noise state.
+- **Functional.** Losses are pure functions of per-example tensors; collators
+  and reference helpers return callables.
 - **Per-example by construction.** Each loss output for example `i` depends
   only on example `i`'s data, so per-example sensitivity stays `O(C)` after
   clipping. SFT divisors are per-example token counts (not a batch aggregate),
   and the DPO collator keeps chosen/rejected as separate `(B, ...)` tensors so
   one preference pair maps to one clipped gradient.
-- **Mechanism-agnostic.** No mechanism or optimizer is imported in the
-  package source; the mechanism is a call-site choice.
-- **Direct functions, no registries.** Losses are exposed by name as plain
-  functions. Mapping a config string to one of them is the caller's concern —
-  the example scripts keep that tiny `name -> fn` map at the CLI boundary.
+- **Mechanism-agnostic.** Choose the mechanism and optimizer at the call site.
 
 ## Module map
 
@@ -38,19 +23,14 @@ two noise/sampling imports change.
 |---|---|
 | `opaque.alignment.sft.loss` | `nll_loss`, `dft_loss`, and the fused twins `fused_nll_loss`, `fused_dft_loss` |
 | `opaque.alignment.sft.collator` | `language_modeling_collator` (output schema `LMBatch` in `…collator.types`) |
-| `opaque.alignment.dpo.loss` | per-sequence logp (`sequence_logp`, `fused_sequence_logp`), 15 exported loss heads (13 per-pair + 2 reference-free, `simpo_loss` / `odds_ratio_loss`), and the 5 log-ratio combinators |
+| `opaque.alignment.dpo.loss` | per-sequence logp, DPO loss heads, and log-ratio combinators |
 | `opaque.alignment.dpo.collator` | `preference_collator` |
 | `opaque.alignment.dpo.reference` | `compute_ref_logprobs_for_dataset`, `null_ref_context`, `with_disabled_adapter`, `ema_update_reference` |
 | `opaque.alignment.dpo.metric` | `reward_metrics` |
 | `opaque.alignment.dpo.data` | `extract_prompt` |
 
-The `DPOTrainer` dispatcher (`opaque.transformers.trl`) maps **15**
-`loss_type` names to these exported heads — the 13 per-pair heads, plus `simpo`
-(added to the dispatcher) and `chosen_nll` (opaque's name for TRL's `sft`,
-reusing `chosen_nll_loss`). The
-reference-free composites `cpo` / `orpo` are assembled in the trainer from
-existing heads (a preference / odds-ratio term plus a per-token-mean NLL), so
-they are **not** separate exported heads.
+`DPOTrainer` maps its supported `loss_type` values to these functions; see the
+[trainer guide](trainers.md#the-loss_type-menu) for the available objectives.
 
 ## See also
 

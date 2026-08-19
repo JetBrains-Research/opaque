@@ -1,11 +1,7 @@
 # tests/integration/
 
-End-to-end integration tests that exercise multiple opaque wheels
-together. The full workspace install (`uv sync --all-packages --extra
-all`) brings in every wheel, so the imports always resolve when
-running locally or in CI.
-
-These tests are **not** shipped inside any wheel's tarball.
+End-to-end tests that exercise multiple Opaque wheels together. Run them with
+the full workspace install: `uv sync --all-packages --extra all`.
 
 ## Layout
 
@@ -33,9 +29,8 @@ A test belongs here when it imports across two or more wheels with
 **mutual non-dependency**, or when it exercises the end-to-end DP
 pipeline (clipping + noise + optimizer + patches all in one).
 
-Patches are part of the framework's normal usage, so applying them in
-an integration test isn't reason on its own to call it a "patches
-test" — it's still a DP-pipeline test.
+Applying normal framework patches alone does not make a test a patches test;
+it remains a DP-pipeline test.
 
 ## Markers
 

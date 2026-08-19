@@ -1,9 +1,8 @@
 # NCCL / `mp.spawn` tests (`tests/ddp`)
 
 CUDA-marked tests that initialize `torch.distributed` with `mp.spawn` live here.
-`tests/conftest.py` prepends this directory to `sys.path` and `PYTHONPATH` so the
-parent process and spawned children can `import engine_ddp_helpers` (required for pickle
-under spawn with pytest's `--import-mode=importlib`).
+`tests/conftest.py` adds this directory to `sys.path` and `PYTHONPATH` so spawn
+workers can import `engine_ddp_helpers` under pytest's importlib mode.
 
 ## Layout
 

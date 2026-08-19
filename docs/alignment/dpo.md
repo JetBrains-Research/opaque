@@ -1,13 +1,8 @@
 # DPO end-to-end
 
-This guide walks through a full DP-SGD Direct Preference Optimization
-(DPO) run built from `opaque.alignment` primitives: precompute the
-reference policy's log-probabilities, collate preference pairs, compute a
-per-example DPO loss, differentiate it under `vmap(grad(...))`, clip,
-noise, and step the optimizer, then evaluate with reward metrics. The
-alignment imports come from the `opaque.alignment.dpo.*` façades; the DP
-plumbing is the same [DP-SGD pipeline](../user-guide/dp-sgd.md) used
-everywhere else.
+This guide builds a DP-SGD Direct Preference Optimization (DPO) run:
+precompute reference log-probabilities, collate preference pairs, compute a
+per-example loss, then clip, noise, optimize, and evaluate reward metrics.
 
 ## Why DPO is different
 
@@ -41,34 +36,20 @@ EMA-updated reference policy variant exposed on the trainer surface.
 
 ## 1. Reference log-probabilities
 
-Run the frozen reference once over the dataset, *before* training, and cache
-the per-example chosen/rejected logps when reuse is needed.
+Run the frozen reference once over the dataset before training. Cache the
+per-example chosen/rejected logps when reuse is needed.
 `opaque.alignment.dpo.reference.compute_ref_logprobs_for_dataset` takes a
 `ref(batch) -> {col: (B,) tensor}` callable (wrap your model into one),
-runs a single `torch.no_grad()` pass — sharded across ranks, see
-[Across ranks](#across-ranks) — and caches to
-a content-addressed `.safetensors` file whose name is the SHA-256 digest of
-`(dataset._fingerprint, cache_identity, output_columns)`.
-By default that file lives under `<tempdir>/opaque_ref_cache/`; pass
-`cache_dir=` to pin a different location. A cache hit skips the forward
-entirely. Cache directories are owner-only and archive files are owner-readable
-and writable only because they contain private per-example values. Remove a
-selected cache directory when its contents are no longer needed.
-This protects the artifacts from other local accounts; it does not isolate
-processes running as the same account, so choose and clean cache locations
-according to that threat model.
+runs a `torch.no_grad()` pass, and optionally caches a content-addressed
+`.safetensors` file keyed by the dataset, `cache_identity`, and output columns.
+The default cache is `<tempdir>/opaque_ref_cache/`; use `cache_dir=` to choose
+its location. Cache values are private per-example data, so remove them when
+they are no longer needed.
 
 Pass `use_cache=False` for one-shot results that cannot be reused. TR-DPO does
 this automatically for its initial seed columns: it recomputes reference logps
 from the evolving EMA reference before every training and evaluation step, so
 those seed values are never persisted.
-
-On disk, the cache stores the requested tensors under their native torch dtypes
-via `opaque.serialization.state_dict(...)` and `safetensors`; for example, a
-bf16 reference forward stays bf16 in the archive. The only dtype demotion
-happens later, when the cached tensors are attached back to a Hugging Face
-dataset column: those values are converted to Python `float` because PyArrow
-has no bf16 column type.
 
 ```python
 import hashlib
@@ -113,22 +94,11 @@ with with_disabled_adapter(model):
     )
 ```
 
-`cache_identity` must be JSON-like — scalars, string-keyed mappings, and
-sequences. Mapping order does not affect the digest, and unsupported or
-non-deterministic values raise `TypeError` rather than falling back to `repr`.
-A dataset without a deterministic `_fingerprint` is rejected for the same
-reason.
-
-A hit reuses the stored logprobs without re-examining the model, so the
-identity must encode every input that changes reference behavior: an immutable
-revision or weight digest, plus the adapter mode. Keying on a mutable name
-alone — a model name, a checkpoint directory — silently returns logprobs from
-whatever last occupied that name. `DPOTrainer` derives this identity from the
-effective reference state on its own; only manual callers build it. Hashing the
-weights as above is the conservative choice — an immutable Hub revision pin is
-cheaper and equally safe when the reference is loaded straight from the Hub and
-never mutated in-process. `examples/train_dpo.py` builds the same identity for
-its manual precompute path.
+`cache_identity` must be JSON-like and identify every input that changes the
+reference output, such as an immutable model revision or weight digest and
+adapter mode. `DPOTrainer` derives it automatically; manual callers provide
+it. Unsupported values and datasets without a deterministic `_fingerprint`
+raise `TypeError`.
 
 For a PEFT/LoRA policy where the *base* model is the reference, use
 `with_disabled_adapter(model)` around the reference forward as above, so no
@@ -144,24 +114,11 @@ between steps.
 
 ### Across ranks
 
-Under a live process group each rank runs the reference over its own
-`local_shard` of the dataset, and the per-column results are gathered back into
-dataset order, so every rank returns the same full-length dataset and matches a
-single-process run. Pass the whole dataset with the same deterministic dataset
-fingerprint on every rank and shard for training afterwards — the trainer's
-dataloaders do that themselves. A fingerprint mismatch raises before any
-examples are scored. Shards may be uneven, and a rank whose shard is empty
-still joins the gather.
-
-Sharding follows the process group, not the launcher. Pass `shard=True` to
-require one and fail if it is missing, or `shard=False` to score the whole
-dataset on every rank. `DPOTrainer` establishes the group before it precomputes,
-so its callers get the sharded path. `use_cache` and `shard` must agree across
-ranks — they select the collective sequence.
-
-Only the main process writes the cache, and the group reuses it only when every
-rank can see the archive; otherwise it recomputes rather than stranding the
-ranks that cannot.
+With a live process group, each rank scores a `local_shard` and the results are
+gathered into dataset order. Every rank must receive the same fingerprinted
+dataset and agree on `use_cache` and `shard`; `shard=True` requires a process
+group, while `shard=False` scores the whole dataset per rank. The main process
+writes the cache, which is reused only when every rank can read it.
 
 !!! warning "The default cache directory is node-local"
 
@@ -229,14 +186,11 @@ one sequence and let the outer `vmap` batch it.
 ### Choosing a per-pair head
 
 The per-pair heads take `(chosen_logratio, rejected_logratio, *, beta, ...)`
-and return a per-example scalar. `sigmoid_loss` is the standard DPO objective
-and the right default. The others trade off robustness and reference
-handling — `hinge_loss`, `robust_loss` (label-smoothed cDPO), `ipo_loss`,
+and return a per-example scalar. `sigmoid_loss` is the standard DPO objective. Other heads include
+`hinge_loss`, `robust_loss` (label-smoothed cDPO), `ipo_loss`,
 `discopop_loss`, `chosen_nll_loss` (chosen-completion NLL regularizer for
 MPO/RPO/CPO blends), `apo_zero_loss`/`apo_down_loss`,
-`exo_loss`, `nca_loss`, `bco_loss`, `sppo_loss`. As with SFT, map a config
-string to a head at the CLI boundary (`{"sigmoid": sigmoid_loss, ...}`) —
-the library exposes direct functions, not a registry. For composite
+`exo_loss`, `nca_loss`, `bco_loss`, and `sppo_loss`. For composite
 objectives, the log-ratio combinators (`f_divergence_remap` /
 `f_divergence_logits`, `mpo_combine`, `wpo_weights`, `ld_dpo_split`)
 remap or blend log-ratios before the head; see the
