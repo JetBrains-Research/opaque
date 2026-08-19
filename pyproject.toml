@@ -180,6 +180,7 @@ markers = [
   "cuda: Test requires CUDA; auto-skipped on non-CUDA hosts.",
   "mps: Test requires Apple Metal (MPS); auto-skipped on non-MPS hosts.",
   "slow: Test takes >5 s on CPU; opted out in PR gate via `and not slow`, run on push to main.",
+  "distributed: Test launches multiple CPU/Gloo ranks; selected by the Linux distributed gate.",
 ]
 
 filterwarnings = [

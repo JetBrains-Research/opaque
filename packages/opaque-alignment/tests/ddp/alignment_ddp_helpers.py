@@ -1,9 +1,4 @@
-"""Gloo CPU workers for the sharded reference-logprob precompute.
-
-Workers must live in a top-level-importable module because ``mp.spawn``
-pickles the target by qualified name; ``tests/conftest.py`` puts this
-directory on ``sys.path`` and ``PYTHONPATH`` for the parent and the children.
-"""
+"""Gloo CPU workers for the sharded reference-logprob precompute."""
 
 from __future__ import annotations
 
@@ -13,13 +8,15 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-# Short timeout: a mismatched collective sequence must fail the test promptly
-# rather than hang the CI job.
+# Short timeout: a mismatched collective sequence must fail promptly rather than
+# hang the CI job.
 _PG_TIMEOUT = timedelta(seconds=120)
+_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
 
 def _find_free_port() -> int:
@@ -29,7 +26,7 @@ def _find_free_port() -> int:
 
 
 def _setup_gloo(rank: int, world_size: int, port: int) -> None:
-    """CPU process-group init for the sharded-precompute regressions."""
+    """Initialize a CPU process group for the precompute regressions."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
@@ -49,12 +46,7 @@ def _spawn_gloo(world_size: int, fn: Any, *args: Any) -> None:
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
 
 
-# --------------------------------------------------------------------------
-# Shared fixtures: a dataset, a collator, and a ref that records what it saw.
-# --------------------------------------------------------------------------
-
-
-def make_dataset(n_rows: int, start: int = 0) -> Any:
+def _make_dataset(n_rows: int, start: int = 0) -> Any:
     from datasets import Dataset
 
     indices = list(range(start, start + n_rows))
@@ -63,12 +55,11 @@ def make_dataset(n_rows: int, start: int = 0) -> Any:
     )
 
 
-def collate(rows: list[dict]) -> dict[str, torch.Tensor]:
+def _collate(rows: list[dict]) -> dict[str, torch.Tensor]:
     return {"idx": torch.tensor([int(row["idx"]) for row in rows], dtype=torch.long)}
 
 
-def expected_columns(n_rows: int, start: int = 0) -> dict[str, list[float]]:
-    """The values ``CountingRef`` produces for the whole dataset, in order."""
+def _expected_columns(n_rows: int, start: int = 0) -> dict[str, list[float]]:
     indices = range(start, start + n_rows)
     return {
         "ref_chosen_logps": [float(index) for index in indices],
@@ -76,7 +67,7 @@ def expected_columns(n_rows: int, start: int = 0) -> dict[str, list[float]]:
     }
 
 
-class CountingRef:
+class _CountingRef:
     """Reference callable recording which examples this rank actually scored."""
 
     def __init__(self, dtype: torch.dtype = torch.float32) -> None:
@@ -90,266 +81,192 @@ class CountingRef:
         return {"ref_chosen_logps": values, "ref_rejected_logps": -2.0 * values}
 
 
-_COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
+def _assert_columns(result: Any, n_rows: int, start: int = 0) -> None:
+    assert len(result) == n_rows
+    for name, values in _expected_columns(n_rows, start).items():
+        assert result[name] == values
 
 
 def _assert_no_desync(world_size: int) -> None:
-    """A follow-up collective must still succeed (proves no rank was left behind)."""
+    """A follow-up collective proves that every rank completed the prior path."""
     token = torch.tensor([float(dist.get_rank() + 1)])
     dist.all_reduce(token, op=dist.ReduceOp.SUM)
     assert abs(token.item() - sum(range(1, world_size + 1))) < 1e-5
 
 
-# --------------------------------------------------------------------------
-# Workers
-# --------------------------------------------------------------------------
-
-
-def _worker_shards_and_restores_order(
-    rank: int, world_size: int, port: int, n_rows: int, cache_dir: str
-) -> None:
-    """Each rank scores only its own shard; the result is the full dataset."""
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-        from opaque.distributed import local_shard
-
-        dataset = make_dataset(n_rows)
-        ref = CountingRef()
-        result = compute_ref_logprobs_for_dataset(
-            dataset,
-            ref,
-            collate,
-            _COLUMNS,
-            cache_identity={"kind": "shard-order"},
-            batch_size=2,
-            cache_dir=cache_dir,
-            use_cache=False,
-        )
-
-        own_shard = local_shard(range(n_rows), rank=rank, world_size=world_size)
-        assert ref.examples_seen == list(own_shard), (
-            f"rank {rank} scored {ref.examples_seen}, expected {list(own_shard)}"
-        )
-
-        expected = expected_columns(n_rows)
-        assert len(result) == n_rows
-        for name, values in expected.items():
-            assert result[name] == values, f"rank {rank} column {name}: {result[name]}"
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
-
-
-def _worker_empty_shard_preserves_dtype(
-    rank: int, world_size: int, port: int, cache_dir: str
-) -> None:
-    """A rank with no rows must not force its dtype on the ranks that have some."""
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-        # One row across two ranks: rank 0's shard is empty, rank 1 takes the
-        # remainder and computes in bf16.  The row index is non-zero so the
-        # assertion sees a real value rather than a dtype-independent zero.
-        dataset = make_dataset(1, start=7)
-        ref = CountingRef(dtype=torch.bfloat16)
-        result = compute_ref_logprobs_for_dataset(
-            dataset,
-            ref,
-            collate,
-            _COLUMNS,
-            cache_identity={"kind": "empty-shard"},
-            batch_size=2,
-            cache_dir=cache_dir,
-            use_cache=False,
-        )
-
-        assert ref.examples_seen == ([] if rank == 0 else [7])
-        assert result["ref_chosen_logps"] == [7.0]
-        assert result["ref_rejected_logps"] == [-14.0]
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
-
-
-def _worker_mismatched_dataset_sizes(rank: int, world_size: int, port: int) -> None:
-    """Ranks holding datasets with different sizes fail on every rank."""
-    import pytest
-
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-        with pytest.raises(RuntimeError, match="dataset size mismatch across ranks"):
-            compute_ref_logprobs_for_dataset(
-                make_dataset(4 if rank == 0 else 3),
-                CountingRef(),
-                collate,
-                _COLUMNS,
-                cache_identity={"kind": "size-mismatch"},
-                batch_size=2,
-                use_cache=False,
-            )
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
-
-
-def _worker_mismatched_dataset_fingerprints(
-    rank: int, world_size: int, port: int
-) -> None:
-    """Equal-length but different datasets fail before their shards are scored."""
-    import pytest
-
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-        with pytest.raises(
-            RuntimeError, match="dataset fingerprint mismatch across ranks"
-        ):
-            compute_ref_logprobs_for_dataset(
-                make_dataset(4, start=rank * 10),
-                CountingRef(),
-                collate,
-                _COLUMNS,
-                cache_identity={"kind": "fingerprint-mismatch"},
-                batch_size=2,
-                use_cache=False,
-            )
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
-
-
-def _worker_divergent_cache_state(
+def _assert_sharded_output(
     rank: int,
     world_size: int,
-    port: int,
-    n_rows: int,
     cache_root: str,
-    shard: bool | None = None,
+    *,
+    n_rows: int,
+    start: int,
+    dtype: torch.dtype,
+    identity: str,
 ) -> None:
-    """Node-local cache dirs must not split the group into different branches.
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+    from opaque.distributed import local_shard
 
-    Every rank gets its own cache directory and the seeding call writes on the
-    main process only, so rank 0 alone holds the archive — the multi-node shape.
-    """
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-        from opaque.distributed import local_shard
+    dataset = _make_dataset(n_rows, start)
+    ref = _CountingRef(dtype=dtype)
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collate,
+        _COLUMNS,
+        cache_identity={"kind": identity},
+        batch_size=2,
+        cache_dir=str(Path(cache_root) / identity),
+        use_cache=False,
+    )
 
-        dataset = make_dataset(n_rows)
-        cache_dir = str(Path(cache_root) / f"rank{rank}")
-        call = {
-            "cache_identity": {"kind": "divergent-cache"},
-            "batch_size": 2,
-            "cache_dir": cache_dir,
-            "use_cache": True,
-            "shard": shard,
-        }
+    own_shard = local_shard(
+        range(start, start + n_rows), rank=rank, world_size=world_size
+    )
+    assert ref.examples_seen == list(own_shard)
+    _assert_columns(result, n_rows, start)
+    _assert_no_desync(world_size)
 
+
+def _assert_shared_cache_hit(rank: int, world_size: int, cache_root: str) -> None:
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+    dataset = _make_dataset(6)
+    call = {
+        "cache_identity": {"kind": "shared-cache"},
+        "batch_size": 2,
+        "cache_dir": str(Path(cache_root) / "shared"),
+        "use_cache": True,
+    }
+    compute_ref_logprobs_for_dataset(
+        dataset, _CountingRef(), _collate, _COLUMNS, **call
+    )
+
+    ref = _CountingRef()
+    result = compute_ref_logprobs_for_dataset(dataset, ref, _collate, _COLUMNS, **call)
+    assert ref.examples_seen == []
+    _assert_columns(result, 6)
+    _assert_no_desync(world_size)
+
+
+def _assert_divergent_cache_recomputes(
+    rank: int,
+    world_size: int,
+    cache_root: str,
+    *,
+    shard: bool | None,
+) -> None:
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+    from opaque.distributed import local_shard
+
+    n_rows = 6
+    cache_kind = "unsharded" if shard is False else "sharded"
+    dataset = _make_dataset(n_rows)
+    cache_dir = Path(cache_root) / cache_kind / f"rank{rank}"
+    call = {
+        "cache_identity": {"kind": f"divergent-cache-{cache_kind}"},
+        "batch_size": 2,
+        "cache_dir": str(cache_dir),
+        "use_cache": True,
+        "shard": shard,
+    }
+    compute_ref_logprobs_for_dataset(
+        dataset, _CountingRef(), _collate, _COLUMNS, **call
+    )
+    assert any(cache_dir.glob("*.safetensors")) == (rank == 0)
+
+    ref = _CountingRef()
+    result = compute_ref_logprobs_for_dataset(dataset, ref, _collate, _COLUMNS, **call)
+    expected_seen = (
+        list(range(n_rows))
+        if shard is False
+        else list(local_shard(range(n_rows), rank=rank, world_size=world_size))
+    )
+    assert ref.examples_seen == expected_seen
+    _assert_columns(result, n_rows)
+    _assert_no_desync(world_size)
+
+
+def _assert_divergent_use_cache(rank: int, world_size: int, cache_root: str) -> None:
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+    dataset = _make_dataset(6)
+    ref = _CountingRef()
+    result = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,
+        _collate,
+        _COLUMNS,
+        cache_identity={"kind": "divergent-use-cache"},
+        batch_size=2,
+        cache_dir=str(Path(cache_root) / "use-cache"),
+        use_cache=(rank == 0),
+    )
+    _assert_columns(result, 6)
+    _assert_no_desync(world_size)
+
+
+def _assert_dataset_size_mismatch(rank: int, world_size: int) -> None:
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+    with pytest.raises(RuntimeError, match="dataset size mismatch across ranks"):
         compute_ref_logprobs_for_dataset(
-            dataset, CountingRef(), collate, _COLUMNS, **call
-        )
-        archive_exists = any(Path(cache_dir).glob("*.safetensors"))
-        assert archive_exists == (rank == 0), (
-            f"rank {rank} unexpectedly {'has' if archive_exists else 'lacks'} an archive"
-        )
-
-        ref = CountingRef()
-        result = compute_ref_logprobs_for_dataset(
-            dataset, ref, collate, _COLUMNS, **call
-        )
-
-        # The group agreed to recompute, so no rank took the cache path alone.
-        expected_seen = (
-            list(range(n_rows))
-            if shard is False
-            else list(local_shard(range(n_rows), rank=rank, world_size=world_size))
-        )
-        assert ref.examples_seen == expected_seen, (
-            f"rank {rank} scored {ref.examples_seen}, expected {expected_seen}"
-        )
-        expected = expected_columns(n_rows)
-        for name, values in expected.items():
-            assert result[name] == values
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
-
-
-def _worker_divergent_use_cache(
-    rank: int, world_size: int, port: int, n_rows: int, cache_dir: str
-) -> None:
-    """Ranks disagreeing on ``use_cache`` must not deadlock.
-
-    The cache decision is reduced whether or not the caller wants a cache, so
-    the collective sequence does not depend on the argument.
-    """
-    _setup_gloo(rank, world_size, port)
-    try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-        dataset = make_dataset(n_rows)
-        ref = CountingRef()
-        result = compute_ref_logprobs_for_dataset(
-            dataset,
-            ref,
-            collate,
+            _make_dataset(4 if rank == 0 else 3),
+            _CountingRef(),
+            _collate,
             _COLUMNS,
-            cache_identity={"kind": "divergent-use-cache"},
+            cache_identity={"kind": "size-mismatch"},
             batch_size=2,
-            cache_dir=cache_dir,
-            use_cache=(rank == 0),
+            use_cache=False,
         )
-
-        expected = expected_columns(n_rows)
-        for name, values in expected.items():
-            assert result[name] == values, f"rank {rank} column {name}: {result[name]}"
-
-        _assert_no_desync(world_size)
-    finally:
-        _cleanup_ddp()
+    _assert_no_desync(world_size)
 
 
-def _worker_shared_cache_hit(
-    rank: int, world_size: int, port: int, n_rows: int, cache_dir: str
+def _assert_dataset_fingerprint_mismatch(rank: int, world_size: int) -> None:
+    from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+    with pytest.raises(RuntimeError, match="dataset fingerprint mismatch across ranks"):
+        compute_ref_logprobs_for_dataset(
+            _make_dataset(4, start=rank * 10),
+            _CountingRef(),
+            _collate,
+            _COLUMNS,
+            cache_identity={"kind": "fingerprint-mismatch"},
+            batch_size=2,
+            use_cache=False,
+        )
+    _assert_no_desync(world_size)
+
+
+def _worker_precompute_contract(
+    rank: int, world_size: int, port: int, cache_root: str
 ) -> None:
-    """A cache every rank can see is reused without any rank calling ``ref``."""
+    """Run all cross-rank precompute scenarios within one process group."""
     _setup_gloo(rank, world_size, port)
     try:
-        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-        dataset = make_dataset(n_rows)
-        call = {
-            "cache_identity": {"kind": "shared-cache"},
-            "batch_size": 2,
-            "cache_dir": cache_dir,
-            "use_cache": True,
-        }
-
-        compute_ref_logprobs_for_dataset(
-            dataset, CountingRef(), collate, _COLUMNS, **call
+        _assert_sharded_output(
+            rank,
+            world_size,
+            cache_root,
+            n_rows=7,
+            start=0,
+            dtype=torch.float32,
+            identity="sharded-remainder",
         )
-
-        ref = CountingRef()
-        result = compute_ref_logprobs_for_dataset(
-            dataset, ref, collate, _COLUMNS, **call
+        _assert_sharded_output(
+            rank,
+            world_size,
+            cache_root,
+            n_rows=2,
+            start=7,
+            dtype=torch.bfloat16,
+            identity="empty-shard-bf16",
         )
-
-        assert ref.examples_seen == [], f"rank {rank} recomputed on a cache hit"
-        expected = expected_columns(n_rows)
-        for name, values in expected.items():
-            assert result[name] == values
-
-        _assert_no_desync(world_size)
+        _assert_shared_cache_hit(rank, world_size, cache_root)
+        _assert_divergent_cache_recomputes(rank, world_size, cache_root, shard=None)
+        _assert_divergent_cache_recomputes(rank, world_size, cache_root, shard=False)
+        _assert_divergent_use_cache(rank, world_size, cache_root)
+        _assert_dataset_size_mismatch(rank, world_size)
+        _assert_dataset_fingerprint_mismatch(rank, world_size)
     finally:
         _cleanup_ddp()

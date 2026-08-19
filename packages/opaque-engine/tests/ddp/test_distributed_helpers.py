@@ -62,6 +62,7 @@ def test_gather_for_metrics_scalar_non_distributed() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_gather_optional_and_ragged_payloads() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
@@ -69,6 +70,7 @@ def test_gather_optional_and_ragged_payloads() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_scalar_reductions_preserve_integer_and_float64_exactness() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")

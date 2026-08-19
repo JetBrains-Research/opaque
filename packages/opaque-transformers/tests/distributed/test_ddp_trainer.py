@@ -137,6 +137,7 @@ def test_eval_gather_returns_cluster_wide_predictions(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_gloo_eval_gather_matches_reference_for_uneven_shards(tmp_path) -> None:
     _run_ddp(
         "eval_gather",
@@ -147,6 +148,7 @@ def test_gloo_eval_gather_matches_reference_for_uneven_shards(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_gloo_eval_gather_supports_empty_rank_shard(tmp_path) -> None:
     _run_ddp(
         "eval_gather_empty_rank",
@@ -164,6 +166,7 @@ def test_batch_eval_metrics_runs_cluster_wide(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_gloo_rank_gating_and_worker_seed(tmp_path) -> None:
     _run_ddp(
         "rank_gating_and_worker_seed",
@@ -174,11 +177,13 @@ def test_gloo_rank_gating_and_worker_seed(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_gloo_gather_fastpath_and_fallback() -> None:
     _run_ddp("gather_paths", world_size=2, backend="gloo")
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_vendor_backend_fails_fast_without_runtime(tmp_path) -> None:
     _run_ddp(
         "env_backend_diagnostic",
