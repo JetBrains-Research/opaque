@@ -97,9 +97,10 @@ class TestKOutOfTRegressionVectors:
         factory: Callable[[], DpHorizonProcess],
         expected: float,
     ):
-        actual = factory().epsilon_at(1e-8)
+        delta = 1e-8
+        actual = factory().epsilon_at(delta)
 
-        assert actual == pytest.approx(expected, rel=1e-6), (
-            f"{name}, delta=1e-08: epsilon drifted; "
+        assert actual == pytest.approx(expected, rel=1e-9), (
+            f"{name}, delta={delta}: epsilon drifted; "
             f"committed={expected:.17g}, observed={actual:.17g}"
         )
