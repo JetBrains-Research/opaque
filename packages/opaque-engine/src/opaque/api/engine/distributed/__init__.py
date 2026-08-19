@@ -17,7 +17,14 @@ The two documented power-user submodules collect lower-level primitives:
 """
 
 from opaque.api.engine.distributed._shard import local_shard
-from opaque.api.engine.distributed._state import register_sync_type, sync
+from opaque.api.engine.distributed._state import (
+    assert_scalar_equal,
+    assert_string_equal,
+    gather_pytree,
+    reduce_scalar,
+    register_sync_type,
+    sync,
+)
 from opaque.api.engine.distributed.collectives import (
     all_reduce,
     barrier,
@@ -34,8 +41,11 @@ from opaque.api.engine.distributed.gradients import sum_gradients
 
 __all__ = [
     "all_reduce",
+    "assert_scalar_equal",
+    "assert_string_equal",
     "barrier",
     "gather_for_metrics",
+    "gather_pytree",
     "get_rank",
     "get_world_size",
     "is_distributed",
@@ -43,6 +53,7 @@ __all__ = [
     "local_shard",
     "num_processes",
     "process_index",
+    "reduce_scalar",
     "register_sync_type",
     "sum_gradients",
     "sync",

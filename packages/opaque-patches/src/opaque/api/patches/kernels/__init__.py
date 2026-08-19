@@ -115,7 +115,7 @@ except ModuleNotFoundError as import_error:
     # Chunked custom-autograd CE streams the log-sum-exp over vocab chunks
     # instead of materializing the full ``(tokens, vocab)`` logits, so
     # large-vocab CE fits in memory on MPS/CPU and stays ``vmap(grad)``-safe.
-    from ._linear_ce_chunked import linear_cross_entropy_chunked
+    from .linear_ce_chunked import linear_cross_entropy_chunked
 
     def opaque_linear_cross_entropy_loss(
         hidden_states,

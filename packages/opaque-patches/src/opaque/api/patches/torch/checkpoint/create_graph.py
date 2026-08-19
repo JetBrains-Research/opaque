@@ -4,6 +4,6 @@
 
 from __future__ import annotations
 
-from opaque.api.torch.backend._checkpoint_compat import apply_create_graph as apply
+from opaque.torch.checkpoint import apply_create_graph as apply
 
 __all__ = ["apply"]

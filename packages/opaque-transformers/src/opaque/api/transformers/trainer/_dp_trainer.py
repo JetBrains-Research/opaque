@@ -45,9 +45,8 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
-from opaque.api.engine.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad, clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import apply_updates
 from opaque.profiling import PerfTracker, perf_tracker
@@ -1417,7 +1416,7 @@ class DPTrainer:
         # --- Clipping norm (scalar ``clipping_norm`` or per-group dict) ---
         mgn = a.clipping_norm
         if isinstance(mgn, dict):
-            from opaque.api.engine.clipping import per_group as per_group_clipper
+            from opaque.dpsgd.clipping import per_group as per_group_clipper
 
             fb = float(mgn["fallback"])
             patterns = {k: float(v) for k, v in mgn.items() if k != "fallback"}
@@ -1849,9 +1848,7 @@ class DPTrainer:
                         if self._ddp.is_distributed and getattr(
                             a, "average_tokens_across_devices", True
                         ):
-                            from opaque.api.engine.distributed._state import (
-                                reduce_scalar,
-                            )
+                            from opaque.distributed import reduce_scalar
 
                             n_tokens = int(reduce_scalar(n_tokens, op="sum"))
                         self.state.num_input_tokens_seen += n_tokens
@@ -2826,7 +2823,7 @@ class DPTrainer:
         # mean before reporting; the prediction accumulator's tensors are
         # gathered inside ``finalize()`` below.
         if self._ddp.is_distributed:
-            from opaque.api.engine.distributed._state import reduce_scalar
+            from opaque.distributed import reduce_scalar
 
             total_loss = reduce_scalar(float(total_loss), op="sum")
             loss_samples = int(reduce_scalar(loss_samples, op="sum"))
@@ -2840,7 +2837,7 @@ class DPTrainer:
         # Bare keys here; ``with_metric_prefix`` below namespaces them as
         # ``{prefix}_<key>``.
         if self._ddp.is_distributed:
-            from opaque.api.engine.distributed._state import gather_pytree
+            from opaque.distributed import gather_pytree
 
             local_eval_aux = (
                 {name: torch.cat(chunks) for name, chunks in eval_aux_chunks.items()}

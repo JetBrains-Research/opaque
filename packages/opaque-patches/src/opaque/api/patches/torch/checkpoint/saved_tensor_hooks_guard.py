@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from opaque.api.torch.backend._checkpoint_compat import (
+from opaque.torch.checkpoint import (
     apply_saved_tensor_hooks_guard as apply,
 )
 

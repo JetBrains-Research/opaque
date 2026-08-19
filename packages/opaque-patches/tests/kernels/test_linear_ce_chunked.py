@@ -19,8 +19,8 @@ import pytest
 import torch
 from torch.func import grad, vmap
 
-import opaque.api.patches.kernels._linear_ce_chunked as mod
-from opaque.api.patches.kernels._linear_ce_chunked import (
+import opaque.api.patches.kernels.linear_ce_chunked as mod
+from opaque.api.patches.kernels.linear_ce_chunked import (
     linear_cross_entropy_chunked,
 )
 

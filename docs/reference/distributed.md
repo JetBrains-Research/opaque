@@ -60,6 +60,29 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         heading_level: 3
 
 
+## Scalar and Pytree Gathers
+
+::: opaque.distributed.reduce_scalar
+    options:
+        show_source: true
+        heading_level: 3
+
+::: opaque.distributed.gather_pytree
+    options:
+        show_source: true
+        heading_level: 3
+
+::: opaque.distributed.assert_scalar_equal
+    options:
+        show_source: true
+        heading_level: 3
+
+::: opaque.distributed.assert_string_equal
+    options:
+        show_source: true
+        heading_level: 3
+
+
 ## State Synchronization
 
 ::: opaque.distributed.sync
