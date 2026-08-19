@@ -31,7 +31,7 @@ import torchopt
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 from opaque.random import key
 
 
@@ -68,10 +68,9 @@ def _full_step(
     noise_fn, ns = gaussian_noise(noise_multiplier=noise_stddev, key=key(42))
     noised, _ = noise_fn(grads, ns)
 
-    optimizer = adamw(lr=1e-2)
-    opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noised, opt_state, params=params)
-    new_params = torchopt.apply_updates(params, updates, inplace=False)
+    optimizer_step, opt_state = adamw(params, lr=1e-2)
+    updates, _ = optimizer_step(noised, opt_state, params=params)
+    new_params = apply_updates(params, updates)
     return grads.pytree, noised.pytree, new_params
 
 

@@ -220,6 +220,16 @@ def accumulator_dtype(value: Any, *, kind: str = "sum") -> torch.dtype:
     return torch.float64
 
 
+@_TORCH.implements(ops.amin)
+def amin(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.amin(value) if axis is None else torch.amin(value, dim=axis)
+
+
+@_TORCH.implements(ops.amax)
+def amax(value: Any, axis: Any = None) -> torch.Tensor:
+    return torch.amax(value) if axis is None else torch.amax(value, dim=axis)
+
+
 @_TORCH.implements(ops.greater)
 def greater(left: Any, right: Any) -> torch.Tensor:
     return torch.gt(left, right)

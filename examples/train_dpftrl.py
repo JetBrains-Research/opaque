@@ -119,12 +119,11 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.device import sdpa_autocast_under_vmap_broken
+from opaque.torch.device import sdpa_autocast_under_vmap_broken
 from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
 
-import torchopt
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
@@ -132,7 +131,7 @@ import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.distributed import local_shard, sync
-from opaque.distributed.gradients import sum_gradients_
+from opaque.torch.distributed import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -149,7 +148,9 @@ from opaque.dpftrl.sampling import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
-from opaque.functional import empty_collate, make_functional
+from opaque.functional import empty_collate
+from opaque.optimizers import apply_updates
+from opaque.torch.functional import make_functional
 from opaque.profiling import (
     perf_tracker,
     print_memory,
@@ -321,7 +322,7 @@ def make_lr_schedule(
 ) -> Schedule:
     """Build an :data:`opaque.scheduling.types.Schedule` callable.
 
-    The same callable is handed both to the torchopt optimizer (via
+    The same callable is handed both to the optimizer factory (via
     ``scale_by_schedule`` machinery) and to the MF noise strategy's
     ``lr_schedule`` argument (for BandMF / BLT — see
     :func:`opaque.dpftrl.noise._band_mf._momentum_workload_coef`).  Both
@@ -1346,6 +1347,7 @@ def main():
         model,
         disable_autograd_tracking=True,
         partition_trainable=True,
+        hf_batch_adaptation=True,
     )
     param_names = list(trainable_params.keys())
     print(f"Trainable parameters: {len(param_names)} (took {time.time() - t0:.1f}s)")
@@ -1762,7 +1764,8 @@ def main():
     if args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        optimizer = sgd(
+        optimizer_step, opt_state = sgd(
+            trainable_params,
             lr=lr_callable,
             momentum=args.momentum,
             weight_decay=args.weight_decay,
@@ -1770,7 +1773,8 @@ def main():
     elif args.optimizer == "adam":
         from opaque.optimizers import adam
 
-        optimizer = adam(
+        optimizer_step, opt_state = adam(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
@@ -1782,7 +1786,8 @@ def main():
 
         # ``--second-moment`` drives the noise side; the same optimizer
         # consumes ``SecondMomentNoiseOutput`` when the noise output carries it.
-        optimizer = adamw(
+        optimizer_step, opt_state = adamw(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
@@ -1794,7 +1799,8 @@ def main():
 
         # β₃ and α default to the paper values (0.9999, 5.0).  Expose
         # CLI knobs for them once a real user case appears.
-        optimizer = ademamix(
+        optimizer_step, opt_state = ademamix(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2, 0.9999),
             alpha=5.0,
@@ -1805,7 +1811,8 @@ def main():
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
 
-        optimizer = lion(
+        optimizer_step, opt_state = lion(
+            trainable_params,
             lr=lr_callable,
             betas=(args.beta1, args.beta2),
             weight_decay=args.weight_decay,
@@ -1813,7 +1820,8 @@ def main():
     elif args.optimizer == "adafactor":
         from opaque.optimizers import adafactor
 
-        optimizer = adafactor(
+        optimizer_step, opt_state = adafactor(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1821,7 +1829,8 @@ def main():
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop
 
-        optimizer = rmsprop(
+        optimizer_step, opt_state = rmsprop(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1829,14 +1838,14 @@ def main():
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
 
-        optimizer = adagrad(
+        optimizer_step, opt_state = adagrad(
+            trainable_params,
             lr=lr_callable,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
-    opt_state = optimizer.init(trainable_params)
 
     # --- Diagnostic: compute what identity baseline σ would be ---
     identity_sigma = None
@@ -2071,12 +2080,12 @@ def main():
                 step_noise_stddev = noisy_grads.noise_stddev
             sp.mark("noise")
 
-            updates, opt_state = optimizer.update(
+            updates, opt_state = optimizer_step(
                 noisy_grads,
                 opt_state,
                 params=trainable_params,
             )
-            trainable_params = torchopt.apply_updates(trainable_params, updates)
+            trainable_params = apply_updates(trainable_params, updates)
             sp.mark("optimizer")
 
         if batch_size == 0:
@@ -2125,9 +2134,7 @@ def main():
                         gn_bound = clip_norm.values[gname]
                         wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                         gnorms = aux.group_norms[gname]
-                        wb_metrics[f"group/grad_norm/{gname}"] = (
-                            gnorms.mean().item()
-                        )
+                        wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
                         gn_clipped = float((gnorms > gn_bound).sum().item())
                         wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                             1.0, float(batch_size)
@@ -2174,7 +2181,6 @@ def main():
             if use_wandb:
                 wandb.log(metrics, step=global_step)
             print(eval_msg)
-
 
     # ===================================================================
     # Final summary

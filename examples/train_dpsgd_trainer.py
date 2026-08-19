@@ -55,7 +55,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
-from opaque.device import device_capabilities
+from opaque.torch.device import device_capabilities
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 log = logging.getLogger(__name__)
@@ -305,7 +305,7 @@ def parse_args() -> argparse.Namespace:
             "adadelta",
             "schedule_free",
         ],
-        help="Torchopt-backed optimizer name passed to TrainingArguments.optim.",
+        help="Backend-neutral optimizer name passed to TrainingArguments.optim.",
     )
     train_group.add_argument("--weight-decay", type=float, default=0.01)
     train_group.add_argument(
@@ -820,15 +820,16 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _validate_sampler_cli(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+def _validate_sampler_cli(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
     sampler = args.sampler
     if sampler == "k_out_of_t" and args.total_participations is None:
         parser.error("--sampler k_out_of_t requires --total-participations K")
     if sampler in ("random_allocation", "k_out_of_t"):
         if args.noise_mechanism != "gaussian":
             parser.error(
-                f"--sampler {sampler} is only supported with "
-                "--noise-mechanism gaussian"
+                f"--sampler {sampler} is only supported with --noise-mechanism gaussian"
             )
         if args.max_batch_size is not None:
             parser.error(
@@ -836,9 +837,7 @@ def _validate_sampler_cli(parser: argparse.ArgumentParser, args: argparse.Namesp
                 f"--sampler {sampler}"
             )
     if args.total_participations is not None and sampler != "k_out_of_t":
-        parser.error(
-            "--total-participations is only used with --sampler k_out_of_t"
-        )
+        parser.error("--total-participations is only used with --sampler k_out_of_t")
 
 
 def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:

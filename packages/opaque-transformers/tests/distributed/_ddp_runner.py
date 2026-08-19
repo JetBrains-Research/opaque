@@ -96,8 +96,8 @@ def _collate(batch: list[dict]) -> dict[str, torch.Tensor]:
     # Poisson rounds occasionally produce empty batches at low sample
     # rates / per-rank shards.  Return zero-row tensors so downstream
     # code (clipped_grad, DDP collectives) takes its empty-batch path:
-    # ``clipped_grad`` short-circuits internally, ``sum_gradients_``
-    # all-reduces zero gradients, and ``training_step`` reports
+    # ``clipped_grad`` short-circuits internally, ``sum_gradients``
+    # returns all-reduced zero gradients, and ``training_step`` reports
     # ``batch_size=0`` based on the synced ``aux.batch_size``.
     if len(batch) == 0:
         return {
@@ -186,7 +186,7 @@ def scenario_runtime_foundation(
 
     # Checkpoint gating: after training, output_dir should contain
     # exactly one checkpoint-{step} dir written by rank 0, and per-rank
-    # rng_state_{rank}.pth files written by every rank.
+    # rank-local sampler and RNG snapshots written by every rank.
     dist.barrier()
     if rank == 0:
         children = sorted(p.name for p in Path(output_dir).iterdir())
@@ -201,6 +201,67 @@ def scenario_runtime_foundation(
             assert f"rng_state_{r}.pth" in files, (
                 f"missing rank {r} rng snapshot in {files}"
             )
+            sampler_state = torch.load(
+                ckpt_dir / f"dp_sampler_state_{r}.pt",
+                map_location="cpu",
+                weights_only=False,
+            )
+            from opaque.random import fold_in, key
+
+            assert sampler_state["key_seed"] == fold_in(key(7), r).seed
+
+
+def scenario_rank_local_sampler_resume(
+    rank: int, world_size: int, output_dir: str, backend: str | None = None, **_
+) -> None:
+    """Resume each rank from its own sampler state rather than rank 0's."""
+    cfg = TinyConfig()
+    dataset = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
+    base_kwargs = {
+        "output_dir": output_dir,
+        "per_device_train_batch_size": 2,
+        "logging_steps": 1,
+        "save_steps": 1,
+        "save_strategy": "steps",
+        "save_total_limit": 2,
+        "seed": 7,
+        "privacy_target_epsilon": 8.0,
+        "privacy_target_delta": 1e-5,
+        "report_to": [],
+        "use_cpu": backend == "gloo",
+    }
+    initial = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=TrainingArguments(max_steps=1, **base_kwargs),
+        train_dataset=dataset,
+        data_collator=_collate,
+    )
+    initial.train()
+
+    checkpoint = Path(output_dir) / "checkpoint-1"
+    dist.barrier()
+    assert checkpoint.is_dir()
+
+    resumed = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=TrainingArguments(max_steps=2, **base_kwargs),
+        train_dataset=dataset,
+        data_collator=_collate,
+    )
+    resumed.train(resume_from_checkpoint=str(checkpoint))
+
+    dist.barrier()
+    if rank == 0:
+        from opaque.random import fold_in, key
+
+        resumed_checkpoint = Path(output_dir) / "checkpoint-2"
+        for r in range(world_size):
+            sampler_state = torch.load(
+                resumed_checkpoint / f"dp_sampler_state_{r}.pt",
+                map_location="cpu",
+                weights_only=False,
+            )
+            assert sampler_state["key_seed"] == fold_in(key(7), r).seed
 
 
 def scenario_per_rank_partition(rank: int, world_size: int, **_) -> None:
@@ -477,6 +538,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
 
 SCENARIOS = {
     "runtime_foundation": scenario_runtime_foundation,
+    "rank_local_sampler_resume": scenario_rank_local_sampler_resume,
     "per_rank_partition": scenario_per_rank_partition,
     "eval_gather": scenario_eval_gather,
     "eval_gather_empty_rank": scenario_eval_gather_empty_rank,

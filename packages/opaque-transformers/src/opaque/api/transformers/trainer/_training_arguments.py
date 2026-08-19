@@ -51,7 +51,7 @@ DP-correct invariants worth flagging:
   ``per_device_train_batch_size * world_size`` (the ``train_batch_size``
   HF property). Internal microbatch chunking under OOM retry never
   changes the logical batch — privacy accounting is unaffected.
-- ``optim`` accepts the torchopt-backed names DPTrainer wires
+- ``optim`` accepts the backend-neutral optimizer names DPTrainer wires
   (``adam``, ``adamw``, ``adamw-bc`` = DP bias-corrected AdamW, ``sgd``,
   ``lion``, ``ademamix``, ``adafactor``, ``rmsprop``, ``adagrad``,
   ``radam``, ``adadelta``, ``schedule_free``) plus HF aliases that map
@@ -83,7 +83,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from opaque.api.engine.device import device_capabilities
+from opaque.torch.device import device_capabilities
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode

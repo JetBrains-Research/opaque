@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-import torchopt
 from datasets import Dataset
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -47,14 +46,10 @@ import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
 from opaque.api.engine.clipping import clipped_grad
-from opaque.api.engine.device import (
-    device_capabilities,
-    sdpa_autocast_under_vmap_broken,
-)
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
+from opaque.optimizers import apply_updates
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
@@ -63,6 +58,11 @@ from opaque.serialization import (
 from opaque.serialization import (
     state_dict as opaque_state_dict,
 )
+from opaque.torch.device import (
+    device_capabilities,
+    sdpa_autocast_under_vmap_broken,
+)
+from opaque.torch.functional import make_functional
 from transformers import (
     DataCollatorWithPadding,
     PreTrainedModel,
@@ -360,7 +360,7 @@ class DPTrainer:
       shared pipeline via ``_run_evaluation_loop``
     - ``compute_per_example_loss()`` — DP-correct override hook; the
       single extension point for SFT / DPO / KTO subclasses
-    - ``create_optimizer()`` — functional optimizer (torchopt)
+    - ``create_optimizer()`` — explicit-state functional optimizer
     - ``get_train_dataloader()`` — PoissonSampler
     - ``get_eval_dataloader()`` — standard DataLoader
     - ``log()`` — append to state + fire callbacks
@@ -416,7 +416,7 @@ class DPTrainer:
         if any(item is not None for item in optimizers):
             raise RuntimeError(
                 "Passing `optimizers` is not supported by DPTrainer: the DP path "
-                "uses a functional torchopt optimizer built after per-example "
+                "uses an explicit-state optimizer built after per-example "
                 "gradient clipping/noising is configured."
             )
         if optimizer_cls_and_kwargs is not None:
@@ -836,7 +836,7 @@ class DPTrainer:
         under functorch ``vmap(grad)`` (it does on CPU/CUDA), so the bf16 DP step
         crashes in attention.  Eager attention sidesteps it **losslessly** —
         under ``vmap`` SDPA already decomposes to the same matmuls.  Probe-gated
-        (:func:`opaque.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
+        (:func:`opaque.torch.device.sdpa_autocast_under_vmap_broken`) so this auto-drops
         on a torch that fixes the upstream bug.  See the minimal repro in that probe.
         """
         if (
@@ -994,7 +994,7 @@ class DPTrainer:
         # non-deterministic physical step, so if ranks halved the microbatch
         # independently they would fall out of step-lockstep: one rank restarts
         # at microbatch=4 step 0 while a sibling is still on microbatch=8 step 3.
-        # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
+        # DP-SGD's per-step collectives (``sum_gradients`` AllReduce + the
         # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
         # mismatched logical steps and raise ``max_norm mismatch across ranks``.
         # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
@@ -1181,14 +1181,18 @@ class DPTrainer:
                 )
 
         try:
+            saved_sampler_state = (
+                self._read_sampler_state_for_resume(
+                    resume_path,
+                    runtime_payload.sampler_state,
+                )
+                if resume_path is not None and runtime_payload is not None
+                else None
+            )
             return self._inner_training_loop(
                 ctx,
                 resume_path=resume_path,
-                saved_sampler_state=(
-                    runtime_payload.sampler_state
-                    if runtime_payload is not None
-                    else None
-                ),
+                saved_sampler_state=saved_sampler_state,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
         finally:
@@ -1300,6 +1304,7 @@ class DPTrainer:
             self._model,
             disable_autograd_tracking=True,
             partition_trainable=True,
+            hf_batch_adaptation=True,
         )
         log.info("Trainable parameters: %d tensors", len(trainable_params))
 
@@ -2020,7 +2025,7 @@ class DPTrainer:
             # Clipped gradients (with optional CPU offload).  Under DDP an OOM
             # here must become a *collective* event: if it propagated as a
             # plain per-rank exception, the OOM'ing rank would skip the
-            # ``sum_gradients_`` AllReduce below while its siblings issued it,
+            # ``sum_gradients`` AllReduce below while its siblings issued it,
             # deadlocking the process group (or, worse, meeting a later
             # mismatched collective). So we catch a retryable OOM, all-reduce a
             # MAX flag across ranks, and if ANY rank OOM'd raise a uniform
@@ -2064,8 +2069,8 @@ class DPTrainer:
                     )
 
             # DDP collectives between clipping and noise.
-            # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
-            #    after this every rank holds the cluster-wide gradient sum.
+            # 1. ``sum_gradients`` — return the AllReduce SUM of the clipped
+            #    per-example sum on every rank.
             # 2. ``sync(clip_state, aux)`` — under fixed clipping ``clip_state``
             #    sync asserts ``clipping_norm`` matches across ranks; under
             #    adaptive clipping it aggregates the clipped-count and
@@ -2077,10 +2082,10 @@ class DPTrainer:
             # ⇒ identical noise) and the optimizer update is a pure function of
             # an identical input on every rank, so parameters stay in lockstep.
             if self._ddp.is_distributed:
-                from opaque.distributed import sum_gradients_
+                from opaque.distributed import sum_gradients
                 from opaque.distributed import sync as _opaque_sync
 
-                sum_gradients_(grads)
+                grads = sum_gradients(grads)
                 ctx.clip_state, aux = _opaque_sync(ctx.clip_state, aux)
             sp.mark("clip")
 
@@ -2117,12 +2122,12 @@ class DPTrainer:
             # Optimizer step — DP-aware optimizers read σ directly off the
             # ``NoisedPytree`` when ``noise_bias_correction=True`` was set at
             # construction (via ``optim_args``); no per-step kwargs are accepted.
-            updates, ctx.opt_state = ctx.opt.update(
+            updates, ctx.opt_state = ctx.opt(
                 noisy_grads,
                 ctx.opt_state,
                 params=ctx.trainable_params,
             )
-            ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
+            ctx.trainable_params = apply_updates(ctx.trainable_params, updates)
             sp.mark("optimizer")
 
             # Post-optimizer hook: surface the post-update parameters so
@@ -2260,7 +2265,7 @@ class DPTrainer:
 
         Args:
             fmodel: Functional model from
-                :func:`opaque.functional.make_functional` (called as
+                :func:`opaque.torch.functional.make_functional` (called as
                 ``fmodel(params, **inputs)``).
             params: All model parameters merged
                 (``frozen | trainable``).  Under vmap, ``trainable`` is
@@ -3433,7 +3438,7 @@ class DPTrainer:
 
         Args:
             fmodel: Functional model from
-                :func:`opaque.functional.make_functional`.
+                :func:`opaque.torch.functional.make_functional`.
             frozen_params: Non-trainable parameters merged with
                 ``trainable_params`` at every forward.
             batch_keys: Ordered tuple of tensor keys the collator emits
@@ -3514,7 +3519,7 @@ class DPTrainer:
             frozen_params = ctx.frozen_params
             batch_keys = ctx.batch_keys
         else:
-            from opaque.functional import make_functional
+            from opaque.torch.functional import make_functional
 
             fmodel, _trainable, frozen_params = make_functional(
                 self._model, partition_trainable=True
@@ -3623,12 +3628,6 @@ class DPTrainer:
         # sampler is configured with matches the rate the accountant
         # calibrated against — both bind to the post-trim ``q``.
         #
-        # Resume caveat (multi-GPU only): the sampler snapshot is
-        # self-contained (carries its own key) and is written once on rank
-        # 0, so resuming a DDP run currently restores rank 0's per-rank key
-        # on every rank, re-introducing the cross-rank correlation after the
-        # resume point.  Fully fixing that needs per-rank sampler snapshots;
-        # tracked for the multi-GPU work and validated there.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -3856,10 +3855,8 @@ class DPTrainer:
             factory, init_kw = fac
             merged = {**dict(init_kw), **extra}
             merged.pop("lr", None)
-            opt = factory(lr=lr_schedule, **merged)
-            return opt, opt.init(trainable_params)
-        opt = build_optimizer(a, lr_schedule, extra_kwargs=extra)
-        return opt, opt.init(trainable_params)
+            return factory(trainable_params, lr=lr_schedule, **merged)
+        return build_optimizer(trainable_params, a, lr_schedule, extra_kwargs=extra)
 
     def create_scheduler(self, num_training_steps: int) -> Callable[[int], float]:
         """Build the LR schedule for the run.
@@ -3960,8 +3957,8 @@ class DPTrainer:
             self._tr_loss = torch.zeros_like(self._tr_loss)
             self._globalstep_last_logged = global_step
             # HF parity: log the LR that was just applied to the optimizer
-            # update we performed for ``global_step``.  Inside torchopt the
-            # schedule's step counter is incremented on every ``update`` so
+            # update we performed for ``global_step``. Inside the optimizer
+            # the schedule's step counter is incremented on every step so
             # the LR consumed by the update at iteration N was
             # ``schedule(N - 1)``; ``global_step`` has already been bumped
             # to N by the time we log here.
@@ -4814,6 +4811,7 @@ class DPTrainer:
         # ranks try to write into it.
         _distributed.barrier(self._ddp)
         if not a.save_only_model:
+            self._save_sampler_state(staging_dir, ctx)
             self._save_rng_state(staging_dir)
         # All ranks have finished writing into the staging dir; publish it.
         _distributed.barrier(self._ddp)
@@ -4920,6 +4918,20 @@ class DPTrainer:
             ),
         )
 
+    def _save_sampler_state(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
+        """Write this rank's sampler snapshot for exact distributed resume."""
+        if ctx.current_sampler is None:
+            return
+
+        from opaque.serialization import state_dict as opaque_state_dict
+
+        path = ckpt.sampler_state_path(
+            ckpt_dir,
+            rank=self._ddp.rank,
+            world_size=self._ddp.world_size,
+        )
+        torch.save(opaque_state_dict(ctx.current_sampler), path)
+
     def _save_accountant(self, ckpt_dir: str, accountant: Accountant) -> None:
         path = Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME
         # Compact JSON (no indent): pretty-printing writes O(n^2)
@@ -4994,6 +5006,14 @@ class DPTrainer:
     def _refresh_final_checkpoint_state(self, global_step: int) -> None:
         """Refresh final checkpoint metadata after final logs update callbacks."""
         if self.args.save_strategy == "no":
+            return
+        # Only the checkpoint-writing rank may touch ``trainer_state.json``.
+        # Every rank reaches this refresh, and each carries a different
+        # ``log_history`` (logging is rank-gated), so an unguarded write has
+        # the ranks truncating and extending one file concurrently — the
+        # published checkpoint then holds one rank's complete JSON followed
+        # by the tail of another's, and resume fails to parse it.
+        if not _distributed.should_save(self.args, self._ddp):
             return
         output_dir = self._effective_output_dir()
         if output_dir is None:
@@ -5118,6 +5138,32 @@ class DPTrainer:
         ):
             accountant = opaque_from_state_dict(Accountant(), json.load(f))
         return runtime_payload, accountant
+
+    def _read_sampler_state_for_resume(
+        self,
+        ckpt_dir: str,
+        fallback: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Load this rank's sampler snapshot, preserving legacy local resumes."""
+        path = ckpt.sampler_state_path(
+            ckpt_dir,
+            rank=self._ddp.rank,
+            world_size=self._ddp.world_size,
+        )
+        if Path(path).exists():
+            sampler_state = torch.load(path, map_location="cpu", weights_only=False)
+            if not isinstance(sampler_state, dict):
+                raise TypeError(
+                    f"Sampler state at {path} must deserialize to a dict, got "
+                    f"{type(sampler_state).__name__}"
+                )
+            return sampler_state
+        if self._ddp.world_size > 1:
+            raise RuntimeError(
+                f"Cannot resume distributed training from {ckpt_dir}: missing "
+                f"rank-local sampler state for rank {self._ddp.rank} at {path}."
+            )
+        return fallback
 
     def _read_trainer_state(self, ckpt_dir: str) -> dict[str, Any] | None:
         """Read ``trainer_state.json`` from a checkpoint directory."""

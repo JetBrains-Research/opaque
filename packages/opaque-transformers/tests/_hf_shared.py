@@ -355,8 +355,8 @@ def run_dp_training_step(
         the final clipping state.
     """
     from opaque.api.engine.clipping import clipped_grad
-    from opaque.functional import make_functional
     from opaque.pytree import tree_map
+    from opaque.torch.functional import make_functional
     from opaque.types import clipped
 
     device = next(model.parameters()).device

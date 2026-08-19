@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-optimizers"
 dynamic = ["version"]
-description = "Opaque functional optimizers (torchopt-based, DP-aware update surface)"
+description = "Opaque backend-neutral functional optimizers"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "pytorch", "optimizers", "torchopt"]
+keywords = ["differential-privacy", "optimizers"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -28,8 +28,6 @@ classifiers = [
 # opaque.api.engine.types.
 dependencies = [
     "opaque-engine>=0.0.0.dev0",
-    "torch>=2.9.0",
-    "torchopt>=0.7.3",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,3 +45,6 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-engine = { workspace = true }
