@@ -6,8 +6,8 @@ common wrapper-aware update surface (`sgd`, `adam`, `adamw`, `radam`, `lion`,
 `ademamix`, `adafactor`, `rmsprop`, `adagrad`, `adadelta`, `schedule_free`).
 Every factory carries DP-aware behaviour selectable at construction time and
 activated by the metadata wrappers (`NoisedPytree`, `SecondMomentNoiseOutput`)
-landing in `optimizer_step()`. Factories run with the active engine provider (Torch,
-MLX, or JAX) and return an explicit `optimizer_step` callable and state. DP-aware paths
+landing in `optimizer_step()`. Factories run with the active engine provider
+(Torch) and return an explicit `optimizer_step` callable and state. DP-aware paths
 (DP-AdamW-BC, private second moments, Adagrad's mandatory variance subtraction) are selected by
 passing `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 

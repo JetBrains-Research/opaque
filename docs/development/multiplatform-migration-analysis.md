@@ -142,6 +142,8 @@ Same user seed no longer reproduces base noise. Three independent causes: (1) sa
 
 ## 6. Rebase reality vs origin/main (33 commits ahead)
 
+*Historical planning record — the extraction series executed this playbook; every "must be re-migrated" item below landed in the stack.*
+
 Full per-commit classification (second-round agent, verified against both trees): **~20 of 33 main commits auto-merge** (CI/release/deps/rust/accounting; `uv.lock` regenerated, not merged), **9 need porting** into branch-rewritten or branch-moved files, **1 inverts onto the branch** (the contracts deletion).
 
 - 83 files overlap between main-side and branch-side changes; 23 of 33 main commits touch branch-touched files; 3 files main modified were rewritten-as-new on the branch (similarity 0.03–0.10 — modify/delete conflicts requiring manual porting: `_adadelta.py`, `_schedule_free.py`, dpftrl `test_dp_ftrl.py`).
@@ -154,6 +156,8 @@ Full per-commit classification (second-round agent, verified against both trees)
 - Opportunistic changes bundled into the branch that should be split into small PRs against main to shrink the diff: `attn_dropout` disabling (211f2f2, 1 functional line), auditing explicit-key requirement + global-RNG isolation tests, per-rank DDP sampler-state checkpointing (both in 5055aa6).
 
 ## 7. Recommended path to mergeable (torch-first extraction)
+
+*Historical planning record — steps 1–6 are complete in the extraction series (including the auditing neutralization and boundary gates); step 7 remains the future-provider roadmap.*
 
 The severability precondition holds: **no production import of jax/mlx exists outside their packages**; root-level conformance tests `importorskip`; removing them touches ~5 lines of root `pyproject.toml` + docs. Suggested series, each PR green on its own:
 

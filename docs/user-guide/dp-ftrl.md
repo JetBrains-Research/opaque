@@ -13,12 +13,11 @@ counterpart, see [DP-SGD end-to-end](dp-sgd.md).
 
 ## Providers and execution model
 
-The functional DP-FTRL path runs eagerly with Torch, JAX, and MLX. Install
-`opaque-dpftrl` with the provider wheel used by the application, or use the
-root extras `opaque[dpftrl]`, `opaque[dpftrl,jax]`, or
-`opaque[dpftrl,mlx]`. The first provider-native gradient template passed to
-`mf_gaussian_noise` activates its provider; explicit activation through
-`torch_backend()`, `jax_backend()`, or `mlx_backend()` is also available.
+The functional DP-FTRL path runs eagerly on the active provider (Torch).
+Install `opaque-dpftrl` together with the `opaque-torch` provider wheel, or
+use the root extra `opaque[dpftrl]`. The first provider-native gradient
+template passed to `mf_gaussian_noise` activates its provider; explicit
+selection through `opaque.backend.set_backend("torch")` is also available.
 
 Gradient pytrees, noised outputs, streaming correlation buffers, and paired
 private second-moment streams remain provider-native. Opaque preserves each
@@ -27,13 +26,9 @@ leaf's dtype and device at the public boundary. Unless overridden,
 normal sampling and linear-combination arithmetic.
 
 Opaque's immutable keys give deterministic replay for the same configuration,
-inputs, and state within one provider. Torch, JAX, and MLX use different native
-random implementations, so samples are not required to be bit-identical across
-providers. DP-FTRL is documented as an eager path; do not infer full-loop JIT
-safety from a provider's optional compilation capability.
-
-Hugging Face `DPTrainer`, model patches, and Triton kernels remain Torch-only.
-JAX and MLX users compose the provider-neutral functional primitives directly.
+inputs, and state within one provider. DP-FTRL is documented as an eager path;
+do not infer full-loop JIT safety from a provider's optional compilation
+capability.
 
 ## Why DP-FTRL
 
@@ -82,7 +77,7 @@ Strategies are provider-independent host recipes. Their
 `coefficients(n_steps=..., min_sep=..., max_participations=...)` queries return
 NumPy arrays for inspection and accounting, while `mf_gaussian_noise` projects
 the recipe into an immutable numeric execution plan and applies that plan to
-native Torch, JAX, or MLX arrays.
+provider-native arrays.
 
 See [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) for the
 choice criteria.
@@ -285,15 +280,12 @@ checkpoint = state_dict({
 })
 ```
 
-Torch users can obtain functional `params` with
-`opaque.torch.functional.make_functional`. JAX and MLX users pass their native
-functional parameter pytrees directly; the loop and Opaque state threading are
-otherwise the same.
+Obtain functional `params` with `opaque.torch.functional.make_functional`.
 
 To resume, reconstruct the clipping, optimizer, and MF noise mechanisms with
 the same configuration, assemble a matching state template, and call
-`from_state_dict(template, checkpoint)`. Native-array handlers preserve Torch,
-JAX, or MLX state leaves when restored against a matching provider template.
+`from_state_dict(template, checkpoint)`. Native-array handlers preserve
+provider-native state leaves when restored against a matching provider template.
 The restored `MFNoiseState` or `SecondMomentMFNoiseState` carries the saved key,
 step counter, and provider-native correlation buffers, so the next noise call
 matches uninterrupted execution within that provider.

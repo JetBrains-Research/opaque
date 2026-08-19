@@ -26,8 +26,8 @@ footing.
 
 ## Runtime providers
 
-All listed strategies execute eagerly over provider-native Torch, JAX, and MLX
-array pytrees through `mf_gaussian_noise`. The strategy recipe and its
+All listed strategies execute eagerly over provider-native array pytrees
+(Torch tensors) through `mf_gaussian_noise`. The strategy recipe and its
 `coefficients(...)` result are host-side, provider-independent data; coefficient
 queries return NumPy arrays. Runtime Gaussian samples, correlated-noise buffers,
 outputs, `PerGroup` allocations, and optional private second-moment streams stay
@@ -36,8 +36,8 @@ native to the provider activated by the gradient template.
 `compute_dtype=None` resolves internal sampling and matrix arithmetic to the
 active provider's `float32`, then each output leaf is returned in its input
 dtype and placement. A fixed key and matching state replay deterministically
-within one provider. Provider-native PRNGs may produce different values for the
-same key on Torch, JAX, and MLX; no cross-provider bitstream is defined.
+within one provider. Provider-native PRNGs define the sample values;
+no cross-provider bitstream is defined.
 
 Serialized MF state includes the key, cursor, and provider-native correlation
 state needed to continue an eager run after restoring against a matching

@@ -12,10 +12,10 @@ reverse-engineering individual modules.
 | `loss_scaler` | `opaque.precision.loss_scaler` | Dynamic loss scaling for `fp16` — multiplies loss before backward, unscales grads before clipping. |
 | `compute_dtype` | Kwarg on clipping + noise factories | Precision at which sensitivity-bound and noise sampling are computed. **DP-critical**: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one. |
 
-`opaque.precision.loss_scaler` and `opaque.precision.all_finite` are
-implemented across Torch, JAX, and MLX with the same functional interface.
-There is no portable autocast abstraction: JAX and MLX keep dtype selection
-explicit, and Torch `torch.autocast(...)` is used directly when needed.
+`opaque.precision.loss_scaler` and `opaque.precision.all_finite` dispatch to
+the active engine provider (Torch) through the same functional interface.
+There is no portable autocast abstraction: `torch.autocast(...)` is used
+directly when needed.
 
 ## The DP-critical invariant
 

@@ -25,7 +25,7 @@ The `opaque-torch` provider adds `opaque.torch.random` helpers:
 `RngKey` is immutable. `key`, `split`, and `fold_in` have stable,
 backend-neutral derivation semantics, while `normal()` is native sampling:
 reusing the same key and arguments replays within the active backend without
-consuming framework global RNG state. Torch, JAX, and MLX are not required to
+consuming framework global RNG state. Providers are not required to
 return equal sample values for the same key.
 
 `normal()` honors requested shape and dtype; providers use `like` for supported
@@ -356,7 +356,7 @@ sampling_key, noise_key, init_key = split(master, num=3)
 
 sampler = PoissonSampler(..., key=sampling_key)
 noise_fn, _ = gaussian_noise(..., key=noise_key)
-model = initialize_model(init_key)  # If using jax
+model = initialize_model(init_key)  # keyed model initialization
 ```
 
 ### Sequential Splitting (Loop Pattern)

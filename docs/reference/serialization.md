@@ -27,9 +27,9 @@ them and the template supplies them on load.
 `str()` form under the structural walker — for example, `groups.('a',)` for a
 flat leaf, or `groups.('layer', 'weight')` for a nested path — alongside
 `values.<group_name>`. When DP bias correction is enabled on Adam-family
-optimizers, `phi` is a path-keyed dict from `opt.init` so `from_state_dict`
-round-trips without resetting φ. NumPy `ndarray`, Torch `Tensor` and
-`Parameter`, JAX `Array`, and MLX `array` leaves preserve their provider type,
+optimizers, `phi` is a path-keyed dict in the factory's initial state so `from_state_dict`
+round-trips without resetting φ. NumPy `ndarray` and Torch `Tensor` and
+`Parameter` leaves preserve their provider type,
 shape, dtype, and value when restored against a matching template.
 
 ## Provider activation

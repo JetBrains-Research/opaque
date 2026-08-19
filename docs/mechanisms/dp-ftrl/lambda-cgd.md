@@ -81,7 +81,7 @@ expression in terms of λ, min_sep, and max_participations.
 ## Noise generation
 
 λ-CGD coefficients are NumPy host data, while eager noise sampling and outputs
-remain native Torch, JAX, or MLX arrays. Replaying the previous keyed sample is
+remain native Torch arrays. Replaying the previous keyed sample is
 deterministic within the active provider; it is not a cross-provider bitstream
 guarantee.
 

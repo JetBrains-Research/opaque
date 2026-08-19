@@ -14,7 +14,7 @@ under [User Guide](index.md): [clipping](clipping.md),
 ## Backend selection
 
 Install `opaque-dpsgd` together with the provider for your array runtime
-(`opaque-torch` today; JAX and MLX providers are planned). Passing native
+(`opaque-torch`). Passing native
 parameter and batch arrays to the clipping or noise function selects that
 provider automatically. To choose a provider before the first array-bearing
 call, use `opaque.backend.set_backend()` with the provider factory, such as

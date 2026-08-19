@@ -152,6 +152,10 @@ nav:
     - Parity harness: development/parity-harness/README.md
   - API Reference:
     - Overview: reference/index.md
+    - Backend: reference/backend.md
+    - Ops: reference/ops.md
+    - Autodiff: reference/autodiff.md
+    - Primitive: reference/primitive.md
     - Serialization: reference/serialization.md
     - Clipping: reference/clipping.md
     - Noise: reference/noise.md
@@ -160,6 +164,7 @@ nav:
     - Random: reference/rng.md
     - Distributed: reference/distributed.md
     - Execution: reference/execution.md
+    - Torch provider: reference/torch.md
     - Auditing: reference/auditing.md
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md

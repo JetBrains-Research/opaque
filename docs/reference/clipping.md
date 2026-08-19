@@ -11,7 +11,7 @@ Per-sample gradient clipping bounds the influence that any single training
 example can have on the model, enabling differential privacy.
 
 DP-SGD clipping consumes and returns the active provider's native arrays,
-dtypes, and devices. Torch, JAX, and MLX arrays select their provider on the
+dtypes, and devices. Torch tensors select their provider on the
 first clipping call; use `opaque.backend.set_backend()` only for earlier
 explicit selection.
 

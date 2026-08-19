@@ -167,7 +167,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 ### Noise injection
 
-The gradient template may contain native Torch, JAX, or MLX arrays. BandMF
+The gradient template contains native Torch arrays. BandMF
 coefficients are computed as NumPy host data, while the eager noise function
 keeps its outputs and correlation state native to the activated provider.
 

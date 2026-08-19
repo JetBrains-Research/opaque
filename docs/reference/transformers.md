@@ -4,9 +4,8 @@ API reference for `opaque.transformers` — `DPTrainer`,
 `TrainingArguments`, and the public state objects. For task-shaped
 usage guides, see [Hugging Face Integration](../user-guide/huggingface/index.md).
 
-This integration is Torch-only. Opaque's eager functional DP-FTRL mechanisms
-also support JAX and MLX native arrays, but `DPTrainer`, Hugging Face model
-patches, PEFT integration, and Triton kernels do not provide JAX or MLX paths.
+This integration is Torch-only: `DPTrainer`, the Hugging Face model patches,
+PEFT integration, and the Triton kernels are built directly on PyTorch.
 
 ## Overview
 

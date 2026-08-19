@@ -86,10 +86,10 @@ of its first call and caches one transformed callable per backend.
 
 ```python
 from opaque.execution import checkpoint
-from opaque.autodiff import grad, vmap
+from opaque.autodiff import grad_and_value, vmap
 
 checkpointed_block = checkpoint(block)
-grads = vmap(grad(checkpointed_block))(batch_x)
+grads, values = vmap(grad_and_value(checkpointed_block))(batch_x)
 ```
 
 The portable first version of each transform accepts only `fn`;
@@ -100,12 +100,6 @@ static-argument lists are intentionally not part of the portable contract.
 Opaque applies the required Torch/functorch compatibility patches once and
 idempotently, so you do not need to call `opaque.patches.apply_runtime_patches()`
 just to use `checkpoint`.
-
-**JAX** maps to `jax.checkpoint(fn)`.
-
-**MLX** maps to `mx.checkpoint(fn)`. Eager checkpointed gradients are
-supported; `vmap(grad(checkpoint(...)))` is not yet supported by MLX's
-checkpoint primitive.
 
 **With Hugging Face models:**
 
@@ -118,26 +112,15 @@ model.gradient_checkpointing_enable()
 `model.gradient_checkpointing_enable()` remains a Torch integration
 convenience; Opaque still forces the non-reentrant path under the hood.
 
-**Backend semantics:**
-
-| Provider | What `checkpoint(fn)` does | Recomputation |
-|---|---|---|
-| Torch | `torch.utils.checkpoint.checkpoint(fn, ..., use_reentrant=False)` | Recomputes intermediates in backward |
-| JAX | `jax.checkpoint(fn)` | Rematerializes via JAX's standard checkpoint |
-| MLX | `mx.checkpoint(fn)` | Recomputes intermediates in backward |
-
 **Limitations:**
 
 - Only safe for first-order differentiation (`grad`, `vjp`, `jacrev`).
   Higher-order transforms (`hessian`, `jacrev(jacrev)`) are not supported.
   Opaque only uses first-order differentiation.
-- MLX's checkpoint primitive does not currently compose with
-  `vmap(grad(...))`. Use eager checkpointed gradients on MLX, or wrap the
-  checkpointed region outside the `vmap`.
-- On Torch, `torch.compile` does not support checkpointed functional
-  transforms, and a direct `vmap(grad(...))` call should run under
-  `torch.no_grad()`. `clipped_grad` already evaluates without building a
-  graph unless an outer transform differentiates its result.
+- `torch.compile` does not support checkpointed functional transforms, and
+  a direct `vmap(grad(...))` call should run under `torch.no_grad()`.
+  `clipped_grad` already evaluates without building a graph unless an
+  outer transform differentiates its result.
 - Opt out at the API layer (there are no env-var kill switches): pass
   `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
   `apply_model_patches(...)`, or
@@ -155,7 +138,7 @@ convenience; Opaque still forces the non-reentrant path under the hood.
 ### Saved-activation optimization
 
 `opaque.execution.optimize_saved_activations(fn)` reduces separate
-accelerator-memory pressure according to each backend's memory model.
+accelerator-memory pressure by offloading activations saved for backward.
 
 ```python
 from opaque.execution import optimize_saved_activations
@@ -168,24 +151,6 @@ each call, moving tensors saved for backward to pinned CPU memory during
 forward and reloading them during backward. Combined with gradient
 checkpointing, this offloads checkpoint inputs while checkpoint handles
 intermediates separately.
-
-**JAX** applies `jax.checkpoint` with a host-offload policy that moves
-non-batched dot-product inputs to pinned host memory. This is a
-transformer-oriented heuristic rather than offloading every residual;
-measure it on your model.
-
-**MLX** returns the original function unchanged and emits a one-time
-process-level warning. MLX uses unified memory, so there is no separate
-host/device placement problem to solve. Total activation storage is not
-reduced by this transform.
-
-**Backend semantics:**
-
-| Provider | What `optimize_saved_activations(fn)` does |
-|---|---|
-| Torch | `torch.autograd.graph.save_on_cpu(pin_memory=True)` around each call |
-| JAX | `jax.checkpoint(fn, policy=offload_dot_with_no_batch_dims(...))` |
-| MLX | Identity; emits one warning about unified memory |
 
 ### Recommended transform order
 

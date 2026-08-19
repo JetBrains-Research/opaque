@@ -1,7 +1,7 @@
 # Optimizers
 
 Opaque ships backend-neutral functional optimizers at `opaque.optimizers`.
-They use the active engine provider (Torch, MLX, or JAX), keep state explicit,
+They use the active engine provider (Torch), keep state explicit,
 and route DP metadata from `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
 ---

@@ -1,7 +1,8 @@
 # Distributed Training
 
-Opaque's low-level eager process collectives support Torch, JAX, and MLX. This
-guide's complete training workflow uses PyTorch DistributedDataParallel (DDP);
+Opaque's low-level eager process collectives run on the active engine provider
+(Torch). This guide's complete training workflow uses PyTorch
+DistributedDataParallel (DDP);
 Opaque does not own process launch or framework distributed initialization.
 FSDP, Tensor Parallel, and Pipeline Parallel training workflows are not
 supported.
@@ -261,6 +262,8 @@ synchronization.
 
 Collectives return new values and never require in-place mutation. In
 single-process mode, reductions return an equivalent new native array.
+The table lists what `opaque.distributed` exports; the sync plumbing each
+subsystem registers behind `sync()` is internal.
 
 | Function | Purpose |
 |----------|---------|
@@ -271,11 +274,8 @@ single-process mode, reductions return an equivalent new native array.
 | `reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Return a Python float or integer reduced across ranks |
 | `all_reduce(value, op)` | Return an all-reduced native array without mutation |
-| `gather_tensors(tensor, dim)` | Gather variable-size native arrays and concatenate along `dim` |
 | `gather_pytree(pytree)` | Gather and concatenate native-array leaves of a PyTree |
-| `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
 | `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
-| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
 
@@ -301,10 +301,10 @@ See [API Reference](../reference/distributed.md) for full docstrings.
 
 ## Limitations
 
-- **Eager process boundary.** Collectives inside JAX `jit`, `pmap`, or
-  `shard_map` are outside the shared profile.
+- **Eager process boundary.** The collectives are eager process-level calls;
+  compiler-staged or sharded execution is outside the shared profile.
 - **Framework-owned launch.** Opaque does not initialize process groups or
-  launch workers; Torch, JAX, and MLX runtimes own that lifecycle.
+  launch workers; the framework runtime owns that lifecycle.
 - **Training integration.** The end-to-end workflow in this guide supports DDP;
   FSDP, Tensor Parallel, and Pipeline Parallel are not supported.
 - **Multi-node validation.** Multi-node execution depends on the framework

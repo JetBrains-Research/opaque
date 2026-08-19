@@ -55,7 +55,7 @@ not to `bsr_strategy`.
 ## Noise generation
 
 BSR coefficients are NumPy host data. The eager noise function applies the
-resulting plan to native Torch, JAX, or MLX arrays and retains provider-native
+resulting plan to native Torch arrays and retains provider-native
 correlation state.
 
 ```python

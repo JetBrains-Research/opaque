@@ -9,8 +9,7 @@
 ## Requirements
 
 - Python 3.11 through 3.13
-- PyTorch 2.9 or later for the default Torch bundle; install JAX or MLX when
-  selecting those provider wheels
+- PyTorch 2.9 or later for the default Torch bundle
 
 ## From JetBrains Packages
 
@@ -45,8 +44,9 @@ pip install opaque-engine opaque-torch  # PyTorch (the only provider today)
 Provider selection is inferred from execution arguments and remains active
 until `opaque.backend.clear_backend()` is called. See [Backend providers and
 primitives](../development/backend-providers.md) for explicit and temporary
-selection. JAX and MLX providers are planned; the engine's dispatch layer,
-`KnownBackend` names, and install guidance already reserve their slots.
+selection. The engine's `KnownBackend` registry also reserves the `jax` and
+`mlx` names; selecting a name whose provider is not installed raises an error
+that points at the missing provider distribution.
 
 For DP-FTRL, install `opaque-dpftrl` with the provider wheel used by the
 training loop:
@@ -57,15 +57,17 @@ pip install opaque-dpftrl opaque-torch
 
 The first Torch tensor passed as the gradient template to
 `mf_gaussian_noise` activates the provider. If setup needs a provider
-before any native array is available, activate it explicitly:
+before any native array is available, select it explicitly:
 
 ```python
-from opaque.torch import torch_backend
+from opaque.backend import set_backend
 
-torch_backend()
+set_backend("torch")
 ```
 
-Provider activation also registers native-array serialization handlers.
+Selection also registers native-array serialization handlers. Building the
+backend object alone (`opaque.torch.torch_backend()`) registers those
+handlers without selecting it; pass it to `set_backend` to make it active.
 
 ### Extras
 

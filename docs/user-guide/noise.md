@@ -262,7 +262,7 @@ varying `max_norm`, and the standard MF privacy proof would not apply.
 
 ### Providers, dtype, and state
 
-MF noise runs eagerly over native Torch, JAX, and MLX array pytrees. The first
+MF noise runs eagerly over provider-native array pytrees. The first
 provider-native gradient template activates the corresponding installed
 provider. Strategy recipes and their `coefficients(...)` queries remain
 host-side and return NumPy arrays; runtime Gaussian samples, correlation
@@ -272,8 +272,7 @@ streams remain native to the active provider.
 `compute_dtype=None` resolves to that provider's `float32` for sampling and
 linear-combination arithmetic. Output leaves are cast back to their input dtype
 and preserve native placement. With the same key, inputs, and state, execution
-replays deterministically within one provider, but Torch, JAX, and MLX do not
-share a bitstream.
+replays deterministically within one provider.
 
 Always thread the returned `MFNoiseState` or `SecondMomentMFNoiseState` into the
 next call. Checkpoint it through `opaque.serialization.state_dict` and restore

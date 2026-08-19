@@ -15,12 +15,11 @@ offloaded = optimize_saved_activations(block)
 ```
 
 The returned callable binds lazily to the backend of its first invocation
-and caches one transformed callable per backend. Because the wrappers are
-backend-neutral, the same construction code works with Torch, JAX, and MLX
-arguments.
+and caches one transformed callable per backend. The wrappers themselves are
+backend-neutral, so construction requires no active provider.
 
 See [Memory Optimizations](../user-guide/memory-optimizations.md) for
-backend semantics, composition order, and examples.
+transform semantics, composition order, and examples.
 
 ## Execution transforms
 

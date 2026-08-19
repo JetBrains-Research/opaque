@@ -13,7 +13,7 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 Opaque provides several noise mechanisms:
 
 DP-SGD Gaussian mechanisms preserve the active provider's native array type,
-dtype, and device. Torch, JAX, and MLX arrays select their provider on the
+dtype, and device. Torch tensors select their provider on the
 first noise call; use `opaque.backend.set_backend()` only for earlier explicit
 selection.
 
@@ -37,7 +37,7 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 - **`bsr_strategy()`** — BSR (Banded Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 
-DP-FTRL noise executes eagerly on provider-native Torch, JAX, and MLX arrays.
+DP-FTRL noise executes eagerly on provider-native arrays (Torch tensors).
 Strategy coefficient queries return NumPy arrays, while runtime samples,
 correlation state, `PerGroup` allocations, and optional private second-moment
 streams remain native to the provider selected by the gradient template.

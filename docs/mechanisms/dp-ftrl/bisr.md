@@ -75,7 +75,7 @@ not applied a second time as a separate workload operator.
 ## Noise generation
 
 BISR's strategy and inverse coefficients are NumPy host data. Eager execution
-uses native Torch, JAX, or MLX arrays and stores the correlation history in
+uses native Torch arrays and stores the correlation history in
 provider-native state.
 
 ```python

@@ -1,9 +1,9 @@
 # API Reference
 
 Opaque provides a functional API for differential privacy. Portable array,
-autodiff, pytree, and random operations infer Torch, JAX, or MLX from the first
-backend-bearing execution call and keep that provider active. This reference
-documents all public functions and classes.
+autodiff, pytree, and random operations infer their provider (Torch) from the
+first backend-bearing execution call and keep that provider active. This
+reference documents all public functions and classes.
 
 Install via `opaque` (and `opaque[...]` extras) when using this API. Module
 paths remain under `opaque.*`, but the root package is the supported

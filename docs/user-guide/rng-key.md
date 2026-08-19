@@ -108,7 +108,7 @@ fold_in(k, 42).seed != fold_in(k, "42").seed  # int vs str distinguished
 ### Backend semantics and limits
 
 `key`, `split`, and `fold_in` are backend-neutral: the same inputs derive the
-same `RngKey` regardless of whether Torch, JAX, or MLX is active. Array-valued
+same `RngKey` regardless of which provider is active. Array-valued
 sampling is deliberately different. `normal()` gives the active provider the
 key and uses that provider's native random implementation, so the same key and
 arguments replay within one backend but are **not** promised to produce equal
@@ -314,7 +314,6 @@ noisy2, _ = noise_fn(grads, s2)
 assert torch.equal(noisy1["w"], noisy2["w"])
 ```
 
-Torch, JAX, and MLX may produce different samples from the same `RngKey`.
 Opaque promises semantic portability — stable key derivation and keyed native
 sampling — not a shared cross-backend bitstream. Provider-native device
 determinism can also be limited by the framework and hardware.
