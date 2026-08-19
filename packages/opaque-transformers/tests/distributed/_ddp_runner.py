@@ -140,7 +140,11 @@ def _setup_ddp(
 
 
 def scenario_runtime_foundation(
-    rank: int, world_size: int, output_dir: str, **_
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    backend: str | None = None,
+    **_,
 ) -> None:
     """Verify rank/world plumbing + checkpoint gating."""
     cfg = TinyConfig()
@@ -158,6 +162,7 @@ def scenario_runtime_foundation(
         privacy_target_epsilon=8.0,
         privacy_target_delta=1e-5,
         report_to=[],
+        use_cpu=backend == "gloo",
     )
     ds = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
     trainer = DPTrainer(

@@ -42,11 +42,6 @@ def _package_entries() -> list[dict[str, object]]:
 
 def _outputs() -> dict[str, object]:
     packages = _package_entries()
-    distributed_paths = [
-        package["path"] for package in packages if package["distributed_tests"]
-    ]
-    if _has_pytest_marker(REPO_ROOT / "tests", "distributed"):
-        distributed_paths.append("tests")
     return {
         "test_shards": [
             *(
@@ -75,17 +70,22 @@ def _outputs() -> dict[str, object]:
                 else []
             ),
         ],
-        "distributed_test_shards": (
-            [
+        "distributed_test_shards": [
+            *(
                 {
-                    "label": "Linux amd64",
-                    "name": "distributed",
-                    "paths": " ".join(distributed_paths),
+                    "label": package["dist"],
+                    "name": package["name"],
+                    "paths": package["path"],
                 }
-            ]
-            if distributed_paths
-            else []
-        ),
+                for package in packages
+                if package["distributed_tests"]
+            ),
+            *(
+                [{"label": "integration", "name": "integration", "paths": "tests"}]
+                if _has_pytest_marker(REPO_ROOT / "tests", "distributed")
+                else []
+            ),
+        ],
         "python_build_packages": [
             {"dir": ".", "dist": "opaque", "path": "."},
             *(

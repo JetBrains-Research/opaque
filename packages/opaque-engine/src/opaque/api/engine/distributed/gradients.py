@@ -27,6 +27,7 @@ from opaque.api.engine.pytree import tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
     NoisedPytree,
+    PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
@@ -56,6 +57,23 @@ def _assert_object_equal(value: Any, *, name: str) -> None:
 
 def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
     if not is_distributed():
+        return
+    metadata_kind = (
+        "per_group"
+        if isinstance(value, PerGroup)
+        else "none"
+        if value is None
+        else "scalar"
+    )
+    _assert_object_equal(metadata_kind, name=f"{name}.kind")
+    if isinstance(value, PerGroup):
+        _assert_object_equal(dict(value.groups), name=f"{name}.groups")
+        _assert_object_equal(set(value.values), name=f"{name}.values.keys")
+        for group_name in sorted(value.values):
+            assert_scalar_equal(
+                value.values[group_name],
+                name=f"{name}.values[{group_name!r}]",
+            )
         return
     if value is None:
         _assert_object_equal(value, name=name)

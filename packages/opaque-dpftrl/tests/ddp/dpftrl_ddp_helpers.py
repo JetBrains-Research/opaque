@@ -407,3 +407,129 @@ def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) ->
         assert token.item() == sum(range(1, world_size + 1))
     finally:
         _cleanup_ddp()
+
+
+def _worker_per_group_mf_state_gloo(rank: int, world_size: int, port: int) -> None:
+    """Exercise per-group MF sensitivity-state synchronization and mismatch checks."""
+    from dataclasses import replace
+
+    import pytest
+
+    from opaque.api.dpftrl.noise._distributed import fingerprint_per_group_max_norm
+    from opaque.distributed import sync
+    from opaque.dpftrl.noise import identity_strategy, mf_gaussian_noise
+    from opaque.random import key
+    from opaque.types import PerGroup, clipped
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        bounds = PerGroup(
+            groups={"weight": "weights", "bias": "biases"},
+            values={"weights": 1.0, "biases": 0.5},
+        )
+        gradients = clipped(
+            {
+                "weight": torch.full((2,), float(rank + 1)),
+                "bias": torch.tensor([float(rank)]),
+            },
+            max_norm=bounds,
+        )
+        noise_fn, state = mf_gaussian_noise(
+            {"weight": torch.zeros(2), "bias": torch.zeros(1)},
+            identity_strategy(),
+            n_steps=1,
+            noise_multiplier=1.0,
+            key=key(53),
+        )
+        noised, state = noise_fn(gradients, state)
+        synced = sync(state)
+
+        assert isinstance(noised.noise_stddev, PerGroup)
+        assert synced._first_max_norm == bounds
+        assert (
+            synced._first_max_norm_sync_fingerprint
+            == fingerprint_per_group_max_norm(bounds)
+        )
+
+        mismatched_bounds = PerGroup(
+            groups=bounds.groups,
+            values={"weights": 2.0, "biases": 0.5},
+        )
+        mismatched = replace(
+            synced,
+            _first_max_norm=mismatched_bounds,
+            _first_max_norm_sync_fingerprint=(
+                fingerprint_per_group_max_norm(bounds)
+                if rank == 0
+                else fingerprint_per_group_max_norm(mismatched_bounds)
+            ),
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=r"MFNoiseState\._first_max_norm_sync_fingerprint mismatch",
+        ):
+            sync(mismatched)
+
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == float(world_size)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_auto_band_mf_gloo(rank: int, world_size: int, port: int) -> None:
+    """Run AUTO-S gradients through two band-MF releases on CPU/Gloo."""
+    from opaque.distributed import sum_gradients, sync
+    from opaque.dpftrl.clipping import auto_clipped_grad
+    from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
+    from opaque.pytree import tree_leaves, tree_map
+    from opaque.random import key
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        params = {
+            "weight": torch.tensor([0.25, -0.5]),
+            "bias": torch.tensor([0.1]),
+        }
+
+        def loss_fn(current_params, x, y):
+            prediction = x @ current_params["weight"] + current_params["bias"].sum()
+            return (prediction - y).square()
+
+        grad_fn, clip_state = auto_clipped_grad(
+            loss_fn,
+            R=1.0,
+            batch_argnums=(1, 2),
+        )
+        noise_fn, noise_state = mf_gaussian_noise(
+            tree_map(torch.zeros_like, params),
+            band_mf_strategy(bands=2, momentum=0.9),
+            n_steps=2,
+            noise_multiplier=0.8,
+            key=key(83),
+        )
+
+        releases = []
+        for step in range(2):
+            local_batch_size = 2 if rank == 0 else 3
+            x = (
+                torch.arange(local_batch_size * 2, dtype=torch.float32).reshape(
+                    local_batch_size, 2
+                )
+                + rank
+                + step
+            )
+            y = torch.linspace(0.0, 1.0, local_batch_size) + step
+            local_grads, clip_state = grad_fn(params, x, y, state=clip_state)
+            noised, noise_state = noise_fn(sum_gradients(local_grads), noise_state)
+            releases.append(tree_leaves(noised.pytree)[0])
+            noise_state = sync(noise_state)
+            assert noise_state._step_counter == step + 1
+            assert torch.isfinite(releases[-1]).all()
+
+        assert not torch.equal(releases[0], releases[1])
+        gathered = [torch.zeros_like(releases[-1]) for _ in range(world_size)]
+        dist.all_gather(gathered, releases[-1])
+        assert all(torch.equal(gathered[0], value) for value in gathered[1:])
+    finally:
+        _cleanup_ddp()

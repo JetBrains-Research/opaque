@@ -386,3 +386,120 @@ def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) ->
         assert token.item() == sum(range(1, world_size + 1))
     finally:
         _cleanup_ddp()
+
+
+def _worker_per_group_adaptive_state_gloo(
+    rank: int, world_size: int, port: int
+) -> None:
+    """Synchronize the per-group adaptive-clipping branch with unequal shards."""
+    from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState
+    from opaque.distributed import sync
+    from opaque.random import key
+    from opaque.types import PerGroup
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        bounds = PerGroup(
+            groups={"weight": "weights", "bias": "biases"},
+            values={"weights": 1.0, "biases": 0.5},
+        )
+        state = AdaptiveClipState(
+            _current_clipping_norm=bounds,
+            _next_clipping_norm=bounds,
+            _step=1,
+            _rng_key=key(41),
+            _fraction_noise_std=1e-12,
+            _learning_rate=0.2,
+            _target_quantile=0.5,
+            _clipping_norm_min=0.01,
+            _clipping_norm_max=100.0,
+            _num_clipped={
+                "weights": float(rank + 1),
+                "biases": float(2 - rank),
+            },
+            _batch_size=3 * (rank + 1),
+        )
+        synced = sync(state)
+
+        assert synced._batch_size == 9.0
+        assert synced._num_clipped == {"weights": 3.0, "biases": 3.0}
+        assert isinstance(synced._next_clipping_norm, PerGroup)
+        assert synced._next_clipping_norm.values["weights"] != bounds.values["weights"]
+        assert synced._next_clipping_norm.values["biases"] < bounds.values["biases"]
+
+        gathered = [None] * world_size
+        dist.all_gather_object(
+            gathered,
+            tuple(sorted(synced._next_clipping_norm.values.items())),
+        )
+        assert all(value == gathered[0] for value in gathered[1:])
+
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == float(world_size)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_per_group_adaptive_training_gloo(
+    rank: int, world_size: int, port: int
+) -> None:
+    """Run the per-group adaptive DP-SGD chain across unequal local batches."""
+    from opaque.distributed import sum_gradients, sync
+    from opaque.dpsgd.clipping import adaptive_clipped_grad, per_group
+    from opaque.dpsgd.noise import gaussian_noise
+    from opaque.pytree import tree_leaves
+    from opaque.random import key
+    from opaque.types import PerGroup
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        params = {
+            "weight": torch.tensor([0.25, -0.5]),
+            "bias": torch.tensor([0.1]),
+        }
+        bounds = per_group(params, weight=1.0, bias=0.5)
+
+        def loss_fn(current_params, x, y):
+            prediction = x @ current_params["weight"] + current_params["bias"].sum()
+            return (prediction - y).square()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=bounds,
+            fraction_noise_std=0.05,
+            key=key(71),
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        local_batch_size = 2 if rank == 0 else 3
+        x = (
+            torch.arange(local_batch_size * 2, dtype=torch.float32).reshape(
+                local_batch_size, 2
+            )
+            + rank
+        )
+        y = torch.linspace(0.0, 1.0, local_batch_size)
+
+        (local_grads, local_aux), clip_state = grad_fn(params, x, y, state=clip_state)
+        reduced = sum_gradients(local_grads)
+        synced_state, synced_aux = sync(clip_state, local_aux)
+
+        noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(73))
+        noised, noise_state = noise_fn(reduced, noise_state)
+        synced_noise_state = sync(noise_state)
+
+        assert isinstance(reduced.max_norm, PerGroup)
+        assert isinstance(noised.noise_stddev, PerGroup)
+        assert synced_state._batch_size == 5.0
+        assert synced_aux.batch_size == 5
+        assert synced_aux.group_norms is not None
+        assert set(synced_aux.group_norms) == {"weight", "bias"}
+        assert synced_noise_state._step_counter == 1
+
+        first_leaf = tree_leaves(noised.pytree)[0]
+        gathered = [torch.zeros_like(first_leaf) for _ in range(world_size)]
+        dist.all_gather(gathered, first_leaf)
+        assert all(torch.equal(gathered[0], value) for value in gathered[1:])
+    finally:
+        _cleanup_ddp()

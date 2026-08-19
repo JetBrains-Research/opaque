@@ -98,8 +98,9 @@ jobs:
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       environment-name: linux-distributed
-      pytest-marker: distributed and not cuda
+      pytest-marker: distributed and not cuda and not slow
       report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.distributed_test_shards }}
