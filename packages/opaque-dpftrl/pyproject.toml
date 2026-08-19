@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "dp-ftrl", "matrix-factorization", "pytorch", "privacy"]
+keywords = ["differential-privacy", "dp-ftrl", "matrix-factorization", "privacy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.9.0",
+    "numpy>=1.26.0",
     "scipy>=1.11.0",
     "opaque-engine>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",

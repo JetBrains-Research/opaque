@@ -30,12 +30,12 @@ from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
 import numpy as np
-from torch.utils.data import Sampler
 
 from opaque.random.types import RngKey
+from opaque.sampling import Sampler
 
 
-class BallsInBinsSampler(Sampler):
+class BallsInBinsSampler(Sampler[list[int]]):
     """Balls-in-Bins sampler: random independent bin assignment, fixed across epochs.
 
     Each example independently chooses one of ``num_bins`` bins uniformly

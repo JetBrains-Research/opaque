@@ -22,29 +22,20 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import torch
-
-from opaque.api.dpftrl.noise._strategy_codec import register_strategy
-from opaque.pytree import tree_map
-from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
-
-from ._engine import (
-    MFNoiseState,
-    _check_mf_horizon,
-    _iid_normal_noise,
-    _require_positive_int_horizon,
+from opaque.api.dpftrl.noise._plan import (
+    MfExecutionPlan,
+    lambda_replay_execution_plan,
 )
+from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+
 from ._schedule_fingerprint import materialize_schedule
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    import numpy as np
 
     from opaque.api.engine.scheduling.types import Schedule
-    from opaque.random.types import RngKey
-    from opaque.types import PerGroup
 
     from ._streaming_matrix import StreamingMatrix
 
@@ -121,11 +112,13 @@ class LambdaCgdStrategy:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
             raise ValueError(f"lambda_ must be in [0, 1), got {self.lambda_}")
 
-    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
-        # [1, λ, λ², ..., λ^{n_steps-1}].
-        return torch.tensor(
-            [self.lambda_**i for i in range(n_steps)], dtype=torch.float64
+    def execution_plan(self, *, n_steps: int, **_) -> MfExecutionPlan:
+        return lambda_replay_execution_plan(
+            self.lambda_, n_steps, normalized=self.normalized
         )
+
+    def coefficients(self, *, n_steps: int, **_) -> np.ndarray:
+        return self.execution_plan(n_steps=n_steps).coefficients()
 
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
@@ -146,25 +139,6 @@ class LambdaCgdStrategy:
         raise NotImplementedError(
             "LambdaCgdStrategy uses PRNG-replay noise; the noise factory "
             "dispatches to _make_lambda_cgd_noise directly."
-        )
-
-    def raw_noise_factory(
-        self,
-        grad_template: Any,
-        *,
-        n_steps: int,
-        min_sep: int,
-        max_participations: int | None,
-        key: RngKey,
-        compute_dtype: torch.dtype,
-    ):
-        del min_sep, max_participations
-        return _make_lambda_cgd_noise(
-            grad_template,
-            self,
-            n_steps=n_steps,
-            key=key,
-            compute_dtype=compute_dtype,
         )
 
     def sensitivity(
@@ -211,11 +185,6 @@ def lambda_cgd_strategy(
     )
 
 
-# ---------------------------------------------------------------------------
-# Internal noise builder (called by mf_gaussian_noise() dispatcher)
-# ---------------------------------------------------------------------------
-
-
 def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> float:
     """Per-step row L2 norm of the λ-CGD effective C^{-1}.
 
@@ -234,95 +203,6 @@ def _lambda_cgd_row_l2(strategy: LambdaCgdStrategy, n_steps: int, step: int) -> 
     if step == 0 or lam == 0.0:
         return col
     return col * math.sqrt(1.0 + lam * lam)
-
-
-def _make_lambda_cgd_noise(
-    grad_template: Any,
-    strategy: LambdaCgdStrategy,
-    *,
-    n_steps: int,
-    key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
-) -> tuple[
-    Callable[..., tuple[Any, MFNoiseState]],
-    MFNoiseState,
-    Callable[[int], float],
-]:
-    """DP-lambda-CGD noise via PRNG replay (zero extra memory).
-
-    Returns ``(noise_fn, state, row_l2_at)`` where ``row_l2_at(step)``
-    gives ``‖row_t(C^{-1})‖`` so the wrapping :func:`mf_gaussian_noise`
-    factory can publish the realized per-step σ on
-    :class:`NoisedPytree.noise_stddev` (= ``base_σ · row_l2_at(step)``).
-    Adam-family bias correction reads that realized σ.
-    """
-    n_steps = _require_positive_int_horizon(n_steps)
-
-    lambda_ = strategy.lambda_
-    normalized = strategy.normalized
-
-    state = MFNoiseState(
-        _inner_state=None,
-        _step_counter=0,
-        _rng_key=key,
-    )
-
-    def noise_fn(
-        clipped_grads: Any,
-        st: MFNoiseState,
-        *,
-        stddev: float | PerGroup,
-    ) -> tuple[Any, MFNoiseState]:
-        step = st._step_counter
-        _check_mf_horizon(step, n_steps)
-
-        current_key = rng_fold_in(st._rng_key, step)
-        g_current = generator_from_key(current_key)
-        z_t = _iid_normal_noise(
-            clipped_grads,
-            stddev,
-            generator=g_current,
-            compute_dtype=compute_dtype,
-        )
-
-        if step == 0 or lambda_ == 0.0:
-            corr_noise = z_t
-        else:
-            prev_key = rng_fold_in(st._rng_key, step - 1)
-            g_prev = generator_from_key(prev_key)
-            z_prev = _iid_normal_noise(
-                clipped_grads,
-                stddev,
-                generator=g_prev,
-                compute_dtype=compute_dtype,
-            )
-            corr_noise = tree_map(
-                lambda zt, zp: zt - lambda_ * zp,
-                z_t,
-                z_prev,
-            )
-
-        if normalized:
-            d_t = _column_norm(lambda_, n_steps, step)
-            corr_noise = tree_map(lambda n: n * d_t, corr_noise)
-
-        noisy_grads = tree_map(
-            lambda grad, n: (grad + n).to(grad.dtype),
-            clipped_grads,
-            corr_noise,
-        )
-
-        new_state = MFNoiseState(
-            _inner_state=None,
-            _step_counter=step + 1,
-            _rng_key=st._rng_key,
-        )
-        return noisy_grads, new_state
-
-    def row_l2_at(step: int) -> float:
-        return _lambda_cgd_row_l2(strategy, n_steps, step)
-
-    return noise_fn, state, row_l2_at
 
 
 __all__ = ["LambdaCgdStrategy", "lambda_cgd_strategy"]

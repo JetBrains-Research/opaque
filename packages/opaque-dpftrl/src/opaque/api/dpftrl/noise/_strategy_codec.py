@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any
 
-import torch
+import numpy as np
 
 #: Strategy-class registry, keyed by class name.  Populated by
 #: :func:`register_strategy` at import time of each strategy module.
@@ -101,8 +101,8 @@ def _to_wire(value: Any) -> Any:
     :class:`~opaque.scheduling.CosineSchedule` — round-trip with
     recursive ``_to_wire`` / :func:`_from_wire` calls.
     """
-    if isinstance(value, torch.Tensor):
-        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
     if isinstance(value, tuple):
         return list(value)
     if callable(value) and not isinstance(value, type):

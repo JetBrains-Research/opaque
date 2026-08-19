@@ -16,8 +16,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-import torch
+import numpy as np
 
+from opaque.api.dpftrl.noise._plan import MfExecutionPlan, toeplitz_execution_plan
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._sensitivity import minsep_true_max_participations
@@ -122,12 +123,12 @@ def _bsr_gram_matrix_cached(
 
 def _bsr_full_coefficients(
     bandwidth: int, alpha: float, beta: float, n_steps: int
-) -> torch.Tensor:
+) -> np.ndarray:
     """Pad the band coefficients out to ``n_steps`` with zeros."""
     band = _bsr_band_coefficients_cached(bandwidth, alpha, beta)
-    out = torch.zeros(n_steps, dtype=torch.float64)
+    out = np.zeros(n_steps, dtype=np.float64)
     copy_len = min(bandwidth, n_steps)
-    out[:copy_len] = torch.tensor(band[:copy_len], dtype=torch.float64)
+    out[:copy_len] = np.asarray(band[:copy_len], dtype=np.float64)
     return out
 
 
@@ -144,7 +145,10 @@ class BsrStrategy:
     alpha: float
     beta: float
 
-    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+    def execution_plan(self, *, n_steps: int, **_) -> MfExecutionPlan:
+        return toeplitz_execution_plan(self.coefficients(n_steps=n_steps))
+
+    def coefficients(self, *, n_steps: int, **_) -> np.ndarray:
         return _bsr_full_coefficients(self.bandwidth, self.alpha, self.beta, n_steps)
 
     def gram_matrix(
@@ -161,8 +165,9 @@ class BsrStrategy:
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
         band = _bsr_band_coefficients_cached(self.bandwidth, self.alpha, self.beta)
-        coef_tensor = torch.tensor(list(band), dtype=torch.float64)
-        return inverse_as_streaming_matrix(coef_tensor, column_normalize_for_n=None)
+        return inverse_as_streaming_matrix(
+            np.asarray(band, dtype=np.float64), column_normalize_for_n=None
+        )
 
     def sensitivity(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
@@ -172,14 +177,14 @@ class BsrStrategy:
             n=n_steps, min_sep=min_sep, max_participations=max_participations
         )
         if k == 1:
-            return float(_toeplitz_col_norm_sq(coef_tensor, n_steps).sqrt())
+            return float(np.sqrt(_toeplitz_col_norm_sq(coef_tensor, n_steps)))
         sens_sq = _toeplitz_minsep_sensitivity_squared(
             strategy_coef=coef_tensor,
             min_sep=min_sep,
             max_participations=max_participations,
             skip_checks=True,
         )
-        return float(sens_sq.sqrt())
+        return float(np.sqrt(sens_sq))
 
 
 def bsr_strategy(
