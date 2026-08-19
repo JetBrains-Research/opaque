@@ -108,6 +108,7 @@ jobs:
           esac
 
       - name: Run Python tests
+        id: pytest
         env:
           ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
           ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
@@ -126,15 +127,18 @@ jobs:
 
           if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
             echo "::notice::No tests matched this environment's filter for ${{ matrix.shard.label }}."
+            echo "tests_ran=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ "$status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
             echo "::warning::pytest exited with status $status in this advisory lane."
             exit 0
           fi
+          echo "tests_ran=true" >> "$GITHUB_OUTPUT"
           exit "$status"
 
       - name: Upload coverage
+        if: steps.pytest.outputs.tests_ran == 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-${{ matrix.shard.name }}
@@ -142,7 +146,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+      - if: steps.pytest.outputs.tests_ran == 'true'
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
           files: ./coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           flags: ${{ inputs.environment-name }}-${{ matrix.shard.name }}
