@@ -326,7 +326,7 @@ def _worker_band_parity(rank: int, world_size: int, port: int, out_path: str) ->
 
 
 def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) -> None:
-    """Exercise gradient reduction and MF noise-state sync on CPU."""
+    """Exercise normal and empty-rank DP-FTRL chains on CPU."""
     _setup_gloo(rank, world_size, port)
     try:
         torch.manual_seed(321)
@@ -365,5 +365,45 @@ def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) ->
             noise_steps.append(first_leaf)
 
         assert not torch.equal(noise_steps[0], noise_steps[1])
+
+        empty_grad_fn, empty_clip_state = clipped_grad(
+            loss_fn,
+            clipping_norm=1.0,
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        empty_batch_size = 0 if rank == 0 else 2
+        empty_x = torch.randn(empty_batch_size, 10)
+        empty_y = torch.randn(empty_batch_size, 1)
+        (empty_grads, empty_aux), _ = empty_grad_fn(
+            params, empty_x, empty_y, state=empty_clip_state
+        )
+        synced_empty_aux = sync(empty_aux)
+        assert synced_empty_aux.batch_size == 2
+        assert synced_empty_aux.loss_values.shape == (2,)
+
+        summed_empty_grads = sum_gradients(empty_grads)
+        empty_noise_fn, empty_noise_state = mf_gaussian_noise(
+            template,
+            identity_strategy(),
+            n_steps=1,
+            noise_multiplier=1.1,
+            key=key(37),
+        )
+        noised_empty_grads, empty_noise_state = empty_noise_fn(
+            summed_empty_grads, empty_noise_state
+        )
+        synced_empty_noise_state = sync(empty_noise_state)
+        assert synced_empty_noise_state._step_counter == 1
+        empty_leaf = tree_leaves(noised_empty_grads.pytree)[0]
+        gathered_empty = [torch.zeros_like(empty_leaf) for _ in range(world_size)]
+        dist.all_gather(gathered_empty, empty_leaf)
+        assert all(
+            torch.equal(gathered_empty[0], value) for value in gathered_empty[1:]
+        )
+
+        token = torch.tensor([float(rank + 1)])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == sum(range(1, world_size + 1))
     finally:
         _cleanup_ddp()

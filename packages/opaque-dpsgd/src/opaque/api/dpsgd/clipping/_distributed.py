@@ -58,7 +58,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     is_per_group = isinstance(state._num_clipped, dict)
 
     if is_per_group:
-        global_batch_size = reduce_scalar(state._batch_size, op="sum")
+        global_batch_size = reduce_scalar(float(state._batch_size), op="sum")
 
         global_num_clipped: dict[str, float] = {}
         for gname, local_count in state._num_clipped.items():
@@ -97,7 +97,11 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         )
 
     synced = sync_object(
-        state,
+        replace(
+            state,
+            _num_clipped=float(state._num_clipped),
+            _batch_size=float(state._batch_size),
+        ),
         field_ops=_ADAPTIVE_CLIP_STATE_FIELD_OPS,
     )
 
