@@ -1,6 +1,6 @@
-# LoRA-XSe: what we found, why it works, and what is still open
+# LoRA-XSe (non-DP): what we found, why it works, and what is still open
 
-Audience: technical leadership. Non-DP, Qwen2.5-Coder-7B on KStack, 520 steps
+Non-DP, Qwen2.5-Coder-7B on KStack, 520 steps
 (2 epochs), rank r=16, **exploration depth 5 of 16 directions, rotation interval
 tau=1** (i.e. 5 of the 16 directions are replaced at every single step, 11 kept),
 SGD momentum 0.9 at lr 5e-2, batch 192, weight decay 0.

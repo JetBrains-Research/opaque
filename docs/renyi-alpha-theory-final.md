@@ -701,7 +701,7 @@ noise and must be estimated.** Three ways, in increasing order of rigour:
 Note the asymmetry, and state it in the paper: **non-DP is the *harder* regime for a threshold rule,
 not the easier one**, because `ς` must be estimated instead of read off the privacy accountant.
 
-**#2 — worth it if the boss wants the theorem to be general (4 runs). Escape the null space.**
+**#2 — worth it if the theorem needs to be general (4 runs). Escape the null space.**
 Non-DP, **r = 64**, α ∈ {0.5, 1, 2, ∞}, m = 2, seed 42. Theorem 2 says the collapse is a property of
 `(r, p₁)`, not of α — and the DP data already shows the statistic escaping the floor as `r` grows
 (⌊N₁⌋ = 1 at r=2,4 → **4** at r=16 under ε=3). Prediction: at r=64 non-DP, `⌊N_α⌋` separates across

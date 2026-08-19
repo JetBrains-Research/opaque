@@ -317,7 +317,7 @@ error-prone thing in the project (§3.5).
 | `vendor/lora-privacy/.../peft_lora_xs/allocation.py` | per-matrix rank allocation (dead end, kept) |
 | `examples/train_causal_lm.py` | trainer; preset `qwen-coder-kstack-lora` at L1030 (sets ε=3, 2 epochs, r=16) |
 | `deploy/zenml/run.py` | submit; `ARMS` at L56 |
-| `docs/renyi-status-summary.md` | consolidated position for the lead |
+| `docs/renyi-status-summary.md` | consolidated position |
 | `docs/renyi-alpha-utility-verdict.md` | α investigation; **§11 and §12 are both superseded — see §3.5 above** |
 | `docs/renyi-effective-rank-theory.md` | the proofs |
 | `docs/renyi-concepts-primer.md` | beginner-friendly walkthrough |

@@ -33,7 +33,7 @@ for m in sorted(GRID):
 
 print()
 print("="*100)
-print("2.  THE BOSS'S HYPOTHESIS, TESTED:  does the rule COMPENSATE for a margin change?")
+print("2.  THE COMPENSATION HYPOTHESIS, TESTED:  does the rule COMPENSATE for a margin change?")
 print("    d(depth)/dm = -1 - d(floor N_a)/dm.   |slope| < 1 = compensating (absorbs it)")
 print("                                          |slope| > 1 = AMPLIFYING (over-reacts)")
 print("="*100)

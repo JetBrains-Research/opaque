@@ -1,6 +1,6 @@
 # The Rényi / LoRA-XSe project: what we're doing, what we found, how to publish it
 
-**Audience:** anyone joining cold, or a reviewer/boss who wants the story before the
+**Audience:** anyone joining cold, or a reviewer who wants the story before the
 equations. Part I is deliberately non-technical. Parts II–IV are the method, the
 results, and the conference framing. Part V is what still needs proving. Part VI is
 the evaluation protocol — how to measure findings properly, which is where our
