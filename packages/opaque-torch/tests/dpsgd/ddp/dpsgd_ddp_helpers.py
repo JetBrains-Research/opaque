@@ -10,12 +10,14 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from opaque.api.engine.backend import use_backend
 from opaque.distributed import sum_gradients, sync
 from opaque.dpsgd.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.pytree import tree_leaves
 from opaque.random import key
+from opaque.torch import torch_backend
+from opaque.torch.functional import make_functional
 from opaque.types import clipped
 
 
@@ -191,7 +193,10 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             _num_clipped=float(3 * (rank + 1)),
             _batch_size=8 * (rank + 1),
         )
-        synced = sync(state)
+        # State-only synchronization has no native input from which the engine
+        # can infer a provider, so select the initialized Torch runtime.
+        with use_backend(torch_backend()):
+            synced = sync(state)
         expected_bs = sum(8 * (r + 1) for r in range(world_size))
         assert synced._batch_size == expected_bs
     finally:
@@ -307,8 +312,8 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
             (aux.grad_norms > new_state._current_clipping_norm).sum().item()
         )
         local_total = float(aux.grad_norms.numel())
-        global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
-        global_total = reduce_scalar(local_total, op="sum", device=device)
+        global_clipped = reduce_scalar(local_clipped, op="sum")
+        global_total = reduce_scalar(local_total, op="sum")
         expected_rate = global_clipped / max(1.0, global_total)
         assert abs(synced_aux.clipping_rate - expected_rate) < 1e-6
     finally:
