@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
+      distributed_test_shards: ${{ steps.discover.outputs.distributed_test_shards }}
       native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
       python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
       test_shards: ${{ steps.discover.outputs.test_shards }}
@@ -67,8 +68,7 @@ jobs:
       pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
-      test-shards: >-
-        [{"label":"Linux amd64","name":"distributed","paths":"packages/opaque-engine/tests/ddp packages/opaque-alignment/tests/ddp packages/opaque-dpsgd/tests/ddp packages/opaque-dpftrl/tests/ddp packages/opaque-transformers/tests/distributed"}]
+      test-shards: ${{ needs.discover-packages.outputs.distributed_test_shards }}
       timeout-minutes: 30
 
   python-tests-minimum:

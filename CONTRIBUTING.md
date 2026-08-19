@@ -190,24 +190,22 @@ install `opaque[transformers]` for Hugging Face tests or
 `opaque-accounting[cross-validation]` for cross-validation. No manual marker
 exclusion is needed.
 
-### GPU and Multi-GPU Tests
+### CUDA and Distributed Tests
 
 Some tests require a CUDA GPU. They live under each package's
-`tests/ddp/` directory (e.g. `packages/opaque-dpsgd/tests/ddp/`,
-`packages/opaque-transformers/tests/ddp/`) and use `torch.distributed`
-with the NCCL backend:
+`tests/` directory and carry the `cuda` marker:
 
 ```bash
 # Run CUDA tests (requires CUDA)
 uv run pytest -m cuda -v
 
-# Run distributed tests (requires 2+ GPUs)
-uv run pytest packages/opaque-dpsgd/tests/ddp/ \
-              packages/opaque-transformers/tests/ddp/ -v
+# Run distributed tests (CPU/Gloo; spawns multiple local ranks)
+uv run pytest -m "distributed and not cuda" -v
 ```
 
 `@pytest.mark.cuda` tests auto-skip on hosts without CUDA; `@pytest.mark.mps`
-tests auto-skip on hosts without Apple Metal.
+tests auto-skip on hosts without Apple Metal. The `distributed` marker selects
+CPU/Gloo multi-rank tests and is run separately from the general platform lanes.
 
 ---
 
