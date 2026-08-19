@@ -96,6 +96,32 @@ FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
         "opaque.api.patches",
         "opaque.api.transformers",
     ),
+    # The two mechanism wheels build on the engine and the accounting
+    # substrate only: never on each other, nor on auditing, patches,
+    # trainers, or alignment.
+    "opaque-dpsgd": (
+        "opaque.api.dpftrl",
+        "opaque.api.auditing",
+        "opaque.api.patches",
+        "opaque.api.transformers",
+        "opaque.api.alignment",
+    ),
+    "opaque-dpftrl": (
+        "opaque.api.dpsgd",
+        "opaque.api.auditing",
+        "opaque.api.patches",
+        "opaque.api.transformers",
+        "opaque.api.alignment",
+    ),
+    # Auditing consumes the engine's public façades and nothing above them.
+    "opaque-auditing": (
+        "opaque.api.optimizers",
+        "opaque.api.dpsgd",
+        "opaque.api.dpftrl",
+        "opaque.api.patches",
+        "opaque.api.transformers",
+        "opaque.api.alignment",
+    ),
 }
 
 

@@ -33,6 +33,12 @@ dependencies = [
 [project.optional-dependencies]
 optimizers = ["opaque-optimizers>=0.0.0.dev0"]
 
+# ARC-006: this package is backend-neutral, but its tests execute real
+# numerics and therefore need a backend. Declare that requirement rather
+# than relying on the monorepo dev environment to supply one.
+[dependency-groups]
+test = ["opaque-torch>=0.0.0.dev0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["opaque.dpftrl*", "opaque.api.dpftrl*", "opaque.api.accounting.dpftrl*"]
@@ -50,6 +56,7 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
+opaque-torch = { workspace = true }
 opaque-engine = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-optimizers = { workspace = true }

@@ -1,4 +1,4 @@
-"""Tests for Torch optimizer distributed-state sync handlers.
+"""Tests for the optimizer distributed-state sync handlers.
 
 The handlers are audit-only (assert cross-rank equality of optimizer state
 structure and leaves), so the multi-rank checks themselves are exercised by
