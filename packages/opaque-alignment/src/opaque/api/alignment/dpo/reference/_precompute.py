@@ -70,6 +70,7 @@ from opaque.api.engine.distributed._state import (
     gather_pytree,
     reduce_scalar,
 )
+from opaque.backend import ensure_backend
 from opaque.distributed import (
     get_rank,
     get_world_size,
@@ -402,6 +403,13 @@ def compute_ref_logprobs_for_dataset(
         ``dataset`` with one new column per name in ``output_columns``, each of
         length ``len(dataset)``.
     """
+    # This entry point takes no native array to infer a provider from, yet
+    # the sharding decision and cross-rank checks below query the engine's
+    # distributed runtime. Activate the Torch provider explicitly (idempotent
+    # under the trainer path) so a bare call inside a spawned worker sees the
+    # live process group instead of degrading to the single-process defaults.
+    ensure_backend(torch.empty(0))
+
     columns = tuple(output_columns)
     n_examples = len(dataset)
     sharded = _resolve_sharding(shard)

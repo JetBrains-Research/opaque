@@ -31,8 +31,7 @@ from numbers import Real
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import ParamPath, tree_map
 
 if TYPE_CHECKING:
@@ -45,21 +44,11 @@ if TYPE_CHECKING:
 # ===========================================================================
 
 
-# A pytree whose leaves are ``torch.Tensor``.  Restricted to the
-# concrete container types the rest of the library actually rebuilds
-# and serialises (``dict``, ``list``, ``tuple``); custom ``Mapping`` /
-# ``Sequence`` subclasses are intentionally excluded.
-#
-# Real ``|`` union (not a string) so ``typing.get_type_hints()`` and
-# ``typing.get_args()`` see the alias correctly.  Recursion is encoded
-# with forward references; static checkers expand the alias to ``Any``,
-# which is fine — the alias is documentation-grade typing.
-TensorPytree = (
-    torch.Tensor
-    | dict[str, "TensorPytree"]
-    | list["TensorPytree"]
-    | tuple["TensorPytree", ...]
-)
+# A backend-neutral pytree used for native-array payloads. The portable
+# structural contract covers ``dict``, ``list``, and ``tuple`` containers;
+# providers may additionally traverse nodes from their native registries.
+# ``Any`` intentionally leaves native array and provider extension types open.
+TensorPytree = Any
 
 
 # ===========================================================================
@@ -212,18 +201,9 @@ def _validate_public_scalar(scalar: Any, *, op: str) -> float:
 
 def _scale_tensor_leaves(pytree: Any, scalar: float) -> Any:
     return tree_map(
-        lambda leaf: leaf * scalar if isinstance(leaf, torch.Tensor) else leaf,
+        lambda leaf: ops.multiply(leaf, scalar) if ops.is_array(leaf) else leaf,
         pytree,
     )
-
-
-def _apply_tensor_method(pytree: Any, method: str, *args: Any, **kwargs: Any) -> Any:
-    def _apply(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
-            return getattr(leaf, method)(*args, **kwargs)
-        return leaf
-
-    return tree_map(_apply, pytree)
 
 
 def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
@@ -367,17 +347,34 @@ class ClippedPytree:
 
     def clone(self) -> ClippedPytree:
         """Clone tensor leaves while preserving metadata."""
-        return replace(self, pytree=_apply_tensor_method(self.pytree, "clone"))
+        return replace(
+            self,
+            pytree=tree_map(
+                lambda leaf: ops.clone(leaf) if ops.is_array(leaf) else leaf,
+                self.pytree,
+            ),
+        )
 
     def detach(self) -> ClippedPytree:
         """Detach tensor leaves while preserving metadata."""
-        return replace(self, pytree=_apply_tensor_method(self.pytree, "detach"))
+        return replace(
+            self,
+            pytree=tree_map(
+                lambda leaf: ops.detach(leaf) if ops.is_array(leaf) else leaf,
+                self.pytree,
+            ),
+        )
 
     def to(self, *args: Any, **kwargs: Any) -> ClippedPytree:
         """Call ``Tensor.to`` on tensor leaves while preserving metadata."""
         return replace(
             self,
-            pytree=_apply_tensor_method(self.pytree, "to", *args, **kwargs),
+            pytree=tree_map(
+                lambda leaf: (
+                    ops.transfer(leaf, *args, **kwargs) if ops.is_array(leaf) else leaf
+                ),
+                self.pytree,
+            ),
         )
 
 

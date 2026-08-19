@@ -1,42 +1,39 @@
-"""PyTree utilities for working with nested parameter structures.
+"""Portable PyTree structure and backend-dispatched array operations.
 
-This module provides utilities for working with PyTrees, i.e. nested Python
-containers (dicts, lists, tuples, …) whose leaves are tensors. We implement a
-thin wrapper on top of `optree` to provide a stable, fast pytree API that does
-not depend on PyTorch's private modules.
+The portable structural core consists of ``dict``, ``list``, and ``tuple``
+containers. Every value not traversed by those containers is a *structural
+leaf*, including native arrays, numbers, and strings. ``None`` is an empty
+node rather than a leaf: it is preserved as structure and never passed to a
+mapped function. Providers may add nodes from their native registry, but
+those extensions are provider-owned and are not portable to another backend.
 
-Key functions:
-- `tree_leaves(tree)`: return the list of tensor leaves in a PyTree.
-- `tree_map(fn, *trees)`: apply a function to corresponding leaves of one or
-  more PyTrees and rebuild the structure.
-- `global_norm(tree)`: compute the global L2 norm across all tensor leaves:
-  sqrt(sum(||leaf||^2)).
+``tree_flatten``, ``tree_flatten_with_paths``, ``tree_map``, and
+``tree_structure`` operate on all structural leaves. ``tree_leaves`` and
+``global_norm`` deliberately select only native-array leaves. Portable
+dictionaries have deterministic provider traversal order; callers should use
+the returned paths rather than relying on insertion order.
 
-Notes
-- Only tensor leaves are considered for `tree_leaves` and `global_norm`.
-- `tree_map` applies `fn` to all leaves, passing through non-tensor leaves
-  unchanged unless `fn` handles them explicitly.
-- Supports mixed dtypes and complex numbers, returning complex norm for complex tensors.
-- Handles empty trees gracefully, returning 0.0 for empty PyTrees.
-- Supports PyTree parameters with nested dictionaries of tensors.
-- Handles microbatching for memory efficiency in gradient clipping.
+Treedefs are opaque provider values. They may only be compared with structures
+and passed to ``tree_unflatten`` while the provider that created them is active;
+they are not a cross-provider serialization format. For multi-tree mapping,
+all trees must have the same provider-defined structure; provider-native
+mismatch errors are propagated.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-import optree as _ot
-import torch
+from opaque.api.engine import ops
+from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 ParamPath = tuple[str | int, ...]
-"""Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
+"""Portable leaf path: dict keys (``str``) and sequence indices (``int``).
 
 Flat ``named_parameters`` dicts use a one-segment path, e.g.
 ``("layers.0.weight",)``.  Nested trees use multi-segment paths, e.g.
-``("layers", 0, "weight")``.  The two never collide.
+``("layers", 0, "weight")``. The two never collide.
 
-A bare leaf pytree (e.g. a single ``Tensor``) uses the empty path ``()``,
-matching :func:`optree.tree_flatten_with_path`.
+A bare structural leaf uses the empty path ``()``.
 """
 
 
@@ -64,82 +61,146 @@ def param_path_display(path: ParamPath) -> str:
     return ".".join(str(p) for p in path)
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_flatten_with_paths(
     tree: Any,
 ) -> tuple[list[ParamPath], list[Any], Any]:
-    """Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.
+    """Flatten all structural leaves to ``(paths, leaves, treedef)``.
 
-    Wraps :func:`optree.tree_flatten_with_path` so PerGroup consumers share one
-    path convention.
+    Providers normalize native paths to :data:`ParamPath`. A root leaf has
+    path ``()``; a flat dotted dict key remains one component and is distinct
+    from a nested path. The returned treedef belongs to the active provider.
     """
-    raw_paths, leaves, treedef = _ot.tree_flatten_with_path(tree)
-    paths = [param_path(p) for p in raw_paths]
-    return paths, list(leaves), treedef
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_flatten(tree: Any) -> tuple[list[Any], Any]:
-    """Flatten ``tree`` to ``(leaves, treedef)``.
+    """Flatten all structural leaves to ``(leaves, treedef)``.
 
-    Thin wrapper around :func:`optree.tree_flatten`.  Prefer
-    :func:`tree_flatten_with_paths` when callers need leaf identities.
+    Prefer :func:`tree_flatten_with_paths` when callers need leaf identities.
     """
-    leaves, treedef = _ot.tree_flatten(tree)
-    return list(leaves), treedef
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_unflatten(treedef: Any, leaves: list[Any]) -> Any:
     """Rebuild a PyTree from ``treedef`` and ``leaves``.
 
-    Thin wrapper around :func:`optree.tree_unflatten`.
+    The provider that created ``treedef`` must be active. The number of leaves
+    must match the treedef; provider-native mismatch errors are propagated.
     """
-    return _ot.tree_unflatten(treedef, leaves)
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_structure(tree: Any) -> Any:
-    """Return the optree structure of ``tree`` (no leaves).
+    """Return the active provider's opaque structure for ``tree``.
 
-    Thin wrapper around :func:`optree.tree_structure`.  Useful for asserting
-    that independently gathered payloads share a layout before unflattening.
+    Useful for asserting that independently gathered payloads share a layout
+    before unflattening.
     """
-    return _ot.tree_structure(tree)
+    raise NotImplementedError
 
 
-def tree_leaves(tree: Any) -> list[torch.Tensor]:
-    """Extract all leaf tensors from a PyTree.
+@primitive(tier=PrimitiveTier.CORE)
+def tree_leaves(tree: Any) -> list[Any]:
+    """Extract all native-array leaves from a PyTree.
 
     Args:
-        tree: Nested structure (dict/list/tuple/…) containing tensors as leaves.
+        tree: A portable tree, optionally including provider-native nodes.
 
     Returns:
-        List of all tensor leaves in the tree (non-tensor leaves are ignored).
+        List of all native-array leaves in the tree (non-array leaves are ignored).
 
     Example:
-        >>> tree = {'a': torch.tensor([1, 2]), 'b': {'c': torch.tensor([3])}}
-        >>> leaves = tree_leaves(tree)
-        >>> len(leaves)
-        2
+        After selecting a provider, construct a nested tree with two
+        provider-native array leaves. ``tree_leaves(tree)`` returns those two
+        leaves in traversal order.
     """
-    flat, _ = _ot.tree_flatten(tree)
-    return [x for x in flat if isinstance(x, torch.Tensor)]
+    raise NotImplementedError
 
 
+@primitive(tier=PrimitiveTier.CORE)
 def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
-    """Apply function to all leaves of one or more PyTrees.
+    """Apply ``fn`` to every structural leaf of one or more PyTrees.
 
     Args:
         fn: Function to apply to each leaf (or set of leaves from multiple trees).
-        *trees: One or more PyTrees with matching structure.
+        *trees: One or more PyTrees with matching provider-defined structure.
 
     Returns:
-        PyTree with same structure as inputs, with `fn` applied to leaves.
+        PyTree with the same structure, with ``fn`` applied to all leaves.
+
+    Raises:
+        Exception: A provider-native structural error if multiple trees do not
+            have matching structures.
 
     Example:
-        >>> tree = {'a': torch.tensor([1.0, 2.0]), 'b': torch.tensor([3.0])}
-        >>> doubled = tree_map(lambda x: x * 2, tree)
-        >>> doubled['a']
-        tensor([2., 4.])
+        After selecting a provider, construct a tree of native arrays and
+        apply ``tree_map(lambda x: x * 2, tree)``. The returned tree has the
+        same structure with every native-array leaf doubled.
     """
-    return _ot.tree_map(fn, *trees)
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def _squared_l2_norms(
+    leaves: list[Any],
+    groups: list[str] | None,
+    *,
+    dtype: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Accumulate total and optional grouped squared L2 norms natively.
+
+    Per-element squaring runs in ``dtype``; the cross-element and cross-leaf
+    accumulation may run in a wider provider-internal dtype, so the returned
+    scalars carry that internal dtype. :func:`_squared_l2_norm_roundoff`
+    reports the matching error bound.
+    """
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def _squared_l2_norm_roundoff(
+    leaves: list[Any],
+    *,
+    dtype: Any,
+) -> float:
+    """Relative error bound on ``sqrt`` of a :func:`_squared_l2_norms` result.
+
+    Covers per-element squaring in ``dtype``, the provider's intra-leaf
+    reduction structure, and the cross-leaf accumulation, halved for the
+    square root. Depends only on leaf shapes and dtypes — never on values —
+    so it stays a trace-time constant under compilation.
+    """
+    raise NotImplementedError
+
+
+def _resolve_reduction_dtype(
+    leaves: list[Any],
+    compute_dtype: Any | None,
+) -> Any:
+    """Resolve a real accumulation dtype for squared L2 reductions."""
+    if compute_dtype is not None:
+        if not ops.is_floating(compute_dtype) or ops.is_complex(compute_dtype):
+            raise TypeError(
+                f"compute_dtype must be a real floating-point dtype, got "
+                f"{compute_dtype!r}. Integer/bool/complex compute dtypes can "
+                f"silently corrupt the L2-norm reduction."
+            )
+        return compute_dtype
+
+    acc_dtype = ops.float32()
+    for leaf in leaves:
+        leaf_dtype = ops.dtype(leaf)
+        if ops.is_complex(leaf_dtype):
+            leaf_dtype = ops.real_dtype(leaf_dtype)
+        elif not ops.is_floating(leaf_dtype):
+            continue
+        if not ops.is_low_precision(leaf_dtype):
+            acc_dtype = ops.promote_dtype(acc_dtype, leaf_dtype)
+    return acc_dtype
 
 
 def tree_map_with_path(
@@ -161,17 +222,14 @@ def tree_map_with_path(
         PyTree with same structure, with fn applied to (path, leaf)
 
     Example:
-        >>> tree = {'layer1': {'weight': torch.ones(2)}, 'layer2': {'bias': torch.zeros(3)}}
-        >>> def print_shapes(path, leaf):
-        ...     print(f"{path}: {leaf.shape}")
-        ...     return leaf
-        >>> tree_map_with_path(print_shapes, tree)
-        ('layer1', 'weight'): torch.Size([2])
-        ('layer2', 'bias'): torch.Size([3])
+        After selecting a provider, pass a tree of native arrays and use a
+        callback that inspects ``path`` and ``leaf.shape``. The callback sees
+        provider-native shape values together with paths such as
+        ``('layer1', 'weight')`` and ``('layer2', 'bias')``.
     """
     paths, leaves, treedef = tree_flatten_with_paths(tree)
     out = [fn(path, leaf) for path, leaf in zip(paths, leaves, strict=True)]
-    return _ot.tree_unflatten(treedef, out)
+    return tree_unflatten(treedef, out)
 
 
 def partition(
@@ -192,19 +250,11 @@ def partition(
         Branches where all leaves are filtered out are omitted.
 
     Example:
-        >>> params = {
-        ...     'encoder': {
-        ...         'weight': torch.randn(10, 5),
-        ...         'lora_a': torch.randn(10, 2),
-        ...         'lora_b': torch.randn(2, 5),
-        ...     }
-        ... }
-        >>> def is_lora(path, value):
-        ...     return 'lora' in str(path)
-        >>> trainable, frozen = partition(is_lora, params)
-        >>> 'lora_a' in trainable['encoder']  # True
-        >>> 'weight' in frozen['encoder']      # True
-        >>> 'weight' in trainable['encoder']   # False
+        After selecting a provider, pass a parameter tree whose leaves are
+        native arrays and define ``is_lora(path, value)`` to identify adapter
+        paths. ``partition(is_lora, params)`` returns matching and
+        non-matching trees, preserving the nested structure where leaves are
+        present.
 
     References:
         Inspired by Haiku's hk.data_structures.partition():
@@ -267,11 +317,10 @@ def merge(*trees: Any) -> Any:
         Merged PyTree
 
     Example:
-        >>> trainable = {'encoder': {'lora_a': torch.ones(2)}}
-        >>> frozen = {'encoder': {'weight': torch.zeros(3)}}
-        >>> merged = merge(frozen, trainable)
-        >>> merged
-        {'encoder': {'weight': ..., 'lora_a': ...}}
+        After selecting a provider, pass trees containing native arrays to
+        ``merge``. For example, merging a frozen tree with a trainable tree
+        combines their ``'weight'`` and ``'lora_a'`` entries, with later trees
+        overriding earlier values at overlapping paths.
 
     References:
         Inspired by Haiku's hk.data_structures.merge():
@@ -336,100 +385,46 @@ def _merge_two(tree1: Any, tree2: Any) -> Any:
 def global_norm(
     tree: Any,
     *,
-    compute_dtype: torch.dtype | None = None,
-) -> torch.Tensor:
-    """Compute global L2 norm across all tensors in a PyTree.
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Compute global L2 norm across all native arrays in a PyTree.
 
     The global norm is the square root of the sum of squared norms of all
-    leaf tensors:
+    native-array leaves:
         global_norm = sqrt(sum(||leaf||^2 for leaf in tree))
 
     Args:
-        tree: PyTree of tensors (e.g., parameters or gradients)
+        tree: PyTree of native arrays (e.g., parameters or gradients)
         compute_dtype: Internal accumulation dtype.  ``None`` (default)
             promotes low-precision floats (fp16/bf16) to float32 for
             numerical stability and otherwise uses the input float dtype
-            promoted to at least float32.  Pass an explicit dtype (e.g.
-            ``torch.float64``) to force a specific accumulation precision.
+            promoted to at least float32. Pass an explicit provider dtype to
+            force a specific accumulation precision.
 
     Returns:
-        Scalar tensor containing the global L2 norm on the device of the first
-        tensor leaf (or CPU if the tree is empty).  Output dtype matches
+        Scalar native array containing the global L2 norm on the device of the
+        first leaf (or the provider default if the tree is empty). Output dtype matches
         the resolved compute dtype.
 
     Example:
-        >>> tree = {'w': torch.tensor([3.0, 4.0]), 'b': torch.tensor([0.0, 12.0])}
-        >>> norm = global_norm(tree)
-        >>> # norm = sqrt(3^2 + 4^2 + 0^2 + 12^2) = sqrt(169) = 13
-        >>> torch.isclose(norm, torch.tensor(13.0))
-        True
+        After selecting a provider, pass native arrays containing
+        ``[3.0, 4.0]`` and ``[0.0, 12.0]`` to ``global_norm``. The result is
+        the provider-native scalar value ``13``.
 
     References:
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
-    if compute_dtype is not None and not torch.is_floating_point(
-        torch.empty((), dtype=compute_dtype)
-    ):
-        raise TypeError(
-            f"compute_dtype must be a real floating-point dtype, got "
-            f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
-            f"silently corrupt the L2-norm reduction (the squared sum is "
-            f"non-negative real and the final sqrt assumes a real "
-            f"accumulator)."
-        )
-
     leaves = tree_leaves(tree)
+    real_acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
     if not leaves:
-        return torch.tensor(0.0, dtype=compute_dtype or torch.float32)
+        return ops.scalar(0.0, dtype=real_acc_dtype)
 
-    if compute_dtype is not None:
-        real_acc_dtype = compute_dtype
-    else:
-        # Auto-promote: at least float32, but match user's intent if they
-        # supplied higher-precision inputs.
-        dtypes = [t.dtype for t in leaves]
-        float_dtypes = [
-            dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))
-        ]
-        complex_dtypes = [
-            dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))
-        ]
-
-        if complex_dtypes:
-            acc_dtype = torch.complex64
-            for dt in complex_dtypes:
-                acc_dtype = torch.promote_types(acc_dtype, dt)
-            # For complex, accumulate real magnitudes in the corresponding real dtype
-            real_acc_dtype = torch.promote_types(
-                torch.float32, torch.tensor(0, dtype=acc_dtype).real.dtype
-            )
-        elif float_dtypes:
-            real_acc_dtype = torch.float32
-            for dt in float_dtypes:
-                real_acc_dtype = torch.promote_types(real_acc_dtype, dt)
-        else:
-            # All integer/bool → accumulate in float32
-            real_acc_dtype = torch.float32
-
-    device = leaves[0].device
-    total = torch.zeros((), device=device, dtype=real_acc_dtype)
-
-    for leaf in leaves:
-        if torch.is_complex(leaf):
-            # ||z||^2 = (real^2 + imag^2)
-            real = leaf.real.to(real_acc_dtype)
-            imag = leaf.imag.to(real_acc_dtype)
-            total = (
-                total
-                + (real * real).sum(dtype=real_acc_dtype)
-                + (imag * imag).sum(dtype=real_acc_dtype)
-            )
-        else:
-            x = leaf.to(real_acc_dtype)
-            total = total + (x * x).sum(dtype=real_acc_dtype)
-
-    return torch.sqrt(total)
+    total, _ = _squared_l2_norms(leaves, None, dtype=real_acc_dtype)
+    norm = ops.sqrt(total)
+    if ops.dtype(norm) != real_acc_dtype:
+        norm = ops.astype(norm, real_acc_dtype)
+    return norm
 
 
 __all__ = [

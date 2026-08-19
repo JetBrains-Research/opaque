@@ -133,6 +133,11 @@ profile:
     - inspection: PyRedeclarationInspection
       ignore:
         - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyAbstractClassInspection
+      # Tests deliberately declare incomplete ABC subclasses to assert the
+      # instantiation TypeError contract.
+      ignore:
+        - "scope#$Opaque_PythonTests"
 # Qodana uses a starter-based bridge because its headless engine interprets
 # several project-profile inspections differently from PyCharm. The shared
 # category scopes describe stable analyzer limitations, not individual files.

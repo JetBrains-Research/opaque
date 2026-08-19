@@ -20,6 +20,7 @@ from opaque.api.base.serialization._dispatch import (
 )
 from opaque.api.base.serialization._registry import (
     lookup_serializer,
+    register_fallback_resolver,
     register_serializer,
     register_template_restored,
     resolve_serializer,
@@ -36,6 +37,7 @@ __all__ = [
     "state_dict",
     "from_state_dict",
     # Registry
+    "register_fallback_resolver",
     "register_serializer",
     "register_template_restored",
     "lookup_serializer",

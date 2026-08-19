@@ -1,65 +1,116 @@
-"""Unit tests for generic RNG engine (JAX-style semantics)."""
+"""Compatibility tests for Opaque's explicit RNG key derivation."""
+
+from __future__ import annotations
+
+import dataclasses
 
 import pytest
-import torch
 
-from opaque.random import fold_in, generator_from_key, key, split
+from opaque.api.engine.random import _helpers
+from opaque.random import fold_in, key, random_key, split
+from opaque.random.types import RngKey
 
 
-def test_key_requires_int_seed():
+@pytest.mark.parametrize(
+    ("seed", "expected"),
+    [
+        (0, 0),
+        (-1, 2**64 - 1),
+        (2**64, 0),
+        (2**64 + 17, 17),
+        (-(2**64) - 17, 2**64 - 17),
+    ],
+)
+def test_key_normalizes_seeds_to_uint64(seed: int, expected: int) -> None:
+    assert key(seed).seed == expected
+    assert RngKey(seed).seed == expected
+
+
+@pytest.mark.parametrize("seed", [True, 1.5, "1", None])
+def test_key_and_rng_key_reject_non_integer_seeds(seed: object) -> None:
     with pytest.raises(TypeError, match="seed must be int"):
-        key("42")
+        key(seed)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="seed must be int"):
+        RngKey(seed)  # type: ignore[arg-type]
 
 
-def test_split_is_deterministic_for_same_key():
-    k1 = key(123)
-    k2 = key(123)
-    c11, c12 = split(k1, 2)
-    c21, c22 = split(k2, 2)
-    assert c11.seed == c21.seed
-    assert c12.seed == c22.seed
+def test_rng_key_is_frozen_and_preserves_implementation_label() -> None:
+    rng_key = RngKey(42, impl="test_implementation")
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        rng_key.seed = 7  # type: ignore[misc]
+
+    assert fold_in(rng_key, 0).impl == "test_implementation"
 
 
-def test_split_children_are_distinct():
-    k = key(123)
-    c1, c2, c3 = split(k, 3)
-    assert len({c1.seed, c2.seed, c3.seed}) == 3
+def test_fold_in_preserves_compatible_derivation_values() -> None:
+    rng_key = key(42)
+
+    assert fold_in(rng_key, 0).seed == 6663219682538052210
+    assert fold_in(rng_key, 1).seed == 2142789487919306769
+    assert fold_in(rng_key, "noise", 3).seed == 6871992306301461613
+    assert tuple(child.seed for child in split(rng_key, 3)) == (
+        6663219682538052210,
+        2142789487919306769,
+        7729968134091776446,
+    )
 
 
-def test_fold_in_domain_separates():
-    k = key(123)
-    a = fold_in(k, "noise")
-    b = fold_in(k, "sampling")
-    assert a.seed != b.seed
+def test_fold_in_is_deterministic_sequential_and_domain_separated() -> None:
+    rng_key = key(42)
+
+    assert fold_in(rng_key, 1) == fold_in(rng_key, 1)
+    assert fold_in(rng_key, "1").seed == 2828878459550303588
+    assert fold_in(rng_key, 1) != fold_in(rng_key, "1")
+    assert fold_in(rng_key, "stream", 3) == fold_in(fold_in(rng_key, "stream"), 3)
+    assert rng_key == key(42)
 
 
-def test_generator_from_key_is_reproducible():
-    k = key(999)
-    g1 = generator_from_key(k)
-    g2 = generator_from_key(k)
-    x1 = torch.randn(16, generator=g1)
-    x2 = torch.randn(16, generator=g2)
-    assert torch.allclose(x1, x2)
+def test_fold_in_supports_arbitrarily_large_integer_metadata() -> None:
+    rng_key = key(42)
+    large = 1 << 200
+
+    assert fold_in(rng_key, large) == fold_in(rng_key, large)
+    assert fold_in(rng_key, large) != fold_in(rng_key, -large)
 
 
-def test_fold_in_variadic_equals_sequential():
-    """fold_in(k, a, b) must equal fold_in(fold_in(k, a), b)."""
-    k = key(42)
-    chained = fold_in(fold_in(k, 7), 3)
-    variadic = fold_in(k, 7, 3)
-    assert chained.seed == variadic.seed
+@pytest.mark.parametrize("data", [True, 1.5, None, object()])
+def test_fold_in_rejects_non_domain_data(data: object) -> None:
+    with pytest.raises(TypeError, match="data must be int or str"):
+        fold_in(key(42), data)  # type: ignore[arg-type]
 
 
-def test_fold_in_variadic_three_values():
-    """fold_in(k, a, b, c) == fold_in(fold_in(fold_in(k, a), b), c)."""
-    k = key(0)
-    chained = fold_in(fold_in(fold_in(k, 1), 2), 3)
-    variadic = fold_in(k, 1, 2, 3)
-    assert chained.seed == variadic.seed
+def test_fold_in_requires_a_key_and_at_least_one_domain_value() -> None:
+    with pytest.raises(TypeError, match="rng_key must be RngKey"):
+        fold_in(42, 0)  # type: ignore[arg-type]
 
-
-def test_fold_in_no_data_raises():
-    """fold_in(k) with no data arguments must raise ValueError."""
-    k = key(42)
     with pytest.raises(ValueError, match="at least one data argument"):
-        fold_in(k)
+        fold_in(key(42))
+
+
+@pytest.mark.parametrize("num", [True, 1.5, "2"])
+def test_split_rejects_non_integer_counts(num: object) -> None:
+    with pytest.raises(TypeError, match="num must be int"):
+        split(key(42), num)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("num", [0, -1])
+def test_split_requires_a_positive_count(num: int) -> None:
+    with pytest.raises(ValueError, match="num must be >= 1"):
+        split(key(42), num)
+
+
+def test_random_key_uses_system_entropy_and_returns_a_canonical_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_bits: list[int] = []
+
+    def randbits(num_bits: int) -> int:
+        requested_bits.append(num_bits)
+        return 2**64 - 1
+
+    monkeypatch.setattr(_helpers.secrets, "randbits", randbits)
+
+    assert random_key() == key(2**64 - 1)
+    assert requested_bits == [64]
