@@ -80,7 +80,7 @@ jobs:
   # on main; supported dependency and platform boundaries remain pre-merge.
   # ---------------------------------------------------------------------------
   python-tests-linux-amd64:
-    name: Linux amd64
+    name: Linux amd64 (locked)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -93,7 +93,7 @@ jobs:
       timeout-minutes: 30
 
   python-tests-minimum:
-    name: Minimum dependencies
+    name: Linux amd64 (minimum dependencies)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -109,7 +109,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-latest:
-    name: Latest dependencies
+    name: Linux amd64 (latest dependencies)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -169,7 +169,7 @@ jobs:
       timeout-minutes: 30
 
   python-tests-cuda-minimum:
-    name: CUDA minimum dependencies
+    name: CUDA (minimum dependencies)
     needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -189,7 +189,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-cuda-latest:
-    name: CUDA latest dependencies
+    name: CUDA (latest dependencies)
     needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||

@@ -239,7 +239,7 @@ jobs:
         run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
 
   python-tests-linux-amd64:
-    name: Release Linux amd64
+    name: Release Linux amd64 (locked)
     needs: [plan, discover-packages]
     permissions:
       contents: read
@@ -254,7 +254,7 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
 
   python-tests-minimum:
-    name: Release minimum dependencies
+    name: Release Linux amd64 (minimum dependencies)
     needs: [plan, discover-packages]
     permissions:
       contents: read
@@ -273,7 +273,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-latest:
-    name: Release latest dependencies
+    name: Release Linux amd64 (latest dependencies)
     needs: [plan, discover-packages]
     permissions:
       contents: read
@@ -339,7 +339,7 @@ jobs:
       timeout-minutes: 40
 
   python-tests-cuda-minimum:
-    name: Release CUDA minimum dependencies
+    name: Release CUDA (minimum dependencies)
     needs: [plan, discover-packages]
     permissions:
       contents: read
@@ -358,7 +358,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-cuda-latest:
-    name: Release CUDA latest dependencies
+    name: Release CUDA (latest dependencies)
     needs: [plan, discover-packages]
     permissions:
       contents: read
