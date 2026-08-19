@@ -5151,6 +5151,16 @@ class DPTrainer:
                 )
             return sampler_state
         if self._ddp.world_size > 1:
+            if self.args.ignore_data_skip:
+                # The user explicitly opted out of sampler-cursor restore;
+                # a missing rank-local snapshot is then not an error — the
+                # sampler restarts from its keyed beginning on every rank.
+                log.info(
+                    "ignore_data_skip=True: rank-local sampler state missing at "
+                    "%s; sampler restarts from its initial cursor.",
+                    path,
+                )
+                return None
             raise RuntimeError(
                 f"Cannot resume distributed training from {ckpt_dir}: missing "
                 f"rank-local sampler state for rank {self._ddp.rank} at {path}."

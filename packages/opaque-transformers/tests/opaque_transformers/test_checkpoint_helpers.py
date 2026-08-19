@@ -173,9 +173,22 @@ class TestSamplerStatePaths:
     def test_distributed_resume_rejects_missing_local_sampler_state(self, tmp_path):
         trainer = object.__new__(DPTrainer)
         trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        trainer.args = SimpleNamespace(ignore_data_skip=False)
 
         with pytest.raises(RuntimeError, match="rank-local sampler state for rank 1"):
             trainer._read_sampler_state_for_resume(str(tmp_path), {"key_seed": 11})
+
+    def test_ignore_data_skip_tolerates_missing_local_sampler_state(self, tmp_path):
+        """ignore_data_skip=True resumes without rank-local sampler files."""
+        trainer = object.__new__(DPTrainer)
+        trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        trainer.args = SimpleNamespace(ignore_data_skip=True)
+
+        sampler_state = trainer._read_sampler_state_for_resume(
+            str(tmp_path), {"key_seed": 11}
+        )
+
+        assert sampler_state is None
 
 
 class TestDpRuntimeBundle:

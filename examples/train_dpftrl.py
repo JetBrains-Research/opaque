@@ -2152,7 +2152,8 @@ def main():
                 f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
                 f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
                 f"LR: {lr_t:.2e} | "
-                f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
+                f"Time: {last.step_time_sec:.2f}s | Mem: "
+                f"{f'{last.memory_peak_gb:.1f}GB' if last.memory_peak_gb is not None else 'n/a'}"
             )
 
         # --- Eval ---
@@ -2233,7 +2234,8 @@ def main():
     print("\nPerformance:")
     print(f"  Throughput: {synced.train.samples_per_second:.1f} samples/s")
     print(f"  Steps/s: {synced.train.steps_per_second:.2f}")
-    print(f"  Peak memory: {synced.train.max_peak_memory_gb:.2f} GB")
+    peak_gb = synced.train.max_peak_memory_gb
+    print(f"  Peak memory: {f'{peak_gb:.2f} GB' if peak_gb is not None else 'n/a'}")
 
     if use_wandb:
         wandb.finish()
