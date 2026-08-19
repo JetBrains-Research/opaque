@@ -17,9 +17,9 @@ from dpftrl_ddp_helpers import (
 from opaque.distributed import sum_gradients
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
-from opaque.functional import make_functional
 from opaque.pytree import tree_map
 from opaque.random import key
+from opaque.torch.functional import make_functional
 
 pytestmark = pytest.mark.cuda
 

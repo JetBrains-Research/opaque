@@ -1,33 +1,22 @@
-"""Matrix factorization-based noise addition for DP-FTRL.
-
-Implements correlated noise mechanisms that add noise to gradients using
-matrix factorization. Instead of adding independent Gaussian noise at
-each step (standard DP-SGD), these mechanisms add correlated noise that
-achieves better utility at the same privacy budget.
-
-The user-facing entry point is ``mf_gaussian_noise`` (in ``opaque.noise``).
-Internally, strategy modules (``band_mf``, ``blt``, etc.)
-call ``_matrix_factorization_noise`` which returns ``(noise_fn, state)``.
-
-References:
-    - Correlated noise mechanisms: https://arxiv.org/abs/2506.08201
-    - BandMF: https://arxiv.org/abs/2306.08153
-    - BLT mechanisms: https://arxiv.org/abs/2404.16706
-"""
+"""Portable matrix-factorization noise execution for DP-FTRL."""
 
 from __future__ import annotations
 
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
-import torch
-
-from opaque.pytree import tree_map
+from opaque.api.engine import ops
+from opaque.api.engine.backend import ensure_backend
+from opaque.api.engine.pytree import (
+    tree_flatten_with_paths,
+    tree_map,
+    tree_unflatten,
+)
 from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
+from opaque.random import normal
 from opaque.types import NoiseState, PerGroup
 
-from . import _streaming_matrix as streaming_matrix
+from ._plan import MfExecutionPlan
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -37,29 +26,7 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class MFNoiseState(NoiseState):
-    """State for matrix factorization noise.
-
-    Attributes:
-        _inner_state: Internal state (streaming matrix state or step counter).
-        _step_counter: Number of noise_fn calls made.
-        _rng_key: Immutable RNG key for deterministic per-step derivation.
-        _first_max_norm: ``ClippedPytree.max_norm`` from the first call (scalar
-            or :class:`~opaque.types.PerGroup`), latched by the dispatcher to
-            enforce constant per-step sensitivity.  ``None`` until the first
-            call.  MF privacy analyses assume the per-step sensitivity is
-            constant across the sequence.  Both fixed clipping
-            (:func:`opaque.dpftrl.clipping.clipped_grad`) and AUTO-S clipping
-            (:func:`opaque.dpftrl.clipping.auto_clipped_grad`) satisfy this
-            assumption — the per-record bound is fixed at construction and
-            does not depend on data.  Adaptive clipping
-            (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) breaks it,
-            so the dispatcher rejects subsequent calls whose ``max_norm``
-            differs.
-        _first_max_norm_sync_fingerprint: Deterministic 64-bit fingerprint
-            (computed at latch time) for cheap cross-rank checks in
-            :func:`sync_mf_noise_state`, for both scalar and ``PerGroup`` norms.
-            ``None`` before the first call.
-    """
+    """Immutable state for provider-native matrix-factorization noise."""
 
     _inner_state: Any
     _step_counter: int
@@ -68,124 +35,233 @@ class MFNoiseState(NoiseState):
     _first_max_norm_sync_fingerprint: int | None = None
 
 
-def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
-    """Use at least float32 for internal MF noise computations."""
-    if dtype in (torch.float16, torch.bfloat16):
-        return torch.float32
-    return dtype
+def _internal_compute_dtype(dtype: object) -> object:
+    """Promote low-precision native dtypes to the active provider's float32."""
+    return ops.float32() if ops.is_low_precision(dtype) else dtype
+
+
+def _resolve_compute_dtype(compute_dtype: object | None) -> object:
+    return ops.float32() if compute_dtype is None else compute_dtype
+
+
+def _validate_noise_stddev(stddev: float | PerGroup) -> None:
+    if isinstance(stddev, PerGroup):
+        for group_name, value in stddev.values.items():
+            if value < 0:
+                raise ValueError(
+                    "MF noise standard deviation must be non-negative for all "
+                    f"groups, got {value} for group {group_name!r}."
+                )
+        return
+    if float(stddev) < 0:
+        raise ValueError(
+            f"MF noise standard deviation must be non-negative, got {stddev}."
+        )
 
 
 def _iid_normal_noise(
     target_tree: Any,
     stddev: float | PerGroup,
-    generator: torch.Generator | None = None,
-    compute_dtype: torch.dtype = torch.float32,
-) -> Any:
-    """Generate IID normal noise matching the structure of ``target_tree``.
-
-    ``compute_dtype`` is the dtype used for the underlying ``torch.randn``
-    call.  Defaults to ``torch.float32`` to match :func:`opaque.dpsgd.noise.gaussian_noise`
-    — sampling Gaussians in bf16/fp16 has discretization issues that distort
-    the noise distribution.  Type stability on the public boundary is
-    preserved by the caller (which casts back to the input dtype).
-    """
-
-    def _randn_on_device(
-        shape: tuple[int, ...],
-        *,
-        noise_dtype: torch.dtype,
-        device: torch.device,
-        generator: torch.Generator | None,
-    ) -> torch.Tensor:
-        try:
-            return torch.randn(
-                shape, dtype=noise_dtype, device=device, generator=generator
-            )
-        except RuntimeError as exc:
-            if "device type for generator" in str(exc):
-                return torch.randn(shape, dtype=noise_dtype, generator=generator).to(
-                    device=device
-                )
-            raise
-
-    if isinstance(stddev, PerGroup):
-        import optree
-
-        from opaque.api.engine.pytree import tree_flatten_with_paths
-
-        paths, leaves, treedef = tree_flatten_with_paths(target_tree)
-        out_leaves: list[Any] = []
-        for path, tensor in zip(paths, leaves, strict=True):
-            if not isinstance(tensor, torch.Tensor):
-                raise TypeError(
-                    "PerGroup MF noise expects tensor leaves; "
-                    f"got {type(tensor).__name__} at path {path!r}."
-                )
-            leaf_std = stddev.for_path(path)
-            noise = _randn_on_device(
-                tensor.shape,
-                noise_dtype=compute_dtype,
-                device=tensor.device,
-                generator=generator,
-            )
-            out_leaves.append(noise * leaf_std)
-        return optree.tree_unflatten(treedef, out_leaves)
-
-    def make_noise(t):
-        noise = _randn_on_device(
-            t.shape,
-            noise_dtype=compute_dtype,
-            device=t.device,
-            generator=generator,
-        )
-        return noise * stddev
-
-    return tree_map(make_noise, target_tree)
-
-
-def _gaussian_linear_combination(
-    matrix_row: torch.Tensor,
-    shape: tuple[int, ...],
-    dtype: torch.dtype,
-    device: torch.device,
+    *,
     key: RngKey,
-    leaf_index: int,
-) -> torch.Tensor:
-    """Compute a linear combination of standard Gaussian random variables.
+    compute_dtype: object | None = None,
+) -> Any:
+    """Sample an IID Gaussian pytree with deterministic per-leaf keys."""
+    _validate_noise_stddev(stddev)
+    sample_dtype = _resolve_compute_dtype(compute_dtype)
+    paths, leaves, treedef = tree_flatten_with_paths(target_tree)
+    noise_leaves: list[Any] = []
+    for leaf_index, (path, leaf) in enumerate(zip(paths, leaves, strict=True)):
+        if not ops.is_array(leaf):
+            raise TypeError(
+                "MF noise expects native array leaves; "
+                f"got {type(leaf).__name__} at path {path!r}."
+            )
+        leaf_stddev = stddev.for_path(path) if isinstance(stddev, PerGroup) else stddev
+        if leaf_stddev == 0:
+            noise = ops.zeros(ops.shape(leaf), dtype=sample_dtype, like=leaf)
+        else:
+            noise = normal(
+                rng_fold_in(key, "mf_gaussian_leaf", leaf_index),
+                ops.shape(leaf),
+                dtype=sample_dtype,
+                like=leaf,
+            )
+            noise = ops.multiply(noise, leaf_stddev)
+        noise_leaves.append(noise)
+    return tree_unflatten(treedef, noise_leaves)
 
-    Given coefficients [c0, c1, ..., c_{k-1}] and IID z_0, ..., z_{k-1}
-    ~ N(0, I), returns sum_i c_i * z_i. Each ``z_i`` is derived from the
-    mechanism key and column ``i`` so it is reused by every row that references
-    that column.
-    """
-    result = torch.zeros(shape, dtype=dtype, device=device)
-    for idx in torch.nonzero(matrix_row, as_tuple=False).flatten().tolist():
-        coef = matrix_row[idx].to(dtype)
-        generator = generator_from_key(
-            rng_fold_in(key, "mf_gaussian_column", idx, leaf_index)
+
+def _tree_scale(tree: Any, scale: float) -> Any:
+    if scale == 1.0:
+        return tree
+    return tree_map(lambda value: ops.multiply(value, scale), tree)
+
+
+def _tree_add(left: Any, right: Any) -> Any:
+    return tree_map(ops.add, left, right)
+
+
+def _tree_subtract(left: Any, right: Any) -> Any:
+    return tree_map(ops.subtract, left, right)
+
+
+def _tree_linear_combination(
+    trees: tuple[Any, ...], coefficients: tuple[float, ...]
+) -> Any:
+    if not trees or len(trees) != len(coefficients):
+        raise ValueError(
+            "linear-combination trees and coefficients must have equal non-zero length"
         )
-        try:
-            noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
-        except RuntimeError as exc:
-            if "device type for generator" in str(exc):
-                noise = torch.randn(shape, dtype=dtype, generator=generator).to(
-                    device=device
-                )
-            else:
-                raise
-        result = result + coef * noise
+    result = _tree_scale(trees[0], coefficients[0])
+    for tree, coefficient in zip(trees[1:], coefficients[1:], strict=True):
+        result = _tree_add(result, _tree_scale(tree, coefficient))
     return result
 
 
-def _check_mf_horizon(step: int, n_steps: int) -> None:
-    """Raise if ``step`` is outside the calibrated MF horizon ``[0, n_steps)``.
+def _zero_tree_like(tree: Any, compute_dtype: object) -> Any:
+    def zero(leaf: Any) -> Any:
+        if not ops.is_array(leaf):
+            raise TypeError(
+                f"MF noise expects native array leaves; got {type(leaf).__name__}."
+            )
+        return ops.zeros(ops.shape(leaf), dtype=compute_dtype, like=leaf)
 
-    MF strategies (and their accountants) are built for a fixed horizon.
-    Calling ``noise_fn`` at ``step >= n_steps`` is either a zero-noise
-    release (normalized λ-CGD) or unaccounted correlated noise (streaming
-    / dense engines).  Fail closed rather than silently continuing.
+    return tree_map(zero, tree)
+
+
+def _add_noise_tree(grads: Any, noise: Any, compute_dtype: object) -> Any:
+    def add(grad: Any, noise_leaf: Any) -> Any:
+        if not ops.is_array(grad):
+            raise TypeError(
+                f"MF noise expects native array leaves; got {type(grad).__name__}."
+            )
+        input_dtype = ops.dtype(grad)
+        grad_compute = (
+            ops.astype(grad, compute_dtype) if input_dtype != compute_dtype else grad
+        )
+        result = ops.add(grad_compute, noise_leaf)
+        return (
+            ops.astype(result, input_dtype) if input_dtype != compute_dtype else result
+        )
+
+    return tree_map(add, grads, noise)
+
+
+def _toeplitz_window(plan: MfExecutionPlan) -> int:
+    """Length of the streamed history window for a toeplitz-mode plan.
+
+    Whichever coefficient window is banded drives execution: a banded
+    strategy needs the last ``strategy_bands - 1`` outputs for the
+    recurrence, a banded inverse (BISR) needs the last
+    ``inverse_bands - 1`` noise draws for the convolution. Dense-dense
+    plans keep an ``n_steps - 1`` window — never worse than materializing
+    the full history.
     """
-    if step >= n_steps:
+    if plan.strategy_bands <= plan.inverse_bands:
+        return plan.strategy_bands - 1
+    return plan.inverse_bands - 1
+
+
+def _initial_inner_state(
+    plan: MfExecutionPlan, grad_template: Any, compute_dtype: object
+) -> Any:
+    if plan.mode == "toeplitz":
+        return tuple(
+            _zero_tree_like(grad_template, compute_dtype)
+            for _ in range(_toeplitz_window(plan))
+        )
+    if plan.mode == "blt":
+        return tuple(
+            _zero_tree_like(grad_template, compute_dtype) for _ in plan.buffer_decay
+        )
+    return None
+
+
+def _apply_plan(
+    plan: MfExecutionPlan,
+    iid_noise: Any,
+    inner_state: Any,
+    *,
+    step: int,
+    target_tree: Any,
+    stddev: float | PerGroup,
+    key: RngKey,
+    compute_dtype: object,
+) -> tuple[Any, Any]:
+    if plan.mode == "identity":
+        return iid_noise, None
+
+    if plan.mode == "lambda_replay":
+        if step == 0 or len(plan.inverse_coefficients) == 1:
+            correlated = iid_noise
+        else:
+            previous = _iid_normal_noise(
+                target_tree,
+                stddev,
+                key=rng_fold_in(key, "mf_gaussian_column", step - 1),
+                compute_dtype=compute_dtype,
+            )
+            correlated = _tree_add(
+                iid_noise,
+                _tree_scale(previous, plan.inverse_coefficients[1]),
+            )
+        return _tree_scale(correlated, plan.column_scales[step]), None
+
+    if plan.mode == "toeplitz":
+        # ``inner_state`` is a newest-first window of past trees (zero
+        # trees before their step exists): recurrence mode stores past
+        # outputs x, convolution mode stores past noise draws z.
+        history: tuple[Any, ...] = inner_state
+        window = _toeplitz_window(plan)
+        count = min(step, window)
+        if plan.strategy_bands <= plan.inverse_bands:
+            # Streaming recurrence (arXiv:2306.08153, Alg. 9):
+            # x_t = (z_t - sum_{j>=1} c_j x_{t-j}) / c_0.
+            coefficients = plan.strategy_coefficients
+            centered = iid_noise
+            if count:
+                centered = _tree_subtract(
+                    centered,
+                    _tree_linear_combination(
+                        history[:count], coefficients[1 : count + 1]
+                    ),
+                )
+            correlated = _tree_scale(centered, 1.0 / coefficients[0])
+            new_entry = correlated
+        else:
+            # Banded inverse: x_t = sum_{j < inverse_bands} inv_j z_{t-j}.
+            inverse = plan.inverse_coefficients
+            correlated = _tree_scale(iid_noise, inverse[0])
+            if count:
+                correlated = _tree_add(
+                    correlated,
+                    _tree_linear_combination(history[:count], inverse[1 : count + 1]),
+                )
+            new_entry = iid_noise
+        next_history = (new_entry, *history[: window - 1]) if window else ()
+        return _tree_scale(correlated, plan.column_scales[step]), next_history
+
+    if plan.mode == "blt":
+        buffers: tuple[Any, ...] = inner_state
+        if buffers:
+            buffered = _tree_linear_combination(buffers, plan.output_scale)
+            correlated = _tree_subtract(iid_noise, buffered)
+            next_buffers = tuple(
+                _tree_add(_tree_scale(buffer, decay), correlated)
+                for buffer, decay in zip(buffers, plan.buffer_decay, strict=True)
+            )
+        else:
+            correlated = iid_noise
+            next_buffers = ()
+        return _tree_scale(correlated, plan.column_scales[step]), next_buffers
+
+    raise ValueError(f"unsupported MF execution-plan mode: {plan.mode!r}")
+
+
+def _check_mf_horizon(step: int, n_steps: int) -> None:
+    """Raise if ``step`` is outside the calibrated MF horizon."""
+    if step < 0 or step >= n_steps:
         raise ValueError(
             f"MF noise step {step} is outside the calibrated horizon "
             f"[0, {n_steps}). Rebuild the noise mechanism with a larger "
@@ -194,11 +270,6 @@ def _check_mf_horizon(step: int, n_steps: int) -> None:
 
 
 def _require_positive_int_horizon(n_steps: object) -> int:
-    """Validate a calibrated MF horizon as a positive ``int``.
-
-    Rejects bools and non-integers (``int(2.9)`` truncation would silently
-    shrink the horizon).  Returns the validated value for callers to latch.
-    """
     if isinstance(n_steps, bool) or not isinstance(n_steps, int):
         raise TypeError(f"n_steps must be an int, got {type(n_steps).__name__}")
     if n_steps < 1:
@@ -208,209 +279,69 @@ def _require_positive_int_horizon(n_steps: object) -> int:
 
 def _matrix_factorization_noise(
     grad_template: Any,
-    noising: torch.Tensor | streaming_matrix.StreamingMatrix,
+    noising: MfExecutionPlan,
     *,
     key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
     n_steps: int | None = None,
-) -> tuple[
-    Callable[..., tuple[Any, MFNoiseState]],
-    MFNoiseState,
-]:
-    """Internal: create ``(noise_fn, state)`` from a noising matrix.
-
-    This is the engine that all strategy modules call. Users
-    should use ``mf_gaussian_noise`` (or a strategy wrapper) instead.
-
-    Args:
-        grad_template: Pytree with the same structure/shapes as gradients.
-        noising: Dense 2D tensor or ``StreamingMatrix`` representing C^{-1}.
-        key: Pre-resolved base ``RngKey``.
-        compute_dtype: Dtype used for the underlying ``torch.randn`` and
-            linear-combination arithmetic.  Matches the
-            :func:`opaque.dpsgd.noise.gaussian_noise` convention.
-        n_steps: Calibrated training horizon.  When provided, ``noise_fn``
-            raises once ``step >= n_steps``.  For dense tensors, defaults
-            to ``noising.shape[0]`` when omitted.  Streaming matrices have
-            no intrinsic size — omit only for direct engine callers that
-            intentionally leave the sequence unbounded; the public
-            :func:`mf_gaussian_noise` factory always passes ``n_steps``.
-
-    Returns:
-        ``(noise_fn, state)`` where
-        ``noise_fn(grads, state, *, stddev) -> (noised, state)``.  ``stddev``
-        is the per-step standard deviation for the base IID noise (scalar or
-        :class:`~opaque.types.PerGroup` for per-parameter-group allocation);
-        the dispatcher derives it from ``noise_multiplier`` and
-        ``ClippedPytree.max_norm``.
-    """
-    if isinstance(noising, torch.Tensor):
-        return _tensor_mf_noise(
-            grad_template,
-            noising,
-            key=key,
-            compute_dtype=compute_dtype,
-            n_steps=n_steps,
+) -> tuple[Callable[..., tuple[Any, MFNoiseState]], MFNoiseState]:
+    """Create a portable raw MF noise function from an immutable host plan."""
+    if not isinstance(noising, MfExecutionPlan):
+        raise TypeError(
+            "noising must be MfExecutionPlan; strategy runtime hooks and native "
+            "matrix objects are not portable execution inputs"
         )
-    elif isinstance(noising, streaming_matrix.StreamingMatrix):
-        return _streaming_mf_noise(
-            grad_template,
-            noising,
-            key=key,
-            compute_dtype=compute_dtype,
-            n_steps=n_steps,
-        )
-    else:
-        raise TypeError(f"Unsupported noising type: {type(noising)}")
-
-
-def _tensor_mf_noise(
-    grad_template: Any,
-    noising: torch.Tensor,
-    *,
-    key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
-    n_steps: int | None = None,
-) -> tuple[Callable, MFNoiseState]:
-    """(noise_fn, state) from a 2D noising matrix C^{-1}."""
-    if noising.ndim != 2:
-        raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
-    horizon = (
-        noising.shape[0] if n_steps is None else _require_positive_int_horizon(n_steps)
-    )
-    if horizon > noising.shape[0]:
+    horizon = noising.n_steps
+    if n_steps is not None and _require_positive_int_horizon(n_steps) != horizon:
         raise ValueError(
-            f"n_steps ({horizon}) exceeds noising matrix rows ({noising.shape[0]})."
+            f"n_steps ({n_steps}) does not match execution-plan horizon ({horizon})."
         )
-
+    ensure_backend(grad_template)
+    resolved_compute_dtype = _resolve_compute_dtype(compute_dtype)
     state = MFNoiseState(
-        _inner_state=torch.tensor(0, dtype=torch.long),
+        _inner_state=_initial_inner_state(
+            noising, grad_template, resolved_compute_dtype
+        ),
         _step_counter=0,
         _rng_key=key,
     )
 
-    def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
-        index = st._inner_state
-        step_index = int(index)
-        _check_mf_horizon(step_index, horizon)
-        matrix_row_base = noising[step_index]
-        import optree
-
-        from opaque.api.engine.pytree import tree_flatten_with_paths
-
-        paths, leaves, treedef = tree_flatten_with_paths(clipped_grads)
-
-        if isinstance(stddev, PerGroup):
-
-            def add_noise_at_path(
-                path, grad_tensor: torch.Tensor, leaf_index: int
-            ) -> torch.Tensor:
-                eff = stddev.for_path(path)
-                matrix_row = matrix_row_base * eff
-                noise = _gaussian_linear_combination(
-                    matrix_row,
-                    grad_tensor.shape,
-                    compute_dtype,
-                    grad_tensor.device,
-                    st._rng_key,
-                    leaf_index,
-                )
-                return (grad_tensor + noise).to(grad_tensor.dtype)
-
-            noisy_leaves = []
-            for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
-                if not isinstance(v, torch.Tensor):
-                    raise TypeError(
-                        "PerGroup dense MF noise expects tensor leaves; "
-                        f"got {type(v).__name__} at path {path!r}."
-                    )
-                noisy_leaves.append(add_noise_at_path(path, v, leaf_index))
-            noisy_grads = optree.tree_unflatten(treedef, noisy_leaves)
-        else:
-            matrix_row = matrix_row_base * float(stddev)
-
-            noisy_leaves = []
-            for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
-                if not isinstance(v, torch.Tensor):
-                    raise TypeError(
-                        "Dense MF noise expects tensor leaves; "
-                        f"got {type(v).__name__} at path {path!r}."
-                    )
-                noise = _gaussian_linear_combination(
-                    matrix_row,
-                    v.shape,
-                    compute_dtype,
-                    v.device,
-                    st._rng_key,
-                    leaf_index,
-                )
-                noisy_leaves.append((v + noise).to(v.dtype))
-            noisy_grads = optree.tree_unflatten(treedef, noisy_leaves)
-        new_state = MFNoiseState(
-            _inner_state=index + 1,
-            _step_counter=st._step_counter + 1,
-            _rng_key=st._rng_key,
-        )
-        return noisy_grads, new_state
-
-    return noise_fn, state
-
-
-def _streaming_mf_noise(
-    grad_template: Any,
-    noising: streaming_matrix.StreamingMatrix,
-    *,
-    key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
-    n_steps: int | None = None,
-) -> tuple[Callable, MFNoiseState]:
-    """(noise_fn, state) from a streaming noising matrix C^{-1}.
-
-    ``n_steps`` is the calibrated horizon.  When provided, ``noise_fn``
-    raises once ``step >= n_steps`` so past-horizon correlated noise is
-    never released unaccounted.  Direct engine callers that omit
-    ``n_steps`` keep the previous unbounded behaviour (tests that drive
-    a streaming matrix without a declared horizon).
-    """
-    horizon = None if n_steps is None else _require_positive_int_horizon(n_steps)
-    streaming_state = noising.init_multiply(grad_template)
-    state = MFNoiseState(
-        _inner_state=streaming_state,
-        _step_counter=0,
-        _rng_key=key,
-    )
-
-    def noise_fn(clipped_grads, st, *, stddev: float | PerGroup):
+    def noise_fn(
+        clipped_grads: Any,
+        st: MFNoiseState,
+        *,
+        stddev: float | PerGroup,
+    ) -> tuple[Any, MFNoiseState]:
         step = st._step_counter
-        if horizon is not None:
-            _check_mf_horizon(step, horizon)
+        _check_mf_horizon(step, horizon)
+        ensure_backend(clipped_grads)
         step_key = rng_fold_in(st._rng_key, "mf_gaussian_column", step)
-        g = generator_from_key(step_key)
-        s_state = st._inner_state
-
         iid_noise = _iid_normal_noise(
             clipped_grads,
             stddev,
-            generator=g,
-            compute_dtype=compute_dtype,
+            key=step_key,
+            compute_dtype=resolved_compute_dtype,
         )
-        corr_noise, new_streaming_state = noising.multiply_next(iid_noise, s_state)
-        noisy_grads = tree_map(
-            lambda grad, n: (grad + n).to(grad.dtype),
-            clipped_grads,
-            corr_noise,
+        correlated, next_inner = _apply_plan(
+            noising,
+            iid_noise,
+            st._inner_state,
+            step=step,
+            target_tree=clipped_grads,
+            stddev=stddev,
+            key=st._rng_key,
+            compute_dtype=resolved_compute_dtype,
         )
-        new_state = MFNoiseState(
-            _inner_state=new_streaming_state,
+        noisy_grads = _add_noise_tree(clipped_grads, correlated, resolved_compute_dtype)
+        return noisy_grads, MFNoiseState(
+            _inner_state=next_inner,
             _step_counter=step + 1,
             _rng_key=st._rng_key,
+            _first_max_norm=st._first_max_norm,
+            _first_max_norm_sync_fingerprint=st._first_max_norm_sync_fingerprint,
         )
-        return noisy_grads, new_state
 
     return noise_fn, state
-
-
-# ---- Input validation helpers shared by mf_gaussian_noise + second-moment ----
 
 
 def _resolve_noise_multiplier(noise_multiplier: float) -> float:
@@ -423,7 +354,7 @@ def _resolve_noise_multiplier(noise_multiplier: float) -> float:
 
 
 def _expect_clipped(value: Any, *, op: str):
-    """Reject NoisedPytree or non-ClippedPytree inputs to the noise function."""
+    """Reject already-noised or non-clipped inputs."""
     from opaque.types import ClippedPytree, NoisedPytree
 
     if isinstance(value, NoisedPytree):
@@ -440,45 +371,32 @@ def _expect_clipped(value: Any, *, op: str):
 
 
 def _validate_constant_max_norm(
-    grads,
+    grads: Any,
     first_max_norm: float | PerGroup | None,
     *,
     op: str,
 ) -> float | PerGroup:
-    """Latch the per-step max_norm and reject changes across calls.
-
-    MF privacy analyses calibrate noise from a sensitivity that is constant
-    across the sequence.  Fixed clipping
-    (:func:`opaque.dpftrl.clipping.clipped_grad`) and AUTO-S clipping
-    (:func:`opaque.dpftrl.clipping.auto_clipped_grad`) both produce a
-    constant ``ClippedPytree.max_norm`` and pass this latch.  Adaptive
-    clipping (:func:`opaque.dpsgd.clipping.adaptive_clipped_grad`) varies
-    its threshold across steps, which breaks the proof; the factory
-    latches the first-call max_norm in the state and rejects any
-    subsequent call whose max_norm differs.
-    """
+    """Latch the clipping bound and reject varying MF sensitivity."""
     max_norm = grads.max_norm
     if isinstance(max_norm, PerGroup):
         for group_name, value in max_norm.values.items():
             if value < 0:
                 raise ValueError(
-                    f"ClippedPytree max_norm must be non-negative for all groups, "
-                    f"got {value} for group '{group_name}'."
+                    "ClippedPytree max_norm must be non-negative for all groups, "
+                    f"got {value} for group {group_name!r}."
                 )
-    else:
-        if float(max_norm) < 0:
-            raise ValueError(
-                f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
-            )
+    elif float(max_norm) < 0:
+        raise ValueError(
+            f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
+        )
     if first_max_norm is not None and max_norm != first_max_norm:
         raise ValueError(
             f"{op} saw a varying ClippedPytree.max_norm across calls "
             f"(first={first_max_norm}, now={max_norm}). MF privacy proofs "
             "assume a constant per-step sensitivity; this is satisfied by "
-            "fixed and AUTO-S clipping but not by adaptive clipping, which "
-            "is therefore unsupported with MF noise."
+            "fixed and AUTO-S clipping but not by adaptive clipping."
         )
     return max_norm
 
 
-# ---- Distributed state validation ----
+__all__ = ["MFNoiseState"]

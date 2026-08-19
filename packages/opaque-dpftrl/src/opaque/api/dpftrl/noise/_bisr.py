@@ -13,21 +13,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import torch
+import numpy as np
 
+from opaque.api.dpftrl.noise._plan import MfExecutionPlan, toeplitz_execution_plan
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._toeplitz import inverse_as_streaming_matrix
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from opaque.api.engine.scheduling.types import Schedule
-    from opaque.random.types import RngKey
 
-    from ._engine import MFNoiseState
     from ._streaming_matrix import StreamingMatrix
 
 
@@ -114,38 +113,6 @@ def _recover_strategy_coefficients(inv_coefs: Sequence[float], n: int) -> list[f
     return col
 
 
-def _make_bisr_noise(
-    grad_template: Any,
-    strategy: BisrStrategy,
-    *,
-    n_steps: int,
-    key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
-) -> tuple[
-    Callable[..., tuple[Any, MFNoiseState]],
-    MFNoiseState,
-    Callable[[int], float],
-]:
-    from ._engine import _check_mf_horizon, _matrix_factorization_noise
-
-    n_steps = int(n_steps)
-    streaming = strategy.streaming_matrix(n_steps=n_steps)
-    noise_fn, state = _matrix_factorization_noise(
-        grad_template,
-        streaming,
-        key=key,
-        compute_dtype=compute_dtype,
-        n_steps=n_steps,
-    )
-    row_norms = streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()
-
-    def row_l2_at(step: int) -> float:
-        _check_mf_horizon(step, n_steps)
-        return float(row_norms[step])
-
-    return noise_fn, state, row_l2_at
-
-
 @register_strategy
 @dataclass(frozen=True, slots=True)
 class BisrStrategy:
@@ -179,10 +146,20 @@ class BisrStrategy:
             return self.inv_coefficients
         return _bisr_inverse_coefficients_cached(self.bandwidth, self.momentum)
 
-    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
+    def execution_plan(self, *, n_steps: int, **_) -> MfExecutionPlan:
+        # The banded inverse is BISR's defining object: passing it keeps
+        # C^{-1} exactly banded in the plan, so execution streams over an
+        # O(bandwidth) window instead of the dense inversion's tail.
+        return toeplitz_execution_plan(
+            self.coefficients(n_steps=n_steps),
+            column_normalized=self.normalized,
+            inverse_coefficients=self._inv_coefs(),
+        )
+
+    def coefficients(self, *, n_steps: int, **_) -> np.ndarray:
         inv = self._inv_coefs()
-        return torch.tensor(
-            _recover_strategy_coefficients(inv, n_steps), dtype=torch.float64
+        return np.asarray(
+            _recover_strategy_coefficients(inv, n_steps), dtype=np.float64
         )
 
     def gram_matrix(
@@ -201,34 +178,8 @@ class BisrStrategy:
         inv = list(self._inv_coefs())
         strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)
         return inverse_as_streaming_matrix(
-            torch.tensor(strategy_coefs, dtype=torch.float64),
+            np.asarray(strategy_coefs, dtype=np.float64),
             column_normalize_for_n=n_steps if self.normalized else None,
-            # The strategy coefficients are dense (length n_steps), but
-            # C^{-1} is banded with exactly these coefficients — hand them
-            # over so the closed-form row norms stay O(bandwidth * n)
-            # instead of running the length-n inversion recurrence. Only the
-            # first n_steps entries lie within the horizon; a longer hint
-            # describes a matrix that does not exist at this size.
-            inverse_coefficients=torch.tensor(inv[:n_steps], dtype=torch.float64),
-        )
-
-    def raw_noise_factory(
-        self,
-        grad_template: Any,
-        *,
-        n_steps: int,
-        min_sep: int,
-        max_participations: int | None,
-        key: RngKey,
-        compute_dtype: torch.dtype,
-    ):
-        del min_sep, max_participations
-        return _make_bisr_noise(
-            grad_template,
-            self,
-            n_steps=n_steps,
-            key=key,
-            compute_dtype=compute_dtype,
         )
 
     def sensitivity(

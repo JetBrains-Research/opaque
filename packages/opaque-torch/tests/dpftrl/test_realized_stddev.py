@@ -1,4 +1,4 @@
-"""Tests for the realized-per-step σ published on ``NoisedPytree.noise_stddev``.
+"""Torch tests for realized σ published on ``NoisedPytree.noise_stddev``.
 
 Bug fix: under correlated MF noise the per-coordinate variance at step
 ``t`` is ``base_σ² · ‖row_t(C^{-1})‖²``, not ``base_σ²`` as the original
@@ -70,10 +70,10 @@ def _step(
 
 def _row_l2_at_zero(strategy, *, n_steps, min_sep=1, max_participations=None) -> float:
     """First-step L2 of ``C^{-1}``'s row 0 — the analytical scaling factor."""
-    streaming = strategy.streaming_matrix(
+    plan = strategy.execution_plan(
         n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
     )
-    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+    return plan.row_l2[0]
 
 
 class TestIdentityReducesToDPSGD:

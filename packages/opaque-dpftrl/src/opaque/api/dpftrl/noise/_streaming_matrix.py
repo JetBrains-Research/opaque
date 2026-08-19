@@ -1,174 +1,153 @@
-"""Definition of the StreamingMatrix interface for memory-efficient matrix ops.
-
-A StreamingMatrix represents a lower-triangular matrix that can be applied
-to vectors in a streaming fashion (one element at a time), enabling
-memory-efficient computation for matrix factorization mechanisms.
-
-Example:
-    >>> import torch
-    >>> A = prefix_sum()
-    >>> x = torch.arange(1, 5, dtype=torch.float64)
-    >>> result = multiply_array(A, x)
-    >>> print(result)
-    tensor([ 1.,  3.,  6., 10.], dtype=torch.float64)
-"""
+"""Memory-efficient operations with lower-triangular streaming matrices."""
 
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any
 
-import optree as _ot
-import torch
+import numpy as np
+
+from opaque.api.engine import ops, pytree
+from opaque.api.engine.backend import BackendNotSelectedError, ensure_backend
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-State = TypeVar("State")
+    from numpy.typing import ArrayLike, NDArray
 
 
 @dataclasses.dataclass(frozen=True)
-class StreamingMatrix(Generic[State]):
-    """A linear mapping x -> A x for a lower-triangular (streaming) A matrix.
+class _PytreeState:
+    treedef: Any
+    leaf_states: tuple[Any, ...]
 
-    Via the attributes ``init_multiply`` and ``multiply_next``, this class
-    allows efficient computation of A @ x in streaming fashion.
 
-    The design encodes the fact that (Ax)[i] depends only on x[i] and
-    state from computing (Ax)[0], ..., (Ax)[i-1], equivalent to A being
-    lower-triangular.
+def _is_host_array(value: object) -> bool:
+    return isinstance(value, np.ndarray)
 
-    Attributes:
-        init_multiply: Returns initial state given the first input element
-            or a template with the expected shape.
-        multiply_next: Returns (next_output, updated_state) from
-            (next_input, current_state).
-        row_norms_squared_fn: Optional closed-form implementation of
-            :meth:`row_norms_squared`.  Builders that know the matrix
-            structure (e.g. Toeplitz) attach one to avoid the generic
-            O(n^2) probing; it must return the same values the probing
-            fallback would.  Compositions drop it (falling back to
-            probing) rather than propagate a stale closed form.
-    """
 
-    init_multiply: Callable[[Any], State]
-    multiply_next: Callable[[Any, State], tuple[Any, State]]
-    row_norms_squared_fn: Callable[[int], torch.Tensor] | None = None
+def _zeros_like(value: Any, *, dtype: Any = None) -> Any:
+    if _is_host_array(value):
+        return np.zeros_like(value, dtype=dtype)
+    ensure_backend(value)
+    zero = ops.zeros_like(value)
+    return zero if dtype is None else ops.astype(zero, dtype)
+
+
+def _add(left: Any, right: Any) -> Any:
+    if _is_host_array(left) or _is_host_array(right):
+        return left + right
+    ensure_backend(left, right)
+    return ops.add(left, right)
+
+
+def _multiply(left: Any, right: Any) -> Any:
+    if _is_host_array(left) or _is_host_array(right):
+        return left * right
+    ensure_backend(left, right)
+    return ops.multiply(left, right)
+
+
+def _scalar_like(value: Any, like: Any, *, dtype: Any = None) -> Any:
+    if _is_host_array(like):
+        return np.asarray(value, dtype=dtype or like.dtype)
+    ensure_backend(like)
+    return ops.scalar(value, dtype=dtype or ops.dtype(like), like=like)
+
+
+@dataclasses.dataclass(frozen=True)
+class StreamingMatrix:
+    """A lower-triangular linear mapping that is evaluated one row at a time."""
+
+    init_multiply: Callable[[Any], Any]
+    multiply_next: Callable[[Any, Any], tuple[Any, Any]]
 
     @classmethod
     def from_array_implementation(
         cls,
-        init_multiply_fn: Callable[[torch.Tensor], State],
-        multiply_next_fn: Callable[[torch.Tensor, State], tuple[torch.Tensor, State]],
+        init_multiply_fn: Callable[[Any], Any],
+        multiply_next_fn: Callable[[Any, Any], tuple[Any, Any]],
     ) -> StreamingMatrix:
-        """Construct a StreamingMatrix from single-array init/next functions.
-
-        The provided functions operate on individual tensors and will be
-        automatically lifted to operate on PyTrees of tensors.
-
-        Args:
-            init_multiply_fn: Initialize state from a single tensor (or its
-                shape/dtype info).
-            multiply_next_fn: Process one tensor element, returns
-                (output, new_state).
-
-        Returns:
-            A StreamingMatrix that operates over PyTrees of tensors.
-        """
+        """Lift single-array init/next functions to native-array PyTrees."""
 
         def lifted_init(abstract_value):
-            if isinstance(abstract_value, torch.Tensor):
+            if _is_host_array(abstract_value):
                 return init_multiply_fn(abstract_value)
-            # For PyTree inputs, create per-leaf states
-            flat, spec = _ot.tree_flatten(abstract_value)
-            flat_states = [init_multiply_fn(v) for v in flat]
-            return (spec, flat_states)
+
+            ensure_backend(abstract_value)
+            if ops.is_array(abstract_value):
+                return init_multiply_fn(abstract_value)
+
+            flat_values, treedef = pytree.tree_flatten(abstract_value)
+            return _PytreeState(
+                treedef=treedef,
+                leaf_states=tuple(init_multiply_fn(value) for value in flat_values),
+            )
 
         def lifted_next(value, state):
-            if isinstance(value, torch.Tensor):
+            if _is_host_array(value):
                 return multiply_next_fn(value, state)
-            # For PyTree inputs, apply per-leaf and reassemble
-            spec, flat_states = state
-            flat_values = _ot.tree_leaves(value)
-            flat_outputs = []
-            new_flat_states = []
-            for v, s in zip(flat_values, flat_states, strict=True):
-                out, ns = multiply_next_fn(v, s)
-                flat_outputs.append(out)
-                new_flat_states.append(ns)
-            return spec.unflatten(flat_outputs), (spec, new_flat_states)
+
+            ensure_backend(value)
+            if ops.is_array(value):
+                return multiply_next_fn(value, state)
+
+            if not isinstance(state, _PytreeState):
+                raise TypeError("PyTree streaming state does not match the input value")
+            flat_values, _ = pytree.tree_flatten(value)
+            outputs = []
+            next_states = []
+            for leaf, leaf_state in zip(flat_values, state.leaf_states, strict=True):
+                output, next_state = multiply_next_fn(leaf, leaf_state)
+                outputs.append(output)
+                next_states.append(next_state)
+            return (
+                pytree.tree_unflatten(state.treedef, outputs),
+                _PytreeState(state.treedef, tuple(next_states)),
+            )
 
         return cls(lifted_init, lifted_next)
 
-    def materialize(self, n: int) -> torch.Tensor:
-        """Materialize this streaming matrix as a dense n x n tensor.
+    def materialize(self, n: int) -> NDArray[np.float64]:
+        """Materialize the leading ``n x n`` block as a host NumPy array."""
+        return multiply_array(self, np.eye(n, dtype=np.float64))
 
-        Primarily for debugging and testing.
-
-        Args:
-            n: Size of the square matrix to materialize.
-
-        Returns:
-            An n x n dense tensor representation.
-        """
-        eye = torch.eye(n, dtype=torch.float64)
-        return multiply_array(self, eye)
-
-    def row_norms_squared(self, n: int) -> torch.Tensor:
-        """Compute the row-wise L2 squared norms of the matrix.
-
-        Given a StreamingMatrix B = A @ C^{-1}, this computes the per-query
-        expected squared error of the factorization.
-
-        Args:
-            n: Number of rows to compute norms for.
-
-        Returns:
-            A tensor of length n with row-wise L2^2 norms.
-        """
-        if self.row_norms_squared_fn is not None:
-            return self.row_norms_squared_fn(n)
-        zero = torch.zeros(n, dtype=torch.float64)
+    def row_norms_squared(self, n: int) -> NDArray[np.float64]:
+        """Compute squared L2 norms of the first ``n`` rows on the host."""
+        zero = np.zeros(n, dtype=np.float64)
         state = self.init_multiply(zero)
-        norms = torch.zeros(n, dtype=torch.float64)
-        for i in range(n):
-            ei = torch.zeros(n, dtype=torch.float64)
-            ei[i] = 1.0
-            row, state = self.multiply_next(ei, state)
-            norms[i] = torch.dot(row, row)
-        return norms
+        norms = []
+        for row_index in range(n):
+            basis_row = np.eye(1, n, row_index, dtype=np.float64)[0]
+            row, state = self.multiply_next(basis_row, state)
+            norms.append(np.dot(row, row))
+        return np.asarray(norms, dtype=np.float64)
 
     def __matmul__(self, other):
-        """Multiply by another StreamingMatrix or a tensor."""
+        """Multiply by another StreamingMatrix or a native/host array."""
         if isinstance(other, StreamingMatrix):
             return multiply_streaming_matrices(self, other)
-        elif isinstance(other, torch.Tensor):
+        if _is_host_array(other):
             return multiply_array(self, other)
-        else:
+        try:
+            ensure_backend(other)
+        except BackendNotSelectedError:
             return NotImplemented
+        return multiply_array(self, other) if ops.is_array(other) else NotImplemented
 
     def __mul__(self, other: float) -> StreamingMatrix:
         """Multiply by a scalar."""
         return multiply_streaming_matrices(
-            self, diagonal(torch.tensor([other], dtype=torch.float64))
+            self, diagonal(np.asarray([other], dtype=np.float64))
         )
 
 
 def scale_rows_and_columns(
     matrix: StreamingMatrix,
-    row_scale: torch.Tensor | None = None,
-    col_scale: torch.Tensor | None = None,
+    row_scale: Any = None,
+    col_scale: Any = None,
 ) -> StreamingMatrix:
-    """Return a new StreamingMatrix with scaled rows and/or columns.
-
-    Args:
-        matrix: The matrix to wrap.
-        row_scale: Multipliers for rows (diag(row_scale) @ matrix).
-        col_scale: Multipliers for columns (matrix @ diag(col_scale)).
-
-    Returns:
-        The wrapped StreamingMatrix.
-    """
+    """Return a matrix with optional row and column scaling."""
     result = matrix
     if row_scale is not None:
         result = multiply_streaming_matrices(diagonal(row_scale), result)
@@ -177,47 +156,48 @@ def scale_rows_and_columns(
     return result
 
 
-def multiply_array(A: StreamingMatrix, x: torch.Tensor) -> torch.Tensor:
-    """Compute the matrix-vector product A @ x in streaming fashion.
+def multiply_array(A: StreamingMatrix, x: Any) -> Any:
+    """Compute ``A @ x`` along the leading sequence axis."""
+    if _is_host_array(x):
+        n = x.shape[0]
+        item = x.__getitem__
+    else:
+        ensure_backend(x)
+        n = ops.shape(x)[0]
 
-    Args:
-        A: A StreamingMatrix.
-        x: A 2D tensor where each row is an element of the sequence.
+        def item(index):
+            return ops.slice_array(x, index)
 
-    Returns:
-        The result of A @ x.
-    """
-    n = x.shape[0]
-    state = A.init_multiply(x[0])
+    if n == 0:
+        raise ValueError("StreamingMatrix input must have at least one element")
+
+    state = A.init_multiply(item(0))
     results = []
-    for i in range(n):
-        result_slice, state = A.multiply_next(x[i], state)
+    for index in range(n):
+        result_slice, state = A.multiply_next(item(index), state)
         results.append(result_slice)
-    return torch.stack(results)
+
+    if _is_host_array(x):
+        return np.stack(results)
+    return ops.concatenate(
+        [ops.expand_dims(result, axis=0) for result in results], axis=0
+    )
 
 
 def multiply_streaming_matrices(
     A: StreamingMatrix,
     B: StreamingMatrix,
 ) -> StreamingMatrix:
-    """Compose two StreamingMatrices: returns A @ B.
-
-    Args:
-        A: Left-hand side matrix.
-        B: Right-hand side matrix.
-
-    Returns:
-        A StreamingMatrix representing A @ B.
-    """
+    """Compose two streaming matrices and return ``A @ B``."""
 
     def init_multiply(abstract_value):
         return A.init_multiply(abstract_value), B.init_multiply(abstract_value)
 
     def multiply_next(value, state):
         A_state, B_state = state
-        inner, B_state = B.multiply_next(value, B_state)
-        outer, A_state = A.multiply_next(inner, A_state)
-        return outer, (A_state, B_state)
+        inner, next_B_state = B.multiply_next(value, B_state)
+        outer, next_A_state = A.multiply_next(inner, A_state)
+        return outer, (next_A_state, next_B_state)
 
     return StreamingMatrix(init_multiply, multiply_next)
 
@@ -228,78 +208,90 @@ def identity() -> StreamingMatrix:
 
 
 def prefix_sum() -> StreamingMatrix:
-    """Create a StreamingMatrix for the prefix sum (lower-triangular ones).
-
-    Returns:
-        A StreamingMatrix representing the n x n lower-triangular matrix
-        of all ones (cumulative sum workload).
-    """
+    """Create the lower-triangular all-ones prefix-sum matrix."""
 
     def init_multiply(abstract_value):
-        return torch.zeros_like(abstract_value)
+        return _zeros_like(abstract_value)
 
     def multiply_next(value, state):
-        result = state + value
+        result = _add(state, value)
         return result, result
 
     return StreamingMatrix.from_array_implementation(init_multiply, multiply_next)
 
 
-def diagonal(diag: torch.Tensor) -> StreamingMatrix:
-    """Create a StreamingMatrix representing a diagonal matrix.
+def diagonal(diag: Any) -> StreamingMatrix:
+    """Create an infinite diagonal matrix, repeating the final coefficient."""
+    native_diag = None
+    try:
+        ensure_backend(diag)
+        if ops.is_array(diag):
+            native_diag = diag
+    except BackendNotSelectedError:
+        pass
 
-    The returned StreamingMatrix is infinitely large; diagonal elements
-    are taken from ``diag`` up to row n = diag.size, and equal diag[-1]
-    beyond that point.
+    host_diag = None if native_diag is not None else np.asarray(diag)
+    length = ops.shape(native_diag)[0] if native_diag is not None else len(host_diag)
+    if length == 0:
+        raise ValueError("diag must contain at least one element")
 
-    Args:
-        diag: A 1D tensor of diagonal elements.
+    def init_fn(_):
+        return 0
 
-    Returns:
-        A StreamingMatrix representing the diagonal matrix.
-    """
-
-    def init_fn(abstract_value):
-        return torch.tensor(0, dtype=torch.long)
-
-    def next_fn(value, i):
-        idx = min(int(i.item()), len(diag) - 1)
-        return value * diag[idx], i + 1
+    def next_fn(value, index):
+        coefficient_index = min(index, length - 1)
+        if native_diag is None:
+            coefficient = _scalar_like(host_diag[coefficient_index], value)
+        else:
+            ensure_backend(value, native_diag)
+            coefficient = ops.slice_array(native_diag, coefficient_index)
+        return _multiply(value, coefficient), index + 1
 
     return StreamingMatrix.from_array_implementation(init_fn, next_fn)
 
 
 def momentum_sgd_matrix(
     momentum: float = 0,
-    learning_rates: torch.Tensor | None = None,
+    learning_rates: ArrayLike | None = None,
 ) -> StreamingMatrix:
-    """Create a StreamingMatrix representing the momentum SGD workload.
-
-    Args:
-        momentum: Momentum coefficient (0 = no momentum).
-        learning_rates: Per-step learning rates. Defaults to all ones.
-
-    Returns:
-        A StreamingMatrix encoding the optimizer workload.
-    """
-    if learning_rates is None:
-        lr_sched = torch.ones(1, dtype=torch.float64)
-    else:
-        lr_sched = learning_rates.to(torch.float64)
-
-    if lr_sched.min() <= 0.0:
+    """Create the workload matrix for momentum SGD with step learning rates."""
+    lr_schedule = np.asarray(
+        [1.0] if learning_rates is None else learning_rates, dtype=np.float64
+    )
+    if lr_schedule.ndim != 1 or len(lr_schedule) == 0:
+        raise ValueError("Learning rates must be a non-empty one-dimensional array")
+    if np.min(lr_schedule) <= 0.0:
         raise ValueError(f"Learning rates must be positive. Found {learning_rates}")
 
     def init_multiply(abstract_value):
-        dtype = torch.promote_types(abstract_value.dtype, lr_sched.dtype)
-        zero = torch.zeros_like(abstract_value, dtype=dtype)
-        return (torch.tensor(0, dtype=torch.long), zero.clone(), zero.clone())
+        if _is_host_array(abstract_value):
+            dtype = np.result_type(abstract_value.dtype, lr_schedule.dtype)
+        else:
+            ensure_backend(abstract_value)
+            dtype = ops.accumulator_dtype(abstract_value)
+        zero = _zeros_like(abstract_value, dtype=dtype)
+        return 0, zero, zero
 
     def multiply_next(value, state):
-        index, momentum_buf, result = state
-        momentum_buf = momentum * momentum_buf + value
-        idx = min(int(index.item()), len(lr_sched) - 1)
-        result = result + lr_sched[idx] * momentum_buf
-        return result, (index + 1, momentum_buf, result)
+        index, momentum_buffer, result = state
+        momentum_value = _scalar_like(momentum, momentum_buffer)
+        momentum_buffer = _add(_multiply(momentum_value, momentum_buffer), value)
+        learning_rate = _scalar_like(
+            lr_schedule[min(index, len(lr_schedule) - 1)], result
+        )
+        result = _add(result, _multiply(learning_rate, momentum_buffer))
+        return result, (index + 1, momentum_buffer, result)
 
     return StreamingMatrix.from_array_implementation(init_multiply, multiply_next)
+
+
+__all__ = [
+    "StreamingMatrix",
+    "diagonal",
+    "identity",
+    "momentum_sgd_matrix",
+    "multiply_array",
+    "multiply_streaming_matrices",
+    "prefix_sum",
+    "scale_rows_and_columns",
+]
