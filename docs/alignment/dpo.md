@@ -70,45 +70,76 @@ dataset column: those values are converted to Python `float` because PyArrow
 has no bf16 column type.
 
 ```python
-from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
-
-dataset = compute_ref_logprobs_for_dataset(
-    dataset,
-    ref,                                  # batch -> ref_*_logps dict
-    collator=collate,                     # the preference collator (below)
-    output_columns=("ref_chosen_logps", "ref_rejected_logps"),
-    batch_size=8,
-    cache_key=("dpo", model_name),
-    cache_dir=cache_dir,
-)
-```
-
-For the example above, the stored metadata contract is:
-
-```python
 import hashlib
 
-dataset_id = getattr(dataset, "_fingerprint", None)
-if dataset_id is None:
-    dataset_id = repr(dataset)
+from opaque.alignment.dpo.reference import (
+    compute_ref_logprobs_for_dataset,
+    with_disabled_adapter,
+)
 
-hasher = hashlib.sha256()
-hasher.update(repr(dataset_id).encode("utf-8"))
-hasher.update(repr(("dpo", model_name)).encode("utf-8"))
-hasher.update(repr(("ref_chosen_logps", "ref_rejected_logps")).encode("utf-8"))
 
-cache_file = f"<cache_dir>/{hasher.hexdigest()}.safetensors"
+def ref_state_digest(model) -> str:
+    """Hash the effective adapter-disabled reference weights."""
+    hasher = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        if ".lora_" in name or ".modules_to_save." in name:
+            continue
+        value = tensor.detach().cpu().contiguous()
+        hasher.update(name.encode("utf-8"))
+        hasher.update(str(value.dtype).encode("ascii"))
+        hasher.update(str(tuple(value.shape)).encode("ascii"))
+        start = value.storage_offset() * value.element_size()
+        end = start + value.numel() * value.element_size()
+        hasher.update(bytes(value.untyped_storage()[start:end]))
+    return hasher.hexdigest()
+
+
+with with_disabled_adapter(model):
+    dataset = compute_ref_logprobs_for_dataset(
+        dataset,
+        ref,                                  # batch -> ref_*_logps dict
+        collator=collate,                     # the preference collator (below)
+        output_columns=("ref_chosen_logps", "ref_rejected_logps"),
+        batch_size=8,
+        cache_identity={
+            "kind": "dpo-reference-logprobs",
+            "reference": {
+                "adapter_mode": "disabled",
+                "state_sha256": ref_state_digest(model),
+            },
+        },
+        cache_dir=cache_dir,
+    )
 ```
 
-When the policy is a PEFT/LoRA adapter, the *base* model is the reference:
-enter `null_ref_context(model)` (or `with_disabled_adapter(model)`) around
-the reference forward to disable the adapter, so no second model is
-needed. `null_ref_context` dispatches over the reference configurations —
-separate `ref_model`, a LoRA `"ref"` adapter clone, a disabled adapter, or
-a no-op for an explicit callable. Both helpers run **outside vmap** (they
-mutate `nn.Module` adapter state). For TR-DPO, periodically move the
-reference toward the policy with `ema_update_reference(ref_params,
-policy_params, alpha)` between steps.
+`cache_identity` must be JSON-like — scalars, string-keyed mappings, and
+sequences. Mapping order does not affect the digest, and unsupported or
+non-deterministic values raise `TypeError` rather than falling back to `repr`.
+A dataset without a deterministic `_fingerprint` is rejected for the same
+reason.
+
+A hit reuses the stored logprobs without re-examining the model, so the
+identity must encode every input that changes reference behavior: an immutable
+revision or weight digest, plus the adapter mode. Keying on a mutable name
+alone — a model name, a checkpoint directory — silently returns logprobs from
+whatever last occupied that name. `DPOTrainer` derives this identity from the
+effective reference state on its own; only manual callers build it. Hashing the
+weights as above is the conservative choice — an immutable Hub revision pin is
+cheaper and equally safe when the reference is loaded straight from the Hub and
+never mutated in-process. `examples/train_dpo.py` builds the same identity for
+its manual precompute path.
+
+For a PEFT/LoRA policy where the *base* model is the reference, use
+`with_disabled_adapter(model)` around the reference forward as above, so no
+second model is needed. `null_ref_context` instead dispatches over the
+reference configurations — separate `ref_model`, a LoRA `"ref"` adapter clone,
+a disabled adapter, or a no-op for an explicit callable. If it selects a
+separate model or `"ref"` adapter clone, derive the cache identity from that
+selected reference: its adapter mode must be accurate and its adapter weights
+must be included in the digest. Both helpers run **outside vmap** (they mutate
+`nn.Module` adapter state). For TR-DPO, periodically move the reference toward
+the policy with `ema_update_reference(ref_params, policy_params, alpha)`
+between steps.
 
 ## 2. Preference collator
 
