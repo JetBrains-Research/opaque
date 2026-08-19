@@ -220,8 +220,8 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     HF carries half a dozen ``adamw_*`` aliases (``adamw_torch``,
     ``adamw_hf``, ``adamw_torch_fused``) that all resolve to AdamW. Opaque
     has a single ``adamw`` name. Quantized/Apex-fused variants
-    (``paged_adamw_*``, ``adamw_8bit``, …) are not in opaque-engine's
-    torchopt path and raise.
+    (``paged_adamw_*``, ``adamw_8bit``, …) are not available in the
+    backend-neutral path and raise.
 
     Other optimizer families (``sgd``, ``adafactor``, ``lion``, ``rmsprop``,
     …) pass through unchanged — opaque's ``_resolve_optimizer_name`` will
@@ -239,7 +239,7 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     if optim_str in _HF_PAGED_OPTIMS:
         raise ValueError(
             f"hf_training_arguments.optim={optim_value!r}: Quantized / "
-            f"Apex-fused optimizers are not in opaque-engine's torchopt "
+            f"Apex-fused optimizers are not in opaque-engine's "
             f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
             f"fused CUDA kernel)."
         )
@@ -247,7 +247,7 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
         return {"optim": "adamw"}
     # ``adamw_torch_fused`` translates to plain ``adamw``: fused is a kernel /
     # execution choice, not different optimizer math, and opaque's functional
-    # torchopt AdamW has no fused kernel (forwarding ``fused=True`` raised
+    # AdamW has no fused kernel (forwarding ``fused=True`` raises
     # ``TypeError`` at optimizer-build time).  Warn rather than silently
     # rewrite or fail — the update math is preserved, the kernel request is
     # not (#389).

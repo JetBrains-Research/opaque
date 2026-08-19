@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
+from opaque.api.transformers.trainer._dp_trainer import DPTrainer
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
@@ -138,6 +140,42 @@ class TestRngSnapshot:
         ckpt.restore_rng_state(snap)
         b = torch.rand(5)
         assert torch.equal(a, b)
+
+
+class TestSamplerStatePaths:
+    def test_paths_are_rank_local_for_distributed_runs(self, tmp_path):
+        assert (
+            Path(ckpt.sampler_state_path(str(tmp_path))).name == "dp_sampler_state.pt"
+        )
+        assert (
+            Path(ckpt.sampler_state_path(str(tmp_path), rank=3, world_size=4)).name
+            == "dp_sampler_state_3.pt"
+        )
+
+    def test_distributed_resume_selects_the_local_sampler_state(self, tmp_path):
+        trainer = object.__new__(DPTrainer)
+        trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        torch.save(
+            {"key_seed": 11},
+            ckpt.sampler_state_path(str(tmp_path), rank=0, world_size=2),
+        )
+        torch.save(
+            {"key_seed": 22},
+            ckpt.sampler_state_path(str(tmp_path), rank=1, world_size=2),
+        )
+
+        sampler_state = trainer._read_sampler_state_for_resume(
+            str(tmp_path), {"key_seed": 11}
+        )
+
+        assert sampler_state == {"key_seed": 22}
+
+    def test_distributed_resume_rejects_missing_local_sampler_state(self, tmp_path):
+        trainer = object.__new__(DPTrainer)
+        trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+
+        with pytest.raises(RuntimeError, match="rank-local sampler state for rank 1"):
+            trainer._read_sampler_state_for_resume(str(tmp_path), {"key_seed": 11})
 
 
 class TestDpRuntimeBundle:

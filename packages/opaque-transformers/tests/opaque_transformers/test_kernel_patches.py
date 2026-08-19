@@ -25,7 +25,7 @@ from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 from opaque.api.engine.clipping import clipped_grad  # noqa: E402
-from opaque.functional import make_functional  # noqa: E402
+from opaque.torch.functional import make_functional  # noqa: E402
 
 RTOL = 1e-4
 ATOL = 1e-4

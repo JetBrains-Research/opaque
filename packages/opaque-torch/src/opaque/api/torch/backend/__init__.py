@@ -23,6 +23,9 @@ def torch_backend() -> Backend:
             "with `pip install opaque-torch`."
         ) from exc
 
+    # Side-effect imports: optimizer-state sync auditors register with the
+    # engine's type-dispatched sync() when the provider activates.
+    import opaque.api.torch.optimizers.distributed  # noqa: F401
     from opaque.api.torch.backend import _execution, _runtime  # noqa: F401
     from opaque.api.torch.backend._core import TorchBackend
     from opaque.api.torch.backend._serialization import register_torch_serialization

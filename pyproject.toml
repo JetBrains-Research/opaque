@@ -126,6 +126,9 @@ dev = [
   # packages/opaque-dpsgd/tests/accounting/test_cross_validation.py — not a
   # runtime dependency of opaque.
   "dp-accounting>=0.4.4",
+  # Reference oracle for numerical parity of the backend-neutral optimizer
+  # rules. Test-only dependency, not part of any Opaque wheel.
+  "torchopt>=0.7.3",
   "riskcal>=1.2.0",
   # Reference implementation published with Feldman & Shenfeld. Imported by
   # test_cross_validation_allocation.py as a one-sided oracle: our PLD bound
