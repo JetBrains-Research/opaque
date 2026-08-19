@@ -115,7 +115,10 @@ class BallsInBins(DpHorizonProcess):
         self, *, n_steps: int | None = None
     ) -> tuple[object, ...]:
         prefix_steps = self.n_steps if n_steps is None else n_steps
-        if not isinstance(self.inner.strategy, BltStrategy):
+        if isinstance(self.inner.strategy, BltStrategy):
+            # BLT prefix PLDs use coefficients optimized for the full horizon.
+            prefix_steps = self.n_steps
+        else:
             prefix_steps = min(
                 -(-prefix_steps // self.num_bins) * self.num_bins,
                 self.n_steps,

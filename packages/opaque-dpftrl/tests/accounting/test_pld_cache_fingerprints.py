@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.noise import band_mf_strategy
+from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
 
 
 def _prefix_process(schedule):
@@ -39,3 +39,24 @@ def test_composed_processes_preserve_schedule_cache_identity() -> None:
 
     assert constant == ramp
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
+
+
+def test_blt_prefix_fingerprint_uses_the_full_schedule() -> None:
+    constant = ftrl_acc.balls_in_bins(
+        ftrl_acc.mf_gaussian(1.0, blt_strategy(lr_schedule=lambda _step: 1.0)),
+        num_bins=4,
+        n_steps=16,
+    )
+    changed_after_prefix = ftrl_acc.balls_in_bins(
+        ftrl_acc.mf_gaussian(
+            1.0,
+            blt_strategy(lr_schedule=lambda step: 1.0 if step < 4 else 0.5),
+        ),
+        num_bins=4,
+        n_steps=16,
+    )
+
+    assert constant == changed_after_prefix
+    assert constant._pld_cache_fingerprint(
+        n_steps=4
+    ) != changed_after_prefix._pld_cache_fingerprint(n_steps=4)
