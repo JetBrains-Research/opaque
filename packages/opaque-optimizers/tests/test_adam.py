@@ -1,12 +1,16 @@
-"""Tests for opaque.optimizers.adamw — universal Adam / AdamW."""
+"""Tests for opaque.api.optimizers._adamw.
+
+Mirrors the optimizer-behavior coverage from opaque-optimizers/tests/test_adam.py
+against the Torch provider, using the new ``(step, state)`` factory shape.
+"""
 
 from __future__ import annotations
 
 import pytest
 import torch
 
-from opaque.optimizers import adam, adamw, apply_updates
-from opaque.optimizers.types import AdamState
+from opaque.api.optimizers import adam, adamw, apply_updates
+from opaque.api.optimizers.types import AdamState
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import (
     PerGroup,
@@ -563,6 +567,22 @@ class TestSchedule:
             updates, state = step(grads, state, params=params)
             expected = -schedule(i) * 0.1 * params["w"]
             torch.testing.assert_close(updates["w"], expected)
+
+    def test_warmup_step_zero_lr_yields_zero_update(self, params, grads):
+        def warmup(step):
+            return 1e-3 * min(step / 2, 1.0)
+
+        step, state = adamw(params, lr=warmup, weight_decay=0.01)
+        updates, state = step(
+            {k: v.clone() for k, v in grads.items()}, state, params=params
+        )
+        for name in updates:
+            assert torch.count_nonzero(updates[name]) == 0
+        # Moments and the step counter still advance during warmup.
+        updates, state = step(
+            {k: v.clone() for k, v in grads.items()}, state, params=params
+        )
+        assert any(torch.count_nonzero(updates[name]) > 0 for name in updates)
 
     def test_adam_alias_uses_same_schedule_indexing(self, params, grads):
         calls = []

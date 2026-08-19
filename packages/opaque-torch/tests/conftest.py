@@ -1,4 +1,4 @@
-"""Pytest hooks for the opaque-engine test tree."""
+"""Pytest hooks for the opaque-torch test tree."""
 
 from __future__ import annotations
 

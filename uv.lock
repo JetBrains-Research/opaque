@@ -2558,6 +2558,11 @@ optimizers = [
     { name = "opaque-optimizers" },
 ]
 
+[package.dev-dependencies]
+test = [
+    { name = "opaque-torch" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.26.0" },
@@ -2567,6 +2572,9 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11.0" },
 ]
 provides-extras = ["optimizers"]
+
+[package.metadata.requires-dev]
+test = [{ name = "opaque-torch", editable = "packages/opaque-torch" }]
 
 [[package]]
 name = "opaque-dpsgd"
@@ -2581,6 +2589,11 @@ optimizers = [
     { name = "opaque-optimizers" },
 ]
 
+[package.dev-dependencies]
+test = [
+    { name = "opaque-torch" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
@@ -2588,6 +2601,9 @@ requires-dist = [
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
 ]
 provides-extras = ["optimizers"]
+
+[package.metadata.requires-dev]
+test = [{ name = "opaque-torch", editable = "packages/opaque-torch" }]
 
 [[package]]
 name = "opaque-engine"
@@ -2612,8 +2628,16 @@ dependencies = [
     { name = "opaque-engine" },
 ]
 
+[package.dev-dependencies]
+test = [
+    { name = "opaque-torch" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "opaque-engine", editable = "packages/opaque-engine" }]
+
+[package.metadata.requires-dev]
+test = [{ name = "opaque-torch", editable = "packages/opaque-torch" }]
 
 [[package]]
 name = "opaque-patches"

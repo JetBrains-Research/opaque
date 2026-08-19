@@ -277,8 +277,6 @@ known-first-party = ["opaque"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
-"packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
 # INP001: pytest trees intentionally omit __init__.py.
 "**/tests/**" = ["INP001", "D"]

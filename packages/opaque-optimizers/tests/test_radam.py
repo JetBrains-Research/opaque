@@ -176,6 +176,29 @@ class TestPerGroupBC:
         vals = list(phi.values())
         assert len({round(v, 12) for v in vals}) > 1
 
+    def test_phi_dict_diverges_per_group(self, params, grads):
+        # φ is an EMA of σ² per group, so the steady-state ratio between
+        # groups must equal the squared stddev ratio — a σ-instead-of-σ²
+        # or per-group mis-scaling bug passes a distinctness check but
+        # fails this pin.  RAdam inlines its own per-group EMA rather than
+        # sharing update_phi_ema, so it needs its own quantitative test.
+        stddev = PerGroup(
+            groups={("weight",): "attn", ("bias",): "mlp"},
+            values={"attn": 0.2, "mlp": 0.8},
+        )
+        step, state = radam(params, lr=1e-3, noise_bias_correction=True)
+        for _ in range(50):
+            _, state = step(
+                noised(grads, max_norm=1.0, noise_stddev=stddev),
+                state,
+                params=params,
+            )
+        phi = state.phi
+        assert isinstance(phi, dict)
+        # Variance ratio is (0.8/0.2)² = 16.
+        assert phi[("weight",)] > 0
+        assert phi[("bias",)] / phi[("weight",)] == pytest.approx(16.0, rel=1e-3)
+
 
 class TestSecondMomentSubstitution:
     def test_substitution_runs_and_freezes_phi(self, params, grads):
