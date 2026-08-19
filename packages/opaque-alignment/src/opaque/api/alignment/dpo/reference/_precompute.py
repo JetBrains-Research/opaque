@@ -66,6 +66,7 @@ from torch.utils.data import DataLoader
 
 from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
+    assert_string_equal,
     gather_pytree,
     reduce_scalar,
 )
@@ -131,7 +132,7 @@ def _cache_fingerprint(
     ``datasets.Dataset._fingerprint`` is required because an object ``repr`` can
     include transient process identity and silently defeat cache correctness.
     """
-    dataset_id = getattr(dataset, "_fingerprint", None)
+    dataset_id = _dataset_fingerprint(dataset)
     if dataset_id is None:
         raise ValueError(
             "dataset must expose a deterministic `_fingerprint` for reference caching"
@@ -150,6 +151,12 @@ def _cache_fingerprint(
         allow_nan=False,
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _dataset_fingerprint(dataset: Any) -> str | None:
+    """Return the dataset's deterministic identity when it is available."""
+    dataset_id = getattr(dataset, "_fingerprint", None)
+    return None if dataset_id is None else str(dataset_id)
 
 
 def _cache_path(
@@ -252,13 +259,13 @@ def _resolve_sharding(shard: bool | None) -> bool:
     return shard
 
 
-def _cache_hit_on_every_rank(local_hit: bool, *, sharded: bool) -> bool:
+def _cache_hit_on_every_rank(local_hit: bool) -> bool:
     """Reduce a rank-local cache hit to a decision the whole group shares.
 
     The default cache directory is node-local, so on a multi-node run some
     ranks can hit while others miss.
     """
-    if not sharded:
+    if not is_distributed():
         return local_hit
     return bool(reduce_scalar(int(local_hit), op="min"))
 
@@ -401,6 +408,13 @@ def compute_ref_logprobs_for_dataset(
     if sharded:
         # Sharding is only well defined when every rank holds the same dataset.
         assert_scalar_equal(n_examples, name="reference precompute dataset size")
+        dataset_id = _dataset_fingerprint(dataset)
+        assert_string_equal(dataset_id, name="reference precompute dataset fingerprint")
+        if dataset_id is None:
+            raise ValueError(
+                "dataset must expose a deterministic `_fingerprint` for "
+                "distributed reference precomputation"
+            )
 
     path: str | None = None
     cached: dict[str, torch.Tensor] | None = None
@@ -412,7 +426,7 @@ def compute_ref_logprobs_for_dataset(
 
     # Reduced unconditionally: the collective sequence must not depend on the
     # rank-local ``use_cache``.
-    if _cache_hit_on_every_rank(cached is not None, sharded=sharded):
+    if _cache_hit_on_every_rank(cached is not None):
         # HIT on every rank: attach cached columns WITHOUT calling ``ref``.
         # PyArrow has no bf16 column type, so demote to a Python ``float``
         # list at the storage boundary (explicit, single conversion).

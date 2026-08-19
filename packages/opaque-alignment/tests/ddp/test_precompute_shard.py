@@ -11,6 +11,7 @@ from alignment_ddp_helpers import (
     _worker_divergent_cache_state,
     _worker_divergent_use_cache,
     _worker_empty_shard_preserves_dtype,
+    _worker_mismatched_dataset_fingerprints,
     _worker_mismatched_dataset_sizes,
     _worker_shards_and_restores_order,
     _worker_shared_cache_hit,
@@ -57,12 +58,23 @@ def test_cache_visible_to_one_rank_makes_the_group_recompute() -> None:
         _spawn_gloo(2, _worker_divergent_cache_state, 6, tmp)
 
 
+def test_unsharded_cache_visible_to_one_rank_makes_the_group_recompute() -> None:
+    _require_gloo()
+    with tempfile.TemporaryDirectory() as tmp:
+        _spawn_gloo(2, _worker_divergent_cache_state, 6, tmp, False)
+
+
 def test_ranks_disagreeing_on_use_cache_do_not_deadlock() -> None:
     _require_gloo()
     with tempfile.TemporaryDirectory() as tmp:
         _spawn_gloo(2, _worker_divergent_use_cache, 6, tmp)
 
 
-def test_ranks_holding_different_datasets_are_rejected() -> None:
+def test_ranks_holding_different_dataset_sizes_are_rejected() -> None:
     _require_gloo()
     _spawn_gloo(2, _worker_mismatched_dataset_sizes)
+
+
+def test_ranks_holding_different_dataset_fingerprints_are_rejected() -> None:
+    _require_gloo()
+    _spawn_gloo(2, _worker_mismatched_dataset_fingerprints)

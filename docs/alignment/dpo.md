@@ -147,9 +147,11 @@ between steps.
 Under a live process group each rank runs the reference over its own
 `local_shard` of the dataset, and the per-column results are gathered back into
 dataset order, so every rank returns the same full-length dataset and matches a
-single-process run. Pass the whole dataset on every rank and shard for training
-afterwards — the trainer's dataloaders do that themselves. Shards may be
-uneven, and a rank whose shard is empty still joins the gather.
+single-process run. Pass the whole dataset with the same deterministic dataset
+fingerprint on every rank and shard for training afterwards — the trainer's
+dataloaders do that themselves. A fingerprint mismatch raises before any
+examples are scored. Shards may be uneven, and a rank whose shard is empty
+still joins the gather.
 
 Sharding follows the process group, not the launcher. Pass `shard=True` to
 require one and fail if it is missing, or `shard=False` to score the whole

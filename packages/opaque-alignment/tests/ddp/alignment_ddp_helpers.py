@@ -176,7 +176,7 @@ def _worker_empty_shard_preserves_dtype(
 
 
 def _worker_mismatched_dataset_sizes(rank: int, world_size: int, port: int) -> None:
-    """Ranks holding different datasets are named as such, on every rank."""
+    """Ranks holding datasets with different sizes fail on every rank."""
     import pytest
 
     _setup_gloo(rank, world_size, port)
@@ -199,8 +199,41 @@ def _worker_mismatched_dataset_sizes(rank: int, world_size: int, port: int) -> N
         _cleanup_ddp()
 
 
+def _worker_mismatched_dataset_fingerprints(
+    rank: int, world_size: int, port: int
+) -> None:
+    """Equal-length but different datasets fail before their shards are scored."""
+    import pytest
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+
+        with pytest.raises(
+            RuntimeError, match="dataset fingerprint mismatch across ranks"
+        ):
+            compute_ref_logprobs_for_dataset(
+                make_dataset(4, start=rank * 10),
+                CountingRef(),
+                collate,
+                _COLUMNS,
+                cache_identity={"kind": "fingerprint-mismatch"},
+                batch_size=2,
+                use_cache=False,
+            )
+
+        _assert_no_desync(world_size)
+    finally:
+        _cleanup_ddp()
+
+
 def _worker_divergent_cache_state(
-    rank: int, world_size: int, port: int, n_rows: int, cache_root: str
+    rank: int,
+    world_size: int,
+    port: int,
+    n_rows: int,
+    cache_root: str,
+    shard: bool | None = None,
 ) -> None:
     """Node-local cache dirs must not split the group into different branches.
 
@@ -210,6 +243,7 @@ def _worker_divergent_cache_state(
     _setup_gloo(rank, world_size, port)
     try:
         from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
+        from opaque.distributed import local_shard
 
         dataset = make_dataset(n_rows)
         cache_dir = str(Path(cache_root) / f"rank{rank}")
@@ -218,6 +252,7 @@ def _worker_divergent_cache_state(
             "batch_size": 2,
             "cache_dir": cache_dir,
             "use_cache": True,
+            "shard": shard,
         }
 
         compute_ref_logprobs_for_dataset(
@@ -233,8 +268,15 @@ def _worker_divergent_cache_state(
             dataset, ref, collate, _COLUMNS, **call
         )
 
-        # The group agreed to recompute, so every rank scored its own shard.
-        assert ref.examples_seen, f"rank {rank} took the cache path alone"
+        # The group agreed to recompute, so no rank took the cache path alone.
+        expected_seen = (
+            list(range(n_rows))
+            if shard is False
+            else list(local_shard(range(n_rows), rank=rank, world_size=world_size))
+        )
+        assert ref.examples_seen == expected_seen, (
+            f"rank {rank} scored {ref.examples_seen}, expected {expected_seen}"
+        )
         expected = expected_columns(n_rows)
         for name, values in expected.items():
             assert result[name] == values
