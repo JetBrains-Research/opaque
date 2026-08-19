@@ -1,54 +1,22 @@
-"""Gaussian noise generation for differential privacy.
-
-This module provides a higher-order function for adding calibrated Gaussian
-noise to clipped DP query values, optionally bounded to a closed interval
-following the *bounded Gaussian mechanism* of Chen and Hale, "The Bounded
-Gaussian Mechanism for Differential Privacy," J. Privacy and Confidentiality,
-14(1), 2024 (https://arxiv.org/abs/2211.17230).
-
-The API returns ``(noise_fn, state)`` where state is always immutable:
-
-    >>> from opaque.random import key
-    >>> from opaque.types import clipped
-    >>> from opaque.dpsgd.noise import gaussian_noise
-    >>> noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
-    >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
-
-The constructor takes a noise multiplier, not a raw standard deviation.
-Per-step sensitivity flows through the input ``ClippedPytree.max_norm`` metadata,
-and the returned ``NoisedPytree`` carries the realized ``noise_stddev`` for
-downstream optimizers.
-
-Pass ``bound=B`` (or ``bound=(low, high)``) to confine the per-coordinate
-output to ``[-B, B]`` (or ``[low, high]``); the noise is sampled from a
-Gaussian renormalized over that interval via the inverse-CDF method.  At
-training scale the per-coordinate analysis of the paper's bounded mechanism
-does not apply. Bounded mode is experimental; the standard ``(ε, δ)``-Gaussian
-accountant does not cover it.
-
-The noise function is **purely local** — it uses exactly the key you provide.
-For synchronized noise in distributed training, pass the same key on every rank.
-For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
-"""
+"""Gaussian and bounded-Gaussian DP-SGD noise mechanisms."""
 
 from __future__ import annotations
 
 import dataclasses
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import torch
-from torch.autograd.profiler import record_function
-
+from opaque.api.engine import ops, runtime
+from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import (
     PAIRED_FIRST_STREAM_FOLD,
     PAIRED_SECOND_STREAM_FOLD,
     per_group_noise_stddev,
     resolve_paired_clipped,
 )
-from opaque.pytree import tree_map
+from opaque.api.engine.pytree import tree_flatten_with_paths, tree_unflatten
 from opaque.random import fold_in as rng_fold_in
-from opaque.random import generator_from_key
+from opaque.random import normal
 from opaque.random.types import RngKey
 from opaque.types import (
     ClippedPytree,
@@ -149,7 +117,7 @@ def gaussian_noise(
     noise_multiplier: float,
     key: RngKey,
     bound: float | tuple[float, float] | list[float] | None = None,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
 ) -> tuple[
     GaussianNoiseFn,
     GaussianNoiseState,
@@ -186,9 +154,9 @@ def gaussian_noise(
             interval ``[-B, B]``.  A ``(low, high)`` tuple/list ⇒ asymmetric
             interval; must satisfy ``low <= 0 <= high``.  Units are absolute
             (same scale as the gradient / clip norm), not multiples of σ.
-        compute_dtype: Internal inverse-CDF dtype. Defaults to ``torch.float32``;
-            finite precision discretizes and bounds the representable tails.
-            Output is cast back to the input dtype.
+        compute_dtype: Provider-native internal sampling dtype. Defaults to the
+            active provider's ``float32``; finite precision discretizes and bounds
+            the representable tails. Output is cast back to the input dtype.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -197,13 +165,12 @@ def gaussian_noise(
         - ``state`` is a :class:`GaussianNoiseState`
 
     Example:
-        >>> import torch
         >>> from opaque.types import clipped
         >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=key(42))
-        >>> grads = torch.zeros(10)
+        >>> grads = ...  # native array from the active provider
         >>> noisy_grads, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
     Example (bounded output — symmetric ``[-3, 3]``):
@@ -232,73 +199,92 @@ def gaussian_noise(
         _rng_key=key,
     )
 
-    def _sample(
-        center: torch.Tensor, std: float, generator: torch.Generator
-    ) -> torch.Tensor:
-        """Sample N(center, std²) by inverse CDF, optionally truncated.
+    def _sample(center: Any, std: float, sample_key: RngKey) -> Any:
+        """Sample N(center, std²), optionally truncated by inverse CDF.
 
-        ``compute_dtype`` upcast/downcast preserves the type-stable boundary;
-        uniforms are drawn on the CPU generator and moved to the input device.
+        ``compute_dtype`` upcast/downcast preserves the type-stable boundary.
+        Bounded sampling derives uniforms from a standard-normal CDF so every
+        random draw remains available through the portable keyed normal contract.
         """
-        in_dtype = center.dtype
-        device = center.device
+        if not ops.is_array(center):
+            raise TypeError(
+                "gaussian_noise expects native array leaves; "
+                f"got {type(center).__name__}."
+            )
+
+        in_dtype = ops.dtype(center)
 
         if std == 0:
             if resolved_bound is None:
                 return center
             low, high = resolved_bound
-            return torch.clamp(center, min=low, max=high)
+            return ops.clamp(center, lo=low, hi=high)
 
-        u = torch.rand(center.shape, dtype=compute_dtype, generator=generator).to(
-            device=device
+        sample_dtype = compute_dtype if compute_dtype is not None else ops.float32()
+        center_c = (
+            ops.astype(center, sample_dtype) if in_dtype != sample_dtype else center
         )
-
-        center_c = center.to(compute_dtype) if in_dtype != compute_dtype else center
-
-        # Clamp ``u`` away from 0 and 1 so ``2u-1`` never reaches ±1 and
-        # ``erfinv`` can't return ±inf.  ``finfo.tiny`` (denormal min) is
-        # below ``compute_dtype`` machine eps, so ``1 - tiny`` rounds back to
-        # ``1.0`` and the upper clamp would be a no-op — use ``finfo.eps``.
-        eps = torch.finfo(compute_dtype).eps
+        standard_normal = normal(
+            sample_key,
+            ops.shape(center_c),
+            dtype=sample_dtype,
+            like=center_c,
+        )
         if resolved_bound is None:
-            # Unbounded N(0, 1) via inverse CDF: μ + σ √2 erfinv(2u - 1)
-            u = torch.clamp(u, min=eps, max=1.0 - eps)
-            sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
+            sample = ops.add(center_c, ops.multiply(standard_normal, std))
         else:
             low, high = resolved_bound
-            z_low = (low - center_c) / std
-            z_high = (high - center_c) / std
-            alpha = 0.5 * (1.0 + torch.erf(z_low / _SQRT2))
-            beta = 0.5 * (1.0 + torch.erf(z_high / _SQRT2))
-            u = alpha + u * (beta - alpha)
-            u = torch.clamp(u, min=eps, max=1.0 - eps)
-            sample = center_c + std * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
-            sample = torch.clamp(sample, min=low, max=high)
+            z_low = ops.divide(ops.subtract(low, center_c), std)
+            z_high = ops.divide(ops.subtract(high, center_c), std)
+            alpha = ops.multiply(ops.add(ops.erf(ops.divide(z_low, _SQRT2)), 1.0), 0.5)
+            beta = ops.multiply(ops.add(ops.erf(ops.divide(z_high, _SQRT2)), 1.0), 0.5)
+            uniform = ops.multiply(
+                ops.add(ops.erf(ops.divide(standard_normal, _SQRT2)), 1.0),
+                0.5,
+            )
+            uniform = ops.add(alpha, ops.multiply(uniform, ops.subtract(beta, alpha)))
+            # Clamp away from 0 and 1 so ``erfinv`` cannot return ±inf.
+            eps = ops.finfo_eps(sample_dtype)
+            uniform = ops.clamp(uniform, lo=eps, hi=1.0 - eps)
+            sample = ops.add(
+                center_c,
+                ops.multiply(
+                    ops.erfinv(ops.subtract(ops.multiply(uniform, 2.0), 1.0)),
+                    std * _SQRT2,
+                ),
+            )
+            sample = ops.clamp(sample, lo=low, hi=high)
 
-        return sample.to(dtype=in_dtype) if in_dtype != compute_dtype else sample
+        return ops.astype(sample, in_dtype) if in_dtype != sample_dtype else sample
 
-    def _add_noise_tree(grads, effective_stddev, generator):
+    def _add_noise_tree(
+        grads: Any,
+        effective_stddev: float | PerGroup,
+        stream_key: RngKey,
+    ) -> Any:
         _validate_noise_stddev(effective_stddev)
 
-        # Per-group σ: look up each leaf by optree ParamPath.
-        if isinstance(effective_stddev, PerGroup):
-            import optree
-
-            from opaque.api.engine.pytree import tree_flatten_with_paths
-
-            paths, leaves, treedef = tree_flatten_with_paths(grads)
-            noised_leaves = []
-            for path, tensor in zip(paths, leaves, strict=True):
-                if not isinstance(tensor, torch.Tensor):
-                    raise TypeError(
-                        "gaussian_noise with PerGroup stddev expects tensor "
-                        f"leaves; got {type(tensor).__name__} at path {path!r}."
-                    )
-                group_std = effective_stddev.for_path(path)
-                noised_leaves.append(_sample(tensor, group_std, generator))
-            return optree.tree_unflatten(treedef, noised_leaves)
-
-        return tree_map(lambda t: _sample(t, effective_stddev, generator), grads)
+        paths, leaves, treedef = tree_flatten_with_paths(grads)
+        noised_leaves = []
+        for leaf_index, (path, leaf) in enumerate(zip(paths, leaves, strict=True)):
+            if not ops.is_array(leaf):
+                raise TypeError(
+                    "gaussian_noise expects native array leaves; "
+                    f"got {type(leaf).__name__} at path {path!r}."
+                )
+            leaf_stddev = (
+                effective_stddev.for_path(path)
+                if isinstance(effective_stddev, PerGroup)
+                else effective_stddev
+            )
+            noised_leaves.append(
+                _sample(
+                    leaf,
+                    leaf_stddev,
+                    rng_fold_in(stream_key, "gaussian_noise_leaf", leaf_index),
+                )
+            )
+        return tree_unflatten(treedef, noised_leaves)
 
     def _clipped_stddev(clipped: ClippedPytree) -> float | PerGroup:
         if isinstance(clipped.max_norm, PerGroup):
@@ -335,12 +321,12 @@ def gaussian_noise(
         noisy_grads = _add_noise_tree(
             first_clipped.pytree,
             first_stddev,
-            generator_from_key(first_step_key),
+            first_step_key,
         )
         noisy_squared = _add_noise_tree(
             second_clipped.pytree,
             second_stddev,
-            generator_from_key(second_step_key),
+            second_step_key,
         )
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,
@@ -364,7 +350,18 @@ def gaussian_noise(
 
     def noise_fn(grads, st):
         """Add Gaussian noise to a clipped pytree (or paired stream)."""
-        with record_function("opaque::gaussian_noise"):
+        if isinstance(grads, SecondMomentClippingOutput):
+            backend = ensure_backend(
+                grads.grads.pytree,
+                grads.squared_grads.pytree,
+            )
+        elif isinstance(grads, ClippedPytree):
+            backend = ensure_backend(grads.pytree)
+        else:
+            return _noise_fn_impl(grads, st)
+        if not runtime.trace_scope.supports(backend):
+            return _noise_fn_impl(grads, st)
+        with runtime.trace_scope("opaque::gaussian_noise"):
             return _noise_fn_impl(grads, st)
 
     def _noise_fn_impl(grads, st):
@@ -393,7 +390,7 @@ def gaussian_noise(
         noisy_tree = _add_noise_tree(
             grads.pytree,
             effective_stddev,
-            generator_from_key(step_key),
+            step_key,
         )
         return (
             NoisedPytree(

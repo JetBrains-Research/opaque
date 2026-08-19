@@ -26,13 +26,12 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
-import torchopt
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.optimizers import adamw, apply_updates
 from opaque.random import key
+from opaque.torch.functional import make_functional
 
 
 def _build_model(seed: int = 0):
@@ -159,7 +158,7 @@ def _saved_tf32():
 
 
 def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
-    """Trimmed DP step for TF32 parity — torchopt.adamw, no AdamW-BC."""
+    """Trimmed DP step for TF32 parity — AdamW without DP bias correction."""
     fmodel, params = make_functional(model)
 
     def loss_fn(p, xi, yi):
@@ -174,10 +173,9 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
     noise_fn, ns = gaussian_noise(noise_multiplier=0.0, key=key(42))
     noised, _ = noise_fn(grads, ns)
 
-    optimizer = torchopt.adamw(lr=1e-2)
-    opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
-    new_params = torchopt.apply_updates(params, updates, inplace=False)
+    optimizer_step, opt_state = adamw(params, lr=1e-2)
+    updates, _ = optimizer_step(noised, opt_state, params=params)
+    new_params = apply_updates(params, updates)
     return grads, new_params
 
 
@@ -403,10 +401,9 @@ def test_fp16_autocast_full_pipeline_with_optimizer():
     noise_fn, ns = gaussian_noise(noise_multiplier=0.5, key=key(42))
     noised, _ = noise_fn(grads, ns)
 
-    optimizer = torchopt.adamw(lr=1e-2)
-    opt_state = optimizer.init(params)
-    updates, _ = optimizer.update(noised.pytree, opt_state, params=params)
-    new_params = torchopt.apply_updates(params, updates, inplace=False)
+    optimizer_step, opt_state = adamw(params, lr=1e-2)
+    updates, _ = optimizer_step(noised, opt_state, params=params)
+    new_params = apply_updates(params, updates)
 
     for p in new_params:
         assert torch.isfinite(p).all(), (

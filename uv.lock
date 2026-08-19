@@ -2572,8 +2572,6 @@ source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -2586,8 +2584,6 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 

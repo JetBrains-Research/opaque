@@ -451,6 +451,8 @@ class TestSyncAdaptiveClipStateAllEmpty:
 
     def test_total_zero_preserves_clipping_norm(self):
         from opaque.api.dpsgd.clipping._distributed import sync_adaptive_clip_state
+        from opaque.api.engine.backend import use_backend
+        from opaque.torch import torch_backend
 
         state = AdaptiveClipState(
             _current_clipping_norm=1.5,
@@ -465,8 +467,9 @@ class TestSyncAdaptiveClipStateAllEmpty:
             _num_clipped=0.0,
             _batch_size=0.0,
         )
-        # In non-distributed mode sync_adaptive_clip_state returns state as-is
-        result = sync_adaptive_clip_state(state)
+        # State-only synchronization needs an explicit active provider runtime.
+        with use_backend(torch_backend()):
+            result = sync_adaptive_clip_state(state)
         assert result._current_clipping_norm == 1.5
         assert result._next_clipping_norm == 1.5
 

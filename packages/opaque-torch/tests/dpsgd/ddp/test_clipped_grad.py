@@ -18,8 +18,8 @@ from dpsgd_ddp_helpers import (
 from opaque.distributed import sum_gradients
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.functional import make_functional
 from opaque.random import key
+from opaque.torch.functional import make_functional
 
 pytestmark = pytest.mark.cuda
 

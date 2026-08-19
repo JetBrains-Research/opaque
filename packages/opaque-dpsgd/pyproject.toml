@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-dpsgd"
 dynamic = ["version"]
-description = "Opaque DP-SGD: Gaussian noise (optionally bounded), per-group calibration, AdamW-BC"
+description = "Opaque DP-SGD: backend-neutral Gaussian noise and per-group calibration"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "dp-sgd", "pytorch", "privacy"]
+keywords = ["differential-privacy", "dp-sgd", "privacy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -24,12 +24,7 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.9.0",
     "opaque-engine>=0.0.0.dev0",
-    # Torch-only at this point in the split: the mechanisms still reach
-    # `generator_from_key` through the transitional `opaque.random` shim,
-    # which imports `opaque.torch.random`. Dropped once they go neutral.
-    "opaque-torch>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
 ]
 
