@@ -14,7 +14,7 @@ from opaque.distributed import sum_gradients, sync
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
-from opaque.pytree import tree_map
+from opaque.pytree import tree_leaves, tree_map
 from opaque.random import key
 from opaque.types import clipped
 
@@ -40,12 +40,26 @@ def _setup_ddp(rank: int, world_size: int, port: int) -> None:
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 
+def _setup_gloo(rank: int, world_size: int, port: int) -> None:
+    """Initialize a CPU process group for backend-neutral DDP coverage."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+
+
 def _cleanup_ddp() -> None:
     if dist.is_initialized():
         dist.destroy_process_group()
 
 
 def _spawn(world_size: int, fn, *args) -> None:
+    port = _find_free_port()
+    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _spawn_gloo(world_size: int, fn, *args) -> None:
     port = _find_free_port()
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
 
@@ -307,5 +321,49 @@ def _worker_band_parity(rank: int, world_size: int, port: int, out_path: str) ->
         noised, _ = noise_fn(summed, noise_state)
         if rank == 0:
             torch.save(noised.pytree["fc1.weight"].cpu(), out_path)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_cpu_gloo_training_contract(rank: int, world_size: int, port: int) -> None:
+    """Exercise gradient reduction and MF noise-state sync on CPU."""
+    _setup_gloo(rank, world_size, port)
+    try:
+        torch.manual_seed(321)
+        model = SimpleModel()
+        func_model, params, _frozen = make_functional(model, partition_trainable=True)
+
+        def loss_fn(params, x, y):
+            prediction = func_model(params, x)
+            return ((prediction - y) ** 2).mean()
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
+        )
+        local_batch_size = 3 if rank == 0 else 5
+        x = torch.randn(local_batch_size, 10)
+        y = torch.randn(local_batch_size, 1)
+        grads, _ = grad_fn(params, x, y, state=clip_state)
+        summed_grads = sum_gradients(grads)
+
+        template = tree_map(torch.zeros_like, params)
+        noise_fn, noise_state = mf_gaussian_noise(
+            template,
+            identity_strategy(),
+            n_steps=2,
+            noise_multiplier=1.1,
+            key=key(29),
+        )
+        noise_steps = []
+        for _ in range(2):
+            noised_grads, noise_state = noise_fn(summed_grads, noise_state)
+            noise_state = sync(noise_state)
+            first_leaf = tree_leaves(noised_grads.pytree)[0]
+            gathered = [torch.zeros_like(first_leaf) for _ in range(world_size)]
+            dist.all_gather(gathered, first_leaf)
+            assert all(torch.equal(gathered[0], value) for value in gathered[1:])
+            noise_steps.append(first_leaf)
+
+        assert not torch.equal(noise_steps[0], noise_steps[1])
     finally:
         _cleanup_ddp()

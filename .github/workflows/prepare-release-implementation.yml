@@ -247,11 +247,27 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-amd64
-      pytest-marker: not cuda and not mps
+      pytest-marker: not cuda and not mps and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+
+  python-tests-distributed:
+    name: Release Linux amd64 (distributed)
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      environment-name: linux-distributed
+      pytest-marker: distributed and not cuda
+      report-durations: true
+      runner: ubuntu-latest
+      test-shards: >-
+        [{"label":"Linux amd64","name":"distributed","paths":"packages/opaque-engine/tests/ddp packages/opaque-alignment/tests/ddp packages/opaque-dpsgd/tests/ddp packages/opaque-dpftrl/tests/ddp packages/opaque-transformers/tests/distributed"}]
+      timeout-minutes: 30
 
   python-tests-minimum:
     name: Release Linux amd64 (minimum dependencies)
@@ -264,7 +280,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: minimum
       environment-name: minimum-dependencies
-      pytest-marker: not cuda and not mps and not slow
+      pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
       report-durations: true
@@ -282,7 +298,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: latest
       environment-name: latest-dependencies
-      pytest-marker: not cuda and not mps and not slow
+      pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.13"
       report-durations: true
@@ -299,7 +315,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: mps
-      pytest-marker: not cuda
+      pytest-marker: not cuda and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
@@ -315,7 +331,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-aarch64
-      pytest-marker: not cuda and not mps
+      pytest-marker: not cuda and not mps and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
@@ -414,6 +430,7 @@ jobs:
     needs:
       - plan
       - python-tests-linux-amd64
+      - python-tests-distributed
       - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64

@@ -19,12 +19,14 @@ def _require_gloo() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_sync_aux_empty_batch_does_not_desync() -> None:
     _require_gloo()
     _spawn_gloo(2, _worker_sync_aux_empty_batch)
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
 def test_sync_aux_empty_vs_per_group_group_norms() -> None:
     """Empty rank omits group_norms; nonempty has a per-group dict."""
     _require_gloo()

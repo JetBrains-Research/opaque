@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting.types import DpHorizonProcess
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _DELTA = 1e-5
 
@@ -51,4 +56,51 @@ def test_k_one_prefix_matches_redrawn_single_epoch_process():
             redrawn.pld_at(steps).epsilon_at(_DELTA),
             rel=1e-12,
             abs=0,
+        )
+
+
+class TestKOutOfTRegressionVectors:
+    """Committed ε values for the two supported deterministic inner mechanisms."""
+
+    @pytest.mark.parametrize(
+        ("name", "factory", "expected"),
+        [
+            pytest.param(
+                "k_out_of_t(gaussian(1.0), k=2, n_steps=16)",
+                lambda: dpsgd_acc.k_out_of_t(
+                    dpsgd_acc.gaussian(1.0),
+                    total_participations=2,
+                    n_steps=16,
+                ),
+                4.687320185091083,
+                id="gaussian",
+            ),
+            pytest.param(
+                "k_out_of_t(adaclip(gaussian(1.1)), k=2, n_steps=16)",
+                lambda: dpsgd_acc.k_out_of_t(
+                    dpsgd_acc.adaclip(
+                        dpsgd_acc.gaussian(1.1),
+                        expected_batch_size=250,
+                        num_groups=3,
+                    ),
+                    total_participations=2,
+                    n_steps=16,
+                ),
+                3.9650600884447935,
+                id="adaclip",
+            ),
+        ],
+    )
+    def test_epsilon_matches_committed_vector(
+        self,
+        name: str,
+        factory: Callable[[], DpHorizonProcess],
+        expected: float,
+    ):
+        delta = 1e-8
+        actual = factory().epsilon_at(delta)
+
+        assert actual == pytest.approx(expected, rel=1e-9, abs=3e-9), (
+            f"{name}, delta={delta}: epsilon drifted; "
+            f"committed={expected:.17g}, observed={actual:.17g}"
         )
