@@ -3603,6 +3603,8 @@ class DPTrainer:
                 num_workers=a.dataloader_num_workers,
                 pin_memory=self._pin_memory_enabled(),
                 worker_init_fn=worker_init,
+                multiprocessing_context=self._dataloader_multiprocessing_context(),
+                in_order=a.dataloader_in_order,
             )
         if self._train_dataloader is not None:
             self._callback_handler.train_dataloader = self._train_dataloader
@@ -3692,16 +3694,14 @@ class DPTrainer:
             )
         sampler = ctx.current_sampler
 
-        # HF parity: MPS requires fork start method when using multiple workers
-        # (PyTorch's default spawn method does not work with MPS).
-        should_fork = self._device.type == "mps" and a.dataloader_num_workers > 1
         kwargs: dict[str, Any] = {
             "batch_sampler": sampler,
             "collate_fn": collate_fn,
             "num_workers": a.dataloader_num_workers,
             "pin_memory": self._pin_memory_enabled(),
             "worker_init_fn": worker_init,
-            "multiprocessing_context": "fork" if should_fork else None,
+            "multiprocessing_context": self._dataloader_multiprocessing_context(),
+            "in_order": a.dataloader_in_order,
         }
         if a.dataloader_num_workers > 0:
             kwargs["persistent_workers"] = a.dataloader_persistent_workers
@@ -3751,10 +3751,6 @@ class DPTrainer:
                 world_size=self._ddp.world_size,
             )
 
-        # HF parity: MPS requires fork start method when using multiple workers.
-        should_fork = (
-            self._device.type == "mps" and self.args.dataloader_num_workers > 1
-        )
         eval_collate = self._resolve_collate_fn(base_collator)
         eval_collate = self._maybe_prime_collate(eval_collate, dataset)
         kwargs: dict[str, Any] = {
@@ -3765,7 +3761,8 @@ class DPTrainer:
             "pin_memory": self._pin_memory_enabled(),
             "drop_last": self.args.dataloader_drop_last,
             "worker_init_fn": self._dataloader_worker_init_fn(),
-            "multiprocessing_context": "fork" if should_fork else None,
+            "multiprocessing_context": self._dataloader_multiprocessing_context(),
+            "in_order": self.args.dataloader_in_order,
         }
         if self.args.dataloader_num_workers > 0:
             kwargs["persistent_workers"] = self.args.dataloader_persistent_workers
@@ -3776,6 +3773,15 @@ class DPTrainer:
         if eval_dataset is None and self.args.dataloader_persistent_workers:
             self._eval_dataloader = loader
         return loader
+
+    def _dataloader_multiprocessing_context(self) -> str | None:
+        """Resolve DataLoader worker context with HF's MPS-safe default."""
+        context = self.args.dataloader_multiprocessing_context
+        if context is not None:
+            return context
+        if self._device.type == "mps" and self.args.dataloader_num_workers > 1:
+            return "fork"
+        return None
 
     def _dataloader_worker_init_fn(self) -> Callable[[int], None] | None:
         """Build a worker-init callable that re-seeds each worker process.

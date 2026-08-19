@@ -8,7 +8,7 @@
 
 ## Requirements
 
-- Python 3.11 or 3.12
+- Python 3.11 through 3.13
 - PyTorch 2.9 or later
 
 ## From JetBrains Packages

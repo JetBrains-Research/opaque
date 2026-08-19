@@ -24,6 +24,7 @@ def _trl_dpo_args(tmp_path, **overrides):
         save_strategy="no",
         report_to=[],
         use_cpu=True,
+        router_aux_loss_coef=overrides.pop("router_aux_loss_coef", 0.0),
         **overrides,
     )
 
@@ -119,6 +120,25 @@ def test_loss_type_aot_rejected(tmp_path):
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
+
+
+def test_reject_router_aux_loss(tmp_path):
+    with pytest.raises(ValueError, match="router_aux_loss_coef"):
+        DPOConfig.from_trl(
+            _trl_dpo_args(tmp_path, router_aux_loss_coef=0.001),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
+
+
+def test_trust_remote_code_carries_through(tmp_path):
+    cfg = DPOConfig.from_trl(
+        _trl_dpo_args(tmp_path, trust_remote_code=True),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert cfg.trust_remote_code is True
+    assert cfg.model_init_kwargs["trust_remote_code"] is True
 
 
 def test_loss_type_aot_unpaired_rejected(tmp_path):

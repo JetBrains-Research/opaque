@@ -56,6 +56,9 @@ class DPOConfig(TrainingArguments):
     #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
     #: Ignored when ``model`` is an already-instantiated module.
     model_init_kwargs: dict | None = None
+    #: Allow loading a model or tokenizer that ships custom Hub Python code.
+    #: This is forwarded only when the trainer receives a string model identifier.
+    trust_remote_code: bool = False
 
     # ---- Loss ------------------------------------------------------------
     #: One or more loss variants (list ⇒ MPO via ``mpo_combine``). Names:
@@ -137,6 +140,9 @@ class DPOConfig(TrainingArguments):
             self.loss_type = [self.loss_type]
         if self.loss_weights is None:
             self.loss_weights = [1.0] * len(self.loss_type)
+        if self.trust_remote_code:
+            self.model_init_kwargs = dict(self.model_init_kwargs or {})
+            self.model_init_kwargs.setdefault("trust_remote_code", True)
         super().__post_init__()
 
         # TRL's own validations, not DP-driven rejections.
@@ -216,7 +222,8 @@ class DPOConfig(TrainingArguments):
         ``sync_ref_model``, ``ref_model_mixup_alpha``,
         ``ref_model_sync_steps``, ``precompute_ref_batch_size``,
         ``disable_dropout``, ``max_length``, ``pad_to_multiple_of``,
-        ``dataset_num_proc``, ``model_init_kwargs``) are copied directly.
+        ``dataset_num_proc``, ``model_init_kwargs``, ``trust_remote_code``) are
+        copied directly.
 
         ``loss_type`` is validated per-element against opaque's implemented
         heads; the TRL 1.x ``aot`` / ``aot_unpaired`` Adversarial Optimal
@@ -225,7 +232,7 @@ class DPOConfig(TrainingArguments):
 
         Fields TRL has that opaque does not implement raise
         ``ValueError``: ``padding_free``, ``truncation_mode='keep_end'``,
-        ``pad_token``.
+        ``pad_token``, and nonzero ``router_aux_loss_coef``.
 
         HF-inherited fields go through the same translation as
         :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same

@@ -17,7 +17,7 @@ cd opaque
 git remote add upstream https://github.com/JetBrains-Research/opaque.git
 ```
 
-Opaque requires Python 3.11 or 3.12, Rust stable, and
+Opaque requires Python 3.11 through 3.13, Rust stable, and
 [uv](https://docs.astral.sh/uv/). Create the complete contributor environment:
 
 ```bash

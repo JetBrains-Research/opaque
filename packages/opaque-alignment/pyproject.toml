@@ -9,7 +9,7 @@ description = "Functional primitives for DP-safe preference learning (DPO, SFT)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = [
     "differential-privacy",
     "preference-learning",
@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]
@@ -31,7 +32,7 @@ dependencies = [
     "torch>=2.9.0",
     "transformers>=4.57.0,<6",
     "datasets>=2.0.0",
-    "peft>=0.18.0",
+    "peft>=0.13.0",
     # safetensors is the on-disk format for the DPO reference-logp cache
     # (`opaque.api.alignment.dpo.reference._precompute`). Already pulled in
     # transitively by transformers; declared directly because we import it.

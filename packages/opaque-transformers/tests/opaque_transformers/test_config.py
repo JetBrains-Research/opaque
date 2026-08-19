@@ -16,6 +16,7 @@ Covers:
 from __future__ import annotations
 
 import math
+import multiprocessing
 
 import pytest
 from transformers.debug_utils import DebugOption
@@ -153,6 +154,40 @@ class TestStrategyCoercion:
         with pytest.raises(ValueError, match="not a valid SchedulerType"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, lr_scheduler="not-a-real-scheduler"
+            )
+
+
+class TestDataLoaderArguments:
+    def test_multiprocessing_context_accepts_platform_method(self):
+        context = multiprocessing.get_all_start_methods()[0]
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            dataloader_num_workers=1,
+            dataloader_multiprocessing_context=context,
+        )
+        assert args.dataloader_multiprocessing_context == context
+
+    def test_multiprocessing_context_rejects_unknown_method(self):
+        with pytest.raises(ValueError, match="dataloader_multiprocessing_context"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                dataloader_num_workers=1,
+                dataloader_multiprocessing_context="not-a-method",
+            )
+
+    def test_multiprocessing_context_requires_workers(self):
+        context = multiprocessing.get_all_start_methods()[0]
+        with pytest.raises(ValueError, match="dataloader_num_workers > 0"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                dataloader_multiprocessing_context=context,
+            )
+
+    def test_out_of_order_loading_is_rejected(self):
+        with pytest.raises(ValueError, match="dataloader_in_order must be True"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                dataloader_in_order=False,
             )
 
 

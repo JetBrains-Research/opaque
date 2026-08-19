@@ -9,7 +9,7 @@ description = "Opaque foundation: pure-Python serialization registry and dispatc
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = ["differential-privacy", "serialization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]

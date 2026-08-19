@@ -5,7 +5,7 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 
 ## Project snapshot
 
-- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.83)
+- **Language**: Python 3.11+ (< 3.14) + Rust stable (≥ 1.83)
 - **Package manager**: `uv`
 - **Hardware**: GPU for training runs; CPU/MPS for most tests
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
@@ -244,13 +244,13 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 CI lane marker expressions:
 
 - PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+- PR dependency boundaries (Ubuntu, Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
 - PR macOS arm64: `-m "not cuda and not slow"`.
 - PR Linux arm64: `-m "not cuda and not mps and not slow"`.
 - PR CUDA (self-hosted): `-m "cuda and not slow"`.
 - Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
-- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+- Main dependency boundaries (Ubuntu, Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
 - Main macOS arm64: `-m "not cuda"`.
 - Main Linux arm64: `-m "not cuda and not mps"`.
@@ -317,7 +317,7 @@ is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
 
 ### Environment prerequisites
 
-- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
+- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.14` constraint.
 - **Rust stable** (≥ 1.83) is pre-installed for the `opaque-accounting` PyO3 build.
 - **uv** must be on `PATH` (`$HOME/.local/bin`). Install via
   `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.

@@ -83,7 +83,7 @@ jobs:
       environment-name: latest-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
-      python-version: "3.12"
+      python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}

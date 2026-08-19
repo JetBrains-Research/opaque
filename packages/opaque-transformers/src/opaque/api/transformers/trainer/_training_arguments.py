@@ -73,6 +73,7 @@ import dataclasses
 import json
 import logging
 import math
+import multiprocessing
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import field
@@ -370,6 +371,12 @@ class TrainingArguments:
     dataloader_persistent_workers: bool = False
     dataloader_pin_memory: bool = True
     dataloader_prefetch_factor: int | None = None
+    # Mirrors HF: None selects the platform default, except DPTrainer uses
+    # ``fork`` for MPS with multiple workers. Explicit values take precedence.
+    dataloader_multiprocessing_context: str | None = None
+    # Batch order follows the sampler order. Out-of-order delivery is not
+    # compatible with Opaque's sequence-sensitive sampling modes.
+    dataloader_in_order: bool = True
     dataloader_drop_last: bool = False
     remove_unused_columns: bool = True
     torch_empty_cache_steps: int | None = None
@@ -796,6 +803,24 @@ class TrainingArguments:
                 "--dataloader_prefetch_factor can only be set when data is "
                 "loaded in a different process, i.e. when "
                 "--dataloader_num_workers > 1."
+            )
+        if self.dataloader_multiprocessing_context is not None:
+            available_contexts = multiprocessing.get_all_start_methods()
+            if self.dataloader_multiprocessing_context not in available_contexts:
+                raise ValueError(
+                    "dataloader_multiprocessing_context must be None or one of "
+                    f"{available_contexts}; got "
+                    f"{self.dataloader_multiprocessing_context!r}."
+                )
+            if self.dataloader_num_workers == 0:
+                raise ValueError(
+                    "dataloader_multiprocessing_context requires "
+                    "dataloader_num_workers > 0."
+                )
+        if self.dataloader_in_order is not True:
+            raise ValueError(
+                "dataloader_in_order must be True: Opaque requires DataLoader "
+                "delivery to preserve sampler order."
             )
 
         # --- 7. Mixed precision sanity --------------------------------------

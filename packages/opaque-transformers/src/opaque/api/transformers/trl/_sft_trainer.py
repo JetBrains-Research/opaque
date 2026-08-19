@@ -326,7 +326,12 @@ class SFTTrainer(DPTrainer):
                     "processing_class is None and the model config has no "
                     "_name_or_path to load a tokenizer from; pass processing_class."
                 )
-            processing_class = AutoTokenizer.from_pretrained(name)
+            processing_class = AutoTokenizer.from_pretrained(
+                name,
+                trust_remote_code=bool(
+                    (args.model_init_kwargs or {}).get("trust_remote_code", False)
+                ),
+            )
         if args.eos_token is not None:
             processing_class.eos_token = args.eos_token
         if processing_class.pad_token_id is None:

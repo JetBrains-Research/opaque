@@ -100,7 +100,7 @@ class TestGaussian:
         zeros = torch.zeros(10000)
         output, state = noise_fn(clipped(zeros, max_norm=1.0), state)
 
-        _, p_value = scipy.stats.kstest(output.pytree.numpy(), "norm", args=(0, 1))
+        _, p_value = scipy.stats.kstest(output.pytree.numpy(), scipy.stats.norm.cdf)
         assert p_value > 0.01
 
     def test_noise_stddev(self):

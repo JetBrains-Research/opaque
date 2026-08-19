@@ -9,6 +9,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 
 from __future__ import annotations
 
+import multiprocessing
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,27 @@ class TestDPTrainerInit:
         assert "attention_mask" in batch
         assert batch["input_ids"].ndim == 2
         assert batch["labels"].ndim == 2
+
+    def test_eval_dataloader_forwards_multiprocessing_context(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+        context = multiprocessing.get_all_start_methods()[0]
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                dataloader_num_workers=1,
+                dataloader_multiprocessing_context=context,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        loader = trainer.get_eval_dataloader()
+
+        assert loader.multiprocessing_context.get_start_method() == context
+        assert loader.in_order is True
 
 
 class TestPrivacyBudgetValidation:

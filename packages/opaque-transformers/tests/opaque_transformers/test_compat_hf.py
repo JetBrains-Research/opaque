@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import multiprocessing
 import warnings
 
 import pytest
@@ -121,6 +122,29 @@ def test_direct_field_max_steps_carries_through(tmp_path):
         clipping_norm=1.0,
     )
     assert opaque.max_steps == 123
+
+
+def test_dataloader_multiprocessing_context_carries_through(tmp_path):
+    context = multiprocessing.get_all_start_methods()[0]
+    opaque = TrainingArguments.from_hf(
+        _hf_args(
+            tmp_path,
+            dataloader_num_workers=1,
+            dataloader_multiprocessing_context=context,
+        ),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert opaque.dataloader_multiprocessing_context == context
+
+
+def test_dataloader_in_order_false_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="dataloader_in_order must be True"):
+        TrainingArguments.from_hf(
+            _hf_args(tmp_path, dataloader_in_order=False),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
 
 
 # bf16 needs a bf16-capable GPU: HF's TrainingArguments rejects ``bf16=True`` at

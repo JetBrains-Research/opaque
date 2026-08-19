@@ -9,7 +9,7 @@ description = "Functional Differential Privacy for PyTorch"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = [
     "differential-privacy",
     "dp-sgd",
@@ -27,6 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]
@@ -90,16 +91,6 @@ workspace.members = [
     "packages/opaque-patches",
     "packages/opaque-alignment",
 ]
-# Keep the shared workspace lock on patched build and PyTorch releases.
-# Published packages retain their broader runtime requirements.
-constraint-dependencies = [
-    "setuptools>=83",
-    "torch>=2.13,<2.14",
-    "transformers<5.12",
-    "trl<1.7",
-    "peft<0.19",
-    "scipy<1.18",
-]
 
 [tool.uv.sources]
 opaque-base = { workspace = true }
@@ -145,7 +136,7 @@ examples = [
   "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
   "transformers>=4.57.0,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
-  "peft>=0.18.0",             # LoRA adapters (needed by all training examples)
+  "peft>=0.13.0",             # LoRA adapters (needed by all training examples)
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
@@ -198,7 +189,7 @@ filterwarnings = [
 # Shared lint/format settings for CI (`autoformat.yml`), `uv run ruff …`, and
 # editor integrations. Select is explicit: Ruff 0.16 widened the unconfigured
 # default far beyond what this repo wants as a merge gate.
-target-version = "py311"  # inferred from requires-python (>=3.11,<3.13)
+target-version = "py311"  # inferred from requires-python (>=3.11,<3.14)
 line-length = 88
 
 # First-party source roots of the PEP 420 `opaque` namespace. Used by ruff to
