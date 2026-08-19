@@ -1,6 +1,9 @@
 # LoRA-XSe: what we found, why it works, and what is still open
 
-Audience: technical leadership. Non-DP, Qwen2.5-Coder-7B on KStack, 520 steps.
+Audience: technical leadership. Non-DP, Qwen2.5-Coder-7B on KStack, 520 steps
+(2 epochs), rank r=16, **exploration depth 5 of 16 directions, rotation interval
+tau=1** (i.e. 5 of the 16 directions are replaced at every single step, 11 kept),
+SGD momentum 0.9 at lr 5e-2, batch 192, weight decay 0.
 Every number below is from a run verified `state == finished` AND `step == 520/520`.
 
 ---
@@ -20,16 +23,39 @@ at matched optimizer, learning rate, batch size, step count and weight decay.
 8.840e-3 (seed 42) and 8.955e-3 (seed 43) -- against a seed-to-seed spread of
 1.4e-4. The effect is **64x the seed noise**. Seed 44 is in flight.
 
-Read as a decomposition:
+### The number to defend: 2.02e-3, not 8.84e-3
+
+An earlier draft of this document led with "rotation buys 8.84e-3". That was
+measured against LoRA-XS run with **SGD** -- which is not LoRA-XS as published.
+Its authors use AdamW in every experiment, so the SGD baseline is the method
+handicapped by an optimizer nobody proposed. Against the faithful version:
+
+| configuration | loss |
+|---|---|
+| LoRA-XS frozen + SGD | 0.702119 |
+| **LoRA-XS frozen + AdamW** (faithful) | **0.695298** |
+| **LoRA-XSe rotating + SGD** (ours) | **0.693279** |
 
 ```
-freezing the basis costs        2.03e-3
-rotating it back gains         +8.84e-3   = 436% of that cost
-net vs full LoRA               -6.81e-3
+of rotation's 8.84e-3 apparent benefit:
+   6.82e-3  (77%)  obtainable by switching optimizer alone
+   2.02e-3  (23%)  genuinely rotation's        <- 15x the seed spread
 ```
 
-Rotation does not merely repay the price of freezing the basis. It overshoots by
-4.4x and lands ahead of a method with 201x more parameters.
+**This strengthens the claim rather than weakening it.** The residual 2.02e-3 is
+exactly the component theory says a preconditioner *cannot* supply: the frozen
+basis holds only 0.077% of the gradient's energy, and no per-direction rescaling
+produces a direction outside the span. So the surviving effect is the
+subspace-escape term, and its measured size now agrees with the geometry. A
+2.02e-3 result that survives scrutiny is worth more than an 8.84e-3 one that does
+not.
+
+**Consequence, stated plainly:** the same critique applies to our full-LoRA
+comparison, which is currently SGD-vs-SGD. That is internally fair, but full LoRA
+also deserves AdamW. Historically AdamW improved full LoRA by ~7.8e-4 (old scale),
+putting a fair arm near ~0.6985 -- still behind our 0.693279, but that is an
+estimate. **A full-LoRA + AdamW arm is the most important outstanding control**
+and is queued.
 
 ---
 
@@ -115,10 +141,40 @@ all:
   momentum, keep the strong, re-randomize the weak);
 * **Adam copes by rescaling** them so they can keep up.
 
-If that is the whole story, a proper preconditioner substitutes for rotation
-rather than adding to it. The evidence so far is consistent with it: rotation's
-benefit shrinks from 8.84e-3 under SGD to ~1.9e-3 under AdamW, and nothing yet
-beats SGD+rotation (AdamW+rotation ties it).
+If that is the whole story, a preconditioner substitutes for rotation rather than
+adding to it, and the measured 77% says most of it is exactly that.
+
+**AdamW helps the two arms utterly differently, and this is the clearest single
+piece of evidence for the mechanism:**
+
+| arm | SGD | AdamW | change |
+|---|---|---|---|
+| frozen (p_e=0) | 0.702119 | 0.695298 | **-6.82e-3 (large gain)** |
+| rotating | 0.693279 | 0.693435 | +0.16e-3 (nothing) |
+
+The frozen arm is stuck with 16 fixed directions, most of which have gradients too
+small to move under a single shared learning rate -- its realised effective rank is
+2.1 of 16. Adam wakes those directions up, hence the large gain. The rotating arm
+never has idle directions to wake: it discards whatever stops moving and draws
+replacements, so its effective rank is 1.35 and every direction it carries is
+already earning its place. Adam has nothing left to fix there.
+
+**And the two actively interfere.** Adam's power lives in its second moment, the
+running estimate of each direction's typical gradient size, which requires history
+to estimate. Rotation rewrites the coordinate system that estimate is expressed in
+-- at tau=1, every single step -- and fresh directions restart from zero. So
+rotation continuously churns the ground Adam stands on. Corroboration from the
+literature: every published gradient-subspace method that uses Adam recomputes the
+subspace RARELY. GaLore uses T=200 and reports T=50-1000 all work; we use tau=1,
+200x more often, and GaLore itself warns that frequent switching "may also impact
+the fidelity of the optimizer states."
+
+**A confound worth naming before someone else does:** tau=1 was chosen because the
+tau sweep found it best under SGD. It is also the worst possible setting for Adam.
+Our AdamW+rotation arm therefore ran at an SGD-optimal cadence. The prediction --
+queued -- is that AdamW+rotation IMPROVES as tau grows, the opposite of SGD's
+behaviour. If it does, that is where the two mechanisms finally stack, and it is
+strong confirmation of the interference account.
 
 ### Why substitution is probably *not* the whole story
 
