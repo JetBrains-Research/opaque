@@ -28,20 +28,18 @@ Names that have no DP-aware mapping (8-bit, paged, GaLore, fused
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import Any
 
 import opaque.optimizers as opaque_opt
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-GradientTransformation = Any  # torchopt.base.GradientTransformation, lazy
+OptimizerFactory = Callable[..., tuple[Callable[..., tuple[Any, Any]], Any]]
 
 # ---------------------------------------------------------------------------
 # Layer 1 — canonical opaque names
 # ---------------------------------------------------------------------------
 
-_OPAQUE_FACTORIES: dict[str, Callable[..., GradientTransformation]] = {
+_OPAQUE_FACTORIES: dict[str, OptimizerFactory] = {
     "adam": opaque_opt.adam,
     "adamw": opaque_opt.adamw,
     "sgd": opaque_opt.sgd,
@@ -163,11 +161,12 @@ def _apply_top_level_fields(
 
 
 def _build_schedule_free(
+    params: Any,
     lr_schedule: Any,
     args: Any,
     extra_kwargs: dict[str, Any],
     base_kwargs: dict[str, Any],
-) -> GradientTransformation:
+) -> tuple[Callable[..., tuple[Any, Any]], Any]:
     """Construct a ``schedule_free`` wrapper.
 
     ``optim_args="base=adamw,..."`` selects the inner factory; the
@@ -212,15 +211,17 @@ def _build_schedule_free(
             base_only[key] = pooled.pop(key)
     # Apply HF TrainingArguments fields to the base factory.
     _apply_top_level_fields(base_name, args, base_only)
-    base = base_factory(lr=lr_schedule, **base_only)
-    return opaque_opt.schedule_free(base, **pooled)
+    return opaque_opt.schedule_free(
+        params, base_factory, lr=lr_schedule, **base_only, **pooled
+    )
 
 
 def build_optimizer(
+    params: Any,
     args: Any,
     lr_schedule: Any,
     extra_kwargs: dict[str, Any] | None = None,
-) -> GradientTransformation:
+) -> tuple[Callable[..., tuple[Any, Any]], Any]:
     """Construct the DP-aware opaque optimizer for ``args.optim``.
 
     ``extra_kwargs`` typically comes from ``args.optim_args``
@@ -231,23 +232,24 @@ def build_optimizer(
     canonical, base_kwargs = resolve_optimizer_name(args.optim)
     extra_kwargs = dict(extra_kwargs or {})
     if canonical == "schedule_free":
-        return _build_schedule_free(lr_schedule, args, extra_kwargs, base_kwargs)
+        return _build_schedule_free(
+            params, lr_schedule, args, extra_kwargs, base_kwargs
+        )
     factory = _OPAQUE_FACTORIES[canonical]
     kwargs = {**base_kwargs}
     _apply_top_level_fields(canonical, args, kwargs)
     kwargs.update(extra_kwargs)
-    return factory(lr=lr_schedule, **kwargs)
+    return factory(params, lr=lr_schedule, **kwargs)
 
 
 def validate_functional_optimizer_cls_and_kwargs(
     optimizer_cls_and_kwargs: tuple[Any, ...],
-) -> tuple[Callable[..., GradientTransformation], dict[str, Any]]:
+) -> tuple[OptimizerFactory, dict[str, Any]]:
     """Validate ``(factory, kwargs)`` for DPTrainer's functional optimizer path.
 
     The factory must **not** be a :class:`torch.optim.Optimizer` subclass and
-    must be callable as ``factory(lr=lr_schedule, **kwargs)`` (same
-    convention as :mod:`opaque.optimizers` and torchopt).  The returned
-    object must expose ``init`` and ``update`` callables.
+    must be callable as ``factory(params, lr=lr_schedule, **kwargs)`` (the
+    convention used by :mod:`opaque.optimizers`) and return ``(step, state)``.
     """
     import torch.optim as torch_optim
 
@@ -267,8 +269,8 @@ def validate_functional_optimizer_cls_and_kwargs(
     if isinstance(factory, type) and issubclass(factory, torch_optim.Optimizer):
         raise RuntimeError(
             "DPTrainer.optimizer_cls_and_kwargs rejects torch.optim.Optimizer "
-            "subclasses: use a callable that returns a torchopt "
-            "GradientTransformation (e.g. opaque.optimizers.adamw)."
+            "subclasses: use an explicit-state factory "
+            "(e.g. opaque.optimizers.adamw)."
         )
     if not callable(factory):
         raise TypeError(
@@ -279,20 +281,18 @@ def validate_functional_optimizer_cls_and_kwargs(
         return 1e-4
 
     try:
-        transform = factory(lr=dummy_lr, **opt_kwargs)
+        result = factory({}, lr=dummy_lr, **opt_kwargs)
     except TypeError as exc:
         raise RuntimeError(
             "optimizer_cls_and_kwargs factory is not compatible with "
-            "``factory(lr=lr_schedule, **kwargs)``.  Original error: "
+            "``factory(params, lr=lr_schedule, **kwargs)``. Original error: "
             f"{exc}"
         ) from exc
-    init_fn = getattr(transform, "init", None)
-    update_fn = getattr(transform, "update", None)
-    if not callable(init_fn) or not callable(update_fn):
+    if not isinstance(result, tuple) or len(result) != 2 or not callable(result[0]):
         raise RuntimeError(
-            "optimizer_cls_and_kwargs factory must return an object with "
-            "callable init and update (torchopt GradientTransformation); "
-            f"got {type(transform)!r}."
+            "optimizer_cls_and_kwargs factory must return ``(step, state)`` "
+            "with a callable step; "
+            f"got {result!r}."
         )
     return factory, dict(opt_kwargs)
 

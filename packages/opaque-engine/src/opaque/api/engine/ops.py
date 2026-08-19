@@ -221,6 +221,28 @@ def accumulator_dtype(value: object, *, kind: str = "sum") -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def amin(value: object, axis: Any = None) -> object:
+    """Reduce to the smallest value along an optional axis.
+
+    ``axis=None`` reduces every axis to a 0-d array. Distinct from
+    :func:`minimum`, which compares two arrays elementwise and keeps their
+    shape. NaN propagates: a reduction over any NaN gives NaN.
+    """
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
+def amax(value: object, axis: Any = None) -> object:
+    """Reduce to the largest value along an optional axis.
+
+    ``axis=None`` reduces every axis to a 0-d array. Distinct from
+    :func:`maximum`, which compares two arrays elementwise and keeps their
+    shape. NaN propagates.
+    """
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def greater(left: object, right: object) -> object:
     """Compare two values elementwise."""
     raise NotImplementedError
@@ -302,6 +324,8 @@ __all__ = [
     "abs",
     "accumulator_dtype",
     "add",
+    "amax",
+    "amin",
     "all",
     "astype",
     "clamp",

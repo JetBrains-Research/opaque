@@ -41,10 +41,9 @@ def _spawn_gloo(world_size: int, fn, *args) -> None:
 
 
 def _worker_optimizer_state_audit_gloo(rank: int, world_size: int, port: int) -> None:
-    from opaque.api.optimizers._adam import AdamState
-    from opaque.api.optimizers._lion import LionState
-    from opaque.api.optimizers.distributed import sync_optimizer_state
+    from opaque.api.optimizers._distributed import sync_optimizer_state
     from opaque.distributed import sync
+    from opaque.optimizers.types import AdamState, LionState
 
     _setup_gloo(rank, world_size, port)
     try:

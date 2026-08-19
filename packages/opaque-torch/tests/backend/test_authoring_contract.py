@@ -75,3 +75,30 @@ def test_dispatched_pytree_paths_and_keyed_normal_are_stable() -> None:
     first = random.normal(random.key(7), (2, 3), dtype=torch.float32)
     second = random.normal(random.key(7), (2, 3), dtype=torch.float32)
     assert torch.equal(first, second)
+
+
+def test_reduction_min_max_are_distinct_from_the_elementwise_pair() -> None:
+    """``amin`` / ``amax`` reduce; ``minimum`` / ``maximum`` compare.
+
+    The optimizer-state audit needs the reduction form to fingerprint a leaf,
+    and reaching for the elementwise pair by mistake returns the input shape
+    rather than a scalar — a fingerprint that silently compares nothing.
+    """
+    value = torch.tensor([[3.0, 1.0], [2.0, 4.0]])
+
+    assert ops.shape(ops.amin(value)) == ()
+    assert ops.shape(ops.amax(value)) == ()
+    assert ops.scalar_item(ops.amin(value)) == 1.0
+    assert ops.scalar_item(ops.amax(value)) == 4.0
+
+    assert ops.shape(ops.amin(value, axis=0)) == (2,)
+    assert ops.amax(value, axis=1).tolist() == [3.0, 4.0]
+
+    # The elementwise pair keeps the shape, which is why they are not
+    # interchangeable.
+    assert ops.shape(ops.minimum(value, value)) == (2, 2)
+
+    # NaN propagates through the reduction rather than being skipped.
+    with_nan = torch.tensor([1.0, float("nan"), 3.0])
+    assert torch.isnan(ops.amin(with_nan))
+    assert torch.isnan(ops.amax(with_nan))

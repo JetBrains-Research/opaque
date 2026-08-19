@@ -101,7 +101,7 @@ REJECTED_OPTIMIZER_NAMES = (
     "schedule_free_adamw",
     "schedule_free_sgd",
     "stable_adamw",
-    # Re-exported torchopt primitives without DP-aware modes.
+    # Optimizers without a DP-aware implementation.
     "adamax",
 )
 
@@ -145,7 +145,7 @@ class TestOptimRejectsUnsupportedNames:
 
 
 # ---------------------------------------------------------------------------
-# Supported torchopt-backed optimizers
+# Supported backend-neutral optimizers
 # ---------------------------------------------------------------------------
 
 
@@ -166,7 +166,7 @@ SUPPORTED_OPTIMIZERS = (
 
 
 class TestSupportedOptimizersConstruct:
-    """All torchopt-backed names accepted by ``TrainingArguments``."""
+    """All backend-neutral names accepted by ``TrainingArguments``."""
 
     @pytest.mark.parametrize("name", SUPPORTED_OPTIMIZERS)
     def test_native_name_constructs(self, tmp_path, name):
@@ -174,14 +174,14 @@ class TestSupportedOptimizersConstruct:
         assert args.optim == name
 
     @pytest.mark.parametrize("name", canonical_optimizer_names())
-    def test_canonical_optimizer_builds_and_inits(self, tmp_path, name):
-        """Every canonical ``optim`` resolves to a factory with a working ``init``.
+    def test_canonical_optimizer_builds_step_and_state(self, tmp_path, name):
+        """Every canonical ``optim`` resolves to a working explicit-state factory.
 
         Full ``train()`` LM integration is exercised elsewhere when the
         installed Transformers / functorch stack supports vmap over the
         model forward; here we lock the contract that each supported
-        name materialises a gradient transform whose ``init`` accepts a
-        small parameter pytree.
+        name materialises a step callable and state from a small parameter
+        pytree.
         """
         args = _args(tmp_path, optim=name)
 
@@ -189,10 +189,10 @@ class TestSupportedOptimizersConstruct:
             return 0.01
 
         extra = dict(args.optim_args or {})
-        opt = build_optimizer(args, lr, extra_kwargs=extra)
         params = {"w": torch.randn(2, 3, requires_grad=True)}
-        st = opt.init(params)
-        assert st is not None
+        step, state = build_optimizer(params, args, lr, extra_kwargs=extra)
+        assert callable(step)
+        assert state is not None
 
 
 # ---------------------------------------------------------------------------
@@ -203,34 +203,32 @@ class TestSupportedOptimizersConstruct:
 class TestSgdWeightDecay:
     """``weight_decay`` is forwarded into the functional SGD chain."""
 
-    def test_nonzero_weight_decay_changes_optimizer_state_shape(self, tmp_path):
-        """Non-zero ``weight_decay`` inserts the additive decay transform."""
+    def test_nonzero_weight_decay_changes_updates(self, tmp_path):
+        """Non-zero ``weight_decay`` contributes to the signed update."""
 
         def lr(_step: int) -> float:
             return 0.1
 
         args0 = _args(tmp_path, optim="sgd", weight_decay=0.0)
         args1 = _args(tmp_path, optim="sgd", weight_decay=0.1)
-        opt0 = build_optimizer(args0, lr, {})
-        opt1 = build_optimizer(args1, lr, {})
         params = {"w": torch.ones(2, 2, requires_grad=True)}
-        st0 = opt0.init(params)
-        st1 = opt1.init(params)
-        assert st0 != st1
-        assert len(st1) >= len(st0)
+        step0, state0 = build_optimizer(params, args0, lr, {})
+        step1, state1 = build_optimizer(params, args1, lr, {})
+        grads = {"w": torch.zeros_like(params["w"])}
+        updates0, _ = step0(grads, state0, params=params)
+        updates1, _ = step1(grads, state1, params=params)
+        assert not torch.equal(updates0["w"], updates1["w"])
 
-    def test_zero_weight_decay_matches_bare_sgd(self, tmp_path):
-        """``weight_decay=0`` keeps the minimal SGD state tuple."""
+    def test_zero_weight_decay_returns_sgd_state(self, tmp_path):
+        """``weight_decay=0`` produces the explicit SGD state."""
 
         def lr(_step: int) -> float:
             return 0.1
 
         args = _args(tmp_path, optim="sgd", weight_decay=0.0)
-        opt = build_optimizer(args, lr, {})
         params = {"w": torch.ones(2, 2, requires_grad=True)}
-        st = opt.init(params)
-        assert isinstance(st, tuple)
-        assert len(st) == 1
+        _, state = build_optimizer(params, args, lr, {})
+        assert state.step == 0
 
 
 class _TinyLogitsModel(torch.nn.Module):
@@ -247,7 +245,7 @@ class _TinyLogitsModel(torch.nn.Module):
 
 
 class TestOptimizerClsAndKwargsFunctional:
-    """``optimizer_cls_and_kwargs`` accepts opaque/torchopt-style factories only."""
+    """``optimizer_cls_and_kwargs`` accepts explicit-state factories only."""
 
     def test_dp_trainer_constructor_stores_functional_factory(self, tmp_path):
         import opaque.optimizers as opaque_opt

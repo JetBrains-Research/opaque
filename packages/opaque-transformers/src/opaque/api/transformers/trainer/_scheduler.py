@@ -102,7 +102,7 @@ def build_lr_schedule(
     Reads ``args.lr_scheduler``, ``args.warmup_steps``,
     ``args.warmup_ratio``, ``args.learning_rate``, and
     ``args.lr_scheduler_kwargs``.  Returns a callable suitable for
-    passing as the ``lr`` argument of any torchopt optimizer factory.
+    passing as the ``lr`` argument of any Opaque optimizer factory.
 
     ``args.lr_scheduler`` may also be a :data:`Schedule` recipe;
     in that case the recipe is returned as-is and the HF-name dispatch
