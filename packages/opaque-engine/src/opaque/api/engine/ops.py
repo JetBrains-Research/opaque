@@ -149,6 +149,16 @@ def finfo_smallest_normal(value_dtype: object) -> float:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def to_host(value: object) -> object:
+    """Return a detached host-memory ``numpy.ndarray`` copy of a native array.
+
+    The one sanctioned exit from provider-native arrays into host numpy —
+    for scores, metrics, and other results that leave the compute graph.
+    """
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def rsqrt(value: object) -> object:
     """Compute an elementwise reciprocal square root."""
     raise NotImplementedError
@@ -367,6 +377,7 @@ __all__ = [
     "squeeze",
     "subtract",
     "sum",
+    "to_host",
     "transfer",
     "where",
     "zeros",

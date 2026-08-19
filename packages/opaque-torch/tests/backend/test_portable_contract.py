@@ -102,3 +102,33 @@ def test_reduction_min_max_are_distinct_from_the_elementwise_pair() -> None:
     with_nan = torch.tensor([1.0, float("nan"), 3.0])
     assert torch.isnan(ops.amin(with_nan))
     assert torch.isnan(ops.amax(with_nan))
+
+
+def test_to_host_returns_a_copy_not_a_view() -> None:
+    """`to_host` promises a copy, and the promise has to hold on CPU too.
+
+    `Tensor.numpy()` shares storage and `.cpu()` is a no-op for a tensor
+    already there, so the natural spelling aliases on CPU while copying on
+    CUDA. A caller normalizing scores in place would then write back into the
+    graph on one device and not the other — the kind of device-dependent
+    behaviour a portable primitive exists to rule out.
+    """
+    import numpy as np
+
+    source = torch.ones(4)
+    host = ops.to_host(source)
+
+    assert not np.shares_memory(host, source.detach().numpy())
+
+    host[0] = 99.0
+    assert source.tolist() == [1.0, 1.0, 1.0, 1.0]
+
+    source[1] = -5.0
+    assert host.tolist() == [99.0, 1.0, 1.0, 1.0]
+
+
+def test_to_host_detaches_from_autograd() -> None:
+    source = torch.ones(3, requires_grad=True)
+    host = ops.to_host(source * 2)
+
+    assert host.tolist() == [2.0, 2.0, 2.0]

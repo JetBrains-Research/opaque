@@ -151,6 +151,16 @@ def finfo_smallest_normal(value_dtype: Any) -> float:
     return float(torch.finfo(value_dtype).smallest_normal)
 
 
+@_TORCH.implements(ops.to_host)
+def to_host(value: Any) -> Any:
+    # ``.copy()`` is load-bearing, not defensive. ``Tensor.numpy()`` shares
+    # storage, and ``.cpu()`` is a no-op on a tensor already there — so
+    # without it the "copy" this primitive promises is an alias on CPU and a
+    # real copy on CUDA. A caller normalizing scores in place would silently
+    # write back into the graph on one device and not the other.
+    return value.detach().cpu().numpy().copy()
+
+
 @_TORCH.implements(ops.rsqrt)
 def rsqrt(value: Any) -> torch.Tensor:
     return torch.rsqrt(value)
