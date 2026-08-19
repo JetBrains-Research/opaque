@@ -27,6 +27,12 @@ class _CoreGlooState:
     local_rank: int
 
 
+@dataclass(frozen=True)
+class _DuckTypedPerGroup:
+    groups: dict[str, str]
+    values: dict[str, float]
+
+
 def _is_ddp_available() -> bool:
     return dist.is_available() and torch.cuda.is_available()
 
@@ -468,6 +474,29 @@ def _worker_core_collectives_gloo(rank: int, world_size: int, port: int) -> None
                         "b": torch.tensor([float(rank + 1)]),
                     },
                     max_norm=reordered_mismatch,
+                ),
+                op="sum",
+            )
+
+        reordered_duck_typed_metadata = _DuckTypedPerGroup(
+            groups={"w": "weights", "b": "biases"},
+            values=(
+                {"weights": 1.0, "biases": 2.0}
+                if rank == 0
+                else {"biases": 1.0, "weights": 2.0}
+            ),
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.values\['(?:biases|weights)'\] mismatch",
+        ):
+            reduce_pytree(
+                ClippedPytree(
+                    {
+                        "w": torch.tensor([float(rank + 1)]),
+                        "b": torch.tensor([float(rank + 1)]),
+                    },
+                    max_norm=reordered_duck_typed_metadata,
                 ),
                 op="sum",
             )

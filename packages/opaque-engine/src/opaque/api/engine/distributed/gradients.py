@@ -83,8 +83,11 @@ def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
     if isinstance(groups, dict) and isinstance(values, dict):
         _assert_object_equal(groups, name=f"{name}.groups")
         _assert_object_equal(set(values), name=f"{name}.values.keys")
-        for group_name, value in values.items():
-            assert_scalar_equal(value, name=f"{name}.values[{group_name!r}]")
+        for group_name in sorted(values):
+            assert_scalar_equal(
+                values[group_name],
+                name=f"{name}.values[{group_name!r}]",
+            )
         return
     assert_scalar_equal(value, name=name)
 
