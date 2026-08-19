@@ -7,30 +7,45 @@ resulting ``Subset`` to the sampler.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from torch.utils.data import Subset
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Sized
+    from collections.abc import Sequence
 
 
-def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Subset:
+class _IndexView:
+    """A lightweight sequence view backed by explicit source indices."""
+
+    def __init__(self, dataset: Sequence[Any], indices: range) -> None:
+        self.dataset = dataset
+        self.indices = indices
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, index: int | slice) -> Any:
+        selected = self.indices[index]
+        if isinstance(selected, range):
+            return [self.dataset[source_index] for source_index in selected]
+        return self.dataset[selected]
+
+
+def local_shard(dataset: Sequence[Any], *, rank: int = 0, world_size: int = 1) -> Any:
     """Return the shard of ``dataset`` that belongs to ``rank``.
 
     Each rank gets a contiguous, non-overlapping slice; the last rank receives
     any remainder examples.
 
     Args:
-        dataset: Any object with ``__len__`` (e.g. a PyTorch ``Dataset``).
+        dataset: Any indexable sequence or dataset.
         rank: Rank of the current worker (0-indexed). Defaults to 0.
         world_size: Total number of workers. Defaults to 1.
 
     Returns:
-        A ``torch.utils.data.Subset`` view into ``dataset``.
+        An engine-owned index view into ``dataset``.
     """
     start, end = _local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-    return Subset(dataset, range(start, end))
+    return _IndexView(dataset, range(start, end))
 
 
 def _local_shard_bounds(

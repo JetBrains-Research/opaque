@@ -25,6 +25,7 @@ members = [
     "opaque-engine",
     "opaque-optimizers",
     "opaque-patches",
+    "opaque-torch",
     "opaque-transformers",
 ]
 
@@ -2357,6 +2358,7 @@ dependencies = [
     { name = "opaque-engine" },
     { name = "opaque-optimizers" },
     { name = "opaque-patches" },
+    { name = "opaque-torch" },
 ]
 
 [package.optional-dependencies]
@@ -2430,6 +2432,7 @@ requires-dist = [
     { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
     { name = "opaque-transformers", extras = ["trl"], marker = "extra == 'trl'", editable = "packages/opaque-transformers" },
 ]
@@ -2482,6 +2485,7 @@ dependencies = [
     { name = "datasets" },
     { name = "opaque-base" },
     { name = "opaque-engine" },
+    { name = "opaque-torch" },
     { name = "peft" },
     { name = "safetensors" },
     { name = "torch" },
@@ -2499,6 +2503,7 @@ requires-dist = [
     { name = "opaque-base", editable = "packages/opaque-base" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-patches", marker = "extra == 'patches'", editable = "packages/opaque-patches" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "peft", specifier = ">=0.13.0" },
     { name = "safetensors", specifier = ">=0.4" },
     { name = "torch", specifier = ">=2.9.0" },
@@ -2512,6 +2517,7 @@ source = { editable = "packages/opaque-auditing" }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
+    { name = "opaque-torch" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "torch" },
@@ -2521,6 +2527,7 @@ dependencies = [
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
@@ -2535,6 +2542,7 @@ source = { editable = "packages/opaque-dpftrl" }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
+    { name = "opaque-torch" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "torch" },
@@ -2550,6 +2558,7 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
@@ -2561,6 +2570,7 @@ source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
+    { name = "opaque-torch" },
     { name = "torch" },
 ]
 
@@ -2574,6 +2584,7 @@ requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
@@ -2585,7 +2596,6 @@ dependencies = [
     { name = "numpy" },
     { name = "opaque-base" },
     { name = "optree" },
-    { name = "torch" },
 ]
 
 [package.metadata]
@@ -2593,7 +2603,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.22" },
     { name = "opaque-base", editable = "packages/opaque-base" },
     { name = "optree", specifier = ">=0.17.0" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 
 [[package]]
@@ -2617,6 +2626,7 @@ name = "opaque-patches"
 source = { editable = "packages/opaque-patches" }
 dependencies = [
     { name = "opaque-engine" },
+    { name = "opaque-torch" },
     { name = "torch" },
 ]
 
@@ -2629,11 +2639,41 @@ transformers = [
 [package.metadata]
 requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "peft", marker = "extra == 'transformers'", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.9.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.57.0,<6" },
 ]
 provides-extras = ["transformers"]
+
+[[package]]
+name = "opaque-torch"
+source = { editable = "packages/opaque-torch" }
+dependencies = [
+    { name = "numpy" },
+    { name = "opaque-engine" },
+    { name = "optree" },
+    { name = "torch" },
+]
+
+[package.optional-dependencies]
+dpftrl = [
+    { name = "opaque-dpftrl" },
+]
+dpsgd = [
+    { name = "opaque-dpsgd" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
+    { name = "opaque-dpsgd", marker = "extra == 'dpsgd'", editable = "packages/opaque-dpsgd" },
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "optree", specifier = ">=0.17.0" },
+    { name = "torch", specifier = ">=2.9.0" },
+]
+provides-extras = ["dpsgd", "dpftrl"]
 
 [[package]]
 name = "opaque-transformers"

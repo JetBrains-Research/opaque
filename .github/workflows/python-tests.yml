@@ -82,6 +82,7 @@ jobs:
             label: Runtime and patches
             paths: |
               packages/opaque-engine
+              packages/opaque-torch
               packages/opaque-optimizers
               packages/opaque-patches
           - id: alignment-and-transformers

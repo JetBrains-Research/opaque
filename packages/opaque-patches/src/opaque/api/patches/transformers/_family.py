@@ -141,7 +141,7 @@ def make_apply_family_patches(
         # rope is a Triton-only kernel and its eager path isn't faithful for every
         # rotary variant (partial / interleaved) — so only install it where the
         # Triton runtime exists; off-CUDA the model keeps HF's own rope.
-        from opaque.api.engine.device import fused_kernels_available
+        from opaque.torch.device import fused_kernels_available
 
         rope = kwargs.get("rope", kernels and fused_kernels_available())
         requested_concerns = set()

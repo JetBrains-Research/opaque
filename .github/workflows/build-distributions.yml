@@ -52,6 +52,9 @@ jobs:
       - name: Build opaque-engine
         run: uv build packages/opaque-engine --wheel --out-dir dist
 
+      - name: Build opaque-torch
+        run: uv build packages/opaque-torch --wheel --out-dir dist
+
       - name: Build opaque-optimizers
         run: uv build packages/opaque-optimizers --wheel --out-dir dist
 

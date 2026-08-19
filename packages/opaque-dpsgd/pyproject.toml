@@ -26,6 +26,10 @@ classifiers = [
 dependencies = [
     "torch>=2.9.0",
     "opaque-engine>=0.0.0.dev0",
+    # Torch-only at this point in the split: the mechanisms still reach
+    # `generator_from_key` through the transitional `opaque.random` shim,
+    # which imports `opaque.torch.random`. Dropped once they go neutral.
+    "opaque-torch>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
 ]
 

@@ -1,11 +1,9 @@
-"""Torch / numpy serialization handlers registered against the base registry.
+"""NumPy and optree serialization handlers registered against the base registry.
 
-Importing this module is enough to register the ``torch.Tensor`` and
-``numpy.ndarray`` exact-type handlers with
-``opaque.api.base.serialization``. Engine's ``__init__.py`` triggers
-this on engine load, so every consumer that imports anything from
-engine (which is anyone using torch in opaque) gets tensor / ndarray
-serialization for free.
+Importing this module registers the portable ``numpy.ndarray`` and
+``optree.PyTreeSpec`` handlers with ``opaque.api.base.serialization``.
+Torch tensor and parameter handlers are registered when the ``opaque-torch``
+provider loads.
 """
 
 from __future__ import annotations

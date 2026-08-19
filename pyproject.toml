@@ -36,6 +36,7 @@ dependencies = [
     # pins for preview/release artifacts while local workspace installs continue
     # to resolve against the editable members below.
     "opaque-engine>=0.0.0.dev0",
+    "opaque-torch>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
     "opaque-dpsgd>=0.0.0.dev0",
     "opaque-optimizers>=0.0.0.dev0",
@@ -82,6 +83,7 @@ package = true
 workspace.members = [
     "packages/opaque-base",
     "packages/opaque-engine",
+    "packages/opaque-torch",
     "packages/opaque-optimizers",
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
@@ -95,6 +97,7 @@ workspace.members = [
 [tool.uv.sources]
 opaque-base = { workspace = true }
 opaque-engine = { workspace = true }
+opaque-torch = { workspace = true }
 opaque-optimizers = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }

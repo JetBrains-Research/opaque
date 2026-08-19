@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import (
     ParamPath,
     param_path_display,
@@ -24,7 +23,7 @@ def _tensor_paths(params: Any) -> list[ParamPath]:
     paths, leaves, _ = tree_flatten_with_paths(params)
     out: list[ParamPath] = []
     for path, leaf in zip(paths, leaves, strict=True):
-        if isinstance(leaf, torch.Tensor):
+        if ops.is_array(leaf):
             out.append(path)
         elif leaf is None:
             continue

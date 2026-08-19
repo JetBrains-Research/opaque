@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "torch>=2.9.0",
     "opaque-engine>=0.0.0.dev0",
+    "opaque-torch>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
@@ -51,3 +52,4 @@ package = true
 
 [tool.uv.sources]
 opaque-engine = { workspace = true }
+opaque-torch = { workspace = true }

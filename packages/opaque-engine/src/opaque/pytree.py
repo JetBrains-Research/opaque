@@ -1,4 +1,4 @@
-"""Torch-pytree ops — ``tree_map``, ``tree_leaves``, ``partition``, ``merge``, ``global_norm``."""
+"""Backend-dispatched pytree operations and structural helpers."""
 
 from opaque.api.engine.pytree import (
     ParamPath,

@@ -111,6 +111,25 @@ updates:
       - dependency-name: "torch"
         update-types: [ "version-update:semver-patch" ]
 
+  # opaque-torch — torch, numpy, optree
+  - package-ecosystem: "pip"
+    directory: "/packages/opaque-torch"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "evgri243"
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "torch"
+        update-types: [ "version-update:semver-patch" ]
+
   # opaque-optimizers — torchopt
   - package-ecosystem: "pip"
     directory: "/packages/opaque-optimizers"

@@ -36,12 +36,12 @@ def _has_kernel_runtime() -> bool:
     """Return True iff CUDA + Triton are importable on this host — the runtime the
     Triton-only kernels (rope / rms_norm / activation / cross_entropy) need.
 
-    Delegates to :func:`opaque.api.engine.device.fused_kernels_available` so the
+    Delegates to :func:`opaque.torch.device.fused_kernels_available` so the
     "what runs the fused kernels?" question has a single source of truth. Portable
     accelerations (grouped-GEMM MoE, chunked CE) do NOT gate on this — they run on
     MPS/CPU and default from ``performance``.
     """
-    from opaque.api.engine.device import fused_kernels_available
+    from opaque.torch.device import fused_kernels_available
 
     return fused_kernels_available()
 
