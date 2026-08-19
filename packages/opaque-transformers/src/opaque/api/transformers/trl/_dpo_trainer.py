@@ -66,6 +66,7 @@ from opaque.alignment.dpo.reference import (
 )
 from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.api.transformers.trainer import DPTrainer
+from opaque.api.transformers.trainer._distributed import resolve_ddp_state
 
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
@@ -425,6 +426,12 @@ class DPOTrainer(DPTrainer):
             eval_dataset = self._prepare_dataset(eval_dataset, processing_class, args)
 
         # ---- reference logps (precompute, or seed for TR-DPO) -------------
+        if self._sync_ref_model or self._needs_reference:
+            # The precompute shards across a live process group, which
+            # ``super().__init__`` below brings up too late.
+            # ``resolve_ddp_state`` is idempotent, so the later call reads the
+            # group established here.
+            resolve_ddp_state(self._precompute_device, args)
         if self._sync_ref_model:
             train_dataset, eval_dataset = self._setup_tr_dpo(
                 model,

@@ -145,7 +145,10 @@ toggles.
   forward). Cache directories and archives are owner-only; callers remove
   selected cache directories when their private per-example values are no
   longer needed. Set `use_cache=False` for non-reusable one-shot values;
-  TR-DPO uses this mode for its seed columns.
+  TR-DPO uses this mode for its seed columns. Under a live process group each
+  rank scores its own shard and the columns are gathered back into dataset
+  order, so the result matches a single-process run — see
+  [Across ranks](../alignment/dpo.md#across-ranks).
 - **`null_ref_context()`** ([`opaque.alignment.dpo.reference`](#api-documentation))
   — context manager that turns a model into its own reference, dispatching
   over the separate-model / `"ref"`-adapter / disabled-adapter / no-op

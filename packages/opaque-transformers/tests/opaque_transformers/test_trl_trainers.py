@@ -1871,3 +1871,80 @@ def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
     assert loss.ndim == 1
     assert preds is None
     assert labels is not None
+
+
+def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypatch):
+    """The reference forward must find a live process group, or it cannot shard.
+
+    The launcher environment is faked and ``init_process_group`` stubbed, which
+    pins that the attempt happens and that it happens before ``ref`` runs; the
+    real auto-init path needs a second process and lives in ``tests/distributed``.
+    """
+    from opaque.api.alignment.dpo.reference import _precompute
+
+    # Keep the reference cache inside the test's tmp_path, out of reach of any
+    # archive left in the shared system tempdir.
+    monkeypatch.setattr(_precompute.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    import socket
+
+    if (
+        not torch.distributed.is_available()
+        or not torch.distributed.is_gloo_available()
+    ):
+        pytest.skip("gloo backend is not available")
+    if torch.distributed.is_initialized():
+        pytest.skip("a process group is already live in this worker")
+
+    # What torchrun gives a rank: a multi-rank launcher env, no group yet.
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    real_init = torch.distributed.init_process_group
+    init_attempts: list[object] = []
+
+    def _init_single_rank(*args, **kwargs):
+        # Stand in for the peer rank: bring up a real 1-rank gloo group so the
+        # rest of the trainer sees a consistent topology, rather than an env
+        # that claims two ranks and a group that does not exist.
+        init_attempts.append(kwargs.get("backend"))
+        real_init(
+            backend="gloo",
+            init_method=f"tcp://127.0.0.1:{port}",
+            world_size=1,
+            rank=0,
+        )
+
+    monkeypatch.setattr(torch.distributed, "init_process_group", _init_single_rank)
+
+    group_live_at_forward: list[bool] = []
+    real_forward = _precompute._reference_forward
+
+    def _observing_forward(*args, **kwargs):
+        group_live_at_forward.append(torch.distributed.is_initialized())
+        return real_forward(*args, **kwargs)
+
+    monkeypatch.setattr(_precompute, "_reference_forward", _observing_forward)
+
+    try:
+        torch.manual_seed(0)
+        DPOTrainer(
+            model=_tiny_model(),
+            ref_model=_tiny_model(),
+            args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+            train_dataset=_pref_dataset(),
+            processing_class=_stub_tokenizer(),
+        )
+    finally:
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+
+    assert init_attempts, "trainer never brought up the process group"
+    assert group_live_at_forward, "the reference forward never ran"
+    assert all(group_live_at_forward), (
+        "the reference forward ran before the process group was established"
+    )
