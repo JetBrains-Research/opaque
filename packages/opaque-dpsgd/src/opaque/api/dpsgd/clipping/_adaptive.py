@@ -574,7 +574,7 @@ def adaptive_clipped_grad(
             _clipping_norm_min=config["clipping_norm_min"],
             _clipping_norm_max=config["clipping_norm_max"],
             _num_clipped=num_clipped,
-            _batch_size=batch_size,
+            _batch_size=float(batch_size),
         )
 
         if user_wants_return_aux:
