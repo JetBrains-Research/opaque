@@ -407,8 +407,8 @@ directly.
 Microbatching is a memory optimization, not a sampling strategy. When
 per-example gradient computation via `vmap` exceeds GPU memory,
 microbatching processes the batch in smaller chunks and accumulates the
-clipped gradient sums. The result is mathematically identical to processing
-the full batch.
+clipped gradient sums. The running sum is held in `compute_dtype`, so the
+result matches processing the full batch to the precision of that dtype.
 
 ```python
 from opaque.dpsgd.clipping import clipped_grad
@@ -422,8 +422,8 @@ grad_fn, clip_state = clipped_grad(
 ```
 
 Each microbatch of 16 examples is vmapped, per-example gradients are
-clipped, and the clipped gradients are summed. The partial sums are
-accumulated in-place, so peak memory is proportional to
+clipped, and the clipped gradients are summed into a running accumulator,
+so peak memory is proportional to
 `microbatch_size * model_parameters` rather than
 `batch_size * model_parameters`.
 

@@ -115,6 +115,63 @@ def _sum_clipped_tensor(
     return summed
 
 
+class _MicrobatchAccumulator:
+    """Running sum over microbatches, held at the accumulation precision.
+
+    The sum stays in the wider of ``compute_dtype`` and the output dtype and is
+    cast to the output dtype once, at the end.
+    """
+
+    __slots__ = ("_compute_dtype", "_output_dtype", "_targets", "_total")
+
+    def __init__(
+        self,
+        *,
+        output_dtype: torch.dtype | None,
+        compute_dtype: torch.dtype | None,
+    ) -> None:
+        self._output_dtype = output_dtype
+        self._compute_dtype = compute_dtype
+        self._total: Any | None = None
+        self._targets: Any | None = None
+
+    def _accum_dtype(self, x: torch.Tensor) -> torch.dtype | None:
+        """Never below the requested output precision, or the sum loses it."""
+        resolved = _resolve_compute_dtype(x, self._compute_dtype)
+        if self._output_dtype is None:
+            return resolved
+        if resolved is None:
+            resolved = x.dtype
+        return torch.promote_types(resolved, self._output_dtype)
+
+    def add(self, values: Any) -> None:
+        """Add one microbatch, summed over its batch dimension."""
+        if self._targets is None:
+            self._targets = tree_map(
+                lambda x: x.dtype if self._output_dtype is None else self._output_dtype,
+                values,
+            )
+        partial = tree_map(
+            lambda x: torch.sum(x, dim=0, dtype=self._accum_dtype(x)),
+            values,
+        )
+        self._total = (
+            partial
+            if self._total is None
+            else tree_map(lambda acc, new: acc + new, self._total, partial)
+        )
+
+    def result(self) -> Any:
+        """The accumulated sum in the caller-visible dtype, or None if unused."""
+        if self._total is None:
+            return None
+        return tree_map(
+            lambda acc, target: acc if acc.dtype == target else acc.to(dtype=target),
+            self._total,
+            self._targets,
+        )
+
+
 def _validate_clipping_norm(clipping_norm: float | PerGroup) -> None:
     if isinstance(clipping_norm, PerGroup):
         for group_name, value in clipping_norm.values.items():
@@ -143,7 +200,7 @@ def _microbatch_accumulate(
 
     This implementation processes the batch in chunks of `microbatch_size`, accumulating
     results according to their type:
-    - Clipped values: SUM (accumulate in-place, don't keep all per-example values)
+    - Clipped values: SUM (into a running accumulator in `compute_dtype`)
     - Auxiliary outputs: CONCAT (keep per-example for privacy analysis)
 
     Args:
@@ -199,8 +256,10 @@ def _microbatch_accumulate(
         batch_size = first_tensor.shape[0]
 
     # Initialize accumulators
-    accumulated_grads = None
-    accumulated_squared = None
+    grad_acc = _MicrobatchAccumulator(output_dtype=dtype, compute_dtype=compute_dtype)
+    squared_acc = _MicrobatchAccumulator(
+        output_dtype=dtype, compute_dtype=compute_dtype
+    )
     aux_list = []
 
     # Process each microbatch
@@ -245,35 +304,9 @@ def _microbatch_accumulate(
                 idx += 1
             aux = outputs[idx] if return_aux else ()
 
-        # Accumulate clipped gradients (SUM)
-        microbatch_sum = tree_map(
-            lambda x: _sum_clipped_tensor(
-                x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
-            ),
-            clipped_values,
-        )
-        if accumulated_grads is None:
-            accumulated_grads = microbatch_sum
-        else:
-            accumulated_grads = tree_map(
-                lambda acc, new: acc + new, accumulated_grads, microbatch_sum
-            )
-
+        grad_acc.add(clipped_values)
         if second_moment:
-            microbatch_squared_sum = tree_map(
-                lambda x: _sum_clipped_tensor(
-                    x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
-                ),
-                squared_values,
-            )
-            if accumulated_squared is None:
-                accumulated_squared = microbatch_squared_sum
-            else:
-                accumulated_squared = tree_map(
-                    lambda acc, new: acc + new,
-                    accumulated_squared,
-                    microbatch_squared_sum,
-                )
+            squared_acc.add(squared_values)
 
         # Collect aux outputs (CONCAT) - keep per-example
         if return_aux:
@@ -295,7 +328,7 @@ def _microbatch_accumulate(
     else:
         aux = ()
 
-    return accumulated_grads, accumulated_squared, aux
+    return grad_acc.result(), squared_acc.result(), aux
 
 
 def _microbatch_accumulate_stats_only(
@@ -339,8 +372,10 @@ def _microbatch_accumulate_stats_only(
             )
         batch_size = first_tensor.shape[0]
 
-    accumulated_grads = None
-    accumulated_squared = None
+    grad_acc = _MicrobatchAccumulator(output_dtype=dtype, compute_dtype=compute_dtype)
+    squared_acc = _MicrobatchAccumulator(
+        output_dtype=dtype, compute_dtype=compute_dtype
+    )
     total_batch_size = 0
     if isinstance(clipping_norm, PerGroup):
         total_num_clipped: float | dict[str, float] = dict.fromkeys(
@@ -373,34 +408,9 @@ def _microbatch_accumulate_stats_only(
         squared_values = outputs[1] if second_moment else None
         stats_aux = outputs[-1]
 
-        microbatch_sum = tree_map(
-            lambda x: _sum_clipped_tensor(
-                x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
-            ),
-            clipped_values,
-        )
-        if accumulated_grads is None:
-            accumulated_grads = microbatch_sum
-        else:
-            accumulated_grads = tree_map(
-                lambda acc, new: acc + new, accumulated_grads, microbatch_sum
-            )
-
+        grad_acc.add(clipped_values)
         if second_moment:
-            microbatch_squared_sum = tree_map(
-                lambda x: _sum_clipped_tensor(
-                    x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
-                ),
-                squared_values,
-            )
-            if accumulated_squared is None:
-                accumulated_squared = microbatch_squared_sum
-            else:
-                accumulated_squared = tree_map(
-                    lambda acc, new: acc + new,
-                    accumulated_squared,
-                    microbatch_squared_sum,
-                )
+            squared_acc.add(squared_values)
 
         stats = _compute_clipping_stats(
             stats_aux["norms"],
@@ -426,8 +436,8 @@ def _microbatch_accumulate_stats_only(
         clipping_rate = total_num_clipped / max(1.0, float(total_batch_size))
 
     return (
-        accumulated_grads,
-        accumulated_squared,
+        grad_acc.result(),
+        squared_acc.result(),
         ClippedFunStats(
             num_clipped=total_num_clipped,
             clipping_rate=clipping_rate,
@@ -558,13 +568,17 @@ def clipped_fun(
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
             Set this to reduce peak memory usage at the cost of slightly slower computation.
+            The running sum is held in ``compute_dtype``, so a bf16/fp16 run keeps
+            one float32 copy of the summed output.  Pass ``compute_dtype=torch.bfloat16``
+            to give that memory back, at the cost of the accumulation precision.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
         compute_dtype: Internal accumulation dtype for reductions (per-example
             clip-norm and the across-batch sum).  ``None`` (default) auto-promotes
             bf16/fp16 to float32 for numerical stability; explicit dtype forces
             that precision regardless of input.  Independent of ``dtype`` (which
-            controls the *output* dtype).
+            controls the *output* dtype).  Applies across microbatches too, so
+            microbatched and non-microbatched runs agree to float32 precision.
     Returns:
         A tuple ``(clip_fn, FixedClipState)`` where ``clip_fn(*args, state=...)``
         clips the output of ``fun`` and sums across the batch.  The exact

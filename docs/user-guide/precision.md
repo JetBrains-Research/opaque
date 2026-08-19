@@ -129,6 +129,20 @@ sensitivity bound the privacy accountant relies on. Three rules:
 - **You can raise it.** `compute_dtype=torch.float64` is safe (and
   occasionally useful for very small clip thresholds or aggressive
   noise multipliers).
+- **It does not cover the *output* dtype.** A scale computed in `float32` still
+  has to be stored in the leaf dtype and multiplied through, and both steps
+  round to nearest — which can round *up*, past the bound. Clipping therefore
+  shrinks each leaf's scale by a few ULPs of that leaf's own dtype so that
+  `norm(output) <= clipping_norm` holds on the values as stored. Clipped values
+  lose ~0.8% of their magnitude at `bfloat16`, ~0.1% at `float16` and ~1.2e-7 at
+  `float32`; a `float32` leaf sitting beside a `bfloat16` one pays only the
+  `float32` cost. The guard widens if `compute_dtype` is set below `float32`,
+  since the norm it is measured against is then less accurate.
+
+Under microbatching the running sum is held at the accumulation precision as
+well, so splitting a batch does not degrade the result — a `bfloat16` run
+accumulates in `float32` and casts once at the end. That costs one `float32`
+copy of the summed output; pass `compute_dtype=torch.bfloat16` to trade it back.
 
 ## What's compatible with `torch.amp` and what isn't
 
