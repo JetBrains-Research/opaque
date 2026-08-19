@@ -13,10 +13,10 @@ Every number below is from a run verified `state == finished` AND `step == 520/5
 | method | trainable parameters | eval loss |
 |---|---|---|
 | full LoRA r=16 | 40,400,000 | 0.700090 |
-| LoRA-XS, basis frozen | 200,704 | 0.702119 |
-| **LoRA-XSe** (basis rotated) | **200,704** | **0.693279** |
+| LoRA-XS, basis frozen | 50,176 | 0.702119 |
+| **LoRA-XSe** (basis rotated) | **50,176** | **0.693279** |
 
-LoRA-XSe beats full LoRA by **6.81e-3** using **201x fewer** trainable parameters,
+LoRA-XSe beats full LoRA by **6.81e-3** using **805x fewer** trainable parameters,
 at matched optimizer, learning rate, batch size, step count and weight decay.
 
 **It replicates.** Seed 43: XSe 0.693141, frozen 0.702096. Rotation's benefit is
@@ -297,10 +297,24 @@ rotation-aligned point, or skip the final re-randomisation before eval).
 
 ## 7. Bottom line
 
-A method with **201x fewer trainable parameters beats tuned full LoRA**, the
+A method with **805x fewer trainable parameters beats tuned full LoRA**, the
 result replicates across seeds at 64x the seed noise, and we can now say *why* it
 works: roughly three-quarters preconditioning, one-quarter subspace escape. The
 negative results (the alpha knob refuted three ways; depth and rotation interval
 collapsing onto a single scalar) close a design space rather than merely failing.
 
 Publishable today at workshop level. Main-track credible once breadth is added.
+
+
+---
+
+## Appendix: correcting the parameter ratio (201x -> 805x)
+
+Earlier drafts quoted 201x. That compared LoRA-XS at **r=32** (32^2 x 196 = 200,704
+trainable) against full LoRA at r=16 (40,370,176). Every experiment in this
+document used **r=16 for both arms**, where LoRA-XS trains 16^2 x 196 = **50,176**
+parameters. The matched ratio is therefore **805x**, and the result was being
+under-claimed by a factor of four.
+
+Verified from the run configs: ref-xse-d5t1-s42 has lora_method=lora-xs, lora_r=16;
+ref-lora-r16-mb8-s42 has lora_method=lora, lora_r=16.
