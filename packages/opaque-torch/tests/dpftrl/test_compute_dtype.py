@@ -1,11 +1,11 @@
-"""Tests for ``mf_gaussian_noise``'s ``compute_dtype`` kwarg.
+"""Torch tests for ``mf_gaussian_noise``'s ``compute_dtype`` kwarg.
 
 Pins down that the user-facing knob behaves the same way as the parallel
 ``opaque.dpsgd.noise.gaussian_noise(..., compute_dtype=...)``:
 
 - Default is ``torch.float32`` (sampling Gaussians in bf16/fp16 distorts
   the noise distribution; not safe under the standard analysis).
-- The dtype is used **directly** for the internal ``torch.randn`` —
+- The dtype is used **directly** for provider-native normal sampling —
   there is no auto-promotion of the input tensor's dtype.
 - The input pytree's dtype is preserved on output (type-stable boundary).
 """
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import torch
 
-from opaque.api.dpftrl.noise import _engine as mf_engine
 from opaque.api.dpftrl.noise._identity import identity_strategy
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
@@ -44,8 +43,8 @@ def _build_noise(*, compute_dtype=None):
 
 def test_compute_dtype_default_matches_explicit_float32():
     """No-arg call is bit-identical to an explicit ``compute_dtype=torch.float32``
-    call on the same key.  Pins the documented default down to the inner
-    ``torch.randn`` precision (not just the output boundary cast)."""
+    call on the same key.  Pins the documented default down to the internal
+    sampling precision (not just the output boundary cast)."""
     grads = clipped({"w": torch.zeros(64, dtype=torch.float32)}, max_norm=1.0)
     nf_default, st_default = _build_noise()
     nf_explicit, st_explicit = _build_noise(compute_dtype=torch.float32)
@@ -54,25 +53,17 @@ def test_compute_dtype_default_matches_explicit_float32():
     assert torch.equal(out_default.pytree["w"], out_explicit.pytree["w"])
 
 
-def test_compute_dtype_default_propagates_to_torch_randn(monkeypatch):
-    """Direct check that the default reaches the inner ``torch.randn`` as fp32."""
-    captured: list[torch.dtype] = []
-    real_randn = torch.randn
-
-    def _capture(*args, **kwargs):
-        captured.append(kwargs.get("dtype", torch.get_default_dtype()))
-        return real_randn(*args, **kwargs)
-
-    monkeypatch.setattr(mf_engine.torch, "randn", _capture)
-
+def test_mf_noise_ignores_unrelated_global_torch_rng_draws():
     grads = clipped({"w": torch.zeros(8, dtype=torch.float32)}, max_norm=1.0)
-    nf, st = _build_noise()
-    nf(grads, st)
+    noise_fn, state = _build_noise()
+    expected, _ = noise_fn(grads, state)
 
-    assert captured, "torch.randn was not invoked inside the noise step"
-    assert all(d == torch.float32 for d in captured), (
-        f"expected every inner torch.randn to use float32, got {captured}"
-    )
+    torch.manual_seed(999)
+    torch.randn(1000)
+    noise_fn, state = _build_noise()
+    actual, _ = noise_fn(grads, state)
+
+    assert torch.equal(actual.pytree["w"], expected.pytree["w"])
 
 
 def test_compute_dtype_preserves_input_dtype_on_output():
@@ -81,28 +72,6 @@ def test_compute_dtype_preserves_input_dtype_on_output():
     grads = clipped({"w": torch.zeros(8, dtype=torch.bfloat16)}, max_norm=1.0)
     noisy, _ = nf(grads, st)
     assert noisy.pytree["w"].dtype == torch.bfloat16
-
-
-def test_compute_dtype_float64_override_propagates_to_torch_randn(monkeypatch):
-    """User-passed fp64 reaches the inner ``torch.randn``."""
-    captured: list[torch.dtype] = []
-    real_randn = torch.randn
-
-    def _capture(*args, **kwargs):
-        captured.append(kwargs.get("dtype", torch.get_default_dtype()))
-        return real_randn(*args, **kwargs)
-
-    monkeypatch.setattr(mf_engine.torch, "randn", _capture)
-
-    grads = clipped({"w": torch.zeros(8, dtype=torch.float64)}, max_norm=1.0)
-    nf, st = _build_noise(compute_dtype=torch.float64)
-    noisy, _ = nf(grads, st)
-
-    assert noisy.pytree["w"].dtype == torch.float64
-    assert captured, "torch.randn was not invoked inside the noise step"
-    assert all(d == torch.float64 for d in captured), (
-        f"expected every inner torch.randn to use float64, got {captured}"
-    )
 
 
 def test_compute_dtype_drives_inner_sampling_dtype():

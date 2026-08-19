@@ -1,22 +1,36 @@
 """Tests for BMinSepSampler."""
 
+import numpy as np
 import pytest
-import torch
-from torch.utils.data import TensorDataset
 
 from opaque.dpftrl.sampling import BMinSepSampler
 from opaque.random import fold_in, key
 
 
 def test_reproducibility():
-    ds = TensorDataset(torch.randn(200, 3))
+    ds = range(200)
     s1 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
     s2 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
     assert list(s1) == list(s2)
 
 
+def test_ignores_unrelated_global_numpy_draws():
+    ds = range(200)
+    expected = list(
+        BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
+    )
+
+    np.random.seed(99)
+    np.random.random(1000)
+    actual = list(
+        BMinSepSampler(ds, bands=4, sampling_prob=0.08, n_steps=20, key=key(7))
+    )
+
+    assert actual == expected
+
+
 def test_different_keys():
-    ds = TensorDataset(torch.randn(200, 3))
+    ds = range(200)
     a = list(BMinSepSampler(ds, bands=4, sampling_prob=0.1, n_steps=30, key=key(1)))
     b = list(BMinSepSampler(ds, bands=4, sampling_prob=0.1, n_steps=30, key=key(2)))
     assert a != b
@@ -24,7 +38,7 @@ def test_different_keys():
 
 def test_same_index_respects_min_separation():
     """One example must not appear in two batches fewer than ``bands`` apart."""
-    ds = TensorDataset(torch.randn(300, 2))
+    ds = range(300)
     bands = 4
     batches = list(
         BMinSepSampler(ds, bands=bands, sampling_prob=0.35, n_steps=120, key=key(101))
@@ -38,7 +52,7 @@ def test_same_index_respects_min_separation():
 
 
 def test_fold_in_changes_stream():
-    ds = TensorDataset(torch.randn(100, 2))
+    ds = range(100)
     a = list(BMinSepSampler(ds, bands=2, sampling_prob=0.2, n_steps=15, key=key(0)))
     b = list(
         BMinSepSampler(
@@ -49,6 +63,6 @@ def test_fold_in_changes_stream():
 
 
 def test_invalid_sampling_prob():
-    ds = TensorDataset(torch.randn(10, 1))
+    ds = range(10)
     with pytest.raises(ValueError, match="sampling_prob"):
         BMinSepSampler(ds, bands=2, sampling_prob=0.0, n_steps=1, key=key(0))

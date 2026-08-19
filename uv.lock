@@ -2542,12 +2542,11 @@ source = { editable = "packages/opaque-base" }
 name = "opaque-dpftrl"
 source = { editable = "packages/opaque-dpftrl" }
 dependencies = [
+    { name = "numpy" },
     { name = "opaque-accounting" },
     { name = "opaque-engine" },
-    { name = "opaque-torch" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -2557,12 +2556,11 @@ optimizers = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=1.26.0" },
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", marker = "extra == 'optimizers'", editable = "packages/opaque-optimizers" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "scipy", specifier = ">=1.11.0" },
-    { name = "torch", specifier = ">=2.9.0" },
 ]
 provides-extras = ["optimizers"]
 

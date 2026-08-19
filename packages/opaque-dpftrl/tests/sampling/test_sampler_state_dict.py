@@ -14,9 +14,6 @@ Covers all four dp-ftrl samplers:
 
 from __future__ import annotations
 
-import torch
-from torch.utils.data import TensorDataset
-
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -27,8 +24,8 @@ from opaque.random import key
 from opaque.serialization import from_state_dict, state_dict
 
 
-def _ds(n: int = 200) -> TensorDataset:
-    return TensorDataset(torch.arange(n).reshape(-1, 1))
+def _ds(n: int = 200) -> range:
+    return range(n)
 
 
 class TestCyclicPoissonRoundTrip:
