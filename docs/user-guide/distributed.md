@@ -262,6 +262,8 @@ synchronization.
 
 Collectives return new values and never require in-place mutation. In
 single-process mode, reductions return an equivalent new native array.
+The table lists what `opaque.distributed` exports; the sync plumbing each
+subsystem registers behind `sync()` is internal.
 
 | Function | Purpose |
 |----------|---------|
@@ -272,11 +274,8 @@ single-process mode, reductions return an equivalent new native array.
 | `reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Return a Python float or integer reduced across ranks |
 | `all_reduce(value, op)` | Return an all-reduced native array without mutation |
-| `gather_tensors(tensor, dim)` | Gather variable-size native arrays and concatenate along `dim` |
 | `gather_pytree(pytree)` | Gather and concatenate native-array leaves of a PyTree |
-| `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
 | `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
-| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
 

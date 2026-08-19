@@ -2,8 +2,8 @@
 
 Opaque provides a functional API for differential privacy. Portable array,
 autodiff, pytree, and random operations infer their provider (Torch) from the
-first backend-bearing execution call and keep that provider active. This reference
-documents all public functions and classes.
+first backend-bearing execution call and keep that provider active. This
+reference documents all public functions and classes.
 
 Install via `opaque` (and `opaque[...]` extras) when using this API. Module
 paths remain under `opaque.*`, but the root package is the supported
@@ -14,6 +14,15 @@ user-facing installation target.
 Opaque is organized into several modules, each focused on a specific aspect of DP training:
 
 ### Core utilities
+
+- **[Backends](backend.md)** — Provider selection for the dispatched engine
+  - `set_backend()`, `use_backend()`, `active_backend()`, `clear_backend()`
+  - `primitive()`, `BackendProvider` — declare an operation the engine lacks
+
+- **[Ops](ops.md)** — Portable array operations the mechanisms are written in
+
+- **[Autodiff](autodiff.md)** — Dispatched functional transforms
+  - `grad_and_value()`, `vmap()`
 
 - **[Serialization](serialization.md)** — Flat `state_dict` / `from_state_dict` for
   explicit state trees (optimizers, accounting, clip/noise state, …);
@@ -245,6 +254,17 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `OneRunEstimate.attack_auc()`       | Empirical attack AUC            | [Guide](../user-guide/auditing.md)             |
 | `OneRunEstimate.attack_beta_at()`   | Empirical attack β at given FPR | [Guide](../user-guide/auditing.md)             |
 
+### Backend
+
+| Function                | Purpose                              | User Guide                          |
+|-------------------------|--------------------------------------|-------------------------------------|
+| `set_backend()`         | Activate a provider by name          | [Guide](../user-guide/backends.md)  |
+| `use_backend()`         | Scope a provider selection           | [Guide](../user-guide/backends.md)  |
+| `active_backend()`      | Query the active provider            | [Guide](../user-guide/backends.md)  |
+| `clear_backend()`       | Return to inference from arguments   | [Guide](../user-guide/backends.md)  |
+| `primitive()`           | Declare a dispatched operation       | [Guide](../user-guide/backends.md)  |
+| `BackendProvider`       | Register per-backend implementations | [Guide](../user-guide/backends.md)  |
+
 ### Distributed
 
 | Function               | Purpose                     | User Guide                                 |
@@ -282,7 +302,8 @@ Opaque's API follows these principles:
 1. **Functional-first**: Immutable state, pure functions
 2. **Composable**: Small, focused functions that combine naturally
 3. **Type-safe**: Comprehensive type hints
-4. **PyTorch-native**: Built on `torch.func`, works with standard PyTorch
+4. **Backend-neutral**: Mechanisms dispatch through `opaque.ops`; `opaque-torch`
+   is the provider shipped today
 5. **JAX-inspired**: API closely mirrors JAX-Privacy for familiarity
 
 ## See also

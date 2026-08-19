@@ -42,10 +42,10 @@ pip install opaque-engine opaque-torch  # PyTorch (the only provider today)
 ```
 
 Provider selection is inferred from the arrays passed to Opaque and remains
-active until `opaque.backend.clear_backend()` is called. The engine's
-`KnownBackend` registry also reserves the `jax` and `mlx` names; selecting a
-name whose provider is not installed raises an error that points at the missing
-distribution.
+active until `opaque.backend.clear_backend()` is called; see
+[Backends](../user-guide/backends.md). The engine's `KnownBackend` registry also
+reserves the `jax` and `mlx` names; selecting a name whose provider is not
+installed raises an error that points at the missing distribution.
 
 For DP-FTRL, install `opaque-dpftrl` with the provider wheel used by the
 training loop:

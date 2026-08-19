@@ -139,7 +139,6 @@ dev = [
 # Everything the scripts under examples/ and docs/tutorials/ need.
 # Install with: `uv sync --group examples`
 examples = [
-  "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
   "transformers>=4.57.0,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
   "peft>=0.13.0",             # LoRA adapters (needed by all training examples)

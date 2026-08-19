@@ -4,9 +4,10 @@ Functional DP-SGD and DP-FTRL for PyTorch.
 
 Opaque provides composable primitives for differentially private model
 training in PyTorch: per-example gradient clipping, calibrated noise
-injection, privacy accounting, and Poisson sampling. Built on `torch.func`,
-it uses a functional API with explicit state — no hooks, no subclassing, no
-hidden mutation.
+injection, privacy accounting, and Poisson sampling. A backend-neutral
+engine dispatches array work to the `opaque-torch` provider (built on
+`torch.func`), and every component uses a functional API with explicit
+state — no hooks, no subclassing, no hidden mutation.
 
 > **Work in progress:** Opaque is research software under active development.
 > Its differential-privacy mechanisms, accounting, and privacy guarantees are
@@ -31,8 +32,9 @@ Install and depend on `opaque` only. The repository is implemented as
 |---|---|---|
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
-| `opaque-engine` | `opaque.{types,pytree,random,distributed,functional,scheduling,profiling}` | Torch substrate: pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler |
-| `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
+| `opaque-engine` | `opaque.{types,pytree,random,backend,ops,autodiff,distributed,scheduling,profiling,optimizers,...}` | Torch-free substrate: dispatched primitives and backend registry, pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, backend-neutral optimizer rules, schedules + warmup, distributed helpers, profiler |
+| `opaque-torch` | `opaque.torch.{functional,random,distributed,device,checkpoint}` | PyTorch provider: Torch implementations of the engine's primitives, `make_functional`, torch RNG bridges, in-place DDP collectives, checkpoint compat |
+| `opaque-optimizers` | `opaque.optimizers` | Facade over the engine's backend-neutral optimizer factories (DP-aware AdamW-BC and friends) |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
@@ -145,7 +147,8 @@ for batch_x, batch_y in dataloader:
 
 ## Features
 
-- **Per-example gradient clipping** via `torch.func.vmap` + `torch.func.grad`,
+- **Per-example gradient clipping** via the engine's vmap + grad transforms
+  (`torch.func` on the Torch provider),
   with fixed, adaptive (Andrew et al. 2021), and AUTO-S (Bu et al. 2023) variants.
 - **Noise injection**: Gaussian, truncated Gaussian, and correlated
   matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD), including

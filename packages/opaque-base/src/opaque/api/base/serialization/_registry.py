@@ -2,7 +2,9 @@
 
 Each opaque wheel registers handlers for the concrete types it owns:
 
-- ``opaque-engine`` registers ``torch.Tensor``, ``numpy.ndarray``.
+- ``opaque-engine`` registers ``numpy.ndarray`` and inert tree
+  structures; providers register their native array types when they
+  activate (``opaque-torch`` covers ``torch.Tensor``).
 - ``opaque-accounting`` registers ``Accountant`` and every
   ``DpProcess`` subclass via ``__init_subclass__``.
 - ``opaque-dpsgd`` / ``opaque-dpftrl`` register stack-specific state
