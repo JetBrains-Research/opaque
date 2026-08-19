@@ -1,81 +1,68 @@
-"""Thin wrappers around ``torch.distributed`` collectives.
+"""Thin wrappers around optional provider collectives.
 
-Provides ``is_distributed``, ``get_rank``, ``get_world_size``, ``all_reduce``
-and its in-place variant, and ``barrier``. All are safe to call outside a
+Provides ``is_distributed``, ``get_rank``, ``get_world_size``, ``all_reduce``,
+and ``barrier``. All are safe to call outside a
 process group; non-distributed contexts fall through to sensible defaults
 (rank 0, world_size 1, no-op barrier).
 """
 
 from __future__ import annotations
 
-import torch
-import torch.distributed as dist
+from typing import Any
+
+from opaque.api.engine import runtime
+from opaque.api.engine.backend import BackendNotSelectedError
 
 
 def is_distributed() -> bool:
-    """Return True if ``torch.distributed`` is available and initialized."""
-    return dist.is_available() and dist.is_initialized()
+    """Return whether a distributed process group is live.
+
+    True for any initialized group, including a single-rank one; callers
+    that need multi-rank behavior compare :func:`get_world_size` instead.
+    Safe to call before any backend is active: with no provider selected
+    there is no process group, so the single-process default applies.
+    """
+    try:
+        return bool(runtime.distributed_initialized())
+    except BackendNotSelectedError:
+        return False
 
 
 def get_rank() -> int:
-    """Return the current rank (0 if not distributed)."""
-    return dist.get_rank() if is_distributed() else 0
+    """Return the current rank (0 if not distributed).
+
+    Safe to call before any backend is active: with no provider selected
+    there is no process group, so the single-process default applies.
+    """
+    try:
+        return runtime.distributed_rank()
+    except BackendNotSelectedError:
+        return 0
 
 
 def get_world_size() -> int:
-    """Return the world size (1 if not distributed)."""
-    return dist.get_world_size() if is_distributed() else 1
+    """Return the world size (1 if not distributed).
 
-
-_OP_MAP: dict[str, object] = {}
-
-
-def _resolve_op(op: str):
-    """Map a string to a ``torch.distributed.ReduceOp``. Populated lazily."""
-    if not _OP_MAP:
-        _OP_MAP.update(
-            {
-                "sum": dist.ReduceOp.SUM,
-                "mean": dist.ReduceOp.AVG,
-                "max": dist.ReduceOp.MAX,
-                "min": dist.ReduceOp.MIN,
-                "product": dist.ReduceOp.PRODUCT,
-            }
-        )
-    if op not in _OP_MAP:
-        raise ValueError(
-            f"Invalid reduction operation: {op}. Must be one of: {list(_OP_MAP.keys())}"
-        )
-    return _OP_MAP[op]
-
-
-def all_reduce_(tensor: torch.Tensor, op: str = "sum") -> None:
-    """All-reduce ``tensor`` across ranks in place.
-
-    Raises:
-        RuntimeError: If ``torch.distributed`` is not initialized.
-        ValueError: If ``op`` is not a recognized reduction.
+    Safe to call before any backend is active: with no provider selected
+    there is no process group, so the single-process default applies.
     """
-    reduce_op = _resolve_op(op)
-    if not is_distributed():
-        raise RuntimeError(
-            "torch.distributed is not initialized. "
-            "Call torch.distributed.init_process_group() first."
-        )
-    dist.all_reduce(tensor, op=reduce_op)
+    try:
+        return runtime.distributed_world_size()
+    except BackendNotSelectedError:
+        return 1
 
 
-def all_reduce(tensor: torch.Tensor, op: str = "sum") -> torch.Tensor:
-    """Return a reduced clone of ``tensor``; input is unchanged."""
-    reduced = tensor.clone()
-    all_reduce_(reduced, op=op)
-    return reduced
+def all_reduce(tensor: Any, op: str = "sum") -> Any:
+    """Return a reduced value; input is unchanged."""
+    return runtime.distributed_all_reduce(tensor, op=runtime.ReduceOp(op))
 
 
 def barrier() -> None:
     """Block until every rank reaches this call (no-op if not distributed)."""
-    if is_distributed():
-        dist.barrier()
+    try:
+        runtime.distributed_barrier()
+    except BackendNotSelectedError:
+        return
 
 
 def is_main_process() -> bool:
@@ -102,7 +89,7 @@ def wait_for_everyone() -> None:
     barrier()
 
 
-def gather_for_metrics(tensor: torch.Tensor) -> torch.Tensor:
+def gather_for_metrics(tensor: Any) -> Any:
     """All-gather ``tensor`` across ranks and concatenate along dim 0.
 
     In a non-distributed context returns ``tensor`` unchanged. Intended for
@@ -111,22 +98,14 @@ def gather_for_metrics(tensor: torch.Tensor) -> torch.Tensor:
     concern. This is **not** a gradient primitive — do not use it inside the
     clipped/noised per-example gradient path.
 
-    All ranks must pass tensors of identical shape and dtype.
+    All ranks must pass arrays with the same dtype, rank, and trailing shape;
+    the leading dimension may vary by rank.
     """
-    if not is_distributed():
-        return tensor
-    world_size = get_world_size()
-    # torch.cat cannot concatenate 0-dim tensors; promote a per-rank scalar
-    # metric to 1-D so it gathers into a (world_size,) vector.
-    local = tensor.unsqueeze(0) if tensor.dim() == 0 else tensor
-    gathered = [torch.empty_like(local) for _ in range(world_size)]
-    dist.all_gather(gathered, local.contiguous())
-    return torch.cat(gathered, dim=0)
+    return runtime.distributed_all_gather(tensor, axis=0)
 
 
 __all__ = [
     "all_reduce",
-    "all_reduce_",
     "barrier",
     "gather_for_metrics",
     "get_rank",

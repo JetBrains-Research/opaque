@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from . import _structural
-from ._registry import resolve_serializer
+from ._registry import resolve_serializer, run_fallback_resolvers
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -56,19 +56,35 @@ def _subdict(sd: Mapping[str, Any], prefix: str) -> dict[str, Any]:
 
 def _walk_save(obj: Any, prefix: str, out: dict[str, Any]) -> None:
     handlers = resolve_serializer(type(obj))
-    if handlers is not None:
-        rel = handlers[0](obj)
-        for rk, rv in rel.items():
-            out[_join_path(prefix, rk)] = rv
-        return
-    _structural.walk_save(obj, prefix, out, _walk_save)
+    if handlers is None:
+        try:
+            _structural.walk_save(obj, prefix, out, _walk_save)
+            return
+        except TypeError:
+            # Last chance: a fallback resolver (e.g. provider activation)
+            # may register a handler for this native type; retry once.
+            if not run_fallback_resolvers(obj):
+                raise
+            handlers = resolve_serializer(type(obj))
+            if handlers is None:
+                raise
+    rel = handlers[0](obj)
+    for rk, rv in rel.items():
+        out[_join_path(prefix, rk)] = rv
 
 
 def _walk_load(template: Any, sd: Mapping[str, Any], prefix: str) -> Any:
     handlers = resolve_serializer(type(template))
-    if handlers is not None:
-        return handlers[1](template, _subdict(sd, prefix))
-    return _structural.walk_load(template, sd, prefix, _walk_load)
+    if handlers is None:
+        try:
+            return _structural.walk_load(template, sd, prefix, _walk_load)
+        except TypeError:
+            if not run_fallback_resolvers(template):
+                raise
+            handlers = resolve_serializer(type(template))
+            if handlers is None:
+                raise
+    return handlers[1](template, _subdict(sd, prefix))
 
 
 def state_dict(obj: Any) -> dict[str, Any]:

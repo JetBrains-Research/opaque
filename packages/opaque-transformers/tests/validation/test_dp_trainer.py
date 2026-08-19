@@ -10,6 +10,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 from __future__ import annotations
 
 import multiprocessing
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,13 @@ def _default_args(**overrides) -> TrainingArguments:
     the test fixtures' CPU-resident model parameters and produce a
     device mismatch).  Tests that explicitly need an accelerator can
     override.
+
+    Allocates a fresh ``output_dir`` per call: xdist's loadscope runs the
+    classes in this file concurrently, and trainers sharing the relative
+    default directory race each other's checkpoint writes and rotations.
     """
     defaults = {
+        "output_dir": tempfile.mkdtemp(prefix="opaque-dp-trainer-test-"),
         "per_device_train_batch_size": 4,
         "clipping_norm": 1.0,
         "privacy_target_epsilon": 10.0,

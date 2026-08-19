@@ -11,12 +11,9 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-import torch
-import torch.distributed as dist
-
+from opaque.api.engine import ops, runtime
 from opaque.api.engine.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
-    get_world_size,
     reduce_scalar,
     register_sync_type,
 )
@@ -123,26 +120,28 @@ def _split_aux_fields(
 def _cpu_payload(value: Any) -> Any:
     """Detach tensor leaves to CPU for ``all_gather_object`` pickling."""
     return tree_map(
-        lambda leaf: leaf.detach().cpu() if isinstance(leaf, torch.Tensor) else leaf,
+        lambda leaf: (
+            ops.transfer(ops.detach(leaf), "cpu") if ops.is_array(leaf) else leaf
+        ),
         value,
     )
 
 
-def _infer_device(value: Any) -> torch.device:
+def _infer_device(value: Any) -> Any:
     leaves = tree_leaves(value)
-    return leaves[0].device if leaves else torch.device("cpu")
+    return getattr(leaves[0], "device", None) if leaves else None
 
 
-def _infer_device_from_fields(tensor_fields: dict[str, object]) -> torch.device:
+def _infer_device_from_fields(tensor_fields: dict[str, object]) -> Any:
     """Prefer any local tensor device so empty optional fields stay on-device."""
     for value in tensor_fields.values():
         leaves = tree_leaves(value)
         if leaves:
             return leaves[0].device
-    return torch.device("cpu")
+    return None
 
 
-def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
+def _merge_gathered_values(values: list[Any], device: Any) -> Any:
     """Concatenate per-rank aux pytrees; ``None`` ranks contribute nothing.
 
     Non-``None`` payloads must share an optree structure (same group keys /
@@ -175,13 +174,21 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     merged_leaves: list[Any] = []
     for i in range(len(leaf_lists[0])):
         column = [leaves[i] for leaves in leaf_lists]
-        if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+        if not all(ops.is_array(leaf) for leaf in column):
             raise TypeError(
                 "Distributed aux gathering supports tensor leaves only; got "
                 f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
                 "preserved structurally and does not need to be a leaf."
             )
-        merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
+        merged_leaves.append(
+            ops.concatenate(
+                [
+                    ops.transfer(leaf, device) if device is not None else leaf
+                    for leaf in column
+                ],
+                axis=0,
+            )
+        )
     return tree_unflatten(treedef, merged_leaves)
 
 
@@ -199,8 +206,7 @@ def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
     default_device = _infer_device_from_fields(tensor_fields)
     # Callers derive this declaration order from the registered aux schema.
     for name, local in tensor_fields.items():
-        payloads = [None] * get_world_size()
-        dist.all_gather_object(payloads, _cpu_payload(local))
+        payloads = runtime.distributed_all_gather_object(_cpu_payload(local))
         device = _infer_device(local) if tree_leaves(local) else default_device
         gathered[name] = _merge_gathered_values(payloads, device)
     return gathered
@@ -208,7 +214,7 @@ def _gather_aux_fields(tensor_fields: dict[str, object]) -> dict[str, object]:
 
 def _sync_clipping_rate(
     clipping_rate: float | None,
-    norms: torch.Tensor | None,
+    norms: Any | None,
 ) -> float | None:
     """Compute global clipping rate as a size-weighted average across ranks.
 
@@ -227,7 +233,7 @@ def _sync_clipping_rate(
     if not local_presence:
         return None
 
-    local_n = float(norms.numel()) if isinstance(norms, torch.Tensor) else 0.0
+    local_n = float(ops.shape(norms)[0]) if ops.is_array(norms) else 0.0
     local_rate = float(clipping_rate)
     global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
     global_total = reduce_scalar(local_n, op="sum")

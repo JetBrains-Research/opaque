@@ -1,20 +1,23 @@
 # opaque.distributed
 
-Distributed training utilities for differential privacy with DDP.
+Provider-neutral eager process-level distributed utilities.
 
 ## Overview
 
-The `opaque.distributed` module provides composable primitives for multi-GPU
-DP training:
+The `opaque.distributed` module provides composable primitives for
+multi-process DP orchestration:
 
 - **Core**: `is_distributed()`, `get_rank()`, `get_world_size()`
-- **Collectives**: `all_reduce()` (+ in-place variant in the `collectives` submodule)
-- **Gradient aggregation**: `sum_gradients()` (copy-returning) and `sum_gradients_()` (in-place)
+- **Collectives**: return-based `all_reduce()` and `barrier()`
+- **Gradient aggregation**: return-based `sum_gradients()`
 - **State sync**: `sync()` (type-dispatched; handles clipping + noise
   states and registered DP runtime objects)
 - **Sharding**: `local_shard()`
 
-DDP is the only supported parallelism strategy.
+Torch, JAX, and MLX implement the shared eager distributed profile. Opaque does
+not initialize or launch distributed runtimes; use `torchrun`, JAX distributed
+initialization, or an MLX launcher as appropriate. Collectives inside `jit`,
+`pmap`, or `shard_map` are outside this process-level contract.
 See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
 
 ## Core Utilities
@@ -39,11 +42,6 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.collectives.all_reduce_
-    options:
-        show_source: true
-        heading_level: 3
-
 ::: opaque.distributed.collectives.barrier
     options:
         show_source: true
@@ -56,20 +54,11 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.gradients.sum_gradients_
-    options:
-        show_source: true
-        heading_level: 3
-
 ::: opaque.distributed.gradients.reduce_pytree
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.gradients.reduce_pytree_
-    options:
-        show_source: true
-        heading_level: 3
 
 ## State Synchronization
 
@@ -81,7 +70,7 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
 The `sync()` machinery is type-dispatched: clipping and noise states
 register themselves with `opaque.distributed._state.register_sync_type`
 and provide the right per-state aggregation rule. Lower-level scalar
-reductions, tensor gathers, and object syncs live in `_state.py`;
+reductions, native-array gathers, and object syncs live in `_state.py`;
 they're internal plumbing for the registered DP runtime objects rather
 than headline API.
 

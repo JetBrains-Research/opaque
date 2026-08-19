@@ -9,7 +9,6 @@ import os
 import pytest
 import torch
 
-
 # ---------------------------------------------------------------------------
 # Auto-skip logic for marker-based gating
 # ---------------------------------------------------------------------------
@@ -71,6 +70,31 @@ def get_default_gpu_device():
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _activate_torch_backend(request):
+    """Select Torch explicitly for legacy Torch-facing package tests."""
+    path = str(request.node.path).replace(os.sep, "/")
+    neutral_test_roots = (
+        "packages/opaque-accounting/tests/",
+        "packages/opaque-base/tests/",
+        "tests/contracts/",
+        "tests/integration/backend/",
+    )
+    if any(root in path for root in neutral_test_roots):
+        yield
+        return
+
+    from opaque.api.engine.backend import _registry, clear_backend, ensure_backend
+
+    clear_backend()
+    ensure_backend(torch.empty(0))
+    # Forget throwaway backends registered by earlier tests so the
+    # single-backend dispatch fast path stays representative.
+    _registry._reset_loaded_backends()
+    yield
+    clear_backend()
 
 
 @pytest.fixture

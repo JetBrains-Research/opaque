@@ -42,6 +42,7 @@ plugins:
           paths:
             - packages/opaque-base/src
             - packages/opaque-engine/src
+            - packages/opaque-torch/src
             - packages/opaque-optimizers/src
             - packages/opaque-dpsgd/src
             - packages/opaque-dpftrl/src

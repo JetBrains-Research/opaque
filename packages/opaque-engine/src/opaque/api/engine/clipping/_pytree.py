@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import math
 from collections import namedtuple
 from typing import Any
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import (
     ParamPath,
+    _resolve_reduction_dtype,
+    _squared_l2_norm_roundoff,
+    _squared_l2_norms,
     param_path_display,
     tree_flatten_with_paths,
     tree_leaves,
@@ -17,12 +18,6 @@ from opaque.api.engine.pytree import (
     tree_unflatten,
 )
 from opaque.api.engine.types import PerGroup
-
-_SQ_NORM_ACCUM_DTYPE = torch.float64
-"""Dtype the cross-leaf squared-norm accumulator runs in.
-
-The per-leaf squaring still happens in the caller's ``compute_dtype``.
-"""
 
 ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
 """Auxiliary outputs from clip_pytree.
@@ -36,12 +31,12 @@ Fields:
 
 def _tensor_path_leaves(
     pytree: Any,
-) -> tuple[list[ParamPath], list[torch.Tensor], Any]:
+) -> tuple[list[ParamPath], list[Any], Any]:
     """Flatten tensor leaves with :data:`~opaque.pytree.ParamPath` keys."""
     paths, leaves, treedef = tree_flatten_with_paths(pytree)
-    tensor_leaves: list[torch.Tensor] = []
+    tensor_leaves: list[Any] = []
     for path, leaf in zip(paths, leaves, strict=True):
-        if not isinstance(leaf, torch.Tensor):
+        if not ops.is_array(leaf):
             raise TypeError(
                 f"Expected tensor leaves for per-group clipping; "
                 f"got {type(leaf).__name__} at path {path!r}."
@@ -71,43 +66,11 @@ def _validate_per_group_paths(
     raise ValueError(" ".join(parts))
 
 
-def _real_dtype(dtype: torch.dtype) -> torch.dtype:
-    """The real dtype a complex leaf's magnitudes accumulate in."""
-    if not dtype.is_complex:
-        return dtype
-    return torch.tensor((), dtype=dtype).real.dtype
-
-
-def _resolve_compute_dtype_for_reduction(
-    leaves: list[torch.Tensor],
-    compute_dtype: torch.dtype | None,
-) -> torch.dtype:
-    """Pick the dtype for sum-of-squares reductions over ``leaves``."""
-    if compute_dtype is not None:
-        if not compute_dtype.is_floating_point:
-            raise TypeError(
-                f"compute_dtype must be a real floating-point dtype, got "
-                f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
-                f"silently corrupt the L2-norm reduction (the squared sum is "
-                f"non-negative real and the final sqrt assumes a real "
-                f"accumulator)."
-            )
-        return compute_dtype
-    acc = torch.float32
-    for leaf in leaves:
-        if not (torch.is_floating_point(leaf) or torch.is_complex(leaf)):
-            continue
-        real = _real_dtype(leaf.dtype)
-        promoted = torch.float32 if real in (torch.float16, torch.bfloat16) else real
-        acc = torch.promote_types(acc, promoted)
-    return acc
-
-
 def _guard_scale(
-    ratio: torch.Tensor,
-    storage_dtype: torch.dtype,
+    ratio: Any,
+    storage_dtype: Any,
     norm_roundoff: float,
-) -> torch.Tensor:
+) -> Any:
     """Shrink a clipping ratio so that storing it cannot break the norm bound.
 
     Three roundings sit between ``C / ||x||`` and the stored output: the norm
@@ -119,188 +82,65 @@ def _guard_scale(
     The absolute term covers subnormals, where round-to-nearest error is not
     bounded by ``u * |x|``; it is sized from ``storage_dtype`` alone.
     """
-    if not (storage_dtype.is_floating_point or storage_dtype.is_complex):
+    if not (ops.is_floating(storage_dtype) or ops.is_complex(storage_dtype)):
         return ratio
-    store = torch.finfo(storage_dtype)
-    relative = 1.0 - 2.0 * (store.eps / 2.0 + norm_roundoff)
-    absolute = store.smallest_normal * store.eps
-    return ratio * relative - absolute
+    real = ops.real_dtype(storage_dtype)
+    eps = ops.finfo_eps(real)
+    relative = 1.0 - 2.0 * (eps / 2.0 + norm_roundoff)
+    absolute = ops.finfo_smallest_normal(real) * eps
+    return ops.subtract(ops.multiply(ratio, relative), absolute)
 
 
 def _finalize_scale(
-    ratio: torch.Tensor,
-    storage_dtype: torch.dtype,
+    ratio: Any,
+    storage_dtype: Any,
     norm_roundoff: float,
     *,
     clamp_to_one: bool,
-) -> torch.Tensor:
+) -> Any:
     """Guard a ratio for one leaf and reduce it to a usable scale."""
     scale = _guard_scale(ratio, storage_dtype, norm_roundoff)
     if clamp_to_one:
-        scale = torch.minimum(torch.ones_like(scale), scale)
-    scale = torch.where(torch.isfinite(scale), scale, torch.zeros_like(scale))
-    return torch.clamp(scale, min=0.0)
-
-
-def _sq_accum_dtype(leaves: list[torch.Tensor]) -> torch.dtype:
-    """Dtype for the cross-leaf squared-norm accumulator.
-
-    MPS has no float64, so it accumulates in float32 and the guard widens to
-    match; every other backend gets the free float64 scalar.
-    """
-    if any(leaf.device.type == "mps" for leaf in leaves):
-        return torch.float32
-    return _SQ_NORM_ACCUM_DTYPE
-
-
-_REDUCTION_BLOCK = 2048
-"""Width of one block in the two-stage leaf reduction.
-
-Deliberately a compile-time constant rather than ``isqrt(numel)``.  The
-balanced split is the tightest bound, but ``math.isqrt`` on a symbolic shape
-makes ``torch.compile(fullgraph=True)`` fail outright (and the default mode
-fall back to a graph break) for every leaf past the threshold below.  Since
-``clipped_grad`` is on the hot path, breaking compilation there breaks it
-everywhere, which costs more than the slack a fixed block gives up.
-
-At 2048 the two stages stay balanced for the multi-million-element leaves that
-motivate the guard — the bound matches the ``isqrt`` one to within a term at
-``numel ~ 4e6``.  Smaller leaves get a looser bound than ``isqrt`` would give,
-but still a far tighter one than the flat reduction they would otherwise use.
-"""
-
-_BLOCKED_REDUCTION_MIN = 4096
-"""Element count above which a leaf's sum of squares is reduced in two stages.
-
-A flat reduction admits ``numel`` sequential roundings; splitting it into
-blocks of ``_REDUCTION_BLOCK`` admits ``_REDUCTION_BLOCK + numel /
-_REDUCTION_BLOCK``, which is what keeps the guard affordable on the float32
-accumulator MPS is limited to.  Below the threshold the flat term is already
-negligible and the extra kernel is not worth it.
-"""
-
-
-def _blocked_reduction_terms(n: int) -> int:
-    """Worst-case sequential additions for a two-stage reduction of ``n``.
-
-    ``_REDUCTION_BLOCK`` additions inside the widest block, then one per block.
-    Integer arithmetic only, so it survives tracing on a symbolic ``n``.
-    """
-    block = _REDUCTION_BLOCK
-    return block + (n + block - 1) // block
-
-
-def _reduction_terms(leaves: list[torch.Tensor]) -> int:
-    """Worst-case sequential additions inside a single leaf's reduction.
-
-    Written as a loop rather than ``max(..., default=0)`` over a generator,
-    which ``torch.compile`` rejects.
-    """
-    widest = 0
-    for leaf in leaves:
-        widest = max(widest, math.prod(leaf.shape))
-    if widest <= 1:
-        return 0
-    if widest > _BLOCKED_REDUCTION_MIN:
-        return _blocked_reduction_terms(widest)
-    return widest
-
-
-def _norm_roundoff(
-    acc_dtype: torch.dtype, sq_dtype: torch.dtype, n_leaves: int, n_reduction: int
-) -> float:
-    """Relative error bound on the computed norm.
-
-    Three sources: squaring each element in ``acc_dtype``, the reduction inside
-    the widest leaf (``n_reduction`` additions, see :func:`_reduction_terms`),
-    and the cross-leaf accumulation (``n_leaves``).  Halved because the error is
-    carried through a square root.
-    """
-    u_acc = torch.finfo(acc_dtype).eps / 2.0 if acc_dtype.is_floating_point else 0.0
-    u_sq = torch.finfo(sq_dtype).eps / 2.0 if sq_dtype.is_floating_point else 0.0
-    return (u_acc + (max(n_leaves, 1) + n_reduction) * u_sq) / 2.0
-
-
-def _leaf_sq_sum(
-    leaf: torch.Tensor, acc_dtype: torch.dtype, sq_dtype: torch.dtype
-) -> torch.Tensor:
-    """Sum of squares of one leaf, reduced in ``sq_dtype``.
-
-    Complex leaves contribute ``real^2 + imag^2``; casting them to a real
-    accumulator would drop the imaginary part and under-read the norm.
-    """
-    if torch.is_complex(leaf):
-        real = leaf.real.to(acc_dtype)
-        imag = leaf.imag.to(acc_dtype)
-        sq = real * real + imag * imag
-    else:
-        x = leaf.to(acc_dtype)
-        sq = x * x
-
-    flat = sq.reshape(-1)
-    n = flat.shape[0]
-    if n <= _BLOCKED_REDUCTION_MIN:
-        return flat.sum(dtype=sq_dtype)
-
-    block = _REDUCTION_BLOCK
-    main = (n // block) * block
-    total = (
-        flat[:main].reshape(-1, block).sum(dim=-1, dtype=sq_dtype).sum(dtype=sq_dtype)
-    )
-    if main < n:
-        total = total + flat[main:].sum(dtype=sq_dtype)
-    return total
-
-
-def _sq_norm(
-    leaves: list[torch.Tensor], acc_dtype: torch.dtype, sq_dtype: torch.dtype
-) -> torch.Tensor:
-    """Sum of squares over ``leaves``, accumulated in ``sq_dtype``."""
-    total: torch.Tensor | None = None
-    for leaf in leaves:
-        sq = _leaf_sq_sum(leaf, acc_dtype, sq_dtype)
-        total = sq if total is None else total + sq
-    if total is None:
-        return torch.zeros((), dtype=sq_dtype)
-    return total
+        scale = ops.minimum(ops.ones_like(scale), scale)
+    scale = ops.where(ops.isfinite(scale), scale, ops.zeros_like(scale))
+    return ops.clamp(scale, lo=0.0)
 
 
 def _accumulate_group_sq_norms(
     paths: list[ParamPath],
-    leaves: list[torch.Tensor],
+    leaves: list[Any],
     pg: PerGroup,
-    acc_dtype: torch.dtype,
-    sq_dtype: torch.dtype,
-) -> dict[str, torch.Tensor]:
-    group_sq_norms: dict[str, torch.Tensor] = {}
-    for path, tensor in zip(paths, leaves, strict=True):
-        group_name = pg.groups[path]
-        sq = _leaf_sq_sum(tensor, acc_dtype, sq_dtype)
-        if group_name in group_sq_norms:
-            group_sq_norms[group_name] = group_sq_norms[group_name] + sq
-        else:
-            group_sq_norms[group_name] = sq
-    return group_sq_norms
+    acc_dtype: Any,
+) -> tuple[Any, dict[str, Any]]:
+    if not leaves:
+        return ops.scalar(0.0, dtype=acc_dtype), {}
+    group_names = [pg.groups[path] for path in paths]
+    return _squared_l2_norms(leaves, group_names, dtype=acc_dtype)
 
 
 def _scale_leaves_by_group(
     paths: list[ParamPath],
-    leaves: list[torch.Tensor],
+    leaves: list[Any],
     pg: PerGroup,
-    group_ratios: dict[str, torch.Tensor],
+    group_ratios: dict[str, Any],
     treedef: Any,
     norm_roundoff: float,
     *,
     clamp_to_one: bool,
 ) -> Any:
     scaled = [
-        _finalize_scale(
-            group_ratios[pg.groups[path]],
-            leaf.dtype,
-            norm_roundoff,
-            clamp_to_one=clamp_to_one,
-        ).to(dtype=leaf.dtype)
-        * leaf
+        ops.multiply(
+            ops.astype(
+                _finalize_scale(
+                    group_ratios[pg.groups[path]],
+                    ops.dtype(leaf),
+                    norm_roundoff,
+                    clamp_to_one=clamp_to_one,
+                ),
+                ops.dtype(leaf),
+            ),
+            leaf,
+        )
         for path, leaf in zip(paths, leaves, strict=True)
     ]
     return tree_unflatten(treedef, scaled)
@@ -310,34 +150,34 @@ def _auto_scale_per_group(
     pytree: Any,
     pg: PerGroup,
     gamma: float,
-    compute_dtype: torch.dtype | None,
+    compute_dtype: Any | None,
 ) -> tuple[Any, ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
     paths, leaves, treedef = _tensor_path_leaves(pytree)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
-    sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
+    roundoff = _squared_l2_norm_roundoff(leaves, dtype=acc_dtype)
+
+    total_sq_norm, group_sq_norms = _accumulate_group_sq_norms(
+        paths, leaves, pg, acc_dtype
     )
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
-
-    group_ratios: dict[str, torch.Tensor] = {}
+    group_ratios: dict[str, Any] = {}
     for group_name, sq_norm in group_sq_norms.items():
-        norm = torch.sqrt(sq_norm)
-        R = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
-        R = torch.clamp(R, min=0.0)
-        gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
-        group_ratios[group_name] = R / (norm + gamma_tensor)
+        norm = ops.sqrt(sq_norm)
+        R = ops.clamp(
+            ops.scalar(pg.values[group_name], dtype=ops.dtype(norm), like=norm), lo=0.0
+        )
+        gamma_tensor = ops.scalar(gamma, dtype=ops.dtype(norm), like=norm)
+        group_ratios[group_name] = ops.divide(R, ops.add(norm, gamma_tensor))
 
     scaled = _scale_leaves_by_group(
         paths, leaves, pg, group_ratios, treedef, roundoff, clamp_to_one=False
     )
 
-    orig_norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype)).to(acc_dtype)
+    orig_norm = ops.astype(ops.sqrt(total_sq_norm), acc_dtype)
     group_norms = {
-        name: torch.sqrt(sq).to(acc_dtype) for name, sq in group_sq_norms.items()
+        name: ops.astype(ops.sqrt(sq), acc_dtype) for name, sq in group_sq_norms.items()
     }
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
@@ -347,7 +187,7 @@ def auto_scale_pytree(
     R: float | PerGroup = 1.0,
     gamma: float = 0.01,
     *,
-    compute_dtype: torch.dtype | None = None,
+    compute_dtype: Any | None = None,
 ) -> tuple[Any, ClipPytreeAux]:
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
@@ -391,42 +231,35 @@ def auto_scale_pytree(
         raise ValueError(f"gamma must be positive, got {gamma}")
 
     pytree = tree_map(
-        lambda t: (
-            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
-            if isinstance(t, torch.Tensor)
-            else t
-        ),
+        lambda t: ops.nan_to_num(t) if ops.is_array(t) else t,
         pytree,
     )
 
     if isinstance(R, PerGroup):
         return _auto_scale_per_group(pytree, R, gamma, compute_dtype)
 
-    leaves = [leaf for leaf in tree_leaves(pytree) if isinstance(leaf, torch.Tensor)]
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
-    sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
-    )
+    leaves = [leaf for leaf in tree_leaves(pytree) if ops.is_array(leaf)]
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
+    if not leaves:
+        orig_norm = ops.scalar(0.0, dtype=acc_dtype)
+        return pytree, ClipPytreeAux(norm=orig_norm, group_norms=None)
+    roundoff = _squared_l2_norm_roundoff(leaves, dtype=acc_dtype)
 
-    norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype))
-    orig_norm = norm.to(acc_dtype)
+    total_sq_norm, _ = _squared_l2_norms(leaves, None, dtype=acc_dtype)
+    norm = ops.sqrt(total_sq_norm)
+    orig_norm = ops.astype(norm, acc_dtype)
 
-    R_tensor = torch.clamp(
-        torch.tensor(R, dtype=norm.dtype, device=norm.device), min=0.0
-    )
-    gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
-    ratio = R_tensor / (norm + gamma_tensor)
+    R_tensor = ops.clamp(ops.scalar(R, dtype=ops.dtype(norm), like=norm), lo=0.0)
+    gamma_tensor = ops.scalar(gamma, dtype=ops.dtype(norm), like=norm)
+    ratio = ops.divide(R_tensor, ops.add(norm, gamma_tensor))
 
     def scale_leaf(t):
-        if not isinstance(t, torch.Tensor):
+        if not ops.is_array(t):
             return t
-        scale = _finalize_scale(ratio, t.dtype, roundoff, clamp_to_one=False)
-        return scale.to(dtype=t.dtype) * t
+        scale = _finalize_scale(ratio, ops.dtype(t), roundoff, clamp_to_one=False)
+        return ops.multiply(ops.astype(scale, ops.dtype(t)), t)
 
-    scaled = tree_map(
-        lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
-    )
+    scaled = tree_map(scale_leaf, pytree)
 
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=None)
 
@@ -435,25 +268,25 @@ def _clip_pytree_per_group(
     pytree: Any,
     pg: PerGroup,
     return_zero: bool,
-    compute_dtype: torch.dtype | None,
+    compute_dtype: Any | None,
 ) -> tuple[Any, ClipPytreeAux]:
     """Per-group clipping keyed by optree :data:`~opaque.pytree.ParamPath`."""
     paths, leaves, treedef = _tensor_path_leaves(pytree)
     _validate_per_group_paths(paths, pg)
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
-    sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
+    roundoff = _squared_l2_norm_roundoff(leaves, dtype=acc_dtype)
+
+    total_sq_norm, group_sq_norms = _accumulate_group_sq_norms(
+        paths, leaves, pg, acc_dtype
     )
 
-    group_sq_norms = _accumulate_group_sq_norms(paths, leaves, pg, acc_dtype, sq_dtype)
-
-    group_ratios: dict[str, torch.Tensor] = {}
+    group_ratios: dict[str, Any] = {}
     for group_name, sq_norm in group_sq_norms.items():
-        norm = torch.sqrt(sq_norm)
-        cn = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
-        cn = torch.clamp(cn, min=0.0)
-        group_ratios[group_name] = cn / norm
+        norm = ops.sqrt(sq_norm)
+        cn = ops.clamp(
+            ops.scalar(pg.values[group_name], dtype=ops.dtype(norm), like=norm), lo=0.0
+        )
+        group_ratios[group_name] = ops.divide(cn, norm)
 
     clipped = _scale_leaves_by_group(
         paths, leaves, pg, group_ratios, treedef, roundoff, clamp_to_one=True
@@ -461,13 +294,12 @@ def _clip_pytree_per_group(
 
     if return_zero:
         clipped = tree_map(
-            lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t,
-            clipped,
+            lambda t: ops.zeros_like(t) if ops.is_array(t) else t, clipped
         )
 
-    orig_norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype)).to(acc_dtype)
+    orig_norm = ops.astype(ops.sqrt(total_sq_norm), acc_dtype)
     group_norms = {
-        name: torch.sqrt(sq).to(acc_dtype) for name, sq in group_sq_norms.items()
+        name: ops.astype(ops.sqrt(sq), acc_dtype) for name, sq in group_sq_norms.items()
     }
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
@@ -477,7 +309,7 @@ def clip_pytree(
     clipping_norm: float | PerGroup,
     return_zero: bool = False,
     *,
-    compute_dtype: torch.dtype | None = None,
+    compute_dtype: Any | None = None,
 ) -> tuple[Any, ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
@@ -518,47 +350,40 @@ def clip_pytree(
         - return_zero=True: Returns zeros regardless of other parameters
     """
     pytree = tree_map(
-        lambda t: (
-            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
-            if isinstance(t, torch.Tensor)
-            else t
-        ),
+        lambda t: ops.nan_to_num(t) if ops.is_array(t) else t,
         pytree,
     )
 
     if isinstance(clipping_norm, PerGroup):
         return _clip_pytree_per_group(pytree, clipping_norm, return_zero, compute_dtype)
 
-    leaves = [leaf for leaf in tree_leaves(pytree) if isinstance(leaf, torch.Tensor)]
-    acc_dtype = _resolve_compute_dtype_for_reduction(leaves, compute_dtype)
-    sq_dtype = _sq_accum_dtype(leaves)
-    roundoff = _norm_roundoff(
-        acc_dtype, sq_dtype, len(leaves), _reduction_terms(leaves)
-    )
+    leaves = [leaf for leaf in tree_leaves(pytree) if ops.is_array(leaf)]
+    acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)
+    if not leaves:
+        orig_norm = ops.scalar(0.0, dtype=acc_dtype)
+        return pytree, ClipPytreeAux(norm=orig_norm, group_norms=None)
+    roundoff = _squared_l2_norm_roundoff(leaves, dtype=acc_dtype)
 
-    sq_norm = _sq_norm(leaves, acc_dtype, sq_dtype)
-    norm = torch.sqrt(sq_norm)
-    orig_norm = norm.to(acc_dtype)
+    total_sq_norm, _ = _squared_l2_norms(leaves, None, dtype=acc_dtype)
+    norm = ops.sqrt(total_sq_norm)
+    orig_norm = ops.astype(norm, acc_dtype)
 
-    clipping_norm_tensor = torch.tensor(
-        clipping_norm, dtype=norm.dtype, device=norm.device
+    clipping_norm_tensor = ops.clamp(
+        ops.scalar(clipping_norm, dtype=ops.dtype(norm), like=norm), lo=0.0
     )
-    clipping_norm_tensor = torch.clamp(clipping_norm_tensor, min=0.0)
-    ratio = clipping_norm_tensor / norm
+    ratio = ops.divide(clipping_norm_tensor, norm)
 
     def scale_leaf(t):
-        if not isinstance(t, torch.Tensor):
+        if not ops.is_array(t):
             return t
-        scale = _finalize_scale(ratio, t.dtype, roundoff, clamp_to_one=True)
-        return scale.to(dtype=t.dtype) * t
+        scale = _finalize_scale(ratio, ops.dtype(t), roundoff, clamp_to_one=True)
+        return ops.multiply(ops.astype(scale, ops.dtype(t)), t)
 
-    clipped = tree_map(
-        lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
-    )
+    clipped = tree_map(scale_leaf, pytree)
 
     if return_zero:
         clipped = tree_map(
-            lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t, clipped
+            lambda t: ops.zeros_like(t) if ops.is_array(t) else t, clipped
         )
 
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=None)

@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import torch
-from torch.autograd.profiler import record_function
-from torch.func import grad_and_value
-
+from opaque.api.engine import autodiff, ops, runtime
 from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
@@ -51,7 +48,7 @@ class ClippedGradAux:
     loss_aux: Any | None = None
     clipping_rate: float | None = None
     batch_size: int = 0
-    group_norms: dict[str, torch.Tensor] | None = None
+    group_norms: dict[str, Any] | None = None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -74,6 +71,35 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
         )
 
 
+def _make_trace_scope_runner() -> Callable[..., Any]:
+    """Build the per-call runner for the optional profiling scope.
+
+    Capability and implementation are resolved once, at grad-fn
+    construction, so compiled callers trace the provider's native scope
+    object (e.g. ``torch.autograd.profiler.record_function``) instead of
+    the dispatch machinery. With no backend active yet (or no scope
+    support) the runner is a plain passthrough.
+    """
+    from opaque.api.engine.primitive import PrimitiveError
+
+    try:
+        if not runtime.trace_scope.supports():
+            raise PrimitiveError
+        scope = runtime.trace_scope.resolve()
+    except PrimitiveError:
+
+        def run_plain(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+            return fn(*args, **kwargs)
+
+        return run_plain
+
+    def run_scoped(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        with scope("opaque::clipped_grad"):
+            return fn(*args, **kwargs)
+
+    return run_scoped
+
+
 def clipped_grad(
     loss_fn: Callable,
     argnums: int | tuple[int, ...] = 0,
@@ -86,15 +112,15 @@ def clipped_grad(
     second_moment: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
-    dtype: torch.dtype | None = None,
-    compute_dtype: torch.dtype | None = None,
+    dtype: Any | None = None,
+    compute_dtype: Any | None = None,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
     _return_stats: bool = False,
 ) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
-    This function acts as a transformation similar to `torch.func.grad`, but with added
+    This function is a provider-dispatched gradient transformation with added
     functionality for gradient clipping applied on a per-example (or per-group)
     basis before summation. It computes the gradient of `loss_fn` with respect to
     `argnums`, calculates the L2 norm of the gradient for each example slice
@@ -107,21 +133,12 @@ def clipped_grad(
     a batch axis. It is up to the caller to handle these as necessary.
 
     Example Usage:
-        >>> import torch
-        >>> from opaque.dpsgd.clipping import clipped_grad
-        >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
-        >>> g, clip_state = clipped_grad(f, clipping_norm=float('inf'))
-        >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
-        >>> result
-        tensor(1.3333)
-
-    Example Usage (with Auxiliary Output):
-        >>> g, clip_state = clipped_grad(
-        ...     f, clipping_norm=float('inf'), return_aux=True
-        ... )
-        >>> (_, aux), clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
-        >>> aux.loss_values
-        tensor([4.5000, 8.0000, 12.5000])
+        After selecting a provider, define a scalar ``loss_fn`` over native
+        arrays and call ``clipped_grad(loss_fn, clipping_norm=...,\
+        batch_argnums=...)``. The returned function accepts native parameter
+        and batch values and returns a ``ClippedPytree`` plus threaded state.
+        Pass ``return_aux=True`` to receive per-example values and norms with
+        the clipped gradients.
         >>> aux.grad_norms
         tensor([3., 4., 5.])
 
@@ -220,7 +237,7 @@ def clipped_grad(
         else:
             grads = clipped(zeros, max_norm=output_max_norm)
         if return_aux or _force_grad_norms:
-            empty = torch.empty(0)
+            empty = ops.zeros((0,))
             grad_aux = ClippedGradAux(
                 loss_values=empty if return_aux else None,
                 grad_norms=empty,
@@ -232,8 +249,9 @@ def clipped_grad(
             return (grads, grad_aux), state
         return grads, state
 
-    # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
-    grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
+    # Route differentiation through the active backend.  ``grad_and_value``
+    # preserves torch's ``(grad, value)`` / ``(grad, (value, aux))`` ordering.
+    grad_and_value_fn = autodiff.grad_and_value(loss_fn, argnums=argnums, has_aux=True)
 
     def grad_fn(*args, **kwargs):
         grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
@@ -241,7 +259,8 @@ def clipped_grad(
         if return_aux or _force_grad_norms:
             # Return dict aux from per-example grad_fn; clipping-related norms are
             # produced by clipped_fun to avoid duplicating norm computation logic.
-            # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
+            # Some vmap implementations cannot handle namedtuples with None values
+            # when out_dims != None.
             aux_dict = {}
             if return_aux:
                 aux_dict["values"] = value_and_aux[0]
@@ -265,6 +284,8 @@ def clipped_grad(
         _return_stats=_return_stats,
     )
 
+    _run_with_trace_scope = _make_trace_scope_runner()
+
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
     # Wrap the result to convert ClippedFunAux to ClippedGradAux
     if not return_aux:
@@ -273,8 +294,9 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            with record_function("opaque::clipped_grad"):
-                (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
+            result, returned_state = _run_with_trace_scope(
+                clipped_grad_fn, *args, state=state, **kwargs
+            )
             if _force_grad_norms:
                 if isinstance(result, tuple):
                     stats = None
@@ -323,10 +345,9 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            with record_function("opaque::clipped_grad"):
-                (clipped_grads, aux), returned_state = clipped_grad_fn(
-                    *args, state=state, **kwargs
-                )
+            (clipped_grads, aux), returned_state = _run_with_trace_scope(
+                clipped_grad_fn, *args, state=state, **kwargs
+            )
             grad_aux = ClippedGradAux(
                 loss_values=aux.values,
                 grad_norms=aux.norms,

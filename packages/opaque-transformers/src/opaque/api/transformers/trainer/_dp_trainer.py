@@ -1829,13 +1829,7 @@ class DPTrainer:
                                 reduce_scalar,
                             )
 
-                            n_tokens = int(
-                                reduce_scalar(
-                                    n_tokens,
-                                    op="sum",
-                                    device=self._device,
-                                )
-                            )
+                            n_tokens = int(reduce_scalar(n_tokens, op="sum"))
                         self.state.num_input_tokens_seen += n_tokens
                 # ``DefaultFlowCallback.on_step_end`` populates the
                 # ``should_log/save/evaluate/training_stop`` flags from
@@ -2810,13 +2804,9 @@ class DPTrainer:
         if self._ddp.is_distributed:
             from opaque.api.engine.distributed._state import reduce_scalar
 
-            total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
-            loss_samples = int(
-                reduce_scalar(loss_samples, op="sum", device=self._device)
-            )
-            total_samples = int(
-                reduce_scalar(total_samples, op="sum", device=self._device)
-            )
+            total_loss = reduce_scalar(float(total_loss), op="sum")
+            loss_samples = int(reduce_scalar(loss_samples, op="sum"))
+            total_samples = int(reduce_scalar(total_samples, op="sum"))
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples

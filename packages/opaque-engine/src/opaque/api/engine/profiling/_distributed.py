@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from types import MappingProxyType
+from typing import Any
 
-import torch
-import torch.distributed as dist
-
-from opaque.api.engine.distributed import get_world_size, is_distributed
+from opaque.api.engine import runtime
+from opaque.api.engine.distributed import is_distributed
 from opaque.api.engine.distributed._state import (
     assert_scalar_equal,
     reduce_scalar,
@@ -24,36 +23,45 @@ from ._memory import (
 __all__ = ["sync_perf_state", "sync_perf_tracker"]
 
 
-def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | None:
+def _sync_step_perf(last: StepPerf | None, device: Any) -> StepPerf | None:
     """Synchronize an optional step record with a fixed presence schedule."""
     local_presence = int(last is not None)
-    min_presence = reduce_scalar(local_presence, op="min", device=device)
-    max_presence = reduce_scalar(local_presence, op="max", device=device)
+    min_presence = reduce_scalar(local_presence, op="min")
+    max_presence = reduce_scalar(local_presence, op="max")
     if min_presence != max_presence:
         raise RuntimeError("StepPerf presence mismatch across ranks.")
     if not local_presence:
         return None
 
     assert last is not None
-    last_time = reduce_scalar(float(last.step_time_sec), op="max", device=device)
-    last_samples = int(reduce_scalar(float(last.batch_size), op="sum", device=device))
-    last_peak = reduce_scalar(float(last.memory_peak_gb), op="max", device=device)
+    last_time = reduce_scalar(float(last.step_time_sec), op="max")
+    last_samples = int(reduce_scalar(float(last.batch_size), op="sum"))
+    last_peak = _reduce_optional(last.memory_peak_gb, op="max")
     return StepPerf(
         step_time_sec=last_time,
         samples_per_second=last_samples / last_time if last_time > 0 else 0.0,
         memory_peak_gb=last_peak,
-        memory_allocated_gb=0.0,
-        memory_reserved_gb=0.0,
+        memory_allocated_gb=None,
+        memory_reserved_gb=None,
         batch_size=last_samples,
         marks=MappingProxyType({}),
     )
 
 
+def _reduce_optional(value: float | None, *, op: str) -> float | None:
+    """Reduce a metric only when every rank reports it."""
+    present = int(value is not None)
+    all_present = reduce_scalar(present, op="min")
+    if not all_present:
+        return None
+    assert value is not None
+    return float(reduce_scalar(value, op=op))
+
+
 def _synchronized_stage_names(tracker: PerfTracker) -> tuple[str, ...]:
     """Return the shared stage schema or raise before stage reductions begin."""
     local_names = tuple(sorted(tracker._stages))
-    gathered: list[tuple[str, ...] | None] = [None] * get_world_size()
-    dist.all_gather_object(gathered, local_names)
+    gathered = runtime.distributed_all_gather_object(local_names)
     mismatched = [rank for rank, names in enumerate(gathered) if names != local_names]
     if mismatched:
         raise RuntimeError(
@@ -76,28 +84,19 @@ def sync_perf_state(state: PerfState) -> PerfState:
     if not is_distributed():
         return state
 
-    device = (
-        state.device
-        if isinstance(state.device, torch.device)
-        else torch.device(state.device)
-    )
+    device = state.device
 
     assert_scalar_equal(
         state.num_steps,
         name="PerfState.num_steps",
-        device=device,
     )
 
-    total_time = reduce_scalar(float(state.total_time), op="max", device=device)
-    total_samples = int(reduce_scalar(state.total_samples, op="sum", device=device))
-    max_peak = reduce_scalar(float(state.max_peak_memory_gb), op="max", device=device)
+    total_time = reduce_scalar(float(state.total_time), op="max")
+    total_samples = int(reduce_scalar(state.total_samples, op="sum"))
+    max_peak = _reduce_optional(state.max_peak_memory_gb, op="max")
 
-    total_time_stable = reduce_scalar(
-        float(state.total_time_stable), op="max", device=device
-    )
-    total_samples_stable = int(
-        reduce_scalar(state.total_samples_stable, op="sum", device=device)
-    )
+    total_time_stable = reduce_scalar(float(state.total_time_stable), op="max")
+    total_samples_stable = int(reduce_scalar(state.total_samples_stable, op="sum"))
 
     last_step = _sync_step_perf(state.last_step, device)
 
@@ -129,19 +128,14 @@ def sync_perf_tracker(tracker: PerfTracker) -> PerfTracker:
         assert_scalar_equal(
             stage.num_steps,
             name=f"PerfStage({name!r}).num_steps",
-            device=device,
         )
 
         s = synced._get_stage(name)
         s.num_steps = stage.num_steps
         s._warmup_steps = stage._warmup_steps
-        s.total_time = reduce_scalar(float(stage.total_time), op="max", device=device)
-        s.total_samples = int(
-            reduce_scalar(stage.total_samples, op="sum", device=device)
-        )
-        s.max_peak_memory_gb = reduce_scalar(
-            float(stage.max_peak_memory_gb), op="max", device=device
-        )
+        s.total_time = reduce_scalar(float(stage.total_time), op="max")
+        s.total_samples = int(reduce_scalar(stage.total_samples, op="sum"))
+        s.max_peak_memory_gb = _reduce_optional(stage.max_peak_memory_gb, op="max")
         s.last = _sync_step_perf(stage.last, device)
 
     return synced
