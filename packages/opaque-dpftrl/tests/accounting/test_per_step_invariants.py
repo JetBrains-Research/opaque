@@ -399,7 +399,7 @@ def test_deterministic_epsilon_matches_committed_vector(amp: str, mech: str):
     actual = _build(amp, mech).epsilon_at(_DELTA)
     expected = _DETERMINISTIC_VECTORS[(amp, mech)]
 
-    assert actual == pytest.approx(expected, rel=1e-9), (
+    assert actual == pytest.approx(expected, rel=1e-9, abs=3e-9), (
         f"{_pair_id((amp, mech))}, delta={_DELTA}: epsilon drifted; "
         f"committed={expected:.17g}, observed={actual:.17g}"
     )

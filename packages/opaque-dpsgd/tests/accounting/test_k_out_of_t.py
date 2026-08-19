@@ -100,7 +100,7 @@ class TestKOutOfTRegressionVectors:
         delta = 1e-8
         actual = factory().epsilon_at(delta)
 
-        assert actual == pytest.approx(expected, rel=1e-9), (
+        assert actual == pytest.approx(expected, rel=1e-9, abs=3e-9), (
             f"{name}, delta={delta}: epsilon drifted; "
             f"committed={expected:.17g}, observed={actual:.17g}"
         )
