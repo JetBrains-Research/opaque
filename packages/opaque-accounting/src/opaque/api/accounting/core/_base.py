@@ -46,9 +46,12 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from . import _native
+
+if TYPE_CHECKING:
+    from collections.abc import Hashable
 
 Pld: TypeAlias = _native.Pld
 
@@ -313,6 +316,16 @@ class DpProcess(ABC):
         Overridden by :class:`Repeated` to return ``(inner, count)``.
         """
         return (self, 1)
+
+    def _pld_cache_fingerprint(self, *, n_steps: int | None = None) -> Hashable:
+        """Return privacy-material state omitted from structural equality.
+
+        Ordinary frozen process dataclasses are their own cache identity.
+        Processes that contain callables or defer mechanism resolution override
+        this to add a concrete, hashable fingerprint of the values used for the
+        requested PLD.
+        """
+        return self
 
     def repeated_pld(
         self,

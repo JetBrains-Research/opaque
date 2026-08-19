@@ -19,6 +19,7 @@ import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
+from ._schedule_fingerprint import materialize_schedule
 from ._toeplitz import inverse_as_streaming_matrix
 
 if TYPE_CHECKING:
@@ -37,13 +38,7 @@ def _native():
     return _n
 
 
-def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
-    """Materialize a schedule at ``[0, n)`` for a cached Gram query."""
-    return (
-        None
-        if lr_schedule is None
-        else tuple(float(lr_schedule(step)) for step in range(n))
-    )
+_lr_key = materialize_schedule
 
 
 @lru_cache(maxsize=256)

@@ -40,6 +40,7 @@ from ._blt_math import (
 from ._blt_math import (
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
+from ._schedule_fingerprint import materialize_schedule
 from ._sensitivity import minsep_true_max_participations
 from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
@@ -57,11 +58,7 @@ def _native():
     return _n
 
 
-def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
-    """Materialise the schedule at ``[0, n)`` for use as an ``lru_cache`` key."""
-    return (
-        None if lr_schedule is None else tuple(float(lr_schedule(t)) for t in range(n))
-    )
+_lr_key = materialize_schedule
 
 
 @lru_cache(maxsize=32)

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 
 from .. import _native
@@ -18,7 +18,7 @@ class EpsDelta(DpProcess):
     epsilon: float
     delta: float
 
-    @functools.lru_cache(maxsize=8)
+    @pld_cache(maxsize=8)
     def pld(
         self,
         *,

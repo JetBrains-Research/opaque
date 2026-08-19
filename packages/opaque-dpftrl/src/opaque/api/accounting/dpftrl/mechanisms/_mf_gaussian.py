@@ -23,13 +23,14 @@ consumed by :mod:`opaque.api.dpftrl.noise._strategy_codec`.
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -61,7 +62,15 @@ class MfGaussian(DpProcess):
             else self.n_steps
         )
 
-    @functools.lru_cache(maxsize=8)
+    def _pld_cache_fingerprint(
+        self, *, n_steps: int | None = None
+    ) -> tuple[object, ...]:
+        return (
+            "MfGaussian",
+            strategy_schedule_fingerprint(self.strategy, self.n_steps),
+        )
+
+    @pld_cache(maxsize=8)
     def pld(
         self,
         *,

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import functools
 import warnings
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 
 
@@ -17,7 +17,7 @@ class Gaussian(DpProcess):
 
     noise_multiplier: float
 
-    @functools.lru_cache(maxsize=8)
+    @pld_cache(maxsize=8)
     def pld(
         self,
         *,

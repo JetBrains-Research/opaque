@@ -15,15 +15,16 @@ duplicate the formula.
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
+from opaque.api.accounting.core._pld_cache import horizon_pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
 
 from ._transcript_cache import with_handle as _with_transcript_handle
 
@@ -95,7 +96,15 @@ class BMinSep(DpHorizonProcess):
         # callers (runtime sampler builders) never re-derive it.
         return participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)
 
-    @functools.lru_cache(maxsize=8)
+    def _pld_cache_fingerprint(
+        self, *, n_steps: int | None = None
+    ) -> tuple[object, ...]:
+        return (
+            "BMinSep",
+            strategy_schedule_fingerprint(self.inner.strategy, self.n_steps),
+        )
+
+    @horizon_pld_cache(maxsize=8)
     def pld_at(
         self,
         n_steps: int,

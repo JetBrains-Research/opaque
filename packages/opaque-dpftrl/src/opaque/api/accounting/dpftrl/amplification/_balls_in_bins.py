@@ -37,19 +37,20 @@ References:
 
 from __future__ import annotations
 
-import functools
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
+from opaque.api.accounting.core._pld_cache import horizon_pld_cache
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
 from opaque.api.dpftrl.noise._blt import BltStrategy
 from opaque.api.dpftrl.noise._bsr import BsrStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import Pld
@@ -110,7 +111,21 @@ class BallsInBins(DpHorizonProcess):
         # rounds K up to the next epoch.
         return self.num_bins
 
-    @functools.lru_cache(maxsize=8)
+    def _pld_cache_fingerprint(
+        self, *, n_steps: int | None = None
+    ) -> tuple[object, ...]:
+        prefix_steps = self.n_steps if n_steps is None else n_steps
+        if not isinstance(self.inner.strategy, BltStrategy):
+            prefix_steps = min(
+                -(-prefix_steps // self.num_bins) * self.num_bins,
+                self.n_steps,
+            )
+        return (
+            "BallsInBins",
+            strategy_schedule_fingerprint(self.inner.strategy, prefix_steps),
+        )
+
+    @horizon_pld_cache(maxsize=8)
     def pld_at(
         self,
         n_steps: int,

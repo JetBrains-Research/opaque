@@ -37,6 +37,7 @@ from ._engine import (
     _iid_normal_noise,
     _require_positive_int_horizon,
 )
+from ._schedule_fingerprint import materialize_schedule
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,13 +55,7 @@ def _native():
     return _n
 
 
-def _lr_key(lr_schedule: Schedule | None, n: int) -> tuple[float, ...] | None:
-    """Materialize a schedule at ``[0, n)`` for a cached Gram query."""
-    return (
-        None
-        if lr_schedule is None
-        else tuple(float(lr_schedule(step)) for step in range(n))
-    )
+_lr_key = materialize_schedule
 
 
 @lru_cache(maxsize=256)
