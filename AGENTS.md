@@ -244,17 +244,21 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 CI lane marker expressions:
 
 - PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow"`.
-- PR dependency boundaries (Ubuntu, Python 3.11/3.13):
+- PR CPU dependency boundaries (Ubuntu, Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
 - PR macOS arm64: `-m "not cuda and not slow"`.
 - PR Linux arm64: `-m "not cuda and not mps and not slow"`.
-- PR CUDA (self-hosted): `-m "cuda and not slow"`.
+- PR CUDA locked (self-hosted): `-m "cuda and not slow"`.
+- PR CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
+  `-m "cuda and not slow"`.
 - Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps"`.
-- Main dependency boundaries (Ubuntu, Python 3.11/3.13):
+- Main CPU dependency boundaries (Ubuntu, Python 3.11/3.13):
   `-m "not cuda and not mps and not slow"`.
 - Main macOS arm64: `-m "not cuda"`.
 - Main Linux arm64: `-m "not cuda and not mps"`.
-- Main CUDA (self-hosted): `-m "cuda"`.
+- Main CUDA locked (self-hosted): `-m "cuda"`.
+- Main CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
+  `-m "cuda and not slow"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
   Failures in the Minimum dependencies lane are currently advisory, while

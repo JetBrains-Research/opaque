@@ -284,7 +284,7 @@ jobs:
       environment-name: latest-dependencies
       pytest-marker: not cuda and not mps and not slow
       pytest-xdist: -n auto --dist loadscope
-      python-version: "3.12"
+      python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
@@ -323,7 +323,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-cuda:
-    name: Release CUDA
+    name: Release CUDA (locked)
     needs: [plan, discover-packages]
     permissions:
       contents: read
@@ -337,6 +337,43 @@ jobs:
       runner: GPU-runner-001
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 40
+
+  python-tests-cuda-minimum:
+    name: Release CUDA minimum dependencies
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      allow-test-failure: true
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      dependency-selection: minimum
+      environment-name: cuda-minimum-dependencies
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      python-version: "3.11"
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda-latest:
+    name: Release CUDA latest dependencies
+    needs: [plan, discover-packages]
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+      dependency-selection: latest
+      environment-name: cuda-latest-dependencies
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      python-version: "3.13"
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 60
 
   release-rust-tests:
     name: Release Rust tests
@@ -382,6 +419,8 @@ jobs:
       - python-tests-macos-arm64
       - python-tests-linux-arm64
       - python-tests-cuda
+      - python-tests-cuda-minimum
+      - python-tests-cuda-latest
       - release-rust-tests
       - build-distributions
       - validate-distributions
