@@ -11,20 +11,9 @@ pattern for using them with TorchOpt functional optimizers.
 
 ## Why warmup matters under DP-SGD
 
-The first few hundred steps of DP-SGD update parameters using a
-gradient direction that's heavily contaminated by Gaussian noise — at
-typical noise multipliers, the signal-to-noise ratio per step is
-small even when the average over many steps is informative. A high
-LR early in training amplifies that noise into the parameters. A
-short linear ramp from `0` to `base_lr` over the first few percent of
-total steps gives the optimizer's moment estimators time to average
-the noise out before they're scaled by the full step size. The same
-schedule that's a nice-to-have for non-private fine-tuning becomes
-load-bearing under DP.
-
-Empirically, anywhere from **3% to 10% of total steps** as warmup is
-typical for fine-tuning under DP — closer to 10% when the noise
-multiplier is large.
+Early DP-SGD updates can be noise-dominated. A short warmup can improve
+stability by gradually increasing the learning rate; tune its length
+with the optimizer and noise multiplier.
 
 ## Constant LR
 

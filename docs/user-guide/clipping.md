@@ -264,18 +264,10 @@ clip_state = sync(clip_state)  # required: aggregate counts and update next thre
 grads = dist_utils.sum_gradients(grads)
 ```
 
-`sync()` dispatches to `sync_adaptive_clip_state` internally. For
-`AdaptiveClipState` it:
-
-1. sums each rank's local `num_clipped` and local batch size,
-2. recomputes the global clipping rate from those aggregated totals, and
-3. updates the internal next threshold so every rank uses the same adaptive
-   clip norm on the following step.
-
-This is what makes distributed adaptive clipping correct even when local
-batches are uneven, such as under Poisson sampling. The clipped output's
-current DP bound still lives on `grads.max_norm`; the synchronized state only
-controls the next step's threshold.
+For `AdaptiveClipState`, `sync()` aggregates clipping counts and batch
+sizes, then updates the same next threshold on every rank. This is
+required with uneven local batches; the current bound remains
+`grads.max_norm`.
 
 ## Loss function requirements
 
@@ -347,22 +339,9 @@ groups. Instead of a single global L2 norm bound, each group is clipped
 independently. This can better match the natural gradient scale of different
 layers or module types (e.g., attention vs. MLP).
 
-**When to reach for it.** Per-group clipping is most useful when one or
-more parameter groups have substantially different gradient magnitudes
-than the rest — a freshly initialised classifier head over frozen
-pretrained layers, or a LoRA target whose gradients sit far below its
-siblings. With `Cᵢ` near per-group typical gradient magnitudes, the
-non-uniform `σᵢ ∝ √Cᵢ` noise allocation concentrates less noise on
-small-gradient groups without sacrificing much sensitivity on the
-dominant ones, and on heterogeneous workloads this recovers a small
-eval-loss improvement over scalar clipping at the same joint budget.
-Setting `Cᵢ` substantially tighter than the per-group typical magnitudes
-(e.g. half the per-group median) regresses below scalar — clipping bias
-dominates the noise-redistribution benefit. When groups are
-near-homogeneous the joint sensitivity `√(ΣCᵢ²)` is `√K`-times the per
-group bound, so uniform `Cᵢ = c` is strictly worse than scalar at `c`;
-either pick scalar or assign asymmetric `Cᵢ` that exploit the
-heterogeneity.
+Use per-group clipping when groups have materially different gradient
+scales. Set each bound near that group's typical norm; scalar clipping
+is usually preferable for homogeneous groups.
 
 ### Setup
 
@@ -451,17 +430,10 @@ The optimal allocation sets $\sigma_i \propto \sqrt{C_i}$ instead of a
 uniform σ.  Privacy accounting remains `gaussian(nm)` — the allocation
 satisfies the same Mahalanobis constraint, just with better MSE.
 
-The same joint allocation extends to a paired first/second-moment
-release (Adam-family optimizers via the private second-moment release).
-With a single shared noise multiplier, the first-moment σ picks up a
-$\sqrt{1+C}$ factor over the no-paired baseline (where `C` is the
-per-record clipping bound — scalar for `clipped_grad`, the joint
-`√(ΣCᵢ²)` for per-group). At `C=0.1` the inflation is +5%; at `C=1` it
-is +40%. Use the smallest `C` the optimizer tolerates when running with
-the paired release. The two compose: stacked, per-group clipping plus
-the paired release carry the same `C`-dependent σ cost as the paired
-release alone and the same per-group thresholding as per-group clipping
-alone — no additional accounting cost from the combination.
+The same joint allocation supports paired first/second-moment releases.
+With a shared noise multiplier, the first-moment standard deviation is
+increased by $\sqrt{1+C}$, where `C` is the per-record clipping
+bound. Use the smallest bound the optimizer tolerates.
 
 ### Diagnostics
 
@@ -615,30 +587,11 @@ grad_fn, clip_state = auto_clipped_grad(
 # grads.max_norm.effective = sqrt(sum R_k^2) / normalize_by
 ```
 
-### CLI usage in `train_dpsgd.py`
-
-The training script exposes clipping mode through `--clipping-mode`:
-
-```bash
-# Flat AUTO-S (default R=1, γ=0.01)
-python examples/train_dpsgd.py --clipping-mode auto --clipping-norm 1.0
-
-# Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)
-python examples/train_dpsgd.py \
-    --clipping-mode auto \
-    --per-group-clipping q_proj=0.1 fallback=0.9 \
-    --auto-clipping-gamma 0.01
-```
-
-Mode choices: `fixed`, `adaptive` (Andrew et al.), `auto` (AUTO-S). The
-`--clipping-norm` flag is reinterpreted by mode: threshold `C` for fixed,
-starting threshold for adaptive, sensitivity bound `R` for auto.
-
 ### When to choose AUTO-S vs. fixed or adaptive clipping
 
 - Fixed (`clipped_grad`): best when you have a tuned clip norm already.
-- AUTO-S (`auto_clipped_grad`): zero hyperparameter tuning; competitive
-  accuracy on standard benchmarks and no extra privacy cost.
+- AUTO-S (`auto_clipped_grad`): avoids tuning a clip threshold and adds
+  no data-dependent accounting query.
 - Adaptive (`adaptive_clipped_grad`): when you want the clip threshold to
   track a target quantile of gradient norms, at a small additional
   privacy cost for the quantile query.

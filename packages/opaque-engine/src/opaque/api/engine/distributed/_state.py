@@ -3,7 +3,7 @@
 This module exposes:
 
 - scalar/tensor helpers: ``reduce_scalar``, ``gather_tensors``, ``gather_pytree``
-- sanity checks: ``assert_scalar_equal``, ``assert_pytree_equal``
+- sanity checks: ``assert_scalar_equal``, ``assert_string_equal``, ``assert_pytree_equal``
 - dataclass field sync: ``sync_object``
 - type registry + dispatcher: ``register_sync_type``, ``sync``
 
@@ -72,6 +72,17 @@ def assert_scalar_equal(
         raise RuntimeError(
             f"{name} mismatch across ranks: min={min_value}, max={max_value}."
         )
+
+
+def assert_string_equal(value: str | None, *, name: str) -> None:
+    """Raise if an optional string is not exactly equal across ranks."""
+    if not is_distributed():
+        return
+
+    values: list[str | None] = [None] * get_world_size()
+    dist.all_gather_object(values, value)
+    if any(other != values[0] for other in values[1:]):
+        raise RuntimeError(f"{name} mismatch across ranks.")
 
 
 def assert_pytree_equal(
@@ -529,6 +540,7 @@ def sync(*states: Any) -> Any:
 __all__ = [
     "assert_pytree_equal",
     "assert_scalar_equal",
+    "assert_string_equal",
     "gather_pytree",
     "gather_tensors",
     "reduce_scalar",
