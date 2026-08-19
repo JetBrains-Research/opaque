@@ -3463,12 +3463,12 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>Return True if <code>torch.distributed</code> is available and initialized.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-15">15</a></span>
 <span class="normal"><a href="#__codelineno-0-16">16</a></span>
 <span class="normal"><a href="#__codelineno-0-17">17</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="k">def</span><span class="w"> </span><span class="nf">is_distributed</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return True if ``torch.distributed`` is available and initialized.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="w">    </span><span class="sd">"""Return True if ``torch.distributed`` is available and initialized."""</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a>    <span class="k">return</span> <span class="n">dist</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="n">dist</span><span class="o">.</span><span class="n">is_initialized</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3490,12 +3490,12 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>Return the current rank (0 if not distributed).</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-20">20</a></span>
 <span class="normal"><a href="#__codelineno-0-21">21</a></span>
 <span class="normal"><a href="#__codelineno-0-22">22</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_rank</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the current rank (0 if not distributed).&quot;&quot;&quot;</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="w">    </span><span class="sd">"""Return the current rank (0 if not distributed)."""</span>
 <a id="__codelineno-0-22" name="__codelineno-0-22"></a>    <span class="k">return</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span> <span class="k">if</span> <span class="n">is_distributed</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3517,12 +3517,12 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>Return the world size (1 if not distributed).</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-25">25</a></span>
 <span class="normal"><a href="#__codelineno-0-26">26</a></span>
 <span class="normal"><a href="#__codelineno-0-27">27</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_world_size</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the world size (1 if not distributed).&quot;&quot;&quot;</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="w">    </span><span class="sd">"""Return the world size (1 if not distributed)."""</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27"></a>    <span class="k">return</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span> <span class="k">if</span> <span class="n">is_distributed</span><span class="p">()</span> <span class="k">else</span> <span class="mi">1</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3534,7 +3534,7 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
 
 
 <h3 id="opaque.distributed.collectives.all_reduce" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">all_reduce</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">all_reduce</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">'sum'</span><span class="p">)</span></code>
 
 <a href="#opaque.distributed.collectives.all_reduce" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3544,14 +3544,14 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>Return a reduced clone of <code>tensor</code>; input is unchanged.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-68">68</a></span>
 <span class="normal"><a href="#__codelineno-0-69">69</a></span>
 <span class="normal"><a href="#__codelineno-0-70">70</a></span>
 <span class="normal"><a href="#__codelineno-0-71">71</a></span>
-<span class="normal"><a href="#__codelineno-0-72">72</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sum&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a reduced clone of ``tensor``; input is unchanged.&quot;&quot;&quot;</span>
+<span class="normal"><a href="#__codelineno-0-72">72</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"sum"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="w">    </span><span class="sd">"""Return a reduced clone of ``tensor``; input is unchanged."""</span>
 <a id="__codelineno-0-70" name="__codelineno-0-70"></a>    <span class="n">reduced</span> <span class="o">=</span> <span class="n">tensor</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
 <a id="__codelineno-0-71" name="__codelineno-0-71"></a>    <span class="n">all_reduce_</span><span class="p">(</span><span class="n">reduced</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-72" name="__codelineno-0-72"></a>    <span class="k">return</span> <span class="n">reduced</span>
@@ -3565,7 +3565,7 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
 
 
 <h3 id="opaque.distributed.collectives.all_reduce_" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">all_reduce_</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">all_reduce_</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">'sum'</span><span class="p">)</span></code>
 
 <a href="#opaque.distributed.collectives.all_reduce_" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3608,7 +3608,7 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
     </table>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-52">52</a></span>
 <span class="normal"><a href="#__codelineno-0-53">53</a></span>
@@ -3623,18 +3623,18 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
 <span class="normal"><a href="#__codelineno-0-62">62</a></span>
 <span class="normal"><a href="#__codelineno-0-63">63</a></span>
 <span class="normal"><a href="#__codelineno-0-64">64</a></span>
-<span class="normal"><a href="#__codelineno-0-65">65</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce_</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sum&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;All-reduce ``tensor`` across ranks in place.</span>
+<span class="normal"><a href="#__codelineno-0-65">65</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce_</span><span class="p">(</span><span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"sum"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="w">    </span><span class="sd">"""All-reduce ``tensor`` across ranks in place.</span>
 <a id="__codelineno-0-54" name="__codelineno-0-54"></a>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">    Raises:</span>
 <a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">        RuntimeError: If ``torch.distributed`` is not initialized.</span>
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        ValueError: If ``op`` is not a recognized reduction.</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">    """</span>
 <a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="n">reduce_op</span> <span class="o">=</span> <span class="n">_resolve_op</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_distributed</span><span class="p">():</span>
 <a id="__codelineno-0-61" name="__codelineno-0-61"></a>        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a>            <span class="s2">&quot;torch.distributed is not initialized. &quot;</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a>            <span class="s2">&quot;Call torch.distributed.init_process_group() first.&quot;</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a>            <span class="s2">"torch.distributed is not initialized. "</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a>            <span class="s2">"Call torch.distributed.init_process_group() first."</span>
 <a id="__codelineno-0-64" name="__codelineno-0-64"></a>        <span class="p">)</span>
 <a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">dist</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">reduce_op</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -3657,13 +3657,13 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>Block until every rank reaches this call (no-op if not distributed).</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/collectives.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-75">75</a></span>
 <span class="normal"><a href="#__codelineno-0-76">76</a></span>
 <span class="normal"><a href="#__codelineno-0-77">77</a></span>
 <span class="normal"><a href="#__codelineno-0-78">78</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="k">def</span><span class="w"> </span><span class="nf">barrier</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Block until every rank reaches this call (no-op if not distributed).&quot;&quot;&quot;</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="w">    </span><span class="sd">"""Block until every rank reaches this call (no-op if not distributed)."""</span>
 <a id="__codelineno-0-77" name="__codelineno-0-77"></a>    <span class="k">if</span> <span class="n">is_distributed</span><span class="p">():</span>
 <a id="__codelineno-0-78" name="__codelineno-0-78"></a>        <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
 </code></pre></div></td></tr></table></div>
@@ -3687,13 +3687,13 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>DP-specific alias for <code>reduce_pytree(op="sum")</code>.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/gradients.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-225">225</a></span>
 <span class="normal"><a href="#__codelineno-0-226">226</a></span>
 <span class="normal"><a href="#__codelineno-0-227">227</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_gradients</span><span class="p">(</span><span class="n">gradients</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;DP-specific alias for ``reduce_pytree(op=&quot;sum&quot;)``.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>    <span class="k">return</span> <span class="n">reduce_pytree</span><span class="p">(</span><span class="n">gradients</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="w">    </span><span class="sd">"""DP-specific alias for ``reduce_pytree(op="sum")``."""</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a>    <span class="k">return</span> <span class="n">reduce_pytree</span><span class="p">(</span><span class="n">gradients</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">"sum"</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3714,13 +3714,13 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
         <p>DP-specific alias for <code>reduce_pytree_(op="sum")</code>.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/gradients.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-220">220</a></span>
 <span class="normal"><a href="#__codelineno-0-221">221</a></span>
 <span class="normal"><a href="#__codelineno-0-222">222</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_gradients_</span><span class="p">(</span><span class="n">gradients</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;DP-specific alias for ``reduce_pytree_(op=&quot;sum&quot;)``.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a>    <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">gradients</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="w">    </span><span class="sd">"""DP-specific alias for ``reduce_pytree_(op="sum")``."""</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>    <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">gradients</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">"sum"</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3731,7 +3731,7 @@ See <a href="../../user-guide/distributed/">User Guide: Distributed Training</a>
 
 
 <h3 id="opaque.distributed.gradients.reduce_pytree" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">reduce_pytree</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">reduce_pytree</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">'sum'</span><span class="p">)</span></code>
 
 <a href="#opaque.distributed.gradients.reduce_pytree" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3744,7 +3744,7 @@ wrapper metadata for supported <code>sum</code> and <code>mean</code> reductions
 second-moment wrappers recurse into both child streams.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/gradients.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-175">175</a></span>
 <span class="normal"><a href="#__codelineno-0-176">176</a></span>
@@ -3788,13 +3788,13 @@ second-moment wrappers recurse into both child streams.</p>
 <span class="normal"><a href="#__codelineno-0-214">214</a></span>
 <span class="normal"><a href="#__codelineno-0-215">215</a></span>
 <span class="normal"><a href="#__codelineno-0-216">216</a></span>
-<span class="normal"><a href="#__codelineno-0-217">217</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="k">def</span><span class="w"> </span><span class="nf">reduce_pytree</span><span class="p">(</span><span class="n">pytree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sum&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a pytree with each tensor leaf reduced; input unchanged.</span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="k">def</span><span class="w"> </span><span class="nf">reduce_pytree</span><span class="p">(</span><span class="n">pytree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"sum"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="w">    </span><span class="sd">"""Return a pytree with each tensor leaf reduced; input unchanged.</span>
 <a id="__codelineno-0-177" name="__codelineno-0-177"></a>
 <a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">    When passed ``ClippedPytree`` or ``NoisedPytree``, preserves and updates the</span>
 <a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">    wrapper metadata for supported ``sum`` and ``mean`` reductions.  Paired</span>
 <a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">    second-moment wrappers recurse into both child streams.</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="sd">    """</span>
 <a id="__codelineno-0-182" name="__codelineno-0-182"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">SecondMomentClippingOutput</span><span class="p">):</span>
 <a id="__codelineno-0-183" name="__codelineno-0-183"></a>        <span class="k">return</span> <span class="n">SecondMomentClippingOutput</span><span class="p">(</span>
 <a id="__codelineno-0-184" name="__codelineno-0-184"></a>            <span class="n">reduce_pytree</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">grads</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">),</span>
@@ -3809,11 +3809,11 @@ second-moment wrappers recurse into both child streams.</p>
 <a id="__codelineno-0-193" name="__codelineno-0-193"></a>
 <a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">ClippedPytree</span><span class="p">):</span>
 <a id="__codelineno-0-195" name="__codelineno-0-195"></a>        <span class="n">_assert_wrapper_reduction_supported</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="p">)</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a>        <span class="n">_assert_public_metadata_equal</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ClippedPytree.max_norm&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>        <span class="n">_assert_public_metadata_equal</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"ClippedPytree.max_norm"</span><span class="p">)</span>
 <a id="__codelineno-0-197" name="__codelineno-0-197"></a>        <span class="k">if</span> <span class="n">_is_noised</span><span class="p">(</span><span class="n">pytree</span><span class="p">):</span>
 <a id="__codelineno-0-198" name="__codelineno-0-198"></a>            <span class="n">_assert_public_metadata_equal</span><span class="p">(</span>
 <a id="__codelineno-0-199" name="__codelineno-0-199"></a>                <span class="n">pytree</span><span class="o">.</span><span class="n">noise_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a>                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;NoisedPytree.noise_stddev&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>                <span class="n">name</span><span class="o">=</span><span class="s2">"NoisedPytree.noise_stddev"</span><span class="p">,</span>
 <a id="__codelineno-0-201" name="__codelineno-0-201"></a>            <span class="p">)</span>
 <a id="__codelineno-0-202" name="__codelineno-0-202"></a>        <span class="n">reduced</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
 <a id="__codelineno-0-203" name="__codelineno-0-203"></a>        <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">reduced</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
@@ -3823,9 +3823,9 @@ second-moment wrappers recurse into both child streams.</p>
 <a id="__codelineno-0-207" name="__codelineno-0-207"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">leaf</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
 <a id="__codelineno-0-208" name="__codelineno-0-208"></a>            <span class="k">return</span> <span class="n">leaf</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
 <a id="__codelineno-0-209" name="__codelineno-0-209"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a>            <span class="sa">f</span><span class="s2">&quot;reduce_pytree expects tensor leaves after wrapper dispatch; &quot;</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a>            <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">leaf</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. Unwrap paired/custom containers &quot;</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a>            <span class="sa">f</span><span class="s2">&quot;explicitly or register a reduction branch.&quot;</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>            <span class="sa">f</span><span class="s2">"reduce_pytree expects tensor leaves after wrapper dispatch; "</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>            <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">leaf</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. Unwrap paired/custom containers "</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>            <span class="sa">f</span><span class="s2">"explicitly or register a reduction branch."</span>
 <a id="__codelineno-0-213" name="__codelineno-0-213"></a>        <span class="p">)</span>
 <a id="__codelineno-0-214" name="__codelineno-0-214"></a>
 <a id="__codelineno-0-215" name="__codelineno-0-215"></a>    <span class="n">reduced</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="n">_clone</span><span class="p">,</span> <span class="n">pytree</span><span class="p">)</span>
@@ -3841,7 +3841,7 @@ second-moment wrappers recurse into both child streams.</p>
 
 
 <h3 id="opaque.distributed.gradients.reduce_pytree_" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s1">'sum'</span><span class="p">)</span></code>
 
 <a href="#opaque.distributed.gradients.reduce_pytree_" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3854,7 +3854,7 @@ stays unchanged.  Use :func:<code>reduce_pytree</code> for reductions such as no
 <code>sum</code> or clipped/noised <code>mean</code> that need updated metadata.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/gradients.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-126">126</a></span>
 <span class="normal"><a href="#__codelineno-0-127">127</a></span>
@@ -3902,13 +3902,13 @@ stays unchanged.  Use :func:<code>reduce_pytree</code> for reductions such as no
 <span class="normal"><a href="#__codelineno-0-169">169</a></span>
 <span class="normal"><a href="#__codelineno-0-170">170</a></span>
 <span class="normal"><a href="#__codelineno-0-171">171</a></span>
-<span class="normal"><a href="#__codelineno-0-172">172</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-126" name="__codelineno-0-126"></a><span class="k">def</span><span class="w"> </span><span class="nf">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sum&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;All-reduce tensor leaves in place.</span>
+<span class="normal"><a href="#__codelineno-0-172">172</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-126" name="__codelineno-0-126"></a><span class="k">def</span><span class="w"> </span><span class="nf">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"sum"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="w">    </span><span class="sd">"""All-reduce tensor leaves in place.</span>
 <a id="__codelineno-0-128" name="__codelineno-0-128"></a>
 <a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">    In-place wrapper reductions are accepted only when the wrapper metadata</span>
 <a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">    stays unchanged.  Use :func:`reduce_pytree` for reductions such as noised</span>
 <a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="sd">    ``sum`` or clipped/noised ``mean`` that need updated metadata.</span>
-<a id="__codelineno-0-132" name="__codelineno-0-132"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-132" name="__codelineno-0-132"></a><span class="sd">    """</span>
 <a id="__codelineno-0-133" name="__codelineno-0-133"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">SecondMomentClippingOutput</span><span class="p">):</span>
 <a id="__codelineno-0-134" name="__codelineno-0-134"></a>        <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">grads</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-135" name="__codelineno-0-135"></a>        <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">squared_grads</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
@@ -3923,14 +3923,14 @@ stays unchanged.  Use :func:<code>reduce_pytree</code> for reductions such as no
 <a id="__codelineno-0-144" name="__codelineno-0-144"></a>        <span class="n">_assert_wrapper_reduction_supported</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-145" name="__codelineno-0-145"></a>        <span class="k">if</span> <span class="n">_in_place_wrapper_metadata_changes</span><span class="p">(</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="p">):</span>
 <a id="__codelineno-0-146" name="__codelineno-0-146"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-147" name="__codelineno-0-147"></a>                <span class="sa">f</span><span class="s2">&quot;In-place </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">pytree</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> reduction would change metadata; &quot;</span>
-<a id="__codelineno-0-148" name="__codelineno-0-148"></a>                <span class="s2">&quot;use reduce_pytree() instead.&quot;</span>
+<a id="__codelineno-0-147" name="__codelineno-0-147"></a>                <span class="sa">f</span><span class="s2">"In-place </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">pytree</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> reduction would change metadata; "</span>
+<a id="__codelineno-0-148" name="__codelineno-0-148"></a>                <span class="s2">"use reduce_pytree() instead."</span>
 <a id="__codelineno-0-149" name="__codelineno-0-149"></a>            <span class="p">)</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a>        <span class="n">_assert_public_metadata_equal</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ClippedPytree.max_norm&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a>        <span class="n">_assert_public_metadata_equal</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">max_norm</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"ClippedPytree.max_norm"</span><span class="p">)</span>
 <a id="__codelineno-0-151" name="__codelineno-0-151"></a>        <span class="k">if</span> <span class="n">_is_noised</span><span class="p">(</span><span class="n">pytree</span><span class="p">):</span>
 <a id="__codelineno-0-152" name="__codelineno-0-152"></a>            <span class="n">_assert_public_metadata_equal</span><span class="p">(</span>
 <a id="__codelineno-0-153" name="__codelineno-0-153"></a>                <span class="n">pytree</span><span class="o">.</span><span class="n">noise_stddev</span><span class="p">,</span>
-<a id="__codelineno-0-154" name="__codelineno-0-154"></a>                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;NoisedPytree.noise_stddev&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-154" name="__codelineno-0-154"></a>                <span class="n">name</span><span class="o">=</span><span class="s2">"NoisedPytree.noise_stddev"</span><span class="p">,</span>
 <a id="__codelineno-0-155" name="__codelineno-0-155"></a>            <span class="p">)</span>
 <a id="__codelineno-0-156" name="__codelineno-0-156"></a>        <span class="n">reduce_pytree_</span><span class="p">(</span><span class="n">pytree</span><span class="o">.</span><span class="n">pytree</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-157" name="__codelineno-0-157"></a>        <span class="k">return</span>
@@ -3943,9 +3943,9 @@ stays unchanged.  Use :func:<code>reduce_pytree</code> for reductions such as no
 <a id="__codelineno-0-164" name="__codelineno-0-164"></a>            <span class="n">all_reduce_</span><span class="p">(</span><span class="n">leaf</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">)</span>
 <a id="__codelineno-0-165" name="__codelineno-0-165"></a>            <span class="k">return</span> <span class="n">leaf</span>
 <a id="__codelineno-0-166" name="__codelineno-0-166"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a>            <span class="sa">f</span><span class="s2">&quot;reduce_pytree_ expects tensor leaves after wrapper dispatch; &quot;</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>            <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">leaf</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. Unwrap paired/custom containers &quot;</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>            <span class="sa">f</span><span class="s2">&quot;explicitly or register a reduction branch.&quot;</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a>            <span class="sa">f</span><span class="s2">"reduce_pytree_ expects tensor leaves after wrapper dispatch; "</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a>            <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">leaf</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. Unwrap paired/custom containers "</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>            <span class="sa">f</span><span class="s2">"explicitly or register a reduction branch."</span>
 <a id="__codelineno-0-170" name="__codelineno-0-170"></a>        <span class="p">)</span>
 <a id="__codelineno-0-171" name="__codelineno-0-171"></a>
 <a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="n">tree_map</span><span class="p">(</span><span class="n">_reduce</span><span class="p">,</span> <span class="n">pytree</span><span class="p">)</span>
@@ -4007,7 +4007,7 @@ unsynchronized.</p>
     </table>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/_state.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-507">507</a></span>
 <span class="normal"><a href="#__codelineno-0-508">508</a></span>
@@ -4040,7 +4040,7 @@ unsynchronized.</p>
 <span class="normal"><a href="#__codelineno-0-535">535</a></span>
 <span class="normal"><a href="#__codelineno-0-536">536</a></span>
 <span class="normal"><a href="#__codelineno-0-537">537</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-507" name="__codelineno-0-507"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync</span><span class="p">(</span><span class="o">*</span><span class="n">states</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-508" name="__codelineno-0-508"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Synchronize one or more registered state/aux objects across ranks.</span>
+<a id="__codelineno-0-508" name="__codelineno-0-508"></a><span class="w">    </span><span class="sd">"""Synchronize one or more registered state/aux objects across ranks.</span>
 <a id="__codelineno-0-509" name="__codelineno-0-509"></a>
 <a id="__codelineno-0-510" name="__codelineno-0-510"></a><span class="sd">    Dispatches on object type — exact match first, then ``__mro__`` — to</span>
 <a id="__codelineno-0-511" name="__codelineno-0-511"></a><span class="sd">    whichever function was registered via :func:`register_sync_type`.  An</span>
@@ -4050,7 +4050,7 @@ unsynchronized.</p>
 <a id="__codelineno-0-515" name="__codelineno-0-515"></a><span class="sd">    Returns:</span>
 <a id="__codelineno-0-516" name="__codelineno-0-516"></a><span class="sd">        A single synchronized object if one argument was passed, otherwise a</span>
 <a id="__codelineno-0-517" name="__codelineno-0-517"></a><span class="sd">        tuple matching the input order.</span>
-<a id="__codelineno-0-518" name="__codelineno-0-518"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-518" name="__codelineno-0-518"></a><span class="sd">    """</span>
 <a id="__codelineno-0-519" name="__codelineno-0-519"></a>
 <a id="__codelineno-0-520" name="__codelineno-0-520"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sync_one</span><span class="p">(</span><span class="n">single</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <a id="__codelineno-0-521" name="__codelineno-0-521"></a>        <span class="n">state_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
@@ -4061,8 +4061,8 @@ unsynchronized.</p>
 <a id="__codelineno-0-526" name="__codelineno-0-526"></a>        <span class="k">if</span> <span class="n">sync_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
 <a id="__codelineno-0-527" name="__codelineno-0-527"></a>            <span class="k">return</span> <span class="n">sync_fn</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
 <a id="__codelineno-0-528" name="__codelineno-0-528"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-529" name="__codelineno-0-529"></a>            <span class="sa">f</span><span class="s2">&quot;No sync function registered for </span><span class="si">{</span><span class="n">state_type</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. &quot;</span>
-<a id="__codelineno-0-530" name="__codelineno-0-530"></a>            <span class="sa">f</span><span class="s2">&quot;Registered types: </span><span class="si">{</span><span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="vm">__name__</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">_SYNC_REGISTRY</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-529" name="__codelineno-0-529"></a>            <span class="sa">f</span><span class="s2">"No sync function registered for </span><span class="si">{</span><span class="n">state_type</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. "</span>
+<a id="__codelineno-0-530" name="__codelineno-0-530"></a>            <span class="sa">f</span><span class="s2">"Registered types: </span><span class="si">{</span><span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="vm">__name__</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">_SYNC_REGISTRY</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
 <a id="__codelineno-0-531" name="__codelineno-0-531"></a>        <span class="p">)</span>
 <a id="__codelineno-0-532" name="__codelineno-0-532"></a>
 <a id="__codelineno-0-533" name="__codelineno-0-533"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>

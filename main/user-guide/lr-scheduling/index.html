@@ -3446,13 +3446,13 @@ gate it on a runtime warmup length:</p>
 <p>The default warmup ramp is linear; <code>ramp="cosine"</code>, <code>ramp="1-sqrt"</code>,
 or any <code>Callable[[float], float]</code> mapping <code>progress ∈ [0, 1]</code> to a
 factor in <code>[0, 1]</code> selects a different shape:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">ramp</span><span class="o">=</span><span class="s2">&quot;cosine&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">ramp</span><span class="o">=</span><span class="s2">"cosine"</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="non-zero-warmup-floor">Non-zero warmup floor<a class="headerlink" href="#non-zero-warmup-floor" title="Permanent link">&para;</a></h3>
 <p>The default warmup ramps from <code>0</code>. Some optimizers (StableAdamW, for
 example) prefer a non-trivial first step; pass <code>init_value</code> to start
 the ramp at a fraction of the inner schedule's value instead of zero:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Ramp factor goes 0.1 → 1.0 over W steps, so the first step&#39;s LR</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Ramp factor goes 0.1 → 1.0 over W steps, so the first step's LR</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># is 0.1 * decay(0) rather than 0.</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">init_value</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
 </code></pre></div>
@@ -3519,7 +3519,7 @@ schedule:</p>
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">num_warmup_steps</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
 <a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="n">num_stable_steps</span><span class="o">=</span><span class="mi">8_000</span><span class="p">,</span>
 <a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="n">num_decay_steps</span><span class="o">=</span><span class="mi">1_500</span><span class="p">,</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="c1"># decay_shape=&quot;1-sqrt&quot; by default — Hägele et al.&#39;s recommendation.</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="c1"># decay_shape="1-sqrt" by default — Hägele et al.'s recommendation.</span>
 <a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">)</span>
 <a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">schedule</span><span class="p">)</span>
 </code></pre></div>
@@ -3581,7 +3581,7 @@ any step:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="c1"># ... clipping, noise, update ...</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step=</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">  lr=</span><span class="si">{</span><span class="n">schedule</span><span class="p">(</span><span class="n">step</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"step=</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">  lr=</span><span class="si">{</span><span class="n">schedule</span><span class="p">(</span><span class="n">step</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 <p>The optimizer maintains its own counter inside <code>opt_state</code> (via
 <code>scale_by_neg_lr</code>), so calling <code>schedule(step)</code> for logging does

@@ -3347,7 +3347,7 @@ handles and the like — with :func:<code>register_template_restored</code>.</p>
 
 
 
-  <div class="doc doc-children">
+<div class="doc doc-children">
 
 
 
@@ -3373,6 +3373,7 @@ handles and the like — with :func:<code>register_template_restored</code>.</p>
               Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
 
 
+
         <p>Pair of save / load callables registered with the dispatcher.</p>
 
 
@@ -3382,7 +3383,7 @@ handles and the like — with :func:<code>register_template_restored</code>.</p>
 
 
 
-              <details class="quote">
+              <details class="mkdocstrings-source">
                 <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_types.py</code></summary>
                 <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-22">22</a></span>
 <span class="normal"><a href="#__codelineno-0-23">23</a></span>
@@ -3392,7 +3393,7 @@ handles and the like — with :func:<code>register_template_restored</code>.</p>
 <span class="normal"><a href="#__codelineno-0-27">27</a></span>
 <span class="normal"><a href="#__codelineno-0-28">28</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="nd">@runtime_checkable</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="k">class</span><span class="w"> </span><span class="nc">Serializer</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Pair of save / load callables registered with the dispatcher.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="w">    </span><span class="sd">"""Pair of save / load callables registered with the dispatcher."""</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25"></a>
 <a id="__codelineno-0-26" name="__codelineno-0-26"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">state_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span> <span class="o">...</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27"></a>
@@ -3402,7 +3403,7 @@ handles and the like — with :func:<code>register_template_restored</code>.</p>
 
 
 
-  <div class="doc doc-children">
+<div class="doc doc-children">
 
 
 
@@ -3442,7 +3443,7 @@ leaves keep the template's value (forward compatibility when new
 fields appear).</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_dispatch.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-87">87</a></span>
 <span class="normal"><a href="#__codelineno-0-88">88</a></span>
@@ -3455,16 +3456,16 @@ fields appear).</p>
 <span class="normal"><a href="#__codelineno-0-95">95</a></span>
 <span class="normal"><a href="#__codelineno-0-96">96</a></span>
 <span class="normal"><a href="#__codelineno-0-97">97</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-87" name="__codelineno-0-87"></a><span class="k">def</span><span class="w"> </span><span class="nf">from_state_dict</span><span class="p">(</span><span class="n">template</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">sd</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Rebuild from ``sd`` using ``template`` for shape and omitted leaves.</span>
+<a id="__codelineno-0-88" name="__codelineno-0-88"></a><span class="w">    </span><span class="sd">"""Rebuild from ``sd`` using ``template`` for shape and omitted leaves.</span>
 <a id="__codelineno-0-89" name="__codelineno-0-89"></a>
 <a id="__codelineno-0-90" name="__codelineno-0-90"></a><span class="sd">    For types registered with :func:`register_serializer`, the</span>
 <a id="__codelineno-0-91" name="__codelineno-0-91"></a><span class="sd">    ``template`` argument selects the handler; handlers may ignore it</span>
 <a id="__codelineno-0-92" name="__codelineno-0-92"></a><span class="sd">    when the dict is self-describing (e.g. ``DpProcess`` subclasses).</span>
 <a id="__codelineno-0-93" name="__codelineno-0-93"></a><span class="sd">    Generic Python container shapes come from the template; missing</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">    leaves keep the template&#39;s value (forward compatibility when new</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">    leaves keep the template's value (forward compatibility when new</span>
 <a id="__codelineno-0-95" name="__codelineno-0-95"></a><span class="sd">    fields appear).</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a>    <span class="k">return</span> <span class="n">_walk_load</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">sd</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="sd">    """</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a>    <span class="k">return</span> <span class="n">_walk_load</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">sd</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3485,7 +3486,7 @@ fields appear).</p>
         <p>Return the serializer pair registered for exactly <code>typ</code>, or <code>None</code>.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_registry.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-58">58</a></span>
 <span class="normal"><a href="#__codelineno-0-59">59</a></span>
@@ -3494,7 +3495,7 @@ fields appear).</p>
 <span class="normal"><a href="#__codelineno-0-62">62</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="k">def</span><span class="w"> </span><span class="nf">lookup_serializer</span><span class="p">(</span>
 <a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="n">typ</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
 <a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">StateDictFn</span><span class="p">,</span> <span class="n">FromStateDictFn</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the serializer pair registered for exactly ``typ``, or ``None``.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="w">    </span><span class="sd">"""Return the serializer pair registered for exactly ``typ``, or ``None``."""</span>
 <a id="__codelineno-0-62" name="__codelineno-0-62"></a>    <span class="k">return</span> <span class="n">_REGISTRY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3519,7 +3520,7 @@ this lets test code stub out registrations without unregistering
 first. Production code should not register the same type twice.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_registry.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-27">27</a></span>
 <span class="normal"><a href="#__codelineno-0-28">28</a></span>
@@ -3537,12 +3538,12 @@ first. Production code should not register the same type twice.</p>
 <a id="__codelineno-0-29" name="__codelineno-0-29"></a>    <span class="n">state_dict_fn</span><span class="p">:</span> <span class="n">StateDictFn</span><span class="p">,</span>
 <a id="__codelineno-0-30" name="__codelineno-0-30"></a>    <span class="n">from_state_dict_fn</span><span class="p">:</span> <span class="n">FromStateDictFn</span><span class="p">,</span>
 <a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Register a serializer pair for ``typ``.</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="w">    </span><span class="sd">"""Register a serializer pair for ``typ``.</span>
 <a id="__codelineno-0-33" name="__codelineno-0-33"></a>
 <a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">    Re-registering the same type silently replaces the existing pair —</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="sd">    this lets test code stub out registrations without unregistering</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">    first. Production code should not register the same type twice.</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">    """</span>
 <a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="n">_REGISTRY</span><span class="p">[</span><span class="n">typ</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">state_dict_fn</span><span class="p">,</span> <span class="n">from_state_dict_fn</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3573,7 +3574,7 @@ saved checkpoint will not contain the value, and a template built
 with different settings restores those different settings.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_registry.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-41">41</a></span>
 <span class="normal"><a href="#__codelineno-0-42">42</a></span>
@@ -3590,19 +3591,19 @@ with different settings restores those different settings.</p>
 <span class="normal"><a href="#__codelineno-0-53">53</a></span>
 <span class="normal"><a href="#__codelineno-0-54">54</a></span>
 <span class="normal"><a href="#__codelineno-0-55">55</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="k">def</span><span class="w"> </span><span class="nf">register_template_restored</span><span class="p">(</span><span class="n">typ</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Declare ``typ`` inert: nothing is saved, the template supplies it.</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="w">    </span><span class="sd">"""Declare ``typ`` inert: nothing is saved, the template supplies it.</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43"></a>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">    The escape hatch for leaves that carry no run state and are fully</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">    determined by a freshly-built template — vendor structure handles</span>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    such as ``optree.PyTreeSpec``, for example. Without a registration</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    the dispatcher raises on an unrecognised non-container leaf rather</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    than dropping it, so this is how a wheel says &quot;dropping this one is</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    intentional&quot;.</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    than dropping it, so this is how a wheel says "dropping this one is</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    intentional".</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">    Do not use it for anything a resumed run needs to reproduce: the</span>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    saved checkpoint will not contain the value, and a template built</span>
 <a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">    with different settings restores those different settings.</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    """</span>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a>    <span class="n">register_serializer</span><span class="p">(</span><span class="n">typ</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">_obj</span><span class="p">:</span> <span class="p">{},</span> <span class="k">lambda</span> <span class="n">template</span><span class="p">,</span> <span class="n">_sd</span><span class="p">:</span> <span class="n">template</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -3627,7 +3628,7 @@ other <code>torch.Tensor</code> subclass resolve to the <code>torch.Tensor</code
 handler.  Returns <code>None</code> when nothing in the MRO is registered.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_registry.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-65">65</a></span>
 <span class="normal"><a href="#__codelineno-0-66">66</a></span>
@@ -3648,12 +3649,12 @@ handler.  Returns <code>None</code> when nothing in the MRO is registered.</p>
 <span class="normal"><a href="#__codelineno-0-81">81</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="k">def</span><span class="w"> </span><span class="nf">resolve_serializer</span><span class="p">(</span>
 <a id="__codelineno-0-66" name="__codelineno-0-66"></a>    <span class="n">typ</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
 <a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">StateDictFn</span><span class="p">,</span> <span class="n">FromStateDictFn</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the serializer pair for ``typ`` or its nearest registered base.</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="w">    </span><span class="sd">"""Return the serializer pair for ``typ`` or its nearest registered base.</span>
 <a id="__codelineno-0-69" name="__codelineno-0-69"></a>
 <a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">    Exact type first, then ``__mro__`` order, so ``nn.Parameter`` and any</span>
 <a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">    other ``torch.Tensor`` subclass resolve to the ``torch.Tensor``</span>
 <a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">    handler.  Returns ``None`` when nothing in the MRO is registered.</span>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">    """</span>
 <a id="__codelineno-0-74" name="__codelineno-0-74"></a>    <span class="n">pair</span> <span class="o">=</span> <span class="n">_REGISTRY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">typ</span><span class="p">)</span>
 <a id="__codelineno-0-75" name="__codelineno-0-75"></a>    <span class="k">if</span> <span class="n">pair</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
 <a id="__codelineno-0-76" name="__codelineno-0-76"></a>        <span class="k">return</span> <span class="n">pair</span>
@@ -3686,7 +3687,7 @@ primitives). Opaque non-containers are dropped — the load is
 template-driven and reads them back from the template.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-base/src/opaque/api/base/serialization/_dispatch.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-74">74</a></span>
 <span class="normal"><a href="#__codelineno-0-75">75</a></span>
@@ -3699,15 +3700,15 @@ template-driven and reads them back from the template.</p>
 <span class="normal"><a href="#__codelineno-0-82">82</a></span>
 <span class="normal"><a href="#__codelineno-0-83">83</a></span>
 <span class="normal"><a href="#__codelineno-0-84">84</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="k">def</span><span class="w"> </span><span class="nf">state_dict</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialise ``obj`` to a flat ``dict[str, Any]``.</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="w">    </span><span class="sd">"""Serialise ``obj`` to a flat ``dict[str, Any]``.</span>
 <a id="__codelineno-0-76" name="__codelineno-0-76"></a>
 <a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="sd">    Registered types use their exact-type handler; everything else is</span>
 <a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    walked structurally (dataclass, NamedTuple, tuple, list, mapping,</span>
 <a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">    primitives). Opaque non-containers are dropped — the load is</span>
 <a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">    template-driven and reads them back from the template.</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">    """</span>
 <a id="__codelineno-0-82" name="__codelineno-0-82"></a>    <span class="n">out</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-83" name="__codelineno-0-83"></a>    <span class="n">_walk_save</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+<a id="__codelineno-0-83" name="__codelineno-0-83"></a>    <span class="n">_walk_save</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
 <a id="__codelineno-0-84" name="__codelineno-0-84"></a>    <span class="k">return</span> <span class="n">out</span>
 </code></pre></div></td></tr></table></div>
             </details>

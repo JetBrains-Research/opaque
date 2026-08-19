@@ -3577,9 +3577,9 @@ Identity MF explicitly accepts <code>sampling_mode="balls_in_bins"</code>. Horiz
 are adapted to the trainer's step-wise accountant through
 <code>opaque.accounting.per_step</code>.</p>
 <p>So the minimal DP-FTRL configuration is one field:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span><span class="n">privacy_noise_mechanism</span><span class="o">=</span><span class="s2">&quot;mf_band&quot;</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># sampling_mode resolves to &quot;b_min_sep&quot;</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># privacy_noise_mechanism_kwargs resolves to {&quot;bands&quot;: 16}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span><span class="n">privacy_noise_mechanism</span><span class="o">=</span><span class="s2">"mf_band"</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># sampling_mode resolves to "b_min_sep"</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># privacy_noise_mechanism_kwargs resolves to {"bands": 16}</span>
 </code></pre></div>
 <p>Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;
 they're a sensible starting point, not universally optimal. Override

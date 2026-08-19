@@ -3926,7 +3926,7 @@ functional API usage.</p>
 
 
 
-  <div class="doc doc-children">
+<div class="doc doc-children">
 
 
 
@@ -3960,7 +3960,7 @@ example list is empty::</p>
 <span class="n">loader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span><span class="w"> </span><span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">,</span><span class="w"> </span><span class="n">collate_fn</span><span class="o">=</span><span class="n">collate</span><span class="p">)</span>
 
 <span class="k">for</span><span class="w"> </span><span class="n">batch</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">loader</span><span class="p">:</span>
-<span class="w">    </span><span class="n">input_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span><span class="w">   </span><span class="c1"># shape (0, seq_len) when empty</span>
+<span class="w">    </span><span class="n">input_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">batch</span><span class="p">[</span><span class="s2">"input_ids"</span><span class="p">]</span><span class="w">   </span><span class="c1"># shape (0, seq_len) when empty</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">len</span><span class="p">(</span><span class="n">input_ids</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">:</span>
 <span class="w">        </span><span class="k">continue</span>
 <span class="w">    </span><span class="o">...</span>
@@ -4038,7 +4038,7 @@ example list is empty::</p>
     </table>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/functional/_collate.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-50"> 50</a></span>
 <span class="normal"><a href="#__codelineno-0-51"> 51</a></span>
@@ -4092,7 +4092,7 @@ example list is empty::</p>
 <span class="normal"><a href="#__codelineno-0-99"> 99</a></span>
 <span class="normal"><a href="#__codelineno-0-100">100</a></span>
 <span class="normal"><a href="#__codelineno-0-101">101</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="k">def</span><span class="w"> </span><span class="nf">empty_collate</span><span class="p">(</span><span class="n">collate_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">T</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">T</span><span class="p">]:</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap a collate function so empty example lists yield zero-batch outputs.</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="w">    </span><span class="sd">"""Wrap a collate function so empty example lists yield zero-batch outputs.</span>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a>
 <a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">    Poisson-style samplers can yield empty index lists, producing batches with</span>
 <a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    zero examples. Standard collators (e.g., HuggingFace</span>
@@ -4107,7 +4107,7 @@ example list is empty::</p>
 <a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        loader = DataLoader(dataset, batch_sampler=sampler, collate_fn=collate)</span>
 <a id="__codelineno-0-64" name="__codelineno-0-64"></a>
 <a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        for batch in loader:</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">            input_ids = batch[&quot;input_ids&quot;]   # shape (0, seq_len) when empty</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">            input_ids = batch["input_ids"]   # shape (0, seq_len) when empty</span>
 <a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">            if len(input_ids) == 0:</span>
 <a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">                continue</span>
 <a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">            ...</span>
@@ -4125,7 +4125,7 @@ example list is empty::</p>
 <a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">    Returns:</span>
 <a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">        Wrapped function that returns empty-batch-dim outputs for empty</span>
 <a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">        example lists.</span>
-<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">    """</span>
 <a id="__codelineno-0-85" name="__codelineno-0-85"></a>    <span class="n">template</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">T</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span>  <span class="c1"># mutable cell for closure</span>
 <a id="__codelineno-0-86" name="__codelineno-0-86"></a>
 <a id="__codelineno-0-87" name="__codelineno-0-87"></a>    <span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">collate_fn</span><span class="p">)</span>
@@ -4386,7 +4386,7 @@ delegates entirely to <code>torch.func.functional_call</code>.</p>
 </ul>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/functional/__init__.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-15"> 15</a></span>
 <span class="normal"><a href="#__codelineno-0-16"> 16</a></span>
@@ -4564,7 +4564,7 @@ delegates entirely to <code>torch.func.functional_call</code>.</p>
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a>    <span class="n">disable_autograd_tracking</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18"></a>    <span class="n">partition_trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="nb">dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert a PyTorch module to functional form.</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">    </span><span class="sd">"""Convert a PyTorch module to functional form.</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21"></a>
 <a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="sd">    This helper mimics the behavior of the deprecated `functorch.make_functional()`.</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="sd">    It creates a stateless version of the module that can be called with external</span>
@@ -4580,15 +4580,15 @@ delegates entirely to <code>torch.func.functional_call</code>.</p>
 <a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="sd">            not through standard .backward(). Default: False.</span>
 <a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="sd">        partition_trainable: If True, return (fmodel, trainable_params, frozen_params)</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="sd">            as dicts instead of (fmodel, params) as tuple. Partitioning is based on</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">            the `requires_grad` attribute of the original module&#39;s parameters.</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="sd">            the `requires_grad` attribute of the original module's parameters.</span>
 <a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">            This is ideal for LoRA-style fine-tuning. Default: False.</span>
 <a id="__codelineno-0-38" name="__codelineno-0-38"></a>
 <a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="sd">    Returns:</span>
 <a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">        If partition_trainable=False:</span>
 <a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">            A tuple containing:</span>
 <a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">            - fmodel: Functional version of the module. Takes parameters as first argument,</span>
-<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">              followed by the module&#39;s normal forward arguments.</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">            - params: Tuple of the module&#39;s parameter tensors.</span>
+<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">              followed by the module's normal forward arguments.</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">            - params: Tuple of the module's parameter tensors.</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">        If partition_trainable=True:</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">            A tuple containing:</span>
@@ -4687,7 +4687,7 @@ delegates entirely to <code>torch.func.functional_call</code>.</p>
 <a id="__codelineno-0-140" name="__codelineno-0-140"></a>
 <a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="sd">    See Also:</span>
 <a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="sd">        - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html</span>
-<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">    """</span>
 <a id="__codelineno-0-144" name="__codelineno-0-144"></a>    <span class="c1"># Extract parameters with their requires_grad status</span>
 <a id="__codelineno-0-145" name="__codelineno-0-145"></a>    <span class="n">params_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">())</span>
 <a id="__codelineno-0-146" name="__codelineno-0-146"></a>
@@ -4882,13 +4882,13 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <div class="codehilite"><pre><span></span><code>&gt;&gt;&gt; # Only unsqueeze when inputs lack batch dim; squeeze output
 &gt;&gt;&gt; model.forward = with_batch_dim(
 <span class="k">...</span>     model.forward,
-<span class="k">...</span>     batch_kwargs={&quot;input_ids&quot;: 2, &quot;inputs_embeds&quot;: 3},
+<span class="k">...</span>     batch_kwargs={"input_ids": 2, "inputs_embeds": 3},
 <span class="k">...</span>     min_ndim=2,
 <span class="k">...</span> )
 </code></pre></div>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/functional/__init__.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-219">219</a></span>
 <span class="normal"><a href="#__codelineno-0-220">220</a></span>
@@ -5038,7 +5038,7 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <a id="__codelineno-0-223" name="__codelineno-0-223"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-0-224" name="__codelineno-0-224"></a>    <span class="n">min_ndim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap a function to add a leading batch dimension to specified arguments.</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="w">    </span><span class="sd">"""Wrap a function to add a leading batch dimension to specified arguments.</span>
 <a id="__codelineno-0-227" name="__codelineno-0-227"></a>
 <a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">    Use this when a model expects a batch dimension but the function is called</span>
 <a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">    per-example under ``vmap`` where the batch dim has been stripped.</span>
@@ -5059,7 +5059,7 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <a id="__codelineno-0-244" name="__codelineno-0-244"></a><span class="sd">            dimension via ``unsqueeze(0)``. Int or tuple of ints.</span>
 <a id="__codelineno-0-245" name="__codelineno-0-245"></a><span class="sd">        batch_kwargs: Keyword arguments to process. A tuple of names uses the</span>
 <a id="__codelineno-0-246" name="__codelineno-0-246"></a><span class="sd">            global ``min_ndim`` threshold. A dict maps each kwarg name to its</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">            own ndim threshold (e.g., ``{&quot;input_ids&quot;: 2, &quot;inputs_embeds&quot;: 3}``).</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a><span class="sd">            own ndim threshold (e.g., ``{"input_ids": 2, "inputs_embeds": 3}``).</span>
 <a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="sd">        min_ndim: Global ndim threshold. ``None`` means always unsqueeze.</span>
 <a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="sd">            An int means only unsqueeze when ``tensor.ndim &lt; min_ndim``.</span>
 <a id="__codelineno-0-250" name="__codelineno-0-250"></a>
@@ -5079,11 +5079,11 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        &gt;&gt;&gt; # Only unsqueeze when inputs lack batch dim; squeeze output</span>
 <a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        &gt;&gt;&gt; model.forward = with_batch_dim(</span>
 <a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">        ...     model.forward,</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ...     batch_kwargs={&quot;input_ids&quot;: 2, &quot;inputs_embeds&quot;: 3},</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        ...     batch_kwargs={"input_ids": 2, "inputs_embeds": 3},</span>
 <a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        ...     min_ndim=2,</span>
 <a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        ... )</span>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a>    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="s2">&quot;_opaque_batchified&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">    """</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="s2">"_opaque_batchified"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
 <a id="__codelineno-0-272" name="__codelineno-0-272"></a>        <span class="k">return</span> <span class="n">fn</span>
 <a id="__codelineno-0-273" name="__codelineno-0-273"></a>
 <a id="__codelineno-0-274" name="__codelineno-0-274"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
@@ -5101,7 +5101,7 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <a id="__codelineno-0-286" name="__codelineno-0-286"></a>
 <a id="__codelineno-0-287" name="__codelineno-0-287"></a>    <span class="n">conditional</span> <span class="o">=</span> <span class="n">min_ndim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 <a id="__codelineno-0-288" name="__codelineno-0-288"></a>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a>    <span class="c1"># Pre-compute: positional indices of batch_kwargs parameters in fn&#39;s</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>    <span class="c1"># Pre-compute: positional indices of batch_kwargs parameters in fn's</span>
 <a id="__codelineno-0-290" name="__codelineno-0-290"></a>    <span class="c1"># signature, so we can catch them even when passed positionally.</span>
 <a id="__codelineno-0-291" name="__codelineno-0-291"></a>    <span class="n">_positional_kwarg_indices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 <a id="__codelineno-0-292" name="__codelineno-0-292"></a>    <span class="k">if</span> <span class="n">batch_kwargs_dict</span><span class="p">:</span>
@@ -5192,8 +5192,8 @@ nested structures of tensors used throughout Opaque.</p>
 <p><strong>PyTrees</strong> are nested dictionaries or tuples of tensors, commonly used to
 represent model parameters:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">params</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;encoder&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;weight&quot;</span><span class="p">:</span> <span class="n">tensor1</span><span class="p">,</span> <span class="s2">&quot;bias&quot;</span><span class="p">:</span> <span class="n">tensor2</span><span class="p">},</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">&quot;decoder&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;weight&quot;</span><span class="p">:</span> <span class="n">tensor3</span><span class="p">,</span> <span class="s2">&quot;bias&quot;</span><span class="p">:</span> <span class="n">tensor4</span><span class="p">},</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">"encoder"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"weight"</span><span class="p">:</span> <span class="n">tensor1</span><span class="p">,</span> <span class="s2">"bias"</span><span class="p">:</span> <span class="n">tensor2</span><span class="p">},</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">"decoder"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"weight"</span><span class="p">:</span> <span class="n">tensor3</span><span class="p">,</span> <span class="s2">"bias"</span><span class="p">:</span> <span class="n">tensor4</span><span class="p">},</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span>
 </code></pre></div>
 <p>This module provides:</p>
@@ -5232,7 +5232,7 @@ usage in DP-SGD.</p>
 
 
 
-  <div class="doc doc-children">
+<div class="doc doc-children">
 
 
 
@@ -5402,7 +5402,7 @@ True</p>
 See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-336">336</a></span>
 <span class="normal"><a href="#__codelineno-0-337">337</a></span>
@@ -5505,7 +5505,7 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <a id="__codelineno-0-338" name="__codelineno-0-338"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-0-339" name="__codelineno-0-339"></a>    <span class="n">compute_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-340" name="__codelineno-0-340"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-341" name="__codelineno-0-341"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute global L2 norm across all tensors in a PyTree.</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a><span class="w">    </span><span class="sd">"""Compute global L2 norm across all tensors in a PyTree.</span>
 <a id="__codelineno-0-342" name="__codelineno-0-342"></a>
 <a id="__codelineno-0-343" name="__codelineno-0-343"></a><span class="sd">    The global norm is the square root of the sum of squared norms of all</span>
 <a id="__codelineno-0-344" name="__codelineno-0-344"></a><span class="sd">    leaf tensors:</span>
@@ -5525,7 +5525,7 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <a id="__codelineno-0-358" name="__codelineno-0-358"></a><span class="sd">        the resolved compute dtype.</span>
 <a id="__codelineno-0-359" name="__codelineno-0-359"></a>
 <a id="__codelineno-0-360" name="__codelineno-0-360"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-361" name="__codelineno-0-361"></a><span class="sd">        &gt;&gt;&gt; tree = {&#39;w&#39;: torch.tensor([3.0, 4.0]), &#39;b&#39;: torch.tensor([0.0, 12.0])}</span>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a><span class="sd">        &gt;&gt;&gt; tree = {'w': torch.tensor([3.0, 4.0]), 'b': torch.tensor([0.0, 12.0])}</span>
 <a id="__codelineno-0-362" name="__codelineno-0-362"></a><span class="sd">        &gt;&gt;&gt; norm = global_norm(tree)</span>
 <a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="sd">        &gt;&gt;&gt; # norm = sqrt(3^2 + 4^2 + 0^2 + 12^2) = sqrt(169) = 13</span>
 <a id="__codelineno-0-364" name="__codelineno-0-364"></a><span class="sd">        &gt;&gt;&gt; torch.isclose(norm, torch.tensor(13.0))</span>
@@ -5533,17 +5533,17 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <a id="__codelineno-0-366" name="__codelineno-0-366"></a>
 <a id="__codelineno-0-367" name="__codelineno-0-367"></a><span class="sd">    References:</span>
 <a id="__codelineno-0-368" name="__codelineno-0-368"></a><span class="sd">        This function is commonly used in gradient clipping for deep learning.</span>
-<a id="__codelineno-0-369" name="__codelineno-0-369"></a><span class="sd">        See: Pascanu et al. 2013, &quot;On the difficulty of training RNNs&quot;</span>
-<a id="__codelineno-0-370" name="__codelineno-0-370"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a><span class="sd">        See: Pascanu et al. 2013, "On the difficulty of training RNNs"</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a><span class="sd">    """</span>
 <a id="__codelineno-0-371" name="__codelineno-0-371"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(</span>
 <a id="__codelineno-0-372" name="__codelineno-0-372"></a>        <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">)</span>
 <a id="__codelineno-0-373" name="__codelineno-0-373"></a>    <span class="p">):</span>
 <a id="__codelineno-0-374" name="__codelineno-0-374"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-375" name="__codelineno-0-375"></a>            <span class="sa">f</span><span class="s2">&quot;compute_dtype must be a real floating-point dtype, got &quot;</span>
-<a id="__codelineno-0-376" name="__codelineno-0-376"></a>            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">compute_dtype</span><span class="si">!r}</span><span class="s2">.  Integer/bool/complex compute dtypes can &quot;</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>            <span class="sa">f</span><span class="s2">&quot;silently corrupt the L2-norm reduction (the squared sum is &quot;</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>            <span class="sa">f</span><span class="s2">&quot;non-negative real and the final sqrt assumes a real &quot;</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>            <span class="sa">f</span><span class="s2">&quot;accumulator).&quot;</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>            <span class="sa">f</span><span class="s2">"compute_dtype must be a real floating-point dtype, got "</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">compute_dtype</span><span class="si">!r}</span><span class="s2">.  Integer/bool/complex compute dtypes can "</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>            <span class="sa">f</span><span class="s2">"silently corrupt the L2-norm reduction (the squared sum is "</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>            <span class="sa">f</span><span class="s2">"non-negative real and the final sqrt assumes a real "</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>            <span class="sa">f</span><span class="s2">"accumulator)."</span>
 <a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="p">)</span>
 <a id="__codelineno-0-381" name="__codelineno-0-381"></a>
 <a id="__codelineno-0-382" name="__codelineno-0-382"></a>    <span class="n">leaves</span> <span class="o">=</span> <span class="n">tree_leaves</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
@@ -5553,7 +5553,7 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <a id="__codelineno-0-386" name="__codelineno-0-386"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
 <a id="__codelineno-0-387" name="__codelineno-0-387"></a>        <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">compute_dtype</span>
 <a id="__codelineno-0-388" name="__codelineno-0-388"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-389" name="__codelineno-0-389"></a>        <span class="c1"># Auto-promote: at least float32, but match user&#39;s intent if they</span>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a>        <span class="c1"># Auto-promote: at least float32, but match user's intent if they</span>
 <a id="__codelineno-0-390" name="__codelineno-0-390"></a>        <span class="c1"># supplied higher-precision inputs.</span>
 <a id="__codelineno-0-391" name="__codelineno-0-391"></a>        <span class="n">dtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">dtype</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">leaves</span><span class="p">]</span>
 <a id="__codelineno-0-392" name="__codelineno-0-392"></a>        <span class="n">float_dtypes</span> <span class="o">=</span> <span class="p">[</span>
@@ -5693,7 +5693,7 @@ merged
 https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-258">258</a></span>
 <span class="normal"><a href="#__codelineno-0-259">259</a></span>
@@ -5737,7 +5737,7 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 <span class="normal"><a href="#__codelineno-0-297">297</a></span>
 <span class="normal"><a href="#__codelineno-0-298">298</a></span>
 <span class="normal"><a href="#__codelineno-0-299">299</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="k">def</span><span class="w"> </span><span class="nf">merge</span><span class="p">(</span><span class="o">*</span><span class="n">trees</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Merge multiple PyTrees into one.</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="w">    </span><span class="sd">"""Merge multiple PyTrees into one.</span>
 <a id="__codelineno-0-260" name="__codelineno-0-260"></a>
 <a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">    Later trees override earlier ones for overlapping keys.</span>
 <a id="__codelineno-0-262" name="__codelineno-0-262"></a>
@@ -5748,16 +5748,16 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 <a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        Merged PyTree</span>
 <a id="__codelineno-0-268" name="__codelineno-0-268"></a>
 <a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        &gt;&gt;&gt; trainable = {&#39;encoder&#39;: {&#39;lora_a&#39;: torch.ones(2)}}</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">        &gt;&gt;&gt; frozen = {&#39;encoder&#39;: {&#39;weight&#39;: torch.zeros(3)}}</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        &gt;&gt;&gt; trainable = {'encoder': {'lora_a': torch.ones(2)}}</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">        &gt;&gt;&gt; frozen = {'encoder': {'weight': torch.zeros(3)}}</span>
 <a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        &gt;&gt;&gt; merged = merge(frozen, trainable)</span>
 <a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">        &gt;&gt;&gt; merged</span>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">        {&#39;encoder&#39;: {&#39;weight&#39;: ..., &#39;lora_a&#39;: ...}}</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">        {'encoder': {'weight': ..., 'lora_a': ...}}</span>
 <a id="__codelineno-0-275" name="__codelineno-0-275"></a>
 <a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        Inspired by Haiku&#39;s hk.data_structures.merge():</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a><span class="sd">        Inspired by Haiku's hk.data_structures.merge():</span>
 <a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="sd">        https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a><span class="sd">    """</span>
 <a id="__codelineno-0-280" name="__codelineno-0-280"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">trees</span><span class="p">:</span>
 <a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="k">return</span> <span class="p">{}</span>
 <a id="__codelineno-0-282" name="__codelineno-0-282"></a>
@@ -5800,7 +5800,7 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 is itself a single tensor).</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-43">43</a></span>
 <span class="normal"><a href="#__codelineno-0-44">44</a></span>
@@ -5819,11 +5819,11 @@ is itself a single tensor).</p>
 <span class="normal"><a href="#__codelineno-0-57">57</a></span>
 <span class="normal"><a href="#__codelineno-0-58">58</a></span>
 <span class="normal"><a href="#__codelineno-0-59">59</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="k">def</span><span class="w"> </span><span class="nf">param_path</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ParamPath</span><span class="p">:</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize an optree path (or flat string key) to :data:`ParamPath`.</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="w">    </span><span class="sd">"""Normalize an optree path (or flat string key) to :data:`ParamPath`.</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    The empty path ``()`` is valid and denotes a root leaf (a pytree that</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    is itself a single tensor).</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    """</span>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a>        <span class="k">return</span> <span class="p">(</span><span class="n">path</span><span class="p">,)</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a>    <span class="n">out</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
@@ -5832,7 +5832,7 @@ is itself a single tensor).</p>
 <a id="__codelineno-0-54" name="__codelineno-0-54"></a>            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">part</span><span class="p">)</span>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a>        <span class="k">else</span><span class="p">:</span>
 <a id="__codelineno-0-56" name="__codelineno-0-56"></a>            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a>                <span class="sa">f</span><span class="s2">&quot;ParamPath components must be str or int; got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">part</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a>                <span class="sa">f</span><span class="s2">"ParamPath components must be str or int; got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">part</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">"</span>
 <a id="__codelineno-0-58" name="__codelineno-0-58"></a>            <span class="p">)</span>
 <a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -5855,13 +5855,13 @@ is itself a single tensor).</p>
         <p>Dotted display form for pattern matching and diagnostics.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-62">62</a></span>
 <span class="normal"><a href="#__codelineno-0-63">63</a></span>
 <span class="normal"><a href="#__codelineno-0-64">64</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="k">def</span><span class="w"> </span><span class="nf">param_path_display</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">ParamPath</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Dotted display form for pattern matching and diagnostics.&quot;&quot;&quot;</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="k">return</span> <span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">path</span><span class="p">)</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="w">    </span><span class="sd">"""Dotted display form for pattern matching and diagnostics."""</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="k">return</span> <span class="s2">"."</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">path</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5993,7 +5993,7 @@ trainable, frozen = partition(is_lora, params)
 https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-177">177</a></span>
 <span class="normal"><a href="#__codelineno-0-178">178</a></span>
@@ -6077,7 +6077,7 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 <a id="__codelineno-0-178" name="__codelineno-0-178"></a>    <span class="n">predicate</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">],</span> <span class="nb">bool</span><span class="p">],</span>
 <a id="__codelineno-0-179" name="__codelineno-0-179"></a>    <span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Partition PyTree into two trees based on predicate.</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a><span class="w">    </span><span class="sd">"""Partition PyTree into two trees based on predicate.</span>
 <a id="__codelineno-0-182" name="__codelineno-0-182"></a>
 <a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">    This is the key function for LoRA-style training: split parameters into</span>
 <a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">    trainable (e.g., LoRA adapters) and frozen (e.g., pretrained backbone).</span>
@@ -6092,23 +6092,23 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 <a id="__codelineno-0-193" name="__codelineno-0-193"></a>
 <a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">    Example:</span>
 <a id="__codelineno-0-195" name="__codelineno-0-195"></a><span class="sd">        &gt;&gt;&gt; params = {</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="sd">        ...     &#39;encoder&#39;: {</span>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">        ...         &#39;weight&#39;: torch.randn(10, 5),</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">        ...         &#39;lora_a&#39;: torch.randn(10, 2),</span>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">        ...         &#39;lora_b&#39;: torch.randn(2, 5),</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="sd">        ...     'encoder': {</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="sd">        ...         'weight': torch.randn(10, 5),</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="sd">        ...         'lora_a': torch.randn(10, 2),</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="sd">        ...         'lora_b': torch.randn(2, 5),</span>
 <a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">        ...     }</span>
 <a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">        ... }</span>
 <a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        &gt;&gt;&gt; def is_lora(path, value):</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">        ...     return &#39;lora&#39; in str(path)</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">        ...     return 'lora' in str(path)</span>
 <a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">        &gt;&gt;&gt; trainable, frozen = partition(is_lora, params)</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        &gt;&gt;&gt; &#39;lora_a&#39; in trainable[&#39;encoder&#39;]  # True</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        &gt;&gt;&gt; &#39;weight&#39; in frozen[&#39;encoder&#39;]      # True</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">        &gt;&gt;&gt; &#39;weight&#39; in trainable[&#39;encoder&#39;]   # False</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        &gt;&gt;&gt; 'lora_a' in trainable['encoder']  # True</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        &gt;&gt;&gt; 'weight' in frozen['encoder']      # True</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">        &gt;&gt;&gt; 'weight' in trainable['encoder']   # False</span>
 <a id="__codelineno-0-208" name="__codelineno-0-208"></a>
 <a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">    References:</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        Inspired by Haiku&#39;s hk.data_structures.partition():</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        Inspired by Haiku's hk.data_structures.partition():</span>
 <a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">        https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    """</span>
 <a id="__codelineno-0-213" name="__codelineno-0-213"></a>
 <a id="__codelineno-0-214" name="__codelineno-0-214"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_partition_subtree</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">subtree</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">subtree</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -6174,7 +6174,7 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 :func:<code>tree_flatten_with_paths</code> when callers need leaf identities.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-80">80</a></span>
 <span class="normal"><a href="#__codelineno-0-81">81</a></span>
@@ -6184,11 +6184,11 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 <span class="normal"><a href="#__codelineno-0-85">85</a></span>
 <span class="normal"><a href="#__codelineno-0-86">86</a></span>
 <span class="normal"><a href="#__codelineno-0-87">87</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_flatten</span><span class="p">(</span><span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Flatten ``tree`` to ``(leaves, treedef)``.</span>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="w">    </span><span class="sd">"""Flatten ``tree`` to ``(leaves, treedef)``.</span>
 <a id="__codelineno-0-82" name="__codelineno-0-82"></a>
 <a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">    Thin wrapper around :func:`optree.tree_flatten`.  Prefer</span>
 <a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">    :func:`tree_flatten_with_paths` when callers need leaf identities.</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">    """</span>
 <a id="__codelineno-0-86" name="__codelineno-0-86"></a>    <span class="n">leaves</span><span class="p">,</span> <span class="n">treedef</span> <span class="o">=</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
 <a id="__codelineno-0-87" name="__codelineno-0-87"></a>    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">leaves</span><span class="p">),</span> <span class="n">treedef</span>
 </code></pre></div></td></tr></table></div>
@@ -6213,7 +6213,7 @@ https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py</p>
 path convention.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-67">67</a></span>
 <span class="normal"><a href="#__codelineno-0-68">68</a></span>
@@ -6228,11 +6228,11 @@ path convention.</p>
 <span class="normal"><a href="#__codelineno-0-77">77</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_flatten_with_paths</span><span class="p">(</span>
 <a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">ParamPath</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="w">    </span><span class="sd">"""Flatten ``tree`` to ``(paths, leaves, treedef)`` with :data:`ParamPath` keys.</span>
 <a id="__codelineno-0-71" name="__codelineno-0-71"></a>
 <a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">    Wraps :func:`optree.tree_flatten_with_path` so PerGroup consumers share one</span>
 <a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">    path convention.</span>
-<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">    """</span>
 <a id="__codelineno-0-75" name="__codelineno-0-75"></a>    <span class="n">raw_paths</span><span class="p">,</span> <span class="n">leaves</span><span class="p">,</span> <span class="n">treedef</span> <span class="o">=</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_flatten_with_path</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
 <a id="__codelineno-0-76" name="__codelineno-0-76"></a>    <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">param_path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">raw_paths</span><span class="p">]</span>
 <a id="__codelineno-0-77" name="__codelineno-0-77"></a>    <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">leaves</span><span class="p">),</span> <span class="n">treedef</span>
@@ -6324,7 +6324,7 @@ len(leaves)
 </blockquote>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-107">107</a></span>
 <span class="normal"><a href="#__codelineno-0-108">108</a></span>
@@ -6343,7 +6343,7 @@ len(leaves)
 <span class="normal"><a href="#__codelineno-0-121">121</a></span>
 <span class="normal"><a href="#__codelineno-0-122">122</a></span>
 <span class="normal"><a href="#__codelineno-0-123">123</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-107" name="__codelineno-0-107"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_leaves</span><span class="p">(</span><span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<a id="__codelineno-0-108" name="__codelineno-0-108"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract all leaf tensors from a PyTree.</span>
+<a id="__codelineno-0-108" name="__codelineno-0-108"></a><span class="w">    </span><span class="sd">"""Extract all leaf tensors from a PyTree.</span>
 <a id="__codelineno-0-109" name="__codelineno-0-109"></a>
 <a id="__codelineno-0-110" name="__codelineno-0-110"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-111" name="__codelineno-0-111"></a><span class="sd">        tree: Nested structure (dict/list/tuple/…) containing tensors as leaves.</span>
@@ -6352,11 +6352,11 @@ len(leaves)
 <a id="__codelineno-0-114" name="__codelineno-0-114"></a><span class="sd">        List of all tensor leaves in the tree (non-tensor leaves are ignored).</span>
 <a id="__codelineno-0-115" name="__codelineno-0-115"></a>
 <a id="__codelineno-0-116" name="__codelineno-0-116"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-117" name="__codelineno-0-117"></a><span class="sd">        &gt;&gt;&gt; tree = {&#39;a&#39;: torch.tensor([1, 2]), &#39;b&#39;: {&#39;c&#39;: torch.tensor([3])}}</span>
+<a id="__codelineno-0-117" name="__codelineno-0-117"></a><span class="sd">        &gt;&gt;&gt; tree = {'a': torch.tensor([1, 2]), 'b': {'c': torch.tensor([3])}}</span>
 <a id="__codelineno-0-118" name="__codelineno-0-118"></a><span class="sd">        &gt;&gt;&gt; leaves = tree_leaves(tree)</span>
 <a id="__codelineno-0-119" name="__codelineno-0-119"></a><span class="sd">        &gt;&gt;&gt; len(leaves)</span>
 <a id="__codelineno-0-120" name="__codelineno-0-120"></a><span class="sd">        2</span>
-<a id="__codelineno-0-121" name="__codelineno-0-121"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-121" name="__codelineno-0-121"></a><span class="sd">    """</span>
 <a id="__codelineno-0-122" name="__codelineno-0-122"></a>    <span class="n">flat</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
 <a id="__codelineno-0-123" name="__codelineno-0-123"></a>    <span class="k">return</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">flat</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)]</span>
 </code></pre></div></td></tr></table></div>
@@ -6463,7 +6463,7 @@ tensor([2., 4.])</p>
 </blockquote>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-126">126</a></span>
 <span class="normal"><a href="#__codelineno-0-127">127</a></span>
@@ -6482,7 +6482,7 @@ tensor([2., 4.])</p>
 <span class="normal"><a href="#__codelineno-0-140">140</a></span>
 <span class="normal"><a href="#__codelineno-0-141">141</a></span>
 <span class="normal"><a href="#__codelineno-0-142">142</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-126" name="__codelineno-0-126"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_map</span><span class="p">(</span><span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">*</span><span class="n">trees</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply function to all leaves of one or more PyTrees.</span>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="w">    </span><span class="sd">"""Apply function to all leaves of one or more PyTrees.</span>
 <a id="__codelineno-0-128" name="__codelineno-0-128"></a>
 <a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">        fn: Function to apply to each leaf (or set of leaves from multiple trees).</span>
@@ -6492,11 +6492,11 @@ tensor([2., 4.])</p>
 <a id="__codelineno-0-134" name="__codelineno-0-134"></a><span class="sd">        PyTree with same structure as inputs, with `fn` applied to leaves.</span>
 <a id="__codelineno-0-135" name="__codelineno-0-135"></a>
 <a id="__codelineno-0-136" name="__codelineno-0-136"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-137" name="__codelineno-0-137"></a><span class="sd">        &gt;&gt;&gt; tree = {&#39;a&#39;: torch.tensor([1.0, 2.0]), &#39;b&#39;: torch.tensor([3.0])}</span>
+<a id="__codelineno-0-137" name="__codelineno-0-137"></a><span class="sd">        &gt;&gt;&gt; tree = {'a': torch.tensor([1.0, 2.0]), 'b': torch.tensor([3.0])}</span>
 <a id="__codelineno-0-138" name="__codelineno-0-138"></a><span class="sd">        &gt;&gt;&gt; doubled = tree_map(lambda x: x * 2, tree)</span>
-<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="sd">        &gt;&gt;&gt; doubled[&#39;a&#39;]</span>
+<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="sd">        &gt;&gt;&gt; doubled['a']</span>
 <a id="__codelineno-0-140" name="__codelineno-0-140"></a><span class="sd">        tensor([2., 4.])</span>
-<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="sd">    """</span>
 <a id="__codelineno-0-142" name="__codelineno-0-142"></a>    <span class="k">return</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_map</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="o">*</span><span class="n">trees</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -6613,7 +6613,7 @@ tree_map_with_path(print_shapes, tree)
 </blockquote>
 </details>
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-145">145</a></span>
 <span class="normal"><a href="#__codelineno-0-146">146</a></span>
@@ -6648,7 +6648,7 @@ tree_map_with_path(print_shapes, tree)
 <a id="__codelineno-0-146" name="__codelineno-0-146"></a>    <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ParamPath</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">],</span>
 <a id="__codelineno-0-147" name="__codelineno-0-147"></a>    <span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply function to leaves with their :data:`ParamPath` in the tree.</span>
+<a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="w">    </span><span class="sd">"""Apply function to leaves with their :data:`ParamPath` in the tree.</span>
 <a id="__codelineno-0-150" name="__codelineno-0-150"></a>
 <a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">    Paths and leaf order match :func:`tree_flatten_with_paths` (optree</span>
 <a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">    traversal, including sorted dict keys), so results align with</span>
@@ -6663,14 +6663,14 @@ tree_map_with_path(print_shapes, tree)
 <a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="sd">        PyTree with same structure, with fn applied to (path, leaf)</span>
 <a id="__codelineno-0-162" name="__codelineno-0-162"></a>
 <a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">    Example:</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        &gt;&gt;&gt; tree = {&#39;layer1&#39;: {&#39;weight&#39;: torch.ones(2)}, &#39;layer2&#39;: {&#39;bias&#39;: torch.zeros(3)}}</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        &gt;&gt;&gt; tree = {'layer1': {'weight': torch.ones(2)}, 'layer2': {'bias': torch.zeros(3)}}</span>
 <a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">        &gt;&gt;&gt; def print_shapes(path, leaf):</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">        ...     print(f&quot;{path}: {leaf.shape}&quot;)</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">        ...     print(f"{path}: {leaf.shape}")</span>
 <a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">        ...     return leaf</span>
 <a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">        &gt;&gt;&gt; tree_map_with_path(print_shapes, tree)</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="sd">        (&#39;layer1&#39;, &#39;weight&#39;): torch.Size([2])</span>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="sd">        (&#39;layer2&#39;, &#39;bias&#39;): torch.Size([3])</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="sd">        ('layer1', 'weight'): torch.Size([2])</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a><span class="sd">        ('layer2', 'bias'): torch.Size([3])</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a><span class="sd">    """</span>
 <a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="n">paths</span><span class="p">,</span> <span class="n">leaves</span><span class="p">,</span> <span class="n">treedef</span> <span class="o">=</span> <span class="n">tree_flatten_with_paths</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
 <a id="__codelineno-0-173" name="__codelineno-0-173"></a>    <span class="n">out</span> <span class="o">=</span> <span class="p">[</span><span class="n">fn</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">leaf</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">leaf</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">leaves</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)]</span>
 <a id="__codelineno-0-174" name="__codelineno-0-174"></a>    <span class="k">return</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_unflatten</span><span class="p">(</span><span class="n">treedef</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
@@ -6696,7 +6696,7 @@ tree_map_with_path(print_shapes, tree)
 that independently gathered payloads share a layout before unflattening.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-98"> 98</a></span>
 <span class="normal"><a href="#__codelineno-0-99"> 99</a></span>
@@ -6705,11 +6705,11 @@ that independently gathered payloads share a layout before unflattening.</p>
 <span class="normal"><a href="#__codelineno-0-102">102</a></span>
 <span class="normal"><a href="#__codelineno-0-103">103</a></span>
 <span class="normal"><a href="#__codelineno-0-104">104</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-98" name="__codelineno-0-98"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_structure</span><span class="p">(</span><span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the optree structure of ``tree`` (no leaves).</span>
+<a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="w">    </span><span class="sd">"""Return the optree structure of ``tree`` (no leaves).</span>
 <a id="__codelineno-0-100" name="__codelineno-0-100"></a>
 <a id="__codelineno-0-101" name="__codelineno-0-101"></a><span class="sd">    Thin wrapper around :func:`optree.tree_structure`.  Useful for asserting</span>
 <a id="__codelineno-0-102" name="__codelineno-0-102"></a><span class="sd">    that independently gathered payloads share a layout before unflattening.</span>
-<a id="__codelineno-0-103" name="__codelineno-0-103"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-103" name="__codelineno-0-103"></a><span class="sd">    """</span>
 <a id="__codelineno-0-104" name="__codelineno-0-104"></a>    <span class="k">return</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_structure</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -6732,7 +6732,7 @@ that independently gathered payloads share a layout before unflattening.</p>
 <p>Thin wrapper around :func:<code>optree.tree_unflatten</code>.</p>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/pytree.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-90">90</a></span>
 <span class="normal"><a href="#__codelineno-0-91">91</a></span>
@@ -6740,10 +6740,10 @@ that independently gathered payloads share a layout before unflattening.</p>
 <span class="normal"><a href="#__codelineno-0-93">93</a></span>
 <span class="normal"><a href="#__codelineno-0-94">94</a></span>
 <span class="normal"><a href="#__codelineno-0-95">95</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-90" name="__codelineno-0-90"></a><span class="k">def</span><span class="w"> </span><span class="nf">tree_unflatten</span><span class="p">(</span><span class="n">treedef</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">leaves</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Rebuild a PyTree from ``treedef`` and ``leaves``.</span>
+<a id="__codelineno-0-91" name="__codelineno-0-91"></a><span class="w">    </span><span class="sd">"""Rebuild a PyTree from ``treedef`` and ``leaves``.</span>
 <a id="__codelineno-0-92" name="__codelineno-0-92"></a>
 <a id="__codelineno-0-93" name="__codelineno-0-93"></a><span class="sd">    Thin wrapper around :func:`optree.tree_unflatten`.</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">    """</span>
 <a id="__codelineno-0-95" name="__codelineno-0-95"></a>    <span class="k">return</span> <span class="n">_ot</span><span class="o">.</span><span class="n">tree_unflatten</span><span class="p">(</span><span class="n">treedef</span><span class="p">,</span> <span class="n">leaves</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>

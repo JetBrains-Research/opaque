@@ -3758,7 +3758,7 @@ threading for deterministic and reproducible DP training.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">RngKey</span><span class="p">:</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">impl</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;opaque_threefry_like&quot;</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">impl</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"opaque_threefry_like"</span>
 </code></pre></div>
 <p>Immutable RNG key. Thread explicitly through functions for deterministic randomness.</p>
 <p><strong>Attributes:</strong>
@@ -3820,7 +3820,7 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 <a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">full_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">base_key</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">worker_id</span><span class="p">)</span>
 <a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>
 <a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="c1"># String data</span>
-<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="n">key_v2</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">base_key</span><span class="p">,</span> <span class="s2">&quot;v2&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="n">key_v2</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">base_key</span><span class="p">,</span> <span class="s2">"v2"</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Args:</strong>
 - <code>rng_key</code>: Base key
@@ -3986,10 +3986,10 @@ your workload.</p>
 <a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="n">base_key</span> <span class="o">=</span> <span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>
 <a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="c1"># Save checkpoint</span>
-<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">checkpoint</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="o">...</span><span class="p">}</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">checkpoint</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"step"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="o">...</span><span class="p">}</span>
 <a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>
 <a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="c1"># Resume</span>
-<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">],</span> <span class="n">total_steps</span><span class="p">):</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">"step"</span><span class="p">],</span> <span class="n">total_steps</span><span class="p">):</span>
 <a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>    <span class="n">step_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">base_key</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span>
 <a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>    <span class="c1"># ... training ...</span>
 </code></pre></div>

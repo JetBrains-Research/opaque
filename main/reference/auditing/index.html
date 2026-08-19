@@ -3871,7 +3871,7 @@
                                <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
                                <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">)</span>
 <span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ε (empirical): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"ε (empirical): </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">()</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 
 <p>Scoring with <code>coin_flip=</code> + <code>dataset=</code> pairs every score with the
@@ -3901,7 +3901,7 @@ live in :mod:<code>opaque.auditing.types</code>.</p>
 
 
 
-  <div class="doc doc-children">
+<div class="doc doc-children">
 
 
 
@@ -4031,7 +4031,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 </code></pre></div>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/_coin_flip.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-105">105</a></span>
 <span class="normal"><a href="#__codelineno-0-106">106</a></span>
@@ -4061,7 +4061,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <span class="normal"><a href="#__codelineno-0-130">130</a></span>
 <span class="normal"><a href="#__codelineno-0-131">131</a></span>
 <span class="normal"><a href="#__codelineno-0-132">132</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-105" name="__codelineno-0-105"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_scores</span><span class="p">(</span><span class="n">scores</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">canary_indices</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span><span class="p">:</span>
-<a id="__codelineno-0-106" name="__codelineno-0-106"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Attest which canary each externally computed score belongs to.</span>
+<a id="__codelineno-0-106" name="__codelineno-0-106"></a><span class="w">    </span><span class="sd">"""Attest which canary each externally computed score belongs to.</span>
 <a id="__codelineno-0-107" name="__codelineno-0-107"></a>
 <a id="__codelineno-0-108" name="__codelineno-0-108"></a><span class="sd">    :func:`~opaque.auditing.loss_scores` and</span>
 <a id="__codelineno-0-109" name="__codelineno-0-109"></a><span class="sd">    :func:`~opaque.auditing.gradient_scores` already return</span>
@@ -4086,7 +4086,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <a id="__codelineno-0-128" name="__codelineno-0-128"></a>
 <a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">        scores = auditing.canary_scores(values, canary_indices=ids)</span>
 <a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">        estimate = auditing.one_run(scores, coin_flip=cf)</span>
-<a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="sd">    """</span>
 <a id="__codelineno-0-132" name="__codelineno-0-132"></a>    <span class="k">return</span> <span class="n">CanaryScores</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">canary_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -4200,7 +4200,7 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 </code></pre></div>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/_coin_flip.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-278">278</a></span>
 <span class="normal"><a href="#__codelineno-0-279">279</a></span>
@@ -4249,7 +4249,7 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 <a id="__codelineno-0-281" name="__codelineno-0-281"></a>    <span class="n">num_canaries</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 <a id="__codelineno-0-282" name="__codelineno-0-282"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
 <a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span><span class="p">:</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a coin-flip partition for canary-based auditing.</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a><span class="w">    </span><span class="sd">"""Create a coin-flip partition for canary-based auditing.</span>
 <a id="__codelineno-0-285" name="__codelineno-0-285"></a>
 <a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    Randomly selects ``num_canaries`` examples from the dataset and flips</span>
 <a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    a fair coin for each to decide inclusion/exclusion.</span>
@@ -4266,11 +4266,11 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 <a id="__codelineno-0-298" name="__codelineno-0-298"></a>
 <a id="__codelineno-0-299" name="__codelineno-0-299"></a><span class="sd">        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))</span>
 <a id="__codelineno-0-300" name="__codelineno-0-300"></a><span class="sd">        train_data = dataset.select(cf.train_indices(len(dataset)))</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">    """</span>
 <a id="__codelineno-0-302" name="__codelineno-0-302"></a>    <span class="n">dataset_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
 <a id="__codelineno-0-303" name="__codelineno-0-303"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&gt;</span> <span class="n">dataset_size</span><span class="p">:</span>
 <a id="__codelineno-0-304" name="__codelineno-0-304"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>            <span class="sa">f</span><span class="s2">&quot;num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds dataset size (</span><span class="si">{</span><span class="n">dataset_size</span><span class="si">}</span><span class="s2">)&quot;</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>            <span class="sa">f</span><span class="s2">"num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds dataset size (</span><span class="si">{</span><span class="n">dataset_size</span><span class="si">}</span><span class="s2">)"</span>
 <a id="__codelineno-0-306" name="__codelineno-0-306"></a>        <span class="p">)</span>
 <a id="__codelineno-0-307" name="__codelineno-0-307"></a>
 <a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_CANARY_SELECTION_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
@@ -4582,7 +4582,7 @@ scores = auditing.gradient_scores(
 </code></pre></div>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/attacks/_gradient.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-35"> 35</a></span>
 <span class="normal"><a href="#__codelineno-0-36"> 36</a></span>
@@ -4726,14 +4726,14 @@ scores = auditing.gradient_scores(
 <a id="__codelineno-0-42" name="__codelineno-0-42"></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43"></a>    <span class="n">collate_fn</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span><span class="p">:</span>
-<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute membership scores as negative squared per-example gradient norm.</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="w">    </span><span class="sd">"""Compute membership scores as negative squared per-example gradient norm.</span>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    Higher score = smaller gradient norm = more likely a training member.</span>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    The model parameters must be the first positional argument to</span>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    ``loss_fn`` (position 0), matching the default ``argnums=0`` of</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">    :func:`~opaque.clipped_grad`.</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Scores the partition&#39;s canaries over an internal identifier-carrying</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Scores the partition's canaries over an internal identifier-carrying</span>
 <a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">    loader and returns :class:`~opaque.auditing.types.CanaryScores`, which</span>
 <a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    :func:`~opaque.auditing.one_run` requires.  Identifiers are attached</span>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">    per batch before collation, so ``collate_fn`` must emit one row per</span>
@@ -4778,7 +4778,7 @@ scores = auditing.gradient_scores(
 <a id="__codelineno-0-94" name="__codelineno-0-94"></a><span class="sd">        A :class:`~opaque.auditing.types.CanaryScores`, shape ``(n,)``:</span>
 <a id="__codelineno-0-95" name="__codelineno-0-95"></a><span class="sd">        negated squared gradient norms (higher = more likely member),</span>
 <a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="sd">        optionally adjusted by reference scores, each carrying its</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="sd">        canary&#39;s dataset index.</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="sd">        canary's dataset index.</span>
 <a id="__codelineno-0-98" name="__codelineno-0-98"></a>
 <a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="sd">    Raises:</span>
 <a id="__codelineno-0-100" name="__codelineno-0-100"></a><span class="sd">        ValueError: If ``0 in batch_argnums`` (params must be at position</span>
@@ -4800,7 +4800,7 @@ scores = auditing.gradient_scores(
 <a id="__codelineno-0-116" name="__codelineno-0-116"></a><span class="sd">            coin_flip=cf, dataset=dataset, collate_fn=canary_collate,</span>
 <a id="__codelineno-0-117" name="__codelineno-0-117"></a><span class="sd">            reference_scores=ref,</span>
 <a id="__codelineno-0-118" name="__codelineno-0-118"></a><span class="sd">        )</span>
-<a id="__codelineno-0-119" name="__codelineno-0-119"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-119" name="__codelineno-0-119"></a><span class="sd">    """</span>
 <a id="__codelineno-0-120" name="__codelineno-0-120"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <a id="__codelineno-0-121" name="__codelineno-0-121"></a>
 <a id="__codelineno-0-122" name="__codelineno-0-122"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.engine.pytree</span><span class="w"> </span><span class="kn">import</span> <span class="n">global_norm</span>
@@ -4809,9 +4809,9 @@ scores = auditing.gradient_scores(
 <a id="__codelineno-0-125" name="__codelineno-0-125"></a>
 <a id="__codelineno-0-126" name="__codelineno-0-126"></a>    <span class="k">if</span> <span class="mi">0</span> <span class="ow">in</span> <span class="n">batch_argnums</span><span class="p">:</span>
 <a id="__codelineno-0-127" name="__codelineno-0-127"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-128" name="__codelineno-0-128"></a>            <span class="s2">&quot;gradient_scores differentiates w.r.t. the first argument &quot;</span>
-<a id="__codelineno-0-129" name="__codelineno-0-129"></a>            <span class="s2">&quot;(position 0), which must not be in batch_argnums. &quot;</span>
-<a id="__codelineno-0-130" name="__codelineno-0-130"></a>            <span class="sa">f</span><span class="s2">&quot;Got batch_argnums=</span><span class="si">{</span><span class="n">batch_argnums</span><span class="si">}</span><span class="s2">.&quot;</span>
+<a id="__codelineno-0-128" name="__codelineno-0-128"></a>            <span class="s2">"gradient_scores differentiates w.r.t. the first argument "</span>
+<a id="__codelineno-0-129" name="__codelineno-0-129"></a>            <span class="s2">"(position 0), which must not be in batch_argnums. "</span>
+<a id="__codelineno-0-130" name="__codelineno-0-130"></a>            <span class="sa">f</span><span class="s2">"Got batch_argnums=</span><span class="si">{</span><span class="n">batch_argnums</span><span class="si">}</span><span class="s2">."</span>
 <a id="__codelineno-0-131" name="__codelineno-0-131"></a>        <span class="p">)</span>
 <a id="__codelineno-0-132" name="__codelineno-0-132"></a>
 <a id="__codelineno-0-133" name="__codelineno-0-133"></a>    <span class="n">loader</span> <span class="o">=</span> <span class="n">_scoring_loader</span><span class="p">(</span>
@@ -5117,7 +5117,7 @@ does not carry identifiers.</p>
         <p>Example (HuggingFace pattern)::</p>
 <div class="codehilite"><pre><span></span><code>def canary_collate(examples):
     batch = data_collator(examples)
-    return (batch[&quot;input_ids&quot;].to(device),)
+    return (batch["input_ids"].to(device),)
 
 ref = auditing.loss_scores(
     loss_fn, initial_params,
@@ -5136,7 +5136,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 </code></pre></div>
 
 
-            <details class="quote">
+            <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/attacks/_loss.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-30"> 30</a></span>
 <span class="normal"><a href="#__codelineno-0-31"> 31</a></span>
@@ -5267,13 +5267,13 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
 <a id="__codelineno-0-38" name="__codelineno-0-38"></a>    <span class="n">collate_fn</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span><span class="p">:</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute membership scores as negative per-example loss.</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="w">    </span><span class="sd">"""Compute membership scores as negative per-example loss.</span>
 <a id="__codelineno-0-41" name="__codelineno-0-41"></a>
 <a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">    Higher score = lower loss = more likely a training member.</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">    Uses ``torch.func.vmap`` for per-example loss computation, following</span>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">    the same ``batch_argnums`` convention as :func:`~opaque.clipped_grad`.</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a>
-<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    The scorer builds its own loader over the partition&#39;s canaries and</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    The scorer builds its own loader over the partition's canaries and</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    pairs every score with the dataset index of the example that produced</span>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    it, returning :class:`~opaque.auditing.types.CanaryScores` — the form</span>
 <a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    :func:`~opaque.auditing.one_run` requires.  The pairing is joined by</span>
@@ -5312,7 +5312,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">    Returns:</span>
 <a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">        A :class:`~opaque.auditing.types.CanaryScores`, shape ``(n,)``:</span>
 <a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">        negated losses (higher = more likely member), optionally adjusted</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">        by reference scores, each carrying its canary&#39;s dataset index.</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a><span class="sd">        by reference scores, each carrying its canary's dataset index.</span>
 <a id="__codelineno-0-86" name="__codelineno-0-86"></a>
 <a id="__codelineno-0-87" name="__codelineno-0-87"></a><span class="sd">    Raises:</span>
 <a id="__codelineno-0-88" name="__codelineno-0-88"></a><span class="sd">        ValueError: If ``batch_argnums`` is malformed, ``batch_size`` is</span>
@@ -5324,7 +5324,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <a id="__codelineno-0-94" name="__codelineno-0-94"></a>
 <a id="__codelineno-0-95" name="__codelineno-0-95"></a><span class="sd">        def canary_collate(examples):</span>
 <a id="__codelineno-0-96" name="__codelineno-0-96"></a><span class="sd">            batch = data_collator(examples)</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="sd">            return (batch[&quot;input_ids&quot;].to(device),)</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a><span class="sd">            return (batch["input_ids"].to(device),)</span>
 <a id="__codelineno-0-98" name="__codelineno-0-98"></a>
 <a id="__codelineno-0-99" name="__codelineno-0-99"></a><span class="sd">        ref = auditing.loss_scores(</span>
 <a id="__codelineno-0-100" name="__codelineno-0-100"></a><span class="sd">            loss_fn, initial_params,</span>
@@ -5340,7 +5340,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <a id="__codelineno-0-110" name="__codelineno-0-110"></a><span class="sd">            reference_scores=ref,</span>
 <a id="__codelineno-0-111" name="__codelineno-0-111"></a><span class="sd">        )</span>
 <a id="__codelineno-0-112" name="__codelineno-0-112"></a><span class="sd">        estimate = auditing.one_run(scores, coin_flip=cf)</span>
-<a id="__codelineno-0-113" name="__codelineno-0-113"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-113" name="__codelineno-0-113"></a><span class="sd">    """</span>
 <a id="__codelineno-0-114" name="__codelineno-0-114"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <a id="__codelineno-0-115" name="__codelineno-0-115"></a>
 <a id="__codelineno-0-116" name="__codelineno-0-116"></a>    <span class="n">_validate_batch_argnums</span><span class="p">(</span><span class="n">batch_argnums</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">))</span>
@@ -5518,7 +5518,7 @@ not positive, or <code>collate_fn</code> changes the batch row count; <code>Type
 <code>reference_scores</code> does not carry identifiers.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_collate</span><span class="p">(</span><span class="n">examples</span><span class="p">):</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">batch</span> <span class="o">=</span> <span class="n">data_collator</span><span class="p">(</span><span class="n">examples</span><span class="p">)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">"input_ids"</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
