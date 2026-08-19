@@ -31,7 +31,7 @@ from opaque.alignment.sft.loss import nll_loss
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 from opaque.random import key
 
 # Mechanism-substitution smoke test runs in well under 5 s on CPU and needs
@@ -166,9 +166,7 @@ def test_dpo_closure_runs_under_both_mechanisms() -> None:
         merged = {**frozen, **trainable_params}
         chosen_logp = sequence_logp(fmodel(merged, c_ids), c_ids, c_mask)
         rejected_logp = sequence_logp(fmodel(merged, r_ids), r_ids, c_mask)
-        return sigmoid_loss(
-            chosen_logp - ref_c, rejected_logp - ref_r, beta=0.1
-        )
+        return sigmoid_loss(chosen_logp - ref_c, rejected_logp - ref_r, beta=0.1)
 
     grad_fn, clip_state = clipped_grad(
         per_example_loss,

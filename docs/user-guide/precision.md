@@ -12,6 +12,11 @@ reverse-engineering individual modules.
 | `loss_scaler` | `opaque.precision.loss_scaler` | Dynamic loss scaling for `fp16` — multiplies loss before backward, unscales grads before clipping. |
 | `compute_dtype` | Kwarg on clipping + noise factories | Precision at which sensitivity-bound and noise sampling are computed. **DP-critical**: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one. |
 
+`opaque.precision.loss_scaler` and `opaque.precision.all_finite` are
+implemented across Torch, JAX, and MLX with the same functional interface.
+There is no portable autocast abstraction: JAX and MLX keep dtype selection
+explicit, and Torch `torch.autocast(...)` is used directly when needed.
+
 ## The DP-critical invariant
 
 The privacy accountant is calibrated to `noise_multiplier · C`, where C is the
@@ -65,9 +70,11 @@ precision even though the forward is in `bfloat16`.
 the unscale as `pre_clipping_transform` so clipping sees the true magnitudes.
 
 ```python
+from opaque.optimizers import adamw, apply_updates
 from opaque.precision import loss_scaler, all_finite
 
 scaler, scaler_state = loss_scaler()  # defaults match torch.amp.GradScaler
+optimizer_step, opt_state = adamw(params, lr=learning_rate)
 
 def per_example_loss(params, x, y):
     with torch.autocast(device_type="cuda", dtype=torch.float16):
@@ -87,7 +94,8 @@ grads, clip_state = grad_fn(params, x, y, state=clip_state)
 grads_finite = all_finite(grads)
 if grads_finite:
     noisy, noise_state = noise_fn(grads, noise_state)
-    opt_state, params = optimizer.update(noisy, opt_state, params=params)
+    updates, opt_state = optimizer_step(noisy, opt_state, params=params)
+    params = apply_updates(params, updates)
     acc_state = accountant.advance(acc_state, ...)
 scaler_state = scaler.update(scaler_state, grads_finite)
 ```
@@ -151,7 +159,7 @@ copy of the summed output; pass `compute_dtype=torch.bfloat16` to trade it back.
 | `torch.amp.autocast(device_type, dtype=...)` | Used directly; nothing to wrap. The trainer enters it around the loss closure. |
 | `torch.amp.GradScaler` | `opaque.precision.loss_scaler` — functional analog. State is a frozen dataclass; defaults match `GradScaler` (`init_scale=2**16`, `growth_factor=2.0`, `backoff_factor=0.5`, `growth_interval=2000`). |
 | `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-patches` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
-| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and the unscale; the surrounding loop owns the skip decision because `optimizer.update(...)` is composed by the user, not by the scaler. |
+| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and the unscale; the surrounding loop owns the skip decision because the explicit `optimizer_step(...)` callable is composed by the user, not by the scaler. |
 
 The structural gap — the scaler doesn't own the optimizer call — is forced by
 the functional path: per-example gradients are returned as a pytree by

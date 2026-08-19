@@ -1,10 +1,11 @@
 # Opaque
 
-**Functional DP-SGD and DP-FTRL for PyTorch.**
+**Functional DP-SGD and DP-FTRL for Torch, JAX, and MLX.**
 
 Opaque provides composable primitives for differentially private
-model training in PyTorch. Built on `torch.func`, every component
-uses explicit state — no hooks, no subclassing, no hidden mutation.
+model training. Backend-dispatched primitives preserve provider-native arrays,
+dtypes, and devices, while every component uses explicit state — no hooks, no
+subclassing, no hidden mutation.
 
 Opaque ships two complementary training pipelines:
 
@@ -19,6 +20,10 @@ Opaque ships two complementary training pipelines:
 Both pipelines share the same primitives — clipping, noise, sampling,
 optimizers, and accounting — but use them differently. Pick the track
 that matches your problem.
+
+DP-FTRL's eager clipping, matrix-factorization noise, optimizer, and state
+continuation paths support Torch, JAX, and MLX. Hugging Face Transformers and
+model patching remain Torch-only.
 
 ## Per-example gradient clipping
 

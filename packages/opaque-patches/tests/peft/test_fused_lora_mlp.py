@@ -123,7 +123,7 @@ class TestFusedLoRAMLP:
         """
         from transformers import Qwen2Config
 
-        from opaque.functional import make_functional
+        from opaque.torch.functional import make_functional
 
         # TF32 (default-on in NVIDIA containers) rounds fp32 matmuls to ~1e-3
         # relative; the vmap path (bmm) and the eager loop (mm) round

@@ -12,6 +12,11 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 
 Opaque provides several noise mechanisms:
 
+DP-SGD Gaussian mechanisms preserve the active provider's native array type,
+dtype, and device. Torch, JAX, and MLX arrays select their provider on the
+first noise call; use `opaque.backend.set_backend()` only for earlier explicit
+selection.
+
 ### Independent Noise (DP-SGD)
 
 - **`gaussian_noise()`** — Gaussian noise; pass `bound=B` (or
@@ -29,7 +34,21 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
 - **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
+- **`bsr_strategy()`** — BSR (Banded Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
+
+DP-FTRL noise executes eagerly on provider-native Torch, JAX, and MLX arrays.
+Strategy coefficient queries return NumPy arrays, while runtime samples,
+correlation state, `PerGroup` allocations, and optional private second-moment
+streams remain native to the provider selected by the gradient template.
+`compute_dtype=None` uses provider `float32` internally and returns each output
+leaf in its input dtype and placement.
+
+An identical key, configuration, inputs, and state replay within one provider;
+provider-native PRNGs do not define cross-provider sample equality. Restoring
+the complete MF state against a matching provider template continues its saved
+native correlation buffers and keyed cursor. These are eager semantics rather
+than a JIT-safety guarantee.
 
 All noise functions return `(noise_fn, state)`, where
 `noise_fn(grads, state) -> (noisy_grads, new_state)`.
@@ -132,6 +151,10 @@ Bounds are absolute, in the same units as the gradient / clip norm.
       heading_level: 4
 
 ::: opaque.dpftrl.noise.bisr_strategy
+    options:
+      heading_level: 4
+
+::: opaque.dpftrl.noise.bsr_strategy
     options:
       heading_level: 4
 

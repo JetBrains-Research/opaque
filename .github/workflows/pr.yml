@@ -236,6 +236,7 @@ jobs:
       - python-tests-cuda
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
+      - engine-torch-free
     runs-on: ubuntu-latest
     steps:
       - name: Verify test results
@@ -262,6 +263,47 @@ jobs:
             echo "$failures"
             exit 1
           fi
+
+  # ---------------------------------------------------------------------------
+  # Backend-neutral gate: the engine core must import and pass its test
+  # suite in an environment that has never installed torch. This is the
+  # source-tree counterpart of the distribution-level ARC-004 check in
+  # validate-distributions.yml.
+  # ---------------------------------------------------------------------------
+  engine-torch-free:
+    name: Engine without torch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Import backend-neutral engine without torch
+        run: |
+          uv run --isolated --no-project \
+            --with-editable packages/opaque-base \
+            --with-editable packages/opaque-engine \
+            python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; import opaque.backend, opaque.ops, opaque.random, opaque.sampling; print('OK')"
+
+      - name: Run engine + boundary tests without torch
+        run: |
+          uv run --isolated --no-project \
+            --with-editable packages/opaque-base \
+            --with-editable packages/opaque-engine \
+            --with pytest --with pytest-xdist \
+            python -m pytest packages/opaque-engine/tests tests/integration/backend \
+              -q -p no:cacheprovider -n auto
+
+      - name: Import isolated Torch provider and infer backend
+        run: |
+          uv run --isolated --no-project \
+            --with-editable packages/opaque-base \
+            --with-editable packages/opaque-engine \
+            --with-editable packages/opaque-torch \
+            python -c "import torch; from opaque.backend import active_backend, clear_backend; from opaque.ops import square; clear_backend(); result = square(torch.tensor([2.0])); assert torch.equal(result, torch.tensor([4.0])); assert active_backend().name == 'torch'; import opaque.torch.random; print('OK')"
 
   # Like the Python gate above, this is the stable check branch protection
   # should require rather than the reusable workflow's implementation job.

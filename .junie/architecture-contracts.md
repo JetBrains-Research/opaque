@@ -49,7 +49,7 @@ infrastructure as a violation.
 | ARC-001: Shared namespaces | Planned |
 | ARC-002: Public façade separation | Active |
 | ARC-003: Public documentation paths | Active |
-| ARC-004: Backend-neutral distributions | Planned |
+| ARC-004: Backend-neutral distributions | Active |
 | ARC-005: Capability dependency graph | Planned |
 | ARC-006: Test placement | Active |
 | ARC-007: Deliberate public exports | Active |
@@ -98,11 +98,23 @@ There is no fixed-directory regular-expression scan.
 A distribution explicitly marked as backend-neutral must install and execute
 its declared neutral scenario without any backend runtime.
 
-**Enforcement:** Each distribution will declare provided and required
-capabilities in its `pyproject.toml`. Post-build validation will discover
-backend-neutral generated artifacts, verify that their dependency metadata has
-no backend-runtime edge, install them without backend packages, and execute
-their declared neutral scenario. Source import scans are not a substitute.
+**Enforcement:** Behavior + Artifact. `validate-distributions.yml`
+(`engine-backend-neutral`) installs the built `opaque-base` + `opaque-engine`
+wheels without any backend runtime and executes a neutral scenario (keyed RNG
+derivation; dispatch fails closed with `BackendNotSelectedError`). The
+`engine-torch-free` PR-gate job runs the whole `packages/opaque-engine/tests`
+suite plus `tests/integration/backend/` in an environment that never installed
+torch, then verifies the isolated Torch provider activates by inference.
+Behavior tests in `tests/integration/backend/` pin the source-level
+invariants: `opaque-engine` neither imports nor depends on torch
+(`test_engine_torch_boundary.py`), `opaque-dpsgd` / `opaque-dpftrl` /
+`opaque-accounting` stay provider-free
+(`test_dpsgd_provider_neutral.py`, `test_dpftrl_provider_neutral.py`,
+`test_accounting_torch_free.py`), lower-layer wheels never import
+upper-layer or provider namespaces (`test_dependency_direction.py`), and
+the sampling contract stays backend-neutral (`test_sampling_boundary.py`).
+The capability-metadata declaration in `pyproject.toml` remains planned;
+until it lands, the explicit wheel lists above are the enforced surface.
 
 ### ARC-005: Capability dependency graph
 

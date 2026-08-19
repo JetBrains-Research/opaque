@@ -22,7 +22,6 @@ import torch.nn as nn
 from torch.utils._pytree import tree_leaves
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.functional import make_functional
 from opaque.patches.kernels import (
     opaque_fused_add_rms_norm,
     opaque_geglu_approx,
@@ -30,6 +29,7 @@ from opaque.patches.kernels import (
     opaque_rms_norm,
     opaque_swiglu,
 )
+from opaque.torch.functional import make_functional
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="autocast + opaque kernels require CUDA"

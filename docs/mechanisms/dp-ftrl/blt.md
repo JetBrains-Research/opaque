@@ -115,6 +115,10 @@ If you need subsampling amplification with correlated noise, use
 
 ### Noise injection
 
+The strategy optimization and coefficients are host-side NumPy work. The eager
+noise function applies them to native Torch, JAX, or MLX arrays and keeps BLT's
+buffer state native to the activated provider.
+
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, blt_strategy
 from opaque.random import key

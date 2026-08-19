@@ -52,7 +52,7 @@ uv sync --group examples --all-packages --extra all
 jupyter lab docs/tutorials/
 ```
 
-The `examples` group ships Jupyter, matplotlib, torchvision, torchopt,
-datasets, and wandb; HuggingFace integration comes via `--extra all`
+The `examples` group ships Jupyter, matplotlib, torchvision, datasets, and
+wandb; HuggingFace integration comes via `--extra all`
 (or `--extra transformers`). The distributed-training tutorial requires
 multiple processes via `torchrun`.

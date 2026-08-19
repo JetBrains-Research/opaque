@@ -77,13 +77,16 @@ Each call to `noise_fn` returns a new state with an incremented step counter.
 Always use the returned state for the next call.
 
 ```python
+from opaque.optimizers import adamw, apply_updates
+
 noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
+optimizer_step, opt_state = adamw(params, lr=learning_rate)
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, state = noise_fn(grads, state)  # state advances
-    updates, opt_state = optimizer.update(noisy_grads, opt_state)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 ```
 
 Internally, noise at step t is generated from `fold_in(base_key, t)`, ensuring
@@ -229,7 +232,7 @@ this — their per-record bound is set at construction and does not depend
 on data — so either can be wired into the loop interchangeably:
 
 ```python
-from opaque.dpsgd.clipping import auto_clipped_grad
+from opaque.dpftrl.clipping import auto_clipped_grad
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key
 
@@ -257,9 +260,30 @@ for batch_x, batch_y in dataloader:
 steps, the dispatcher's `_validate_constant_max_norm` latch rejects the
 varying `max_norm`, and the standard MF privacy proof would not apply.
 
+### Providers, dtype, and state
+
+MF noise runs eagerly over native Torch, JAX, and MLX array pytrees. The first
+provider-native gradient template activates the corresponding installed
+provider. Strategy recipes and their `coefficients(...)` queries remain
+host-side and return NumPy arrays; runtime Gaussian samples, correlation
+buffers, outputs, `PerGroup` allocations, and paired private second-moment
+streams remain native to the active provider.
+
+`compute_dtype=None` resolves to that provider's `float32` for sampling and
+linear-combination arithmetic. Output leaves are cast back to their input dtype
+and preserve native placement. With the same key, inputs, and state, execution
+replays deterministically within one provider, but Torch, JAX, and MLX do not
+share a bitstream.
+
+Always thread the returned `MFNoiseState` or `SecondMomentMFNoiseState` into the
+next call. Checkpoint it through `opaque.serialization.state_dict` and restore
+against a matching provider-native state template with `from_state_dict`; the
+next call continues the saved key, step counter, and correlation buffers. This
+is an eager contract, not a claim that a complete MF loop is JIT-safe.
+
 ### Variants
 
-Opaque provides five MF strategies, all used through the unified `mf_gaussian_noise()` dispatcher:
+Opaque provides six MF strategies, all used through the unified `mf_gaussian_noise()` dispatcher:
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
@@ -267,6 +291,7 @@ Opaque provides five MF strategies, all used through the unified `mf_gaussian_no
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
+| `bsr_strategy()` | O(bandwidth) | Closed-form banded square-root workload |
 | `identity_strategy()` | O(1) | Testing MF infrastructure with standard noise |
 
 All strategies are created by factory functions and passed to `mf_gaussian_noise()`:
@@ -282,6 +307,7 @@ noise_fn, noise_state = mf_gaussian_noise(
     n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
+    compute_dtype=None,  # active provider's float32
 )
 
 for step in range(1000):
@@ -290,14 +316,14 @@ for step in range(1000):
     params = params - lr * noisy_grads.pytree
 ```
 
-The `grad_template` argument provides shape and dtype information for
-pre-allocating noise buffers. Pass any pytree with the same structure as
-the gradients (e.g., the model parameters).
+The `grad_template` argument provides native array shape, dtype, device, and
+provider information for allocating noise buffers. Pass a pytree with the same
+structure as the gradients, such as the model parameters.
 
 ### Per-group clipping
 
 `mf_gaussian_noise` accepts `ClippedPytree` metadata where `max_norm` is a
-`PerGroup` (from `opaque.dpsgd.clipping.per_group`), not only a scalar. The
+`PerGroup` (from `opaque.dpftrl.clipping.per_group`), not only a scalar. The
 per-leaf IID noise scale follows the same MSE-optimal Mahalanobis allocation
 as `gaussian_noise` (bounded or not) on DP-SGD: no extra privacy
 cost versus scalar clipping at the same `noise_multiplier`, and the MF
@@ -336,7 +362,7 @@ noise_fn, noise_state = mf_gaussian_noise(
 # `grads` is a SecondMomentClippingOutput when clipped_grad was called
 # with second_moment=True; the noise function dispatches polymorphically.
 noise_output, noise_state = noise_fn(grads, noise_state)
-updates, opt_state = optimizer.update(
+updates, opt_state = optimizer_step(
     noise_output,
     opt_state,
     params=params,
@@ -404,14 +430,13 @@ from opaque.random import key
 
 strategy = lambda_cgd_strategy(
     lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
-    n_steps=1000,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -427,14 +452,40 @@ from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
-    n_steps=total_steps,
     bandwidth=4,
     momentum=0.95,
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
-    n_steps=1000,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
+    noise_multiplier=noise_multiplier,
+    key=key(42),
+)
+```
+
+### `bsr_strategy`
+
+BSR (Banded Square Root) uses closed-form coefficients for the paper's
+`alpha`/`beta` workload and a finite bandwidth.
+
+```python
+from opaque.dpftrl.noise import bsr_strategy, mf_gaussian_noise
+from opaque.random import key
+
+strategy = bsr_strategy(
+    bandwidth=4,
+    alpha=1.0,
+    beta=0.95,
+)
+noise_fn, noise_state = mf_gaussian_noise(
+    params,
+    strategy,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -482,7 +533,7 @@ proc = dpftrl_acc.poisson(
 )
 eps = proc.epsilon_at(1e-5)
 
-# DP-λCGD / BISR / BLT — strategy.as_mechanism populates the accounting
+# DP-λCGD / BISR / BLT — the amplifier queries the same strategy recipe
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
@@ -589,10 +640,10 @@ For independent per-rank noise (not typical for centralized DP-SGD), derive
 a per-rank key via `fold_in`:
 
 ```python
+from opaque.distributed import get_rank
 from opaque.random import key, fold_in
-import torch.distributed as dist
 
-rank = dist.get_rank()
+rank = get_rank()
 noise_fn, noise_state = gaussian_noise(
     noise_multiplier=noise_multiplier,
     key=fold_in(key(42), rank),
