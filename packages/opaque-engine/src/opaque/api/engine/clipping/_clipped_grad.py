@@ -251,7 +251,10 @@ def clipped_grad(
         # frees the activations checkpointing recomputed.  An enclosing
         # grad/vjp/jvp is the exception -- it differentiates this result, so its
         # graph has to survive, and dropping it would hand it silent zeros.
-        values_only = not under_differentiating_transform()
+        # Under torch.compile, assume the enclosing transform is there: keeping
+        # a graph nothing differentiates costs memory the compiler manages
+        # anyway, while dropping one that is needed answers silent zeros.
+        values_only = not under_differentiating_transform(when_compiling=True)
         with torch.no_grad() if values_only else contextlib.nullcontext():
             grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
         result = pre_clipping_transform(grad)

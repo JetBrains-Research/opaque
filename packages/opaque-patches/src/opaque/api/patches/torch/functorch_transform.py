@@ -34,7 +34,14 @@ def prev_grad_mode() -> bool:
     with no_grad]. Outside such a transform the ambient mode is the answer, and
     it is also the fallback if the private accessor moves: keeping the inner
     graph costs memory, dropping one that is needed costs correctness.
+
+    Under ``torch.compile`` the ambient mode is the answer too. ``CInterpreter``
+    is a pybind type Dynamo cannot call methods on, so probing it inside a
+    compiled region is a hard error under ``fullgraph=True``, and the compiler
+    manages activation lifetimes itself rather than through this flag.
     """
+    if torch.compiler.is_compiling():
+        return torch.is_grad_enabled()
     try:
         from torch._C._functorch import (
             CGradInterpreterPtr,

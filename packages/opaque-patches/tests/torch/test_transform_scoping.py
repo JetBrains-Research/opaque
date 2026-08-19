@@ -15,6 +15,7 @@ import pytest
 import torch
 from torch.autograd.graph import save_on_cpu
 from torch.func import grad, hessian, jacrev, jvp, vjp, vmap
+from torch.utils.checkpoint import checkpoint
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.patches.torch.checkpoint import native_support
@@ -147,3 +148,47 @@ def test_first_order_allows_saved_tensor_hooks():
 def test_higher_order_rejects_saved_tensor_hooks():
     with save_on_cpu(), pytest.raises(RuntimeError, match="saved tensor hooks"):
         jacrev(grad(cube))(torch.tensor(2.0))
+
+
+# ---------------------------------------------------------------------------
+# torch.compile: the stack cannot be read from inside a compiled region at all,
+# so every scoping decision above has to have a constant to fall back on. Both
+# live here rather than with the other compile tests because they only bite
+# once the patches are installed, and nothing else in that suite installs them.
+# ---------------------------------------------------------------------------
+
+
+def test_compiles_the_dp_transform_with_the_patches_applied():
+    """``fullgraph=True`` over ``clipped_grad``, patches and all.
+
+    Reading the interpreter stack is what a compiled region cannot do: the
+    stack itself is a pybind builtin and its interpreters are pybind objects,
+    so both the clipping probe and ``prev_grad_mode`` abort the compilation.
+    """
+    grad_fn, state = clipped_grad(lambda w, x: ((x - w) ** 2).sum(), clipping_norm=1.0)
+    args = (torch.tensor(3.0), torch.tensor([0.0, 7.0]))
+
+    eager, _ = grad_fn(*args, state=state)
+    compiled_fn = torch.compile(grad_fn, backend="aot_eager", fullgraph=True)
+    compiled, _ = compiled_fn(*args, state=state)
+
+    torch.testing.assert_close(compiled.pytree, eager.pytree)
+
+
+def test_compiled_first_order_keeps_its_saved_tensor_hooks():
+    """A compiled first-order transform still gets hooks, so checkpoint runs.
+
+    The guard is what rejects the hooks non-reentrant checkpoint is built on.
+    Answering "higher-order" for a compiled composition -- which is the safe
+    assumption for the *clipping* probe -- would raise here instead.
+    """
+    weight = torch.randn(4, 4)
+
+    def f(x):
+        h = checkpoint(lambda z: torch.tanh(z @ weight), x, use_reentrant=False)
+        return h.sum()
+
+    compiled_fn = torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)
+    x = torch.randn(3, 4)
+
+    torch.testing.assert_close(compiled_fn(x), vmap(grad(f))(x))

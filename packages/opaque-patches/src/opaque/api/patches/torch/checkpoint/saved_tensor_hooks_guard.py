@@ -39,11 +39,18 @@ def _higher_order_only(guarded, unguarded):
 
     The dispatcher runs before the transform pushes its own level, so anything
     it sees on the stack encloses it.
+
+    Under ``torch.compile`` the stack cannot be read, and the guard is what
+    rejects the saved-tensor hooks non-reentrant checkpoint is built on. Lifting
+    it there keeps ``torch.compile`` over a checkpointed first-order transform
+    working exactly as it did before this patch; the cost is that a *compiled*
+    higher-order composition is no longer told it is unsupported, which is the
+    behaviour every torch Opaque supports already had.
     """
 
     @functools.wraps(unguarded)
     def dispatch(*args, **kwargs):
-        target = guarded if under_differentiating_transform() else unguarded
-        return target(*args, **kwargs)
+        higher_order = under_differentiating_transform(when_compiling=False)
+        return (guarded if higher_order else unguarded)(*args, **kwargs)
 
     return dispatch
