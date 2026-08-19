@@ -216,6 +216,19 @@ def _compile_with_fullgraph_fallback(
     return wrapper
 
 
+# Sampling modes whose privacy analysis does not depend on where in the
+# schedule a step falls, and which may therefore resume with a sampler
+# restarted at cursor 0 while clipping, noise and the accountant resume
+# mid-horizon. Poisson qualifies because inclusion is an independent
+# Bernoulli(q) draw per step and amplification composes per step. Every
+# other mode Opaque exposes fixes a participation pattern across the
+# horizon -- b-min-separation, the balls-in-bins partition, random
+# allocation, k-out-of-t -- whose sensitivity bound a restarted cursor
+# violates. Allowlist rather than denylist, so a mode added later fails
+# closed.
+_CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
+
+
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -919,9 +932,15 @@ class DPTrainer:
           seed.  DP-valid either way.
         - **``ignore_data_skip=True``** disables the sampler-state
           restore on resume.  The new run starts each epoch from
-          ``iter_count=0`` with a fresh subsample sequence, again
-          DP-valid; useful when the dataset shape changed since
-          checkpoint write.
+          ``iter_count=0`` with a fresh subsample sequence; useful when
+          the dataset shape changed since checkpoint write.  DP-valid
+          under ``sampling_mode="poisson"``, where inclusion is an
+          independent Bernoulli draw per step.  Under the participation
+          schemas -- ``b_min_sep``, ``balls_in_bins``,
+          ``random_allocation``, ``k_out_of_t`` -- a restarted cursor
+          would spend participations the accounted sensitivity assumes
+          are separated, so a distributed resume missing its rank-local
+          snapshot raises instead.
         - **Accountant on resume** preserves heterogeneous composition:
           the saved ``Accountant`` is loaded as the *prefix* and
           calibration of the remaining steps targets the original
@@ -5159,6 +5178,36 @@ class DPTrainer:
                 )
             return sampler_state
         if self._ddp.world_size > 1:
+            if self.args.ignore_data_skip:
+                mode = self.args.sampling_mode
+                if mode in _CURSOR_FREE_SAMPLING_MODES:
+                    # Poisson only. Opting out of cursor restore costs nothing
+                    # when inclusion is an independent Bernoulli(q) draw per
+                    # step: the guarantee composes per step and does not depend
+                    # on which records were drawn earlier, so a sampler
+                    # restarted at its keyed beginning still realizes the
+                    # mechanism the accountant priced.
+                    log.info(
+                        "ignore_data_skip=True: rank-local sampler state "
+                        "missing at %s; sampler restarts from its initial "
+                        "cursor.",
+                        path,
+                    )
+                    return None
+                raise RuntimeError(
+                    f"Cannot resume distributed training from {ckpt_dir} with "
+                    f"ignore_data_skip=True under sampling_mode={mode!r}: "
+                    f"missing rank-local sampler state for rank "
+                    f"{self._ddp.rank} at {path}. Clipping, noise and the "
+                    "accountant resume mid-horizon, so restarting the sampler "
+                    "at cursor 0 would spend participations this schedule "
+                    "treats as already used — breaking the b-min-separation or "
+                    "balls-in-bins participation bound the accounted "
+                    "sensitivity assumes, and understating epsilon. Restore "
+                    "the rank-local snapshot, or start a fresh run. "
+                    "ignore_data_skip is safe here only for "
+                    f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}."
+                )
             raise RuntimeError(
                 f"Cannot resume distributed training from {ckpt_dir}: missing "
                 f"rank-local sampler state for rank {self._ddp.rank} at {path}."

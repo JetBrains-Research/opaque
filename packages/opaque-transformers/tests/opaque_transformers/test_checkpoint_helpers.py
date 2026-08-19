@@ -11,7 +11,13 @@ import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
-from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+from opaque.api.transformers.trainer._dp_trainer import (
+    _CURSOR_FREE_SAMPLING_MODES,
+    DPTrainer,
+)
+from opaque.api.transformers.trainer._training_arguments import (
+    _ALLOWED_SAMPLERS,
+)
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
@@ -142,6 +148,15 @@ class TestRngSnapshot:
         assert torch.equal(a, b)
 
 
+# Every sampling mode ``_ALLOWED_SAMPLERS`` admits except the cursor-free
+# ones. Derived rather than hardcoded so widening the allowed-sampler map
+# without revisiting the resume path fails this file instead of silently
+# leaving a schema unguarded.
+_PARTICIPATION_SCHEMA_MODES = {
+    mode for modes in _ALLOWED_SAMPLERS.values() for mode in modes
+} - _CURSOR_FREE_SAMPLING_MODES
+
+
 class TestSamplerStatePaths:
     def test_paths_are_rank_local_for_distributed_runs(self, tmp_path):
         assert (
@@ -173,8 +188,47 @@ class TestSamplerStatePaths:
     def test_distributed_resume_rejects_missing_local_sampler_state(self, tmp_path):
         trainer = object.__new__(DPTrainer)
         trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        trainer.args = SimpleNamespace(ignore_data_skip=False)
 
         with pytest.raises(RuntimeError, match="rank-local sampler state for rank 1"):
+            trainer._read_sampler_state_for_resume(str(tmp_path), {"key_seed": 11})
+
+    def test_ignore_data_skip_tolerates_missing_state_under_poisson(self, tmp_path):
+        """Poisson resumes without rank-local sampler files.
+
+        Inclusion is an independent Bernoulli(q) draw per step, so the
+        guarantee composes per step and does not depend on which records
+        earlier steps drew. A sampler restarted at its keyed beginning still
+        realizes the mechanism the accountant priced.
+        """
+        trainer = object.__new__(DPTrainer)
+        trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        trainer.args = SimpleNamespace(ignore_data_skip=True, sampling_mode="poisson")
+
+        sampler_state = trainer._read_sampler_state_for_resume(
+            str(tmp_path), {"key_seed": 11}
+        )
+
+        assert sampler_state is None
+
+    @pytest.mark.parametrize("mode", sorted(_PARTICIPATION_SCHEMA_MODES))
+    def test_ignore_data_skip_rejects_missing_state_under_participation_schemas(
+        self, tmp_path, mode
+    ):
+        """Every schema that fixes a participation pattern must still raise.
+
+        Clipping, noise and the accountant resume mid-horizon. Restarting the
+        sampler at cursor 0 would spend participations the schedule treats as
+        already used, breaking the separation or partition bound the accounted
+        sensitivity assumes — which understates epsilon rather than failing
+        loudly. Parametrized over every non-Poisson mode `_ALLOWED_SAMPLERS`
+        admits, so widening that map without revisiting this path fails here.
+        """
+        trainer = object.__new__(DPTrainer)
+        trainer._ddp = SimpleNamespace(rank=1, world_size=2)
+        trainer.args = SimpleNamespace(ignore_data_skip=True, sampling_mode=mode)
+
+        with pytest.raises(RuntimeError, match="understating epsilon"):
             trainer._read_sampler_state_for_resume(str(tmp_path), {"key_seed": 11})
 
 
