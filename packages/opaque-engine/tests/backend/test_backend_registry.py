@@ -224,6 +224,35 @@ def test_unselected_context_fails_closed_while_another_context_is_active() -> No
         pristine.run(probe)
 
 
+def test_set_backend_accepts_known_backend_name() -> None:
+    set_backend("torch")
+
+    active = active_backend()
+    assert active is not None
+    assert active.name == "torch"
+    assert _factory_calls == [KnownBackend.TORCH]
+    assert _validation_calls == [("torch", None)]
+
+
+def test_use_backend_accepts_known_backend_name() -> None:
+    with use_backend("jax") as backend:
+        assert backend.name == "jax"
+        assert active_backend() is backend
+
+    assert active_backend() is None
+    assert _factory_calls == [KnownBackend.JAX]
+
+
+def test_unknown_backend_name_is_rejected_without_activation() -> None:
+    with pytest.raises(
+        BackendProviderError, match=r"Unknown backend name 'numpy'.*'torch'"
+    ):
+        set_backend("numpy")
+
+    assert active_backend() is None
+    assert _factory_calls == []
+
+
 def test_facade_reexports_complete_lifecycle_surface() -> None:
     assert facade.KnownBackend is KnownBackend
     assert facade.ensure_backend is ensure_backend
