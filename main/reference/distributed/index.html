@@ -4009,18 +4009,7 @@ unsynchronized.</p>
 
             <details class="quote">
               <summary>Source code in <code>packages/opaque-engine/src/opaque/api/engine/distributed/_state.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-496">496</a></span>
-<span class="normal"><a href="#__codelineno-0-497">497</a></span>
-<span class="normal"><a href="#__codelineno-0-498">498</a></span>
-<span class="normal"><a href="#__codelineno-0-499">499</a></span>
-<span class="normal"><a href="#__codelineno-0-500">500</a></span>
-<span class="normal"><a href="#__codelineno-0-501">501</a></span>
-<span class="normal"><a href="#__codelineno-0-502">502</a></span>
-<span class="normal"><a href="#__codelineno-0-503">503</a></span>
-<span class="normal"><a href="#__codelineno-0-504">504</a></span>
-<span class="normal"><a href="#__codelineno-0-505">505</a></span>
-<span class="normal"><a href="#__codelineno-0-506">506</a></span>
-<span class="normal"><a href="#__codelineno-0-507">507</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-507">507</a></span>
 <span class="normal"><a href="#__codelineno-0-508">508</a></span>
 <span class="normal"><a href="#__codelineno-0-509">509</a></span>
 <span class="normal"><a href="#__codelineno-0-510">510</a></span>
@@ -4039,37 +4028,48 @@ unsynchronized.</p>
 <span class="normal"><a href="#__codelineno-0-523">523</a></span>
 <span class="normal"><a href="#__codelineno-0-524">524</a></span>
 <span class="normal"><a href="#__codelineno-0-525">525</a></span>
-<span class="normal"><a href="#__codelineno-0-526">526</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-496" name="__codelineno-0-496"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync</span><span class="p">(</span><span class="o">*</span><span class="n">states</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-497" name="__codelineno-0-497"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Synchronize one or more registered state/aux objects across ranks.</span>
-<a id="__codelineno-0-498" name="__codelineno-0-498"></a>
-<a id="__codelineno-0-499" name="__codelineno-0-499"></a><span class="sd">    Dispatches on object type — exact match first, then ``__mro__`` — to</span>
-<a id="__codelineno-0-500" name="__codelineno-0-500"></a><span class="sd">    whichever function was registered via :func:`register_sync_type`.  An</span>
-<a id="__codelineno-0-501" name="__codelineno-0-501"></a><span class="sd">    unregistered type raises ``TypeError``; nothing is passed through</span>
-<a id="__codelineno-0-502" name="__codelineno-0-502"></a><span class="sd">    unsynchronized.</span>
-<a id="__codelineno-0-503" name="__codelineno-0-503"></a>
-<a id="__codelineno-0-504" name="__codelineno-0-504"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-505" name="__codelineno-0-505"></a><span class="sd">        A single synchronized object if one argument was passed, otherwise a</span>
-<a id="__codelineno-0-506" name="__codelineno-0-506"></a><span class="sd">        tuple matching the input order.</span>
-<a id="__codelineno-0-507" name="__codelineno-0-507"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-508" name="__codelineno-0-508"></a>
-<a id="__codelineno-0-509" name="__codelineno-0-509"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sync_one</span><span class="p">(</span><span class="n">single</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<a id="__codelineno-0-510" name="__codelineno-0-510"></a>        <span class="n">state_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
-<a id="__codelineno-0-511" name="__codelineno-0-511"></a>        <span class="n">sync_fn</span> <span class="o">=</span> <span class="n">_resolve_sync_fn</span><span class="p">(</span><span class="n">state_type</span><span class="p">)</span>
-<a id="__codelineno-0-512" name="__codelineno-0-512"></a>        <span class="k">if</span> <span class="n">sync_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-513" name="__codelineno-0-513"></a>            <span class="n">_ensure_builtin_sync_types_loaded</span><span class="p">()</span>
-<a id="__codelineno-0-514" name="__codelineno-0-514"></a>            <span class="n">sync_fn</span> <span class="o">=</span> <span class="n">_resolve_sync_fn</span><span class="p">(</span><span class="n">state_type</span><span class="p">)</span>
-<a id="__codelineno-0-515" name="__codelineno-0-515"></a>        <span class="k">if</span> <span class="n">sync_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-516" name="__codelineno-0-516"></a>            <span class="k">return</span> <span class="n">sync_fn</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
-<a id="__codelineno-0-517" name="__codelineno-0-517"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-518" name="__codelineno-0-518"></a>            <span class="sa">f</span><span class="s2">&quot;No sync function registered for </span><span class="si">{</span><span class="n">state_type</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. &quot;</span>
-<a id="__codelineno-0-519" name="__codelineno-0-519"></a>            <span class="sa">f</span><span class="s2">&quot;Registered types: </span><span class="si">{</span><span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="vm">__name__</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">_SYNC_REGISTRY</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-520" name="__codelineno-0-520"></a>        <span class="p">)</span>
-<a id="__codelineno-0-521" name="__codelineno-0-521"></a>
-<a id="__codelineno-0-522" name="__codelineno-0-522"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-523" name="__codelineno-0-523"></a>        <span class="k">return</span> <span class="n">_sync_one</span><span class="p">(</span><span class="n">states</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-<a id="__codelineno-0-524" name="__codelineno-0-524"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-525" name="__codelineno-0-525"></a>        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_sync_one</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">states</span><span class="p">)</span>
-<a id="__codelineno-0-526" name="__codelineno-0-526"></a>    <span class="k">return</span> <span class="p">()</span>
+<span class="normal"><a href="#__codelineno-0-526">526</a></span>
+<span class="normal"><a href="#__codelineno-0-527">527</a></span>
+<span class="normal"><a href="#__codelineno-0-528">528</a></span>
+<span class="normal"><a href="#__codelineno-0-529">529</a></span>
+<span class="normal"><a href="#__codelineno-0-530">530</a></span>
+<span class="normal"><a href="#__codelineno-0-531">531</a></span>
+<span class="normal"><a href="#__codelineno-0-532">532</a></span>
+<span class="normal"><a href="#__codelineno-0-533">533</a></span>
+<span class="normal"><a href="#__codelineno-0-534">534</a></span>
+<span class="normal"><a href="#__codelineno-0-535">535</a></span>
+<span class="normal"><a href="#__codelineno-0-536">536</a></span>
+<span class="normal"><a href="#__codelineno-0-537">537</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-507" name="__codelineno-0-507"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync</span><span class="p">(</span><span class="o">*</span><span class="n">states</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="__codelineno-0-508" name="__codelineno-0-508"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Synchronize one or more registered state/aux objects across ranks.</span>
+<a id="__codelineno-0-509" name="__codelineno-0-509"></a>
+<a id="__codelineno-0-510" name="__codelineno-0-510"></a><span class="sd">    Dispatches on object type — exact match first, then ``__mro__`` — to</span>
+<a id="__codelineno-0-511" name="__codelineno-0-511"></a><span class="sd">    whichever function was registered via :func:`register_sync_type`.  An</span>
+<a id="__codelineno-0-512" name="__codelineno-0-512"></a><span class="sd">    unregistered type raises ``TypeError``; nothing is passed through</span>
+<a id="__codelineno-0-513" name="__codelineno-0-513"></a><span class="sd">    unsynchronized.</span>
+<a id="__codelineno-0-514" name="__codelineno-0-514"></a>
+<a id="__codelineno-0-515" name="__codelineno-0-515"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-516" name="__codelineno-0-516"></a><span class="sd">        A single synchronized object if one argument was passed, otherwise a</span>
+<a id="__codelineno-0-517" name="__codelineno-0-517"></a><span class="sd">        tuple matching the input order.</span>
+<a id="__codelineno-0-518" name="__codelineno-0-518"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-519" name="__codelineno-0-519"></a>
+<a id="__codelineno-0-520" name="__codelineno-0-520"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sync_one</span><span class="p">(</span><span class="n">single</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="__codelineno-0-521" name="__codelineno-0-521"></a>        <span class="n">state_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
+<a id="__codelineno-0-522" name="__codelineno-0-522"></a>        <span class="n">sync_fn</span> <span class="o">=</span> <span class="n">_resolve_sync_fn</span><span class="p">(</span><span class="n">state_type</span><span class="p">)</span>
+<a id="__codelineno-0-523" name="__codelineno-0-523"></a>        <span class="k">if</span> <span class="n">sync_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-524" name="__codelineno-0-524"></a>            <span class="n">_ensure_builtin_sync_types_loaded</span><span class="p">()</span>
+<a id="__codelineno-0-525" name="__codelineno-0-525"></a>            <span class="n">sync_fn</span> <span class="o">=</span> <span class="n">_resolve_sync_fn</span><span class="p">(</span><span class="n">state_type</span><span class="p">)</span>
+<a id="__codelineno-0-526" name="__codelineno-0-526"></a>        <span class="k">if</span> <span class="n">sync_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-527" name="__codelineno-0-527"></a>            <span class="k">return</span> <span class="n">sync_fn</span><span class="p">(</span><span class="n">single</span><span class="p">)</span>
+<a id="__codelineno-0-528" name="__codelineno-0-528"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-529" name="__codelineno-0-529"></a>            <span class="sa">f</span><span class="s2">&quot;No sync function registered for </span><span class="si">{</span><span class="n">state_type</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">. &quot;</span>
+<a id="__codelineno-0-530" name="__codelineno-0-530"></a>            <span class="sa">f</span><span class="s2">&quot;Registered types: </span><span class="si">{</span><span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="vm">__name__</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">_SYNC_REGISTRY</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-531" name="__codelineno-0-531"></a>        <span class="p">)</span>
+<a id="__codelineno-0-532" name="__codelineno-0-532"></a>
+<a id="__codelineno-0-533" name="__codelineno-0-533"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-534" name="__codelineno-0-534"></a>        <span class="k">return</span> <span class="n">_sync_one</span><span class="p">(</span><span class="n">states</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<a id="__codelineno-0-535" name="__codelineno-0-535"></a>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-536" name="__codelineno-0-536"></a>        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_sync_one</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">states</span><span class="p">)</span>
+<a id="__codelineno-0-537" name="__codelineno-0-537"></a>    <span class="k">return</span> <span class="p">()</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
