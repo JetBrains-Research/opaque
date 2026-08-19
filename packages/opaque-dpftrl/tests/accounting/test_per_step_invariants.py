@@ -380,6 +380,30 @@ def _pair_id(pair: tuple[str, str]) -> str:
 
 _SUPPORTED_IDS = [_pair_id(p) for p in _SUPPORTED_PAIRS]
 
+# Committed vectors cover the deterministic entries of the supported matrix.
+# Correlated BallsInBins and BMinSep remain MC-backed and use the invariant
+# tests below instead.
+_DETERMINISTIC_VECTORS: dict[tuple[str, str], float] = {
+    ("CyclicPoisson", "IdentityMf"): 0.6260223959034013,
+    ("CyclicPoisson", "BandMf"): 0.4292229170296121,
+    ("BallsInBins", "IdentityMf"): 8.612106227069155,
+}
+
+
+@pytest.mark.parametrize(
+    ("amp", "mech"),
+    _DETERMINISTIC_VECTORS,
+    ids=[_pair_id(pair) for pair in _DETERMINISTIC_VECTORS],
+)
+def test_deterministic_epsilon_matches_committed_vector(amp: str, mech: str):
+    actual = _build(amp, mech).epsilon_at(_DELTA)
+    expected = _DETERMINISTIC_VECTORS[(amp, mech)]
+
+    assert actual == pytest.approx(expected, rel=1e-6), (
+        f"{_pair_id((amp, mech))}, delta={_DELTA}: epsilon drifted; "
+        f"committed={expected:.17g}, observed={actual:.17g}"
+    )
+
 
 @pytest.mark.parametrize(("amp", "mech"), _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
 class TestKPrefixInvariants:

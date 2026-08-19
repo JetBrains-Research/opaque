@@ -2,6 +2,7 @@
 RandomAllocation."""
 
 import math
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -377,3 +378,102 @@ class TestRandomAllocationTightness:
         assert values == sorted(values)
         poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), 1 / 8)
         assert values[0] == pytest.approx(poisson.epsilon_at(1e-8), abs=2e-3)
+
+
+# ── Deterministic regression vectors ──────────────────────────────────
+
+
+def _adaclip() -> DpProcess:
+    return dpsgd_acc.adaclip(
+        dpsgd_acc.gaussian(1.1),
+        expected_batch_size=250,
+        num_groups=3,
+    )
+
+
+_DeterministicAmplificationFactory = Callable[[], DpProcess]
+
+
+class TestDeterministicAmplificationVectors:
+    """Committed ε values for deterministic amplification combinations."""
+
+    @pytest.mark.parametrize(
+        ("name", "factory", "delta", "expected"),
+        [
+            pytest.param(
+                "poisson(adaclip(gaussian(1.1)), q=0.01) * 200",
+                lambda: dpsgd_acc.poisson(_adaclip(), 0.01) * 200,
+                1e-5,
+                0.7256467822715522,
+                id="poisson-adaclip",
+            ),
+            pytest.param(
+                "poisson(gaussian(1.1), q=0.01, cap=64, n=50000) * 200",
+                lambda: (
+                    dpsgd_acc.poisson(
+                        dpsgd_acc.gaussian(1.1),
+                        0.01,
+                        truncated_batch_size=64,
+                        dataset_size=50_000,
+                    )
+                    * 200
+                ),
+                1e-5,
+                1.8536078379130241,
+                id="truncated-poisson-gaussian",
+            ),
+            pytest.param(
+                "poisson(adaclip(gaussian(1.1)), q=0.01, cap=64, n=50000) * 200",
+                lambda: (
+                    dpsgd_acc.poisson(
+                        _adaclip(),
+                        0.01,
+                        truncated_batch_size=64,
+                        dataset_size=50_000,
+                    )
+                    * 200
+                ),
+                1e-5,
+                1.8789749867731147,
+                id="truncated-poisson-adaclip",
+            ),
+            pytest.param(
+                "parallel_poisson(adaclip(gaussian(1.1)), q=0.01, workers=4) * 200",
+                lambda: dpsgd_acc.parallel_poisson(_adaclip(), 0.01, 4) * 200,
+                1e-5,
+                3.3561060950994523,
+                id="parallel-poisson-adaclip",
+            ),
+            pytest.param(
+                "random_allocation(gaussian(1.0), bins=8, n_steps=16)",
+                lambda: dpsgd_acc.random_allocation(
+                    dpsgd_acc.gaussian(1.0),
+                    num_bins=8,
+                    n_steps=16,
+                ),
+                1e-8,
+                4.687320195749143,
+                id="random-allocation-gaussian",
+            ),
+            pytest.param(
+                "random_allocation(adaclip(gaussian(1.1)), bins=8, n_steps=16)",
+                lambda: dpsgd_acc.random_allocation(_adaclip(), num_bins=8, n_steps=16),
+                1e-8,
+                3.965060097641603,
+                id="random-allocation-adaclip",
+            ),
+        ],
+    )
+    def test_epsilon_matches_committed_vector(
+        self,
+        name: str,
+        factory: _DeterministicAmplificationFactory,
+        delta: float,
+        expected: float,
+    ):
+        actual = factory().epsilon_at(delta)
+
+        assert actual == pytest.approx(expected, rel=1e-6), (
+            f"{name}, delta={delta}: epsilon drifted; "
+            f"committed={expected:.17g}, observed={actual:.17g}"
+        )
