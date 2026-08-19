@@ -5,7 +5,7 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 
 ## Project snapshot
 
-- **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.83)
+- **Language**: Python 3.11+ (< 3.14) + Rust stable (≥ 1.83)
 - **Package manager**: `uv`
 - **Hardware**: GPU for training runs; CPU/MPS for most tests
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
@@ -245,20 +245,24 @@ Gated HuggingFace models use `@requires_hf_auth` imported from
 
 CI lane marker expressions:
 
-- PR Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not slow and not distributed"`.
-- PR Distributed / Linux amd64: `-m "distributed and not cuda"`.
-- PR dependency boundaries (Ubuntu, Python 3.11/3.12):
+- PR Linux amd64 (locked): `-m "not cuda and not mps and not slow and not distributed"`.
+- PR Linux amd64 (distributed): `-m "distributed and not cuda"`.
+- PR Linux amd64 dependency boundaries (Python 3.11/3.13):
   `-m "not cuda and not mps and not slow and not distributed"`.
 - PR macOS arm64: `-m "not cuda and not slow and not distributed"`.
 - PR Linux arm64: `-m "not cuda and not mps and not slow and not distributed"`.
-- PR CUDA (self-hosted): `-m "cuda and not slow"`.
-- Main Linux/amd64 (Ubuntu): `-m "not cuda and not mps and not distributed"`.
-- Main Distributed / Linux amd64: `-m "distributed and not cuda"`.
-- Main dependency boundaries (Ubuntu, Python 3.11/3.12):
+- PR CUDA locked (self-hosted): `-m "cuda and not slow"`.
+- PR CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
+  `-m "cuda and not slow"`.
+- Main Linux amd64 (locked): `-m "not cuda and not mps and not distributed"`.
+- Main Linux amd64 (distributed): `-m "distributed and not cuda"`.
+- Main Linux amd64 dependency boundaries (Python 3.11/3.13):
   `-m "not cuda and not mps and not slow and not distributed"`.
 - Main macOS arm64: `-m "not cuda and not distributed"`.
 - Main Linux arm64: `-m "not cuda and not mps and not distributed"`.
-- Main CUDA (self-hosted): `-m "cuda"`.
+- Main CUDA locked (self-hosted): `-m "cuda"`.
+- Main CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
+  `-m "cuda and not slow"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
   Failures in the Minimum dependencies lane are currently advisory, while
@@ -319,7 +323,7 @@ is needed. The development loop is entirely `uv sync` + `pytest` + `cargo test`.
 
 ### Environment prerequisites
 
-- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.13` constraint.
+- **Python 3.12** (system default on the VM) satisfies the `>=3.11,<3.14` constraint.
 - **Rust stable** (≥ 1.83) is pre-installed for the `opaque-accounting` PyO3 build.
 - **uv** must be on `PATH` (`$HOME/.local/bin`). Install via
   `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.

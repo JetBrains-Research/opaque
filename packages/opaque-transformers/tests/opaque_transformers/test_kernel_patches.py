@@ -6,6 +6,8 @@ Verifies that patched model components produce correct outputs and gradients,
 and remain vmap-compatible for DP-SGD.
 """
 
+import inspect
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -562,19 +564,37 @@ class TestCrossEntropyPatches:
 # =============================================================================
 
 
+def _make_lora_linear(base_layer, adapter_name, *, rank, alpha, dropout):
+    """Build PEFT LoRA Linear across its supported constructor revisions."""
+    from peft.tuners.lora import Linear as PeftLoRALinear
+
+    if "config" not in inspect.signature(PeftLoRALinear).parameters:
+        return PeftLoRALinear(
+            base_layer, adapter_name, r=rank, lora_alpha=alpha, lora_dropout=dropout
+        )
+
+    from peft import LoraConfig
+
+    return PeftLoRALinear(
+        base_layer,
+        adapter_name,
+        LoraConfig(r=rank, lora_alpha=alpha, lora_dropout=dropout),
+        r=rank,
+        lora_alpha=alpha,
+    )
+
+
 @pytest.mark.cuda
 class TestLoRAPatches:
     """Test that patched LoRA linear produces correct outputs."""
 
     def test_lora_forward_matches_peft(self, device):
         """Patched LoRA forward should match PyTorch reference."""
-        from peft.tuners.lora import Linear as PeftLoRALinear
-
         in_features, out_features, rank = 256, 512, 8
         base_linear = torch.nn.Linear(in_features, out_features, bias=False).to(device)
 
-        lora_layer = PeftLoRALinear(
-            base_linear, "default", r=rank, lora_alpha=16, lora_dropout=0.0
+        lora_layer = _make_lora_linear(
+            base_linear, "default", rank=rank, alpha=16, dropout=0.0
         ).to(device)
 
         x = torch.randn(2, 16, in_features, device=device)
@@ -594,13 +614,11 @@ class TestLoRAPatches:
 
     def test_lora_forward_with_bias(self, device):
         """LoRA forward should correctly handle base layer bias."""
-        from peft.tuners.lora import Linear as PeftLoRALinear
-
         in_features, out_features, rank = 256, 512, 8
         base_linear = torch.nn.Linear(in_features, out_features, bias=True).to(device)
 
-        lora_layer = PeftLoRALinear(
-            base_linear, "default", r=rank, lora_alpha=16, lora_dropout=0.0
+        lora_layer = _make_lora_linear(
+            base_linear, "default", rank=rank, alpha=16, dropout=0.0
         ).to(device)
 
         x = torch.randn(2, 16, in_features, device=device)
@@ -620,13 +638,11 @@ class TestLoRAPatches:
 
     def test_backward_through_patched_lora(self, device):
         """Gradients should flow through patched LoRA."""
-        from peft.tuners.lora import Linear as PeftLoRALinear
-
         in_features, out_features, rank = 256, 512, 8
         base_linear = torch.nn.Linear(in_features, out_features, bias=False).to(device)
 
-        lora_layer = PeftLoRALinear(
-            base_linear, "default", r=rank, lora_alpha=16, lora_dropout=0.0
+        lora_layer = _make_lora_linear(
+            base_linear, "default", rank=rank, alpha=16, dropout=0.0
         ).to(device)
 
         x = torch.randn(2, 16, in_features, device=device, requires_grad=True)
@@ -647,14 +663,11 @@ class TestLoRAPatches:
         """The LoRA kernel patch rebinds the *instance* ``forward`` of peft
         LoRA ``Linear`` modules (not the class). It only activates on
         CUDA + Triton, so the assertion is guarded accordingly."""
-        try:
-            from peft.tuners.lora import Linear as PeftLoRALinear
-        except ImportError:
-            pytest.skip("peft not available")
+        pytest.importorskip("peft")
         from opaque.patches import apply_model_patches
 
         base = torch.nn.Linear(64, 64, bias=False).to(device)
-        lora = PeftLoRALinear(base, "default", r=8, lora_alpha=16, lora_dropout=0.0).to(
+        lora = _make_lora_linear(base, "default", rank=8, alpha=16, dropout=0.0).to(
             device
         )
         apply_model_patches(lora)

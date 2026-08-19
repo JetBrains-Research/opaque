@@ -9,7 +9,7 @@ description = "Hugging Face trainer integration for Opaque: DP-aware training lo
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = [
     "differential-privacy",
     "huggingface",
@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]

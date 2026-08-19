@@ -176,7 +176,7 @@ class TestBoundedGaussian:
 
         _, p_value = scipy.stats.kstest(
             output.pytree.numpy(),
-            "truncnorm",
+            scipy.stats.truncnorm.cdf,
             args=(-bound / sigma, bound / sigma, 0.0, sigma),
         )
         assert p_value > 0.01, f"KS test failed with p={p_value}"

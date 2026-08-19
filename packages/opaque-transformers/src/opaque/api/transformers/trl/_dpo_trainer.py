@@ -299,7 +299,7 @@ class DPOTrainer(DPTrainer):
 
         # Kwargs reused for both the string-policy load and the string/auto
         # reference load.
-        self._model_init_kwargs = args.model_init_kwargs or {}
+        self._model_init_kwargs = dict(args.model_init_kwargs or {})
 
         if isinstance(model, str):
             from transformers import AutoModelForCausalLM
@@ -361,7 +361,9 @@ class DPOTrainer(DPTrainer):
         self._tr_ref: Any = None  # EMA reference module (kept on device)
 
         # ---- tokenizer ----------------------------------------------------
-        processing_class = self._resolve_tokenizer(model, processing_class)
+        processing_class = self._resolve_tokenizer(
+            model, processing_class, self._model_init_kwargs
+        )
         self._pad_token_id = processing_class.pad_token_id
 
         # ---- dropout / PEFT ----------------------------------------------
@@ -481,7 +483,9 @@ class DPOTrainer(DPTrainer):
     # Tokenizer / dropout helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _resolve_tokenizer(model: Any, processing_class: Any) -> Any:
+    def _resolve_tokenizer(
+        model: Any, processing_class: Any, model_init_kwargs: dict[str, Any]
+    ) -> Any:
         if processing_class is None:
             from transformers import AutoTokenizer
 
@@ -491,7 +495,12 @@ class DPOTrainer(DPTrainer):
                     "processing_class is None and the model config has no "
                     "_name_or_path; pass processing_class."
                 )
-            processing_class = AutoTokenizer.from_pretrained(name)
+            processing_class = AutoTokenizer.from_pretrained(
+                name,
+                trust_remote_code=bool(
+                    model_init_kwargs.get("trust_remote_code", False)
+                ),
+            )
         if processing_class.pad_token_id is None:
             processing_class.pad_token = processing_class.eos_token
         return processing_class

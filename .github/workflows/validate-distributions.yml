@@ -10,13 +10,17 @@ on:
 
 jobs:
   install-all:
-    name: opaque[all]
+    name: opaque[all] (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -36,7 +40,7 @@ jobs:
             echo "::error::Expected one opaque wheel, found ${#opaque_wheels[@]}"
             exit 1
           fi
-          uv venv --python 3.11 .artifact-venv
+          uv venv --python ${{ matrix.python-version }} .artifact-venv
           uv pip install \
             --python .artifact-venv/bin/python \
             --find-links dist \

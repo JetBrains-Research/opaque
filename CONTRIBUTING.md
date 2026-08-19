@@ -156,10 +156,11 @@ Three orthogonal markers are declared in the root `pyproject.toml`:
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
 
-The PR gate covers non-slow Linux amd64, macOS arm64, Linux arm64, CUDA, and
-minimum/latest dependency validation. Main adds slow-test coverage. The minimum
-dependencies lane is advisory, but environment setup and dependency resolution
-remain required.
+The PR gate covers locked Linux amd64, macOS arm64, Linux arm64, and CUDA
+tests, plus a dedicated Linux Gloo distributed lane. Linux amd64 and CUDA also
+run minimum (Python 3.11) and latest (Python 3.13) dependency validation.
+Locked main-platform lanes include slow tests. Minimum dependencies lanes are
+advisory, but environment setup and dependency resolution remain required.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)
@@ -189,24 +190,22 @@ install `opaque[transformers]` for Hugging Face tests or
 `opaque-accounting[cross-validation]` for cross-validation. No manual marker
 exclusion is needed.
 
-### GPU and Multi-GPU Tests
+### CUDA and Distributed Tests
 
 Some tests require a CUDA GPU. They live under each package's
-`tests/ddp/` directory (e.g. `packages/opaque-dpsgd/tests/ddp/`,
-`packages/opaque-transformers/tests/ddp/`) and use `torch.distributed`
-with the NCCL backend:
+`tests/` directory and carry the `cuda` marker:
 
 ```bash
 # Run CUDA tests (requires CUDA)
 uv run pytest -m cuda -v
 
-# Run distributed tests (requires 2+ GPUs)
-uv run pytest packages/opaque-dpsgd/tests/ddp/ \
-              packages/opaque-transformers/tests/ddp/ -v
+# Run distributed tests (CPU/Gloo; spawns multiple local ranks)
+uv run pytest -m "distributed and not cuda" -v
 ```
 
 `@pytest.mark.cuda` tests auto-skip on hosts without CUDA; `@pytest.mark.mps`
-tests auto-skip on hosts without Apple Metal.
+tests auto-skip on hosts without Apple Metal. The `distributed` marker selects
+CPU/Gloo multi-rank tests and is run separately from the general platform lanes.
 
 ---
 

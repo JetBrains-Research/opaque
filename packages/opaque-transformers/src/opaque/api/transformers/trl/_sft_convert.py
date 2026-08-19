@@ -17,6 +17,7 @@ from ._convert import (
     _reject_if_truthy,
     _reject_pad_token,
     _reject_truncation_mode,
+    _router_aux_loss_transform,
 )
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 TRL_SFT_DIRECT_FIELDS: frozenset[str] = frozenset(
     {
         "model_init_kwargs",
+        "trust_remote_code",
         "chat_template_path",
         "dataset_text_field",
         "dataset_num_proc",
@@ -47,7 +49,9 @@ TRL_SFT_RENAME_MAP: dict[str, str] = {}
 
 
 # TRANSFORM — TRL SFT field requires a derivation step.
-TRL_SFT_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+TRL_SFT_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "router_aux_loss_coef": _router_aux_loss_transform,
+}
 
 
 # REJECT_IF_SET — TRL has the field but opaque does not implement it.

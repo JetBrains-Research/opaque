@@ -42,6 +42,9 @@ class SFTConfig(TrainingArguments):
     #: ``model`` is passed as a string (e.g. ``torch_dtype``, ``attn_implementation``).
     #: Ignored when ``model`` is an already-instantiated module.
     model_init_kwargs: dict | None = None
+    #: Allow loading a model or tokenizer that ships custom Hub Python code.
+    #: This is forwarded only when the trainer receives a string model identifier.
+    trust_remote_code: bool = False
 
     # ---- Data preparation ------------------------------------------------
     #: Name of the column holding raw text on a language-modeling dataset.
@@ -116,6 +119,9 @@ class SFTConfig(TrainingArguments):
 
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
                 self.bf16 = True
+        if self.trust_remote_code:
+            self.model_init_kwargs = dict(self.model_init_kwargs or {})
+            self.model_init_kwargs["trust_remote_code"] = True
         super().__post_init__()
 
     @classmethod
@@ -146,11 +152,13 @@ class SFTConfig(TrainingArguments):
         TRL-specific fields (``dataset_text_field``, ``chat_template_path``,
         ``completion_only_loss``, ``assistant_only_loss``, ``loss_type``,
         ``eos_token``, ``max_length``, ``pad_to_multiple_of``,
-        ``dataset_num_proc``, ``model_init_kwargs``) are copied directly.
+        ``dataset_num_proc``, ``model_init_kwargs``, ``trust_remote_code``) are
+        copied directly.
 
         Fields TRL has that opaque does not implement raise
         ``ValueError``: ``packing``, ``padding_free``, ``eval_packing``,
-        ``shuffle_dataset``, ``truncation_mode='keep_end'``, ``pad_token``.
+        ``shuffle_dataset``, ``truncation_mode='keep_end'``, ``pad_token``, and
+        nonzero ``router_aux_loss_coef``.
 
         HF-inherited fields go through the same translation as
         :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same

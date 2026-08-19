@@ -81,7 +81,7 @@ jobs:
   # on main; supported dependency and platform boundaries remain pre-merge.
   # ---------------------------------------------------------------------------
   python-tests-linux-amd64:
-    name: Linux amd64
+    name: Linux amd64 (locked)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -94,7 +94,7 @@ jobs:
       timeout-minutes: 30
 
   python-tests-distributed:
-    name: Distributed
+    name: Linux amd64 (distributed)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -106,7 +106,7 @@ jobs:
       timeout-minutes: 30
 
   python-tests-minimum:
-    name: Minimum dependencies
+    name: Linux amd64 (minimum dependencies)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -122,7 +122,7 @@ jobs:
       timeout-minutes: 60
 
   python-tests-latest:
-    name: Latest dependencies
+    name: Linux amd64 (latest dependencies)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -130,14 +130,14 @@ jobs:
       environment-name: latest-dependencies
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
-      python-version: "3.12"
+      python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
       test-shards: ${{ needs.discover-packages.outputs.test_shards }}
       timeout-minutes: 60
 
   python-tests-macos-arm64:
-    name: macOS arm64
+    name: macOS arm64 (locked)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -150,7 +150,7 @@ jobs:
       timeout-minutes: 30
 
   python-tests-linux-arm64:
-    name: Linux arm64
+    name: Linux arm64 (locked)
     needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
@@ -165,7 +165,7 @@ jobs:
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. The job-level guard prevents allocation entirely.
   python-tests-cuda:
-    name: CUDA
+    name: CUDA (locked)
     needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -181,6 +181,45 @@ jobs:
       test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
       timeout-minutes: 30
 
+  python-tests-cuda-minimum:
+    name: CUDA (minimum dependencies)
+    needs: [discover-packages]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      allow-empty-test-selection: true
+      allow-test-failure: true
+      dependency-selection: minimum
+      environment-name: cuda-minimum-dependencies
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      python-version: "3.11"
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 60
+
+  python-tests-cuda-latest:
+    name: CUDA (latest dependencies)
+    needs: [discover-packages]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      allow-empty-test-selection: true
+      dependency-selection: latest
+      environment-name: cuda-latest-dependencies
+      pytest-marker: cuda and not slow
+      pytest-xdist: -rs
+      python-version: "3.13"
+      report-durations: true
+      runner: GPU-runner-001
+      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      timeout-minutes: 60
+
   # Keep a stable, matrix-independent check name for branch protection rules.
   # CUDA is intentionally skipped for fork pull requests because the runner is
   # self-hosted and must not execute untrusted code.
@@ -195,6 +234,8 @@ jobs:
       - python-tests-macos-arm64
       - python-tests-linux-arm64
       - python-tests-cuda
+      - python-tests-cuda-minimum
+      - python-tests-cuda-latest
     runs-on: ubuntu-latest
     steps:
       - name: Verify test results
@@ -207,7 +248,10 @@ jobs:
               to_entries[]
               | select(
                   .value.result != "success"
-                  and (.key != "python-tests-cuda" or .value.result != "skipped")
+                  and (
+                    .value.result != "skipped"
+                    or (.key | startswith("python-tests-cuda") | not)
+                  )
                 )
               | "\(.key): \(.value.result)"
             ' <<< "$RESULTS"
