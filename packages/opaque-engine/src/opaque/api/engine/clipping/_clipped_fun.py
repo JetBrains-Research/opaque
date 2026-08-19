@@ -573,12 +573,12 @@ def clipped_fun(
             to give that memory back, at the cost of the accumulation precision.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
-        compute_dtype: Internal accumulation dtype for reductions (per-example
-            clip-norm and the across-batch sum).  ``None`` (default) auto-promotes
-            bf16/fp16 to float32 for numerical stability; explicit dtype forces
-            that precision regardless of input.  Independent of ``dtype`` (which
-            controls the *output* dtype).  Applies across microbatches too, so
-            microbatched and non-microbatched runs agree to float32 precision.
+        compute_dtype: Internal dtype for per-example clip norms, leaf scaling,
+            and across-batch sums. ``None`` (default) auto-promotes bf16/fp16 to
+            float32 for numerical stability; explicit dtype forces that precision
+            regardless of input. Independent of ``dtype`` (which controls the
+            *output* dtype). Applies across microbatches too, so microbatched and
+            non-microbatched runs agree to float32 precision.
     Returns:
         A tuple ``(clip_fn, FixedClipState)`` where ``clip_fn(*args, state=...)``
         clips the output of ``fun`` and sums across the batch.  The exact
