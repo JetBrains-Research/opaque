@@ -4043,8 +4043,8 @@ directly.</p>
 <p>Microbatching is a memory optimization, not a sampling strategy. When
 per-example gradient computation via <code>vmap</code> exceeds GPU memory,
 microbatching processes the batch in smaller chunks and accumulates the
-clipped gradient sums. The result is mathematically identical to processing
-the full batch.</p>
+clipped gradient sums. The running sum is held in <code>compute_dtype</code>, so the
+result matches processing the full batch to the precision of that dtype.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
@@ -4055,8 +4055,8 @@ the full batch.</p>
 <a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="p">)</span>
 </code></pre></div>
 <p>Each microbatch of 16 examples is vmapped, per-example gradients are
-clipped, and the clipped gradients are summed. The partial sums are
-accumulated in-place, so peak memory is proportional to
+clipped, and the clipped gradients are summed into a running accumulator,
+so peak memory is proportional to
 <code>microbatch_size * model_parameters</code> rather than
 <code>batch_size * model_parameters</code>.</p>
 <h3 id="choosing-microbatch-size">Choosing microbatch size<a class="headerlink" href="#choosing-microbatch-size" title="Permanent link">&para;</a></h3>

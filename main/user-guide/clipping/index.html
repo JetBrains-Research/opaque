@@ -3989,8 +3989,9 @@ a <code>clipping_rate</code> field (fraction of gradients clipped).</p>
 <p>Per-example gradient computation via <code>vmap</code> requires memory proportional to
 <code>batch_size * model_parameters</code>. For large models, this may exceed GPU memory.</p>
 <p>Microbatching processes the batch in smaller chunks, accumulating clipped
-gradients incrementally. The result is mathematically identical to processing
-the full batch.</p>
+gradients incrementally. The running sum is held in <code>compute_dtype</code>, so the
+result matches processing the full batch to the precision of that dtype —
+<code>float32</code> by default for <code>bfloat16</code> / <code>float16</code> inputs.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">loss_fn</span><span class="p">,</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
@@ -3998,9 +3999,12 @@ the full batch.</p>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>  <span class="c1"># process 16 examples at a time</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
 </code></pre></div>
-<p>Each microbatch of 16 examples is vmapped, clipped, and summed. The partial
-sums are accumulated in-place, so peak memory is proportional to
-<code>microbatch_size * model_parameters</code> instead of <code>batch_size * model_parameters</code>.</p>
+<p>Each microbatch of 16 examples is vmapped, clipped, and summed into a running
+accumulator, so peak memory is proportional to
+<code>microbatch_size * model_parameters</code> instead of <code>batch_size * model_parameters</code>.
+The accumulator itself is one model-sized buffer in <code>compute_dtype</code> — for a
+<code>bfloat16</code> run that is a <code>float32</code> copy, which is the price of the accumulation
+precision described in <a href="../precision/">Precision</a>.</p>
 <h3 id="choosing-microbatch-size">Choosing microbatch size<a class="headerlink" href="#choosing-microbatch-size" title="Permanent link">&para;</a></h3>
 <p>Use <code>step_perf</code> from <code>opaque.profiling</code> to run a short sweep and
 select the largest stable microbatch that does not OOM:</p>

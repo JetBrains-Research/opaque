@@ -3316,7 +3316,20 @@ sensitivity bound the privacy accountant relies on. Three rules:</p>
 <li><strong>You can raise it.</strong> <code>compute_dtype=torch.float64</code> is safe (and
   occasionally useful for very small clip thresholds or aggressive
   noise multipliers).</li>
+<li><strong>It does not cover the <em>output</em> dtype.</strong> A scale computed in <code>float32</code> still
+  has to be stored in the leaf dtype and multiplied through, and both steps
+  round to nearest — which can round <em>up</em>, past the bound. Clipping therefore
+  shrinks each leaf's scale by a few ULPs of that leaf's own dtype so that
+  <code>norm(output) &lt;= clipping_norm</code> holds on the values as stored. Clipped values
+  lose ~0.8% of their magnitude at <code>bfloat16</code>, ~0.1% at <code>float16</code> and ~1.2e-7 at
+  <code>float32</code>; a <code>float32</code> leaf sitting beside a <code>bfloat16</code> one pays only the
+  <code>float32</code> cost. The guard widens if <code>compute_dtype</code> is set below <code>float32</code>,
+  since the norm it is measured against is then less accurate.</li>
 </ul>
+<p>Under microbatching the running sum is held at the accumulation precision as
+well, so splitting a batch does not degrade the result — a <code>bfloat16</code> run
+accumulates in <code>float32</code> and casts once at the end. That costs one <code>float32</code>
+copy of the summed output; pass <code>compute_dtype=torch.bfloat16</code> to trade it back.</p>
 <h2 id="whats-compatible-with-torchamp-and-what-isnt">What's compatible with <code>torch.amp</code> and what isn't<a class="headerlink" href="#whats-compatible-with-torchamp-and-what-isnt" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
