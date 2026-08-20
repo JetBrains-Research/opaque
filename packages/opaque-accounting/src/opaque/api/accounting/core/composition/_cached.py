@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
 
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
@@ -59,7 +59,14 @@ class CachedProcess(DpProcess):
 
         return iter_repr(self)
 
-    @functools.lru_cache(maxsize=16)
+    def _pld_cache_fingerprint(
+        self, *, n_steps: int | None = None
+    ) -> tuple[object, ...]:
+        from ._iter_fingerprint import iter_fingerprint
+
+        return iter_fingerprint(self, n_steps=n_steps)
+
+    @pld_cache(maxsize=16)
     def pld(
         self,
         *,

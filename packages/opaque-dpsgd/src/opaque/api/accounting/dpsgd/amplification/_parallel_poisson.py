@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.amplification._poisson import Poisson, poisson
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
@@ -34,7 +34,7 @@ class ParallelPoisson(DpProcess):
                 "ParallelPoisson does not support truncated Poisson inner mechanisms."
             )
 
-    @functools.lru_cache(maxsize=8)
+    @pld_cache(maxsize=8)
     def pld(
         self,
         *,

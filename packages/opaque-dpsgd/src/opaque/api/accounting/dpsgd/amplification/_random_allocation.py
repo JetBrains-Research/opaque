@@ -32,12 +32,12 @@ References:
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
+from opaque.api.accounting.core._pld_cache import horizon_pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
@@ -106,7 +106,7 @@ class RandomAllocation(DpHorizonProcess):
                     f"{type(self.inner).__name__}."
                 )
 
-    @functools.lru_cache(maxsize=16)
+    @horizon_pld_cache(maxsize=16)
     def pld_at(
         self,
         n_steps: int,

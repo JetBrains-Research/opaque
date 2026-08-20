@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from . import _native
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +55,20 @@ __all__ = [
 
 # Module-level discretization default
 _default_config: DiscretizationConfig | None = None
+_active_config: ContextVar[DiscretizationConfig | None] = ContextVar(
+    "opaque_accounting_active_discretization",
+    default=None,
+)
+
+
+@contextmanager
+def _use_discretization(config: DiscretizationConfig) -> Iterator[None]:
+    """Make a resolved config available to nested PLD computations."""
+    token = _active_config.set(config)
+    try:
+        yield
+    finally:
+        _active_config.reset(token)
 
 
 def set_discretization(
@@ -63,6 +83,9 @@ def set_discretization(
     """Set module-level default discretization parameters.
 
     These defaults are used when query parameters are not provided.
+    Existing process objects resolve these defaults at every PLD cache lookup:
+    changing the defaults computes a distinct PLD, while restoring an equal
+    configuration reuses its prior bounded cache entry.
     By default, uses high-precision settings matching Google's dp_accounting.
 
     Args:
@@ -138,7 +161,11 @@ def get_discretization(
         cfg = acc.get_discretization(discretization=1e-3, log_x_mass_truncation_bound=-40.0)
     """
     # Start with global default or library default
-    base = _default_config if _default_config is not None else DiscretizationConfig()
+    base = _active_config.get()
+    if base is None:
+        base = (
+            _default_config if _default_config is not None else DiscretizationConfig()
+        )
 
     # If no overrides, return base as-is
     if (

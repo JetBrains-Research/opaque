@@ -8,11 +8,11 @@ absolute noise std is ``σ_b = expected_batch_size × fraction_noise_std``.
 
 from __future__ import annotations
 
-import functools
 from dataclasses import dataclass
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
 
@@ -54,7 +54,7 @@ class AdaClip(DpProcess):
                 s = _native.adaclip_sensitivity(nm, sigma_b, self.num_groups)
                 return 1.0 / s
 
-    @functools.lru_cache(maxsize=8)
+    @pld_cache(maxsize=8)
     def pld(
         self,
         *,
