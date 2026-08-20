@@ -454,6 +454,7 @@ class TestDeterministicAmplificationVectors:
                 1e-8,
                 4.687320195749143,
                 id="random-allocation-gaussian",
+                marks=pytest.mark.slow,
             ),
             pytest.param(
                 "random_allocation(adaclip(gaussian(1.1)), bins=8, n_steps=16)",
@@ -461,6 +462,7 @@ class TestDeterministicAmplificationVectors:
                 1e-8,
                 3.965060097641603,
                 id="random-allocation-adaclip",
+                marks=pytest.mark.slow,
             ),
         ],
     )
@@ -480,3 +482,17 @@ class TestDeterministicAmplificationVectors:
             f"{name}, delta={delta}: epsilon drifted; "
             f"committed={expected:.17g}, observed={actual:.17g}"
         )
+
+
+def test_random_allocation_short_prefix_matches_poisson():
+    process = dpsgd_acc.random_allocation(
+        dpsgd_acc.gaussian(1.0),
+        num_bins=2,
+        n_steps=2,
+    )
+    poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.5)
+
+    assert process.pld_at(1).epsilon_at(1e-8) == pytest.approx(
+        poisson.epsilon_at(1e-8),
+        abs=2e-3,
+    )

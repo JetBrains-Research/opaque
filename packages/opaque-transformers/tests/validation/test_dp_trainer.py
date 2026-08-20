@@ -956,7 +956,6 @@ class TestDPTrainerLRScheduling:
         for got, exp in zip(lrs, expected, strict=False):
             assert got == pytest.approx(exp, abs=1e-9)
 
-    @pytest.mark.slow
     def test_warmup_changes_param_trajectory(self, gpt2_with_lora, tiny_lm_dataset):
         """Trainers with constant vs warmup LR diverge on identical seed/data."""
         model_const, tok = gpt2_with_lora

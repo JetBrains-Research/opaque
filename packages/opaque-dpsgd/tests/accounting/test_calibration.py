@@ -484,7 +484,6 @@ class TestCalibrateDirectionIntegration:
     pin the real Poisson/Gaussian shapes end-to-end (PLD-heavy, slow-marked).
     """
 
-    @pytest.mark.slow
     def test_sample_rate_calibration_converges(self):
         # epsilon INCREASES with sample rate; raised ValueError before #333.
         budget = cal.epsilon_budget(3.0, delta=1e-5)

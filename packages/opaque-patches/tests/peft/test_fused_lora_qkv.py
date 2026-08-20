@@ -2,7 +2,13 @@ import pytest
 import torch
 import torch.nn.functional as F
 from peft import LoraConfig, get_peft_model
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    Qwen2Config,
+    Qwen3Config,
+)
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
@@ -133,11 +139,16 @@ class TestFusedLoRAQKV:
                 assert not torch.isnan(p.grad).any(), f"NaN in gradient for {name}"
         assert has_grad, "No gradients computed"
 
-    @pytest.mark.slow
     def test_qwen2_skips_qkv_fusion(self, device):
         """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
-        config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
-        config.num_hidden_layers = 2
+        config = Qwen2Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
             r=8,
@@ -154,14 +165,16 @@ class TestFusedLoRAQKV:
                 "Qwen2 attention should NOT have fused QKV (bias=True)"
             )
 
-    @pytest.mark.slow
     def test_qwen3_skips_qkv_fusion(self, device):
         """Qwen3 attention should NOT be fused (has q_norm/k_norm)."""
-        try:
-            config = AutoConfig.from_pretrained("Qwen/Qwen3-0.6B")
-        except Exception:
-            pytest.skip("Qwen3 not available")
-        config.num_hidden_layers = 2
+        config = Qwen3Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
             r=8,

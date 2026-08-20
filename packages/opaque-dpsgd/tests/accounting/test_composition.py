@@ -313,7 +313,6 @@ class TestCompositionProperties:
         growth = eps_10k / eps_1k
         assert 1.5 < growth < 10.0
 
-    @pytest.mark.slow
     def test_heterogeneous_composition(self):
         """Heterogeneous composition ε > max single phase ε."""
         phase1 = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01) * 100

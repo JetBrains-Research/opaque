@@ -46,7 +46,6 @@ def test_gemma2_vmap_forward(tiny_model, device):
     assert_vmap_forward(tiny_model, device)
 
 
-@pytest.mark.slow
 def test_gemma2_vmap_grad(tiny_model, device):
     assert_vmap_grad(tiny_model, device)
 

@@ -124,21 +124,18 @@ class TestAttentionWithMicrobatching:
         )
         return grads
 
-    @pytest.mark.slow
     def test_eager_with_microbatching(self, qwen2_config, qwen2_tokenizer, device):
         """Test eager attention with microbatching."""
         qwen2_config._attn_implementation = "eager"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
         assert len(grads.pytree) > 0
 
-    @pytest.mark.slow
     def test_sdpa_with_microbatching(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA attention with microbatching."""
         qwen2_config._attn_implementation = "sdpa"
         grads = self._run_with_microbatch(qwen2_config, qwen2_tokenizer, device)
         assert len(grads.pytree) > 0
 
-    @pytest.mark.slow
     def test_sdpa_microbatch_size_3(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA with microbatch_size=3 (uneven split of batch=4)."""
         qwen2_config._attn_implementation = "sdpa"

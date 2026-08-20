@@ -19,6 +19,7 @@ Run selectively with::
 from __future__ import annotations
 
 import math
+from itertools import product
 
 import pytest
 
@@ -30,13 +31,10 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque.accounting as acc  # noqa: E402
 
-# Whole module marked `slow`: these cross-checks drive the *reference* libraries
-# (dp_accounting / riskcal), which run pure-Python PLD convolutions that are
-# far slower than opaque's Rust path and were the dominant cost of the dpsgd
-# PR-gate shard. They validate opaque against external implementations rather
-# than opaque's own logic (covered by test_accountant / test_composition /
-# test_calibration), so they belong on the main-CI lane, not every PR.
-pytestmark = pytest.mark.slow
+# Expensive reference-library cases below are scoped to their individual test
+# functions. Fast cross-checks stay in the normal suite so accounting behavior
+# remains covered pre-merge without running the costly pure-Python PLD
+# convolutions.
 import opaque.dpsgd.accounting as dpsgd_acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
 from opaque.api.accounting.core.discretization import get_discretization  # noqa: E402
@@ -56,6 +54,16 @@ SIGMAS = [0.1, 0.3, 0.5, 0.8, 1.2]
 SAMPLE_RATES = [0.001, 0.0005, 0.0001]
 STEPS = [10, 50, 200, 500, 1000, 3000]
 DELTAS = [1e-5, 1e-6, 1e-8]
+
+
+def _slow_params(cases, slow_cases):
+    return [
+        pytest.param(
+            *case,
+            marks=pytest.mark.slow if case in slow_cases else (),
+        )
+        for case in cases
+    ]
 
 
 def _ref_gaussian_pld(sigma: float, sampling_prob: float = 1.0):
@@ -91,8 +99,18 @@ def _ref_delta(
 class TestGaussianEpsilon:
     """Single Gaussian mechanism: opaque vs dp_accounting epsilon_at."""
 
-    @pytest.mark.parametrize("sigma", SIGMAS)
-    @pytest.mark.parametrize("delta", DELTAS)
+    @pytest.mark.parametrize(
+        ("sigma", "delta"),
+        _slow_params(
+            product(SIGMAS, DELTAS),
+            {
+                (0.1, 1e-5),
+                (0.3, 1e-5),
+                (0.1, 1e-6),
+                (0.1, 1e-8),
+            },
+        ),
+    )
     def test_epsilon(self, sigma, delta):
         ours = dpsgd_acc.gaussian(sigma).epsilon_at(delta)
         ref = _ref_epsilon(sigma, delta)
@@ -130,9 +148,19 @@ class TestPoissonEpsilon:
     # Adjacent middle points (q=5e-4, steps=50/500) were dropped — they sit
     # between covered points and never caught a discrepancy the endpoints
     # missed.
-    @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
-    @pytest.mark.parametrize("q", [0.001, 0.0001])
-    @pytest.mark.parametrize("steps", [10, 200, 1000])
+    @pytest.mark.parametrize(
+        ("sigma", "q", "steps"),
+        _slow_params(
+            product([0.5, 0.8, 1.2], [0.001, 0.0001], [10, 200, 1000]),
+            {
+                (0.5, 0.0001, 10),
+                (0.5, 0.0001, 200),
+                (0.5, 0.001, 200),
+                (0.8, 0.001, 200),
+                (1.2, 0.001, 1000),
+            },
+        ),
+    )
     def test_epsilon(self, sigma, q, steps):
         ours = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(
             1e-5
@@ -159,9 +187,19 @@ class TestPoissonHighSteps:
 class TestPoissonDelta:
     """Poisson delta_at cross-validation."""
 
-    @pytest.mark.parametrize("sigma", [0.5, 1.2])
-    @pytest.mark.parametrize("q", [0.001, 0.0001])
-    @pytest.mark.parametrize("steps", [100, 500])
+    @pytest.mark.parametrize(
+        ("sigma", "q", "steps"),
+        _slow_params(
+            product([0.5, 1.2], [0.001, 0.0001], [100, 500]),
+            {
+                (0.5, 0.0001, 100),
+                (0.5, 0.001, 100),
+                (0.5, 0.0001, 500),
+                (0.5, 0.001, 500),
+                (1.2, 0.001, 500),
+            },
+        ),
+    )
     def test_delta(self, sigma, q, steps):
         eps = (dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps).epsilon_at(
             1e-5
@@ -181,9 +219,19 @@ class TestPoissonDelta:
 class TestTripleEpsilon:
     """Epsilon: opaque vs dp_accounting vs riskcal (via (ε,δ)->advantage->ε)."""
 
-    @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
-    @pytest.mark.parametrize("q", [0.001, 0.0001])
-    @pytest.mark.parametrize("steps", [100, 500])
+    @pytest.mark.parametrize(
+        ("sigma", "q", "steps"),
+        _slow_params(
+            product([0.5, 0.8, 1.2], [0.001, 0.0001], [100, 500]),
+            {
+                (0.5, 0.0001, 100),
+                (0.5, 0.001, 100),
+                (0.5, 0.0001, 500),
+                (0.8, 0.0001, 500),
+                (0.8, 0.001, 500),
+            },
+        ),
+    )
     def test_triple_epsilon(self, sigma, q, steps):
         # opaque
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps
@@ -219,10 +267,16 @@ class TestTripleBeta:
             f"Gaussian({sigma}) beta@α={alpha}: ours={beta_ours}, riskcal={beta_riskcal}"
         )
 
-    @pytest.mark.parametrize("sigma", [0.8, 1.2])
-    @pytest.mark.parametrize("q", [0.001, 0.0001])
-    @pytest.mark.parametrize("steps", [100, 500])
-    @pytest.mark.parametrize("alpha", [0.01, 0.1])
+    @pytest.mark.parametrize(
+        ("sigma", "q", "steps", "alpha"),
+        _slow_params(
+            product([0.8, 1.2], [0.001, 0.0001], [100, 500], [0.01, 0.1]),
+            {
+                (0.8, 0.0001, 500, 0.01),
+                (0.8, 0.001, 500, 0.01),
+            },
+        ),
+    )
     def test_beta_poisson(self, sigma, q, steps, alpha):
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps
         beta_ours = proc.beta_at(alpha)
@@ -239,7 +293,10 @@ class TestTripleBeta:
 class TestTripleAdvantage:
     """Advantage (TV distance): opaque vs riskcal.get_advantage_from_pld."""
 
-    @pytest.mark.parametrize("sigma", SIGMAS)
+    @pytest.mark.parametrize(
+        "sigma",
+        _slow_params([(sigma,) for sigma in SIGMAS], {(0.1,)}),
+    )
     def test_gaussian_advantage(self, sigma):
         proc = dpsgd_acc.gaussian(sigma)
         adv_ours = proc.advantage()
@@ -295,7 +352,10 @@ class TestTruncatedPoissonValidity:
     The benefit is a more accurate model of real production systems.
     """
 
-    @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
+    @pytest.mark.parametrize(
+        "sigma",
+        _slow_params([(sigma,) for sigma in [0.5, 0.8, 1.2]], {(0.5,), (0.8,)}),
+    )
     def test_larger_cap_lower_epsilon(self, sigma):
         """Larger truncated_batch_size → less truncation → lower epsilon."""
         n = 100_000
@@ -314,6 +374,7 @@ class TestTruncatedPoissonValidity:
             f"Larger cap should give ≤ epsilon: cap=500 → {eps_large_cap}, cap=50 → {eps_small_cap}"
         )
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_monotone_in_steps(self, sigma):
         """More steps → higher epsilon."""
@@ -339,6 +400,7 @@ class TestTruncatedPoissonValidity:
         )
         assert proc.epsilon_at(1e-5) > 0
 
+    @pytest.mark.slow
     def test_fallback_when_no_truncation(self):
         """When truncated_batch_size >> expected batch, result ≈ standard Poisson."""
         g = dpsgd_acc.gaussian(0.8)
@@ -361,6 +423,7 @@ class TestTruncatedPoissonValidity:
 class TestParallelPoissonCrossValidation:
     """ParallelPoisson mechanism: verify native worker-count behavior."""
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     @pytest.mark.parametrize("q", [0.001, 0.0005])
     def test_parallel_poisson_matches_native_worker_behavior(self, sigma, q):
@@ -382,6 +445,7 @@ class TestParallelPoissonCrossValidation:
             < eps_by_workers[8]
         )
 
+    @pytest.mark.slow
     def test_parallel_poisson_matches_pinned_reference(self):
         """Worker-count privacy loss matches the native reference calculation."""
         inner = dpsgd_acc.gaussian(0.8)
@@ -488,7 +552,10 @@ class TestMetricsConsistency:
             f"advantage={adv} != delta_at(0)={d0}"
         )
 
-    @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
+    @pytest.mark.parametrize(
+        "sigma",
+        _slow_params([(sigma,) for sigma in [0.5, 0.8, 1.2]], {(1.2,)}),
+    )
     def test_advantage_poisson_equals_delta_at_zero(self, sigma):
         """advantage() == delta_at(0) for Poisson-subsampled too."""
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), 0.01) * 500
@@ -543,6 +610,7 @@ class TestMetricsConsistency:
 class TestCompositionCrossValidation:
     """Verify composed mechanisms match dp_accounting composition."""
 
+    @pytest.mark.slow
     def test_heterogeneous_compose(self):
         """Compose different mechanisms: (G(0.5)*100 | G(1.0)*200)."""
         # opaque
@@ -558,6 +626,7 @@ class TestCompositionCrossValidation:
         # For large epsilon (~400), use relative tolerance
         assert eps_ours == pytest.approx(eps_ref, rel=1e-6)
 
+    @pytest.mark.slow
     def test_compose_poisson_different_rates(self):
         """Compose Poisson steps with different sample rates."""
         # opaque
@@ -593,6 +662,7 @@ class TestCompositionCrossValidation:
 class TestCalibrationCrossValidation:
     """Verify calibration results match dp_accounting reference."""
 
+    @pytest.mark.slow
     def test_calibrate_epsilon_roundtrip(self):
         """Calibrated noise → check epsilon against reference."""
         target_eps = 5.0
@@ -612,6 +682,7 @@ class TestCalibrationCrossValidation:
         ref_eps = _ref_epsilon(result.param, delta, sampling_prob=q, steps=steps)
         assert ref_eps == pytest.approx(target_eps, abs=1e-3)
 
+    @pytest.mark.slow
     def test_calibrate_advantage_roundtrip(self):
         """Calibrated noise → check advantage against riskcal."""
         result = cal.calibrate(
@@ -685,6 +756,7 @@ class TestNumericalStability:
 
         assert eps_repeated == pytest.approx(eps_composed, abs=ATOL)
 
+    @pytest.mark.slow
     def test_epsilon_monotone_in_steps(self):
         """More steps → weakly higher epsilon (monotonicity)."""
         g = dpsgd_acc.gaussian(0.8)
