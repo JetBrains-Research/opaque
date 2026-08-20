@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
+    ClippedGradStatus,
     clipped_grad,
 )
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
@@ -339,6 +340,7 @@ def auto_clipped_grad(
 
     def grad_fn(*args, state, **kwargs):
         inner_result, _ = inner_fn(*args, state=None, **kwargs)
+        status: ClippedGradStatus | None = None
         if return_pre_clipping_finite:
             grads, grad_aux, status = inner_result
         else:
@@ -353,6 +355,7 @@ def auto_clipped_grad(
             group_norms=grad_aux.group_norms,
         )
         if return_pre_clipping_finite:
+            assert status is not None
             return (grads, auto_aux, status), state
         return (grads, auto_aux), state
 
