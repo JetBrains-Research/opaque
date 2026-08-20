@@ -260,7 +260,6 @@ ignore = [
   "RUF002", # intentional unicode in docstrings
   "RUF003", # intentional unicode in comments
   "RUF022", # keep thematic __all__ section comments
-  "B019",   # lru_cache on frozen PLD mechanism methods is intentional
 ]
 
 [tool.ruff.lint.isort]
