@@ -87,7 +87,6 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-base
         id: opaque-base
-        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-base
         run: bash .github/scripts/run_python_test_package.sh
@@ -140,7 +139,6 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-dpsgd
         id: opaque-dpsgd
-        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-dpsgd
         run: bash .github/scripts/run_python_test_package.sh
@@ -187,7 +185,6 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-engine
         id: opaque-engine
-        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-engine
         run: bash .github/scripts/run_python_test_package.sh
@@ -240,7 +237,6 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-alignment
         id: opaque-alignment
-        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-alignment
         run: bash .github/scripts/run_python_test_package.sh
@@ -287,7 +283,6 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: Integration
         id: integration
-        if: ${{ !cancelled() }}
         env:
           TEST_PATH: tests
         run: bash .github/scripts/run_python_test_package.sh
