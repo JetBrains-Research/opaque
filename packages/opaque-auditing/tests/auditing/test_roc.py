@@ -40,11 +40,30 @@ class TestParetoFrontier:
 
 class TestGetTnFnCounts:
     def test_perfect_separation(self):
-        thresholds, tn, fn = get_tn_fn_counts([5, 6, 7, 8, 9], [0, 1, 2, 3, 4])
-        idx = np.where(thresholds == 5)[0]
-        if len(idx) > 0:
-            assert tn[idx[0]] == 5
-            assert fn[idx[0]] == 0
+        """The ideal corner (FN=0, TN=n_out) is on the threshold grid exactly once."""
+        in_scores, out_scores = [5, 6, 7, 8, 9], [0, 1, 2, 3, 4]
+        thresholds, tn, fn = get_tn_fn_counts(in_scores, out_scores)
+        grid = f"thresholds={thresholds} tn={tn} fn={fn}"
+
+        # Only a threshold in (max(out), min(in)] classifies every canary correctly.
+        corner = np.flatnonzero((fn == 0) & (tn == len(out_scores)))
+        assert corner.size == 1, grid
+        assert thresholds[corner[0]] == min(in_scores), grid
+
+        np.testing.assert_array_equal(
+            thresholds, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, np.inf]
+        )
+        np.testing.assert_array_equal(tn, [0, 1, 2, 3, 4, 5, 5, 5, 5, 5, 5])
+        np.testing.assert_array_equal(fn, [0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5])
+
+    def test_perfect_separation_hull(self):
+        """The frontier of a separated ROC is the ideal corner plus both endpoints."""
+        thresholds, tn, fn = get_tn_fn_counts(
+            [5, 6, 7, 8, 9], [0, 1, 2, 3, 4], hull=True
+        )
+        np.testing.assert_array_equal(thresholds, [0, 5, np.inf])
+        np.testing.assert_array_equal(tn, [0, 5, 5])
+        np.testing.assert_array_equal(fn, [0, 0, 5])
 
     def test_complete_overlap(self):
         _thresholds, tn, fn = get_tn_fn_counts([1, 2, 3, 4, 5], [1, 2, 3, 4, 5])
@@ -61,10 +80,17 @@ class TestGetTnFnCounts:
 
 class TestTprAtGivenFpr:
     def test_perfect_classifier(self):
+        """A separated ROC attains TPR=1 at FPR=0."""
+        _thresholds, tn, fn = get_tn_fn_counts([5, 6, 7, 8, 9], [0, 1, 2, 3, 4])
+        tp_counts = (fn[-1] - fn)[::-1]
+        fp_counts = (tn[-1] - tn)[::-1]
+        assert tpr_at_given_fpr(0.0, tp_counts, fp_counts) == 1.0
+
+    def test_degenerate_roc(self):
+        """A two-point ROC without separation has no true positives at FPR=0."""
         tp_counts = np.array([0, 100])
         fp_counts = np.array([0, 1])
-        tpr = tpr_at_given_fpr(0.0, tp_counts, fp_counts)
-        assert tpr == 0.0
+        assert tpr_at_given_fpr(0.0, tp_counts, fp_counts) == 0.0
 
     def test_random_classifier(self):
         tp_counts = np.array([0, 50, 100])
