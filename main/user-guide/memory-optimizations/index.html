@@ -3530,12 +3530,8 @@ trade-off on your workload.</p>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">h</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="p">(</span><span class="n">block2</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">use_reentrant</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">return</span> <span class="n">h</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># no_grad states that the per-example gradients are values, not a graph to</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># differentiate again; `grad` ignores it for the gradient itself. Without it the</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># transform keeps an internal backward graph that pins the recomputed</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># activations, and checkpointing saves nothing.</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">grads</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">grad</span><span class="p">(</span><span class="n">my_model</span><span class="p">))(</span><span class="n">batch_x</span><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">grads</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">grad</span><span class="p">(</span><span class="n">my_model</span><span class="p">))(</span><span class="n">batch_x</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>With Hugging Face models:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">"meta-llama/Llama-3.1-8B"</span><span class="p">)</span>
@@ -3579,14 +3575,11 @@ with functorch). No special kwargs needed.</p>
 <ul>
 <li>Requires <code>use_reentrant=False</code> (the non-reentrant checkpoint path).
   The legacy reentrant path is not supported.</li>
-<li>Only first-order differentiation is checkpointed. Higher-order transforms
-  (<code>hessian</code>, <code>jacrev(grad(...))</code>) keep upstream behaviour and still refuse
-  saved-tensor hooks, so they cannot be combined with checkpointing.</li>
-<li>The saving requires entering the transform under <code>torch.no_grad()</code>. With grad
-  mode on, the result stays differentiable by <code>.backward()</code> and the activations
-  stay pinned. <code>clipped_grad</code> does this for you — the trainers inherit it — and
-  skips it when an outer <code>torch.func</code> transform still has to differentiate the
-  clipped gradients.</li>
+<li>Supports first-order differentiation only; higher-order transforms still
+  reject saved-tensor hooks.</li>
+<li><code>torch.compile</code> is not supported with checkpointed functional transforms.</li>
+<li>Use <code>torch.no_grad()</code> for direct <code>vmap(grad(...))</code> calls. <code>clipped_grad</code> does
+  this automatically unless an outer transform differentiates its result.</li>
 <li>Opt out at the API layer (no env-var kill switches): pass
   <code>vmap_checkpointing=False</code> to <code>apply_runtime_patches(...)</code> or
   <code>apply_model_patches(...)</code>, or <code>performance_kernels_config={"vmap_checkpointing": False}</code>
