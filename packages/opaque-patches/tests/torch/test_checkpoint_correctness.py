@@ -75,3 +75,34 @@ def test_functional_call_checkpoint_per_sample_grads_match(device):
     got = vmap(grad(loss), in_dims=(None, 0, None))(params, batch, True)
     for k in ref:
         torch.testing.assert_close(got[k], ref[k], msg=f"mismatch for {k}")
+
+
+def test_tied_functional_call_checkpoint_per_sample_grads_match(device):
+    class Net(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.inner = torch.nn.Linear(8, 8, bias=False)
+            self.head = torch.nn.Linear(8, 8, bias=False)
+            self.head.weight = self.inner.weight
+
+        def forward(self, x, use_ckpt):
+            if use_ckpt:
+                x = checkpoint(self.inner, x, use_reentrant=False)
+            else:
+                x = self.inner(x)
+            return self.head(x).sum()
+
+    torch.manual_seed(0)
+    net = Net().to(device=device)
+    params = {k: v.detach().clone() for k, v in net.named_parameters()}
+    with torch.no_grad():
+        net.inner.weight.add_(123.0)
+
+    def loss(p, xi, use_ckpt):
+        return functional_call(net, p, (xi, use_ckpt))
+
+    batch = torch.randn(4, 8, device=device, dtype=torch.float32)
+    ref = vmap(grad(loss), in_dims=(None, 0, None))(params, batch, False)
+    got = vmap(grad(loss), in_dims=(None, 0, None))(params, batch, True)
+    for k in ref:
+        torch.testing.assert_close(got[k], ref[k], msg=f"mismatch for {k}")

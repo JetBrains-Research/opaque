@@ -51,13 +51,30 @@ def _wrap_reparametrize_module() -> None:
     _orig_reparametrize = stateless._reparametrize_module
 
     @contextlib.contextmanager
-    def _reparametrize_module(module, parameters_and_buffers, *args, **kwargs):
-        with _orig_reparametrize(module, parameters_and_buffers, *args, **kwargs):
-            _stack().append((module, parameters_and_buffers))
-            try:
+    def _reparametrize_module(
+        module,
+        parameters_and_buffers,
+        tie_weights=False,
+        strict=False,
+        stack_weights=False,
+    ):
+        params = (
+            stateless._untie_named_tensors_map(module, parameters_and_buffers)
+            if tie_weights
+            else parameters_and_buffers
+        )
+        _stack().append((module, params))
+        try:
+            with _orig_reparametrize(
+                module,
+                parameters_and_buffers,
+                tie_weights=tie_weights,
+                strict=strict,
+                stack_weights=stack_weights,
+            ):
                 yield
-            finally:
-                _stack().pop()
+        finally:
+            _stack().pop()
 
     stateless._reparametrize_module = _reparametrize_module
 
@@ -74,7 +91,9 @@ def _wrap_checkpoint_frame() -> None:
             def rebinding_recompute(*a, _fn=recompute_fn, _snapshot=snapshot):
                 with contextlib.ExitStack() as stack:
                     for module, params in _snapshot:
-                        stack.enter_context(_orig_reparametrize(module, params))
+                        stack.enter_context(
+                            _orig_reparametrize(module, params, tie_weights=False)
+                        )
                     return _fn(*a)
 
             recompute_fn = rebinding_recompute

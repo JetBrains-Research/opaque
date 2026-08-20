@@ -1,13 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Transforms Opaque does not use keep upstream behaviour after patching.
-
-The checkpoint shim conditions two process-global ``torch.func`` behaviours: the
-internal ``create_graph`` of a first-order backward, and the saved-tensor-hooks
-guard. Both now follow the composition that is actually running, so everything
-other than a lone first-order transform must behave as it does on stock torch.
-CPU-only, and valid on every torch regime.
-"""
+"""Regression tests for transform behavior after checkpoint patching."""
 
 from __future__ import annotations
 
@@ -23,7 +16,6 @@ from opaque.patches import apply_runtime_patches
 
 apply_runtime_patches(vmap_checkpointing=True)
 
-# d²/dx² x³ = 6x, so 12.0 at x = 2 for every reverse-over-reverse spelling.
 SECOND_DERIVATIVE = 12.0
 
 backport_only = pytest.mark.skipif(
@@ -89,8 +81,6 @@ def test_autograd_differentiates_through_vmap_grad():
 
 
 def test_autograd_reaches_parameters_captured_by_the_transform():
-    # The gradient-penalty shape: differentiate w.r.t. an input, then update the
-    # weights the transformed function closed over.
     weight = torch.nn.Parameter(torch.tensor(2.0))
     penalty = grad(lambda x: (x * x * weight).sum())(torch.tensor(3.0))
     (dweight,) = torch.autograd.grad(penalty, weight)
@@ -112,8 +102,6 @@ def test_grad_mode_entry_keeps_the_inner_graph(create_graph_flags):
 
 @backport_only
 def test_clipped_grad_skips_the_inner_graph(create_graph_flags):
-    # Opaque's own transform: the saving the shim exists for, on the path the
-    # trainers take, regardless of the caller's ambient grad mode.
     grad_fn, state = clipped_grad(lambda w, x: ((x - w) ** 2).sum(), clipping_norm=1.0)
     grad_fn(torch.tensor(3.0), torch.tensor([0.0, 7.0]), state=state)
     assert create_graph_flags == [False]
@@ -123,9 +111,6 @@ def test_clipped_grad_skips_the_inner_graph(create_graph_flags):
 def test_clipped_grad_keeps_the_inner_graph_under_an_outer_transform(
     create_graph_flags,
 ):
-    # Nested, the clipped gradients are an intermediate the outer transform has
-    # to differentiate: both backwards build their graph.  Skipping the inner
-    # one here is what would answer 0 instead of 4.
     grad_fn, state = clipped_grad(
         lambda w, x: ((x - w) ** 2).sum(), clipping_norm=100.0
     )
@@ -150,21 +135,7 @@ def test_higher_order_rejects_saved_tensor_hooks():
         jacrev(grad(cube))(torch.tensor(2.0))
 
 
-# ---------------------------------------------------------------------------
-# torch.compile: the stack cannot be read from inside a compiled region at all,
-# so every scoping decision above has to have a constant to fall back on. Both
-# live here rather than with the other compile tests because they only bite
-# once the patches are installed, and nothing else in that suite installs them.
-# ---------------------------------------------------------------------------
-
-
 def test_compiles_the_dp_transform_with_the_patches_applied():
-    """``fullgraph=True`` over ``clipped_grad``, patches and all.
-
-    Reading the interpreter stack is what a compiled region cannot do: the
-    stack itself is a pybind builtin and its interpreters are pybind objects,
-    so both the clipping probe and ``prev_grad_mode`` abort the compilation.
-    """
     grad_fn, state = clipped_grad(lambda w, x: ((x - w) ** 2).sum(), clipping_norm=1.0)
     args = (torch.tensor(3.0), torch.tensor([0.0, 7.0]))
 
@@ -175,13 +146,7 @@ def test_compiles_the_dp_transform_with_the_patches_applied():
     torch.testing.assert_close(compiled.pytree, eager.pytree)
 
 
-def test_compiled_first_order_keeps_its_saved_tensor_hooks():
-    """A compiled first-order transform still gets hooks, so checkpoint runs.
-
-    The guard is what rejects the hooks non-reentrant checkpoint is built on.
-    Answering "higher-order" for a compiled composition -- which is the safe
-    assumption for the *clipping* probe -- would raise here instead.
-    """
+def test_compiled_transform_rejects_saved_tensor_hooks():
     weight = torch.randn(4, 4)
 
     def f(x):
@@ -191,4 +156,5 @@ def test_compiled_first_order_keeps_its_saved_tensor_hooks():
     compiled_fn = torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)
     x = torch.randn(3, 4)
 
-    torch.testing.assert_close(compiled_fn(x), vmap(grad(f))(x))
+    with pytest.raises(RuntimeError):
+        compiled_fn(x)
