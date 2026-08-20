@@ -128,7 +128,7 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     :meth:`epsilon_at` so that the PLD is populated on the first query
     and reused as an opaque boundary for subsequent composition.
 
-    A whole-horizon process is returned unchanged with a warning.
+    A frozen whole-horizon prefix is returned unchanged with a warning.
 
     Example::
 
@@ -160,7 +160,8 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     match process:
         case Accountant() if _contains_horizon_process(process.process):
             warnings.warn(
-                "cached() skipped a process containing a whole-horizon mechanism.",
+                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
+                "before accumulation instead.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -171,7 +172,8 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
             return CachedProcess(inner=process)
         case DpProcess() if _contains_horizon_process(process):
             warnings.warn(
-                "cached() skipped a process containing a whole-horizon mechanism.",
+                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
+                "before accumulation instead.",
                 RuntimeWarning,
                 stacklevel=2,
             )
