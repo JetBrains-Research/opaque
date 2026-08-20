@@ -1848,21 +1848,46 @@ class TestDPTrainerCheckpointing:
 
 
 class _EvalRecorder(_HFTrainerCallback):
-    """Pytest helper: records each on_evaluate call with its global_step."""
+    """Pytest helper: records ``(global_step, epoch)`` per on_evaluate call."""
 
     def __init__(self):
-        self.calls: list[tuple[int, dict]] = []
-        self.train_steps_seen: list[int] = []
+        self.calls: list[tuple[int, float]] = []
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        self.calls.append((state.global_step, dict(metrics or {})))
+        self.calls.append((state.global_step, float(state.epoch)))
 
-    def on_step_end(self, args, state, control, **kwargs):
-        self.train_steps_seen.append(state.global_step)
+    @property
+    def steps(self) -> list[int]:
+        return [step for step, _ in self.calls]
+
+
+def _hf_evaluates_at_end_of_training() -> bool:
+    """Whether HF's flow callback adds an evaluation at an off-grid final step.
+
+    ``DefaultFlowCallback`` grew this in transformers 5.5 and the supported
+    floor is 4.57, so the cadence tests probe for it the way the kernel patches
+    probe torch: ask the installed version, don't assume a release.
+    """
+    from transformers.trainer_callback import (
+        DefaultFlowCallback,
+        TrainerControl,
+        TrainerState,
+    )
+
+    args = _default_args(max_steps=5, eval_strategy="steps", eval_steps=2)
+    state = TrainerState(global_step=5, max_steps=5, eval_steps=2)
+    control = DefaultFlowCallback().on_step_end(args, state, TrainerControl())
+    return bool(control.should_evaluate)
 
 
 class TestDPTrainerEvalControls:
-    """Phase 3a: ``eval_on_start``, ``eval_delay``, ``prediction_loss_only``."""
+    """``eval_on_start``, evaluation cadence, ``prediction_loss_only``.
+
+    Cadence comes from HF's ``DefaultFlowCallback``, which sets
+    ``control.should_evaluate``; ``DPTrainer._maybe_log_save_evaluate`` acts
+    on it.  The cadence tests assert the ``on_evaluate`` events a real
+    training run emits.
+    """
 
     def test_eval_on_start_fires_before_first_step(
         self, gpt2_with_lora, tiny_lm_dataset
@@ -1970,6 +1995,43 @@ class TestDPTrainerEvalControls:
         # global_step (= 2), not 0.
         assert rec.calls[0][0] == 2
 
+    @pytest.mark.parametrize(
+        ("max_steps", "on_grid"),
+        [(6, [2, 4, 6]), (5, [2, 4])],
+        ids=["grid-hits-last-step", "grid-misses-last-step"],
+    )
+    def test_eval_steps_cadence(
+        self, gpt2_with_lora, tiny_lm_dataset, max_steps, on_grid
+    ):
+        """``eval_strategy='steps'`` evaluates on the ``eval_steps`` grid.
+
+        HF parity: on versions that do it, ``DefaultFlowCallback`` adds one
+        evaluation at a final step the grid missed, so ``eval_steps=2`` over 5
+        steps evaluates at 2, 4 and 5.  That is the only version-dependent part
+        of the cadence, so it is probed rather than assumed.
+        """
+        model, tokenizer = gpt2_with_lora
+        rec = _EvalRecorder()
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=max_steps,
+                eval_strategy="steps",
+                eval_steps=2,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[rec],
+        )
+        trainer.train()
+
+        expected = on_grid
+        if max_steps not in on_grid and _hf_evaluates_at_end_of_training():
+            expected = [*on_grid, max_steps]
+        assert rec.steps == expected
+
     def test_eval_delay_steps_skips_until_threshold(
         self, gpt2_with_lora, tiny_lm_dataset
     ):
@@ -1993,11 +2055,129 @@ class TestDPTrainerEvalControls:
         )
         trainer.train()
 
-        steps_evaluated = [c[0] for c in rec.calls]
-        # 2 must NOT appear; 4 and 6 must appear.
-        assert 2 not in steps_evaluated
-        assert 4 in steps_evaluated
-        assert 6 in steps_evaluated
+        assert rec.steps == [4, 6]
+
+    def test_eval_epoch_cadence(self, gpt2_with_lora, tiny_lm_dataset):
+        """``eval_strategy='epoch'`` evaluates once per completed epoch."""
+        model, tokenizer = gpt2_with_lora
+        rec = _EvalRecorder()
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                num_train_epochs=3,
+                eval_strategy="epoch",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[rec],
+        )
+        trainer.train()
+
+        # 8 examples at a logical batch of 4 ⇒ 2 steps per epoch.  Each
+        # evaluation lands on an integer epoch, never mid-epoch.
+        assert rec.calls == [(2, 1.0), (4, 2.0), (6, 3.0)]
+
+    def test_eval_delay_epochs_skips_until_threshold(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        """Under ``eval_strategy='epoch'``, ``eval_delay`` counts epochs."""
+        model, tokenizer = gpt2_with_lora
+        rec = _EvalRecorder()
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                num_train_epochs=3,
+                eval_strategy="epoch",
+                eval_delay=2,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[rec],
+        )
+        trainer.train()
+
+        assert rec.calls == [(4, 2.0), (6, 3.0)]
+
+    def test_eval_steps_cadence_survives_resume(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """The step grid is global, so resume keeps evaluating on it.
+
+        Training stops at step 2 and resumes with ``eval_steps=3``: the grid
+        is read off ``state.global_step``, so evaluation happens at 3 and 6.
+        A cadence restarted from the resume point would evaluate at 5 instead.
+        """
+        model, tokenizer = gpt2_with_lora
+        cadence = {
+            "output_dir": str(tmp_path),
+            "save_strategy": "steps",
+            "save_steps": 2,
+            "eval_strategy": "steps",
+            "eval_steps": 3,
+        }
+
+        trainer1 = DPTrainer(
+            model=model,
+            args=_default_args(max_steps=2, **cadence),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer1.train()
+
+        rec = _EvalRecorder()
+        trainer2 = DPTrainer(
+            model=model,
+            args=_default_args(max_steps=6, **cadence),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[rec],
+        )
+        trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+
+        assert rec.steps == [3, 6]
+
+    def test_eval_epoch_cadence_survives_resume(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """Resume does not re-evaluate an epoch that already completed.
+
+        The resumed run picks its starting epoch up from ``global_step``, so
+        after one completed epoch it evaluates at epochs 2 and 3 only.
+        """
+        model, tokenizer = gpt2_with_lora
+        cadence = {
+            "output_dir": str(tmp_path),
+            "save_strategy": "epoch",
+            "eval_strategy": "epoch",
+        }
+
+        trainer1 = DPTrainer(
+            model=model,
+            args=_default_args(num_train_epochs=1, **cadence),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer1.train()
+
+        rec = _EvalRecorder()
+        trainer2 = DPTrainer(
+            model=model,
+            args=_default_args(num_train_epochs=3, **cadence),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[rec],
+        )
+        trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+
+        assert rec.calls == [(4, 2.0), (6, 3.0)]
 
     def test_prediction_loss_only_skips_compute_metrics(
         self,

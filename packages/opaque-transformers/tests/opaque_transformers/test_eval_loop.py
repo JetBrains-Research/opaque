@@ -1,13 +1,12 @@
 """Unit tests for opaque.api.transformers.trainer._eval helpers.
 
-Covers ``should_run_eval_at_step`` and ``_PredictionAccumulator``
-without instantiating a model — every parity rule for the eval loop is
-exercised in milliseconds.
+Covers ``_PredictionAccumulator`` and the reporting helpers without
+instantiating a model.  Evaluation cadence comes from HF's
+``DefaultFlowCallback`` and is covered end-to-end in
+``tests/validation/test_dp_trainer.py``.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 import pytest
 import torch
@@ -16,76 +15,8 @@ from opaque.api.transformers.trainer._eval import (
     EvalPrediction,
     EvaluationResult,
     _PredictionAccumulator,
-    should_run_eval_at_step,
     with_metric_prefix,
 )
-
-# ---------------------------------------------------------------------------
-# Stand-in args object
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _Args:
-    """Minimal stand-in for TrainingArguments — only the fields helpers read."""
-
-    eval_strategy: str = "no"
-    eval_delay: float = 0.0
-    eval_steps: int | None = None
-    eval_accumulation_steps: int | None = None
-    eval_do_concat_batches: bool = True
-    prediction_loss_only: bool = False
-
-
-# ---------------------------------------------------------------------------
-# should_run_eval_at_step
-# ---------------------------------------------------------------------------
-
-
-class TestShouldRunEvalAtStep:
-    def test_strategy_no_never_fires(self):
-        a = _Args(eval_strategy="no")
-        for step in (0, 1, 5, 100):
-            assert should_run_eval_at_step(a, step, 0.0, 1) is False
-
-    def test_strategy_steps_fires_at_cadence(self):
-        a = _Args(eval_strategy="steps")
-        # eval_steps_resolved=4 → fires at 4, 8, 12, ...
-        assert should_run_eval_at_step(a, 4, 0.0, 4) is True
-        assert should_run_eval_at_step(a, 8, 0.0, 4) is True
-        assert should_run_eval_at_step(a, 5, 0.0, 4) is False
-
-    def test_strategy_steps_never_at_zero(self):
-        a = _Args(eval_strategy="steps")
-        assert should_run_eval_at_step(a, 0, 0.0, 4) is False
-
-    def test_strategy_steps_with_delay(self):
-        # eval_delay=10, eval_steps=2, max_steps=12 → fires at 10 and 12
-        a = _Args(eval_strategy="steps", eval_delay=10)
-        assert should_run_eval_at_step(a, 2, 0.0, 2) is False
-        assert should_run_eval_at_step(a, 4, 0.0, 2) is False
-        assert should_run_eval_at_step(a, 8, 0.0, 2) is False
-        assert should_run_eval_at_step(a, 10, 0.0, 2) is True
-        assert should_run_eval_at_step(a, 12, 0.0, 2) is True
-
-    def test_strategy_epoch_fires_only_at_integer_epoch(self):
-        a = _Args(eval_strategy="epoch")
-        # Step-based gating: should NOT fire mid-epoch even if step matches.
-        assert should_run_eval_at_step(a, 5, 0.5, 5) is False
-        # Epoch boundary: fires.
-        assert should_run_eval_at_step(a, 0, 1.0, 1) is True
-        assert should_run_eval_at_step(a, 0, 2.0, 1) is True
-
-    def test_strategy_epoch_never_at_epoch_zero(self):
-        a = _Args(eval_strategy="epoch")
-        assert should_run_eval_at_step(a, 0, 0.0, 1) is False
-
-    def test_strategy_epoch_with_delay(self):
-        # eval_delay=1.0 with epoch strategy: skip epoch 1, fire at epoch 2.
-        a = _Args(eval_strategy="epoch", eval_delay=2.0)
-        assert should_run_eval_at_step(a, 0, 1.0, 1) is False
-        assert should_run_eval_at_step(a, 0, 2.0, 1) is True
-
 
 # ---------------------------------------------------------------------------
 # _PredictionAccumulator
