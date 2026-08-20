@@ -488,7 +488,7 @@ jobs:
         shell: bash
         run: |
           if [[ "$MAIN_CI_RESULT" != "success" ]]; then
-            echo "::error::Could not reuse CI (main) test coverage."
+            echo "::error::CI (main) validation failed, timed out, or could not be reused."
             exit 1
           fi
 
