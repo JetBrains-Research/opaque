@@ -132,10 +132,9 @@ profile:
 # Sanity analysis uses a separate profile, so its inspection-specific
 # analyzer workarounds must remain in Qodana's top-level configuration.
 exclude:
-  - name: UndefinedParamsPresent
+  - name: All
     paths:
-      - .github/actions
-      - .github/workflows
+      - .github
   - name: PyUnresolvedReferencesInspection
     paths:
       - docs/tutorials

@@ -89,6 +89,12 @@ def tiny_lm_dataset(gpt2_model_and_tokenizer):
     return build_lm_dataset(texts, tokenizer, max_length=24)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_default_trainer_output(tmp_path, monkeypatch):
+    """Keep default relative trainer outputs isolated across xdist workers."""
+    monkeypatch.chdir(tmp_path)
+
+
 # ---------------------------------------------------------------------------
 # DPTrainer tests
 # ---------------------------------------------------------------------------

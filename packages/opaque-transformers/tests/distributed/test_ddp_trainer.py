@@ -114,6 +114,17 @@ def test_runtime_foundation_rank_world_world2(tmp_path) -> None:
     _run_ddp("runtime_foundation", world_size=2, output_dir=str(tmp_path))
 
 
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_runtime_foundation_trains_and_checkpoints(tmp_path) -> None:
+    _run_ddp(
+        "runtime_foundation",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
 @pytest.mark.cuda
 @pytest.mark.slow
 def test_runtime_foundation_rank_world_world4(tmp_path) -> None:

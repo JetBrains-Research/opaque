@@ -17,6 +17,22 @@ class _ScalarExactnessState:
     value: int
 
 
+@dataclass(frozen=True)
+class _CoreGlooState:
+    total: int
+    average: float
+    minimum: int
+    maximum: int
+    product: int
+    local_rank: int
+
+
+@dataclass(frozen=True)
+class _DuckTypedPerGroup:
+    groups: dict[str, str]
+    values: dict[str, float]
+
+
 def _is_ddp_available() -> bool:
     return dist.is_available() and torch.cuda.is_available()
 
@@ -326,6 +342,223 @@ def _worker_second_moment_clipping_parity_gloo(
 def _spawn_gloo(world_size: int, fn, *args) -> None:
     port = _find_free_port()
     mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+
+
+def _worker_core_collectives_gloo(rank: int, world_size: int, port: int) -> None:
+    """Exercise backend-neutral engine primitives through a live Gloo group."""
+    from opaque.api.engine.distributed._state import gather_tensors, sync_object
+    from opaque.distributed import (
+        all_reduce,
+        barrier,
+        gather_for_metrics,
+        get_rank,
+        get_world_size,
+        is_distributed,
+        is_main_process,
+        num_processes,
+        process_index,
+        reduce_pytree,
+        sync,
+    )
+    from opaque.distributed.collectives import all_reduce_
+    from opaque.profiling import PerfState, step_perf
+    from opaque.types import ClippedPytree, NoisedPytree, PerGroup
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        assert is_distributed()
+        assert get_rank() == process_index() == rank
+        assert get_world_size() == num_processes() == world_size
+        assert is_main_process() is (rank == 0)
+
+        base = torch.tensor([float(rank + 1), float(2 * (rank + 1))])
+        expected = {
+            "sum": torch.tensor([3.0, 6.0]),
+            "mean": torch.tensor([1.5, 3.0]),
+            "max": torch.tensor([2.0, 4.0]),
+            "min": torch.tensor([1.0, 2.0]),
+            "product": torch.tensor([2.0, 8.0]),
+        }
+        for op, value in expected.items():
+            torch.testing.assert_close(all_reduce(base, op=op), value)
+        torch.testing.assert_close(
+            base, torch.tensor([float(rank + 1), float(2 * (rank + 1))])
+        )
+
+        inplace = base.clone()
+        assert all_reduce_(inplace, op="mean") is None
+        torch.testing.assert_close(inplace, expected["mean"])
+
+        gathered_scalars = gather_for_metrics(torch.tensor(float(rank)))
+        torch.testing.assert_close(gathered_scalars, torch.tensor([0.0, 1.0]))
+        gathered_ragged = gather_tensors(torch.full((rank + 1, 1), float(rank)))
+        torch.testing.assert_close(
+            gathered_ragged,
+            torch.tensor([[0.0], [1.0], [1.0]]),
+        )
+
+        local_tree = {
+            "weight": torch.tensor([float(rank + 1)]),
+            "bias": torch.tensor([float(rank)]),
+        }
+        reduced_tree = reduce_pytree(local_tree, op="sum")
+        torch.testing.assert_close(reduced_tree["weight"], torch.tensor([3.0]))
+        torch.testing.assert_close(reduced_tree["bias"], torch.tensor([1.0]))
+        torch.testing.assert_close(
+            local_tree["weight"], torch.tensor([float(rank + 1)])
+        )
+
+        clipped = ClippedPytree({"w": torch.tensor([float(rank + 1)])}, max_norm=2.0)
+        averaged = reduce_pytree(clipped, op="mean")
+        assert isinstance(averaged, ClippedPytree)
+        assert averaged.max_norm == 1.0
+        torch.testing.assert_close(averaged.pytree["w"], torch.tensor([1.5]))
+
+        noised = NoisedPytree(
+            {"w": torch.tensor([float(rank + 1)])},
+            max_norm=2.0,
+            noise_stddev=0.5,
+        )
+        summed_noised = reduce_pytree(noised, op="sum")
+        assert isinstance(summed_noised, NoisedPytree)
+        assert summed_noised.max_norm == 2.0
+        assert summed_noised.noise_stddev == pytest.approx(0.5 * 2**0.5)
+        torch.testing.assert_close(summed_noised.pytree["w"], torch.tensor([3.0]))
+
+        per_group_norm = PerGroup(
+            groups={"w": "weights"},
+            values={"weights": 1.0},
+        )
+        per_group_reduced = reduce_pytree(
+            ClippedPytree(
+                {"w": torch.tensor([float(rank + 1)])},
+                max_norm=per_group_norm,
+            ),
+            op="sum",
+        )
+        assert per_group_reduced.max_norm == per_group_norm
+        torch.testing.assert_close(per_group_reduced.pytree["w"], torch.tensor([3.0]))
+
+        mismatched_per_group_norm = PerGroup(
+            groups=per_group_norm.groups,
+            values={"weights": float(rank + 1)},
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.values\['weights'\] mismatch",
+        ):
+            reduce_pytree(
+                ClippedPytree(
+                    {"w": torch.tensor([float(rank + 1)])},
+                    max_norm=mismatched_per_group_norm,
+                ),
+                op="sum",
+            )
+
+        reordered_mismatch = PerGroup(
+            groups={"w": "weights", "b": "biases"},
+            values=(
+                {"weights": 1.0, "biases": 2.0}
+                if rank == 0
+                else {"biases": 1.0, "weights": 2.0}
+            ),
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.values\['(?:biases|weights)'\] mismatch",
+        ):
+            reduce_pytree(
+                ClippedPytree(
+                    {
+                        "w": torch.tensor([float(rank + 1)]),
+                        "b": torch.tensor([float(rank + 1)]),
+                    },
+                    max_norm=reordered_mismatch,
+                ),
+                op="sum",
+            )
+
+        reordered_duck_typed_metadata = _DuckTypedPerGroup(
+            groups={"w": "weights", "b": "biases"},
+            values=(
+                {"weights": 1.0, "biases": 2.0}
+                if rank == 0
+                else {"biases": 1.0, "weights": 2.0}
+            ),
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.values\['(?:biases|weights)'\] mismatch",
+        ):
+            reduce_pytree(
+                ClippedPytree(
+                    {
+                        "w": torch.tensor([float(rank + 1)]),
+                        "b": torch.tensor([float(rank + 1)]),
+                    },
+                    max_norm=reordered_duck_typed_metadata,
+                ),
+                op="sum",
+            )
+
+        mixed_metadata = per_group_norm if rank == 0 else 1.0
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.kind mismatch",
+        ):
+            reduce_pytree(
+                ClippedPytree(
+                    {"w": torch.tensor([float(rank + 1)])},
+                    max_norm=mixed_metadata,
+                ),
+                op="sum",
+            )
+
+        synced = sync_object(
+            _CoreGlooState(
+                total=rank + 1,
+                average=float(rank + 1),
+                minimum=rank + 1,
+                maximum=rank + 1,
+                product=rank + 1,
+                local_rank=rank,
+            ),
+            {
+                "total": "sum",
+                "average": "mean",
+                "minimum": "min",
+                "maximum": "max",
+                "product": "product",
+                "local_rank": "local",
+            },
+        )
+        assert synced == _CoreGlooState(
+            total=3,
+            average=1.5,
+            minimum=1,
+            maximum=2,
+            product=2,
+            local_rank=rank,
+        )
+
+        perf_state = PerfState(torch.device("cpu"))
+        with step_perf(torch.device("cpu"), batch_size=rank + 1) as step:
+            _ = torch.arange(64, dtype=torch.float32).square().sum()
+        perf_state = perf_state.add(step.perf)
+        synced_perf_state = sync(perf_state)
+        assert synced_perf_state is not perf_state
+        assert synced_perf_state.num_steps == 1
+        assert synced_perf_state.total_samples == 3
+        assert synced_perf_state.last_step is not None
+        assert synced_perf_state.last_step.batch_size == 3
+        assert synced_perf_state.last_step.step_time_sec >= 0.0
+
+        barrier()
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == float(world_size)
+    finally:
+        _cleanup_ddp()
 
 
 def _worker_gather_optional_ragged(rank: int, world_size: int, port: int) -> None:

@@ -12,14 +12,6 @@ on:
         required: false
         default: ""
         type: string
-      native-build-packages:
-        description: JSON array of native package matrix entries.
-        required: true
-        type: string
-      python-build-packages:
-        description: JSON array of pure-Python package matrix entries.
-        required: true
-        type: string
       retention-days:
         description: Number of days to retain uploaded artifacts.
         required: true
@@ -32,12 +24,8 @@ on:
 
 jobs:
   build-python-wheels:
-    name: ${{ matrix.package.dist }}
+    name: Python packages
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(inputs.python-build-packages) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -55,28 +43,54 @@ jobs:
       - name: Preflight build version
         run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
 
-      - name: Build wheel
-        run: uv build "${{ matrix.package.path }}" --wheel --out-dir dist
+      - name: Build opaque
+        run: uv build . --wheel --out-dir dist
+
+      - name: Build opaque-base
+        run: uv build packages/opaque-base --wheel --out-dir dist
+
+      - name: Build opaque-engine
+        run: uv build packages/opaque-engine --wheel --out-dir dist
+
+      - name: Build opaque-optimizers
+        run: uv build packages/opaque-optimizers --wheel --out-dir dist
+
+      - name: Build opaque-dpsgd
+        run: uv build packages/opaque-dpsgd --wheel --out-dir dist
+
+      - name: Build opaque-dpftrl
+        run: uv build packages/opaque-dpftrl --wheel --out-dir dist
+
+      - name: Build opaque-auditing
+        run: uv build packages/opaque-auditing --wheel --out-dir dist
+
+      - name: Build opaque-patches
+        run: uv build packages/opaque-patches --wheel --out-dir dist
+
+      - name: Build opaque-transformers
+        run: uv build packages/opaque-transformers --wheel --out-dir dist
+
+      - name: Build opaque-alignment
+        run: uv build packages/opaque-alignment --wheel --out-dir dist
 
       - name: Validate wheel metadata
         run: >-
           uv run --isolated --no-project --with packaging==25.0
           python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
-      - name: Upload wheel
+      - name: Upload wheels
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}
+          name: ${{ inputs.artifact-prefix }}-python
           path: dist/*.whl
           retention-days: ${{ inputs.retention-days }}
 
   build-native-artifacts:
-    name: ${{ matrix.package.dist }} (${{ matrix.target.label }})
+    name: opaque-accounting (${{ matrix.target.label }})
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(inputs.native-build-packages) }}
         target:
           - kind: wheel
             label: Linux x86_64
@@ -129,7 +143,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: build
-          working-directory: ${{ matrix.package.path }}
+          working-directory: packages/opaque-accounting
           target: ${{ matrix.target.target }}
           manylinux: ${{ matrix.target.manylinux }}
           args: >-
@@ -140,7 +154,7 @@ jobs:
 
       - name: Build sdist
         if: matrix.target.kind == 'sdist'
-        run: uv build "${{ matrix.package.path }}" --sdist --out-dir dist
+        run: uv build packages/opaque-accounting --sdist --out-dir dist
 
       - name: Validate wheel metadata
         if: matrix.target.kind == 'wheel'
@@ -149,7 +163,6 @@ jobs:
           python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
       - name: Validate artifact policy
-        if: matrix.package.dist == 'opaque-accounting'
         run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
 
       - name: Rebuild wheel from sdist
@@ -165,6 +178,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}-${{ matrix.target.artifact }}
+          name: ${{ inputs.artifact-prefix }}-opaque-accounting-${{ matrix.target.artifact }}
           path: dist/${{ matrix.target.pattern }}
           retention-days: ${{ inputs.retention-days }}
