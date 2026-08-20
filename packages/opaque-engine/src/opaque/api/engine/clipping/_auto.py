@@ -34,7 +34,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
-from opaque.api.engine.clipping._clipped_grad import ClippedGradAux, clipped_grad
+from opaque.api.engine.clipping._clipped_grad import (
+    ClippedGradAux,
+    clipped_grad,
+)
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
 from opaque.api.engine.types import ClipState, PerGroup
 
@@ -207,6 +210,7 @@ def auto_clipped_grad(
     microbatch_size: int | None = None,
     dtype: Any = None,
     second_moment: bool = False,
+    return_pre_clipping_finite: bool = False,
 ) -> tuple[Callable, AutoClipState]:
     r"""Create a function that computes the sum of AUTO-S scaled per-example gradients.
 
@@ -252,12 +256,18 @@ def auto_clipped_grad(
             mechanism for DP-FTRL); the sensitivity-proportional joint
             Mahalanobis allocation gives the paired release the same PLD
             as a single first-moment release.
+        return_pre_clipping_finite: When True, return
+            :class:`ClippedGradStatus` beside the gradient. Use its private
+            ``grads_were_finite`` flag only for numerical state such as
+            loss-scale backoff; do not use it to skip the noised update or
+            its privacy accounting.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
         ``(*args, state, **kwargs) -> (grad, state)``, or
         ``(*args, state, **kwargs) -> ((grad, aux), state)`` when
-        ``return_aux=True``.
+        ``return_aux=True``. When ``return_pre_clipping_finite=True``, a
+        private :class:`ClippedGradStatus` is appended to either result.
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the
@@ -313,6 +323,7 @@ def auto_clipped_grad(
         microbatch_size=microbatch_size,
         dtype=dtype,
         second_moment=second_moment,
+        return_pre_clipping_finite=return_pre_clipping_finite,
         _scale_fn=scale_fn,
     )
 
@@ -327,7 +338,11 @@ def auto_clipped_grad(
         return grad_fn, state
 
     def grad_fn(*args, state, **kwargs):
-        (grads, grad_aux), _ = inner_fn(*args, state=None, **kwargs)
+        inner_result, _ = inner_fn(*args, state=None, **kwargs)
+        if return_pre_clipping_finite:
+            grads, grad_aux, status = inner_result
+        else:
+            grads, grad_aux = inner_result
         auto_aux = AutoClippedGradAux(
             loss_values=grad_aux.loss_values,
             grad_norms=grad_aux.grad_norms,
@@ -337,6 +352,8 @@ def auto_clipped_grad(
             batch_size=grad_aux.batch_size,
             group_norms=grad_aux.group_norms,
         )
+        if return_pre_clipping_finite:
+            return (grads, auto_aux, status), state
         return (grads, auto_aux), state
 
     return grad_fn, state

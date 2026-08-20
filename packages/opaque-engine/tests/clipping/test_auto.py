@@ -178,6 +178,27 @@ class TestAutoClippedGrad:
         assert grads.shape == params.shape
         assert isinstance(new_state, AutoClipState)
 
+    def test_pre_clipping_finiteness_is_preserved_before_auto_scaling(self):
+        def loss(params, data):
+            return torch.sqrt(data - params)
+
+        grad_fn, state = auto_clipped_grad(
+            loss,
+            argnums=0,
+            batch_argnums=1,
+            R=1.0,
+            return_pre_clipping_finite=True,
+        )
+
+        (grads, status), _ = grad_fn(
+            torch.tensor(0.0),
+            torch.tensor([1.0, -1.0]),
+            state=state,
+        )
+
+        assert status.grads_were_finite is False
+        assert torch.isfinite(_unwrap_clipped(grads)).all()
+
     def test_state_is_fixed(self):
         """State does not change across steps (no adaptation)."""
         grad_fn, state = auto_clipped_grad(

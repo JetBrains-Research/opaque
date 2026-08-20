@@ -20,6 +20,7 @@ from opaque.api.engine.clipping._helpers import (
 from opaque.api.engine.functional._transform_stack import (
     under_differentiating_transform,
 )
+from opaque.api.engine.pytree import tree_flatten
 from opaque.api.engine.types import PerGroup, clipped
 
 if TYPE_CHECKING:
@@ -58,6 +59,40 @@ class ClippedGradAux:
     group_norms: dict[str, torch.Tensor] | None = None
 
 
+@dataclass(frozen=True)
+class ClippedGradStatus:
+    """Private control status for a clipped-gradient attempt.
+
+    ``grads_were_finite`` is computed after ``pre_clipping_transform`` and
+    before clipping replaces non-finite values with zero. It may update
+    private numerical state such as a loss scale, but must not control whether
+    the noised update or its privacy accounting executes, and must not be
+    emitted as telemetry.
+    """
+
+    grads_were_finite: bool
+
+
+def _pytree_finite_indicator(value: Any) -> torch.Tensor:
+    """Return a scalar bool tensor without escaping a ``vmap`` transform."""
+    leaves, _ = tree_flatten(value)
+    indicator: torch.Tensor | None = None
+    for leaf in leaves:
+        if not isinstance(leaf, torch.Tensor):
+            continue
+        finite = (
+            torch.isfinite(leaf).all()
+            if leaf.is_floating_point() or leaf.is_complex()
+            else torch.ones((), dtype=torch.bool, device=leaf.device)
+        )
+        indicator = finite if indicator is None else indicator & finite
+    if indicator is None:
+        raise TypeError(
+            "Expected at least one tensor leaf when checking gradient finiteness."
+        )
+    return indicator
+
+
 def _validate_static_args(argnums, batch_argnums, normalize_by):
     """Validates the argnums and batch_argnums inputs are compatible."""
     if normalize_by <= 0.0:
@@ -92,6 +127,7 @@ def clipped_grad(
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
     compute_dtype: torch.dtype | None = None,
+    return_pre_clipping_finite: bool = False,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
     _return_stats: bool = False,
@@ -181,6 +217,13 @@ def clipped_grad(
             clip-norm and the across-batch sum). ``None`` (default) auto-promotes
             bf16/fp16 to float32 for numerical stability. Independent of
             ``dtype`` (which controls the *output* dtype).
+        return_pre_clipping_finite: When True, return a
+            :class:`ClippedGradStatus` beside the clipped result. Its
+            ``grads_were_finite`` flag is measured after
+            ``pre_clipping_transform`` and before clipping sanitizes NaN/Inf
+            values. Keep it private and use it only for numerical state such as
+            loss-scale backoff; it must not decide whether the DP update or
+            accountant advances.
         second_moment: Whether to accumulate the clipped-gradient second
             moment required by DP-FTRL noise mechanisms.
     Returns:
@@ -188,6 +231,8 @@ def clipped_grad(
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
           Call signature: clipped_grads, new_state = clipped_grad_fn(..., state=clip_state)
           If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state
+          If ``return_pre_clipping_finite=True``, a private
+          :class:`ClippedGradStatus` is appended to that result.
         - clip_state: Initial FixedClipState containing sensitivity information
 
         The grad_aux output (when requested) is a ClippedGradAux dataclass with fields:
@@ -198,6 +243,10 @@ def clipped_grad(
     _validate_static_args(argnums, batch_argnums, normalize_by)
     if return_aux and _return_stats:
         raise ValueError("_return_stats cannot be combined with return_aux=True")
+    if return_pre_clipping_finite and (_force_grad_norms or _return_stats):
+        raise ValueError(
+            "return_pre_clipping_finite cannot be combined with internal statistics options."
+        )
 
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
@@ -207,6 +256,12 @@ def clipped_grad(
     output_squared_max_norm = (
         (clipping_norm * clipping_norm) / normalize_by if second_moment else None
     )
+
+    def _with_status(result: Any, grads_were_finite: bool) -> Any:
+        if not return_pre_clipping_finite:
+            return result
+        status = ClippedGradStatus(grads_were_finite=grads_were_finite)
+        return (*result, status) if isinstance(result, tuple) else (result, status)
 
     def _empty_batch_response(args, state):
         """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
@@ -233,8 +288,8 @@ def clipped_grad(
                 clipping_rate=0.0,
                 batch_size=0,
             )
-            return (grads, grad_aux), state
-        return grads, state
+            return _with_status((grads, grad_aux), grads_were_finite=True), state
+        return _with_status(grads, grads_were_finite=True), state
 
     # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
     grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
@@ -245,11 +300,13 @@ def clipped_grad(
         with torch.no_grad() if values_only else contextlib.nullcontext():
             grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
         result = pre_clipping_transform(grad)
-        if return_aux or _force_grad_norms:
+        if return_aux or _force_grad_norms or return_pre_clipping_finite:
             # Return dict aux from per-example grad_fn; clipping-related norms are
             # produced by clipped_fun to avoid duplicating norm computation logic.
             # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
             aux_dict = {}
+            if return_pre_clipping_finite:
+                aux_dict["_pre_clipping_finite"] = _pytree_finite_indicator(result)
             if return_aux:
                 aux_dict["values"] = value_and_aux[0]
             if return_aux and has_aux:
@@ -259,11 +316,11 @@ def clipped_grad(
 
     clipped_grad_fn, clip_state = clipped_fun(
         grad_fn,
-        has_aux=return_aux or _force_grad_norms,
+        has_aux=return_aux or _force_grad_norms or return_pre_clipping_finite,
         batch_argnums=batch_argnums,
         clipping_norm=clipping_norm,
         normalize_by=normalize_by,
-        return_aux=return_aux,
+        return_aux=return_aux or return_pre_clipping_finite,
         second_moment=second_moment,
         microbatch_size=microbatch_size,
         dtype=dtype,
@@ -271,6 +328,36 @@ def clipped_grad(
         _scale_fn=_scale_fn,
         _return_stats=_return_stats,
     )
+
+    if return_pre_clipping_finite:
+
+        def grad_fn_wrapper(*args, state, **kwargs):
+            if batch_size_from_args(args, batch_argnums_tuple) == 0:
+                return _empty_batch_response(args, state)
+            with record_function("opaque::clipped_grad"):
+                (clipped_grads, aux), returned_state = clipped_grad_fn(
+                    *args, state=state, **kwargs
+                )
+            finite = aux._pre_clipping_finite
+            if finite is None:
+                raise RuntimeError(
+                    "clipped_grad did not return the requested finiteness status."
+                )
+            status = ClippedGradStatus(grads_were_finite=bool(finite.all().item()))
+            if return_aux:
+                grad_aux = ClippedGradAux(
+                    loss_values=aux.values,
+                    grad_norms=aux.norms,
+                    clipped_grad_norms=aux.clipped_norms,
+                    loss_aux=aux.value_aux,
+                    clipping_rate=aux.clipping_rate,
+                    batch_size=aux.batch_size,
+                    group_norms=aux.group_norms,
+                )
+                return (clipped_grads, grad_aux, status), returned_state
+            return (clipped_grads, status), returned_state
+
+        return grad_fn_wrapper, clip_state
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
     # Wrap the result to convert ClippedFunAux to ClippedGradAux
@@ -348,4 +435,4 @@ def clipped_grad(
         return grad_fn_wrapper, clip_state
 
 
-__all__ = ["ClippedGradAux", "clipped_grad"]
+__all__ = ["ClippedGradAux", "ClippedGradStatus", "clipped_grad"]

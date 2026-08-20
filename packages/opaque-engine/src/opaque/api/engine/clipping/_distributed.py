@@ -97,7 +97,11 @@ def _split_aux_fields(
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Split a supported auxiliary output using its declared field schema."""
     schema = _AUX_FIELD_SCHEMAS[schema_type]
-    actual = tuple(field.name for field in dataclasses.fields(aux))
+    actual = tuple(
+        field.name
+        for field in dataclasses.fields(aux)
+        if not field.name.startswith("_")
+    )
     if actual != schema:
         unexpected = sorted(set(actual) - set(schema))
         missing = sorted(set(schema) - set(actual))

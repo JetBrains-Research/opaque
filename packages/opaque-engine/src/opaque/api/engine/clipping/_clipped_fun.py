@@ -61,6 +61,8 @@ class ClippedFunAux:
     clipping_rate: float | None = None
     batch_size: int = 0
     group_norms: dict[str, torch.Tensor] | None = None
+    _pre_clipping_finite: torch.Tensor | None = None
+    """Internal per-example finiteness flags supplied by ``clipped_grad``."""
 
 
 @dataclass(frozen=True)
@@ -659,6 +661,9 @@ def clipped_fun(
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
                 # aux may be a dict like {"values": val, "value_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
+                    if "_pre_clipping_finite" in aux:
+                        aux_dict["_pre_clipping_finite"] = aux["_pre_clipping_finite"]
+
                     # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
                     if "values" in aux:
                         val = aux["values"]
@@ -813,6 +818,7 @@ def clipped_fun(
                 ),
                 batch_size=stats.batch_size,
                 group_norms=aux_dict.get("group_norms"),
+                _pre_clipping_finite=aux_dict.get("_pre_clipping_finite"),
             )
             if _return_stats:
                 return output, aux, stats

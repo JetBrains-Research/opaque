@@ -26,9 +26,15 @@ as the ``pre_clipping_transform`` of
 
 Skipped steps and the privacy accountant
 ----------------------------------------
-A skip is data-dependent and is not free privacy-wise. Unless separately
-analyzed, advance accounting on a public fixed schedule. This module only
-provides detection and scaling; the surrounding loop owns the skip.
+An overflow signal is data-dependent and must not suppress the noised update or
+its accounting. Request ``return_pre_clipping_finite=True`` from
+:func:`opaque.api.engine.clipping.clipped_grad`, run the normal noised update
+on every attempted step, and use the returned private status only to back off
+the loss scale. This module provides scaling and the state machine; the
+surrounding loop owns noise, optimization, and accounting. The scale and
+unscale must remain a numerical reparameterization before clipping; a raw
+status must not alter any later released query in another way without a
+separate privacy analysis.
 
 Factory shape
 -------------
@@ -193,9 +199,12 @@ def all_finite(updates: Any) -> bool:
 
     Walks the pytree once. Integer / boolean leaves are ignored — they
     can't carry inf/nan and would raise on :func:`torch.isfinite`.
-    Lives next to :func:`loss_scaler` rather than on the ``LossScaler``
-    NamedTuple because it operates purely on grads, with no scaler-state
-    dependency — same as :func:`opaque.pytree.global_norm`.
+    Use this only on manually materialized, pre-clipping gradient pytrees.
+    ``clipped_grad`` sanitizes non-finite values before returning its
+    ``ClippedPytree``; use its ``return_pre_clipping_finite`` status for loss
+    scaling instead. The helper lives next to :func:`loss_scaler` rather than
+    on the ``LossScaler`` NamedTuple because it operates purely on grads, with
+    no scaler-state dependency — same as :func:`opaque.pytree.global_norm`.
     """
 
     def _iter_tensor_containers(value: Any):
