@@ -254,6 +254,11 @@ class TestBallsInBinsIdentity:
         assert _atomic_unit(self._proc(num_bins=10)) == 10
         assert _atomic_unit(self._proc(num_bins=4)) == 4
 
+    def test_small_horizon_prefix_matches_full_process(self):
+        proc = self._proc(num_bins=2, num_epochs=1)
+
+        assert _eps_via_step(proc, 2, _DELTA) == pytest.approx(proc.epsilon_at(_DELTA))
+
     @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints(self):
@@ -392,8 +397,14 @@ _DETERMINISTIC_VECTORS: dict[tuple[str, str], float] = {
 
 @pytest.mark.parametrize(
     ("amp", "mech"),
-    _DETERMINISTIC_VECTORS,
-    ids=[_pair_id(pair) for pair in _DETERMINISTIC_VECTORS],
+    [
+        pytest.param(
+            *pair,
+            id=_pair_id(pair),
+            marks=pytest.mark.slow if pair == ("BallsInBins", "IdentityMf") else (),
+        )
+        for pair in _DETERMINISTIC_VECTORS
+    ],
 )
 def test_deterministic_epsilon_matches_committed_vector(amp: str, mech: str):
     actual = _build(amp, mech).epsilon_at(_DELTA)

@@ -330,13 +330,19 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
 # ----------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_family_name_for_known_hf_model():
-    import transformers
+    from transformers import Qwen2Config, Qwen2ForCausalLM
 
-    cfg = transformers.AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
-    cfg.num_hidden_layers = 1
-    model = transformers.AutoModelForCausalLM.from_config(cfg)
+    model = Qwen2ForCausalLM(
+        Qwen2Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+    )
     assert family_name(model) == "qwen2"
 
 

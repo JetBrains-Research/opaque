@@ -397,6 +397,7 @@ _DeterministicAmplificationFactory = Callable[[], DpProcess]
 class TestDeterministicAmplificationVectors:
     """Committed ε values for deterministic amplification combinations."""
 
+    @pytest.mark.slow
     @pytest.mark.parametrize(
         ("name", "factory", "delta", "expected"),
         [
@@ -480,3 +481,17 @@ class TestDeterministicAmplificationVectors:
             f"{name}, delta={delta}: epsilon drifted; "
             f"committed={expected:.17g}, observed={actual:.17g}"
         )
+
+
+def test_random_allocation_short_prefix_matches_poisson():
+    process = dpsgd_acc.random_allocation(
+        dpsgd_acc.gaussian(1.0),
+        num_bins=2,
+        n_steps=2,
+    )
+    poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.5)
+
+    assert process.pld_at(1).epsilon_at(1e-8) == pytest.approx(
+        poisson.epsilon_at(1e-8),
+        abs=2e-3,
+    )

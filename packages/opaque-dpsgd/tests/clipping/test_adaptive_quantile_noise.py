@@ -74,8 +74,9 @@ class TestQuantileNoise:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        # Run multiple steps
-        for _ in range(5):
+        # Two updates prove the state advances while preserving the identical
+        # noise sequence for equal keys.
+        for _ in range(2):
             _, state1 = grad_fn1(params, batch_x, batch_y, state=state1)
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 

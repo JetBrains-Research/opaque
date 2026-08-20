@@ -58,8 +58,9 @@ jobs:
   # Python tests
   #
   # Every environment calls the same reusable workflow with explicit runner,
-  # Python, dependency, marker, parallelism, and explicit suite settings. Slow tests stay
-  # on main; supported dependency and platform boundaries remain pre-merge.
+  # Python, dependency, marker, parallelism, and explicit suite settings. Slow
+  # tests stay on main except for the reviewed CPU/Gloo distributed selection;
+  # supported dependency and platform boundaries remain pre-merge.
   # ---------------------------------------------------------------------------
   python-tests-linux-amd64:
     name: Linux amd64 (locked)
@@ -78,7 +79,7 @@ jobs:
     with:
       allow-empty-test-selection: true
       environment-name: linux-distributed
-      pytest-marker: distributed and not cuda and not slow
+      pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
       timeout-minutes: 30

@@ -74,6 +74,7 @@ class TestKOutOfTRegressionVectors:
                 ),
                 4.687320185091083,
                 id="gaussian",
+                marks=pytest.mark.slow,
             ),
             pytest.param(
                 "k_out_of_t(adaclip(gaussian(1.1)), k=2, n_steps=16)",
@@ -88,6 +89,7 @@ class TestKOutOfTRegressionVectors:
                 ),
                 3.9650600884447935,
                 id="adaclip",
+                marks=pytest.mark.slow,
             ),
         ],
     )

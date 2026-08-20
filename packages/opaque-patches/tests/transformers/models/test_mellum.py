@@ -32,7 +32,6 @@ def test_mellum_experts_patched(tiny):
     assert experts_forward_patched(tiny[1])
 
 
-@pytest.mark.slow
 def test_mellum_forward_no_grad(tiny, device):
     assert_forward_no_grad(tiny[0], device)
 
@@ -45,7 +44,6 @@ def test_mellum_vmap_forward(tiny, device):
     assert_vmap_forward(tiny[0], device)
 
 
-@pytest.mark.slow
 def test_mellum_vmap_grad(tiny, device):
     assert_vmap_grad(tiny[0], device)
 
