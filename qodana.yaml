@@ -132,6 +132,9 @@ profile:
 # Sanity analysis uses a separate profile, so its inspection-specific
 # analyzer workarounds must remain in Qodana's top-level configuration.
 exclude:
+  - name: All
+    paths:
+      - .github
   - name: UndefinedParamsPresent
     paths:
       - .github/actions

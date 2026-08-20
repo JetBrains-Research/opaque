@@ -48,25 +48,6 @@ jobs:
             The subject after the colon should start with a lowercase letter.
 
   # ---------------------------------------------------------------------------
-  # Package discovery
-  # ---------------------------------------------------------------------------
-  discover-packages:
-    name: Discover package matrices
-    runs-on: ubuntu-latest
-    outputs:
-      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
-      distributed_test_shards: ${{ steps.discover.outputs.distributed_test_shards }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      test_shards: ${{ steps.discover.outputs.test_shards }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - name: Discover packages
-        id: discover
-        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
-
-  # ---------------------------------------------------------------------------
   # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
@@ -77,12 +58,11 @@ jobs:
   # Python tests
   #
   # Every environment calls the same reusable workflow with explicit runner,
-  # Python, dependency, marker, parallelism, and shard settings. Slow tests stay
+  # Python, dependency, marker, parallelism, and explicit suite settings. Slow tests stay
   # on main; supported dependency and platform boundaries remain pre-merge.
   # ---------------------------------------------------------------------------
   python-tests-linux-amd64:
     name: Linux amd64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-amd64
@@ -90,12 +70,11 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 30
 
   python-tests-distributed:
     name: Linux amd64 (distributed)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-empty-test-selection: true
@@ -103,12 +82,11 @@ jobs:
       pytest-marker: distributed and not cuda and not slow
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.distributed_test_shards }}
+      test-suite: distributed
       timeout-minutes: 30
 
   python-tests-minimum:
     name: Linux amd64 (minimum dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-test-failure: true
@@ -119,12 +97,11 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 60
 
   python-tests-latest:
     name: Linux amd64 (latest dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       dependency-selection: latest
@@ -134,12 +111,11 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 60
 
   python-tests-macos-arm64:
     name: macOS arm64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: mps
@@ -147,12 +123,11 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 30
 
   python-tests-linux-arm64:
     name: Linux arm64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-aarch64
@@ -160,14 +135,13 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
   # self-hosted GPU runner. The job-level guard prevents allocation entirely.
   python-tests-cuda:
     name: CUDA (locked)
-    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -179,12 +153,11 @@ jobs:
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 30
 
   python-tests-cuda-minimum:
     name: CUDA (minimum dependencies)
-    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -199,12 +172,11 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 60
 
   python-tests-cuda-latest:
     name: CUDA (latest dependencies)
-    needs: [discover-packages]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -218,7 +190,7 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 60
 
   # Keep a stable, matrix-independent check name for branch protection rules.
@@ -363,12 +335,10 @@ jobs:
 
   build-preview-distributions:
     name: Build
-    needs: [compute-preview-version, discover-packages]
+    needs: [compute-preview-version]
     uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: preview-wheels
-      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
-      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 14
       version: ${{ needs.compute-preview-version.outputs.version }}
 

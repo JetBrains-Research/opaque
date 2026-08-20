@@ -13,25 +13,6 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Package discovery
-  # ---------------------------------------------------------------------------
-  discover-packages:
-    name: Discover package matrices
-    runs-on: ubuntu-latest
-    outputs:
-      cuda_test_shards: ${{ steps.discover.outputs.cuda_test_shards }}
-      distributed_test_shards: ${{ steps.discover.outputs.distributed_test_shards }}
-      native_build_packages: ${{ steps.discover.outputs.native_build_packages }}
-      python_build_packages: ${{ steps.discover.outputs.python_build_packages }}
-      test_shards: ${{ steps.discover.outputs.test_shards }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - name: Discover packages
-        id: discover
-        run: python3 .github/scripts/discover_package_matrices.py --github-output "$GITHUB_OUTPUT"
-
-  # ---------------------------------------------------------------------------
   # Rust tests
   # ---------------------------------------------------------------------------
   rust-tests:
@@ -48,7 +29,6 @@ jobs:
   # ---------------------------------------------------------------------------
   python-tests-linux-amd64:
     name: Linux amd64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-amd64
@@ -56,24 +36,22 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 40
 
   python-tests-distributed:
     name: Linux amd64 (distributed)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-distributed
       pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.distributed_test_shards }}
+      test-suite: distributed
       timeout-minutes: 30
 
   python-tests-minimum:
     name: Linux amd64 (minimum dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-test-failure: true
@@ -84,12 +62,11 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 60
 
   python-tests-latest:
     name: Linux amd64 (latest dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       dependency-selection: latest
@@ -99,12 +76,11 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 60
 
   python-tests-macos-arm64:
     name: macOS arm64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: mps
@@ -112,12 +88,11 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 40
 
   python-tests-linux-arm64:
     name: Linux arm64 (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-aarch64
@@ -125,12 +100,11 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
-      test-shards: ${{ needs.discover-packages.outputs.test_shards }}
+      test-suite: all
       timeout-minutes: 60
 
   python-tests-cuda:
     name: CUDA (locked)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: cuda
@@ -138,12 +112,11 @@ jobs:
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 40
 
   python-tests-cuda-minimum:
     name: CUDA (minimum dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-test-failure: true
@@ -154,12 +127,11 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 60
 
   python-tests-cuda-latest:
     name: CUDA (latest dependencies)
-    needs: [discover-packages]
     uses: ./.github/workflows/python-tests.yml
     with:
       dependency-selection: latest
@@ -169,7 +141,7 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: GPU-runner-001
-      test-shards: ${{ needs.discover-packages.outputs.cuda_test_shards }}
+      test-suite: cuda
       timeout-minutes: 60
 
   qodana:
@@ -200,12 +172,9 @@ jobs:
   # ---------------------------------------------------------------------------
   build-distributions:
     name: Build
-    needs: [discover-packages]
     uses: ./.github/workflows/build-distributions.yml
     with:
       artifact-prefix: wheels
-      native-build-packages: ${{ needs.discover-packages.outputs.native_build_packages }}
-      python-build-packages: ${{ needs.discover-packages.outputs.python_build_packages }}
       retention-days: 30
 
   validate-distributions:
