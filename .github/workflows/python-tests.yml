@@ -119,9 +119,6 @@ jobs:
           SHARD_PATHS_JSON: ${{ toJSON(matrix.shard.paths) }}
         shell: bash
         run: |
-          mapfile -t shard_paths < <(
-            python3 -c 'import json, os; print(*json.loads(os.environ["SHARD_PATHS_JSON"]), sep="\n")'
-          )
           read -r -a xdist_args <<< "$PYTEST_XDIST"
           duration_args=()
           if [[ "$REPORT_DURATIONS" == "true" ]]; then
@@ -130,7 +127,7 @@ jobs:
 
           tests_ran=false
           failed_status=0
-          for path in "${shard_paths[@]}"; do
+          while IFS= read -r path; do
             echo "::group::Pytest $path"
             pytest_args=(
               uv run pytest "$path"
@@ -161,7 +158,9 @@ jobs:
             fi
             failed_status=$status
             break
-          done
+          done < <(
+            python3 -c 'import json, os; print(*json.loads(os.environ["SHARD_PATHS_JSON"]), sep="\n")'
+          )
 
           if [[ "$tests_ran" == "false" ]]; then
             if [[ "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then

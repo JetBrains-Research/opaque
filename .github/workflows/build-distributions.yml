@@ -60,13 +60,7 @@ jobs:
             uv build "$path" --wheel --out-dir dist
             echo "::endgroup::"
           done < <(
-            python3 -c '
-            import json
-            import os
-
-            for package in json.loads(os.environ["PYTHON_BUILD_PACKAGES"]):
-                print(package["dist"], package["path"], sep="\t")
-            '
+            python3 -c 'import json, os; print(*("%s\t%s" % (package["dist"], package["path"]) for package in json.loads(os.environ["PYTHON_BUILD_PACKAGES"])), sep="\n")'
           )
 
       - name: Validate wheel metadata
