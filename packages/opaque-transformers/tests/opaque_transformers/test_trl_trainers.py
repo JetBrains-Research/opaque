@@ -245,7 +245,13 @@ def test_sft_chunked_nll_trains(tmp_path):
     assert torch.isfinite(torch.tensor(out.training_loss))
 
 
-@pytest.mark.parametrize("loss_type", ["nll", "dft"])
+@pytest.mark.parametrize(
+    "loss_type",
+    [
+        pytest.param("nll", marks=pytest.mark.slow),
+        "dft",
+    ],
+)
 def test_sft_trains_a_couple_steps(tmp_path, loss_type):
     torch.manual_seed(0)
     trainer = SFTTrainer(
@@ -1873,6 +1879,7 @@ def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
     assert labels is not None
 
 
+@pytest.mark.slow
 def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypatch):
     """The reference forward must find a live process group, or it cannot shard.
 
