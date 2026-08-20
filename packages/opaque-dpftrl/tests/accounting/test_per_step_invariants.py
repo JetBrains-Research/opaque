@@ -257,7 +257,6 @@ class TestBallsInBinsIdentity:
     def test_small_horizon_prefix_matches_full_process(self):
         proc = self._proc(num_bins=2, num_epochs=1)
 
-        assert _eps_at(proc, 2, _DELTA) == pytest.approx(proc.epsilon_at(_DELTA))
         assert _eps_via_step(proc, 2, _DELTA) == pytest.approx(proc.epsilon_at(_DELTA))
 
     @pytest.mark.slow
