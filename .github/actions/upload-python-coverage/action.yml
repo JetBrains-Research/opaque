@@ -16,10 +16,19 @@ runs:
   using: composite
   steps:
     - name: Write coverage report
+      id: coverage
       shell: bash
-      run: uv run coverage xml -o "${{ inputs.coverage-file }}"
+      run: |
+        if [[ ! -s "${TEST_RESULTS_FILE:?TEST_RESULTS_FILE must be set}" ]]; then
+          echo "::notice::No package tests matched this group."
+          echo "tests-ran=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        uv run coverage xml -o "${{ inputs.coverage-file }}"
+        echo "tests-ran=true" >> "$GITHUB_OUTPUT"
 
     - name: Upload coverage
+      if: steps.coverage.outputs.tests-ran == 'true'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
       with:
         name: ${{ inputs.artifact-name }}
@@ -28,6 +37,7 @@ runs:
         retention-days: 1
 
     - name: Upload Codecov report
+      if: steps.coverage.outputs.tests-ran == 'true'
       uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
       with:
         files: ${{ inputs.coverage-file }}

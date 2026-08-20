@@ -50,10 +50,6 @@ on:
         description: GitHub Actions runner label.
         required: true
         type: string
-      test-suite:
-        description: Explicit package suite to run (all, cuda, or distributed).
-        required: true
-        type: string
       timeout-minutes:
         description: Maximum runtime for each test group.
         required: false
@@ -61,26 +57,8 @@ on:
         type: number
 
 jobs:
-  validate-suite:
-    name: Validate suite
-    runs-on: ${{ inputs.runner }}
-    steps:
-      - name: Validate test suite
-        env:
-          TEST_SUITE: ${{ inputs.test-suite }}
-        run: |
-          case "$TEST_SUITE" in
-            all|cuda|distributed) ;;
-            *)
-              echo "::error::Unknown test suite: $TEST_SUITE"
-              exit 1
-              ;;
-          esac
-
   foundation:
     name: Foundation
-    if: inputs.test-suite == 'all'
-    needs: [validate-suite]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
@@ -90,6 +68,7 @@ jobs:
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
+      TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-foundation
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -140,7 +119,6 @@ jobs:
 
   dp-mechanisms:
     name: DP mechanisms
-    needs: [validate-suite]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
@@ -150,6 +128,7 @@ jobs:
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
+      TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-dp-mechanisms
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -193,7 +172,6 @@ jobs:
 
   runtime-and-patches:
     name: Runtime and patches
-    needs: [validate-suite]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
@@ -203,6 +181,7 @@ jobs:
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
+      TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-runtime-and-patches
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -226,14 +205,12 @@ jobs:
           TEST_PATH: packages/opaque-engine
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-optimizers
-        if: inputs.test-suite != 'cuda'
         id: opaque-optimizers
         continue-on-error: true
         env:
           TEST_PATH: packages/opaque-optimizers
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-patches
-        if: inputs.test-suite != 'distributed'
         id: opaque-patches
         continue-on-error: true
         env:
@@ -255,8 +232,6 @@ jobs:
 
   integrations:
     name: Integrations
-    if: inputs.test-suite != 'distributed' || !contains(inputs.pytest-marker, 'not slow')
-    needs: [validate-suite]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
@@ -266,6 +241,7 @@ jobs:
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
+      TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-integrations
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -283,7 +259,6 @@ jobs:
           DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-alignment
-        if: inputs.test-suite != 'cuda'
         id: opaque-alignment
         continue-on-error: true
         env:
@@ -310,8 +285,6 @@ jobs:
 
   integration-tests:
     name: Integration tests
-    if: inputs.test-suite != 'distributed'
-    needs: [validate-suite]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
@@ -321,6 +294,7 @@ jobs:
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
+      TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-integration
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

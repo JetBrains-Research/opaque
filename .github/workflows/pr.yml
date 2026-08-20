@@ -70,7 +70,6 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 30
 
   python-tests-distributed:
@@ -82,7 +81,6 @@ jobs:
       pytest-marker: distributed and not cuda and not slow
       report-durations: true
       runner: ubuntu-latest
-      test-suite: distributed
       timeout-minutes: 30
 
   python-tests-minimum:
@@ -97,7 +95,6 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 60
 
   python-tests-latest:
@@ -111,7 +108,6 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 60
 
   python-tests-macos-arm64:
@@ -123,7 +119,6 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
-      test-suite: all
       timeout-minutes: 30
 
   python-tests-linux-arm64:
@@ -135,7 +130,6 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
-      test-suite: all
       timeout-minutes: 30
 
   # Fork pull requests must never execute untrusted code on the persistent
@@ -153,7 +147,6 @@ jobs:
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 30
 
   python-tests-cuda-minimum:
@@ -172,7 +165,6 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 60
 
   python-tests-cuda-latest:
@@ -190,7 +182,6 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 60
 
   # Keep a stable, matrix-independent check name for branch protection rules.

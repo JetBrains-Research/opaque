@@ -36,18 +36,17 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 40
 
   python-tests-distributed:
     name: Linux amd64 (distributed)
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       environment-name: linux-distributed
       pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
-      test-suite: distributed
       timeout-minutes: 30
 
   python-tests-minimum:
@@ -62,7 +61,6 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 60
 
   python-tests-latest:
@@ -76,7 +74,6 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: ubuntu-latest
-      test-suite: all
       timeout-minutes: 60
 
   python-tests-macos-arm64:
@@ -88,7 +85,6 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
-      test-suite: all
       timeout-minutes: 40
 
   python-tests-linux-arm64:
@@ -100,25 +96,25 @@ jobs:
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
-      test-suite: all
       timeout-minutes: 60
 
   python-tests-cuda:
     name: CUDA (locked)
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       environment-name: cuda
       pytest-marker: cuda
       pytest-xdist: -rs
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 40
 
   python-tests-cuda-minimum:
     name: CUDA (minimum dependencies)
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       allow-test-failure: true
       dependency-selection: minimum
       environment-name: cuda-minimum-dependencies
@@ -127,13 +123,13 @@ jobs:
       python-version: "3.11"
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 60
 
   python-tests-cuda-latest:
     name: CUDA (latest dependencies)
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       dependency-selection: latest
       environment-name: cuda-latest-dependencies
       pytest-marker: cuda and not slow
@@ -141,7 +137,6 @@ jobs:
       python-version: "3.13"
       report-durations: true
       runner: GPU-runner-001
-      test-suite: cuda
       timeout-minutes: 60
 
   qodana:

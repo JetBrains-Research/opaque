@@ -9,6 +9,7 @@ set -euo pipefail
 : "${PYTEST_MARKER:?PYTEST_MARKER must be set}"
 : "${REPORT_DURATIONS:=false}"
 : "${TEST_PATH:?TEST_PATH must be set}"
+: "${TEST_RESULTS_FILE:?TEST_RESULTS_FILE must be set}"
 
 pytest_args=(
   uv run pytest "$TEST_PATH"
@@ -34,11 +35,15 @@ status=$?
 set -e
 
 if [[ "$status" -eq 0 ]]; then
+  printf '%s\n' "$TEST_PATH" >> "$TEST_RESULTS_FILE"
   exit 0
 fi
 if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
   echo "::notice::No tests matched $TEST_PATH for $PYTEST_MARKER."
   exit 0
+fi
+if [[ "$status" -ne 5 ]]; then
+  printf '%s\n' "$TEST_PATH" >> "$TEST_RESULTS_FILE"
 fi
 if [[ "$ALLOW_TEST_FAILURE" == "true" ]]; then
   echo "::warning::pytest exited with status $status for $TEST_PATH in this advisory lane."
