@@ -142,6 +142,9 @@ jobs:
   qodana:
     name: Qodana
     if: (success() || failure()) && github.ref == 'refs/heads/main'
+    # Surface Qodana policy failures in its job while keeping main publication
+    # independent from this informational analysis.
+    continue-on-error: true
     needs:
       - python-tests-linux-amd64
       - python-tests-distributed
@@ -153,12 +156,21 @@ jobs:
       checks: write
       contents: read
       security-events: write
-    uses: ./.github/workflows/qodana.yml
-    with:
-      coverage-artifact-pattern: coverage-locked-*
-      fail-on-problems: false
-      pr-mode: false
-    secrets: inherit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/run-qodana
+        with:
+          analyzed-sha: ${{ github.sha }}
+          coverage-artifact-pattern: coverage-locked-*
+          fail-on-problems: true
+          pr-mode: false
+        env:
+          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight

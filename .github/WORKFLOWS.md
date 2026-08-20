@@ -36,6 +36,13 @@ This composite action installs Rust stable, optional toolchain components, and
 a shared Cargo dependency cache. Use `components: clippy, rustfmt` for
 formatting jobs.
 
+### `.github/actions/run-qodana`
+
+This composite action downloads the selected coverage artifacts, runs Qodana,
+and uploads its SARIF report. The PR workflow calls it through `qodana.yml` as
+a required check; the main workflow uses the same action in an allowed-to-fail
+job so policy violations remain visible without gating wheel publication.
+
 ### `.github/workflows/build-distributions.yml`
 
 This private `workflow_call` workflow builds all Python wheels, native wheels,
@@ -55,9 +62,11 @@ credentials, publication, cross-package validation, or pipeline gates.
 This private `workflow_call` workflow runs the shared Python test matrix:
 Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
 Codecov upload. Each caller provides one runner environment plus its Python
-version, dependency selection, pytest marker filter, xdist arguments, and shard
-matrix. Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or
-`latest` (uv `highest`). Validation callers report every test phase taking at
+version, dependency selection, pytest marker filter, and xdist arguments. Its
+five fixed test-group matrix legs keep each caller collapsed as one
+environment block in the Actions graph while the groups still run in parallel.
+Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or `latest`
+(`uv` `highest`). Validation callers report every test phase taking at
 least five seconds, so newly slow tests cannot disappear behind a fixed-size
 duration table. Lower-bound pytest failures are advisory while dependency
 resolution and workflow failures remain blocking.
