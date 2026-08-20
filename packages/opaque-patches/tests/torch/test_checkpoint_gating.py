@@ -116,8 +116,8 @@ def test_create_graph_patch_accepts_create_graph_keyword():
         eager._autograd_grad = before
 
 
-def test_guard_backport_allows_hooks_during_compile(monkeypatch):
-    """Internal compilation cannot distinguish first- from higher-order transforms."""
+def test_guard_backport_rejects_hooks_during_compile(monkeypatch):
+    """The backport uses PyTorch's compiled-hook safety behavior."""
     import torch
 
     from opaque.api.patches.torch.checkpoint import saved_tensor_hooks_guard
@@ -131,4 +131,5 @@ def test_guard_backport_allows_hooks_during_compile(monkeypatch):
     )
     monkeypatch.setattr(torch.compiler, "is_compiling", lambda: True)
 
-    assert guarded().item() == 1
+    with pytest.raises(RuntimeError, match="saved tensor hooks"):
+        guarded()
