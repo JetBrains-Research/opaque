@@ -135,10 +135,6 @@ exclude:
   - name: All
     paths:
       - .github
-  - name: UndefinedParamsPresent
-    paths:
-      - .github/actions
-      - .github/workflows
   - name: PyUnresolvedReferencesInspection
     paths:
       - docs/tutorials
