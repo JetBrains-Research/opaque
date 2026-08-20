@@ -47,7 +47,7 @@ def test_clipped_grad_validate_args_empty_batch():
 
 
 def test_clipped_grad_rejects_stats_with_aux():
-    """Aggregate stats are only supported on the no-aux internal path."""
+    """Aggregate stats and per-example diagnostics are separate return modes."""
 
     def loss(params, x):
         return ((params - x) ** 2).mean()
@@ -57,12 +57,12 @@ def test_clipped_grad_rejects_stats_with_aux():
             loss,
             clipping_norm=1.0,
             return_aux=True,
-            _return_stats=True,
+            return_stats=True,
         )
 
 
 @pytest.mark.parametrize("microbatch_size", [None, 1])
-def test_pre_clipping_finiteness_survives_sanitizing_clip(microbatch_size):
+def test_stats_report_nonfinite_gradients_before_sanitizing_clip(microbatch_size):
     """The loss scaler must see overflow without skipping the bounded DP query."""
 
     def loss(param, data):
@@ -74,20 +74,20 @@ def test_pre_clipping_finiteness_survives_sanitizing_clip(microbatch_size):
         batch_argnums=1,
         clipping_norm=1.0,
         microbatch_size=microbatch_size,
-        return_pre_clipping_finite=True,
+        return_stats=True,
     )
 
-    (grads, status), _ = grad_fn(
+    (grads, stats), _ = grad_fn(
         torch.tensor(0.0),
         torch.tensor([1.0, -1.0]),
         state=clip_state,
     )
 
-    assert status.grads_were_finite is False
+    assert stats.all_finite is False
     assert torch.isfinite(_unwrap_clipped(grads)).all()
 
 
-def test_pre_clipping_finiteness_is_true_for_finite_and_empty_batches():
+def test_stats_report_finite_and_empty_batches():
     def loss(param, data):
         return 0.5 * (data - param).square()
 
@@ -96,47 +96,23 @@ def test_pre_clipping_finiteness_is_true_for_finite_and_empty_batches():
         argnums=0,
         batch_argnums=1,
         clipping_norm=1.0,
-        return_pre_clipping_finite=True,
+        return_stats=True,
     )
 
-    (_finite_grads, finite_status), clip_state = grad_fn(
+    (_finite_grads, finite_stats), clip_state = grad_fn(
         torch.tensor(0.0),
         torch.tensor([1.0, 2.0]),
         state=clip_state,
     )
-    (empty_grads, empty_status), _ = grad_fn(
+    (empty_grads, empty_stats), _ = grad_fn(
         torch.tensor(0.0),
         torch.empty(0),
         state=clip_state,
     )
 
-    assert finite_status.grads_were_finite is True
-    assert empty_status.grads_were_finite is True
+    assert finite_stats.all_finite is True
+    assert empty_stats.all_finite is True
     assert torch.equal(_unwrap_clipped(empty_grads), torch.tensor(0.0))
-
-
-def test_pre_clipping_finiteness_appends_after_requested_auxiliary_output():
-    def loss(param, data):
-        return 0.5 * (data - param).square()
-
-    grad_fn, clip_state = clipped_grad(
-        loss,
-        argnums=0,
-        batch_argnums=1,
-        clipping_norm=1.0,
-        return_aux=True,
-        return_pre_clipping_finite=True,
-    )
-
-    (grads, aux, status), _ = grad_fn(
-        torch.tensor(0.0),
-        torch.tensor([1.0, 2.0]),
-        state=clip_state,
-    )
-
-    assert isinstance(grads, ClippedPytree)
-    assert aux.batch_size == 2
-    assert status.grads_were_finite is True
 
 
 def test_clipped_grad_basic():

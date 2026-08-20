@@ -28,16 +28,16 @@ def test_loss_scale_overflow_still_consumes_the_attempted_dp_step():
         batch_argnums=1,
         clipping_norm=1.0,
         pre_clipping_transform=lambda grad: scaler.unscale_grads(grad, scaler_state),
-        return_pre_clipping_finite=True,
+        return_stats=True,
     )
     noise_fn, noise_state = gaussian_noise(noise_multiplier=1.0, key=key(0))
     step_process = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.1)
     accountant = Accountant()
     params = torch.tensor(1.0)
 
-    statuses = []
+    all_finite = []
     for data in (torch.tensor([1.0]), torch.tensor([-1.0])):
-        (grads, status), clip_state = grad_fn(params, data, state=clip_state)
+        (grads, stats), clip_state = grad_fn(params, data, state=clip_state)
         assert isinstance(grads, ClippedPytree)
         assert torch.isfinite(grads.pytree).all()
 
@@ -45,10 +45,10 @@ def test_loss_scale_overflow_still_consumes_the_attempted_dp_step():
         assert torch.isfinite(noised.pytree).all()
         params = params - 0.1 * noised.pytree
         accountant = accountant | step_process
-        scaler_state = scaler.update(scaler_state, status.grads_were_finite)
-        statuses.append(status.grads_were_finite)
+        scaler_state = scaler.update(scaler_state, stats.all_finite)
+        all_finite.append(stats.all_finite)
 
-    assert statuses == [True, False]
+    assert all_finite == [True, False]
     assert noise_state._step_counter == 2
     assert accountant.process == step_process * 2
     assert scaler_state.scale == 4.0

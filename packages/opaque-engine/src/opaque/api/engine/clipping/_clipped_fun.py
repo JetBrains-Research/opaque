@@ -10,7 +10,7 @@ from torch.func import vmap as _vmap
 
 from opaque.api.engine.clipping._helpers import normalize_to_tuple
 from opaque.api.engine.clipping._pytree import clip_pytree
-from opaque.api.engine.pytree import global_norm, tree_map
+from opaque.api.engine.pytree import global_norm, tree_leaves, tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
     PerGroup,
@@ -61,17 +61,17 @@ class ClippedFunAux:
     clipping_rate: float | None = None
     batch_size: int = 0
     group_norms: dict[str, torch.Tensor] | None = None
-    _pre_clipping_finite: torch.Tensor | None = None
-    """Internal per-example finiteness flags supplied by ``clipped_grad``."""
 
 
 @dataclass(frozen=True)
-class ClippedFunStats:
+class ClippingStats:
     """Aggregated clipping statistics without per-example materialization."""
 
     num_clipped: float | dict[str, float]
     clipping_rate: float | dict[str, float] | None
     batch_size: int = 0
+    all_finite: bool = True
+    """Whether every pre-clipping output in the batch was finite."""
 
 
 def _resolve_compute_dtype(
@@ -93,6 +93,23 @@ def _resolve_compute_dtype(
     ):
         return torch.float32
     return None
+
+
+def _all_finite(value: Any) -> torch.Tensor:
+    """Return whether every floating-point tensor leaf is finite."""
+    result: torch.Tensor | None = None
+    for leaf in tree_leaves(value):
+        if not isinstance(leaf, torch.Tensor):
+            continue
+        finite = (
+            torch.isfinite(leaf).all()
+            if leaf.is_floating_point() or leaf.is_complex()
+            else torch.ones((), dtype=torch.bool, device=leaf.device)
+        )
+        result = finite if result is None else result & finite
+    if result is None:
+        raise TypeError("Expected at least one tensor leaf when checking finiteness.")
+    return result
 
 
 def _sum_clipped_tensor(
@@ -385,6 +402,7 @@ def _microbatch_accumulate_stats_only(
         )
     else:
         total_num_clipped = 0.0
+    all_finite = True
 
     for start_idx in range(0, batch_size, microbatch_size):
         end_idx = min(start_idx + microbatch_size, batch_size)
@@ -418,8 +436,10 @@ def _microbatch_accumulate_stats_only(
             stats_aux["norms"],
             clipping_norm=clipping_norm,
             group_norms_dict=stats_aux.get("group_norms"),
+            all_finite=stats_aux["all_finite"],
         )
         total_batch_size += stats.batch_size
+        all_finite = all_finite and stats.all_finite
         if isinstance(total_num_clipped, dict):
             assert isinstance(stats.num_clipped, dict)
             for name, count in stats.num_clipped.items():
@@ -440,10 +460,11 @@ def _microbatch_accumulate_stats_only(
     return (
         grad_acc.result(),
         squared_acc.result(),
-        ClippedFunStats(
+        ClippingStats(
             num_clipped=total_num_clipped,
             clipping_rate=clipping_rate,
             batch_size=total_batch_size,
+            all_finite=all_finite,
         ),
     )
 
@@ -453,19 +474,27 @@ def _compute_clipping_stats(
     *,
     clipping_norm: float | PerGroup,
     group_norms_dict: dict[str, torch.Tensor] | None,
-) -> ClippedFunStats:
+    all_finite: torch.Tensor | None = None,
+) -> ClippingStats:
     """Compute aggregated clipping statistics from materialized norm tensors."""
     batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
+    finite = bool(all_finite.all().item()) if all_finite is not None else True
     if batch_size == 0:
         if isinstance(clipping_norm, PerGroup):
             empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
             empty_rates = dict.fromkeys(clipping_norm.values, 0.0)
-            return ClippedFunStats(
+            return ClippingStats(
                 num_clipped=empty_counts,
                 clipping_rate=empty_rates,
                 batch_size=0,
+                all_finite=finite,
             )
-        return ClippedFunStats(num_clipped=0.0, clipping_rate=0.0, batch_size=0)
+        return ClippingStats(
+            num_clipped=0.0,
+            clipping_rate=0.0,
+            batch_size=0,
+            all_finite=finite,
+        )
 
     if isinstance(clipping_norm, PerGroup) and group_norms_dict is not None:
         counts = {
@@ -473,10 +502,11 @@ def _compute_clipping_stats(
             for gname, gnorms in group_norms_dict.items()
         }
         rates = {gname: count / float(batch_size) for gname, count in counts.items()}
-        return ClippedFunStats(
+        return ClippingStats(
             num_clipped=counts,
             clipping_rate=rates,
             batch_size=batch_size,
+            all_finite=finite,
         )
 
     effective_cn = (
@@ -485,10 +515,11 @@ def _compute_clipping_stats(
         else clipping_norm
     )
     num_clipped = float((norms > effective_cn).sum().item())
-    return ClippedFunStats(
+    return ClippingStats(
         num_clipped=num_clipped,
         clipping_rate=num_clipped / float(batch_size),
         batch_size=batch_size,
+        all_finite=finite,
     )
 
 
@@ -500,12 +531,12 @@ def clipped_fun(
     clipping_norm: float | PerGroup = 1.0,
     normalize_by: float = 1.0,
     return_aux: bool = False,
+    return_stats: bool = False,
     second_moment: bool = False,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
     compute_dtype: torch.dtype | None = None,
     _scale_fn: Callable | None = None,
-    _return_stats: bool = False,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -557,6 +588,9 @@ def clipped_fun(
         return_aux: If True, the returned Callable will return a per-example aux
             dataclass containing the original per-example values, per-example norms
             before clipping, and any auxiliary data returned by `fun`.
+        return_stats: If True, return :class:`ClippingStats` with aggregate
+            clipping statistics and whether every pre-clipping output was finite.
+            Cannot be combined with ``return_aux``.
         second_moment: If True, also accumulate the element-wise sum of
             per-example squared clipped values, i.e. ``Σᵢ gᵢ²``.  The
             squaring happens inside the per-example loop so the
@@ -592,7 +626,13 @@ def clipped_fun(
         | False             | True           | ``((ClippedPytree, ClippedFunAux), state)``        |
         | True              | False          | ``(SecondMomentClippingOutput, state)``            |
         | True              | True           | ``((SecondMomentClippingOutput, ClippedFunAux), state)`` |
+
+        With ``return_stats=True`` and ``return_aux=False``, the clipped value
+        is paired with :class:`ClippingStats`.
     """
+    if return_aux and return_stats:
+        raise ValueError("return_stats cannot be combined with return_aux=True")
+
     # Normalize batch_argnums to tuple
     batch_argnums = normalize_to_tuple(batch_argnums)
 
@@ -641,7 +681,7 @@ def clipped_fun(
                 if second_moment
                 else None
             )
-            if return_aux or _return_stats:
+            if return_aux or return_stats:
                 # Build aux dict with clipping metadata
                 # IMPORTANT: Detach all tensors to prevent memory leaks from retaining
                 # computational graphs. These are monitoring values, not used for gradients.
@@ -651,6 +691,8 @@ def clipped_fun(
                         clipped_value, compute_dtype=compute_dtype
                     ).detach(),
                 }
+                if return_stats:
+                    aux_dict["all_finite"] = _all_finite(value)
 
                 # Per-group norms (dict of scalar tensors → dict of 1D tensors after vmap)
                 if norm.group_norms is not None:
@@ -661,9 +703,6 @@ def clipped_fun(
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
                 # aux may be a dict like {"values": val, "value_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
-                    if "_pre_clipping_finite" in aux:
-                        aux_dict["_pre_clipping_finite"] = aux["_pre_clipping_finite"]
-
                     # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
                     if "values" in aux:
                         val = aux["values"]
@@ -691,7 +730,7 @@ def clipped_fun(
                     if has_aux:
                         aux_dict["value_aux"] = aux
 
-                if not return_aux and _return_stats:
+                if return_stats:
                     if second_moment:
                         return clipped_value, squared_value, aux_dict
                     return clipped_value, aux_dict
@@ -712,7 +751,7 @@ def clipped_fun(
             # pytree (which may itself be a tuple of tensors for tuple
             # params); when n_outputs > 1 the per_example_fn returns a
             # tuple of n_outputs pytrees.
-            n_outputs = 1 + int(bool(second_moment)) + int(return_aux or _return_stats)
+            n_outputs = 1 + int(bool(second_moment)) + int(return_aux or return_stats)
             out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
             vmapped = _vmap(
                 per_example_fn,
@@ -732,7 +771,7 @@ def clipped_fun(
                 squared_values = outputs[idx] if second_moment else None
                 if second_moment:
                     idx += 1
-                aux = outputs[idx] if (return_aux or _return_stats) else ()
+                aux = outputs[idx] if (return_aux or return_stats) else ()
 
             # Sum clipped values across batch dimension
             result = tree_map(
@@ -751,7 +790,7 @@ def clipped_fun(
                 if second_moment
                 else None
             )
-        elif _return_stats and not return_aux:
+        elif return_stats:
             result, squared_result, stats = _microbatch_accumulate_stats_only(
                 per_example_fn=per_example_fn,
                 args=args,
@@ -794,7 +833,7 @@ def clipped_fun(
         else:
             output = clipped(result, max_norm=output_max_norm)
 
-        if not return_aux and not _return_stats:
+        if not return_aux and not return_stats:
             return output
 
         if return_aux:
@@ -818,10 +857,7 @@ def clipped_fun(
                 ),
                 batch_size=stats.batch_size,
                 group_norms=aux_dict.get("group_norms"),
-                _pre_clipping_finite=aux_dict.get("_pre_clipping_finite"),
             )
-            if _return_stats:
-                return output, aux, stats
             return output, aux
 
         if microbatch_size is not None:
@@ -833,6 +869,7 @@ def clipped_fun(
             aux_dict.get("norms"),
             clipping_norm=clipping_norm,
             group_norms_dict=aux_dict.get("group_norms"),
+            all_finite=aux_dict.get("all_finite"),
         )
 
     # Wrap function to accept and return state
@@ -844,4 +881,4 @@ def clipped_fun(
     return stateful_clipped_fn, clip_state
 
 
-__all__ = ["ClippedFunAux", "ClippedFunStats", "clipped_fun"]
+__all__ = ["ClippedFunAux", "ClippingStats", "clipped_fun"]

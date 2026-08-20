@@ -34,11 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
-from opaque.api.engine.clipping._clipped_grad import (
-    ClippedGradAux,
-    ClippedGradStatus,
-    clipped_grad,
-)
+from opaque.api.engine.clipping._clipped_grad import ClippedGradAux, clipped_grad
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
 from opaque.api.engine.types import ClipState, PerGroup
 
@@ -118,6 +114,7 @@ def auto_clipped_fun(
     gamma: float = _DEFAULT_GAMMA,
     normalize_by: float = 1.0,
     return_aux: bool = False,
+    return_stats: bool = False,
     microbatch_size: int | None = None,
     dtype: Any = None,
 ) -> tuple[Callable, AutoClipState]:
@@ -138,6 +135,8 @@ def auto_clipped_fun(
         normalize_by: Divisor applied to the scaled sum.
         return_aux: If True, the returned callable returns an
             :class:`AutoClippedFunAux` alongside the summed value.
+        return_stats: If True, return :class:`ClippingStats` alongside the
+            summed value. Cannot be combined with ``return_aux``.
         microbatch_size: Process the batch in chunks of this size.
         dtype: Optional accumulation dtype for the sum.
 
@@ -166,6 +165,7 @@ def auto_clipped_fun(
         clipping_norm=R,
         normalize_by=normalize_by,
         return_aux=return_aux,
+        return_stats=return_stats,
         microbatch_size=microbatch_size,
         dtype=dtype,
         _scale_fn=scale_fn,
@@ -207,11 +207,11 @@ def auto_clipped_grad(
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
+    return_stats: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: Any = None,
     second_moment: bool = False,
-    return_pre_clipping_finite: bool = False,
 ) -> tuple[Callable, AutoClipState]:
     r"""Create a function that computes the sum of AUTO-S scaled per-example gradients.
 
@@ -257,17 +257,17 @@ def auto_clipped_grad(
             mechanism for DP-FTRL); the sensitivity-proportional joint
             Mahalanobis allocation gives the paired release the same PLD
             as a single first-moment release.
-        return_pre_clipping_finite: When True, return
-            :class:`ClippedGradStatus` beside the gradient. Use its
-            ``grads_were_finite`` flag for loss-scale backoff while continuing
-            the noised update and its privacy accounting on every step.
+        return_stats: If True, return :class:`ClippingStats` beside the
+            gradient. Its ``all_finite`` field is measured before AUTO-S
+            sanitizes non-finite gradients. Cannot be combined with
+            ``return_aux``.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
         ``(*args, state, **kwargs) -> (grad, state)``, or
         ``(*args, state, **kwargs) -> ((grad, aux), state)`` when
-        ``return_aux=True``. When ``return_pre_clipping_finite=True``, a
-        :class:`ClippedGradStatus` is appended to either result.
+        ``return_aux=True``. When ``return_stats=True``, it returns
+        ``((grad, stats), state)``.
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the
@@ -319,11 +319,11 @@ def auto_clipped_grad(
         normalize_by=normalize_by,
         batch_argnums=batch_argnums,
         return_aux=return_aux,
+        return_stats=return_stats,
         pre_clipping_transform=pre_clipping_transform,
         microbatch_size=microbatch_size,
         dtype=dtype,
         second_moment=second_moment,
-        return_pre_clipping_finite=return_pre_clipping_finite,
         _scale_fn=scale_fn,
     )
 
@@ -339,11 +339,7 @@ def auto_clipped_grad(
 
     def grad_fn(*args, state, **kwargs):
         inner_result, _ = inner_fn(*args, state=None, **kwargs)
-        status: ClippedGradStatus | None = None
-        if return_pre_clipping_finite:
-            grads, grad_aux, status = inner_result
-        else:
-            grads, grad_aux = inner_result
+        grads, grad_aux = inner_result
         auto_aux = AutoClippedGradAux(
             loss_values=grad_aux.loss_values,
             grad_norms=grad_aux.grad_norms,
@@ -353,9 +349,6 @@ def auto_clipped_grad(
             batch_size=grad_aux.batch_size,
             group_norms=grad_aux.group_norms,
         )
-        if return_pre_clipping_finite:
-            assert status is not None
-            return (grads, auto_aux, status), state
         return (grads, auto_aux), state
 
     return grad_fn, state

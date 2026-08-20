@@ -2,14 +2,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import torch
 from torch.autograd.profiler import record_function
 
+from opaque.api.engine.clipping._clipped_fun import ClippingStats
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
-    ClippedGradStatus,
     _validate_static_args,
     clipped_grad,
 )
@@ -21,9 +21,6 @@ from opaque.api.engine.clipping._helpers import (
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
 from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clipped
-
-if TYPE_CHECKING:
-    from opaque.api.engine.clipping._clipped_fun import ClippedFunStats
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -145,8 +142,8 @@ def adaptive_clipped_grad(
     fraction_noise_std: float = _DEFAULT_FRACTION_NOISE_STD,
     key: RngKey,
     return_aux: bool = False,
+    return_stats: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
-    return_pre_clipping_finite: bool = False,
     **clipped_grad_kwargs: Any,
 ) -> tuple[Callable, AdaptiveClipState]:
     """Create function for adaptive gradient clipping with explicit state-passing.
@@ -171,6 +168,8 @@ def adaptive_clipped_grad(
         key: RNG key for quantile noise generation.
         return_aux: If True, return per-example aux with loss values,
             gradient norms, and clipping rate.
+        return_stats: If True, return aggregate clipping statistics alongside
+            the gradient. Cannot be combined with ``return_aux``.
         pre_clipping_transform: An optional function to apply to the
             per-example gradients before clipping. The function should
             consume the gradient pytree for a single example and return
@@ -180,11 +179,6 @@ def adaptive_clipped_grad(
             gradients so the adaptive quantile tracker observes the
             unscaled per-example norms. Does not affect the sensitivity
             guarantee. Default is identity function.
-        return_pre_clipping_finite: When True, return
-            :class:`~opaque.api.engine.clipping.ClippedGradStatus` beside the
-            gradient. Use its ``grads_were_finite`` flag for loss-scale
-            backoff while continuing the noised update and accounting on every
-            step.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 
@@ -202,8 +196,7 @@ def adaptive_clipped_grad(
             - clipped_grad_fn: Function with signature
                 (*args, state, **kwargs) -> (grad, new_state) or
                 (*args, state, **kwargs) -> ((grad, aux), new_state)
-                and appends ``ClippedGradStatus`` when
-                ``return_pre_clipping_finite=True``.
+                or ``((grad, stats), new_state)`` when ``return_stats=True``.
             - initial_state: Initial AdaptiveClipState
 
     Example (single device):
@@ -296,6 +289,9 @@ def adaptive_clipped_grad(
         Andrew et al., "Differentially Private Learning with Adaptive
         Clipping", NeurIPS 2021. https://arxiv.org/abs/1905.03871
     """
+    if return_aux and return_stats:
+        raise ValueError("return_stats cannot be combined with return_aux=True")
+
     # Validate parameters
     if isinstance(initial_clipping_norm, PerGroup):
         for gname, val in initial_clipping_norm.values.items():
@@ -422,21 +418,29 @@ def adaptive_clipped_grad(
                     loss_aux=None,
                     clipping_rate=0.0,
                 )
-                if return_pre_clipping_finite:
-                    return (
-                        grads,
-                        adaptive_aux,
-                        ClippedGradStatus(grads_were_finite=True),
-                    ), new_state
                 return (grads, adaptive_aux), new_state
-            if return_pre_clipping_finite:
-                return (grads, ClippedGradStatus(grads_were_finite=True)), new_state
+            if return_stats:
+                if is_per_group:
+                    empty_counts = dict.fromkeys(initial_clipping_norm.values, 0.0)
+                    empty_rates = dict.fromkeys(initial_clipping_norm.values, 0.0)
+                    stats = ClippingStats(
+                        num_clipped=empty_counts,
+                        clipping_rate=empty_rates,
+                        batch_size=0,
+                    )
+                else:
+                    stats = ClippingStats(
+                        num_clipped=0.0,
+                        clipping_rate=0.0,
+                        batch_size=0,
+                    )
+                return (grads, stats), new_state
             return grads, new_state
 
         # Compute gradients with current threshold
         # Force grad_norms computation to update the threshold
         user_wants_return_aux = return_aux
-        inner_return_aux = user_wants_return_aux or return_pre_clipping_finite
+        inner_return_aux = user_wants_return_aux
         clipped_result = cast(
             "tuple[Callable, Any]",
             clipped_grad(
@@ -445,10 +449,8 @@ def adaptive_clipped_grad(
                 has_aux=has_aux,
                 clipping_norm=state._next_clipping_norm,
                 return_aux=inner_return_aux,
-                _force_grad_norms=not inner_return_aux,
-                _return_stats=not inner_return_aux,
+                return_stats=not inner_return_aux,
                 pre_clipping_transform=pre_clipping_transform,
-                return_pre_clipping_finite=return_pre_clipping_finite,
                 **clipped_grad_kwargs,
             ),
         )
@@ -458,17 +460,13 @@ def adaptive_clipped_grad(
 
         # Extract gradients and auxiliary output
         aux = None
-        stats: ClippedFunStats | None = None
-        status: ClippedGradStatus | None = None
+        stats: ClippingStats | None = None
         if isinstance(result, tuple):
             if inner_return_aux:
-                if return_pre_clipping_finite:
-                    grads, aux, status = result
-                else:
-                    grads, aux = result
+                grads, aux = result
                 grad_norms = aux.grad_norms
             else:
-                grads, aux, stats = result
+                grads, stats = result
                 grad_norms = None
         else:
             grads = result
@@ -612,12 +610,11 @@ def adaptive_clipped_grad(
                 batch_size=batch_size,
                 group_norms=aux.group_norms if aux is not None else None,
             )
-            if status is not None:
-                return (grads, adaptive_aux, status), new_state
             return (grads, adaptive_aux), new_state
 
-        if status is not None:
-            return (grads, status), new_state
+        if return_stats:
+            assert stats is not None
+            return (grads, stats), new_state
         return grads, new_state
 
     # Create initial state

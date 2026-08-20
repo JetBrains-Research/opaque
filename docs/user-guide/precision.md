@@ -88,23 +88,23 @@ grad_fn, clip_state = clipped_grad(
     batch_argnums=(1, 2),
     clipping_norm=C,
     pre_clipping_transform=lambda g: scaler.unscale_grads(g, scaler_state),
-    return_pre_clipping_finite=True,
+    return_stats=True,
 )
 
 # in the step:
-(grads, status), clip_state = grad_fn(params, x, y, state=clip_state)
+(grads, stats), clip_state = grad_fn(params, x, y, state=clip_state)
 noisy, noise_state = noise_fn(grads, noise_state)
 opt_state, params = optimizer.update(noisy, opt_state, params=params)
 accountant = accountant | step_process
-scaler_state = scaler.update(scaler_state, status.grads_were_finite)
+scaler_state = scaler.update(scaler_state, stats.all_finite)
 ```
 
 Every attempted step follows this path, including an empty Poisson batch and
-one whose unscaled gradients overflow. For an overflow, `clipped_grad` records
-`status.grads_were_finite=False` before clipping replaces non-finite leaves
+one whose unscaled gradients overflow. For an overflow, `stats.all_finite` is
+`False` before clipping replaces non-finite leaves
 with zero; the zero contribution is still noised, optimized, and composed into
-the accountant. The status then backs off the next loss scale. In distributed
-training, reduce the status across ranks (logical AND) before calling
+the accountant. The stats then back off the next loss scale. In distributed
+training, reduce `stats.all_finite` across ranks (logical AND) before calling
 `scaler.update` so every rank uses the same scale.
 
 ## Recipe: `float32` training (everything disabled)

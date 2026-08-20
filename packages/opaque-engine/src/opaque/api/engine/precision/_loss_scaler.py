@@ -27,9 +27,9 @@ as the ``pre_clipping_transform`` of
 Skipped steps and the privacy accountant
 ----------------------------------------
 An overflow signal is data-dependent and must not suppress the noised update or
-its accounting. Request ``return_pre_clipping_finite=True`` from
+its accounting. Request ``return_stats=True`` from
 :func:`opaque.api.engine.clipping.clipped_grad`, run the normal noised update
-on every attempted step, and use the returned status to back off the loss
+on every attempted step, and use ``stats.all_finite`` to back off the loss
 scale. This module provides scaling and the state machine; the surrounding
 loop owns noise, optimization, and accounting.
 
@@ -198,8 +198,8 @@ def all_finite(updates: Any) -> bool:
     can't carry inf/nan and would raise on :func:`torch.isfinite`.
     Use this only on manually materialized, pre-clipping gradient pytrees.
     ``clipped_grad`` sanitizes non-finite values before returning its
-    ``ClippedPytree``; use its ``return_pre_clipping_finite`` status for loss
-    scaling instead. The helper lives next to :func:`loss_scaler` rather than
+    ``ClippedPytree``; use ``return_stats=True`` for loss scaling instead. The
+    helper lives next to :func:`loss_scaler` rather than
     on the ``LossScaler`` NamedTuple because it operates purely on grads, with
     no scaler-state dependency — same as :func:`opaque.pytree.global_norm`.
     """

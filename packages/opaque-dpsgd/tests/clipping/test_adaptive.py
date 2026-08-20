@@ -50,7 +50,7 @@ class TestAdaptiveClippedGrad:
         assert isinstance(clip_state._next_clipping_norm, float)
         assert grads.shape == params.shape
 
-    def test_pre_clipping_finiteness_is_preserved_before_adaptive_clipping(self):
+    def test_stats_report_nonfinite_gradients_before_adaptive_clipping(self):
         def loss_fn(params, data):
             return torch.sqrt(data - params)
 
@@ -59,16 +59,16 @@ class TestAdaptiveClippedGrad:
             initial_clipping_norm=1.0,
             key=key(0),
             batch_argnums=1,
-            return_pre_clipping_finite=True,
+            return_stats=True,
         )
 
-        (grads, status), _ = grad_fn(
+        (grads, stats), _ = grad_fn(
             torch.tensor(0.0),
             torch.tensor([1.0, -1.0]),
             state=clip_state,
         )
 
-        assert status.grads_were_finite is False
+        assert stats.all_finite is False
         assert torch.isfinite(_unwrap_clipped(grads)).all()
 
     def test_threshold_increases_when_too_many_clipped(self):
