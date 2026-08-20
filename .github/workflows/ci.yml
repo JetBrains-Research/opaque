@@ -142,6 +142,9 @@ jobs:
   qodana:
     name: Qodana
     if: (success() || failure()) && github.ref == 'refs/heads/main'
+    # Surface Qodana policy failures in its job while keeping main publication
+    # independent from this informational analysis.
+    continue-on-error: true
     needs:
       - python-tests-linux-amd64
       - python-tests-distributed
@@ -156,7 +159,7 @@ jobs:
     uses: ./.github/workflows/qodana.yml
     with:
       coverage-artifact-pattern: coverage-locked-*
-      fail-on-problems: false
+      fail-on-problems: true
       pr-mode: false
     secrets: inherit
 
