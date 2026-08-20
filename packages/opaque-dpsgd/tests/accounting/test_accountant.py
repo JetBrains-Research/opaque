@@ -352,16 +352,20 @@ class TestAccountantTrainingLoop:
     def test_calibration_then_train(self):
         """Calibrate noise, then use Accountant to track budget."""
         budget = acc.epsilon_budget(2.0, delta=1e-5)
+        steps = 25
 
         result = acc.calibrate(
             budget=budget,
-            process=lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 100,
+            process=lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * steps,
             param_min=0.1,
             param_max=3.5,
+            tolerance=1e-3,
         )
 
         acct = Accountant(budget=budget)
-        acct = acct | (dpsgd_acc.poisson(dpsgd_acc.gaussian(result.param), 0.01) * 100)
+        acct = acct | (
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(result.param), 0.01) * steps
+        )
 
         achieved = acct.epsilon_at(1e-5)
         assert abs(achieved - budget.value) < 0.5

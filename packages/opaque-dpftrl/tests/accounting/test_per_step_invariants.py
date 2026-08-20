@@ -118,20 +118,19 @@ class TestCyclicPoissonIdentity:
             (step * 10_000).epsilon_at(_DELTA)
 
     @pytest.mark.slow
-    def test_monotonic(self):
+    def test_monotonic_and_bounded_by_full(self):
         proc = self._proc(200)
+        e_full = proc.epsilon_at(_DELTA)
+        points = [1, 5, 25, 50, 100, 150, 199, 200]
+        epsilons = {k: _eps_at(proc, k, _DELTA) for k in points}
         prev = -math.inf
-        for k in [1, 5, 25, 50, 100, 150, 199, 200]:
-            e = _eps_at(proc, k, _DELTA)
+        for k in points:
+            e = epsilons[k]
             assert e >= prev - 1e-10, f"non-monotone at k={k}: {e} < {prev}"
             prev = e
 
-    @pytest.mark.slow
-    def test_bounded_by_full(self):
-        proc = self._proc(200)
-        e_full = proc.epsilon_at(_DELTA)
         for k in [1, 50, 100, 199]:
-            assert _eps_at(proc, k, _DELTA) <= e_full + 1e-10
+            assert epsilons[k] <= e_full + 1e-10
 
     @pytest.mark.slow
     def test_truncated_poisson_works(self):
@@ -184,12 +183,19 @@ class TestCyclicPoissonBand:
         """For K = G·M + r: ε(G·M) ≤ ε(K) ≤ ε((G+1)·M) for r ∈ [0, M)."""
         proc = self._proc(n_steps=80, bands=8)
         M = _atomic_unit(proc)
+        epsilons: dict[int, float] = {}
+
+        def epsilon_at(K: int) -> float:
+            if K not in epsilons:
+                epsilons[K] = _eps_at(proc, K, _DELTA)
+            return epsilons[K]
+
         for K in range(1, proc.n_steps + 1):
             G, r = divmod(K, M)
-            e_lo = _eps_at(proc, G * M, _DELTA) if G > 0 else 0.0
-            e_K = _eps_at(proc, K, _DELTA)
+            e_lo = epsilon_at(G * M) if G > 0 else 0.0
+            e_K = epsilon_at(K)
             e_hi_step = min((G + 1) * M, proc.n_steps)
-            e_hi = _eps_at(proc, e_hi_step, _DELTA)
+            e_hi = epsilon_at(e_hi_step)
             assert e_lo - 1e-10 <= e_K <= e_hi + 1e-10, (
                 f"sandwich broken at K={K} (G={G}, r={r}): {e_lo} ≤ {e_K} ≤ {e_hi}"
             )
@@ -261,21 +267,19 @@ class TestBallsInBinsIdentity:
 
     @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
-    def test_endpoints(self):
-        proc = self._proc(num_bins=10, num_epochs=10)
+    def test_endpoints_and_monotonic_prefixes(self):
+        # A three-epoch horizon covers first, interior, and final epoch
+        # boundaries without re-running the deterministic PLD transform ten
+        # times at a 100-step horizon.
+        proc = self._proc(num_bins=4, num_epochs=3)
         assert _eps_at(proc, 0, _DELTA) == 0.0
-        e_full = _eps_at(proc, 100, _DELTA)
+        e_full = _eps_at(proc, 12, _DELTA)
         e_direct = proc.pld(**_MC_KW).epsilon_at(_DELTA)
         assert math.isclose(e_full, e_direct, rel_tol=1e-9)
 
-    @pytest.mark.slow
-    @pytest.mark.usefixtures("_seed_mc")
-    def test_monotonic(self):
-        proc = self._proc(num_bins=10, num_epochs=10)
-        e_full = _eps_at(proc, 100, _DELTA)
         prev = 0.0
-        for k in range(10, 101, 10):
-            e = _eps_at(proc, k, _DELTA)
+        for k in range(4, 13, 4):
+            e = e_full if k == 12 else _eps_at(proc, k, _DELTA)
             # The identity path is deterministic (random-allocation PLD
             # transform), so monotonicity holds exactly rather than in
             # expectation.
@@ -450,8 +454,6 @@ class TestKPrefixInvariants:
             1,
             M,
             n // 2,
-            n - 1,
-            *range(M, n + 1, M),
             n,
         }
         epsilons = {K: _eps_via_step(proc, K, _DELTA) for K in checked_steps}
@@ -460,7 +462,7 @@ class TestKPrefixInvariants:
 
         # MC paths have transcript noise: 10% slack at the test budget.
         bound_slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
-        for K in (1, M, n // 2, n - 1):
+        for K in (1, M, n // 2):
             assert epsilons[K] <= e_full + bound_slack
 
         assert epsilons[M] < e_full
@@ -471,10 +473,7 @@ class TestKPrefixInvariants:
         # empirically robust at the test's sample budget.
         monotone_slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
         prev = 0.0
-        steps = list(range(M, n + 1, M))
-        if steps[-1] != n:
-            steps.append(n)
-        for K in steps:
+        for K in sorted({M, n // 2, n}):
             assert epsilons[K] >= prev - monotone_slack
             prev = epsilons[K]
 

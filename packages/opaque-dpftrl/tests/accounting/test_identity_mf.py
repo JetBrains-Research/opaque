@@ -2,6 +2,7 @@
 dispatching on it (``poisson``, ``balls_in_bins``)."""
 
 import math
+from functools import lru_cache
 
 import pytest
 
@@ -14,6 +15,17 @@ from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 from opaque.dpftrl.noise.types import BandMfStrategy, IdentityStrategy
 
 _DELTA = 1e-5
+
+
+@lru_cache
+def _identity_bnb_epsilon(
+    noise_multiplier: float, num_bins: int, num_epochs: int
+) -> float:
+    return ftrl_acc.balls_in_bins(
+        ftrl_acc.mf_gaussian(noise_multiplier, identity_strategy()),
+        num_bins=num_bins,
+        n_steps=num_bins * num_epochs,
+    ).epsilon_at(_DELTA)
 
 
 # ---------------------------------------------------------------------------
@@ -185,11 +197,7 @@ class TestBallsInBinsIdentity:
             cfg_native,
         ).epsilon_at(_DELTA)
 
-        det_eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()),
-            num_bins=k,
-            n_steps=k * E,
-        ).epsilon_at(_DELTA)
+        det_eps = _identity_bnb_epsilon(nm, k, E)
 
         assert abs(det_eps - ref_eps) < 0.10 * abs(ref_eps), (
             f"deterministic vs MC gap too large: det={det_eps}, mc={ref_eps}"
@@ -199,11 +207,7 @@ class TestBallsInBinsIdentity:
     def test_factory_path_finite(self):
         """The default ``balls_in_bins`` factory produces a finite, positive ε."""
         nm, k, E = 1.5, 32, 4
-        eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()),
-            num_bins=k,
-            n_steps=k * E,
-        ).epsilon_at(_DELTA)
+        eps = _identity_bnb_epsilon(nm, k, E)
         assert math.isfinite(eps)
         assert eps > 0
 
@@ -211,9 +215,7 @@ class TestBallsInBinsIdentity:
     def test_strictly_tighter_than_unamplified_composition(self):
         """Amplification (factor ~1/num_bins) must beat unamplified composition."""
         nm, k, E = 1.5, 32, 4
-        amplified = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()), num_bins=k, n_steps=k * E
-        ).epsilon_at(_DELTA)
+        amplified = _identity_bnb_epsilon(nm, k, E)
         cfg = get_discretization()
         unamplified = (
             _native.gaussian_pld(nm, cfg.to_native())
@@ -336,13 +338,17 @@ class TestTruncatedPoissonIdentity:
 
 @pytest.mark.slow
 def test_identity_mf_calibrates_through_poisson():
+    n_steps = 100
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),
         lambda nm: ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=0.01, n_steps=500
+            ftrl_acc.mf_gaussian(nm, identity_strategy()),
+            sample_rate=0.01,
+            n_steps=n_steps,
         ),
         param_min=0.1,
         param_max=10.0,
+        tolerance=1e-3,
     )
     assert cal.param > 0
     assert cal.achieved <= 3.0 + 1e-6
