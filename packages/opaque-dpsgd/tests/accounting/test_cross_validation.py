@@ -107,6 +107,7 @@ class TestGaussianEpsilon:
                 (0.1, 1e-5),
                 (0.3, 1e-5),
                 (0.1, 1e-6),
+                (0.3, 1e-6),
                 (0.1, 1e-8),
             },
         ),
@@ -122,7 +123,10 @@ class TestGaussianEpsilon:
 class TestGaussianDelta:
     """Single Gaussian mechanism: opaque vs dp_accounting delta_at."""
 
-    @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8, 1.2])
+    @pytest.mark.parametrize(
+        "sigma",
+        _slow_params([(sigma,) for sigma in [0.3, 0.5, 0.8, 1.2]], {(0.3,)}),
+    )
     def test_delta(self, sigma):
         # Pick an epsilon value in a reasonable range
         eps = dpsgd_acc.gaussian(sigma).epsilon_at(1e-5) * 0.8
@@ -157,7 +161,9 @@ class TestPoissonEpsilon:
                 (0.5, 0.0001, 200),
                 (0.5, 0.001, 200),
                 (0.8, 0.001, 200),
+                (0.8, 0.0001, 200),
                 (1.2, 0.001, 1000),
+                (0.5, 0.001, 1000),
             },
         ),
     )
@@ -229,6 +235,7 @@ class TestTripleEpsilon:
                 (0.5, 0.0001, 500),
                 (0.8, 0.0001, 500),
                 (0.8, 0.001, 500),
+                (1.2, 0.001, 500),
             },
         ),
     )
@@ -274,6 +281,9 @@ class TestTripleBeta:
             {
                 (0.8, 0.0001, 500, 0.01),
                 (0.8, 0.001, 500, 0.01),
+                (0.8, 0.0001, 500, 0.1),
+                (0.8, 0.001, 500, 0.1),
+                (1.2, 0.001, 500, 0.01),
             },
         ),
     )
@@ -308,9 +318,18 @@ class TestTripleAdvantage:
             f"Gaussian({sigma}) advantage: ours={adv_ours}, riskcal={adv_riskcal}"
         )
 
-    @pytest.mark.parametrize("sigma", [0.8, 1.2])
-    @pytest.mark.parametrize("q", [0.001, 0.0001])
-    @pytest.mark.parametrize("steps", [100, 500])
+    @pytest.mark.parametrize(
+        ("sigma", "q", "steps"),
+        _slow_params(
+            product([0.8, 1.2], [0.001, 0.0001], [100, 500]),
+            {
+                (0.8, 0.001, 100),
+                (0.8, 0.001, 500),
+                (0.8, 0.0001, 500),
+                (1.2, 0.001, 500),
+            },
+        ),
+    )
     def test_poisson_advantage(self, sigma, q, steps):
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps
         adv_ours = proc.advantage()
@@ -610,6 +629,7 @@ class TestMetricsConsistency:
 class TestCompositionCrossValidation:
     """Verify composed mechanisms match dp_accounting composition."""
 
+    @pytest.mark.slow
     @pytest.mark.slow
     def test_heterogeneous_compose(self):
         """Compose different mechanisms: (G(0.5)*100 | G(1.0)*200)."""

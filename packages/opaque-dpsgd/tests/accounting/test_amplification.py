@@ -397,6 +397,7 @@ _DeterministicAmplificationFactory = Callable[[], DpProcess]
 class TestDeterministicAmplificationVectors:
     """Committed ε values for deterministic amplification combinations."""
 
+    @pytest.mark.slow
     @pytest.mark.parametrize(
         ("name", "factory", "delta", "expected"),
         [
@@ -454,7 +455,6 @@ class TestDeterministicAmplificationVectors:
                 1e-8,
                 4.687320195749143,
                 id="random-allocation-gaussian",
-                marks=pytest.mark.slow,
             ),
             pytest.param(
                 "random_allocation(adaclip(gaussian(1.1)), bins=8, n_steps=16)",
@@ -462,7 +462,6 @@ class TestDeterministicAmplificationVectors:
                 1e-8,
                 3.965060097641603,
                 id="random-allocation-adaclip",
-                marks=pytest.mark.slow,
             ),
         ],
     )

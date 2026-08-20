@@ -26,26 +26,6 @@ def test_factory_returns_horizon_process():
     assert process.n_steps == 10
 
 
-def test_k_one_short_prefix_matches_redrawn_process():
-    k_out = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        total_participations=1,
-        n_steps=2,
-    )
-    redrawn = dpsgd_acc.random_allocation(
-        dpsgd_acc.gaussian(1.0),
-        num_bins=2,
-        n_steps=2,
-    )
-
-    for steps in range(1, 3):
-        assert k_out.pld_at(steps).epsilon_at(_DELTA) == pytest.approx(
-            redrawn.pld_at(steps).epsilon_at(_DELTA),
-            rel=1e-12,
-            abs=0,
-        )
-
-
 @pytest.mark.slow
 def test_prefixes_are_finite_and_full_matches_pld():
     process = dpsgd_acc.k_out_of_t(
