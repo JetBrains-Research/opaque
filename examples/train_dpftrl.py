@@ -2151,11 +2151,9 @@ def main():
         # --- Eval ---
         if global_step % args.eval_steps == 0:
             current_eval_loss = eval_loss(trainable_params)
-            # Cache PLD before eval so it serves as an opaque boundary
-            # for subsequent ``|`` calls — Repeated nodes from later
-            # steps merge into a fresh suffix instead of re-doing the
-            # full FFT each time.
-            accounting = acc.cached(accounting)
+            # Keep the correlated N-step MF mechanism intact. PerStep's
+            # Repeated node queries pld_at(global_step), whose horizon cache
+            # memoizes this prefix without splitting correlations at evals.
             epsilon = accounting.epsilon_at(args.target_delta)
             eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
             metrics: dict[str, float] = {

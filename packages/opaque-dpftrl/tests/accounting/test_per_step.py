@@ -140,6 +140,30 @@ class TestPerStepAccountant:
             rel_tol=1e-9,
         )
 
+    def test_loop_preserves_correlated_horizon_prefix(self):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=10,
+        )
+        step = acc.per_step(proc)
+        proc.pld_at.cache_clear()
+
+        loop_acc = Accountant()
+        for _ in range(5):
+            loop_acc |= step
+        prefix_pld = loop_acc.process.pld(discretization=0.1)
+
+        assert prefix_pld is proc.pld_at(5, discretization=0.1)
+        assert proc.pld_at.cache_info().misses == 1
+
+        for _ in range(5):
+            loop_acc |= step
+        full_pld = loop_acc.process.pld(discretization=0.1)
+
+        assert full_pld is proc.pld_at(10, discretization=0.1)
+        assert proc.pld_at.cache_info().misses == 2
+
     def test_empty_accountant_is_zero(self):
         # Step-0 eval: empty accountant returns ε=0 regardless of step_proc.
         accnt = Accountant()

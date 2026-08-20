@@ -134,6 +134,11 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     :meth:`epsilon_at` so that the PLD is populated on the first query
     and reused as an opaque boundary for subsequent composition.
 
+    Do not use an opaque boundary within a correlated whole-horizon DP-FTRL
+    process. Query its ``pld_at`` prefix through
+    :func:`~opaque.accounting.per_step` instead, so the horizon mechanism
+    retains its cross-step correlation.
+
     Example::
 
         training = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01) * 1000)
