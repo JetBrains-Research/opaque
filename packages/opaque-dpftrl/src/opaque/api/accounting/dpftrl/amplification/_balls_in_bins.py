@@ -125,6 +125,9 @@ class BallsInBins(DpHorizonProcess):
             )
         return (
             "BallsInBins",
+            self.inner.noise_multiplier,
+            self.num_bins,
+            self.n_steps,
             strategy_schedule_fingerprint(self.inner.strategy, prefix_steps),
         )
 

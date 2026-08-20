@@ -67,6 +67,10 @@ class MfGaussian(DpProcess):
     ) -> tuple[object, ...]:
         return (
             "MfGaussian",
+            self.noise_multiplier,
+            self.n_steps,
+            self.min_sep,
+            self.max_participations,
             strategy_schedule_fingerprint(self.strategy, self.n_steps),
         )
 

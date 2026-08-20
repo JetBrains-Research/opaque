@@ -101,6 +101,9 @@ class BMinSep(DpHorizonProcess):
     ) -> tuple[object, ...]:
         return (
             "BMinSep",
+            self.inner.noise_multiplier,
+            self.n_steps,
+            self.p0,
             strategy_schedule_fingerprint(self.inner.strategy, self.n_steps),
         )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
-from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
+from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
 
 
 def _prefix_process(schedule):
@@ -31,6 +31,14 @@ def test_equal_materialized_schedules_reuse_cached_plds() -> None:
 
     assert first == second
     assert first.pld(discretization=0.1) is second.pld(discretization=0.1)
+
+
+def test_distinct_mf_gaussian_parameters_do_not_share_cached_plds() -> None:
+    first = ftrl_acc.mf_gaussian(0.0, identity_strategy())
+    second = ftrl_acc.mf_gaussian(1.0, identity_strategy())
+    first.pld.cache_clear()
+
+    assert first.pld(discretization=0.1) is not second.pld(discretization=0.1)
 
 
 def test_composed_processes_preserve_schedule_cache_identity() -> None:

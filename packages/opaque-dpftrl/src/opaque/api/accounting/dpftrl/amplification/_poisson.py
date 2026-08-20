@@ -133,6 +133,11 @@ class CyclicPoisson(DpHorizonProcess):
     ) -> tuple[object, ...]:
         return (
             "CyclicPoisson",
+            self.inner.noise_multiplier,
+            self.sample_rate,
+            self.n_steps,
+            self.truncated_batch_size,
+            self.dataset_size,
             strategy_schedule_fingerprint(self.inner.strategy, self.n_steps),
         )
 
