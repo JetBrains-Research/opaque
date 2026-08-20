@@ -42,8 +42,25 @@ def _package_entries() -> list[dict[str, object]]:
 
 def _outputs() -> dict[str, object]:
     packages = _package_entries()
+    cpu_only_packages = [
+        package
+        for package in packages
+        if not package["cuda_tests"] and not package["distributed_tests"]
+    ]
+    cpu_only_paths = " ".join(package["path"] for package in cpu_only_packages)
     return {
         "test_shards": [
+            *(
+                [
+                    {
+                        "label": "CPU-only packages",
+                        "name": "cpu-only",
+                        "paths": cpu_only_paths,
+                    }
+                ]
+                if cpu_only_packages
+                else []
+            ),
             *(
                 {
                     "label": package["dist"],
@@ -51,6 +68,7 @@ def _outputs() -> dict[str, object]:
                     "paths": package["path"],
                 }
                 for package in packages
+                if package not in cpu_only_packages
             ),
             {"label": "integration", "name": "integration", "paths": "tests"},
         ],
