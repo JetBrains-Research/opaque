@@ -164,6 +164,14 @@ class TestPerStepAccountant:
         assert full_pld is proc.pld_at(10, discretization=0.1)
         assert proc.pld_at.cache_info().misses == 2
 
+    def test_cached_horizon_step_preserves_prefix(self):
+        proc = self._proc(10)
+        step = acc.per_step(proc)
+        cached_step = acc.cached(step)
+
+        assert cached_step is not step
+        assert (cached_step * 5).pld() is proc.pld_at(5)
+
     def test_cached_horizon_accountant_warns_and_skips_boundary(self):
         proc = self._proc(10)
         step = acc.per_step(proc)

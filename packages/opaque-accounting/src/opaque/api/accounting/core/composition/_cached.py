@@ -10,6 +10,8 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import pld_cache
 
+from ._per_step import PerStep
+
 if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
 
@@ -165,6 +167,8 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
             return process
         case Accountant():
             return Accountant(budget=process._budget, prefix=cached(process.process))
+        case PerStep():
+            return CachedProcess(inner=process)
         case DpProcess() if _contains_horizon_process(process):
             warnings.warn(
                 "cached() skipped a process containing a whole-horizon mechanism.",
@@ -181,7 +185,6 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
 def _contains_horizon_process(process: DpProcess) -> bool:
     """Return whether a process tree contains a whole-horizon mechanism."""
     from ._composed import Composed
-    from ._per_step import PerStep
     from ._repeated import Repeated
 
     stack = [process]
