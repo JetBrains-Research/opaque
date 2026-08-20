@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import functools
+import weakref
+from collections import OrderedDict
+from collections.abc import Callable, Hashable
+from threading import RLock
 from typing import TYPE_CHECKING
 
 from .discretization import (
@@ -13,6 +17,98 @@ from .discretization import (
 
 if TYPE_CHECKING:
     from ._base import Pld
+
+_CacheKey = tuple[DiscretizationConfig, Hashable, int | None]
+_MISSING = object()
+
+
+class _ProcessCache:
+    """A weak process reference and its bounded PLD entries."""
+
+    def __init__(self, process_ref: weakref.ReferenceType[object]) -> None:
+        self.process_ref = process_ref
+        self.entries: OrderedDict[_CacheKey, Pld] = OrderedDict()
+
+
+class _WeakIdentityPldCache:
+    """Keep bounded PLD entries without extending a process's lifetime."""
+
+    def __init__(self, maxsize: int) -> None:
+        self._maxsize = maxsize
+        self._entries: dict[int, _ProcessCache] = {}
+        self._hits = 0
+        self._misses = 0
+        self._lock = RLock()
+
+    def _entry_for(self, process: object) -> _ProcessCache:
+        process_id = id(process)
+        entry = self._entries.get(process_id)
+        if entry is not None and entry.process_ref() is process:
+            return entry
+
+        cache_ref = weakref.ref(self)
+
+        def remove(ref: weakref.ReferenceType[object]) -> None:
+            cache = cache_ref()
+            if cache is None:
+                return
+            with cache._lock:
+                current = cache._entries.get(process_id)
+                if current is not None and current.process_ref is ref:
+                    del cache._entries[process_id]
+
+        process_ref = weakref.ref(process, remove)
+        entry = _ProcessCache(process_ref)
+        self._entries[process_id] = entry
+        return entry
+
+    def get_or_compute(
+        self, process: object, key: _CacheKey, compute: Callable[[], Pld]
+    ) -> Pld:
+        with self._lock:
+            entry = self._entry_for(process)
+            cached = entry.entries.get(key, _MISSING)
+            if cached is not _MISSING:
+                entry.entries.move_to_end(key)
+                self._hits += 1
+                return cached
+            self._misses += 1
+
+        result = compute()
+
+        with self._lock:
+            entry = self._entry_for(process)
+            cached = entry.entries.get(key, _MISSING)
+            if cached is not _MISSING:
+                entry.entries.move_to_end(key)
+                return cached
+            if self._maxsize:
+                entry.entries[key] = result
+                if len(entry.entries) > self._maxsize:
+                    entry.entries.popitem(last=False)
+            return result
+
+    def cache_clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def cache_info(self) -> functools._CacheInfo:
+        with self._lock:
+            stale_entries = [
+                process_id
+                for process_id, entry in self._entries.items()
+                if entry.process_ref() is None
+            ]
+            for process_id in stale_entries:
+                del self._entries[process_id]
+            return functools._CacheInfo(
+                self._hits,
+                self._misses,
+                self._maxsize,
+                sum(len(entry.entries) for entry in self._entries.values()),
+            )
 
 
 def _resolve_config(
@@ -38,10 +134,7 @@ def pld_cache(*, maxsize: int):
     """Cache a ``DpProcess.pld`` method by resolved configuration and mechanism."""
 
     def decorator(method):
-        @functools.lru_cache(maxsize=maxsize)
-        def cached(process, fingerprint, config: DiscretizationConfig) -> Pld:
-            with _use_discretization(config):
-                return method(process)
+        cache = _WeakIdentityPldCache(maxsize)
 
         @functools.wraps(method)
         def wrapper(
@@ -62,10 +155,14 @@ def pld_cache(*, maxsize: int):
                 num_mc_samples=num_mc_samples,
                 seed=seed,
             )
-            return cached(self, self._pld_cache_fingerprint(), config)
+            return cache.get_or_compute(
+                self,
+                (config, self._pld_cache_fingerprint(), None),
+                lambda: _compute_pld(method, self, config),
+            )
 
-        wrapper.cache_clear = cached.cache_clear
-        wrapper.cache_info = cached.cache_info
+        wrapper.cache_clear = cache.cache_clear
+        wrapper.cache_info = cache.cache_info
         return wrapper
 
     return decorator
@@ -75,12 +172,7 @@ def horizon_pld_cache(*, maxsize: int):
     """Cache a horizon ``pld_at`` method by configuration and prefix mechanism."""
 
     def decorator(method):
-        @functools.lru_cache(maxsize=maxsize)
-        def cached(
-            process, fingerprint, config: DiscretizationConfig, n_steps: int
-        ) -> Pld:
-            with _use_discretization(config):
-                return method(process, n_steps)
+        cache = _WeakIdentityPldCache(maxsize)
 
         @functools.wraps(method)
         def wrapper(
@@ -113,12 +205,27 @@ def horizon_pld_cache(*, maxsize: int):
                 num_mc_samples=num_mc_samples,
                 seed=seed,
             )
-            return cached(
-                self, self._pld_cache_fingerprint(n_steps=n_steps), config, n_steps
+            return cache.get_or_compute(
+                self,
+                (config, self._pld_cache_fingerprint(n_steps=n_steps), n_steps),
+                lambda: _compute_pld(method, self, config, n_steps=n_steps),
             )
 
-        wrapper.cache_clear = cached.cache_clear
-        wrapper.cache_info = cached.cache_info
+        wrapper.cache_clear = cache.cache_clear
+        wrapper.cache_info = cache.cache_info
         return wrapper
 
     return decorator
+
+
+def _compute_pld(
+    method: Callable[..., Pld],
+    process: object,
+    config: DiscretizationConfig,
+    *,
+    n_steps: int | None = None,
+) -> Pld:
+    with _use_discretization(config):
+        if n_steps is None:
+            return method(process)
+        return method(process, n_steps)

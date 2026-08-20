@@ -320,12 +320,13 @@ class DpProcess(ABC):
     def _pld_cache_fingerprint(self, *, n_steps: int | None = None) -> Hashable:
         """Return privacy-material state omitted from structural equality.
 
-        Ordinary frozen process dataclasses are their own cache identity.
-        Processes that contain callables or defer mechanism resolution override
-        this to add a concrete, hashable fingerprint of the values used for the
+        Cache entries are already scoped to process identity, so ordinary frozen
+        process dataclasses only need a process-free type sentinel. Processes
+        that contain callables or defer mechanism resolution override this to
+        add a concrete, hashable fingerprint of the values used for the
         requested PLD.
         """
-        return self
+        return type(self)
 
     def repeated_pld(
         self,
