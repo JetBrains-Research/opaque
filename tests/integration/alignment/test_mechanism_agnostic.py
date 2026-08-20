@@ -166,9 +166,7 @@ def test_dpo_closure_runs_under_both_mechanisms() -> None:
         merged = {**frozen, **trainable_params}
         chosen_logp = sequence_logp(fmodel(merged, c_ids), c_ids, c_mask)
         rejected_logp = sequence_logp(fmodel(merged, r_ids), r_ids, c_mask)
-        return sigmoid_loss(
-            chosen_logp - ref_c, rejected_logp - ref_r, beta=0.1
-        )
+        return sigmoid_loss(chosen_logp - ref_c, rejected_logp - ref_r, beta=0.1)
 
     grad_fn, clip_state = clipped_grad(
         per_example_loss,
