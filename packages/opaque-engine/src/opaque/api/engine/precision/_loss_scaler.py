@@ -29,12 +29,9 @@ Skipped steps and the privacy accountant
 An overflow signal is data-dependent and must not suppress the noised update or
 its accounting. Request ``return_pre_clipping_finite=True`` from
 :func:`opaque.api.engine.clipping.clipped_grad`, run the normal noised update
-on every attempted step, and use the returned private status only to back off
-the loss scale. This module provides scaling and the state machine; the
-surrounding loop owns noise, optimization, and accounting. The scale and
-unscale must remain a numerical reparameterization before clipping; a raw
-status must not alter any later released query in another way without a
-separate privacy analysis.
+on every attempted step, and use the returned status to back off the loss
+scale. This module provides scaling and the state machine; the surrounding
+loop owns noise, optimization, and accounting.
 
 Factory shape
 -------------

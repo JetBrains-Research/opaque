@@ -258,17 +258,16 @@ def auto_clipped_grad(
             Mahalanobis allocation gives the paired release the same PLD
             as a single first-moment release.
         return_pre_clipping_finite: When True, return
-            :class:`ClippedGradStatus` beside the gradient. Use its private
-            ``grads_were_finite`` flag only for numerical state such as
-            loss-scale backoff; do not use it to skip the noised update or
-            its privacy accounting.
+            :class:`ClippedGradStatus` beside the gradient. Use its
+            ``grads_were_finite`` flag for loss-scale backoff while continuing
+            the noised update and its privacy accounting on every step.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
         ``(*args, state, **kwargs) -> (grad, state)``, or
         ``(*args, state, **kwargs) -> ((grad, aux), state)`` when
         ``return_aux=True``. When ``return_pre_clipping_finite=True``, a
-        private :class:`ClippedGradStatus` is appended to either result.
+        :class:`ClippedGradStatus` is appended to either result.
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the

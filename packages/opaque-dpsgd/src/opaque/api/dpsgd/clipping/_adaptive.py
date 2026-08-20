@@ -182,9 +182,9 @@ def adaptive_clipped_grad(
             guarantee. Default is identity function.
         return_pre_clipping_finite: When True, return
             :class:`~opaque.api.engine.clipping.ClippedGradStatus` beside the
-            gradient. Its ``grads_were_finite`` flag is private numerical
-            control state for loss-scale backoff only; it must not control
-            whether the noised update or its privacy accounting executes.
+            gradient. Use its ``grads_were_finite`` flag for loss-scale
+            backoff while continuing the noised update and accounting on every
+            step.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 

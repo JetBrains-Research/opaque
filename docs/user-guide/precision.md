@@ -103,17 +103,9 @@ Every attempted step follows this path, including an empty Poisson batch and
 one whose unscaled gradients overflow. For an overflow, `clipped_grad` records
 `status.grads_were_finite=False` before clipping replaces non-finite leaves
 with zero; the zero contribution is still noised, optimized, and composed into
-the accountant. The status then backs off the next loss scale, but it never
-selects whether the model update or accounting executes.
-
-`status.grads_were_finite` and the dynamic `scaler_state` are private runtime
-control state. Do not log, emit, or publish them; persist them only in a private
-resume checkpoint. In distributed training, reduce the status across ranks
-(logical AND) before calling `scaler.update` so every rank uses the same scale.
-Loss scaling must remain a numerical reparameterization: scaling and unscaling
-must cancel before clipping. A design where the raw status changes any later
-released query beyond that reparameterization needs a separate privacy
-analysis.
+the accountant. The status then backs off the next loss scale. In distributed
+training, reduce the status across ranks (logical AND) before calling
+`scaler.update` so every rank uses the same scale.
 
 ## Recipe: `float32` training (everything disabled)
 

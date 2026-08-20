@@ -61,13 +61,11 @@ class ClippedGradAux:
 
 @dataclass(frozen=True)
 class ClippedGradStatus:
-    """Private control status for a clipped-gradient attempt.
+    """Status for a clipped-gradient attempt.
 
     ``grads_were_finite`` is computed after ``pre_clipping_transform`` and
-    before clipping replaces non-finite values with zero. It may update
-    private numerical state such as a loss scale, but must not control whether
-    the noised update or its privacy accounting executes, and must not be
-    emitted as telemetry.
+    before clipping replaces non-finite values with zero. Use it to update a
+    loss scale while continuing the noised update and accounting on every step.
     """
 
     grads_were_finite: bool
@@ -221,9 +219,8 @@ def clipped_grad(
             :class:`ClippedGradStatus` beside the clipped result. Its
             ``grads_were_finite`` flag is measured after
             ``pre_clipping_transform`` and before clipping sanitizes NaN/Inf
-            values. Keep it private and use it only for numerical state such as
-            loss-scale backoff; it must not decide whether the DP update or
-            accountant advances.
+            values. Use it for loss-scale backoff while continuing the noised
+            update and accountant on every step.
         second_moment: Whether to accumulate the clipped-gradient second
             moment required by DP-FTRL noise mechanisms.
     Returns:
@@ -231,7 +228,7 @@ def clipped_grad(
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
           Call signature: clipped_grads, new_state = clipped_grad_fn(..., state=clip_state)
           If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state
-          If ``return_pre_clipping_finite=True``, a private
+          If ``return_pre_clipping_finite=True``, a
           :class:`ClippedGradStatus` is appended to that result.
         - clip_state: Initial FixedClipState containing sensitivity information
 
