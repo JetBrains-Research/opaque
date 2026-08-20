@@ -20,6 +20,8 @@ hidden mutation.
 [![JetBrains Research](https://jb.gg/badges/research.svg)](https://confluence.jetbrains.com/display/ALL/JetBrains+on+GitHub)
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
 
+**[Documentation](https://jetbrains-research.github.io/opaque/)**
+
 ## Packages
 
 Install and depend on `opaque` only. The repository is implemented as
@@ -97,7 +99,7 @@ apply_model_patches(model)
 loss-mapping fixes. `apply_model_patches(model)` wires compat wrappers and
 Triton kernels into the specific model instance, including PEFT/LoRA modules.
 
-See [`docs/user-guide/huggingface/model-patches.md`](docs/user-guide/huggingface/model-patches.md)
+See the [model-patches guide](https://jetbrains-research.github.io/opaque/latest/user-guide/huggingface/model-patches/)
 for patching details, model compatibility, and tuning knobs.
 
 ## Example
@@ -162,10 +164,11 @@ for batch_x, batch_y in dataloader:
 
 ## Documentation
 
-- [Getting Started](docs/getting-started/quickstart.md)
-- [User Guide](docs/user-guide/index.md)
-- [Tutorials](docs/tutorials/README.md)
-- [API Reference](docs/reference/index.md)
+- [Documentation](https://jetbrains-research.github.io/opaque/)
+- [Getting Started](https://jetbrains-research.github.io/opaque/latest/getting-started/quickstart/)
+- [User Guide](https://jetbrains-research.github.io/opaque/latest/user-guide/)
+- [Tutorials](https://jetbrains-research.github.io/opaque/latest/tutorials/)
+- [API Reference](https://jetbrains-research.github.io/opaque/latest/reference/)
 - [Examples](examples)
 
 ## Development
