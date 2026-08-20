@@ -164,6 +164,19 @@ class TestPerStepAccountant:
         assert full_pld is proc.pld_at(10, discretization=0.1)
         assert proc.pld_at.cache_info().misses == 2
 
+    def test_cached_horizon_accountant_warns_and_skips_boundary(self):
+        proc = self._proc(10)
+        step = acc.per_step(proc)
+        accountant = Accountant()
+        for _ in range(5):
+            accountant |= step
+
+        with pytest.warns(RuntimeWarning, match="whole-horizon"):
+            cached_accountant = acc.cached(accountant)
+
+        assert cached_accountant is accountant
+        assert cached_accountant.process.pld() is proc.pld_at(5)
+
     def test_empty_accountant_is_zero(self):
         # Step-0 eval: empty accountant returns ε=0 regardless of step_proc.
         accnt = Accountant()
@@ -315,51 +328,6 @@ class TestPerStepCrossAmp:
 
 
 # ---------------------------------------------------------------------------
-# CachedProcess must relay repeated_pld — otherwise DPTrainer's
-# ``acc.cached(per_step(proc))`` path silently falls back to K-fold
-# single-step composition and inflates ε for every MF run.
-# ---------------------------------------------------------------------------
-
-
-class TestCachedPerStepRepeatedPld:
-    """``cached(per_step(p)) * K`` must equal ``per_step(p) * K``.
-
-    Band-MF with ``bands > 1`` is required so the Identity degeneracy
-    (where K-fold single-step composition happens to match the horizon
-    PLD) cannot mask a missing ``CachedProcess.repeated_pld`` relay.
-    """
-
-    def _band_proc(self, *, n_steps: int = 128, bands: int = 16) -> DpHorizonProcess:
-        return ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=bands)),
-            sample_rate=0.01,
-            n_steps=n_steps,
-        )
-
-    def test_cached_repeated_matches_uncached(self):
-        proc = self._band_proc()
-        step = acc.per_step(proc)
-        K = proc.n_steps
-
-        e_uncached = (step * K).epsilon_at(_DELTA)
-        e_cached = (acc.cached(step) * K).epsilon_at(_DELTA)
-        assert math.isclose(e_uncached, e_cached, rel_tol=0.0, abs_tol=0.0)
-
-    def test_cached_repeated_pld_is_horizon_not_self_compose(self):
-        """Guard against the pre-fix failure mode (~2× inflated ε)."""
-        proc = self._band_proc()
-        step = acc.per_step(proc)
-        K = proc.n_steps
-
-        e_cached = (acc.cached(step) * K).epsilon_at(_DELTA)
-        e_horizon = proc.pld_at(K).epsilon_at(_DELTA)
-        # Wrong path would be step.pld().self_compose(K) ≈ 2× horizon.
-        e_wrong = step.pld().self_compose(K).epsilon_at(_DELTA)
-        assert math.isclose(e_cached, e_horizon, rel_tol=0.0, abs_tol=0.0)
-        assert e_wrong > e_horizon * 1.5
-
-
-# ---------------------------------------------------------------------------
 # Serialization registry hardening: abstract bases must NOT be registered.
 # ---------------------------------------------------------------------------
 
@@ -405,10 +373,9 @@ class TestQueryTimeMcParams:
         )
 
     def test_chain_forwards_to_pld_at(self):
-        """``cached(per_step(p)) * K`` resolves the same config as a direct
-        ``pld_at(K, **mc_kw)`` call — byte-identical PLD."""
+        """``per_step(p) * K`` resolves the same config as ``pld_at(K)``."""
         proc = self._mc_proc()
-        chain = acc.cached(acc.per_step(proc)) * 8
+        chain = acc.per_step(proc) * 8
 
         e_chain = chain.epsilon_at(_DELTA, **_MC_KW)
         e_direct = proc.pld_at(8, **_MC_KW).epsilon_at(_DELTA)
@@ -416,7 +383,7 @@ class TestQueryTimeMcParams:
 
     def test_chain_honors_mc_budget(self):
         proc = self._mc_proc()
-        chain = acc.cached(acc.per_step(proc)) * 8
+        chain = acc.per_step(proc) * 8
 
         e_small = chain.epsilon_at(_DELTA, num_mc_samples=500, seed=_MC_KW["seed"])
         e_large = chain.epsilon_at(_DELTA, **_MC_KW)
