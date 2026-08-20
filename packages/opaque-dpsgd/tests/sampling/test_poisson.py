@@ -1,12 +1,31 @@
-"""Tests for the unified PoissonSampler (plain + truncated)."""
+"""Tests for the unified PoissonSampler (plain + truncated).
+
+Statistical assertions use exact binomial confidence bands rather than
+hand-picked tolerances, so they hold for an arbitrary RNG stream instead of
+one lucky seed; seeds are fixed only for reproducible failures.
+"""
 
 import numpy as np
 import pytest
+import scipy.stats
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
+
+# Total tail mass a statistical assertion is allowed to spend.  Per-record
+# assertions split it across records (Bonferroni), so the whole file stays
+# below this false-failure probability per run.
+_FALSE_FAILURE_PROB = 1e-9
+
+
+def _inclusion_counts(sampler: PoissonSampler, num_records: int) -> np.ndarray:
+    """Count how many of the sampler's batches include each record."""
+    counts = np.zeros(num_records, dtype=np.int64)
+    for batch in sampler:
+        counts += np.bincount(np.asarray(batch, dtype=np.intp), minlength=num_records)
+    return counts
 
 
 class TestPoissonSampler:
@@ -44,35 +63,77 @@ class TestPoissonSampler:
 
         assert len(set(batch_sizes)) > 1, "Batch sizes should vary"
 
-    def test_statistical_properties_mean(self):
-        dataset = TensorDataset(torch.randn(1000, 10))
+    @pytest.mark.parametrize(
+        ("num_records", "sample_rate", "n_steps", "max_rel_width"),
+        [
+            (1000, 0.1, 4000, 0.01),
+            (1000, 0.5, 1000, 0.01),
+            # A 1% band at q=0.001 needs ~4e8 trials; 5% is what is practical.
+            (10000, 0.001, 2000, 0.05),
+        ],
+    )
+    def test_pooled_inclusion_rate(
+        self, num_records, sample_rate, n_steps, max_rel_width
+    ):
+        """Pooled inclusions land in a Binomial(records * steps, q) band.
+
+        Every (record, step) pair is an independent Bernoulli(q) trial, so the
+        pooled count is exactly binomial and the band is exact.
+        """
+        dataset = TensorDataset(torch.randn(num_records, 10))
         sampler = PoissonSampler(
-            dataset,
-            sample_rate=0.1,
-            n_steps=100,
-            key=key(42),
+            dataset, sample_rate=sample_rate, n_steps=n_steps, key=key(42)
         )
 
-        batch_sizes = [len(batch) for batch in sampler]
-        expected_mean = 1000 * 0.1
-        actual_mean = np.mean(batch_sizes)
+        trials = num_records * n_steps
+        expected = trials * sample_rate
+        low, high = scipy.stats.binom.interval(
+            1 - _FALSE_FAILURE_PROB, trials, sample_rate
+        )
+        half_width = max(high - expected, expected - low)
+        assert half_width / expected <= max_rel_width
 
-        assert abs(actual_mean - expected_mean) < 10
+        included = sum(len(batch) for batch in sampler)
+        assert low <= included <= high
+
+    def test_per_record_inclusion_rate(self):
+        """No individual record is systematically over- or under-sampled.
+
+        The pooled band above cannot see this: a sampler that never draws one
+        record out of 1000 shifts the pooled rate by only 0.1%.
+        """
+        num_records, sample_rate, n_steps = 1000, 0.1, 4000
+        dataset = TensorDataset(torch.randn(num_records, 10))
+        sampler = PoissonSampler(
+            dataset, sample_rate=sample_rate, n_steps=n_steps, key=key(7)
+        )
+
+        counts = _inclusion_counts(sampler, num_records)
+        low, high = scipy.stats.binom.interval(
+            1 - _FALSE_FAILURE_PROB / num_records, n_steps, sample_rate
+        )
+        assert low <= counts.min()
+        assert counts.max() <= high
 
     def test_statistical_properties_variance(self):
-        dataset = TensorDataset(torch.randn(1000, 10))
+        """Batch-size spread matches Binomial(records, q), not a fixed size."""
+        num_records, sample_rate, n_steps = 1000, 0.1, 2000
+        dataset = TensorDataset(torch.randn(num_records, 10))
         sampler = PoissonSampler(
-            dataset,
-            sample_rate=0.1,
-            n_steps=500,
-            key=key(42),
+            dataset, sample_rate=sample_rate, n_steps=n_steps, key=key(42)
         )
 
         batch_sizes = [len(batch) for batch in sampler]
-        expected_var = 1000 * 0.1 * (1 - 0.1)
-        actual_var = np.var(batch_sizes)
 
-        assert abs(actual_var - expected_var) < 20
+        # Sampling error of a variance over n iid draws is
+        # sqrt((mu4 - var^2) / n), asymptotically normal.
+        binomial = scipy.stats.binom(num_records, sample_rate)
+        variance = float(binomial.var())
+        fourth_moment = (float(binomial.stats(moments="k")) + 3) * variance**2
+        sigma = np.sqrt((fourth_moment - variance**2) / n_steps)
+        z = scipy.stats.norm.isf(_FALSE_FAILURE_PROB / 2)
+
+        assert abs(np.var(batch_sizes) - variance) <= z * sigma
 
     def test_no_duplicate_indices_within_batch(self):
         dataset = TensorDataset(torch.randn(100, 10))
@@ -163,9 +224,45 @@ class TestPoissonSamplerTruncated:
             key=key(42),
         )
 
-        batch_sizes = [len(batch) for batch in sampler]
-        assert max(batch_sizes) <= 100
-        assert max(batch_sizes) >= 90
+        # A Binomial(1000, 0.5) draw below 100 has probability 7e-163, so
+        # every step truncates to exactly the cap.
+        assert all(len(batch) == 100 for batch in sampler)
+
+    def test_truncation_selects_records_uniformly(self):
+        """Truncation subsamples uniformly instead of favouring low indices."""
+        num_records, truncated, n_steps = 200, 50, 2000
+        dataset = TensorDataset(torch.randn(num_records, 10))
+        sampler = PoissonSampler(
+            dataset,
+            sample_rate=1.0,
+            truncated_batch_size=truncated,
+            n_steps=n_steps,
+            key=key(3),
+        )
+
+        # sample_rate=1 makes each step a uniform draw of ``truncated`` out of
+        # ``num_records``, so each record's count is Binomial(steps, B / N).
+        counts = _inclusion_counts(sampler, num_records)
+        low, high = scipy.stats.binom.interval(
+            1 - _FALSE_FAILURE_PROB / num_records,
+            n_steps,
+            truncated / num_records,
+        )
+        assert low <= counts.min()
+        assert counts.max() <= high
+
+    def test_no_truncation_when_cap_equals_dataset_size(self):
+        dataset = TensorDataset(torch.randn(100, 10))
+        sampler = PoissonSampler(
+            dataset,
+            sample_rate=1.0,
+            truncated_batch_size=100,
+            n_steps=5,
+            key=key(42),
+        )
+
+        for batch in sampler:
+            assert batch == list(range(100))
 
     def test_same_as_plain_when_no_truncation(self):
         dataset = TensorDataset(torch.randn(1000, 10))
@@ -228,25 +325,17 @@ class TestPoissonSamplerTruncated:
 class TestEdgeCases:
     """Test edge cases."""
 
-    def test_sample_rate_one(self):
+    @pytest.mark.parametrize("seed", [0, 42, 12345])
+    def test_sample_rate_one_yields_every_record(self, seed):
+        """``sample_rate=1`` is exhaustive for any stream, not just on average.
+
+        ``rng.random()`` draws from [0, 1), so ``< 1.0`` holds for every draw.
+        """
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=1.0, n_steps=5, key=key(42))
+        sampler = PoissonSampler(dataset, sample_rate=1.0, n_steps=5, key=key(seed))
 
-        batch_sizes = [len(batch) for batch in sampler]
-        assert all(90 <= size <= 100 for size in batch_sizes)
-
-    def test_very_small_sample_rate(self):
-        dataset = TensorDataset(torch.randn(10000, 10))
-        sampler = PoissonSampler(
-            dataset,
-            sample_rate=0.001,
-            n_steps=100,
-            key=key(42),
-        )
-
-        batch_sizes = [len(batch) for batch in sampler]
-        mean_size = np.mean(batch_sizes)
-        assert 5 <= mean_size <= 15
+        for batch in sampler:
+            assert batch == list(range(100))
 
     def test_truncated_with_max_batch_size_one(self):
         dataset = TensorDataset(torch.randn(100, 10))
