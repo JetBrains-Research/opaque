@@ -4,11 +4,14 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
+
 import pytest
 import torch
 from torch.autograd.graph import save_on_cpu
 from torch.func import grad, hessian, jacrev, jvp, vjp, vmap
-from torch.utils.checkpoint import checkpoint
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.patches.torch.checkpoint import native_support
@@ -147,14 +150,37 @@ def test_compiles_the_dp_transform_with_the_patches_applied():
 
 
 def test_compiled_transform_rejects_saved_tensor_hooks():
-    weight = torch.randn(4, 4)
+    # PyTorch 2.13 leaves its thread-local saved-tensor-hooks disable state
+    # active when this expected compilation error aborts tracing. Run it out of
+    # process so later eager checkpoint tests retain their supported behavior.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent("""
+                import torch
+                from torch.func import grad, vmap
+                from torch.utils.checkpoint import checkpoint
 
-    def f(x):
-        h = checkpoint(lambda z: torch.tanh(z @ weight), x, use_reentrant=False)
-        return h.sum()
+                from opaque.patches import apply_runtime_patches
 
-    compiled_fn = torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)
-    x = torch.randn(3, 4)
+                apply_runtime_patches(vmap_checkpointing=True)
+                weight = torch.randn(4, 4)
 
-    with pytest.raises(RuntimeError):
-        compiled_fn(x)
+                def f(x):
+                    h = checkpoint(
+                        lambda z: torch.tanh(z @ weight), x, use_reentrant=False
+                    )
+                    return h.sum()
+
+                torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)(
+                    torch.randn(3, 4)
+                )
+            """),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "saved tensor hooks" in result.stderr
