@@ -230,14 +230,14 @@ jobs:
             opaque-patches=${{ steps.opaque-patches.outcome }}
         run: bash .github/scripts/verify_python_test_results.sh
 
-  integrations:
-    name: Integrations
+  alignment-and-transformers:
+    name: Alignment and transformers
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
       ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
       ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
-      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-integrations
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-alignment-and-transformers
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
@@ -272,9 +272,9 @@ jobs:
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
         with:
-          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integrations
-          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integrations.xml
-          codecov-flag: ${{ inputs.environment-name }}-integrations
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-alignment-and-transformers
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-alignment-and-transformers.xml
+          codecov-flag: ${{ inputs.environment-name }}-alignment-and-transformers
       - name: Verify package results
         if: always()
         env:
