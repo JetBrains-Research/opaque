@@ -11,26 +11,32 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
 
+# Stable, timing-balanced groups keep the five CPU-oriented matrices compact.
+# Discovery must stay reproducible, so it does not query historical GitHub runs.
 _TEST_SHARD_GROUPS = (
     (
-        "foundation",
-        "Foundation packages",
-        ("opaque-base", "opaque-accounting", "opaque-auditing"),
+        "dp-mechanisms",
+        "DP mechanisms",
+        ("opaque-dpsgd", "opaque-dpftrl"),
     ),
     (
-        "training",
-        "Training stack",
+        "runtime-patches",
+        "Runtime and patches",
         (
             "opaque-engine",
             "opaque-optimizers",
-            "opaque-dpsgd",
-            "opaque-dpftrl",
+            "opaque-patches",
         ),
     ),
     (
-        "integrations",
-        "Optional integrations",
-        ("opaque-alignment", "opaque-patches", "opaque-transformers"),
+        "transformers-auditing",
+        "Transformers and auditing",
+        ("opaque-transformers", "opaque-auditing"),
+    ),
+    (
+        "foundation-alignment",
+        "Foundation and alignment",
+        ("opaque-base", "opaque-accounting", "opaque-alignment"),
     ),
 )
 
@@ -79,7 +85,7 @@ def _outputs() -> dict[str, object]:
             {
                 "label": label,
                 "name": name,
-                "paths": " ".join(package["path"] for package in grouped_packages),
+                "paths": [package["path"] for package in grouped_packages],
             }
         )
 
@@ -87,13 +93,13 @@ def _outputs() -> dict[str, object]:
         {
             "label": package["dist"],
             "name": package["name"],
-            "paths": package["path"],
+            "paths": [package["path"]],
         }
         for package in packages
         if package["dist"] not in grouped_dists
     )
     test_shards.append(
-        {"label": "integration", "name": "integration", "paths": "tests"}
+        {"label": "integration", "name": "integration", "paths": ["tests"]}
     )
     return {
         "test_shards": test_shards,
@@ -102,13 +108,13 @@ def _outputs() -> dict[str, object]:
                 {
                     "label": package["dist"],
                     "name": package["name"],
-                    "paths": package["path"],
+                    "paths": [package["path"]],
                 }
                 for package in packages
                 if package["cuda_tests"]
             ),
             *(
-                [{"label": "integration", "name": "integration", "paths": "tests"}]
+                [{"label": "integration", "name": "integration", "paths": ["tests"]}]
                 if _has_pytest_marker(REPO_ROOT / "tests", "cuda")
                 else []
             ),
@@ -118,13 +124,13 @@ def _outputs() -> dict[str, object]:
                 {
                     "label": package["dist"],
                     "name": package["name"],
-                    "paths": package["path"],
+                    "paths": [package["path"]],
                 }
                 for package in packages
                 if package["distributed_tests"]
             ),
             *(
-                [{"label": "integration", "name": "integration", "paths": "tests"}]
+                [{"label": "integration", "name": "integration", "paths": ["tests"]}]
                 if _has_pytest_marker(REPO_ROOT / "tests", "distributed")
                 else []
             ),

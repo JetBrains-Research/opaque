@@ -112,30 +112,76 @@ jobs:
         env:
           ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
           ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+          COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}
+          PYTEST_MARKER: ${{ inputs.pytest-marker }}
+          PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+          REPORT_DURATIONS: ${{ inputs.report-durations }}
+          SHARD_PATHS_JSON: ${{ toJSON(matrix.shard.paths) }}
         shell: bash
         run: |
-          set +e
-          uv run pytest ${{ matrix.shard.paths }} \
-            -m "${{ inputs.pytest-marker }}" \
-            ${{ inputs.pytest-xdist }} \
-            --cov=opaque \
-            --cov-report=xml:coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml \
-            ${{ inputs.report-durations && '--durations=0 --durations-min=5' || '' }} \
-            -q
-          status=$?
-          set -e
+          mapfile -t shard_paths < <(
+            python3 -c 'import json, os; print(*json.loads(os.environ["SHARD_PATHS_JSON"]), sep="\n")'
+          )
+          read -r -a xdist_args <<< "$PYTEST_XDIST"
+          duration_args=()
+          if [[ "$REPORT_DURATIONS" == "true" ]]; then
+            duration_args=(--durations=0 --durations-min=5)
+          fi
 
-          if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
-            echo "::notice::No tests matched this environment's filter for ${{ matrix.shard.label }}."
-            echo "tests_ran=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          tests_ran=false
+          failed_status=0
+          for path in "${shard_paths[@]}"; do
+            echo "::group::Pytest $path"
+            pytest_args=(
+              uv run pytest "$path"
+              -m "$PYTEST_MARKER"
+              "${xdist_args[@]}"
+              --cov=opaque
+              --cov-report=
+              "${duration_args[@]}"
+              -q
+            )
+            if [[ "$tests_ran" == "true" ]]; then
+              pytest_args+=(--cov-append)
+            fi
+
+            set +e
+            "${pytest_args[@]}"
+            status=$?
+            set -e
+            echo "::endgroup::"
+
+            if [[ "$status" -eq 0 ]]; then
+              tests_ran=true
+              continue
+            fi
+            if [[ "$status" -eq 5 ]]; then
+              echo "::notice::No tests matched $path for ${{ matrix.shard.label }}."
+              continue
+            fi
+            failed_status=$status
+            break
+          done
+
+          if [[ "$tests_ran" == "false" ]]; then
+            if [[ "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
+              echo "::notice::No tests matched this environment's filter for ${{ matrix.shard.label }}."
+              echo "tests_ran=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::No tests matched this environment's filter for ${{ matrix.shard.label }}."
+            exit 5
           fi
-          if [[ "$status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
-            echo "::warning::pytest exited with status $status in this advisory lane."
-            exit 0
-          fi
+
+          uv run coverage xml \
+            -o coverage-${{ inputs.environment-name }}-${{ matrix.shard.name }}.xml
           echo "tests_ran=true" >> "$GITHUB_OUTPUT"
-          exit "$status"
+
+          if [[ "$failed_status" -ne 0 && "$ALLOW_TEST_FAILURE" == "true" ]]; then
+            echo "::warning::pytest exited with status $failed_status in this advisory lane."
+            exit 0
+          fi
+          exit "$failed_status"
 
       - name: Upload coverage
         if: steps.pytest.outputs.tests_ran == 'true'
