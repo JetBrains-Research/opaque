@@ -86,6 +86,12 @@ class TestTprAtGivenFpr:
         fp_counts = (tn[-1] - tn)[::-1]
         assert tpr_at_given_fpr(0.0, tp_counts, fp_counts) == 1.0
 
+    def test_degenerate_roc(self):
+        """A two-point ROC without separation has no true positives at FPR=0."""
+        tp_counts = np.array([0, 100])
+        fp_counts = np.array([0, 1])
+        assert tpr_at_given_fpr(0.0, tp_counts, fp_counts) == 0.0
+
     def test_random_classifier(self):
         tp_counts = np.array([0, 50, 100])
         fp_counts = np.array([0, 50, 100])
