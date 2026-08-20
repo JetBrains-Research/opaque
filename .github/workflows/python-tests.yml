@@ -138,6 +138,10 @@ jobs:
               "${duration_args[@]}"
               -q
             )
+            if [[ "$path" == "tests" ]]; then
+              export PYTHONPATH="$GITHUB_WORKSPACE/.github/scripts${PYTHONPATH:+:$PYTHONPATH}"
+              pytest_args+=(--cov=discover_package_matrices)
+            fi
             if [[ "$tests_ran" == "true" ]]; then
               pytest_args+=(--cov-append)
             fi
