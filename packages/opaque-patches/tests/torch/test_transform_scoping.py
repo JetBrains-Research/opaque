@@ -147,14 +147,24 @@ def test_compiles_the_dp_transform_with_the_patches_applied():
 
 
 def test_compiled_transform_rejects_saved_tensor_hooks():
+    # PyTorch 2.13 can abort Dynamo tracing before it restores this thread-local
+    # state. Preserve the pre-test state so the expected error cannot poison
+    # later eager tests in the same worker.
+    previous_error = (
+        torch._C._autograd._saved_tensors_hooks_get_disabled_error_message()
+    )
     weight = torch.randn(4, 4)
 
     def f(x):
         h = checkpoint(lambda z: torch.tanh(z @ weight), x, use_reentrant=False)
         return h.sum()
 
-    compiled_fn = torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)
-    x = torch.randn(3, 4)
-
-    with pytest.raises(RuntimeError):
-        compiled_fn(x)
+    try:
+        compiled_fn = torch.compile(vmap(grad(f)), backend="aot_eager", fullgraph=True)
+        with pytest.raises(RuntimeError, match="saved tensor hooks"):
+            compiled_fn(torch.randn(3, 4))
+    finally:
+        if previous_error is None:
+            torch._C._autograd._saved_tensors_hooks_enable()
+        else:
+            torch._C._autograd._saved_tensors_hooks_disable(previous_error)
