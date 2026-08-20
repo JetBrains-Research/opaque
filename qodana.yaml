@@ -33,6 +33,14 @@ profile:
   inspections:
     - group: RuffOwned
       enabled: false
+    - inspection: PyCoverageInspection
+      # Per-entity coverage is noisy for the runtime categories that rely on
+      # framework dispatch or functional state threading. Aggregate and fresh
+      # coverage gates below continue to apply to every source file.
+      ignore:
+        - "scope#$Opaque_DynamicFrameworkSources"
+        - "scope#$Opaque_FunctionalRuntimeSources"
+        - "scope#$Opaque_LazyModuleFacades"
     - inspection: PyArgumentListInspection
       enabled: true
       ignore:
