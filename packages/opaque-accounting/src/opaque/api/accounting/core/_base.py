@@ -62,6 +62,32 @@ __all__ = ["DpProcess", "Pld"]
 _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 
+def _freeze_cache_fingerprint(value: object) -> Hashable:
+    """Return a process-free, hashable representation of a dataclass value."""
+    if isinstance(value, DpProcess):
+        return value._pld_cache_fingerprint()
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return (
+            type(value),
+            tuple(
+                _freeze_cache_fingerprint(getattr(value, field.name))
+                for field in dataclasses.fields(value)
+            ),
+        )
+    if isinstance(value, tuple):
+        return tuple(_freeze_cache_fingerprint(item) for item in value)
+    if isinstance(value, list):
+        return tuple(_freeze_cache_fingerprint(item) for item in value)
+    if isinstance(value, dict):
+        return frozenset(
+            (_freeze_cache_fingerprint(key), _freeze_cache_fingerprint(item))
+            for key, item in value.items()
+        )
+    if isinstance(value, set):
+        return frozenset(_freeze_cache_fingerprint(item) for item in value)
+    return value
+
+
 def _register_dp_process_with_serialization(cls) -> None:
     """Hook each concrete process into :mod:`opaque.serialization`."""
     from opaque.api.accounting.core._process_codec import (
@@ -320,13 +346,18 @@ class DpProcess(ABC):
     def _pld_cache_fingerprint(self, *, n_steps: int | None = None) -> Hashable:
         """Return privacy-material state omitted from structural equality.
 
-        Cache entries are already scoped to process identity, so ordinary frozen
-        process dataclasses only need a process-free type sentinel. Processes
-        that contain callables or defer mechanism resolution override this to
-        add a concrete, hashable fingerprint of the values used for the
-        requested PLD.
+        Ordinary frozen process dataclasses use a process-free structural
+        fingerprint. Processes that contain callables or defer mechanism
+        resolution override this to add a concrete, hashable fingerprint of
+        the values used for the requested PLD.
         """
-        return type(self)
+        return (
+            type(self),
+            tuple(
+                _freeze_cache_fingerprint(getattr(self, field.name))
+                for field in dataclasses.fields(self)
+            ),
+        )
 
     def repeated_pld(
         self,

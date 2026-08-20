@@ -99,6 +99,14 @@ def test_query_override_shares_the_matching_resolved_cache_entry() -> None:
     assert process.pld() is override_pld
 
 
+def test_distinct_processes_do_not_share_pld_cache_entries() -> None:
+    first = acc.eps_delta(0.11)
+    second = acc.eps_delta(0.12)
+    first.pld.cache_clear()
+
+    assert first.pld(discretization=0.1) is not second.pld(discretization=0.1)
+
+
 def test_pld_cache_reuses_entries_evicts_lru_entry_and_clears() -> None:
     process = _CachedProcess()
 
