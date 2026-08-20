@@ -114,6 +114,7 @@ def auto_clipped_fun(
     gamma: float = _DEFAULT_GAMMA,
     normalize_by: float = 1.0,
     return_aux: bool = False,
+    return_stats: bool = False,
     microbatch_size: int | None = None,
     dtype: Any = None,
 ) -> tuple[Callable, AutoClipState]:
@@ -134,6 +135,8 @@ def auto_clipped_fun(
         normalize_by: Divisor applied to the scaled sum.
         return_aux: If True, the returned callable returns an
             :class:`AutoClippedFunAux` alongside the summed value.
+        return_stats: If True, return :class:`ClippingStats` alongside the
+            summed value. Cannot be combined with ``return_aux``.
         microbatch_size: Process the batch in chunks of this size.
         dtype: Optional accumulation dtype for the sum.
 
@@ -162,6 +165,7 @@ def auto_clipped_fun(
         clipping_norm=R,
         normalize_by=normalize_by,
         return_aux=return_aux,
+        return_stats=return_stats,
         microbatch_size=microbatch_size,
         dtype=dtype,
         _scale_fn=scale_fn,
@@ -203,6 +207,7 @@ def auto_clipped_grad(
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
+    return_stats: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: Any = None,
@@ -252,12 +257,17 @@ def auto_clipped_grad(
             mechanism for DP-FTRL); the sensitivity-proportional joint
             Mahalanobis allocation gives the paired release the same PLD
             as a single first-moment release.
+        return_stats: If True, return :class:`ClippingStats` beside the
+            gradient. Its ``all_finite`` field is measured before AUTO-S
+            sanitizes non-finite gradients. Cannot be combined with
+            ``return_aux``.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature
         ``(*args, state, **kwargs) -> (grad, state)``, or
         ``(*args, state, **kwargs) -> ((grad, aux), state)`` when
-        ``return_aux=True``.
+        ``return_aux=True``. When ``return_stats=True``, it returns
+        ``((grad, stats), state)``.
 
     Formal guarantee:
         Under add/remove or zero-out DP, the L2 sensitivity of the
@@ -309,6 +319,7 @@ def auto_clipped_grad(
         normalize_by=normalize_by,
         batch_argnums=batch_argnums,
         return_aux=return_aux,
+        return_stats=return_stats,
         pre_clipping_transform=pre_clipping_transform,
         microbatch_size=microbatch_size,
         dtype=dtype,
@@ -327,7 +338,8 @@ def auto_clipped_grad(
         return grad_fn, state
 
     def grad_fn(*args, state, **kwargs):
-        (grads, grad_aux), _ = inner_fn(*args, state=None, **kwargs)
+        inner_result, _ = inner_fn(*args, state=None, **kwargs)
+        grads, grad_aux = inner_result
         auto_aux = AutoClippedGradAux(
             loss_values=grad_aux.loss_values,
             grad_norms=grad_aux.grad_norms,

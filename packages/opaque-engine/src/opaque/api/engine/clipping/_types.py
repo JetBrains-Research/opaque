@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 from opaque.api.engine.types import ClippedPytree, SecondMomentClippingOutput
 
 if TYPE_CHECKING:
-    from opaque.api.engine.clipping._clipped_fun import FixedClipState
+    from opaque.api.engine.clipping._clipped_fun import ClippingStats, FixedClipState
     from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
 
 
@@ -15,7 +15,9 @@ ClippedGradValue: TypeAlias = ClippedPytree | SecondMomentClippingOutput
 """Private gradient output before optional diagnostics are attached."""
 
 ClippedGradResult: TypeAlias = (
-    ClippedGradValue | tuple[ClippedGradValue, "ClippedGradAux"]
+    ClippedGradValue
+    | tuple[ClippedGradValue, "ClippedGradAux"]
+    | tuple[ClippedGradValue, "ClippingStats"]
 )
 """Value returned by :class:`ClippedGradFn` before its updated state."""
 

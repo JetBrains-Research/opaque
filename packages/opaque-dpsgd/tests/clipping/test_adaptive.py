@@ -7,6 +7,7 @@ import torch
 
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
+from opaque.dpsgd.clipping.types import ClippingStats
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree
 
@@ -18,6 +19,17 @@ def _unwrap_clipped(value):
 
 class TestAdaptiveClippedGrad:
     """Tests for adaptive_clipped_grad function."""
+
+    def test_rejects_stats_with_per_example_auxiliary_output(self):
+        with pytest.raises(ValueError, match="return_stats"):
+            adaptive_clipped_grad(
+                lambda params, data: (params - data).square(),
+                initial_clipping_norm=1.0,
+                key=key(0),
+                batch_argnums=1,
+                return_aux=True,
+                return_stats=True,
+            )
 
     def test_basic_usage(self):
         """Test basic adaptive clipping workflow."""
@@ -49,6 +61,28 @@ class TestAdaptiveClippedGrad:
         # Check state updated
         assert isinstance(clip_state._next_clipping_norm, float)
         assert grads.shape == params.shape
+
+    def test_stats_report_nonfinite_gradients_before_adaptive_clipping(self):
+        def loss_fn(params, data):
+            return torch.sqrt(data - params)
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
+            batch_argnums=1,
+            return_stats=True,
+        )
+
+        (grads, stats), _ = grad_fn(
+            torch.tensor(0.0),
+            torch.tensor([1.0, -1.0]),
+            state=clip_state,
+        )
+
+        assert isinstance(stats, ClippingStats)
+        assert stats.all_finite is False
+        assert torch.isfinite(_unwrap_clipped(grads)).all()
 
     def test_threshold_increases_when_too_many_clipped(self):
         """Test that threshold increases when clipping rate > target quantile."""

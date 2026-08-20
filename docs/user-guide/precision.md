@@ -65,9 +65,17 @@ precision even though the forward is in `bfloat16`.
 the unscale as `pre_clipping_transform` so clipping sees the true magnitudes.
 
 ```python
-from opaque.precision import loss_scaler, all_finite
+from opaque.accounting import Accountant
+import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.dpsgd.clipping import clipped_grad
+from opaque.precision import loss_scaler
 
 scaler, scaler_state = loss_scaler()  # defaults match torch.amp.GradScaler
+accountant = Accountant()
+step_process = dpsgd_acc.poisson(
+    dpsgd_acc.gaussian(noise_multiplier),
+    sample_rate,
+)
 
 def per_example_loss(params, x, y):
     with torch.autocast(device_type="cuda", dtype=torch.float16):
@@ -80,20 +88,24 @@ grad_fn, clip_state = clipped_grad(
     batch_argnums=(1, 2),
     clipping_norm=C,
     pre_clipping_transform=lambda g: scaler.unscale_grads(g, scaler_state),
+    return_stats=True,
 )
 
 # in the step:
-grads, clip_state = grad_fn(params, x, y, state=clip_state)
-grads_finite = all_finite(grads)
-if grads_finite:
-    noisy, noise_state = noise_fn(grads, noise_state)
-    opt_state, params = optimizer.update(noisy, opt_state, params=params)
-    acc_state = accountant.advance(acc_state, ...)
-scaler_state = scaler.update(scaler_state, grads_finite)
+(grads, stats), clip_state = grad_fn(params, x, y, state=clip_state)
+noisy, noise_state = noise_fn(grads, noise_state)
+opt_state, params = optimizer.update(noisy, opt_state, params=params)
+accountant = accountant | step_process
+scaler_state = scaler.update(scaler_state, stats.all_finite)
 ```
 
-A skip is data-dependent and is not free privacy-wise. Unless separately
-analyzed, advance the accountant on a public fixed schedule.
+Every attempted step follows this path, including an empty Poisson batch and
+one whose unscaled gradients overflow. For an overflow, `stats.all_finite` is
+`False` before clipping replaces non-finite leaves
+with zero; the zero contribution is still noised, optimized, and composed into
+the accountant. The stats then back off the next loss scale. In distributed
+training, reduce `stats.all_finite` across ranks (logical AND) before calling
+`scaler.update` so every rank uses the same scale.
 
 ## Recipe: `float32` training (everything disabled)
 
@@ -151,7 +163,7 @@ copy of the summed output; pass `compute_dtype=torch.bfloat16` to trade it back.
 | `torch.amp.autocast(device_type, dtype=...)` | Used directly; nothing to wrap. The trainer enters it around the loss closure. |
 | `torch.amp.GradScaler` | `opaque.precision.loss_scaler` — functional analog. State is a frozen dataclass; defaults match `GradScaler` (`init_scale=2**16`, `growth_factor=2.0`, `backoff_factor=0.5`, `growth_interval=2000`). |
 | `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-patches` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
-| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and the unscale; the surrounding loop owns the skip decision because `optimizer.update(...)` is composed by the user, not by the scaler. |
+| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and unscale, while the surrounding loop always runs its noised optimizer and accountant steps; raw finiteness only backs off the private scale. |
 
 The structural gap — the scaler doesn't own the optimizer call — is forced by
 the functional path: per-example gradients are returned as a pytree by

@@ -87,14 +87,13 @@ def clipped_grad(
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
+    return_stats: bool = False,
     second_moment: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
     compute_dtype: torch.dtype | None = None,
-    _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
-    _return_stats: bool = False,
 ) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
@@ -163,6 +162,11 @@ def clipped_grad(
             the signature of loss_fn is `loss_fn(params, batch)`.
         return_aux: If True, the transformed function will also return a per-example
             aux dataclass containing loss values, gradient norms, and loss aux.
+        return_stats: If True, return aggregate clipping statistics. The returned
+            :class:`~opaque.api.engine.clipping.types.ClippingStats` includes
+            ``all_finite``, measured after ``pre_clipping_transform`` and before
+            clipping sanitizes NaN/Inf values. Cannot be combined with
+            ``return_aux``.
         pre_clipping_transform: An optional function to apply to the per-example
             gradients before clipping. The function should consume the gradient pytree
             for a single example and return a new pytree (possibly with different
@@ -188,6 +192,7 @@ def clipped_grad(
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
           Call signature: clipped_grads, new_state = clipped_grad_fn(..., state=clip_state)
           If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state
+          If ``return_stats=True``, returns ``(clipped_grads, stats), new_state``.
         - clip_state: Initial FixedClipState containing sensitivity information
 
         The grad_aux output (when requested) is a ClippedGradAux dataclass with fields:
@@ -196,8 +201,8 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
-    if return_aux and _return_stats:
-        raise ValueError("_return_stats cannot be combined with return_aux=True")
+    if return_aux and return_stats:
+        raise ValueError("return_stats cannot be combined with return_aux=True")
 
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)
@@ -223,7 +228,7 @@ def clipped_grad(
             )
         else:
             grads = clipped(zeros, max_norm=output_max_norm)
-        if return_aux or _force_grad_norms:
+        if return_aux:
             empty = torch.empty(0)
             grad_aux = ClippedGradAux(
                 loss_values=empty if return_aux else None,
@@ -234,6 +239,20 @@ def clipped_grad(
                 batch_size=0,
             )
             return (grads, grad_aux), state
+        if return_stats:
+            from opaque.api.engine.clipping._clipped_fun import ClippingStats
+
+            if isinstance(clipping_norm, PerGroup):
+                empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
+                empty_rates = dict.fromkeys(clipping_norm.values, 0.0)
+                stats = ClippingStats(
+                    num_clipped=empty_counts,
+                    clipping_rate=empty_rates,
+                    batch_size=0,
+                )
+            else:
+                stats = ClippingStats(num_clipped=0.0, clipping_rate=0.0, batch_size=0)
+            return (grads, stats), state
         return grads, state
 
     # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
@@ -245,7 +264,7 @@ def clipped_grad(
         with torch.no_grad() if values_only else contextlib.nullcontext():
             grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
         result = pre_clipping_transform(grad)
-        if return_aux or _force_grad_norms:
+        if return_aux:
             # Return dict aux from per-example grad_fn; clipping-related norms are
             # produced by clipped_fun to avoid duplicating norm computation logic.
             # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
@@ -259,18 +278,31 @@ def clipped_grad(
 
     clipped_grad_fn, clip_state = clipped_fun(
         grad_fn,
-        has_aux=return_aux or _force_grad_norms,
+        has_aux=return_aux,
         batch_argnums=batch_argnums,
         clipping_norm=clipping_norm,
         normalize_by=normalize_by,
         return_aux=return_aux,
+        return_stats=return_stats,
         second_moment=second_moment,
         microbatch_size=microbatch_size,
         dtype=dtype,
         compute_dtype=compute_dtype,
         _scale_fn=_scale_fn,
-        _return_stats=_return_stats,
     )
+
+    if return_stats:
+
+        def grad_fn_wrapper(*args, state, **kwargs):
+            if batch_size_from_args(args, batch_argnums_tuple) == 0:
+                return _empty_batch_response(args, state)
+            with record_function("opaque::clipped_grad"):
+                (clipped_grads, stats), returned_state = clipped_grad_fn(
+                    *args, state=state, **kwargs
+                )
+            return (clipped_grads, stats), returned_state
+
+        return grad_fn_wrapper, clip_state
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
     # Wrap the result to convert ClippedFunAux to ClippedGradAux
@@ -282,45 +314,6 @@ def clipped_grad(
 
             with record_function("opaque::clipped_grad"):
                 (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
-            if _force_grad_norms:
-                if isinstance(result, tuple):
-                    stats = None
-                    if _return_stats:
-                        if len(result) == 3:
-                            clipped_grads, aux, stats = result
-                        else:
-                            clipped_grads, stats = result
-                            aux = None
-                    else:
-                        clipped_grads, aux = result
-                    grad_aux = ClippedGradAux(
-                        loss_values=None,
-                        grad_norms=(aux.norms if aux is not None else None),
-                        clipped_grad_norms=(
-                            aux.clipped_norms if aux is not None else None
-                        ),
-                        loss_aux=None,
-                        clipping_rate=(
-                            aux.clipping_rate
-                            if aux is not None
-                            else (
-                                stats.clipping_rate
-                                if stats is not None
-                                and isinstance(stats.clipping_rate, float)
-                                else None
-                            )
-                        ),
-                        batch_size=(
-                            aux.batch_size
-                            if aux is not None
-                            else (stats.batch_size if stats is not None else 0)
-                        ),
-                        group_norms=(aux.group_norms if aux is not None else None),
-                    )
-                    if _return_stats:
-                        return (clipped_grads, grad_aux, stats), returned_state
-                    return (clipped_grads, grad_aux), returned_state
-                return result, returned_state
             return result, returned_state
 
         return grad_fn_wrapper, clip_state
