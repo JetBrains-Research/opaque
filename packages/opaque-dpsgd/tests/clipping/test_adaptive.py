@@ -7,6 +7,7 @@ import torch
 
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
+from opaque.dpsgd.clipping.types import ClippingStats
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree
 
@@ -68,6 +69,7 @@ class TestAdaptiveClippedGrad:
             state=clip_state,
         )
 
+        assert isinstance(stats, ClippingStats)
         assert stats.all_finite is False
         assert torch.isfinite(_unwrap_clipped(grads)).all()
 

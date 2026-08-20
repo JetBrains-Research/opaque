@@ -460,6 +460,22 @@ class TestAutoClippedFun:
         torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
         assert new_state == state
 
+    def test_return_stats_reports_pre_scaling_finiteness(self):
+        fn, state = auto_clipped_fun(
+            lambda x: x,
+            batch_argnums=0,
+            R=1.0,
+            return_stats=True,
+        )
+
+        (result, stats), _ = fn(
+            torch.tensor([[1.0], [float("nan")]]),
+            state=state,
+        )
+
+        assert stats.all_finite is False
+        assert torch.isfinite(_unwrap_clipped(result)).all()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
