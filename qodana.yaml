@@ -40,6 +40,7 @@ profile:
       ignore:
         - "scope#$Opaque_DynamicFrameworkSources"
         - "scope#$Opaque_FunctionalRuntimeSources"
+        - "scope#$Opaque_LazyModuleFacades"
     - inspection: PyArgumentListInspection
       enabled: true
       ignore:

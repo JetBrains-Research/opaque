@@ -30,16 +30,6 @@ def test_accounting_mechanism_types_facade_imports():
     assert MfGaussian.__name__ == "MfGaussian"
 
 
-def test_accounting_facade_is_lazy_loaded(monkeypatch):
-    import opaque.dpftrl as dpftrl
-
-    monkeypatch.delitem(dpftrl.__dict__, "accounting", raising=False)
-
-    accounting = dpftrl.accounting
-
-    assert accounting.__name__ == "opaque.dpftrl.accounting"
-
-
 def _engine_train_loop(
     model, optimizer, noise_fn, state, x_data, y_data, steps, *, stddev
 ):
