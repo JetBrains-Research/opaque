@@ -7,6 +7,10 @@ import argparse
 import json
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
@@ -69,16 +73,22 @@ def _package_entries() -> list[dict[str, object]]:
     return entries
 
 
-def _outputs() -> dict[str, object]:
-    packages = _package_entries()
+def _test_shards(
+    packages: list[dict[str, object]],
+    include: Callable[[dict[str, object]], bool],
+) -> list[dict[str, object]]:
+    """Group selected packages by their stable timing-balanced test shards."""
+    selected = [package for package in packages if include(package)]
     packages_by_dist = {package["dist"]: package for package in packages}
     grouped_dists: set[str] = set()
     test_shards: list[dict[str, object]] = []
     for name, label, dists in _TEST_SHARD_GROUPS:
         grouped_packages = [
-            packages_by_dist[dist] for dist in dists if dist in packages_by_dist
+            packages_by_dist[dist]
+            for dist in dists
+            if dist in packages_by_dist and packages_by_dist[dist] in selected
         ]
-        if not grouped_packages:
+        if len(grouped_packages) < 2:
             continue
         grouped_dists.update(package["dist"] for package in grouped_packages)
         test_shards.append(
@@ -95,42 +105,37 @@ def _outputs() -> dict[str, object]:
             "name": package["name"],
             "paths": [package["path"]],
         }
-        for package in packages
+        for package in selected
         if package["dist"] not in grouped_dists
     )
+    return test_shards
+
+
+def _outputs() -> dict[str, object]:
+    packages = _package_entries()
+    test_shards = _test_shards(packages, lambda _: True)
     test_shards.append(
-        {"label": "integration", "name": "integration", "paths": ["tests"]}
+        {"label": "Integration", "name": "integration", "paths": ["tests"]}
+    )
+    cuda_test_shards = _test_shards(packages, lambda package: package["cuda_tests"])
+    distributed_test_shards = _test_shards(
+        packages,
+        lambda package: package["distributed_tests"],
     )
     return {
         "test_shards": test_shards,
         "cuda_test_shards": [
+            *cuda_test_shards,
             *(
-                {
-                    "label": package["dist"],
-                    "name": package["name"],
-                    "paths": [package["path"]],
-                }
-                for package in packages
-                if package["cuda_tests"]
-            ),
-            *(
-                [{"label": "integration", "name": "integration", "paths": ["tests"]}]
+                [{"label": "Integration", "name": "integration", "paths": ["tests"]}]
                 if _has_pytest_marker(REPO_ROOT / "tests", "cuda")
                 else []
             ),
         ],
         "distributed_test_shards": [
+            *distributed_test_shards,
             *(
-                {
-                    "label": package["dist"],
-                    "name": package["name"],
-                    "paths": [package["path"]],
-                }
-                for package in packages
-                if package["distributed_tests"]
-            ),
-            *(
-                [{"label": "integration", "name": "integration", "paths": ["tests"]}]
+                [{"label": "Integration", "name": "integration", "paths": ["tests"]}]
                 if _has_pytest_marker(REPO_ROOT / "tests", "distributed")
                 else []
             ),

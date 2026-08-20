@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       python-build-packages:
-        description: JSON array of pure-Python package matrix entries.
+        description: JSON array of pure-Python packages to build.
         required: true
         type: string
       retention-days:
@@ -32,12 +32,8 @@ on:
 
 jobs:
   build-python-wheels:
-    name: ${{ matrix.package.dist }}
+    name: Python packages
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(inputs.python-build-packages) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -55,18 +51,33 @@ jobs:
       - name: Preflight build version
         run: bash .github/scripts/set_build_versions.sh "${{ inputs.version }}"
 
-      - name: Build wheel
-        run: uv build "${{ matrix.package.path }}" --wheel --out-dir dist
+      - name: Build wheels
+        env:
+          PYTHON_BUILD_PACKAGES: ${{ inputs.python-build-packages }}
+        run: |
+          while IFS=$'\t' read -r dist path; do
+            echo "::group::Build $dist"
+            uv build "$path" --wheel --out-dir dist
+            echo "::endgroup::"
+          done < <(
+            python3 -c '
+            import json
+            import os
+
+            for package in json.loads(os.environ["PYTHON_BUILD_PACKAGES"]):
+                print(package["dist"], package["path"], sep="\t")
+            '
+          )
 
       - name: Validate wheel metadata
         run: >-
           uv run --isolated --no-project --with packaging==25.0
           python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
-      - name: Upload wheel
+      - name: Upload wheels
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ inputs.artifact-prefix }}-${{ matrix.package.dist }}
+          name: ${{ inputs.artifact-prefix }}-python
           path: dist/*.whl
           retention-days: ${{ inputs.retention-days }}
 
