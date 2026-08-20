@@ -11,6 +11,29 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
 
+_TEST_SHARD_GROUPS = (
+    (
+        "foundation",
+        "Foundation packages",
+        ("opaque-base", "opaque-accounting", "opaque-auditing"),
+    ),
+    (
+        "training",
+        "Training stack",
+        (
+            "opaque-engine",
+            "opaque-optimizers",
+            "opaque-dpsgd",
+            "opaque-dpftrl",
+        ),
+    ),
+    (
+        "integrations",
+        "Optional integrations",
+        ("opaque-alignment", "opaque-patches", "opaque-transformers"),
+    ),
+)
+
 
 def _has_pytest_marker(path: Path, marker: str) -> bool:
     needle = f"pytest.mark.{marker}"
@@ -42,36 +65,38 @@ def _package_entries() -> list[dict[str, object]]:
 
 def _outputs() -> dict[str, object]:
     packages = _package_entries()
-    cpu_only_packages = [
-        package
+    packages_by_dist = {package["dist"]: package for package in packages}
+    grouped_dists: set[str] = set()
+    test_shards: list[dict[str, object]] = []
+    for name, label, dists in _TEST_SHARD_GROUPS:
+        grouped_packages = [
+            packages_by_dist[dist] for dist in dists if dist in packages_by_dist
+        ]
+        if not grouped_packages:
+            continue
+        grouped_dists.update(package["dist"] for package in grouped_packages)
+        test_shards.append(
+            {
+                "label": label,
+                "name": name,
+                "paths": " ".join(package["path"] for package in grouped_packages),
+            }
+        )
+
+    test_shards.extend(
+        {
+            "label": package["dist"],
+            "name": package["name"],
+            "paths": package["path"],
+        }
         for package in packages
-        if not package["cuda_tests"] and not package["distributed_tests"]
-    ]
-    cpu_only_paths = " ".join(package["path"] for package in cpu_only_packages)
+        if package["dist"] not in grouped_dists
+    )
+    test_shards.append(
+        {"label": "integration", "name": "integration", "paths": "tests"}
+    )
     return {
-        "test_shards": [
-            *(
-                [
-                    {
-                        "label": "CPU-only packages",
-                        "name": "cpu-only",
-                        "paths": cpu_only_paths,
-                    }
-                ]
-                if cpu_only_packages
-                else []
-            ),
-            *(
-                {
-                    "label": package["dist"],
-                    "name": package["name"],
-                    "paths": package["path"],
-                }
-                for package in packages
-                if package not in cpu_only_packages
-            ),
-            {"label": "integration", "name": "integration", "paths": "tests"},
-        ],
+        "test_shards": test_shards,
         "cuda_test_shards": [
             *(
                 {
