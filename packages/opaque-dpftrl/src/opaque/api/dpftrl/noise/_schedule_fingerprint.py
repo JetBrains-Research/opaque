@@ -1,7 +1,8 @@
-"""Materialized learning-rate schedule identity for strategy caches."""
+"""Materialized learning-rate schedules and complete strategy cache keys."""
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -17,11 +18,26 @@ def materialize_schedule(
     return tuple(float(lr_schedule(step)) for step in range(n_steps))
 
 
-def strategy_schedule_fingerprint(
+def strategy_cache_key(
     strategy: Any, n_steps: int
-) -> tuple[type[Any], tuple[float, ...] | None]:
-    """Return the privacy-material schedule identity for a strategy query."""
+) -> tuple[type[Any], tuple[object, ...]]:
+    """Return every strategy recipe input that affects an ``n_steps`` query."""
+    if not dataclasses.is_dataclass(strategy):
+        raise TypeError(
+            "strategy_cache_key() requires a dataclass strategy, got "
+            f"{type(strategy).__name__}."
+        )
     return (
         type(strategy),
-        materialize_schedule(getattr(strategy, "lr_schedule", None), n_steps),
+        tuple(
+            (
+                field.name,
+                (
+                    materialize_schedule(getattr(strategy, field.name), n_steps)
+                    if field.name == "lr_schedule"
+                    else getattr(strategy, field.name)
+                ),
+            )
+            for field in dataclasses.fields(strategy)
+        ),
     )

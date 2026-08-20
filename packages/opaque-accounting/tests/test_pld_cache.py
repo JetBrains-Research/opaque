@@ -19,7 +19,7 @@ class _CachedProcess:
     def __init__(self) -> None:
         self.calls = 0
 
-    def _pld_cache_fingerprint(self) -> str:
+    def _pld_cache_key(self) -> str:
         return "cached-process"
 
     @pld_cache(maxsize=2)
@@ -34,7 +34,7 @@ class _CachedHorizonProcess:
     def __init__(self) -> None:
         self.calls = 0
 
-    def _pld_cache_fingerprint(self, *, n_steps: int) -> tuple[str, int]:
+    def _pld_cache_key(self, *, n_steps: int) -> tuple[str, int]:
         return ("cached-horizon-process", n_steps)
 
     @horizon_pld_cache(maxsize=2)
@@ -47,7 +47,7 @@ class _UnboundedCachedProcess:
     def __init__(self) -> None:
         self.calls = 0
 
-    def _pld_cache_fingerprint(self) -> str:
+    def _pld_cache_key(self) -> str:
         return "unbounded-cached-process"
 
     @pld_cache(maxsize=None)

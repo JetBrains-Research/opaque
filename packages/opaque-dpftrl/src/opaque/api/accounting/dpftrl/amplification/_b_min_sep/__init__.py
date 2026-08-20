@@ -24,7 +24,7 @@ from opaque.api.accounting.core._pld_cache import horizon_pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
-from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
 
 from ._transcript_cache import with_handle as _with_transcript_handle
 
@@ -96,15 +96,13 @@ class BMinSep(DpHorizonProcess):
         # callers (runtime sampler builders) never re-derive it.
         return participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
             "BMinSep",
             self.inner.noise_multiplier,
             self.n_steps,
             self.p0,
-            strategy_schedule_fingerprint(self.inner.strategy, self.n_steps),
+            strategy_cache_key(self.inner.strategy, self.n_steps),
         )
 
     @horizon_pld_cache(maxsize=8)

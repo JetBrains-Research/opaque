@@ -182,7 +182,7 @@ def pld_cache(*, maxsize: int | None):
             )
             return cache.get_or_compute(
                 self,
-                (config, self._pld_cache_fingerprint(), None),
+                (config, self._pld_cache_key(), None),
                 lambda: _compute_pld(method, self, config),
             )
 
@@ -232,7 +232,7 @@ def horizon_pld_cache(*, maxsize: int | None):
             )
             return cache.get_or_compute(
                 self,
-                (config, self._pld_cache_fingerprint(n_steps=n_steps), n_steps),
+                (config, self._pld_cache_key(n_steps=n_steps), n_steps),
                 lambda: _compute_pld(method, self, config, n_steps=n_steps),
             )
 

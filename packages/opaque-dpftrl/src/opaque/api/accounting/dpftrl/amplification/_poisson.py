@@ -29,7 +29,7 @@ from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
-from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import Pld
@@ -128,9 +128,7 @@ class CyclicPoisson(DpHorizonProcess):
                     "(truncated_batch_size=None) with BandMfStrategy."
                 )
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
             "CyclicPoisson",
             self.inner.noise_multiplier,
@@ -138,7 +136,7 @@ class CyclicPoisson(DpHorizonProcess):
             self.n_steps,
             self.truncated_batch_size,
             self.dataset_size,
-            strategy_schedule_fingerprint(self.inner.strategy, self.n_steps),
+            strategy_cache_key(self.inner.strategy, self.n_steps),
         )
 
     @horizon_pld_cache(maxsize=8)

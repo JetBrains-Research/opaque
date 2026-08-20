@@ -62,29 +62,32 @@ __all__ = ["DpProcess", "Pld"]
 _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 
-def _freeze_cache_fingerprint(value: object) -> Hashable:
+def _freeze_cache_key(value: object, *, n_steps: int | None) -> Hashable:
     """Return a process-free, hashable representation of a dataclass value."""
     if isinstance(value, DpProcess):
-        return value._pld_cache_fingerprint()
+        return value._pld_cache_key(n_steps=n_steps)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return (
             type(value),
             tuple(
-                _freeze_cache_fingerprint(getattr(value, field.name))
+                _freeze_cache_key(getattr(value, field.name), n_steps=n_steps)
                 for field in dataclasses.fields(value)
             ),
         )
     if isinstance(value, tuple):
-        return tuple(_freeze_cache_fingerprint(item) for item in value)
+        return tuple(_freeze_cache_key(item, n_steps=n_steps) for item in value)
     if isinstance(value, list):
-        return tuple(_freeze_cache_fingerprint(item) for item in value)
+        return tuple(_freeze_cache_key(item, n_steps=n_steps) for item in value)
     if isinstance(value, dict):
         return frozenset(
-            (_freeze_cache_fingerprint(key), _freeze_cache_fingerprint(item))
+            (
+                _freeze_cache_key(key, n_steps=n_steps),
+                _freeze_cache_key(item, n_steps=n_steps),
+            )
             for key, item in value.items()
         )
     if isinstance(value, set):
-        return frozenset(_freeze_cache_fingerprint(item) for item in value)
+        return frozenset(_freeze_cache_key(item, n_steps=n_steps) for item in value)
     return value
 
 
@@ -343,18 +346,17 @@ class DpProcess(ABC):
         """
         return (self, 1)
 
-    def _pld_cache_fingerprint(self, *, n_steps: int | None = None) -> Hashable:
-        """Return privacy-material state omitted from structural equality.
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> Hashable:
+        """Return every process-free input that can affect the requested PLD.
 
         Ordinary frozen process dataclasses use a process-free structural
-        fingerprint. Processes that contain callables or defer mechanism
-        resolution override this to add a concrete, hashable fingerprint of
-        the values used for the requested PLD.
+        key. Processes that contain callables or defer mechanism resolution
+        override this with an equally complete key of their resolved inputs.
         """
         return (
             type(self),
             tuple(
-                _freeze_cache_fingerprint(getattr(self, field.name))
+                _freeze_cache_key(getattr(self, field.name), n_steps=n_steps)
                 for field in dataclasses.fields(self)
             ),
         )
