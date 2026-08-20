@@ -1,0 +1,35 @@
+name: Upload Python coverage
+description: Write, upload, and report one explicit Python test group's coverage.
+
+inputs:
+  artifact-name:
+    description: Coverage artifact name.
+    required: true
+  coverage-file:
+    description: XML coverage report path.
+    required: true
+  codecov-flag:
+    description: Codecov flag for this test group.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write coverage report
+      shell: bash
+      run: uv run coverage xml -o "${{ inputs.coverage-file }}"
+
+    - name: Upload coverage
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.coverage-file }}
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Upload Codecov report
+      uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+      with:
+        files: ${{ inputs.coverage-file }}
+        flags: ${{ inputs.codecov-flag }}
+        fail_ci_if_error: false

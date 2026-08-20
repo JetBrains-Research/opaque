@@ -55,62 +55,16 @@ on:
         required: true
         type: string
       timeout-minutes:
-        description: Maximum runtime for the job.
+        description: Maximum runtime for each test group.
         required: false
         default: 360
         type: number
 
 jobs:
-  test:
-    name: ${{ inputs.environment-name }}
+  validate-suite:
+    name: Validate suite
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
-    env:
-      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
-      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
-      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}
-      PYTEST_MARKER: ${{ inputs.pytest-marker }}
-      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
-      REPORT_DURATIONS: ${{ inputs.report-durations }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.checkout-ref || github.sha }}
-
-      - uses: ./.github/actions/setup-rust
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: ${{ inputs.python-version }}
-
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: false
-
-      - name: Install dependencies
-        env:
-          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
-        shell: bash
-        run: |
-          case "$DEPENDENCY_SELECTION" in
-            locked)
-              uv sync --locked --group dev --all-packages --extra all
-              ;;
-            minimum)
-              uv sync --upgrade --resolution lowest-direct \
-                --group dev --all-packages --extra all
-              ;;
-            latest)
-              uv sync --upgrade --resolution highest \
-                --group dev --all-packages --extra all
-              ;;
-            *)
-              echo "::error::Unknown dependency selection: $DEPENDENCY_SELECTION"
-              exit 1
-              ;;
-          esac
-
       - name: Validate test suite
         env:
           TEST_SUITE: ${{ inputs.test-suite }}
@@ -123,159 +77,222 @@ jobs:
               ;;
           esac
 
-      - name: All - opaque-base
-        if: inputs.test-suite == 'all'
+  foundation:
+    name: Foundation
+    if: inputs.test-suite == 'all'
+    needs: [validate-suite]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-foundation
+      PYTEST_MARKER: ${{ inputs.pytest-marker }}
+      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+      REPORT_DURATIONS: ${{ inputs.report-durations }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+      - uses: ./.github/actions/setup-rust
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - name: Install dependencies
+        env:
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        run: bash .github/scripts/setup_python_test_environment.sh
+      - name: opaque-base
         env:
           TEST_PATH: packages/opaque-base
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-accounting
-        if: inputs.test-suite == 'all'
+      - name: opaque-accounting
         env:
           TEST_PATH: packages/opaque-accounting
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-auditing
-        if: inputs.test-suite == 'all'
+      - name: opaque-auditing
         env:
           TEST_PATH: packages/opaque-auditing
         run: bash .github/scripts/run_python_test_package.sh
+      - uses: ./.github/actions/upload-python-coverage
+        with:
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-foundation
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-foundation.xml
+          codecov-flag: ${{ inputs.environment-name }}-foundation
 
-      - name: All - opaque-engine
-        if: inputs.test-suite == 'all'
+  dp-mechanisms:
+    name: DP mechanisms
+    needs: [validate-suite]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-dp-mechanisms
+      PYTEST_MARKER: ${{ inputs.pytest-marker }}
+      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+      REPORT_DURATIONS: ${{ inputs.report-durations }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+      - uses: ./.github/actions/setup-rust
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - name: Install dependencies
+        env:
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        run: bash .github/scripts/setup_python_test_environment.sh
+      - name: opaque-dpsgd
+        env:
+          TEST_PATH: packages/opaque-dpsgd
+        run: bash .github/scripts/run_python_test_package.sh
+      - name: opaque-dpftrl
+        env:
+          TEST_PATH: packages/opaque-dpftrl
+        run: bash .github/scripts/run_python_test_package.sh
+      - uses: ./.github/actions/upload-python-coverage
+        with:
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-dp-mechanisms
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-dp-mechanisms.xml
+          codecov-flag: ${{ inputs.environment-name }}-dp-mechanisms
+
+  runtime-and-patches:
+    name: Runtime and patches
+    needs: [validate-suite]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-runtime-and-patches
+      PYTEST_MARKER: ${{ inputs.pytest-marker }}
+      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+      REPORT_DURATIONS: ${{ inputs.report-durations }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+      - uses: ./.github/actions/setup-rust
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - name: Install dependencies
+        env:
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        run: bash .github/scripts/setup_python_test_environment.sh
+      - name: opaque-engine
         env:
           TEST_PATH: packages/opaque-engine
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-optimizers
-        if: inputs.test-suite == 'all'
+      - name: opaque-optimizers
+        if: inputs.test-suite != 'cuda'
         env:
           TEST_PATH: packages/opaque-optimizers
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-dpsgd
-        if: inputs.test-suite == 'all'
-        env:
-          TEST_PATH: packages/opaque-dpsgd
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-dpftrl
-        if: inputs.test-suite == 'all'
-        env:
-          TEST_PATH: packages/opaque-dpftrl
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-alignment
-        if: inputs.test-suite == 'all'
-        env:
-          TEST_PATH: packages/opaque-alignment
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - opaque-patches
-        if: inputs.test-suite == 'all'
+      - name: opaque-patches
+        if: inputs.test-suite != 'distributed'
         env:
           TEST_PATH: packages/opaque-patches
         run: bash .github/scripts/run_python_test_package.sh
+      - uses: ./.github/actions/upload-python-coverage
+        with:
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-runtime-and-patches
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-runtime-and-patches.xml
+          codecov-flag: ${{ inputs.environment-name }}-runtime-and-patches
 
-      - name: All - opaque-transformers
-        if: inputs.test-suite == 'all'
+  integrations:
+    name: Integrations
+    if: inputs.test-suite != 'distributed' || !contains(inputs.pytest-marker, 'not slow')
+    needs: [validate-suite]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-integrations
+      PYTEST_MARKER: ${{ inputs.pytest-marker }}
+      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+      REPORT_DURATIONS: ${{ inputs.report-durations }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+      - uses: ./.github/actions/setup-rust
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - name: Install dependencies
         env:
-          TEST_PATH: packages/opaque-transformers
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: All - Integration
-        if: inputs.test-suite == 'all'
-        env:
-          TEST_PATH: tests
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - opaque-dpsgd
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: packages/opaque-dpsgd
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - opaque-dpftrl
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: packages/opaque-dpftrl
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - opaque-engine
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: packages/opaque-engine
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - opaque-patches
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: packages/opaque-patches
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - opaque-transformers
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: packages/opaque-transformers
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: CUDA - Integration
-        if: inputs.test-suite == 'cuda'
-        env:
-          TEST_PATH: tests
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-dpsgd
-        if: inputs.test-suite == 'distributed'
-        env:
-          TEST_PATH: packages/opaque-dpsgd
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-dpftrl
-        if: inputs.test-suite == 'distributed'
-        env:
-          TEST_PATH: packages/opaque-dpftrl
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-engine
-        if: inputs.test-suite == 'distributed'
-        env:
-          TEST_PATH: packages/opaque-engine
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-optimizers
-        if: inputs.test-suite == 'distributed'
-        env:
-          TEST_PATH: packages/opaque-optimizers
-        run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-alignment
-        if: inputs.test-suite == 'distributed'
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        run: bash .github/scripts/setup_python_test_environment.sh
+      - name: opaque-alignment
+        if: inputs.test-suite != 'cuda'
         env:
           TEST_PATH: packages/opaque-alignment
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Distributed - opaque-transformers
-        if: inputs.test-suite == 'distributed'
+      - name: opaque-transformers
         env:
           TEST_PATH: packages/opaque-transformers
         run: bash .github/scripts/run_python_test_package.sh
-
-      - name: Write coverage report
-        run: >-
-          uv run coverage xml
-          -o coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}.xml
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: ./.github/actions/upload-python-coverage
         with:
-          name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}
-          path: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}.xml
-          if-no-files-found: error
-          retention-days: 1
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integrations
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integrations.xml
+          codecov-flag: ${{ inputs.environment-name }}-integrations
 
-      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+  integration-tests:
+    name: Integration tests
+    if: inputs.test-suite != 'distributed'
+    needs: [validate-suite]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
+      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-integration
+      PYTEST_MARKER: ${{ inputs.pytest-marker }}
+      PYTEST_XDIST: ${{ inputs.pytest-xdist }}
+      REPORT_DURATIONS: ${{ inputs.report-durations }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          files: ./coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}.xml
-          flags: ${{ inputs.environment-name }}
-          fail_ci_if_error: false
+          fetch-depth: 0
+          ref: ${{ inputs.checkout-ref || github.sha }}
+      - uses: ./.github/actions/setup-rust
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - name: Install dependencies
+        env:
+          DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
+        run: bash .github/scripts/setup_python_test_environment.sh
+      - name: Integration
+        env:
+          TEST_PATH: tests
+        run: bash .github/scripts/run_python_test_package.sh
+      - uses: ./.github/actions/upload-python-coverage
+        with:
+          artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integration
+          coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integration.xml
+          codecov-flag: ${{ inputs.environment-name }}-integration
