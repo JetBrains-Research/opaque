@@ -20,6 +20,17 @@ def _unwrap_clipped(value):
 class TestAdaptiveClippedGrad:
     """Tests for adaptive_clipped_grad function."""
 
+    def test_rejects_stats_with_per_example_auxiliary_output(self):
+        with pytest.raises(ValueError, match="return_stats"):
+            adaptive_clipped_grad(
+                lambda params, data: (params - data).square(),
+                initial_clipping_norm=1.0,
+                key=key(0),
+                batch_argnums=1,
+                return_aux=True,
+                return_stats=True,
+            )
+
     def test_basic_usage(self):
         """Test basic adaptive clipping workflow."""
 
