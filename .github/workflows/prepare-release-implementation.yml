@@ -521,6 +521,12 @@ jobs:
       - release-source-validation
       - build-distributions
       - validate-distributions
+    if: >-
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.release-source-validation.result == 'success' &&
+      needs.build-distributions.result == 'success' &&
+      needs.validate-distributions.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -577,7 +583,11 @@ jobs:
   create-draft:
     name: Create complete draft Release
     needs: [plan, assemble-candidate]
-    if: ${{ !inputs.dry_run }}
+    if: >-
+      always() &&
+      !inputs.dry_run &&
+      needs.plan.result == 'success' &&
+      needs.assemble-candidate.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -770,7 +780,11 @@ jobs:
   dry-run-summary:
     name: Candidate validation complete
     needs: [plan, assemble-candidate]
-    if: inputs.dry_run
+    if: >-
+      always() &&
+      inputs.dry_run &&
+      needs.plan.result == 'success' &&
+      needs.assemble-candidate.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Write dry-run summary
