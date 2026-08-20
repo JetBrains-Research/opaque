@@ -10,7 +10,8 @@
 
 Mechanism constructors store parameters as frozen-dataclass fields.
 The PLD is computed on demand via the ``pld()`` method, which is automatically
-cached via ``@lru_cache`` on each implementation.  Use
+cached by its resolved discretization configuration and process-free mechanism
+inputs. Use
 :func:`~opaque.accounting.composition._cached` to increase cache size or as
 a merge barrier.
 
@@ -110,8 +111,8 @@ class DpProcess(ABC):
 
     Abstract base class for all mechanisms.  Subclasses implement
     :meth:`pld` to compute the Privacy Loss Distribution on demand.
-    Results are automatically cached via ``@lru_cache`` on each
-    implementation.
+    Results are automatically cached by the resolved discretization
+    configuration and process-free mechanism inputs.
 
     Supports:
 
@@ -153,9 +154,10 @@ class DpProcess(ABC):
     ) -> Pld:
         """Compute the Privacy Loss Distribution.
 
-        Results are automatically cached via ``@lru_cache`` on each
-        implementation.  Use :func:`~opaque.accounting.composition._cached`
-        to increase cache size or as a merge barrier.
+        Results are automatically cached by the resolved discretization
+        configuration and process-free mechanism inputs. Use
+        :func:`~opaque.accounting.composition._cached` to increase cache size
+        or as a merge barrier.
 
         Query-time overrides are broadcast to every node of a composed
         process, so a single ``seed`` is shared by all Monte-Carlo nodes —
