@@ -50,7 +50,7 @@ from opaque.api.dpftrl.noise._blt import BltStrategy
 from opaque.api.dpftrl.noise._bsr import BsrStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
-from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import Pld
@@ -111,9 +111,7 @@ class BallsInBins(DpHorizonProcess):
         # rounds K up to the next epoch.
         return self.num_bins
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         prefix_steps = self.n_steps if n_steps is None else n_steps
         if isinstance(self.inner.strategy, BltStrategy):
             # BLT prefix PLDs use coefficients optimized for the full horizon.
@@ -125,7 +123,10 @@ class BallsInBins(DpHorizonProcess):
             )
         return (
             "BallsInBins",
-            strategy_schedule_fingerprint(self.inner.strategy, prefix_steps),
+            self.inner.noise_multiplier,
+            self.num_bins,
+            self.n_steps,
+            strategy_cache_key(self.inner.strategy, prefix_steps),
         )
 
     @horizon_pld_cache(maxsize=8)

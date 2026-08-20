@@ -1985,7 +1985,8 @@ def main():
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                # Cache PLD before eval so it serves as opaque boundary
+                # Independent DP-SGD releases compose across this checkpoint, so
+                # caching the evaluated prefix avoids recomputing it at later evals.
                 accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
 

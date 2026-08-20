@@ -40,12 +40,10 @@ class Repeated(DpProcess):
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
-        from ._iter_fingerprint import iter_fingerprint
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+        from ._iter_cache_key import iter_cache_key
 
-        return iter_fingerprint(self, n_steps=n_steps)
+        return iter_cache_key(self, n_steps=n_steps)
 
     @pld_cache(maxsize=8)
     def pld(

@@ -30,7 +30,7 @@ from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
-from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_schedule_fingerprint
+from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -62,12 +62,16 @@ class MfGaussian(DpProcess):
             else self.n_steps
         )
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
             "MfGaussian",
-            strategy_schedule_fingerprint(self.strategy, self.n_steps),
+            self.noise_multiplier,
+            self.n_steps,
+            self.min_sep,
+            self.max_participations,
+            strategy_cache_key(
+                self.strategy, self.n_steps if n_steps is None else n_steps
+            ),
         )
 
     @pld_cache(maxsize=8)

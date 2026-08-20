@@ -1,4 +1,4 @@
-"""Iterative PLD cache fingerprinting for composition trees."""
+"""Iterative PLD cache key construction for composition trees."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ if TYPE_CHECKING:
     from opaque.api.accounting.core._base import DpProcess
 
 
-def iter_fingerprint(
+def iter_cache_key(
     process: DpProcess, *, n_steps: int | None = None
 ) -> tuple[object, ...]:
-    """Return a flat, unambiguous cache fingerprint without recursive calls."""
+    """Return a flat, unambiguous cache key without recursive calls."""
     from ._cached import CachedProcess
     from ._composed import Composed
     from ._repeated import Repeated
@@ -33,5 +33,5 @@ def iter_fingerprint(
             parts.append("CachedProcess")
             stack.append((node.inner, node_steps))
             continue
-        parts.append(node._pld_cache_fingerprint(n_steps=node_steps))
+        parts.append(node._pld_cache_key(n_steps=node_steps))
     return tuple(parts)

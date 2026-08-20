@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
 
 from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import pld_cache
+
+from ._per_step import PerStep
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
@@ -24,11 +28,6 @@ class CachedProcess(DpProcess):
     :meth:`_leaf_and_count` returns ``(self, 1)``, preventing the
     optimizer from looking through the cache boundary. Cached wrappers
     can still merge via structural equality of their inner processes.
-
-    :meth:`repeated_pld` is a transparent relay to ``inner.repeated_pld``
-    so wrappers around processes that override K-fold behaviour
-    (notably DP-FTRL ``PerStep``) keep their strategy-aware horizon PLD
-    under ``cached(step) * K``.
 
     Since every :meth:`DpProcess.pld` already caches, this wrapper's
     primary purpose is the merge barrier rather than caching (though it
@@ -59,12 +58,10 @@ class CachedProcess(DpProcess):
 
         return iter_repr(self)
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
-        from ._iter_fingerprint import iter_fingerprint
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+        from ._iter_cache_key import iter_cache_key
 
-        return iter_fingerprint(self, n_steps=n_steps)
+        return iter_cache_key(self, n_steps=n_steps)
 
     @pld_cache(maxsize=16)
     def pld(
@@ -97,11 +94,6 @@ class CachedProcess(DpProcess):
         num_mc_samples: int | None = None,
         seed: int | None = None,
     ) -> Pld:
-        # Transparent relay: CachedProcess is a merge barrier / cache, not a
-        # privacy transform.  Without this, Repeated(CachedProcess(inner), K)
-        # falls through to DpProcess.repeated_pld = self.pld().self_compose(K)
-        # and discards any override on *inner* (notably PerStep, whose K-step
-        # PLD is not the K-fold composition of a single-step PLD).
         return self.inner.repeated_pld(
             count,
             discretization=discretization,
@@ -116,7 +108,7 @@ class CachedProcess(DpProcess):
 @overload
 def cached(process: Accountant) -> Accountant: ...
 @overload
-def cached(process: DpProcess) -> CachedProcess: ...
+def cached(process: DpProcess) -> DpProcess: ...
 
 
 def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
@@ -135,6 +127,8 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     returns a new Accountant whose inner process is cached.  Call before
     :meth:`epsilon_at` so that the PLD is populated on the first query
     and reused as an opaque boundary for subsequent composition.
+
+    A frozen whole-horizon prefix is returned unchanged with a warning.
 
     Example::
 
@@ -158,15 +152,54 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
         process: The process (or Accountant) to cache.
 
     Returns:
-        A :class:`CachedProcess` wrapping *process*, or a new
-        :class:`Accountant` with its inner process cached.
+        A :class:`CachedProcess` wrapping *process*, unless it contains a
+        whole-horizon process, or a new :class:`Accountant`.
     """
     from opaque.api.accounting.core._accountant import Accountant
 
     match process:
+        case Accountant() if _contains_horizon_process(process.process):
+            warnings.warn(
+                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
+                "before accumulation instead.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return process
         case Accountant():
             return Accountant(budget=process._budget, prefix=cached(process.process))
+        case PerStep():
+            return CachedProcess(inner=process)
+        case DpProcess() if _contains_horizon_process(process):
+            warnings.warn(
+                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
+                "before accumulation instead.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return process
         case CachedProcess():
             return process
         case _:
             return CachedProcess(process)
+
+
+def _contains_horizon_process(process: DpProcess) -> bool:
+    """Return whether a process tree contains a whole-horizon mechanism."""
+    from ._composed import Composed
+    from ._repeated import Repeated
+
+    stack = [process]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, DpHorizonProcess):
+            return True
+        if isinstance(node, CachedProcess):
+            stack.append(node.inner)
+        elif isinstance(node, Composed):
+            stack.extend((node.left, node.right))
+        elif isinstance(node, Repeated):
+            stack.append(node.inner)
+        elif isinstance(node, PerStep):
+            stack.append(node.process)
+    return False

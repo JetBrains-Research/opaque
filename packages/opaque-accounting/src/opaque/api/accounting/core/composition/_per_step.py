@@ -15,14 +15,10 @@ class PerStep(DpProcess):
 
     process: DpHorizonProcess
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
             "PerStep",
-            self.process._pld_cache_fingerprint(
-                n_steps=1 if n_steps is None else n_steps
-            ),
+            self.process._pld_cache_key(n_steps=1 if n_steps is None else n_steps),
         )
 
     @pld_cache(maxsize=8)

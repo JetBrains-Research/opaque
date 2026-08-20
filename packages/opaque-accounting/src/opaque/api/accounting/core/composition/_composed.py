@@ -38,12 +38,10 @@ class Composed(DpProcess):
 
         return iter_repr(self)
 
-    def _pld_cache_fingerprint(
-        self, *, n_steps: int | None = None
-    ) -> tuple[object, ...]:
-        from ._iter_fingerprint import iter_fingerprint
+    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+        from ._iter_cache_key import iter_cache_key
 
-        return iter_fingerprint(self, n_steps=n_steps)
+        return iter_cache_key(self, n_steps=n_steps)
 
     @pld_cache(maxsize=8)
     def pld(

@@ -500,3 +500,28 @@ class TestAccountantCached:
         acct2 = acc.cached(acct1)
         # Inner process should be the same CachedProcess (not double-wrapped)
         assert acct1.process is acct2.process
+
+    def test_cached_random_allocation_step_preserves_prefix(self):
+        horizon = dpsgd_acc.random_allocation(
+            dpsgd_acc.gaussian(1.0),
+            num_bins=2,
+            n_steps=4,
+        )
+        step = acc.per_step(horizon)
+        cached_step = acc.cached(step)
+
+        assert cached_step is not step
+        assert (cached_step * 2).pld() is horizon.pld_at(2)
+
+    def test_cached_random_allocation_accountant_warns_and_skips_boundary(self):
+        horizon = dpsgd_acc.random_allocation(
+            dpsgd_acc.gaussian(1.0),
+            num_bins=2,
+            n_steps=4,
+        )
+        accountant = Accountant() | acc.per_step(horizon)
+
+        with pytest.warns(RuntimeWarning, match="whole-horizon"):
+            cached_accountant = acc.cached(accountant)
+
+        assert cached_accountant is accountant
