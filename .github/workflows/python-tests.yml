@@ -87,35 +87,28 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-base
         id: opaque-base
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-base
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-accounting
         id: opaque-accounting
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-accounting
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-auditing
         id: opaque-auditing
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-auditing
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
+        if: ${{ !cancelled() }}
         with:
           artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-foundation
           coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-foundation.xml
           codecov-flag: ${{ inputs.environment-name }}-foundation
-      - name: Verify package results
-        if: always()
-        env:
-          RESULTS: |
-            opaque-base=${{ steps.opaque-base.outcome }}
-            opaque-accounting=${{ steps.opaque-accounting.outcome }}
-            opaque-auditing=${{ steps.opaque-auditing.outcome }}
-        run: bash .github/scripts/verify_python_test_results.sh
 
   dp-mechanisms:
     name: DP mechanisms
@@ -147,28 +140,22 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-dpsgd
         id: opaque-dpsgd
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-dpsgd
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-dpftrl
         id: opaque-dpftrl
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-dpftrl
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
+        if: ${{ !cancelled() }}
         with:
           artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-dp-mechanisms
           coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-dp-mechanisms.xml
           codecov-flag: ${{ inputs.environment-name }}-dp-mechanisms
-      - name: Verify package results
-        if: always()
-        env:
-          RESULTS: |
-            opaque-dpsgd=${{ steps.opaque-dpsgd.outcome }}
-            opaque-dpftrl=${{ steps.opaque-dpftrl.outcome }}
-        run: bash .github/scripts/verify_python_test_results.sh
 
   runtime-and-patches:
     name: Runtime and patches
@@ -200,35 +187,28 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-engine
         id: opaque-engine
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-engine
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-optimizers
         id: opaque-optimizers
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-optimizers
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-patches
         id: opaque-patches
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-patches
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
+        if: ${{ !cancelled() }}
         with:
           artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-runtime-and-patches
           coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-runtime-and-patches.xml
           codecov-flag: ${{ inputs.environment-name }}-runtime-and-patches
-      - name: Verify package results
-        if: always()
-        env:
-          RESULTS: |
-            opaque-engine=${{ steps.opaque-engine.outcome }}
-            opaque-optimizers=${{ steps.opaque-optimizers.outcome }}
-            opaque-patches=${{ steps.opaque-patches.outcome }}
-        run: bash .github/scripts/verify_python_test_results.sh
 
   alignment-and-transformers:
     name: Alignment and transformers
@@ -260,28 +240,22 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: opaque-alignment
         id: opaque-alignment
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-alignment
         run: bash .github/scripts/run_python_test_package.sh
       - name: opaque-transformers
         id: opaque-transformers
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: packages/opaque-transformers
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
+        if: ${{ !cancelled() }}
         with:
           artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-alignment-and-transformers
           coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-alignment-and-transformers.xml
           codecov-flag: ${{ inputs.environment-name }}-alignment-and-transformers
-      - name: Verify package results
-        if: always()
-        env:
-          RESULTS: |
-            opaque-alignment=${{ steps.opaque-alignment.outcome }}
-            opaque-transformers=${{ steps.opaque-transformers.outcome }}
-        run: bash .github/scripts/verify_python_test_results.sh
 
   integration-tests:
     name: Integration tests
@@ -313,17 +287,13 @@ jobs:
         run: bash .github/scripts/setup_python_test_environment.sh
       - name: Integration
         id: integration
-        continue-on-error: true
+        if: ${{ !cancelled() }}
         env:
           TEST_PATH: tests
         run: bash .github/scripts/run_python_test_package.sh
       - uses: ./.github/actions/upload-python-coverage
+        if: ${{ !cancelled() }}
         with:
           artifact-name: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integration
           coverage-file: coverage-${{ inputs.dependency-selection }}-${{ inputs.environment-name }}-integration.xml
           codecov-flag: ${{ inputs.environment-name }}-integration
-      - name: Verify package results
-        if: always()
-        env:
-          RESULTS: integration=${{ steps.integration.outcome }}
-        run: bash .github/scripts/verify_python_test_results.sh
