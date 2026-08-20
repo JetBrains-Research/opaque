@@ -1560,6 +1560,13 @@ def main():
     # snapshots the frozen tensors into the functional dict. Re-basing afterwards
     # would change the module while training kept using the old basis.
     if args.lora_method == "lora-xs" and args.lora_xs_init != "weight":
+        if args.lora_xs_init == "grad-sb":
+            raise SystemExit(
+                "--lora-xs-init grad-sb is not available: the gradient probe was "
+                "rewritten to return only the top-r factors (it OOM'd holding 196 "
+                "full-size targets), and seeding R needs the singular values the "
+                "factored probe never materialises. Use --lora-xs-init grad."
+            )
         from lora_privacy.peft_lora_xs import rebase_on_gradient
 
         n_probe = max(1, args.lora_xs_init_batches)
@@ -1567,9 +1574,13 @@ def main():
             f"\nLoRA-SB init: probing {n_probe} batch(es) for the gradient basis "
             f"(mode={args.lora_xs_init})..."
         )
+        # batch_size 1: the probe does a full backward through the base model on the
+        # plain module path -- no microbatching, no vmap, no functional split. At
+        # batch 16 that OOM'd an 80 GB H100. One sequence is enough for a rank-16
+        # basis, and LoRA-SB itself probes ~0.1% of the data.
         _probe_loader = DataLoader(
             train_dataset,
-            batch_size=args.microbatch_size or args.eval_batch_size,
+            batch_size=1,
             shuffle=False,
             collate_fn=collate,
             drop_last=False,
