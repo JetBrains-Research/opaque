@@ -110,12 +110,6 @@ def clipped_grad(
     by setting `return_aux=True`. These outputs are per-example, and hence have
     a batch axis. It is up to the caller to handle these as necessary.
 
-    The returned gradients are values, not a graph: `torch.autograd.grad`
-    through them raises. Dropping that graph is what lets activation
-    checkpointing free its recomputed activations. Calling this inside an outer
-    `torch.func` transform is supported — the graph that transform has to
-    differentiate is kept, at the usual memory cost.
-
     Example Usage:
         >>> import torch
         >>> from opaque.dpsgd.clipping import clipped_grad
@@ -246,14 +240,7 @@ def clipped_grad(
     grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
 
     def grad_fn(*args, **kwargs):
-        # Clipped gradients are values, so the transform's internal backward
-        # graph is dead weight; entering under no_grad drops it, which is what
-        # frees the activations checkpointing recomputed.  An enclosing
-        # grad/vjp/jvp is the exception -- it differentiates this result, so its
-        # graph has to survive, and dropping it would hand it silent zeros.
-        # Under torch.compile, assume the enclosing transform is there: keeping
-        # a graph nothing differentiates costs memory the compiler manages
-        # anyway, while dropping one that is needed answers silent zeros.
+        # Keep the graph only when an enclosing transform differentiates it.
         values_only = not under_differentiating_transform(when_compiling=True)
         with torch.no_grad() if values_only else contextlib.nullcontext():
             grad, value_and_aux = grad_and_value_fn(*args, **kwargs)

@@ -123,8 +123,6 @@ class TestCheckpointPatches:
             return x.sum()
 
         B, N = 4, 1024
-        # Freeing the recomputed activations means skipping the transform's
-        # internal backward graph, which entering under no_grad asks for.
         with torch.no_grad():
             mem_plain = _peak_memory(
                 lambda: vmap(grad(f_plain))(torch.randn(B, N, d, device=device))
@@ -136,12 +134,7 @@ class TestCheckpointPatches:
         _assert_savings(mem_plain, mem_ckpt)
 
     def test_clipped_grad_saves_memory(self, device):
-        """The saving survives on the path the trainers actually take.
-
-        The test above enters the transform under ``no_grad`` itself.  Nothing
-        does that for ``clipped_grad``: it scopes the decision internally, so
-        the saving it exists for needs its own guard.
-        """
+        """clipped_grad preserves checkpoint memory savings."""
         if device.type != "cuda":
             pytest.skip("Memory measurement requires CUDA")
 

@@ -114,3 +114,22 @@ def test_create_graph_patch_accepts_create_graph_keyword():
         assert torch.allclose(y, torch.tensor(2.0))
     finally:
         eager._autograd_grad = before
+
+
+def test_guard_backport_rejects_hooks_during_compile(monkeypatch):
+    """The backport uses PyTorch's compiled-hook safety behavior."""
+    import torch
+
+    from opaque.api.patches.torch.checkpoint import saved_tensor_hooks_guard
+
+    def use_save_on_cpu():
+        with torch.autograd.graph.save_on_cpu():
+            return torch.tensor(1.0)
+
+    guarded = saved_tensor_hooks_guard._disable_saved_tensor_hooks_for_higher_order(
+        use_save_on_cpu
+    )
+    monkeypatch.setattr(torch.compiler, "is_compiling", lambda: True)
+
+    with pytest.raises(RuntimeError, match="saved tensor hooks"):
+        guarded()

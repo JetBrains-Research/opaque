@@ -1,56 +1,63 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Restrict torch's saved-tensor-hooks guard to higher-order transforms.
-
-``torch.func.{grad,vjp}`` wrap their internals with a decorator that disables
-saved-tensor hooks unconditionally. Non-reentrant checkpoint (and
-``save_on_cpu``) are built on those hooks, so the guard blocks them even for a
-single first-order transform.
-
-Rebind each decorated implementation to a dispatcher that keeps the guard while
-another ``grad`` / ``vjp`` / ``jvp`` is already active and skips it otherwise:
-first-order gets its hooks, higher-order keeps raising torch's message.
-
-Applied only when torch has not already scoped the guard itself.
-"""
+"""Backport PyTorch's scoped saved-tensor-hooks guard."""
 
 from __future__ import annotations
 
 import functools
 
-from opaque.api.engine.functional._transform_stack import (
-    under_differentiating_transform,
+import torch
+
+_HIGHER_ORDER_MESSAGE = (
+    "torch.func transforms (grad, vjp, jacrev, hessian) don't support saved "
+    "tensor hooks (e.g. torch.autograd.graph.save_on_cpu) under higher-order "
+    "differentiation such as grad(grad) or hessian: the saved-tensor "
+    "round-trip severs the higher-order graph and would silently produce "
+    "incorrect gradients. First-order use is supported."
+)
+_COMPILE_MESSAGE = (
+    "torch.func transforms (grad, vjp, jacrev, hessian) don't support saved "
+    "tensor hooks (e.g. torch.autograd.graph.save_on_cpu) under torch.compile, "
+    "where saved-tensor hooks are managed by AOTAutograd. Use eager execution "
+    "for saved-tensor hooks with torch.func."
 )
 
 
 def apply() -> None:
-    """Scope the transform guard around saved-tensor hooks to higher order."""
+    """Install the upstream-compatible scoped saved-tensor-hooks guard."""
     import torch._functorch.eager_transforms as eager
 
     for name in ("grad_and_value_impl", "_vjp_with_argnums"):
-        guarded = getattr(eager, name, None)
-        unguarded = getattr(guarded, "__wrapped__", None)
+        unguarded = getattr(getattr(eager, name, None), "__wrapped__", None)
         if unguarded is not None:
-            setattr(eager, name, _higher_order_only(guarded, unguarded))
+            setattr(
+                eager, name, _disable_saved_tensor_hooks_for_higher_order(unguarded)
+            )
 
 
-def _higher_order_only(guarded, unguarded):
-    """Route to ``guarded`` only when an outer differentiating transform is active.
+def _disable_saved_tensor_hooks_for_higher_order(fn):
+    """Apply PyTorch's scoped hook guard to a pre-upstream transform."""
 
-    The dispatcher runs before the transform pushes its own level, so anything
-    it sees on the stack encloses it.
-
-    Under ``torch.compile`` the stack cannot be read, and the guard is what
-    rejects the saved-tensor hooks non-reentrant checkpoint is built on. Lifting
-    it there keeps ``torch.compile`` over a checkpointed first-order transform
-    working exactly as it did before this patch; the cost is that a *compiled*
-    higher-order composition is no longer told it is unsupported, which is the
-    behaviour every torch Opaque supports already had.
-    """
-
-    @functools.wraps(unguarded)
+    @functools.wraps(fn)
     def dispatch(*args, **kwargs):
-        higher_order = under_differentiating_transform(when_compiling=False)
-        return (guarded if higher_order else unguarded)(*args, **kwargs)
+        if torch.compiler.is_compiling():
+            with torch.autograd.graph.disable_saved_tensors_hooks(_COMPILE_MESSAGE):
+                return fn(*args, **kwargs)
+        try:
+            from torch._C._functorch import TransformType, get_interpreter_stack
+
+            stack = get_interpreter_stack()
+            higher_order = bool(stack) and any(
+                interpreter.key() in (TransformType.Grad, TransformType.Jvp)
+                for interpreter in stack
+            )
+        except Exception:  # pragma: no cover - private API moved/unavailable
+            higher_order = True
+        if higher_order:
+            with torch.autograd.graph.disable_saved_tensors_hooks(
+                _HIGHER_ORDER_MESSAGE
+            ):
+                return fn(*args, **kwargs)
+        return fn(*args, **kwargs)
 
     return dispatch

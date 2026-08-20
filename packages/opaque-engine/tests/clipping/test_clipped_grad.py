@@ -595,23 +595,12 @@ def test_clipped_grad_microbatching_with_pytree_params():
     torch.testing.assert_close(grads_mb["b"], grads_no_mb["b"], rtol=1e-5, atol=1e-6)
 
 
-# ---------------------------------------------------------------------------
-# Differentiability of the result
-# ---------------------------------------------------------------------------
-
-
 def _sum_of_clipped_grads(grad_fn, params, batch, state):
     result, _ = grad_fn(params, batch, state=state)
     return _unwrap_clipped(result).sum()
 
 
 def test_clipped_grad_returns_values_not_a_graph():
-    """The result carries no autograd graph, so differentiating it fails loudly.
-
-    Dropping that graph is what lets activation checkpointing under the
-    transform free its recomputed activations.
-    """
-
     def loss(params, x):
         return ((x - params) ** 2).sum()
 
@@ -626,13 +615,6 @@ def test_clipped_grad_returns_values_not_a_graph():
 
 
 def test_clipped_grad_under_an_outer_transform_stays_differentiable():
-    """An enclosing transform differentiates the result, so its graph is kept.
-
-    Per-example gradients of ``(x - p)²`` are ``-2(x - p)``; below the clipping
-    norm their sum differentiates to ``2 * batch_size`` in ``p``.  Handing the
-    outer transform a detached result would silently answer 0 instead.
-    """
-
     def loss(params, x):
         return ((x - params) ** 2).sum()
 
