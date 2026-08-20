@@ -5,7 +5,8 @@ type, then by ``__mro__`` so subclasses reach their base class handler
 (``nn.Parameter`` resolves to the ``torch.Tensor`` pair). On a miss the
 generic structural walker handles the node if it is a container or a
 primitive, and raises ``TypeError`` otherwise — an unrecognised leaf is
-never dropped silently.
+never dropped silently. An error raised by a registered handler on load
+is annotated with the key being restored.
 """
 
 from __future__ import annotations
@@ -67,7 +68,15 @@ def _walk_save(obj: Any, prefix: str, out: dict[str, Any]) -> None:
 def _walk_load(template: Any, sd: Mapping[str, Any], prefix: str) -> Any:
     handlers = resolve_serializer(type(template))
     if handlers is not None:
-        return handlers[1](template, _subdict(sd, prefix))
+        try:
+            return handlers[1](template, _subdict(sd, prefix))
+        except Exception as exc:
+            # Handlers see only their slice, so only the dispatcher can
+            # name the leaf that failed.
+            exc.add_note(
+                f"while restoring {prefix!r}" if prefix else "while restoring the root"
+            )
+            raise
     return _structural.walk_load(template, sd, prefix, _walk_load)
 
 

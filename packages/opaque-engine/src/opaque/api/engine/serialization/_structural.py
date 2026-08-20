@@ -14,6 +14,13 @@ through the dispatcher's MRO walk, but that handler returns a plain
 tensor.  Parameters are what ``make_functional`` hands back, so they
 get their own load handler that keeps the subclass and the
 ``requires_grad`` flag the template carries.
+
+Restore is template-driven and each attribute of an array leaf follows
+its own rule. Shape must match the template exactly, for both leaf
+kinds: a broadcast-compatible mismatch would otherwise restore silently.
+Dtype and, for tensors, device are taken from the template, so a
+checkpoint read onto the CPU resumes in the live compute dtype on the
+training device.
 """
 
 from __future__ import annotations
@@ -33,6 +40,20 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
+def _check_shape(saved: tuple[int, ...], expected: tuple[int, ...]) -> None:
+    """Reject a checkpoint value whose shape differs from the template's.
+
+    The message normalises to ``tuple`` so a ``torch.Size`` and an ndarray
+    shape read identically.
+    """
+    if saved != expected:
+        raise ValueError(
+            f"state_dict value has shape {tuple(saved)}; template expects "
+            f"{tuple(expected)}. Restore is template-driven: rebuild the "
+            "template from the configuration the checkpoint was written with."
+        )
+
+
 def _tensor_save(obj: torch.Tensor) -> dict[str, Any]:
     return {"": obj.detach().clone()}
 
@@ -45,6 +66,7 @@ def _tensor_load(template: torch.Tensor, sd: Mapping[str, Any]) -> torch.Tensor:
         raise TypeError(
             f"state_dict value expected a torch.Tensor, got {type(saved).__name__}"
         )
+    _check_shape(saved.shape, template.shape)
     return saved.to(dtype=template.dtype, device=template.device)
 
 
@@ -70,11 +92,7 @@ def _ndarray_load(template: np.ndarray, sd: Mapping[str, Any]) -> np.ndarray:
     if saved is None:
         return template
     arr = np.asarray(saved)
-    if arr.shape != template.shape:
-        raise ValueError(
-            f"state_dict ndarray has shape {arr.shape}; "
-            f"template expects {template.shape}"
-        )
+    _check_shape(arr.shape, template.shape)
     if arr.dtype != template.dtype:
         arr = arr.astype(template.dtype, copy=False)
     return arr.copy()

@@ -33,6 +33,27 @@ round-trips without resetting φ. NumPy `ndarray` leaves are supported alongside
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
+## Array leaf policy
+
+`torch.Tensor`, `torch.nn.Parameter` and `numpy.ndarray` leaves resolve three
+attributes against the template, each under its own rule:
+
+- **Shape** — must match the template exactly; a mismatch raises `ValueError`
+  for every array leaf kind. Broadcast-compatible shapes (a length-1 buffer
+  against a length-*d* slot) are what make the check load-bearing: they would
+  otherwise restore without an error and keep training against state the
+  accountant no longer prices.
+- **Dtype** — taken from the template, and the checkpoint value is cast to it.
+  The template carries the live compute dtype, so resuming an fp32 checkpoint
+  in bf16 works.
+- **Device** — taken from the template for tensors, so a checkpoint read with
+  `map_location="cpu"` lands on the training device. `ndarray` leaves have no
+  device.
+
+A leaf absent from the checkpoint keeps the template's value; that is the
+forward-compatibility rule above, not a mismatch. An error raised while
+restoring a registered leaf carries the offending key as an exception note.
+
 ## API surface (no per-type `state_dict()`)
 
 Opaque centralizes (de)serialization in `opaque.serialization.state_dict`
