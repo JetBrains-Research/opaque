@@ -29,8 +29,8 @@ jobs:
 
       - name: Check Python formatting and linting
         run: |
-          uv run --no-sync ruff format --check packages/
-          uv run --no-sync ruff check packages/
+          uv run --no-sync ruff format --check packages/ tests/
+          uv run --no-sync ruff check packages/ tests/
 
   format-python-fix:
     name: Auto-fix Python formatting
@@ -51,14 +51,14 @@ jobs:
 
       - name: Auto-fix Python formatting and linting
         run: |
-          uv run --no-sync ruff format packages/
-          uv run --no-sync ruff check --fix packages/
+          uv run --no-sync ruff format packages/ tests/
+          uv run --no-sync ruff check --fix packages/ tests/
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5
         with:
           commit_message: "ci: auto-format Python with ruff"
-          file_pattern: "packages/**/*.py"
+          file_pattern: "packages/**/*.py tests/**/*.py"
 
   format-rust:
     name: Format Rust
