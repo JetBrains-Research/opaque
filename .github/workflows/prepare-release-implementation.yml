@@ -218,9 +218,66 @@ jobs:
           | Commit range | \`${{ steps.plan.outputs.commit_range }}\` |
           EOF
 
+  main-ci-status:
+    name: Await CI (main)
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+    outputs:
+      reuse-tests: ${{ steps.status.outputs.reuse-tests }}
+    steps:
+      - name: Resolve matching main CI run
+        id: status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 2 * 60 * 60))
+
+          while true; do
+            run="$(
+              gh api \
+                "/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$TARGET_SHA&event=push&per_page=100" \
+              | jq -c '(.workflow_runs | sort_by(.created_at) | last) // empty'
+            )"
+
+            if [[ -z "$run" || "$run" == "null" ]]; then
+              echo "::notice::No CI (main) run matches $TARGET_SHA; release tests will run."
+              echo "reuse-tests=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            run_id="$(jq -r '.id' <<< "$run")"
+            status="$(jq -r '.status' <<< "$run")"
+            conclusion="$(jq -r '.conclusion // empty' <<< "$run")"
+
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "CI (main) run $run_id succeeded for $TARGET_SHA; reusing its test coverage."
+                echo "reuse-tests=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              echo "::error::CI (main) run $run_id finished with $conclusion for $TARGET_SHA."
+              exit 1
+            fi
+
+            if (( SECONDS >= deadline )); then
+              echo "::error::CI (main) run $run_id did not finish within two hours."
+              exit 1
+            fi
+
+            echo "CI (main) run $run_id is $status; waiting 30 seconds."
+            sleep 30
+          done
+
   python-tests-linux-amd64:
     name: Release Linux amd64
-    needs: [plan]
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -234,7 +291,8 @@ jobs:
 
   python-tests-distributed:
     name: Release Linux amd64 (distributed)
-    needs: [plan]
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -249,6 +307,8 @@ jobs:
 
   python-tests-minimum:
     name: Release Linux amd64 (minimum dependencies)
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -266,6 +326,8 @@ jobs:
 
   python-tests-latest:
     name: Release Linux amd64 (latest dependencies)
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -282,6 +344,8 @@ jobs:
 
   python-tests-macos-arm64:
     name: Release macOS arm64 (locked)
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -296,6 +360,8 @@ jobs:
 
   python-tests-linux-arm64:
     name: Release Linux arm64 (locked)
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -310,6 +376,8 @@ jobs:
 
   python-tests-cuda:
     name: Release CUDA (locked)
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -325,7 +393,8 @@ jobs:
 
   python-tests-cuda-minimum:
     name: Release CUDA (minimum dependencies)
-    needs: [plan]
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -344,7 +413,8 @@ jobs:
 
   python-tests-cuda-latest:
     name: Release CUDA (latest dependencies)
-    needs: [plan]
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -362,7 +432,8 @@ jobs:
 
   release-rust-tests:
     name: Release Rust tests
-    needs: [plan]
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.reuse-tests != 'true'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/rust-tests.yml@main
@@ -392,10 +463,11 @@ jobs:
     with:
       artifact-prefix: candidate
 
-  assemble-candidate:
-    name: Assemble immutable release candidate
+  release-source-validation:
+    name: Release source validation
+    if: ${{ always() }}
     needs:
-      - plan
+      - main-ci-status
       - python-tests-linux-amd64
       - python-tests-distributed
       - python-tests-minimum
@@ -406,6 +478,47 @@ jobs:
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
       - release-rust-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source validation
+        env:
+          MAIN_CI_RESULT: ${{ needs.main-ci-status.result }}
+          RESULTS: ${{ toJSON(needs) }}
+          REUSE_TESTS: ${{ needs.main-ci-status.outputs.reuse-tests }}
+        shell: bash
+        run: |
+          if [[ "$MAIN_CI_RESULT" != "success" ]]; then
+            echo "::error::Could not reuse CI (main) test coverage."
+            exit 1
+          fi
+
+          if [[ "$REUSE_TESTS" == "true" ]]; then
+            echo "Reusing successful CI (main) test coverage."
+            exit 0
+          fi
+
+          failures="$(
+            jq -r '
+              to_entries[]
+              | select(
+                  .key != "main-ci-status"
+                  and .value.result != "success"
+                )
+              | "\(.key): \(.value.result)"
+            ' <<< "$RESULTS"
+          )"
+
+          if [[ -n "$failures" ]]; then
+            echo "::error::Release source validation did not succeed:"
+            echo "$failures"
+            exit 1
+          fi
+
+  assemble-candidate:
+    name: Assemble immutable release candidate
+    needs:
+      - plan
+      - release-source-validation
       - build-distributions
       - validate-distributions
     runs-on: ubuntu-latest

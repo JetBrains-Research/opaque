@@ -10,7 +10,7 @@ private callable workflows described below.
 |---|---|---|
 | `pr.yml` | Pull requests to `main`, manual dispatch | Required Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA checks plus preview-wheel artifacts. |
 | `ci.yml` | Pushes to `main` | Linux amd64, dependency-boundary, macOS arm64, Linux arm64, and CUDA validation plus development-wheel publication. |
-| `prepare-release.yml` | Manual dispatch from `main` or `release/X.Y` | Resolves a release line, runs the complete release test matrix, builds and validates its exact SHA, and either stops as a non-mutating dry run or creates the maintenance branch and complete draft Release. |
+| `prepare-release.yml` | Manual dispatch from `main` or `release/X.Y` | Resolves a release line, reuses a successful `CI (main)` run for its exact SHA when available (otherwise runs the complete release test matrix), builds and validates its exact SHA, and either stops as a non-mutating dry run or creates the maintenance branch and complete draft Release. |
 | `release.yml` | Published GitHub Release, manual tag recovery | Verifies attached Release assets, publishes them idempotently to JetBrains Packages, and deploys immutable documentation. |
 | `docs.yml` | Pushes to `main`, manual dispatch, callable workflow | Builds rolling documentation or deploys a caller-selected immutable release version. |
 | `autoformat.yml` | Pull requests to `main` | Checks and, for trusted PRs, applies Python and Rust formatting fixes. |
@@ -87,7 +87,12 @@ prefix.
 
 `prepare-release.yml` is a stable branch-selected dispatcher. It calls the
 implementation on `main` while passing the selected branch and SHA explicitly,
-so workflow-only fixes do not need backports. The implementation rejects sources
+so workflow-only fixes do not need backports. Before running release source
+tests, the implementation looks for a successful `CI (main)` run for the
+exact target SHA. It reuses that coverage when present, waits up to two hours
+for an in-progress matching run, fails if that run fails, and otherwise runs
+the full release matrix. This lets maintenance commits without a main CI run
+retain their normal release validation. The implementation rejects sources
 other than `main` and `release/X.Y`, creates a missing maintenance branch only
 after the candidate is green, and preserves handwritten release prose outside
 the three generated fences.
