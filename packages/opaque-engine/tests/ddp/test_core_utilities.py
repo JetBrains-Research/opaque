@@ -18,6 +18,9 @@ from opaque.api.engine.distributed._state import (
 # ``_reduced_metadata`` is a private helper exercised directly by the
 # tests below; reach for it via the impl-side path.
 from opaque.api.engine.distributed.gradients import (
+    _assert_public_metadata_equal,
+)
+from opaque.api.engine.distributed.gradients import (
     _reduced_metadata as _reduced_metadata,
 )
 from opaque.distributed import get_rank, get_world_size, is_distributed, sum_gradients
@@ -30,6 +33,7 @@ from opaque.distributed.gradients import (  # noqa: F401
 from opaque.types import (
     ClippedPytree,
     NoisedPytree,
+    PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
@@ -298,3 +302,72 @@ class TestBoundedGradientAggregation:
     def test_reduce_pytree_rejects_non_tensor_leaves(self):
         with pytest.raises(TypeError, match="tensor leaves"):
             reduce_pytree({"w": 1.0})
+
+
+class TestDistributedMetadataValidation:
+    class _DuckTypedPerGroup:
+        def __init__(self, values: dict[str, float]) -> None:
+            self.groups = {"w": "weights", "b": "biases"}
+            self.values = values
+
+    @staticmethod
+    def _record_metadata_calls(monkeypatch):
+        import opaque.api.engine.distributed.gradients as gradients_module
+
+        calls: list[tuple[str, str, object]] = []
+        monkeypatch.setattr(gradients_module, "is_distributed", lambda: True)
+        monkeypatch.setattr(
+            gradients_module,
+            "_assert_object_equal",
+            lambda value, *, name: calls.append(("object", name, value)),
+        )
+        monkeypatch.setattr(
+            gradients_module,
+            "assert_scalar_equal",
+            lambda value, *, name: calls.append(("scalar", name, value)),
+        )
+        return calls
+
+    def test_per_group_metadata_uses_sorted_group_names(self, monkeypatch):
+        calls = self._record_metadata_calls(monkeypatch)
+        metadata = PerGroup(
+            groups={"w": "weights", "b": "biases"},
+            values={"weights": 2.0, "biases": 1.0},
+        )
+
+        _assert_public_metadata_equal(metadata, name="max_norm")
+
+        assert calls == [
+            ("object", "max_norm.kind", "per_group"),
+            ("object", "max_norm.groups", {("w",): "weights", ("b",): "biases"}),
+            ("object", "max_norm.values.keys", {"weights", "biases"}),
+            ("scalar", "max_norm.values['biases']", 1.0),
+            ("scalar", "max_norm.values['weights']", 2.0),
+        ]
+
+    def test_duck_typed_per_group_metadata_uses_sorted_group_names(self, monkeypatch):
+        calls = self._record_metadata_calls(monkeypatch)
+        metadata = self._DuckTypedPerGroup({"weights": 2.0, "biases": 1.0})
+
+        _assert_public_metadata_equal(metadata, name="max_norm")
+
+        assert calls == [
+            ("object", "max_norm.kind", "scalar"),
+            ("object", "max_norm.groups", {"w": "weights", "b": "biases"}),
+            ("object", "max_norm.values.keys", {"weights", "biases"}),
+            ("scalar", "max_norm.values['biases']", 1.0),
+            ("scalar", "max_norm.values['weights']", 2.0),
+        ]
+
+    def test_none_and_scalar_metadata_follow_symmetric_paths(self, monkeypatch):
+        calls = self._record_metadata_calls(monkeypatch)
+
+        _assert_public_metadata_equal(None, name="optional")
+        _assert_public_metadata_equal(1.5, name="scalar")
+
+        assert calls == [
+            ("object", "optional.kind", "none"),
+            ("object", "optional", None),
+            ("object", "scalar.kind", "scalar"),
+            ("scalar", "scalar", 1.5),
+        ]
