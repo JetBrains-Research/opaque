@@ -33,7 +33,7 @@ class _ProcessCache:
 class _WeakIdentityPldCache:
     """Keep bounded PLD entries without extending a process's lifetime."""
 
-    def __init__(self, maxsize: int) -> None:
+    def __init__(self, maxsize: int | None) -> None:
         self._maxsize = maxsize
         self._entries: dict[int, _ProcessCache] = {}
         self._hits = 0
@@ -82,7 +82,9 @@ class _WeakIdentityPldCache:
             if cached is not _MISSING:
                 entry.entries.move_to_end(key)
                 return cached
-            if self._maxsize:
+            if self._maxsize is None:
+                entry.entries[key] = result
+            elif self._maxsize > 0:
                 entry.entries[key] = result
                 if len(entry.entries) > self._maxsize:
                     entry.entries.popitem(last=False)
@@ -130,7 +132,7 @@ def _resolve_config(
     )
 
 
-def pld_cache(*, maxsize: int):
+def pld_cache(*, maxsize: int | None):
     """Cache a ``DpProcess.pld`` method by resolved configuration and mechanism."""
 
     def decorator(method):
@@ -168,7 +170,7 @@ def pld_cache(*, maxsize: int):
     return decorator
 
 
-def horizon_pld_cache(*, maxsize: int):
+def horizon_pld_cache(*, maxsize: int | None):
     """Cache a horizon ``pld_at`` method by configuration and prefix mechanism."""
 
     def decorator(method):

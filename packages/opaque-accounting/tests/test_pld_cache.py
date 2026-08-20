@@ -43,6 +43,19 @@ class _CachedHorizonProcess:
         return object()
 
 
+class _UnboundedCachedProcess:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def _pld_cache_fingerprint(self) -> str:
+        return "unbounded-cached-process"
+
+    @pld_cache(maxsize=None)
+    def pld(self) -> object:
+        self.calls += 1
+        return object()
+
+
 @pytest.fixture(autouse=True)
 def _restore_discretization() -> None:
     from opaque.accounting import discretization
@@ -110,6 +123,16 @@ def test_horizon_pld_cache_reuses_entries_and_evicts_lru_entry() -> None:
     process.pld_at(3)
     assert process.pld_at(1) is not first
     assert process.calls == 4
+
+
+def test_pld_cache_supports_unbounded_entries() -> None:
+    process = _UnboundedCachedProcess()
+
+    first = process.pld(discretization=0.1)
+    process.pld(discretization=0.2)
+
+    assert process.pld(discretization=0.1) is first
+    assert process.calls == 2
 
 
 @pytest.mark.parametrize(
