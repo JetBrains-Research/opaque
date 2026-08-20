@@ -114,6 +114,18 @@ def test_pld_cache_reuses_entries_evicts_lru_entry_and_clears() -> None:
     assert process.calls == 5
 
 
+def test_pld_cache_reuses_entries_for_equal_processes() -> None:
+    _CachedProcess.pld.cache_clear()
+    first = _CachedProcess()
+    second = _CachedProcess()
+
+    first_pld = first.pld(discretization=0.1)
+
+    assert second.pld(discretization=0.1) is first_pld
+    assert first.calls == 1
+    assert second.calls == 0
+
+
 def test_horizon_pld_cache_reuses_entries_and_evicts_lru_entry() -> None:
     process = _CachedHorizonProcess()
 

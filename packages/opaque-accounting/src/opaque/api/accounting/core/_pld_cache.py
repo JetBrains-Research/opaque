@@ -36,6 +36,7 @@ class _WeakIdentityPldCache:
     def __init__(self, maxsize: int | None) -> None:
         self._maxsize = maxsize
         self._entries: dict[int, _ProcessCache] = {}
+        self._shared_entries: OrderedDict[_CacheKey, Pld] = OrderedDict()
         self._hits = 0
         self._misses = 0
         self._lock = RLock()
@@ -63,6 +64,22 @@ class _WeakIdentityPldCache:
         self._entries[process_id] = entry
         return entry
 
+    def _get_shared(self, key: _CacheKey) -> Pld | object:
+        cached = self._shared_entries.get(key, _MISSING)
+        if cached is not _MISSING:
+            self._shared_entries.move_to_end(key)
+        return cached
+
+    def _store(
+        self, entries: OrderedDict[_CacheKey, Pld], key: _CacheKey, value: Pld
+    ) -> None:
+        if self._maxsize is None:
+            entries[key] = value
+        elif self._maxsize > 0:
+            entries[key] = value
+            if len(entries) > self._maxsize:
+                entries.popitem(last=False)
+
     def get_or_compute(
         self, process: object, key: _CacheKey, compute: Callable[[], Pld]
     ) -> Pld:
@@ -71,6 +88,11 @@ class _WeakIdentityPldCache:
             cached = entry.entries.get(key, _MISSING)
             if cached is not _MISSING:
                 entry.entries.move_to_end(key)
+                self._hits += 1
+                return cached
+            cached = self._get_shared(key)
+            if cached is not _MISSING:
+                self._store(entry.entries, key, cached)
                 self._hits += 1
                 return cached
             self._misses += 1
@@ -83,17 +105,17 @@ class _WeakIdentityPldCache:
             if cached is not _MISSING:
                 entry.entries.move_to_end(key)
                 return cached
-            if self._maxsize is None:
-                entry.entries[key] = result
-            elif self._maxsize > 0:
-                entry.entries[key] = result
-                if len(entry.entries) > self._maxsize:
-                    entry.entries.popitem(last=False)
-            return result
+            cached = self._get_shared(key)
+            if cached is _MISSING:
+                self._store(self._shared_entries, key, result)
+                cached = result
+            self._store(entry.entries, key, cached)
+            return cached
 
     def cache_clear(self) -> None:
         with self._lock:
             self._entries.clear()
+            self._shared_entries.clear()
             self._hits = 0
             self._misses = 0
 
@@ -110,7 +132,7 @@ class _WeakIdentityPldCache:
                 self._hits,
                 self._misses,
                 self._maxsize,
-                sum(len(entry.entries) for entry in self._entries.values()),
+                len(self._shared_entries),
             )
 
 
