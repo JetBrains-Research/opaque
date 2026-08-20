@@ -39,6 +39,7 @@ class _WeakIdentityPldCache:
         self._hits = 0
         self._misses = 0
         self._lock = RLock()
+        self._weak_self = weakref.ref(self)
 
     def _entry_for(self, process: object) -> _ProcessCache:
         process_id = id(process)
@@ -46,7 +47,7 @@ class _WeakIdentityPldCache:
         if entry is not None and entry.process_ref() is process:
             return entry
 
-        cache_ref = weakref.ref(self)
+        cache_ref = self._weak_self
 
         def remove(ref: weakref.ReferenceType[object]) -> None:
             cache = cache_ref()
