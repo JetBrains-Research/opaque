@@ -26,6 +26,26 @@ pytestmark = [
 ]
 
 
+def _peak_memory(fn) -> int:
+    """Peak CUDA allocation of a second, warmed-up call to ``fn``."""
+    import gc
+
+    fn()
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    fn()
+    return torch.cuda.max_memory_allocated()
+
+
+def _assert_savings(mem_plain: int, mem_ckpt: int) -> None:
+    savings = (mem_plain - mem_ckpt) / mem_plain
+    assert savings > 0.15, (
+        f"Expected >15% memory savings from checkpoint, got {savings:.1%} "
+        f"(plain={mem_plain / 1e6:.0f}MB, ckpt={mem_ckpt / 1e6:.0f}MB)"
+    )
+
+
 class TestCheckpointPatches:
     """Verify checkpoint patches are applied and functional."""
 
@@ -83,8 +103,6 @@ class TestCheckpointPatches:
         if device.type != "cuda":
             pytest.skip("Memory measurement requires CUDA")
 
-        import gc
-
         d, n_layers = 512, 8
         Ws = [torch.randn(d, d, device=device) for _ in range(n_layers)]
 
@@ -104,29 +122,68 @@ class TestCheckpointPatches:
                 x = checkpoint(block, x, use_reentrant=False)
             return x.sum()
 
-        def measure(fn):
-            # Warmup
-            fn()
-            gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
-            fn()
-            return torch.cuda.max_memory_allocated()
+        B, N = 4, 1024
+        # Freeing the recomputed activations means skipping the transform's
+        # internal backward graph, which entering under no_grad asks for.
+        with torch.no_grad():
+            mem_plain = _peak_memory(
+                lambda: vmap(grad(f_plain))(torch.randn(B, N, d, device=device))
+            )
+            mem_ckpt = _peak_memory(
+                lambda: vmap(grad(f_ckpt))(torch.randn(B, N, d, device=device))
+            )
+
+        _assert_savings(mem_plain, mem_ckpt)
+
+    def test_clipped_grad_saves_memory(self, device):
+        """The saving survives on the path the trainers actually take.
+
+        The test above enters the transform under ``no_grad`` itself.  Nothing
+        does that for ``clipped_grad``: it scopes the decision internally, so
+        the saving it exists for needs its own guard.
+        """
+        if device.type != "cuda":
+            pytest.skip("Memory measurement requires CUDA")
+
+        from opaque.api.engine.clipping import clipped_grad
+
+        d, n_layers = 512, 8
+        params = {
+            "weights": [torch.randn(d, d, device=device) for _ in range(n_layers)]
+        }
+
+        def loss_plain(p, x):
+            for weight in p["weights"]:
+                x = F.gelu(x @ weight)
+            return x.sum()
+
+        def loss_ckpt(p, x):
+            for s in range(0, n_layers, 4):
+
+                def block(x, s=s):
+                    for j in range(s, min(s + 4, n_layers)):
+                        x = F.gelu(x @ p["weights"][j])
+                    return x
+
+                x = checkpoint(block, x, use_reentrant=False)
+            return x.sum()
+
+        grad_plain, state_plain = clipped_grad(loss_plain, clipping_norm=1.0)
+        grad_ckpt, state_ckpt = clipped_grad(loss_ckpt, clipping_norm=1.0)
 
         B, N = 4, 1024
-        mem_plain = measure(
-            lambda: vmap(grad(f_plain))(torch.randn(B, N, d, device=device))
+        mem_plain = _peak_memory(
+            lambda: grad_plain(
+                params, torch.randn(B, N, d, device=device), state=state_plain
+            )
         )
-        mem_ckpt = measure(
-            lambda: vmap(grad(f_ckpt))(torch.randn(B, N, d, device=device))
+        mem_ckpt = _peak_memory(
+            lambda: grad_ckpt(
+                params, torch.randn(B, N, d, device=device), state=state_ckpt
+            )
         )
 
-        # Checkpoint should save meaningful memory
-        savings = (mem_plain - mem_ckpt) / mem_plain
-        assert savings > 0.15, (
-            f"Expected >15% memory savings from checkpoint, got {savings:.1%} "
-            f"(plain={mem_plain / 1e6:.0f}MB, ckpt={mem_ckpt / 1e6:.0f}MB)"
-        )
+        _assert_savings(mem_plain, mem_ckpt)
 
 
 @pytest.mark.cuda

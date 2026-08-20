@@ -596,6 +596,57 @@ def test_clipped_grad_microbatching_with_pytree_params():
 
 
 # ---------------------------------------------------------------------------
+# Differentiability of the result
+# ---------------------------------------------------------------------------
+
+
+def _sum_of_clipped_grads(grad_fn, params, batch, state):
+    result, _ = grad_fn(params, batch, state=state)
+    return _unwrap_clipped(result).sum()
+
+
+def test_clipped_grad_returns_values_not_a_graph():
+    """The result carries no autograd graph, so differentiating it fails loudly.
+
+    Dropping that graph is what lets activation checkpointing under the
+    transform free its recomputed activations.
+    """
+
+    def loss(params, x):
+        return ((x - params) ** 2).sum()
+
+    param = torch.nn.Parameter(torch.tensor(3.0))
+    grad_fn, state = clipped_grad(loss, clipping_norm=100.0)
+
+    total = _sum_of_clipped_grads(grad_fn, param, torch.tensor([0.0, 5.0]), state)
+
+    assert not total.requires_grad
+    with pytest.raises(RuntimeError, match="does not require grad"):
+        torch.autograd.grad(total, param)
+
+
+def test_clipped_grad_under_an_outer_transform_stays_differentiable():
+    """An enclosing transform differentiates the result, so its graph is kept.
+
+    Per-example gradients of ``(x - p)²`` are ``-2(x - p)``; below the clipping
+    norm their sum differentiates to ``2 * batch_size`` in ``p``.  Handing the
+    outer transform a detached result would silently answer 0 instead.
+    """
+
+    def loss(params, x):
+        return ((x - params) ** 2).sum()
+
+    grad_fn, state = clipped_grad(loss, clipping_norm=100.0)
+    batch = torch.tensor([0.0, 5.0])
+
+    second = torch.func.grad(lambda p: _sum_of_clipped_grads(grad_fn, p, batch, state))(
+        torch.tensor(3.0)
+    )
+
+    assert second.item() == pytest.approx(2 * len(batch))
+
+
+# ---------------------------------------------------------------------------
 # Second-moment paired-stream clipping
 # ---------------------------------------------------------------------------
 
