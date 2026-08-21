@@ -282,7 +282,7 @@ process group and raise `RuntimeError`.
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
 | `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
 | `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
-| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
+| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks; each `field_ops` entry is an operation name or a callable `fn(value, device)`, invoked once |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
 

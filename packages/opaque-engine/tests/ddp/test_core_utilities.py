@@ -178,7 +178,54 @@ class TestSyncObjectSchema:
 
         monkeypatch.setattr(state_module, "is_distributed", lambda: True)
         with pytest.raises(TypeError, match="cannot update a bool field"):
-            sync_object(self._BooleanState(enabled=True), {"enabled": lambda _: 1})
+            sync_object(
+                self._BooleanState(enabled=True), {"enabled": lambda _value, _device: 1}
+            )
+
+    def test_rejects_callable_with_unsupported_signature(self):
+        with pytest.raises(ValueError, match=r"callable as fn\(value, device\)"):
+            sync_object(self._BooleanState(enabled=True), {"enabled": lambda _value: 1})
+
+    def test_rejects_field_op_that_is_neither_name_nor_callable(self):
+        with pytest.raises(ValueError, match="operation name or a callable"):
+            sync_object(self._BooleanState(enabled=True), {"enabled": 1})
+
+    def test_callable_signature_is_validated_before_any_field_runs(self, monkeypatch):
+        import opaque.api.engine.distributed._state as state_module
+
+        monkeypatch.setattr(state_module, "is_distributed", lambda: True)
+        reduced: list[int] = []
+
+        with pytest.raises(ValueError, match=r"callable as fn\(value, device\)"):
+            sync_object(
+                self._State(count=1, label="local"),
+                {
+                    "count": lambda value, _device: reduced.append(value) or 1,
+                    "label": lambda _value: 1,
+                },
+            )
+
+        assert reduced == []
+
+    def test_callable_error_propagates_without_a_second_call(self, monkeypatch):
+        import opaque.api.engine.distributed._state as state_module
+
+        monkeypatch.setattr(state_module, "is_distributed", lambda: True)
+        calls: list[int] = []
+        failure = TypeError("callback body failed")
+
+        def _failing(value, _device):
+            calls.append(value)
+            raise failure
+
+        with pytest.raises(TypeError) as excinfo:
+            sync_object(
+                self._State(count=1, label="local"),
+                {"count": _failing, "label": "local"},
+            )
+
+        assert excinfo.value is failure
+        assert calls == [1]
 
 
 class TestBoundedGradientAggregation:
