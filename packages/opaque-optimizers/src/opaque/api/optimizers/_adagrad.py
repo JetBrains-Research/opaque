@@ -24,8 +24,16 @@ DP correction.  Track a parallel cumulative sum of the per-step noise
 variance::
 
     Φ_acc[i] += σ_t²[i]
-    v_acc_corrected = max(v_acc − Φ_acc, floor)
+    v_acc_corrected = v_acc − Φ_acc   where that is positive
+                      v_acc           elsewhere
     update = g_t / (√v_acc_corrected + eps)
+
+Where ``Φ_acc`` has overtaken ``v_acc`` the signal-variance estimate is
+non-positive, hence meaningless, and that coordinate reverts to
+*uncorrected* Adagrad.  It is deliberately not clamped to a small positive
+floor: a floor would divide by ``≈ eps`` and amplify a coordinate that
+carries no usable signal by ~1/eps.  The additive ``eps`` in the
+denominator is what keeps the step finite.
 
 No bias-correction division is needed (Adagrad doesn't apply
 ``1/(1−β^t)``); ``v_acc`` and ``Φ_acc`` accumulate at the same rate.
@@ -92,7 +100,6 @@ def _scale_by_adagrad(
     eps: float,
     initial_accumulator_value: float,
     noise_bias_correction: bool,
-    bc_floor: float,
 ) -> GradientTransformation:
     def init_fn(params: Any) -> AdagradState:
         v_acc = tree_map(
@@ -212,12 +219,10 @@ def adagrad(
             "initial_accumulator_value must be non-negative, got "
             f"{initial_accumulator_value}"
         )
-    bc_floor = eps * eps
     moment = _scale_by_adagrad(
         eps=eps,
         initial_accumulator_value=initial_accumulator_value,
         noise_bias_correction=noise_bias_correction,
-        bc_floor=bc_floor,
     )
     return make_optimizer_chain(
         moment,

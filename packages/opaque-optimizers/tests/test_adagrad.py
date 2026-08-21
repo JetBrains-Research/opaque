@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 import torch
 
@@ -10,6 +12,48 @@ torchopt = pytest.importorskip("torchopt")
 from opaque.optimizers import adagrad
 from opaque.optimizers.types import AdagradState
 from opaque.types import noised
+
+# Closed-form oracle for the DP tests below.  Under a constant gradient
+# Adagrad's accumulators are exact: ``v_acc = t·g²`` and ``phi_acc = t·sigma²``,
+# so with ``weight_decay=0`` the update is ``−lr·g/(√v_eff + eps)`` for
+# ``v_eff = t(g² − sigma²)`` while the signal dominates and ``t·g²`` once it
+# does not.
+_DP_LR = 0.1
+_DP_EPS = 1e-10
+
+# The σ=0.95 case cancels two ~20.0 values down to ~1.95; measured worst-case
+# float32 error is 2.2e-07, well inside this bound and well below the 15%
+# separation the assertions rely on.
+_DP_RTOL = 1e-5
+
+
+def _expected_update(
+    g: float, sigma: float, steps: int, *, lr=_DP_LR, eps=_DP_EPS
+) -> float:
+    """Adagrad's update after ``steps`` constant-gradient steps."""
+    v_acc = steps * g * g
+    corrected = v_acc - steps * sigma * sigma
+    v_eff = corrected if corrected > 0 else v_acc
+    return -lr * g / (math.sqrt(v_eff) + eps)
+
+
+def _run_constant(opt, g: float, steps: int, sigma: float | None):
+    """Drive ``opt`` for ``steps`` steps on a constant gradient ``g``.
+
+    ``sigma=None`` feeds the bare pytree (no DP metadata); otherwise the
+    gradients are wrapped with a realized noise stddev.  Returns the final
+    update pytree.
+    """
+    params = {"w": torch.ones(4)}
+    grads = {"w": torch.full((4,), g)}
+    state = opt.init(params)
+    updates = None
+    for _ in range(steps):
+        step_grads = (
+            grads if sigma is None else noised(grads, max_norm=1.0, noise_stddev=sigma)
+        )
+        updates, state = opt.update(step_grads, state, params=params)
+    return updates
 
 
 @pytest.fixture
@@ -116,45 +160,76 @@ class TestDPCorrection:
         assert isinstance(phi_acc, dict)
         assert all(v == pytest.approx(expected) for v in phi_acc.values())
 
-    def test_correction_prevents_runaway_denominator(self, params):
-        """The headline DP-Adagrad fix: with correction, the effective
-        v̂ tracks signal contribution only.  Without correction, v_acc
-        would carry t·σ² forever.
+    @pytest.mark.parametrize("steps", [5, 20])
+    @pytest.mark.parametrize("sigma", [0.5, 0.8, 0.95])
+    def test_correction_removes_noise_variance_from_denominator(self, sigma, steps):
+        """``Φ_acc`` subtraction removes the noise variance from the denominator.
 
-        We feed zero gradients with ``NoisedPytree`` σ metadata,
-        and verify v̂_corrected stays at the floor (no signal → no
-        denominator inflation)."""
-        zero_grads = {k: torch.zeros_like(v) for k, v in params.items()}
-        sigma = 1.0
-        opt = adagrad(lr=1e-2, noise_bias_correction=True)
-        state = opt.init(params)
-        # Update receives zero gradients plus σ metadata. v_acc grows
-        # to 0 (g²=0); φ_acc
-        # grows by σ² per step.  v_acc - φ_acc < 0 → clamped to floor.
-        for _ in range(20):
-            updates, state = opt.update(
-                noised(zero_grads, max_norm=1.0, noise_stddev=sigma),
-                state,
-                params=params,
-            )
-            # Updates should be ~zero (g/sqrt(floor) ≈ 0 since g=0).
-            for k in updates:
-                assert torch.all(updates[k].abs() < 1e-3)
+        Adagrad never decays ``v_acc``, so the denominator would otherwise
+        accumulate ``t·σ²`` forever.  The corrected/uncorrected ratio is
+        exactly ``√(g²/(g²−σ²))`` — 1.15 at σ=0.5, 3.20 at σ=0.95.
 
-    def test_floor_keeps_finite(self):
-        params = {"w": torch.ones(3)}
-        grads = {"w": torch.ones(3) * 0.01}
-        # Huge sigma — phi_acc dominates, denom would be negative
-        # without floor.
-        opt = adagrad(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
-        for _ in range(10):
-            updates, state = opt.update(
-                noised(grads, max_norm=1.0, noise_stddev=1e3),
-                state,
-                params=params,
-            )
-            assert torch.isfinite(updates["w"]).all()
+        ``σ`` comparable to ``|g|`` is the ordinary DP regime: per-coordinate
+        noise is ``σ_dp·C/B`` ≈ 3.9e-3 at ``C=1, B=256, σ_dp=1``, against
+        clipped gradient means of 1e-3–1e-2.
+        """
+        g = 1.0
+        opt_on = adagrad(lr=_DP_LR, eps=_DP_EPS, noise_bias_correction=True)
+        opt_off = adagrad(lr=_DP_LR, eps=_DP_EPS, noise_bias_correction=False)
+        u_on = _run_constant(opt_on, g, steps, sigma)
+        u_off = _run_constant(opt_off, g, steps, sigma)
+
+        # Corrected: denominator tracks t(g² − σ²).
+        torch.testing.assert_close(
+            u_on["w"],
+            torch.full_like(u_on["w"], _expected_update(g, sigma, steps)),
+            rtol=_DP_RTOL,
+            atol=0,
+        )
+        # Uncorrected: the same stream still carries t·σ² in the denominator.
+        torch.testing.assert_close(
+            u_off["w"],
+            torch.full_like(u_off["w"], _expected_update(g, 0.0, steps)),
+            rtol=_DP_RTOL,
+            atol=0,
+        )
+        # The resulting gain is exactly √(g²/(g²−σ²)), independent of t.
+        expected_gain = math.sqrt(g**2 / (g**2 - sigma**2))
+        assert (u_on["w"][0] / u_off["w"][0]).item() == pytest.approx(
+            expected_gain, rel=_DP_RTOL
+        )
+
+    def test_noise_dominant_regime_falls_back_to_uncorrected_v(self):
+        """A non-positive correction reverts the coordinate to plain Adagrad.
+
+        ``v_acc − Φ_acc ≤ 0`` carries no signal, so
+        ``torch.where(corrected > 0, corrected, v_acc)`` returns the
+        uncorrected accumulator — hence bit-equality with plain Adagrad.  The
+        trailing magnitude bound separates that from a floor clamp, which
+        would divide by ``≈ eps`` and inflate the coordinate by ~1e8.
+        """
+        g, sigma, steps, lr = 0.01, 1e3, 10, 1e-3
+        opt_bc = adagrad(lr=lr, eps=_DP_EPS, noise_bias_correction=True)
+        opt_plain = adagrad(lr=lr, eps=_DP_EPS, noise_bias_correction=False)
+        u_bc = _run_constant(opt_bc, g, steps, sigma)
+        u_plain = _run_constant(opt_plain, g, steps, None)
+
+        assert torch.isfinite(u_bc["w"]).all()
+        # Fallback, not floor: bit-identical to plain Adagrad on this stream.
+        torch.testing.assert_close(u_bc["w"], u_plain["w"], rtol=0, atol=0)
+        torch.testing.assert_close(
+            u_bc["w"],
+            torch.full_like(u_bc["w"], _expected_update(g, 0.0, steps, lr=lr)),
+            rtol=_DP_RTOL,
+            atol=0,
+        )
+        # A clamp to eps² would divide by √eps² + eps = 2·eps.
+        floored = lr * g / (2 * _DP_EPS)
+        ratio = floored / u_bc["w"].abs().max().item()
+        assert ratio > 1e3, (
+            f"update is only {ratio:.1e}x smaller than a floor clamp would give; "
+            f"the non-positive branch must fall back to the uncorrected v_acc"
+        )
 
     def test_bc_flag_disables_noisy_metadata_correction(self, params, grads):
         opt = adagrad(lr=1e-2, noise_bias_correction=False)

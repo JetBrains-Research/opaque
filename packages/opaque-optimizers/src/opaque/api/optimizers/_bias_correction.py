@@ -17,11 +17,21 @@ EMA::
 After bias correction by ``1 − β₂^t``, ``φ̂_t = φ_t / (1 − β₂^t)`` is
 an unbiased estimate of the noise-variance contribution to ``v̂_t``::
 
-    v̂_corrected = max(v̂_t − φ̂_t, floor)
+    v̂_corrected = v̂_t − φ̂_t   where that is positive
+                  v̂_t         elsewhere
 
-The floor is a small positive constant so the corrected denominator
-``√v̂_corrected + ε`` cannot collapse to zero when noise dominates
-the gradient signal.
+Coordinates where the noise estimate has overtaken the second moment are
+left *uncorrected* rather than clamped to a small positive floor.  Their
+signal-variance estimate is non-positive and therefore meaningless;
+flooring would divide by ``≈ ε`` and amplify pure noise by ~1/ε, whereas
+falling back to ``v̂_t`` degrades them to the non-private behavior, which
+is bounded.  The additive ``ε`` in ``√v̂_corrected + ε`` is what keeps the
+denominator away from zero.
+
+The separate ``bc_floor`` clamp seen in some optimizers belongs to the
+*private second-moment* branch (``noisy_squared_grads``), where ``v̂``
+comes from an externally privatised ``g²`` stream and can be genuinely
+negative — not to this φ-EMA path.
 
 This module is mechanism-agnostic.  ``noise_stddev`` is a number (or a
 ``PerGroup`` of numbers) supplied by the caller; the noise *generation*
