@@ -157,8 +157,8 @@ class SFTConfig(TrainingArguments):
 
         Fields TRL has that opaque does not implement raise
         ``ValueError``: ``packing``, ``padding_free``, ``eval_packing``,
-        ``shuffle_dataset``, ``truncation_mode='keep_end'``, ``pad_token``, and
-        nonzero ``router_aux_loss_coef``.
+        ``shuffle_dataset``, ``truncation_mode='keep_end'``, and ``pad_token``.
+        A nonzero ``router_aux_loss_coef`` warns and trains as if it were 0.
 
         HF-inherited fields go through the same translation as
         :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same

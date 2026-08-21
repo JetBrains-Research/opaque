@@ -148,6 +148,19 @@ def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
+def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
+    """Asking for no aux loss gets no aux loss, so there is nothing to warn about."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = DPOConfig.from_trl(
+            _trl_dpo_args(tmp_path, router_aux_loss_coef=0.0),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
+    assert cfg is not None
+    assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
+
+
 def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):
     cfg = DPOConfig.from_trl(
         _trl_dpo_args(

@@ -66,12 +66,15 @@ def _reject_pad_token(value: Any) -> str | None:
     return None
 
 
-_ROUTER_AUX_LOSS_DROP_REASON = (
-    "the MoE router load-balancing loss is batch-coupled — it is a property "
-    "of the whole batch, so it has no per-example gradient to clip and "
-    "cannot enter opaque's DP objective. Training proceeds as if the "
-    "coefficient were 0.0"
-)
+def _drop_router_aux_loss(value: Any) -> str | None:
+    if not value:
+        return None  # already 0 — nothing is being withheld.
+    return (
+        "the MoE router load-balancing loss is batch-coupled — it is a property "
+        "of the whole batch, so it has no per-example gradient to clip and "
+        "cannot enter opaque's DP objective. Training proceeds as if the "
+        "coefficient were 0.0"
+    )
 
 
 def _convert_trl_config(
@@ -81,7 +84,7 @@ def _convert_trl_config(
     trl_rename: dict[str, str],
     trl_transform: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
     trl_reject: dict[str, Callable[[Any], str | None]],
-    trl_drop: dict[str, str],
+    trl_drop: dict[str, str | Callable[[Any], str | None]],
     source_label: str,
     strict: bool,
     dp_overrides: dict[str, Any],

@@ -108,7 +108,7 @@ def _apply_manifest(
     rename: Mapping[str, str],
     transform: Mapping[str, Callable[[dict[str, Any]], dict[str, Any]]],
     reject: Mapping[str, Callable[[Any], str | None]],
-    drop: Mapping[str, str],
+    drop: Mapping[str, str | Callable[[Any], str | None]],
     source_label: str,
     strict: bool,
 ) -> dict[str, Any]:
@@ -119,8 +119,10 @@ def _apply_manifest(
     benign (e.g. ``packing=False`` is fine, only ``packing=True`` is
     rejected). The callable receives the raw source value.
 
-    ``drop`` maps field name → reason string surfaced in the
-    ``RuntimeWarning`` when the field is non-default.
+    ``drop`` maps field name → the reason surfaced in the ``RuntimeWarning``
+    when the field is non-default: either a fixed string, or a callable
+    receiving the raw value and returning ``None`` to stay silent (e.g. a
+    coefficient set to 0 asks for nothing opaque withholds).
 
     ``transform`` maps field name → callable that receives the full
     ``source_values`` dict and returns a partial opaque-side dict to
@@ -145,7 +147,10 @@ def _apply_manifest(
         # Layer 2: DROP_WITH_WARN — drop and (optionally) warn.
         if name in drop:
             if not _is_default(value, source_defaults.get(name)):
-                _warn_drop(source_label, name, value, drop[name], strict)
+                rule = drop[name]
+                reason = rule(value) if callable(rule) else rule
+                if reason is not None:
+                    _warn_drop(source_label, name, value, reason, strict)
             continue
 
         # Layer 3: TRANSFORM — multi-field derivation, run once below.
