@@ -120,12 +120,12 @@ from opaque.optimizers import adamw
 strategy = blt_strategy(max_buffers=10)
 second_strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
-    grad_template,
-    strategy,
-    n_steps=1000,
-    noise_multiplier=noise_multiplier,
-    key=key(42),
-    second_moment_strategy=second_strategy,
+  grad_template,
+  strategy,
+  n_steps=1000,
+  noise_multiplier=noise_multiplier,
+  key=key(42),
+  second_moment_strategy=second_strategy,
 )
 
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
@@ -134,9 +134,7 @@ opt_state = optimizer.init(params)
 # Per-step:
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 updates, opt_state = optimizer.update(
-    noisy_grads,
-    opt_state,
-    params=p,
+  noisy_grads, opt_state, params=p,
 )
 ```
 
@@ -158,9 +156,7 @@ from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
-    loss_fn,
-    clipping_norm=1.0,
-    batch_argnums=1,
+    loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
