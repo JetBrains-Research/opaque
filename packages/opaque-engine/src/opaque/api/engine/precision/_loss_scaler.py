@@ -47,6 +47,7 @@ determined by ``init_scale`` at factory time.
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
@@ -103,10 +104,14 @@ class LossScaler(NamedTuple):
     to per-example gradients through ``vmap(grad(...))``."""
 
     unscale_grads: Callable[[Any, LossScalerState], Any]
-    """Divide every floating-point leaf of ``grads`` by the current
-    scale. Returns a new pytree with the same structure. Shaped to be
-    passed (after binding ``state``) as the ``pre_clipping_transform``
-    of :func:`opaque.api.engine.clipping.clipped_grad`."""
+    """Divide every floating-point or complex leaf of ``grads`` by the
+    current scale. Returns a new pytree with the same structure. Shaped
+    to be passed (after binding ``state``) as the
+    ``pre_clipping_transform`` of
+    :func:`opaque.api.engine.clipping.clipped_grad`. Clipping normalizes
+    the pytree as a whole, so a leaf left scaled would not merely keep
+    its own magnitude — it would crush every unscaled leaf beside it in
+    the shared norm."""
 
     update: Callable[[LossScalerState, bool], LossScalerState]
     """Advance the scale schedule. Grow by ``growth_factor`` after
@@ -130,6 +135,10 @@ def loss_scaler(
 
     Args:
         init_scale: Initial loss scale. Default ``2**16`` (GradScaler default).
+            Must be finite and strictly positive — a non-positive or
+            non-finite scale sends every unscaled gradient through
+            clipping's NaN/Inf sanitization, which silently zeroes the
+            update instead of raising.
         growth_factor: Multiplier applied after ``growth_interval``
             consecutive clean steps. Must be ``> 1.0``.
         backoff_factor: Multiplier applied on a non-finite step. Must
@@ -146,6 +155,8 @@ def loss_scaler(
         A ``(transform, state)`` tuple. The ``transform`` is immutable;
         the ``state`` is threaded through training-step calls.
     """
+    if not math.isfinite(init_scale) or init_scale <= 0.0:
+        raise ValueError(f"init_scale must be finite and > 0, got {init_scale}")
     if growth_factor <= 1.0:
         raise ValueError(f"growth_factor must be > 1.0, got {growth_factor}")
     if not (0.0 < backoff_factor < 1.0):
@@ -164,9 +175,10 @@ def loss_scaler(
         s = state.scale
 
         def _unscale(t: Any) -> Any:
-            if isinstance(t, torch.Tensor) and t.is_floating_point():
-                return t / s
-            return t
+            scalable = isinstance(t, torch.Tensor) and (
+                t.is_floating_point() or t.is_complex()
+            )
+            return t / s if scalable else t
 
         return tree_map(_unscale, updates)
 

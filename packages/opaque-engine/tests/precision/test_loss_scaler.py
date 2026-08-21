@@ -4,15 +4,18 @@ The functional analog of :class:`torch.amp.GradScaler` for DP-SGD's pytree
 gradient flow. These tests pin down the four invariants DP correctness and
 HF-parity rely on:
 
-1. ``scale_loss`` multiplies; ``unscale_grads`` is its left-inverse.
+1. ``scale_loss`` multiplies; ``unscale_grads`` is its left-inverse, and
+   routing it through ``pre_clipping_transform`` leaves the clipped gradient
+   equal to the unscaled baseline — the DP-critical ordering invariant.
 2. ``all_finite`` is True iff every floating-point leaf is finite.
 3. ``update`` mirrors ``GradScaler``'s growth/backoff state machine.
 4. Roundtrip (scale → grad → unscale) is a no-op on the gradient pytree.
 
-For the *DP-critical* invariant (unscale runs before clipping so the
-accountant sees true sensitivity) see
+The same ordering invariant under real ``fp16`` autocast lives in
 ``packages/opaque-dpsgd/tests/functional/test_precision.py`` and
 ``packages/opaque-transformers/tests/opaque_transformers/test_precision_training.py``.
+Both are CUDA-gated, so the CPU version below is the one that runs in the
+required lanes.
 """
 
 from __future__ import annotations
@@ -20,9 +23,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from opaque.api.engine.clipping import auto_clipped_grad
+from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.precision import LossScaler, LossScalerState, all_finite, loss_scaler
 from opaque.types import NoisedPytree, SecondMomentClippingOutput, clipped
+
+_CLIP = 1.0
 
 
 def _grads_pytree(magnitude: float = 1.0) -> dict[str, torch.Tensor]:
@@ -32,6 +37,23 @@ def _grads_pytree(magnitude: float = 1.0) -> dict[str, torch.Tensor]:
         "bf16": torch.full((4,), magnitude, dtype=torch.bfloat16),
         "step": torch.tensor(7, dtype=torch.int64),  # passthrough
     }
+
+
+def _clipped_sum(params, x, scaler: LossScaler, state: LossScalerState):
+    """Run the documented fp16 wiring: scale in the loss, unscale before clipping."""
+
+    def loss_fn(p, xi):
+        return scaler.scale_loss((p[0] * xi).sum(), state)
+
+    grad_fn, clip_state = clipped_grad(
+        loss_fn,
+        argnums=0,
+        batch_argnums=1,
+        clipping_norm=_CLIP,
+        pre_clipping_transform=lambda g: scaler.unscale_grads(g, state),
+    )
+    grads, _ = grad_fn(params, x, state=clip_state)
+    return grads.pytree[0]
 
 
 # ----------------------------------------------------------------------------
@@ -73,6 +95,18 @@ def test_factory_validates_growth_interval():
         loss_scaler(growth_interval=0)
 
 
+@pytest.mark.parametrize("bad", [0.0, -1.0, float("inf"), float("nan")])
+def test_factory_rejects_init_scale_that_is_not_finite_and_positive(bad):
+    """An unusable scale must raise, not silently zero every update.
+
+    ``g / 0`` is ``inf``, and clipping replaces non-finite values with zero
+    before the norm reduction, so an unvalidated scale of ``0.0`` produced a
+    dead training run with no error anywhere.
+    """
+    with pytest.raises(ValueError, match="init_scale"):
+        loss_scaler(init_scale=bad)
+
+
 # ----------------------------------------------------------------------------
 # scale_loss / unscale_grads roundtrip
 # ----------------------------------------------------------------------------
@@ -92,6 +126,39 @@ def test_unscale_grads_preserves_pytree_structure():
     assert unscaled["fp32"].dtype == torch.float32
     assert unscaled["bf16"].dtype == torch.bfloat16
     assert torch.equal(unscaled["step"], grads["step"])  # int passthrough
+
+
+def test_unscale_covers_complex_leaves():
+    """Clipping normalizes the pytree as a whole.
+
+    ``Tensor.is_floating_point()`` is ``False`` for ``complex64`` /
+    ``complex128``, which ``clip_pytree`` explicitly supports. A complex leaf
+    left scaled keeps a factor of ``scale`` and crushes every real leaf beside
+    it in the shared norm.
+    """
+    scaler, state = loss_scaler(init_scale=128.0)
+    grads = {"c64": torch.full((2,), complex(128.0, 128.0), dtype=torch.complex64)}
+    unscaled = scaler.unscale_grads(grads, state)["c64"]
+    torch.testing.assert_close(unscaled, torch.full((2,), complex(1.0, 1.0)))
+
+
+def test_scaling_does_not_move_the_clipped_gradient():
+    """The DP-critical invariant: clipping sees the same magnitudes either way.
+
+    If the unscale ran after the clip-norm the effective per-example bound
+    would be ``C / scale``, and the accountant's ``noise_multiplier · C`` would
+    price a sensitivity the mechanism never had. The autocast version of this
+    check is CUDA-gated; this one runs everywhere.
+    """
+    params = (torch.ones(3),)
+    x = torch.tensor([1.0, 2.0, 3.0])
+
+    baseline_scaler, baseline_state = loss_scaler(enabled=False)
+    scaled_scaler, scaled_state = loss_scaler(init_scale=128.0)
+
+    baseline = _clipped_sum(params, x, baseline_scaler, baseline_state)
+    scaled = _clipped_sum(params, x, scaled_scaler, scaled_state)
+    torch.testing.assert_close(scaled, baseline)
 
 
 def test_unscale_recovers_original_magnitude():
