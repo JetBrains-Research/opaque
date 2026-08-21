@@ -330,6 +330,21 @@ def parse_args():
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
+        "--classifier-lr",
+        type=float,
+        default=None,
+        help=(
+            "Separate learning rate for the randomly-initialised classification "
+            "head, for --task-type sequence-classification. Defaults to "
+            "--learning-rate. The LoRA-XS paper tunes this independently per task "
+            "and rank (Table 7): at r=16 it is 1e-2 for CoLA against an adapter "
+            "lr of 1e-3, i.e. 10x. Without it the head trains at the adapter's "
+            "rate, and the head's gradients dominate -- measured at 95.6 mean "
+            "norm on GLUE against 0.30 on KStack, where every trainable is a "
+            "LoRA-XS core started at sigma=1e-5 on a converged model."
+        ),
+    )
+    model_group.add_argument(
         "--task-type",
         type=str,
         choices=["causal-lm", "sequence-classification"],
@@ -1354,6 +1369,11 @@ def main():
             "--glue-task is only meaningful with "
             "--task-type sequence-classification"
         )
+    elif args.classifier_lr is not None:
+        raise ValueError(
+            "--classifier-lr is only meaningful with "
+            "--task-type sequence-classification (there is no head to scale)"
+        )
 
     if _is_cls:
         # Rejected UP FRONT rather than silently ignored. Each of these is
@@ -1370,6 +1390,10 @@ def main():
             )
             if on
         ]
+        if args.classifier_lr is not None and args.classifier_lr <= 0:
+            raise ValueError(
+                f"--classifier-lr must be positive, got {args.classifier_lr}"
+            )
         if _unsupported:
             raise SystemExit(
                 "these flags are causal-LM only and cannot be used with "
@@ -1864,6 +1888,43 @@ def main():
 
     def merged_params(trainable):
         return {**frozen_params, **trainable}
+
+    # --- separate learning rate for the classification head ------------------
+    # Implemented by scaling the head's UPDATES rather than building a second
+    # optimizer, and that is exact rather than an approximation: for SGD, Adam,
+    # AdamW and their decoupled weight decay, the update is exactly proportional
+    # to the learning rate, so multiplying it by (classifier_lr / learning_rate)
+    # yields precisely the update the head would have received at classifier_lr.
+    # The second-moment state is computed from gradients and is lr-independent,
+    # so sharing it across the two groups changes nothing.
+    #
+    # It also composes correctly with --lr-schedule: `updates` already carries the
+    # scheduled lr, so a constant ratio gives the head the same schedule SHAPE
+    # with a different peak, which is what a two-group setup means.
+    #
+    # PEFT puts the head under modules_to_save, so its keys look like
+    # base_model.model.classifier.modules_to_save.default.dense.weight. "score" is
+    # the head name some other architectures use.
+    _head_keys: list[str] = []
+    _head_scale = 1.0
+    if _is_cls:
+        _head_keys = [
+            k for k in trainable_params
+            if ".classifier." in f".{k}." or ".score." in f".{k}."
+        ]
+        if not _head_keys:
+            raise SystemExit(
+                "could not find the classification head among the trainable "
+                "parameters. Without it the head is frozen and the run is "
+                f"meaningless. Trainable keys sample: {list(trainable_params)[:3]}"
+            )
+        if args.classifier_lr is not None:
+            _head_scale = args.classifier_lr / args.learning_rate
+        print(
+            f"Classification head: {len(_head_keys)} tensors, lr="
+            f"{args.classifier_lr if args.classifier_lr is not None else args.learning_rate:g}"
+            f" (adapter lr={args.learning_rate:g}, update scale={_head_scale:g})"
+        )
 
     # Define per-example loss
     _pad_id = tokenizer.pad_token_id
@@ -2671,6 +2732,12 @@ def main():
                     updates, opt_state = base_opt.update(
                         noisy_grads, opt_state, params=trainable_params
                     )
+                if _head_scale != 1.0:
+                    updates = dict(updates)
+                    for _hk in _head_keys:
+                        _hu = updates.get(_hk)
+                        if _hu is not None:
+                            updates[_hk] = _hu * _head_scale
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)

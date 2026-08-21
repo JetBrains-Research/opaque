@@ -391,3 +391,99 @@ def test_explicit_flags_override_the_preset():
     assert args.lora_r == 4
     assert args.learning_rate == pytest.approx(6e-4)
     assert args.lora_alpha == 16, "alpha stays fixed across ranks, as in the paper"
+
+
+def test_scaling_updates_equals_a_separate_learning_rate():
+    """--classifier-lr is implemented by scaling the head's updates. Prove it exact.
+
+    For SGD/Adam/AdamW the update is exactly proportional to the learning rate --
+    decoupled weight decay included -- so multiplying by (classifier_lr /
+    learning_rate) gives precisely the update a second optimizer at classifier_lr
+    would produce. The second moment is built from gradients and is
+    lr-independent, so sharing state across the two groups changes nothing.
+
+    If this ever stops being bit-exact, the head is no longer being trained at the
+    rate the run claims, and every GLUE number becomes untrustworthy.
+    """
+    import torchopt
+
+    def run(scale_updates, lr_a, lr_b, steps=25):
+        torch.manual_seed(0)
+        p = {"a": torch.tensor([1.0, -2.0]), "b": torch.tensor([0.5, 3.0])}
+        kw = dict(betas=(0.9, 0.99), eps=1e-8, weight_decay=0.01)
+        if scale_updates:
+            opt = torchopt.adamw(lr=lr_a, **kw)
+            state = opt.init(p)
+            k = lr_b / lr_a
+        else:
+            oa, ob = torchopt.adamw(lr=lr_a, **kw), torchopt.adamw(lr=lr_b, **kw)
+            sa, sb = oa.init({"a": p["a"]}), ob.init({"b": p["b"]})
+        for step in range(steps):
+            g = {
+                "a": p["a"] * 0.3 + 0.1 * (step % 3),
+                "b": p["b"] * 0.7 - 0.2 * (step % 5),
+            }
+            if scale_updates:
+                u, state = opt.update(g, state, params=p)
+                u = dict(u)
+                u["b"] = u["b"] * k
+                p = torchopt.apply_updates(p, u)
+            else:
+                ua, sa = oa.update({"a": g["a"]}, sa, params={"a": p["a"]})
+                ub, sb = ob.update({"b": g["b"]}, sb, params={"b": p["b"]})
+                p = {
+                    "a": torchopt.apply_updates({"a": p["a"]}, ua)["a"],
+                    "b": torchopt.apply_updates({"b": p["b"]}, ub)["b"],
+                }
+        return p
+
+    for head_lr in (1e-2, 1e-4):  # 10x up and 10x down
+        scaled, two_opt = run(True, 1e-3, head_lr), run(False, 1e-3, head_lr)
+        for key in ("a", "b"):
+            assert torch.equal(scaled[key], two_opt[key]), (
+                f"head_lr={head_lr} diverged on {key}"
+            )
+
+
+@pytest.mark.slow
+def test_head_keys_are_discoverable_under_peft():
+    """The key pattern --classifier-lr matches must actually hit PEFT's head.
+
+    PEFT nests the head under modules_to_save, so the trainable key is
+    base_model.model.classifier.modules_to_save.default.dense.weight. If the
+    pattern misses, _head_scale silently applies to nothing and the head trains
+    at the adapter's rate while the log claims otherwise.
+    """
+    from opaque.functional import make_functional
+    from peft import get_peft_model
+    from transformers import AutoModelForSequenceClassification
+
+    from lora_privacy.peft_lora_xs import LoraXSConfig
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        "roberta-base", num_labels=2, attn_implementation="eager"
+    )
+    for p in model.parameters():
+        p.requires_grad = False
+    model = get_peft_model(
+        model,
+        LoraXSConfig(
+            r=8,
+            lora_alpha=16,
+            sigma=1e-5,
+            lora_dropout=0.0,
+            target_modules=GLUE_MODULES,
+            task_type="SEQ_CLS",
+        ),
+    )
+    _, trainable, _ = make_functional(
+        model, disable_autograd_tracking=True, partition_trainable=True
+    )
+    # Exactly the expression the trainer uses.
+    head = [
+        k for k in trainable if ".classifier." in f".{k}." or ".score." in f".{k}."
+    ]
+    assert head, f"pattern missed the head; keys: {list(trainable)[:5]}"
+    # roberta's head is dense{weight,bias} + out_proj{weight,bias}
+    assert len(head) == 4, f"expected 4 head tensors, got {len(head)}: {head}"
+    assert not any("lora_xs" in k for k in head), "pattern caught adapter tensors"
