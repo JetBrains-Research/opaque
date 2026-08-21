@@ -58,7 +58,7 @@ packages/
 ├── opaque-dpsgd/        # DP-SGD noise, adaptive clipping, and sampling
 ├── opaque-dpftrl/       # Correlated-noise DP-FTRL mechanisms and sampling
 ├── opaque-auditing/     # Empirical privacy auditing
-├── opaque-patches/      # Fused Triton kernels with PyTorch fallbacks
+├── opaque-kernels/      # Fused Triton kernels with PyTorch fallbacks
 ├── opaque-transformers/ # Hugging Face trainer integration
 └── opaque-alignment/    # DP-safe SFT and DPO primitives
 
@@ -407,7 +407,7 @@ uv build --wheel --out-dir dist
 
 # Build every sub-package wheel
 for pkg in opaque-base opaque-engine opaque-torch opaque-optimizers opaque-dpsgd \
-                opaque-dpftrl opaque-auditing opaque-patches opaque-transformers \
+                opaque-dpftrl opaque-auditing opaque-kernels opaque-transformers \
                 opaque-alignment; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done

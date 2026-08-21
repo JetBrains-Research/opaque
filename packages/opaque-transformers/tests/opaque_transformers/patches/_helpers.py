@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Shared fixtures and helpers for opaque-patches compatibility tests.
+"""Shared fixtures and helpers for opaque-kernels compatibility tests.
 
 The helpers exercise ``opaque.transformers.patches.apply_model_patches`` against
 ``opaque.api.engine.clipping.clipped_grad`` to verify that patched HF

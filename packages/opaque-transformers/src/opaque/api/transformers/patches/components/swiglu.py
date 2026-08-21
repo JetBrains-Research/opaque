@@ -11,7 +11,7 @@ def _make_swiglu_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.api.patches.kernels.swiglu import Opaque_SwiGLU
+        from opaque.api.kernels.swiglu import Opaque_SwiGLU
 
         return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
 
@@ -24,7 +24,7 @@ def _make_phi3_mlp_forward(original):
     def forward(self, hidden_states):
         if not hidden_states.is_cuda:
             return original(self, hidden_states)
-        from opaque.api.patches.kernels.swiglu import Opaque_SwiGLU
+        from opaque.api.kernels.swiglu import Opaque_SwiGLU
 
         gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
         return self.down_proj(Opaque_SwiGLU.apply(gate, up))

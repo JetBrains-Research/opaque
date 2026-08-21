@@ -38,7 +38,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
-| `opaque-patches` | `opaque.patches.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) |
+| `opaque-kernels` | `opaque.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) |
 | `opaque-transformers` | `opaque.transformers` | Hugging Face trainer + integration; TRL-style `SFTTrainer` / `DPOTrainer` (`opaque.transformers.trl`) built on `DPTrainer`; the Hugging Face and PEFT compatibility patches (`opaque.transformers.patches`) |
 | `opaque-alignment` | `opaque.alignment` | Functional, mechanism-agnostic DP-safe SFT / DPO primitives: per-example losses, log-prob helpers, collators, reference helpers, reward metrics |
 | `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend); torch-free standalone |
@@ -56,7 +56,7 @@ opaque.optimizers                                          <- opaque-optimizers
 opaque.dpsgd.{clipping,noise,sampling,accounting}          <- opaque-dpsgd
 opaque.dpftrl.{clipping,noise,sampling,accounting}         <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
-opaque.patches.kernels                                     <- opaque-patches
+opaque.kernels                                     <- opaque-kernels
 opaque.transformers{,.trl,.patches}                        <- opaque-transformers
 opaque.alignment.{sft,dpo,data,metric}                     <- opaque-alignment
 opaque.accounting                                          <- opaque-accounting
@@ -166,7 +166,7 @@ for batch_x, batch_y in dataloader:
 - **Hugging Face compatibility**: automatic `vmap` patching for LLaMA, Mistral,
   Qwen2/3, Phi-3, Gemma/Gemma2, Granite, Cohere/Cohere2 via
   `opaque.transformers.patches`, plus fused Triton kernels via
-  `opaque.patches.kernels`.
+  `opaque.kernels`.
 
 ## Documentation
 

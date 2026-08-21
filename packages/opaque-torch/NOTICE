@@ -23,8 +23,8 @@ License. They carry an SPDX-License-Identifier of
 "Apache-2.0 AND BSD-2-Clause" and the LinkedIn copyright line in their
 file headers.
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py
+  packages/opaque-kernels/src/opaque/api/kernels/rms_norm.py
+  packages/opaque-kernels/src/opaque/api/kernels/fused_add_rms_norm.py
 
 BSD 2-Clause License text:
 
@@ -65,12 +65,12 @@ project (https://github.com/unslothai/unsloth), distributed under the
 Apache License, Version 2.0. Adapted to Opaque's vmap-friendly
 new-style autograd dispatch (Opaque_* + _Backward + setup_context).
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/swiglu.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/geglu.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/cross_entropy.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/lora.py
+  packages/opaque-kernels/src/opaque/api/kernels/_utils.py
+  packages/opaque-kernels/src/opaque/api/kernels/swiglu.py
+  packages/opaque-kernels/src/opaque/api/kernels/geglu.py
+  packages/opaque-kernels/src/opaque/api/kernels/rope_embedding.py
+  packages/opaque-kernels/src/opaque/api/kernels/cross_entropy.py
+  packages/opaque-kernels/src/opaque/api/kernels/lora.py
 
 
 ------------------------------------------------------------------------
@@ -84,8 +84,8 @@ under the Apache License, Version 2.0. Simplified to drop bias /
 Kahan / VocabOrdering / dLSE / shift handling and adapted to Opaque's
 vmap-friendly autograd dispatch.
 
-  packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py
-  packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py
+  packages/opaque-kernels/src/opaque/api/kernels/_utils.py
+  packages/opaque-kernels/src/opaque/api/kernels/linear_cross_entropy.py
 
 
 ------------------------------------------------------------------------

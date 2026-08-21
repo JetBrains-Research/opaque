@@ -14,7 +14,7 @@
     <orderEntry type="module" module-name="opaque-optimizers" exported="" />
     <orderEntry type="module" module-name="opaque-alignment" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
-    <orderEntry type="module" module-name="opaque-patches" exported="" />
+    <orderEntry type="module" module-name="opaque-kernels" exported="" />
     <orderEntry type="module" module-name="opaque-dpftrl" exported="" />
   </component>
 </module>

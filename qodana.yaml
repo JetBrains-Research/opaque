@@ -162,14 +162,14 @@ exclude:
       - packages/opaque-jax/tests
       - packages/opaque-mlx/tests
       - packages/opaque-optimizers/tests
-      - packages/opaque-patches/tests
+      - packages/opaque-kernels/tests
       - packages/opaque-torch/tests
       - packages/opaque-transformers/tests
       - tests
       - packages/opaque-engine/src/opaque/api/engine/clipping
       - packages/opaque-engine/src/opaque/api/engine/functional
       - packages/opaque-engine/src/opaque/api/engine/random
-      - packages/opaque-patches/src/opaque/api/patches
+      - packages/opaque-kernels/src/opaque/api/patches
 
 # Resolve every workspace package so inspections, vulnerability checks, license
 # audit, and SBOM generation see the same dependency graph as CI.

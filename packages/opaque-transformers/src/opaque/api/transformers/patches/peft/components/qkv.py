@@ -24,7 +24,7 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Replaces 3 separate q_proj/k_proj/v_proj LoRA calls with a single
     fused kernel call that shares X computation across all three projections.
     """
-    from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
+    from opaque.api.kernels.lora import Opaque_LoRA_QKV
 
     dtype = _active_lora_dtype(hidden_states)
 

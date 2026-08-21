@@ -25,7 +25,7 @@ def _make_lora_linear_forward(original):
         if not x.is_cuda:
             return original(self, x, *args, **kwargs)
 
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_W
+        from opaque.api.kernels.lora import Opaque_LoRA_W
 
         if self.disable_adapters or not self.active_adapters:
             return self.base_layer(x)

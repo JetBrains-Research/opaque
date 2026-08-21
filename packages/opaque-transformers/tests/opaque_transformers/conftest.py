@@ -3,7 +3,7 @@
 Re-exports fixtures from _helpers (which also provides ``prepare_lora_model``
 and ``run_clipped_grad_test`` as plain functions that tests import directly).
 
-Applies the opaque-patches runtime patches once at collection time so the
+Applies the opaque-kernels runtime patches once at collection time so the
 vmap-safety patches are in effect for the whole test session. Patching is
 opt-in in production; tests opt in via this conftest.
 """

@@ -11,7 +11,7 @@ def _make_geglu_exact_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.api.patches.kernels.geglu import Opaque_GeGLU_Exact
+        from opaque.api.kernels.geglu import Opaque_GeGLU_Exact
 
         return self.down_proj(
             Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x))
@@ -26,7 +26,7 @@ def _make_geglu_approx_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.api.patches.kernels.geglu import Opaque_GeGLU_Approx
+        from opaque.api.kernels.geglu import Opaque_GeGLU_Approx
 
         return self.down_proj(
             Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x))

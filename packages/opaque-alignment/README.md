@@ -5,7 +5,7 @@ per-example loss functions (DPO / SFT families), log-probability helpers, prefer
 collators, dataset transforms, reference-model helpers, alignment metrics, and
 memory-efficient fused-linear twins (`fused_nll_loss` / `fused_dft_loss` /
 `fused_sequence_logp`) that project hidden states through the `lm_head` via the
-optional `opaque-patches` linear-CE kernel.
+optional `opaque-kernels` linear-CE kernel.
 
 Built on `opaque-engine` (clipping, functional, distributed) and `opaque-base`
 (serialization). Consumed by both functional training scripts

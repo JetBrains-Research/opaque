@@ -9,7 +9,7 @@ User-facing entry points:
   variant.
 - :func:`apply_peft_model_patches` — PEFT-only variant.
 
-See :mod:`opaque.patches.kernels`, :mod:`opaque.transformers.patches.families`,
+See :mod:`opaque.kernels`, :mod:`opaque.transformers.patches.families`,
 and :mod:`opaque.transformers.patches.peft` for the power-user submodules. The Torch-core
 runtime patches belong to the provider —
 :func:`opaque.torch.apply_runtime_patches` and

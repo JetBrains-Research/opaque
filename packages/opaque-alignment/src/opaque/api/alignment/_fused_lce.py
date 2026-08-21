@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Bridge to the opaque-patches fused linear cross-entropy kernel.
+"""Bridge to the opaque-kernels fused linear cross-entropy kernel.
 
 The fused alignment primitives — :func:`~opaque.api.alignment.sft.loss.fused_nll_loss`,
 :func:`~opaque.api.alignment.sft.loss.fused_dft_loss`, and
@@ -8,7 +8,7 @@ The fused alignment primitives — :func:`~opaque.api.alignment.sft.loss.fused_n
 backend: the patches Triton ``Opaque_LinearCrossEntropyLoss`` kernel. It computes
 the per-token cross-entropy ``Σ CE`` against ``hidden @ weight.T`` without
 materialising the ``(T, V)`` logits and recomputes the LSE in its backward.
-``opaque-patches`` is the optional ``opaque-alignment[patches]`` dependency, so
+``opaque-kernels`` is the optional ``opaque-alignment[patches]`` dependency, so
 each primitive falls back to its eager (logits-materialising) counterpart when
 the kernel is unavailable (e.g. CPU CI).
 
@@ -31,10 +31,10 @@ import torch
 # Patches is the optional ``opaque-alignment[patches]`` extra, not a runtime
 # dependency. Resolve the kernel module dynamically so the bridge remains
 # optional.
-_LCE_KERNEL_PATH = "opaque.api.patches.kernels.linear_cross_entropy"
-_CE_KERNEL_PATH = "opaque.api.patches.kernels.cross_entropy"
+_LCE_KERNEL_PATH = "opaque.api.kernels.linear_cross_entropy"
+_CE_KERNEL_PATH = "opaque.api.kernels.cross_entropy"
 # Pure-PyTorch chunked kernel (Triton-free): the fused-CE path on MPS/CPU.
-_LCE_CHUNKED_PATH = "opaque.api.patches.kernels.linear_ce_chunked"
+_LCE_CHUNKED_PATH = "opaque.api.kernels.linear_ce_chunked"
 
 
 def lce_available(hidden: torch.Tensor) -> bool:
@@ -42,7 +42,7 @@ def lce_available(hidden: torch.Tensor) -> bool:
 
     CUDA + half precision routes to the Triton kernel; any other host (MPS/CPU)
     routes to the pure-PyTorch chunked kernel, which streams the LSE in fp32 and
-    works in any float dtype. ``opaque-patches`` must be importable either way
+    works in any float dtype. ``opaque-kernels`` must be importable either way
     (the ``[patches]`` extra); otherwise the caller uses its eager fallback.
     """
     if not hidden.is_floating_point():
@@ -63,7 +63,7 @@ def lce_available(hidden: torch.Tensor) -> bool:
 def selective_log_softmax_available(logits: torch.Tensor) -> bool:
     """True when the patches chunked CE kernel can power ``selective_log_softmax``.
 
-    Needs CUDA and ``opaque-patches`` importable. The kernel casts inputs to fp32
+    Needs CUDA and ``opaque-kernels`` importable. The kernel casts inputs to fp32
     internally, so half precision is *not* required (unlike :func:`lce_available`).
     The eager fallback materialises a ``(T, V)`` ``log_softmax`` tensor and stays
     available everywhere this returns False.

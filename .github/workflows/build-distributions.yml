@@ -67,8 +67,8 @@ jobs:
       - name: Build opaque-auditing
         run: uv build packages/opaque-auditing --wheel --out-dir dist
 
-      - name: Build opaque-patches
-        run: uv build packages/opaque-patches --wheel --out-dir dist
+      - name: Build opaque-kernels
+        run: uv build packages/opaque-kernels --wheel --out-dir dist
 
       - name: Build opaque-transformers
         run: uv build packages/opaque-transformers --wheel --out-dir dist

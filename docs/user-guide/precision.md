@@ -209,7 +209,7 @@ own dtype object binds the mechanism to that one backend.
 |-----------------------|---------------------|
 | `torch.amp.autocast(device_type, dtype=...)` | Used directly; nothing to wrap. The trainer enters it around the loss closure. |
 | `torch.amp.GradScaler` | `opaque.precision.loss_scaler` — functional analog. State is a frozen dataclass; defaults match `GradScaler` (`init_scale=2**16`, `growth_factor=2.0`, `backoff_factor=0.5`, `growth_interval=2000`). |
-| `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-patches` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
+| `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-kernels` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
 | `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and unscale, while the surrounding loop always runs its noised `optimizer_step(...)` and accountant steps; raw finiteness only backs off the private scale. |
 
 The structural gap — the scaler doesn't own the optimizer call — is forced by

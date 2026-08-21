@@ -40,7 +40,7 @@ dependencies = [
     "opaque-engine>=0.0.0.dev0",
     "opaque-torch>=0.0.0.dev0",
     "opaque-base>=0.0.0.dev0",
-    # NO opaque-patches: alignment-specific kernels live inside this package
+    # NO opaque-kernels: alignment-specific kernels live inside this package
     #   (Opaque_FusedLinearPreference is self-contained pure-PyTorch).
     # NO opaque-dpsgd, NO opaque-dpftrl, NO opaque-optimizers
     #   — mechanism + optimizer are chosen by the caller.
@@ -49,7 +49,7 @@ dependencies = [
 [project.optional-dependencies]
 # Recipe path for SFT users who want opaque_linear_cross_entropy_loss memory
 # optimization. Not needed for the alignment primitives themselves.
-patches = ["opaque-patches>=0.0.0.dev0"]
+patches = ["opaque-kernels>=0.0.0.dev0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,4 +71,4 @@ package = true
 opaque-engine = { workspace = true }
 opaque-torch = { workspace = true }
 opaque-base = { workspace = true }
-opaque-patches = { workspace = true }
+opaque-kernels = { workspace = true }

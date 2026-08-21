@@ -23,8 +23,8 @@ members = [
     "opaque-dpftrl",
     "opaque-dpsgd",
     "opaque-engine",
+    "opaque-kernels",
     "opaque-optimizers",
-    "opaque-patches",
     "opaque-torch",
     "opaque-transformers",
 ]
@@ -2356,8 +2356,8 @@ dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-dpsgd" },
     { name = "opaque-engine" },
+    { name = "opaque-kernels" },
     { name = "opaque-optimizers" },
-    { name = "opaque-patches" },
     { name = "opaque-torch" },
 ]
 
@@ -2427,8 +2427,8 @@ requires-dist = [
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-kernels", editable = "packages/opaque-kernels" },
     { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
-    { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
     { name = "opaque-transformers", extras = ["trl"], marker = "extra == 'trl'", editable = "packages/opaque-transformers" },
@@ -2491,7 +2491,7 @@ dependencies = [
 
 [package.optional-dependencies]
 patches = [
-    { name = "opaque-patches" },
+    { name = "opaque-kernels" },
 ]
 
 [package.metadata]
@@ -2499,7 +2499,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=2.0.0" },
     { name = "opaque-base", editable = "packages/opaque-base" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
-    { name = "opaque-patches", marker = "extra == 'patches'", editable = "packages/opaque-patches" },
+    { name = "opaque-kernels", marker = "extra == 'patches'", editable = "packages/opaque-kernels" },
     { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "peft", specifier = ">=0.13.0" },
     { name = "safetensors", specifier = ">=0.4" },
@@ -2617,6 +2617,22 @@ requires-dist = [
 ]
 
 [[package]]
+name = "opaque-kernels"
+source = { editable = "packages/opaque-kernels" }
+dependencies = [
+    { name = "opaque-engine" },
+    { name = "opaque-torch" },
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-torch", editable = "packages/opaque-torch" },
+    { name = "torch", specifier = ">=2.9.0" },
+]
+
+[[package]]
 name = "opaque-optimizers"
 source = { editable = "packages/opaque-optimizers" }
 dependencies = [
@@ -2633,22 +2649,6 @@ requires-dist = [{ name = "opaque-engine", editable = "packages/opaque-engine" }
 
 [package.metadata.requires-dev]
 test = [{ name = "opaque-torch", editable = "packages/opaque-torch" }]
-
-[[package]]
-name = "opaque-patches"
-source = { editable = "packages/opaque-patches" }
-dependencies = [
-    { name = "opaque-engine" },
-    { name = "opaque-torch" },
-    { name = "torch" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "opaque-engine", editable = "packages/opaque-engine" },
-    { name = "opaque-torch", editable = "packages/opaque-torch" },
-    { name = "torch", specifier = ">=2.9.0" },
-]
 
 [[package]]
 name = "opaque-torch"
@@ -2693,8 +2693,8 @@ dependencies = [
     { name = "opaque-dpftrl" },
     { name = "opaque-dpsgd" },
     { name = "opaque-engine" },
+    { name = "opaque-kernels" },
     { name = "opaque-optimizers" },
-    { name = "opaque-patches" },
     { name = "opaque-torch" },
     { name = "peft" },
     { name = "torch" },
@@ -2714,8 +2714,8 @@ requires-dist = [
     { name = "opaque-dpftrl", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
+    { name = "opaque-kernels", editable = "packages/opaque-kernels" },
     { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
-    { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "peft", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.9.0" },

@@ -10,12 +10,12 @@ Install the root package as described in the [repository installation guide](htt
 Use its `transformers` extra for trainer integration or `trl` for TRL config
 conversion.
 
-Depends on `opaque-engine`, `opaque-patches`, `opaque-dpsgd`, `opaque-dpftrl`,
+Depends on `opaque-engine`, `opaque-kernels`, `opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, plus
 `transformers>=4.57`, `peft>=0.13`, and `datasets>=2.0`.
 
 For Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy), install
-`opaque-patches[transformers]` — kernels are a dependency of `opaque-patches`
+`opaque-kernels[transformers]` — kernels are a dependency of `opaque-kernels`
 and gate on CUDA + Triton at runtime.
 
 ## Quick start

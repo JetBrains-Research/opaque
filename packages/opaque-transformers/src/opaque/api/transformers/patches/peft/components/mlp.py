@@ -46,7 +46,7 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
     def forward(self, x):
         if not x.is_cuda:
             return original_forward(x)
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.kernels.lora import Opaque_LoRA_MLP
 
         dtype = _active_lora_dtype(x)
 

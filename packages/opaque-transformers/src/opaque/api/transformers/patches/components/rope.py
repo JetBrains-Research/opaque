@@ -32,7 +32,7 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
         k_embed = (k * cos_u) + (_rotate_half(k) * sin_u)
         return q_embed, k_embed
 
-    from opaque.api.patches.kernels.rope_embedding import Opaque_RoPE_QK
+    from opaque.api.kernels.rope_embedding import Opaque_RoPE_QK
 
     # HF provides cos/sin as (batch, seq_len, head_dim) or (seq_len, head_dim).
     # The kernel needs 2D (seq_len, head_dim) after squeeze.

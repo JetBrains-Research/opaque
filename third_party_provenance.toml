@@ -10,8 +10,8 @@ license = "BSD-2-Clause"
 disposition = "adapted"
 requires_notice = true
 files = [
-  "packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/rms_norm.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/fused_add_rms_norm.py",
 ]
 
 [[upstreams]]
@@ -21,12 +21,12 @@ license = "Apache-2.0"
 disposition = "adapted"
 requires_notice = true
 files = [
-  "packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/swiglu.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/geglu.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/cross_entropy.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/lora.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/_utils.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/swiglu.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/geglu.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/rope_embedding.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/cross_entropy.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/lora.py",
 ]
 
 [[upstreams]]
@@ -36,8 +36,8 @@ license = "Apache-2.0"
 disposition = "adapted"
 requires_notice = true
 files = [
-  "packages/opaque-patches/src/opaque/api/patches/kernels/_utils.py",
-  "packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/_utils.py",
+  "packages/opaque-kernels/src/opaque/api/patches/kernels/linear_cross_entropy.py",
 ]
 
 [[upstreams]]

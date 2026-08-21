@@ -54,7 +54,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_forward(self, device):
         """Fused LoRA MLP forward should match PyTorch matmul reference."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = (2, 16, 256, 512, 8)
@@ -82,7 +82,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_backward(self, device):
         """Fused LoRA MLP should produce correct gradients."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = (2, 16, 256, 512, 8)

@@ -7,7 +7,7 @@ Direct functions only: there is no string registry / resolver / variant enum.
 data changes only that example's gradient, enforced by the NaN-injection test in
 ``tests/sft/loss/test_sft.py``). ``fused_nll_loss`` / ``fused_dft_loss`` are
 their memory-efficient drop-ins: same per-example math, but they take the hidden
-states + ``lm_head`` weight and fuse the projection through the opaque-patches
+states + ``lm_head`` weight and fuse the projection through the opaque-kernels
 linear-CE kernel (no ``(T, V)`` logits), with an eager fallback. The fused twins
 are per-example — drive them with ``vmap(grad)``.
 """

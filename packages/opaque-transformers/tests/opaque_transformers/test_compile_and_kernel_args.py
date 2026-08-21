@@ -146,7 +146,7 @@ def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatc
 
 def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeypatch):
     """``performance_kernels_config`` is a flat dict forwarded as-is to
-    ``apply_model_patches`` kwargs — no key translation, opaque-patches
+    ``apply_model_patches`` kwargs — no key translation, opaque-kernels
     keys used directly."""
     calls: list[dict] = []
 

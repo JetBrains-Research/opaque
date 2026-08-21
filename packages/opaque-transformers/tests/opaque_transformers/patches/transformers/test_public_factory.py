@@ -489,7 +489,7 @@ def test_register_family_routes_via_apply_transformers_model_patches():
     """``apply_transformers_model_patches`` (the dispatcher used by
     :func:`opaque.transformers.patches.apply_model_patches`) consults the registry,
     so user-registered families are reached without any source-code
-    changes inside opaque-patches."""
+    changes inside opaque-kernels."""
     from opaque.api.transformers.patches._router import apply_transformers_model_patches
 
     name = "public_api_test_router_dispatch"

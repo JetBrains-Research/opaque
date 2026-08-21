@@ -40,7 +40,7 @@ dependencies = [
     "opaque-accounting>=0.0.0.dev0",
     "opaque-dpsgd>=0.0.0.dev0",
     "opaque-optimizers>=0.0.0.dev0",
-    "opaque-patches>=0.0.0.dev0",
+    "opaque-kernels>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
@@ -87,7 +87,7 @@ workspace.members = [
     "packages/opaque-auditing",
     "packages/opaque-transformers",
     "packages/opaque-accounting",
-    "packages/opaque-patches",
+    "packages/opaque-kernels",
     "packages/opaque-alignment",
 ]
 
@@ -101,7 +101,7 @@ opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
 opaque-transformers = { workspace = true }
 opaque-accounting = { workspace = true }
-opaque-patches = { workspace = true }
+opaque-kernels = { workspace = true }
 opaque-alignment = { workspace = true }
 
 [dependency-groups]
@@ -110,7 +110,7 @@ opaque-alignment = { workspace = true }
 # transformers, peft) live in each package's [dependencies] or
 # [project.optional-dependencies] and compose via `--extra`. Triton is not
 # explicitly declared — it is a platform-gated transitive dependency of
-# `opaque-patches` kernels (only resolved on Linux x86_64) and auto-disabled
+# `opaque-kernels` kernels (only resolved on Linux x86_64) and auto-disabled
 # when CUDA + Triton are not importable.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
@@ -207,7 +207,7 @@ src = [
   "packages/opaque-dpsgd/src",
   "packages/opaque-engine/src",
   "packages/opaque-optimizers/src",
-  "packages/opaque-patches/src",
+  "packages/opaque-kernels/src",
   "packages/opaque-transformers/src",
 ]
 

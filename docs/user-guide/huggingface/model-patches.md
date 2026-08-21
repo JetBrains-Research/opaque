@@ -288,7 +288,7 @@ blocks (up to 65536), avoiding materialisation of the full
 The kernel honours `label_smoothing` natively (`F.cross_entropy(...,
 label_smoothing=...)` parity) — pass `label_smoothing=...` as a loss
 kwarg and the kernel applies the smoothed formula directly.
-Available standalone as `opaque.patches.kernels.opaque_cross_entropy_loss`.
+Available standalone as `opaque.kernels.opaque_cross_entropy_loss`.
 
 ### Fused linear cross-entropy
 
@@ -353,7 +353,7 @@ Phi-3 (combined qkv_proj), Cohere (no transpose).
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.patches.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 h = opaque_swiglu(gate, up)
 loss = opaque_cross_entropy_loss(logits, labels)

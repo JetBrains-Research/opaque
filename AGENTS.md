@@ -35,9 +35,9 @@ ships an `__init__.py`.
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-dpftrl` | `opaque.api.dpftrl.*`, `opaque.api.accounting.dpftrl.*`; façade `opaque.dpftrl` | MF mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers, DP-FTRL-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-auditing` | `opaque.api.auditing.*`; façade `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) | `opaque-engine`, `opaque-accounting` |
-| `opaque-patches` | `opaque.api.patches.kernels`; façade `opaque.patches.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine`, `opaque-torch` |
-| `opaque-transformers` | `opaque.api.transformers.*`; façades `opaque.transformers`, `opaque.transformers.patches` | HF trainer + integration, plus the HF Transformers and PEFT compatibility patches (vmap-safe attention, KV cache, LoRA fusion) | `opaque-engine`, `opaque-torch`, `opaque-patches`, transformers, peft |
-| `opaque-alignment` | `opaque.api.alignment.*`; façade `opaque.alignment` | DP-safe preference learning (DPO, SFT); self-contained fused-preference kernel, so no `opaque-patches` dependency | `opaque-engine`, `opaque-torch`, `opaque-base`, transformers, datasets, peft |
+| `opaque-kernels` | `opaque.api.kernels`; façade `opaque.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine`, `opaque-torch` |
+| `opaque-transformers` | `opaque.api.transformers.*`; façades `opaque.transformers`, `opaque.transformers.patches` | HF trainer + integration, plus the HF Transformers and PEFT compatibility patches (vmap-safe attention, KV cache, LoRA fusion) | `opaque-engine`, `opaque-torch`, `opaque-kernels`, transformers, peft |
+| `opaque-alignment` | `opaque.api.alignment.*`; façade `opaque.alignment` | DP-safe preference learning (DPO, SFT); self-contained fused-preference kernel, so no `opaque-kernels` dependency | `opaque-engine`, `opaque-torch`, `opaque-base`, transformers, datasets, peft |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
 pulls only `opaque-engine`, `opaque-accounting`, and their transitive
@@ -119,7 +119,7 @@ uv run pytest packages/opaque-torch/tests/     # Torch-executing suites, incl. o
 uv run pytest packages/opaque-dpsgd/tests/
 uv run pytest packages/opaque-dpftrl/tests/
 uv run pytest packages/opaque-auditing/tests/
-uv run pytest packages/opaque-patches/tests/
+uv run pytest packages/opaque-kernels/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
 ```
@@ -136,7 +136,7 @@ pip install opaque-dpsgd                 # DP-SGD mechanisms
 pip install opaque-dpsgd[optimizers]     # DP-SGD + opaque-optimizers
 pip install opaque-dpftrl                # MF (DP-FTRL) mechanisms
 pip install opaque-auditing              # empirical privacy auditing
-pip install opaque-patches               # fused Triton kernels + PyTorch fallbacks
+pip install opaque-kernels               # fused Triton kernels + PyTorch fallbacks
 pip install opaque-transformers          # HF trainer integration + HF/PEFT patches
 pip install opaque-alignment             # DP-safe preference learning (DPO, SFT)
 pip install "opaque[all]"                # everything
@@ -181,7 +181,7 @@ Patch surfaces, by owner:
   `.families` (HF model patches: vmap-safe attention, KV cache, per-model
   component replacements, custom-family registry), `.peft` (vmap-safe linear,
   MLP, QKV), `.runtime`, and `.types`.
-- `opaque.patches.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
+- `opaque.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
   fused CE, LoRA), with PyTorch fallbacks.
 - `opaque.transformers` — compatibility-only runtime (Poisson-collator
   compat, trainer integration).

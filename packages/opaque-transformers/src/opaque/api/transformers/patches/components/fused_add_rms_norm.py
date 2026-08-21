@@ -41,7 +41,7 @@ def _fused_add_rms_fac_llama(orig):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-        from opaque.api.patches.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
+        from opaque.api.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
 
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -93,7 +93,7 @@ def _fused_add_rms_fac_gemma(orig):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-        from opaque.api.patches.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
+        from opaque.api.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
 
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -145,7 +145,7 @@ def _fused_add_rms_fac_phi3(orig):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-        from opaque.api.patches.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
+        from opaque.api.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
 
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -198,7 +198,7 @@ def _fused_add_rms_fac_granite(orig):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-        from opaque.api.patches.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
+        from opaque.api.kernels.fused_add_rms_norm import Opaque_FusedAddRMSNorm
 
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)

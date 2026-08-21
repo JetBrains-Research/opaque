@@ -13,7 +13,7 @@ def _make_rms_norm_forward(
     def forward(self, hidden_states):
         if not hidden_states.is_cuda:
             return original(self, hidden_states)
-        from opaque.api.patches.kernels.rms_norm import Opaque_RMSNorm
+        from opaque.api.kernels.rms_norm import Opaque_RMSNorm
 
         eps = getattr(self, "variance_epsilon", None) or getattr(self, "eps", 1e-6)
         return Opaque_RMSNorm.apply(

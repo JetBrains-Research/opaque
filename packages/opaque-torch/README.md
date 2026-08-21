@@ -34,5 +34,5 @@ The Torch execution provider implements:
 Checkpoint/functorch compatibility is the provider's own concern:
 `opaque.torch.apply_runtime_patches()` applies it, `opaque.torch.checkpoint`
 exposes the individual installers and the capability probes, and none of it
-needs `opaque-patches` installed. Higher layers call this one first — fixing
+needs `opaque-kernels` installed. Higher layers call this one first — fixing
 Hugging Face requires fixing torch — so their users still make a single call.

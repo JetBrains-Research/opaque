@@ -58,7 +58,7 @@ def _reset_patched_families() -> None:
 
 
 def family_name(model: object) -> str | None:
-    """Return the opaque-patches family name for an HF model instance.
+    """Return the opaque-kernels family name for an HF model instance.
 
     Tries ``model.config.model_type`` first (the HF-canonical signal),
     then falls back to the modeling module path

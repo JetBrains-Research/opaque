@@ -37,7 +37,7 @@ dependencies = [
     "datasets>=2.0.0",
     "opaque-engine>=0.0.0.dev0",
     "opaque-torch>=0.0.0.dev0",
-    "opaque-patches>=0.0.0.dev0",
+    "opaque-kernels>=0.0.0.dev0",
     "opaque-dpsgd>=0.0.0.dev0",
     "opaque-dpftrl>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
@@ -77,7 +77,7 @@ package = true
 [tool.uv.sources]
 opaque-engine = { workspace = true }
 opaque-torch = { workspace = true }
-opaque-patches = { workspace = true }
+opaque-kernels = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-accounting = { workspace = true }

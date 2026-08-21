@@ -28,7 +28,7 @@ def _make_moe_experts_forward(original, *, grouped=True):
     """
 
     def forward(self, hidden_states, top_k_index, top_k_weights):
-        from opaque.api.patches.kernels.moe import opaque_moe
+        from opaque.api.kernels.moe import opaque_moe
 
         # reshape (not view) keeps this vmap-traceable under an extra mapped dim.
         hidden_dim = self.gate_up_proj.shape[-1]

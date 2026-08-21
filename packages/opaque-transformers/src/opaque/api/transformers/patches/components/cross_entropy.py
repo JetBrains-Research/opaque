@@ -80,7 +80,7 @@ def _opaque_causal_lm_loss(
             **kwargs,
         )
 
-    from opaque.api.patches.kernels.cross_entropy import Opaque_CrossEntropyLoss
+    from opaque.api.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
     logits = logits.float()
 
@@ -255,13 +255,13 @@ def _make_fused_ce_causal_lm_forward(original):
 
         if use_fused_ce:
             if hidden_states.is_cuda:
-                from opaque.api.patches.kernels.linear_cross_entropy import (
+                from opaque.api.kernels.linear_cross_entropy import (
                     Opaque_LinearCrossEntropyLoss,
                 )
 
                 ce_loss_fn = Opaque_LinearCrossEntropyLoss.apply
             else:
-                from opaque.api.patches.kernels.linear_ce_chunked import (
+                from opaque.api.kernels.linear_ce_chunked import (
                     linear_nll_sum_chunked as ce_loss_fn,
                 )
 
