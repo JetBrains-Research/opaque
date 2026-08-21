@@ -15,13 +15,6 @@ pytest_args=(
   uv run pytest "$TEST_PATH"
   -m "$PYTEST_MARKER"
 )
-if [[ -n "${JUNIT_DIR:-}" ]]; then
-  # One report per path, named after it, so `check_executed_tests.py` can sum
-  # executed counts across a leg. pytest overwrites `--junitxml`, so a shared
-  # file would report only the last path.
-  mkdir -p "$JUNIT_DIR"
-  pytest_args+=(--junitxml "$JUNIT_DIR/${TEST_PATH//\//_}.xml")
-fi
 if [[ -n "${PYTEST_XDIST:-}" ]]; then
   read -r -a xdist_args <<< "$PYTEST_XDIST"
   pytest_args+=("${xdist_args[@]}")
