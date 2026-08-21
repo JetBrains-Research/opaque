@@ -319,6 +319,11 @@ def concatenate(values: Any, axis: int = 0) -> torch.Tensor:
     return torch.cat(tuple(values), dim=axis)
 
 
+@_TORCH.implements(ops.stack)
+def stack(values: Any, axis: int = 0) -> torch.Tensor:
+    return torch.stack(tuple(values), dim=axis)
+
+
 @_TORCH.implements(ops.slice_array)
 def slice_array(value: Any, slices: Any) -> torch.Tensor:
     return value[slices]

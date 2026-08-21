@@ -574,6 +574,24 @@ def concatenate(values: Any, axis: int = 0) -> object:
 
 
 @primitive(tier=PrimitiveTier.CORE)
+def stack(values: Any, axis: int = 0) -> object:
+    """Join arrays along a **new** axis.
+
+    Args:
+        values: Any iterable of arrays with identical shapes and dtypes.
+        axis: Position of the new axis in the result; negative counts from
+            its end.
+
+    Returns:
+        One array with one more dimension than its inputs, of length equal to
+        the number of them. This is the difference from :func:`concatenate`,
+        which joins along an existing axis and preserves rank: stacking three
+        ``(4,)`` arrays gives ``(3, 4)``, concatenating them gives ``(12,)``.
+    """
+    raise NotImplementedError
+
+
+@primitive(tier=PrimitiveTier.CORE)
 def slice_array(value: object, slices: Any) -> object:
     """Index ``value``, as the subscript operator would.
 
@@ -670,6 +688,7 @@ __all__ = [
     "shape",
     "slice_array",
     "sqrt",
+    "stack",
     "square",
     "squeeze",
     "subtract",

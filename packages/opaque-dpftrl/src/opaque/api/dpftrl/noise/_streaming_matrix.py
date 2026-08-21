@@ -179,9 +179,7 @@ def multiply_array(A: StreamingMatrix, x: Any) -> Any:
 
     if _is_host_array(x):
         return np.stack(results)
-    return ops.concatenate(
-        [ops.expand_dims(result, axis=0) for result in results], axis=0
-    )
+    return ops.stack(results, axis=0)
 
 
 def multiply_streaming_matrices(

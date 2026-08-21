@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from opaque.api.auditing._coin_flip import CanaryScores
-from opaque.ops import concatenate, detach, expand_dims, is_array
+from opaque.ops import detach, is_array, stack
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
@@ -109,7 +109,7 @@ def _default_collate(examples: list[Any]) -> Any:
     """
     first = examples[0]
     if is_array(first):
-        return concatenate([expand_dims(example, 0) for example in examples], axis=0)
+        return stack(examples, axis=0)
     if isinstance(first, Mapping):
         columns = {
             key: _default_collate([example[key] for example in examples])

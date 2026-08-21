@@ -330,3 +330,24 @@ def test_grad_and_value_returns_gradients_first() -> None:
     assert len(both) == 2
     assert torch.equal(both[0], batch)
     assert torch.equal(both[1], params)
+
+
+def test_stack_joins_on_a_new_axis_where_concatenate_joins_an_existing_one() -> None:
+    """The distinction that made hand-rolling it error-prone.
+
+    Building a batch from per-example arrays was previously spelled
+    ``concatenate([expand_dims(x, 0) for x in xs], axis=0)`` in two packages —
+    correct, but easy to get wrong by one axis.
+    """
+    parts = [torch.ones(4), torch.zeros(4), torch.ones(4)]
+
+    assert ops.shape(ops.stack(parts)) == (3, 4)
+    assert ops.shape(ops.concatenate(parts)) == (12,)
+    assert ops.shape(ops.stack(parts, axis=1)) == (4, 3)
+    assert ops.shape(ops.stack(parts, axis=-1)) == (4, 3)
+    # Any iterable, matching concatenate.
+    assert ops.shape(ops.stack(part for part in parts)) == (3, 4)
+
+    stacked = ops.stack(parts)
+    assert ops.dtype(stacked) is torch.float32
+    assert torch.equal(ops.slice_array(stacked, 1), torch.zeros(4))
