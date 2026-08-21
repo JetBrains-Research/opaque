@@ -95,9 +95,10 @@ class ReleasePlan:
     tag: str
     series: str
     maintenance_branch: str
+    maintenance_branch_sha: str
     base_tag: str
+    branch_action: str
     commit_range: str
-    create_branch: bool
     prerelease: bool
 
 
@@ -124,10 +125,40 @@ def _ref_exists(repo: Path, ref: str) -> bool:
     )
 
 
-def _maintenance_branch_exists(repo: Path, branch: str) -> bool:
-    return _ref_exists(repo, f"refs/remotes/origin/{branch}") or _ref_exists(
-        repo, f"refs/heads/{branch}"
+def _maintenance_branch_sha(repo: Path, branch: str) -> str:
+    for ref in (f"refs/remotes/origin/{branch}", f"refs/heads/{branch}"):
+        if _ref_exists(repo, ref):
+            return _git(repo, "rev-parse", f"{ref}^{{commit}}")
+    return ""
+
+
+def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    return (
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "merge-base",
+                "--is-ancestor",
+                ancestor,
+                descendant,
+            ],
+            check=False,
+        ).returncode
+        == 0
     )
+
+
+def _tags_since(repo: Path, base_sha: str, target_sha: str) -> list[str]:
+    return _git(
+        repo,
+        "tag",
+        "--merged",
+        target_sha,
+        "--no-merged",
+        base_sha,
+    ).splitlines()
 
 
 def _reachable_versions(repo: Path, target_sha: str) -> dict[str, Version]:
@@ -209,19 +240,37 @@ def resolve_plan(
 
     tag = f"v{version}"
     maintenance_branch = f"release/{version.series}"
-    create_branch = source_branch == "main"
+    maintenance_branch_sha = _maintenance_branch_sha(repo, maintenance_branch)
 
-    if create_branch:
-        if _maintenance_branch_exists(repo, maintenance_branch):
+    if source_branch == "main":
+        if not maintenance_branch_sha:
+            branch_action = "create"
+        elif not _is_ancestor(repo, maintenance_branch_sha, target_sha):
             raise ValueError(
-                f"{maintenance_branch} already exists; dispatch preparation "
-                "from that branch"
+                f"{maintenance_branch} at {maintenance_branch_sha} cannot be "
+                f"fast-forwarded to main target {target_sha}; dispatch preparation "
+                f"from {maintenance_branch}"
             )
+        else:
+            intervening_tags = _tags_since(
+                repo,
+                maintenance_branch_sha,
+                target_sha,
+            )
+            if intervening_tags:
+                raise ValueError(
+                    f"{maintenance_branch} cannot be fast-forwarded to main target "
+                    f"{target_sha}; tags found after its current head: "
+                    f"{', '.join(intervening_tags)}"
+                )
+            branch_action = "fast-forward"
     elif maintenance_branch != source_branch:
         raise ValueError(
             f"version {version} must be released from {maintenance_branch}, "
             f"not {source_branch}"
         )
+    else:
+        branch_action = "none"
 
     tag_ref = f"refs/tags/{tag}"
     tag_exists = _ref_exists(repo, tag_ref)
@@ -304,9 +353,10 @@ def resolve_plan(
         tag=tag,
         series=version.series,
         maintenance_branch=maintenance_branch,
+        maintenance_branch_sha=maintenance_branch_sha,
         base_tag=base_tag,
+        branch_action=branch_action,
         commit_range=commit_range,
-        create_branch=create_branch,
         prerelease=version.is_prerelease,
     )
 
