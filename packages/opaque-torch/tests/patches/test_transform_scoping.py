@@ -11,15 +11,15 @@ from torch.func import grad, hessian, jacrev, jvp, vjp, vmap
 from torch.utils.checkpoint import checkpoint
 
 from opaque.api.engine.clipping import clipped_grad
-from opaque.api.patches.torch.checkpoint import native_support
-from opaque.patches import apply_runtime_patches
+from opaque.torch import apply_runtime_patches
+from opaque.torch.checkpoint import native_checkpoint_support
 
 apply_runtime_patches(vmap_checkpointing=True)
 
 SECOND_DERIVATIVE = 12.0
 
 backport_only = pytest.mark.skipif(
-    native_support.native_checkpoint_support(),
+    native_checkpoint_support(),
     reason="torch conditions create_graph natively; the backport is not applied",
 )
 

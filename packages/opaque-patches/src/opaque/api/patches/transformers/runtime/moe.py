@@ -19,7 +19,7 @@ so this is a CPU-under-vmap shim only.
 
 from __future__ import annotations
 
-from opaque.api.patches.torch.functorch_transform import under_functorch_transform
+from opaque.torch import under_functorch_transform
 
 
 def apply_grouped_mm_patches(*, vmap_grouped_mm: bool = True) -> None:

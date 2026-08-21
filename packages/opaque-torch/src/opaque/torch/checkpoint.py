@@ -3,10 +3,9 @@
 Public entry points for the vmap-safe checkpoint patches the Torch provider
 carries: the ``apply_*`` installers rebind the corresponding
 ``torch.utils.checkpoint`` / ``torch.func`` internals (idempotently), and the
-probes report what the running torch already supports. ``opaque-patches``
-composes these into :func:`opaque.patches.apply_runtime_patches`; they are
-exposed here so integrations can install a single patch without pulling in
-the whole patch set.
+probes report what the running torch already supports. :func:`opaque.torch.apply_runtime_patches`
+selects the whole set as one concern; the individual installers are exposed here
+so an integration can install a single patch without pulling in the rest.
 
 :func:`apply_checkpoint_patch` is the orchestrator over the whole set, and it is
 what :func:`opaque.execution.checkpoint` and

@@ -16,7 +16,7 @@ import torch
 from torch.func import functional_call, grad, vmap
 from torch.utils.checkpoint import checkpoint
 
-from opaque.patches import apply_runtime_patches
+from opaque.torch import apply_runtime_patches
 
 apply_runtime_patches(vmap_checkpointing=True)
 

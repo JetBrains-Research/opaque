@@ -31,6 +31,8 @@ The Torch execution provider implements:
 - `checkpoint(fn)` → `torch.utils.checkpoint.checkpoint(fn, ..., use_reentrant=False)`
 - `optimize_saved_activations(fn)` → enters `torch.autograd.graph.save_on_cpu(pin_memory=True)` per call
 
-Core checkpoint/functorch compatibility code lives inside `opaque-torch`, so
-the provider works independently of `opaque-patches`; the public
-`opaque.patches.torch` entry points remain as compatibility delegates.
+Checkpoint/functorch compatibility is the provider's own concern:
+`opaque.torch.apply_runtime_patches()` applies it, `opaque.torch.checkpoint`
+exposes the individual installers and the capability probes, and none of it
+needs `opaque-patches` installed. Higher layers call this one first — fixing
+Hugging Face requires fixing torch — so their users still make a single call.

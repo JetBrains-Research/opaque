@@ -11,6 +11,7 @@ import torch.nn as nn
 
 from opaque.api.patches.peft import apply_peft_model_patches
 from opaque.api.patches.transformers._router import apply_transformers_model_patches
+from opaque.torch import apply_runtime_patches as apply_torch_runtime_patches
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +98,16 @@ def apply_runtime_patches(
     batches), ``vmap_checkpointing`` (gradient-checkpointing shim),
     ``vmap_grouped_mm`` (vmap-safe grouped-GEMM gate for MoE experts).
     Per-model CE patches live on :func:`apply_model_patches`.
+
+    The Torch provider carries runtime patches of its own, and making Hugging
+    Face work under a functional transform requires them: the same flags are
+    forwarded to :func:`opaque.torch.apply_runtime_patches` first, so one call
+    here covers both layers.
     """
     global _runtime_patches_applied
     _runtime_patches_applied = True
+
+    apply_torch_runtime_patches(compat=compat, **kwargs)
 
     vmap_masking = kwargs.get("vmap_masking", compat)
     empty_batches = kwargs.get("empty_batches", compat)
@@ -137,16 +145,17 @@ def apply_runtime_patches(
             pass
 
     if vmap_checkpointing:
+        # The torch-core half already ran above, via the provider. What is left
+        # is the Hugging Face half: forcing non-reentrant checkpointing and
+        # making the input-requires-grad hook a no-op under a transform.
         try:
-            from opaque.api.patches.torch import apply_checkpoint_patch
-
-            apply_checkpoint_patch(vmap_checkpointing=vmap_checkpointing)
-        except ImportError:
-            logger.warning(
-                "opaque: checkpoint+functorch patches unavailable; "
-                "gradient checkpointing under vmap(grad(...)) may break.",
-                exc_info=True,
+            from opaque.api.patches.transformers.runtime.checkpoint import (
+                apply_checkpoint_patches,
             )
+
+            apply_checkpoint_patches(vmap_checkpointing=vmap_checkpointing)
+        except ImportError:
+            pass
 
 
 def is_runtime_patched() -> bool:

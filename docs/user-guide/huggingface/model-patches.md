@@ -47,7 +47,10 @@ apply_model_patches(
 ```
 
 `apply_runtime_patches()` should be called once near process startup,
-before creating checkpointed models or HF data collators.
+before creating checkpointed models or HF data collators. It forwards its flags
+to `opaque.torch.apply_runtime_patches()` first — making Hugging Face work under
+a functional transform requires the Torch-core shims — so this one call covers
+both layers.
 `apply_model_patches(model)` runs after the model is instantiated and
 after any PEFT / LoRA wrapping, so the patcher sees the final module
 graph.

@@ -10,8 +10,11 @@ User-facing entry points:
 - :func:`apply_peft_model_patches` — PEFT-only variant.
 
 See :mod:`opaque.patches.kernels`, :mod:`opaque.patches.transformers`,
-:mod:`opaque.patches.peft`, and :mod:`opaque.patches.torch` for the
-power-user submodules.
+and :mod:`opaque.patches.peft` for the power-user submodules. The Torch-core
+runtime patches belong to the provider —
+:func:`opaque.torch.apply_runtime_patches` and
+:mod:`opaque.torch.checkpoint` — and :func:`apply_runtime_patches` here
+forwards to them, so one call covers both layers.
 """
 
 from opaque.api.patches import (

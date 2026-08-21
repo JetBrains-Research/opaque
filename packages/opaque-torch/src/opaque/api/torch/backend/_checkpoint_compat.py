@@ -3,9 +3,10 @@
 """Torch-core checkpoint/functorch compatibility patches.
 
 This module lives in ``opaque-torch`` so the Torch provider can apply the
-necessary shims without depending on ``opaque-patches``.  The public entry
-points ``apply_checkpoint_patch`` and ``is_checkpoint_patched`` are re-exported
-by ``opaque.api.patches.torch.checkpoint`` together with Hugging Face glue.
+necessary shims without depending on any higher layer. ``apply_checkpoint_patch``
+is the whole torch-core concern and the only one
+:func:`opaque.torch.apply_runtime_patches` selects today; the Hugging Face glue
+that pairs with it belongs to ``opaque-transformers`` and is applied separately.
 """
 
 from __future__ import annotations

@@ -98,7 +98,6 @@ def test_apply_model_patches_propagates_explicit_runtime_kwargs(monkeypatch):
 def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkeypatch):
     """End-to-end: when compat=False, none of the three runtime sub-patches fire."""
     import opaque.api.patches as patches_init
-    import opaque.api.patches.torch as torch_pkg
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
     )
@@ -118,10 +117,11 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
         "apply_collator_patches",
         lambda **kw: calls.append("collator"),
     )
+    # The torch-core half is the provider's; spy on the delegation itself.
     monkeypatch.setattr(
-        torch_pkg,
-        "apply_checkpoint_patch",
-        lambda **kw: calls.append("checkpoint"),
+        patches_init,
+        "apply_torch_runtime_patches",
+        lambda **kw: calls.append("torch-runtime") if kw.get("compat", True) else None,
     )
 
     patches_init.apply_model_patches(_StubModel(), compat=False, peft=False)
@@ -134,7 +134,6 @@ def test_apply_model_patches_compat_false_does_not_enable_runtime_patches(monkey
 def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch):
     """Sanity: default behavior (compat=True) still applies the runtime patches."""
     import opaque.api.patches as patches_init
-    import opaque.api.patches.torch as torch_pkg
     from opaque.api.patches.transformers.runtime import (
         collator as collator_runtime,
     )
@@ -154,16 +153,17 @@ def test_apply_model_patches_default_compat_enables_runtime_patches(monkeypatch)
         "apply_collator_patches",
         lambda **kw: calls.append("collator"),
     )
+    # The torch-core half is the provider's; spy on the delegation itself.
     monkeypatch.setattr(
-        torch_pkg,
-        "apply_checkpoint_patch",
-        lambda **kw: calls.append("checkpoint"),
+        patches_init,
+        "apply_torch_runtime_patches",
+        lambda **kw: calls.append("torch-runtime") if kw.get("compat", True) else None,
     )
 
     patches_init.apply_model_patches(_StubModel(), peft=False)
 
-    assert set(calls) == {"masking", "collator", "checkpoint"}
+    assert set(calls) == {"masking", "collator", "torch-runtime"}
 
 
 # Which patches apply for which torch regime is covered by
-# tests/torch/test_checkpoint_gating.py.
+# packages/opaque-torch/tests/patches/test_checkpoint_gating.py.

@@ -1,23 +1,33 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""HuggingFace glue for gradient checkpointing under vmap(grad(...)).
+"""Hugging Face glue for gradient checkpointing under vmap(grad(...)).
 
-Not candidates for upstreaming and with no torch-version dependency, so applied
-on every regime (whenever ``transformers`` imports), independent of the
-torch-core patches.
+The torch-core half of this concern belongs to the Torch provider
+(:func:`opaque.torch.checkpoint.apply_checkpoint_patch`); what is left here
+rebinds ``transformers`` and so is applied on every torch regime, whenever
+``transformers`` imports.
 """
 
 from __future__ import annotations
 
 import logging
 
-from opaque.api.patches.torch.functorch_transform import under_functorch_transform
+from opaque.torch import under_functorch_transform
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["apply_checkpoint_patches"]
 
-def apply() -> None:
-    """Install Hugging Face checkpointing compatibility patches when available."""
+
+def apply_checkpoint_patches(*, vmap_checkpointing: bool = True) -> None:
+    """Install the Hugging Face checkpointing compatibility patches.
+
+    No-op when transformers is not importable — the torch-side checkpoint+vmap
+    composition does not depend on it. Idempotent.
+    """
+    if vmap_checkpointing is False:
+        return
+
     try:
         import transformers
     except ImportError:
@@ -40,6 +50,8 @@ def _force_non_reentrant(transformers) -> None:
     keeps base layers in eval, which otherwise makes checkpoint a no-op).
     """
     orig_enable = transformers.PreTrainedModel.gradient_checkpointing_enable
+    if getattr(orig_enable, "__opaque_patched__", False):
+        return
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         if gradient_checkpointing_kwargs is None:
@@ -55,6 +67,7 @@ def _force_non_reentrant(transformers) -> None:
             if getattr(m, "gradient_checkpointing", False):
                 m.training = True
 
+    gradient_checkpointing_enable.__opaque_patched__ = True
     transformers.PreTrainedModel.gradient_checkpointing_enable = (
         gradient_checkpointing_enable
     )
@@ -69,6 +82,8 @@ def _make_input_require_grads_vmap_safe(transformers) -> None:
     (``_require_grads_hooks``).
     """
     orig_enable = transformers.PreTrainedModel.enable_input_require_grads
+    if getattr(orig_enable, "__opaque_patched__", False):
+        return
 
     def _vmap_safe(hook):
         def wrapped(module, args, output):
@@ -91,4 +106,5 @@ def _make_input_require_grads_vmap_safe(transformers) -> None:
                 continue
             hooks_dict[handle.id] = _vmap_safe(hooks_dict[handle.id])
 
+    enable_input_require_grads.__opaque_patched__ = True
     transformers.PreTrainedModel.enable_input_require_grads = enable_input_require_grads

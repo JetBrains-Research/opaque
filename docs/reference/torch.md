@@ -56,8 +56,9 @@ Vmap-safe gradient-checkpointing patch installers and probes.
 [`opaque.execution`](execution.md)'s `checkpoint` and
 `optimize_saved_activations` need before they compose under a functional
 transform. The individual installers are exposed for integrations that want one
-patch rather than the whole set; `opaque.patches.apply_runtime_patches` composes
-them alongside the rest of the runtime patches.
+patch rather than the whole set. `opaque.torch.apply_runtime_patches` selects the
+whole set as its one concern; higher layers forward to it before applying
+runtime patches of their own, so a caller makes a single call.
 
 ::: opaque.torch.checkpoint
     options:
