@@ -1,19 +1,15 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the DPO EXO pairwise loss variant (work-unit γ.2).
+"""Tests for the DPO EXO pairwise loss variant.
 
-Covers :func:`exo_loss` (EXO pairwise loss):
-- ≥3 hand-computed reference cases (small, analytically tractable inputs).
-- Imports target the concrete implementation paths (public façade not wired
-  for this work-unit; façade wiring is γ.W).
+Shape, the label-smoothing floor, and non-negativity (EXO is a KL divergence).
+Closed-form reference values live in ``tests/test_reference_values.py`` and
+parity against TRL's ``exo_pair`` in ``tests/test_trl_parity.py``.
 """
 
 from __future__ import annotations
 
-import math
-
 import torch
-import torch.nn.functional as F
 
 from opaque.api.alignment.dpo.loss._exo import exo_loss
 
@@ -31,32 +27,6 @@ _T = torch.tensor
 
 class TestDpoExoPair:
     """Hand-computed reference cases for :func:`exo_loss`."""
-
-    def test_zero_logits_default_ls(self) -> None:
-        """c=0, r=0, β=0.1, ls=1e-3 → reference formula evaluated at logits=0."""
-        c = _T(0.0)
-        r = _T(0.0)
-        beta = 0.1
-        ls = 1e-3
-        logits = _T(beta * 0.0)
-        expected = F.sigmoid(logits) * (
-            F.logsigmoid(logits) - math.log(1 - ls)
-        ) + F.sigmoid(-logits) * (F.logsigmoid(-logits) - math.log(ls))
-        out = exo_loss(c, r, beta=beta)
-        assert torch.allclose(out, expected, atol=1e-6)
-
-    def test_positive_margin(self) -> None:
-        """c=1, r=-1, β=0.5, ls=1e-3."""
-        c = _T(1.0)
-        r = _T(-1.0)
-        beta = 0.5
-        ls = 1e-3
-        logits = _T(beta * (1.0 - (-1.0)))  # = 1.0
-        expected = F.sigmoid(logits) * (
-            F.logsigmoid(logits) - math.log(1 - ls)
-        ) + F.sigmoid(-logits) * (F.logsigmoid(-logits) - math.log(ls))
-        out = exo_loss(c, r, beta=beta)
-        assert torch.allclose(out, expected, atol=1e-5)
 
     def test_label_smoothing_zero_clamped_to_1e3(self) -> None:
         """label_smoothing=0 is silently clamped to 1e-3 (same as default)."""
