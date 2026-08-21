@@ -102,9 +102,10 @@ exact target SHA. It reuses that coverage when present, waits up to two hours
 for an in-progress matching run, fails if that run fails, and otherwise runs
 the full release matrix. This lets maintenance commits without a main CI run
 retain their normal release validation. The implementation rejects sources
-other than `main` and `release/X.Y`, creates a missing maintenance branch only
-after the candidate is green, and preserves handwritten release prose outside
-the three generated fences.
+other than `main` and `release/X.Y`, creates a missing maintenance branch or
+safely fast-forwards an existing compatible branch only after the candidate is
+green, and preserves handwritten release prose outside the three generated
+fences.
 
 ## Artifact contracts
 
