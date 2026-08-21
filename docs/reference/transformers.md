@@ -113,6 +113,7 @@ is the caller's loop.
 | `save_metrics(split, metrics, combined=True)` | Write `metrics.json` / `all_results.json` under `output_dir`. |
 | `save_state()` | Write `trainer_state.json` under the effective output directory. |
 | `save_model(output_dir=None)` | Write model weights + tokenizer + `training_args.bin` + `accountant.json`.  Does NOT write the DP runtime bundle (sampler / optimizer / RNG); resume requires `_save_checkpoint`'s output (driven by `save_strategy`). |
+| `save_accountant(output_dir=None)` | Write only `accountant.json`; returns the path written, or `None` before any `train()` call or on a rank excluded by `args.should_save`. Rank-gated but performs no barrier. |
 
 ### Distributed flags
 

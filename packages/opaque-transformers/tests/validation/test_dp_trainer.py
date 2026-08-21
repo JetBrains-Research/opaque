@@ -1287,6 +1287,97 @@ class TestDPTrainerCheckpointing:
         assert (out / "accountant.json").exists()
 
     # ------------------------------------------------------------------
+    # Accountant persistence, independent of the model
+    # ------------------------------------------------------------------
+
+    def _trained_trainer(self, model, tokenizer, dataset, tmp_path, **overrides):
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(
+                tmp_path, save_strategy="no", max_steps=2, **overrides
+            ),
+            processing_class=tokenizer,
+            train_dataset=dataset,
+            eval_dataset=dataset,
+        )
+        trainer.train()
+        return trainer
+
+    def test_save_accountant_writes_only_the_accountant(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """The accounting can be harvested without re-saving the model."""
+        model, tokenizer = gpt2_with_lora
+        trainer = self._trained_trainer(model, tokenizer, tiny_lm_dataset, tmp_path)
+
+        out = tmp_path / "accounting-only"
+        written = trainer.save_accountant(str(out))
+
+        assert written == str(out / "accountant.json")
+        assert (out / "accountant.json").exists()
+        # No model artefacts — that is the whole point of the method.
+        assert not (out / "model.safetensors").exists()
+        assert not (out / "adapter_model.safetensors").exists()
+        assert not (out / "training_args.bin").exists()
+
+    def test_save_accountant_creates_missing_directory(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        model, tokenizer = gpt2_with_lora
+        trainer = self._trained_trainer(model, tokenizer, tiny_lm_dataset, tmp_path)
+
+        out = tmp_path / "nested" / "does-not-exist-yet"
+        assert trainer.save_accountant(str(out)) is not None
+        assert (out / "accountant.json").exists()
+
+    def test_save_accountant_defaults_to_args_output_dir(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        model, tokenizer = gpt2_with_lora
+        default_dir = tmp_path / "default-target"
+        trainer = self._trained_trainer(model, tokenizer, tiny_lm_dataset, default_dir)
+
+        assert trainer.save_accountant() == str(default_dir / "accountant.json")
+        assert (default_dir / "accountant.json").exists()
+
+    def test_save_accountant_matches_what_save_model_writes(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """Factoring the write out of ``save_model`` changed no bytes."""
+        import json
+
+        model, tokenizer = gpt2_with_lora
+        trainer = self._trained_trainer(model, tokenizer, tiny_lm_dataset, tmp_path)
+
+        via_model = tmp_path / "via-save-model"
+        via_direct = tmp_path / "via-save-accountant"
+        trainer.save_model(str(via_model))
+        trainer.save_accountant(str(via_direct))
+
+        with (via_model / "accountant.json").open() as f:
+            from_model = json.load(f)
+        with (via_direct / "accountant.json").open() as f:
+            from_direct = json.load(f)
+        assert from_model == from_direct
+
+    def test_save_accountant_before_training_writes_nothing(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """No training run means no accounting to serialise — report, don't guess."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(tmp_path, save_strategy="no", max_steps=2),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        out = tmp_path / "untrained"
+        assert trainer.save_accountant(str(out)) is None
+        assert not (out / "accountant.json").exists()
+
+    # ------------------------------------------------------------------
     # Best-model tracking
     # ------------------------------------------------------------------
 
