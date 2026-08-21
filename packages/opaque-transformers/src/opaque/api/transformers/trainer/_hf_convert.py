@@ -62,7 +62,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "adam_beta1",
         "adam_beta2",
         "adam_epsilon",
-        "warmup_steps",
         "lr_scheduler_kwargs",
         # Training duration
         "num_train_epochs",
@@ -264,6 +263,25 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     return {"optim": optim_str}
 
 
+def _warmup_collapse(hf: dict[str, Any]) -> dict[str, Any]:
+    """Split HF's single ``warmup_steps`` knob into opaque's steps/ratio pair.
+
+    HF's ``warmup_steps`` is a float in which a value below 1 means a
+    *fraction* of the total training steps rather than a step count — its
+    ``get_warmup_steps`` resolves ``int(w) if w >= 1 else ceil(total * w)``.
+    Opaque keeps the older two-field shape (integer ``warmup_steps`` plus
+    fractional ``warmup_ratio``), so route the fractional form to
+    ``warmup_ratio`` and the absolute form to ``warmup_steps``. Copying the
+    float straight across would trip opaque's ``warmup_steps`` int check.
+    """
+    value = float(hf.get("warmup_steps") or 0.0)
+    if value >= 1:
+        return {"warmup_steps": int(value), "warmup_ratio": 0.0}
+    if value > 0:
+        return {"warmup_steps": 0, "warmup_ratio": value}
+    return {"warmup_steps": 0, "warmup_ratio": 0.0}
+
+
 def _max_grad_norm_to_clipping(hf: dict[str, Any]) -> dict[str, Any]:
     """Loosely map HF's global grad-norm clip → opaque ``clipping_norm``.
 
@@ -291,6 +309,7 @@ HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "gradient_accumulation_steps": _batch_collapse,
     "auto_find_batch_size": _batch_collapse,
     "optim": _optim_collapse,
+    "warmup_steps": _warmup_collapse,
     "max_grad_norm": _max_grad_norm_to_clipping,
     "use_liger_kernel": _liger_to_perf_kernels,
     "liger_kernel_config": _liger_to_perf_kernels,

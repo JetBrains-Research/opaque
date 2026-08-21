@@ -10,9 +10,12 @@ import pytest
 
 from opaque.api.transformers.trainer import TrainingArguments
 from opaque.api.transformers.trainer._convert import (
+    _apply_manifest,
     _is_default,
     _normalize_dp_overrides,
 )
+from opaque.api.transformers.trainer._hf_convert import _warmup_collapse
+from opaque.api.transformers.trainer._scheduler import get_warmup_steps
 
 # ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
@@ -414,3 +417,83 @@ def test_normalize_dp_overrides_accepts_noise_only():
 def test_normalize_dp_overrides_accepts_epsilon_only():
     result = _normalize_dp_overrides({"privacy_target_epsilon": 8.0})
     assert result["privacy_target_epsilon"] == 8.0
+
+
+# ---------------------------------------------------------------------------
+# Manifest engine — unbucketed fields
+# ---------------------------------------------------------------------------
+
+
+def _apply(values, defaults):
+    """Drive the engine with an empty manifest, so every field is unbucketed."""
+    return _apply_manifest(
+        source_values=values,
+        source_defaults=defaults,
+        direct=frozenset(),
+        rename={},
+        transform={},
+        reject={},
+        drop={},
+        source_label="src",
+        strict=True,
+    )
+
+
+def test_unbucketed_field_at_default_is_skipped():
+    """An untouched field carries no instruction to drop and cannot affect ε."""
+    assert _apply({"novel_knob": 0.0}, {"novel_knob": 0.0}) == {}
+
+
+def test_unbucketed_none_default_is_skipped():
+    """Upstream deprecating a field to a ``None`` placeholder must not break callers."""
+    assert _apply({"novel_knob": None}, {"novel_knob": None}) == {}
+
+
+def test_unbucketed_field_the_user_set_raises():
+    """Silently dropping a deliberately configured knob could invalidate accounting."""
+    with pytest.raises(ValueError, match="not classified"):
+        _apply({"novel_knob": 0.05}, {"novel_knob": 0.0})
+
+
+def test_unbucketed_field_with_unknown_default_raises():
+    """No default to compare against means we cannot prove the user left it alone."""
+    with pytest.raises(ValueError, match="not classified"):
+        _apply({"novel_knob": 0.05}, {})
+
+
+# ---------------------------------------------------------------------------
+# Warmup: HF's single float knob → opaque's (steps, ratio) pair
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("hf_value", "expected_steps", "expected_ratio"),
+    [
+        (0, 0, 0.0),
+        (0.05, 0, 0.05),
+        (0.999, 0, 0.999),
+        (1, 1, 0.0),
+        (1.0, 1, 0.0),
+        (25, 25, 0.0),
+        (25.7, 25, 0.0),
+        (None, 0, 0.0),
+    ],
+)
+def test_warmup_collapse(hf_value, expected_steps, expected_ratio):
+    """Below 1 is a fraction of training; 1 and above is an absolute step count."""
+    out = _warmup_collapse({"warmup_steps": hf_value})
+    assert out["warmup_steps"] == expected_steps
+    assert out["warmup_ratio"] == pytest.approx(expected_ratio)
+
+
+def test_warmup_collapse_preserves_resolved_step_count(tmp_path):
+    """Opaque must resolve a fractional warmup to the same step count as HF."""
+    total = 200
+    try:
+        hf_args = _hf_args(tmp_path, warmup_steps=0.05)
+    except ValueError:
+        pytest.skip("upstream treats warmup_steps as an integer step count only")
+    out = _warmup_collapse({"warmup_steps": hf_args.warmup_steps})
+    assert get_warmup_steps(
+        total, out["warmup_steps"], out["warmup_ratio"]
+    ) == hf_args.get_warmup_steps(total)

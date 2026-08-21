@@ -115,12 +115,28 @@ def test_reject_packing(tmp_path):
 
 
 def test_reject_router_aux_loss(tmp_path):
+    """A deliberately set MoE aux-loss coefficient is a hard error."""
     with pytest.raises(ValueError, match="router_aux_loss_coef"):
         SFTConfig.from_trl(
-            _trl_args(tmp_path, router_aux_loss_coef=0.001),
+            _trl_args(tmp_path, router_aux_loss_coef=0.5),
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
+
+
+def test_trl_default_router_aux_loss_is_tolerated(tmp_path):
+    """TRL's own non-zero default must not block conversion.
+
+    TRL ships ``router_aux_loss_coef=0.001``; treating that as a deliberate
+    request made every unmodified TRL config unconvertible.
+    """
+    default_coef = trl.SFTConfig.__dataclass_fields__["router_aux_loss_coef"].default
+    cfg = SFTConfig.from_trl(
+        _trl_args(tmp_path, router_aux_loss_coef=default_coef),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+    )
+    assert cfg is not None
 
 
 def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):

@@ -13,12 +13,14 @@ to SFT and DPO, and the two-layer dispatcher :func:`_convert_trl_config`.
 
 from __future__ import annotations
 
+import functools
 import tempfile
 from typing import TYPE_CHECKING, Any
 
 from ..trainer._convert import (  # noqa: F401  (_reject_if_truthy re-exported)
     _apply_manifest,
     _get_dataclass_field_values,
+    _is_default,
     _reject_if_truthy,
 )
 from ..trainer._hf_convert import (
@@ -66,10 +68,18 @@ def _reject_pad_token(value: Any) -> str | None:
     return None
 
 
-def _router_aux_loss_transform(trl: dict[str, Any]) -> dict[str, Any]:
-    """Reject TRL's batch-coupled MoE router auxiliary loss."""
+def _router_aux_loss_transform(
+    trl: dict[str, Any], *, default: Any = 0.0
+) -> dict[str, Any]:
+    """Reject TRL's batch-coupled MoE router auxiliary loss when it was asked for.
+
+    Opaque never computes the router load-balancing term, so the coefficient
+    is dropped either way. Raising is reserved for a user who deliberately
+    set it: TRL ships a non-zero default (0.001 since TRL 1.x), and failing
+    on that would make every unmodified TRL config unconvertible.
+    """
     coefficient = trl.get("router_aux_loss_coef", 0.0)
-    if float(coefficient) != 0.0:
+    if float(coefficient) != 0.0 and not _is_default(coefficient, default):
         raise ValueError(
             "trl router_aux_loss_coef must be 0.0: the MoE router load-balancing "
             "loss is batch-coupled and cannot be included in Opaque's per-example "
@@ -123,6 +133,16 @@ def _convert_trl_config(
     hf_defaults = {k: v for k, v in source_defaults.items() if k in hf_field_names}
     trl_values = {k: v for k, v in source_values.items() if k not in hf_field_names}
     trl_defaults = {k: v for k, v in source_defaults.items() if k not in hf_field_names}
+
+    # The REJECT and DROP layers get "is this the default?" from the engine;
+    # transforms only see values. Bind this TRL version's own default so the
+    # router-aux-loss check can tell a deliberate setting from an untouched one.
+    if "router_aux_loss_coef" in trl_transform:
+        trl_transform = dict(trl_transform)
+        trl_transform["router_aux_loss_coef"] = functools.partial(
+            _router_aux_loss_transform,
+            default=trl_defaults.get("router_aux_loss_coef", 0.0),
+        )
 
     # Layer 1: HF base translation.
     hf_converted = _apply_manifest(
