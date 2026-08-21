@@ -299,6 +299,7 @@ jobs:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
     with:
+      allow-empty-test-selection: true
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-distributed
       min-executed-tests: 1

@@ -42,6 +42,7 @@ jobs:
     name: Linux amd64 (distributed)
     uses: ./.github/workflows/python-tests.yml
     with:
+      allow-empty-test-selection: true
       environment-name: linux-distributed
       min-executed-tests: 1
       pytest-marker: distributed and not cuda
