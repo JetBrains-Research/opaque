@@ -3614,7 +3614,7 @@ process group and raise <code>RuntimeError</code>.</p>
 </tr>
 <tr>
 <td><code>sync_object(state, field_ops)</code></td>
-<td>Synchronize scalar fields of a dataclass across ranks</td>
+<td>Synchronize scalar fields of a dataclass across ranks; each <code>field_ops</code> entry is an operation name or a callable <code>fn(value, device)</code>, invoked once</td>
 </tr>
 <tr>
 <td><code>assert_scalar_equal(v, name)</code></td>
