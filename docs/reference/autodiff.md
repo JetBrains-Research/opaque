@@ -13,10 +13,12 @@ per_example = vmap(loss_fn, in_axes=(None, 0))
 
 `vmap` carries an explicit `randomness` contract (default `"same"`): one draw
 from the framework's ambient generator is reused for every element, so a
-stochastic module such as dropout applies the identical mask to each example.
+stochastic module such as dropout applies the identical mask to each example,
+and that mask still changes from run to run unless the generator is seeded.
 Pass `"different"` for independent draws, or `"error"` to reject ambient
 randomness. Opaque's own randomness is keyed and unaffected — `normal(key, ...)`
-inside a mapped function ignores the setting.
+inside a mapped function ignores the setting; derive a key per element for
+per-example noise, as in [Domain separation](rng.md#domain-separation).
 
 ## Transforms
 

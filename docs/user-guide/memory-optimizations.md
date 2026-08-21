@@ -96,10 +96,17 @@ The portable first version of each transform accepts only `fn`;
 backend-specific compile flags, checkpoint policies, buffer donation, or
 static-argument lists are intentionally not part of the portable contract.
 
-**Torch** maps to `torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`.
-Opaque applies the required Torch/functorch compatibility patches once and
-idempotently, so you do not need to call `opaque.patches.apply_runtime_patches()`
-just to use `checkpoint`.
+**Torch** maps to `torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`,
+which uses saved-tensor hooks that `torch.func` rejects on its own. Call
+`opaque.torch.checkpoint.apply_checkpoint_patch()` once before composing
+`checkpoint` or `optimize_saved_activations` under `grad_and_value` / `vmap` /
+`clipped_grad`; without it the first call raises `RuntimeError:
+torch.func.{grad, vjp, jacrev, hessian} don't yet support saved tensor hooks`.
+It ships with `opaque-torch`, so this needs no `opaque-patches` install;
+`opaque.patches.apply_runtime_patches()` also covers it, along with the rest of
+the runtime patch set. `DPTrainer` applies the runtime patches during
+construction, so trainer-driven flows are already covered. Plain eager
+checkpointing, outside any functional transform, needs no patch.
 
 **With Hugging Face models:**
 
@@ -117,10 +124,13 @@ convenience; Opaque still forces the non-reentrant path under the hood.
 - Only safe for first-order differentiation (`grad`, `vjp`, `jacrev`).
   Higher-order transforms (`hessian`, `jacrev(jacrev)`) are not supported.
   Opaque only uses first-order differentiation.
-- `torch.compile` does not support checkpointed functional transforms, and
-  a direct `vmap(grad(...))` call should run under `torch.no_grad()`.
-  `clipped_grad` already evaluates without building a graph unless an
-  outer transform differentiates its result.
+- `compile` around a checkpointed transform runs and matches the eager result,
+  but Dynamo warns while tracing the checkpoint boundary. Measure before
+  assuming a speedup.
+- Build a direct `vmap(grad_and_value(...))` whose result you only read with
+  `grad_and_value(..., values_only=True)`: it tells the provider not to keep
+  the result differentiable, which is the portable spelling of a
+  `torch.no_grad()` region. `clipped_grad` already passes it.
 - Opt out at the API layer (there are no env-var kill switches): pass
   `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
   `apply_model_patches(...)`, or
@@ -167,12 +177,17 @@ checkpoint / optimize_saved_activations → grad / vmap / clip → compile
 3. **Compile the outermost stable transform** with `compile` so the
    compiler sees fixed shapes and dtypes.
 
-For example:
+Install the checkpoint patch first. The engine binds an execution transform
+lazily, so the provider only reaches its own implementation on the transform's
+first invocation — by then a `torch.func` interpreter is already on the stack
+and has made its saved-tensor-hook check:
 
 ```python
-from opaque.execution import compile, checkpoint
-from opaque.autodiff import grad_and_value, vmap
+from opaque.torch.checkpoint import apply_checkpoint_patch
+from opaque.execution import checkpoint, compile
 from opaque.dpsgd.clipping import clipped_grad
+
+apply_checkpoint_patch()
 
 core = checkpoint(selected_region)
 grad_fn, _ = clipped_grad(

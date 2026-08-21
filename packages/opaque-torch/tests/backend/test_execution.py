@@ -14,6 +14,7 @@ from opaque.execution import (
     compile,
     optimize_saved_activations,
 )
+from opaque.torch.checkpoint import apply_checkpoint_patch
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +68,13 @@ def test_checkpoint_preserves_eager_values_and_gradients() -> None:
 
 
 def test_vmap_grad_checkpoint_matches_eager() -> None:
+    # Required, and required *here*: the patch is what lets a checkpointed
+    # region compose under a functional transform. Without this line the test
+    # passes only when an earlier test in this file has already run one of the
+    # transforms eagerly and installed the patch process-wide as a side effect
+    # — green by neighbour, and failing under `-k` or a reordering.
+    apply_checkpoint_patch()
+
     def block(x: torch.Tensor) -> torch.Tensor:
         return (x**2).sum()
 
@@ -106,3 +114,54 @@ def test_execution_profiles_report_torch_supported() -> None:
     assert ExecutionProfile.COMPILATION.supports(backend)
     assert ExecutionProfile.CHECKPOINTING.supports(backend)
     assert ExecutionProfile.SAVED_ACTIVATIONS.supports(backend)
+
+
+def test_functional_composition_requires_the_checkpoint_patch() -> None:
+    """The patch requirement is real, and only an earlier call satisfies it.
+
+    Both subprocesses build the same composition. The engine binds an execution
+    transform lazily, so the provider reaches its implementation on the
+    transform's first *invocation* — already inside the ``torch.func``
+    interpreter, past its saved-tensor-hook check. Only a patch installed
+    before that call can help, which is why the provider does not install one
+    itself.
+    """
+    import subprocess
+    import sys
+
+    body = (
+        "import torch\n"
+        "from opaque.api.engine.autodiff import grad_and_value, vmap\n"
+        "from opaque.execution import checkpoint\n"
+        "{patch}"
+        "def block(x):\n"
+        "    return (x**2).sum()\n"
+        "batched = torch.randn(4, 3)\n"
+        "got = vmap(grad_and_value(checkpoint(block)))(batched)\n"
+        "ref = vmap(grad_and_value(block))(batched)\n"
+        "torch.testing.assert_close(got[0], ref[0])\n"
+        "torch.testing.assert_close(got[1], ref[1])\n"
+        "print('ok')\n"
+    )
+
+    def run(script: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+
+    unpatched = run(body.format(patch=""))
+    assert unpatched.returncode != 0, unpatched.stdout
+    assert "don't yet support saved tensor hooks" in unpatched.stderr, unpatched.stderr
+
+    patched = run(
+        body.format(
+            patch="from opaque.torch.checkpoint import apply_checkpoint_patch\n"
+            "apply_checkpoint_patch()\n"
+        )
+    )
+    assert patched.returncode == 0, patched.stderr
+    assert patched.stdout.strip() == "ok"

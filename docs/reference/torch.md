@@ -52,8 +52,12 @@ in-place variants DDP training loops use to avoid re-allocating gradients.
 ## Checkpoint compatibility
 
 Vmap-safe gradient-checkpointing patch installers and probes.
-`opaque.patches.apply_runtime_patches` composes these; they are exposed here
-so integrations can install a single patch without the whole patch set.
+`apply_checkpoint_patch()` installs the set, and is what
+[`opaque.execution`](execution.md)'s `checkpoint` and
+`optimize_saved_activations` need before they compose under a functional
+transform. The individual installers are exposed for integrations that want one
+patch rather than the whole set; `opaque.patches.apply_runtime_patches` composes
+them alongside the rest of the runtime patches.
 
 ::: opaque.torch.checkpoint
     options:
