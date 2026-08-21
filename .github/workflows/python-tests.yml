@@ -27,6 +27,16 @@ on:
         description: Stable environment identifier used in artifacts and Codecov flags.
         required: true
         type: string
+      min-executed-tests:
+        description: >-
+          Fail the leg unless at least this many selected tests actually ran.
+          A leg whose tests all skip exits zero, so a marker typo or a missing
+          optional backend would otherwise turn a required check into a no-op.
+          Only meaningful together with a suite selection that is expected to
+          collect tests; leave at 0 for legs that may legitimately match none.
+        required: false
+        default: 0
+        type: number
       pytest-marker:
         description: pytest marker expression.
         required: true
@@ -50,6 +60,26 @@ on:
         description: GitHub Actions runner label.
         required: true
         type: string
+      suites:
+        description: >-
+          JSON array of test-group matrix legs. Defaults to the per-package
+          split. A selection that spans few packages — the distributed lane —
+          should pass a single whole-tree leg instead, so that "this lane ran
+          nothing" has one unambiguous place to be checked.
+        required: false
+        default: >-
+          [
+            {"id": "foundation", "label": "Foundation",
+             "paths": "packages/opaque-base\npackages/opaque-accounting\npackages/opaque-auditing"},
+            {"id": "dp-mechanisms", "label": "DP mechanisms",
+             "paths": "packages/opaque-dpsgd\npackages/opaque-dpftrl"},
+            {"id": "runtime-and-patches", "label": "Runtime and patches",
+             "paths": "packages/opaque-engine\npackages/opaque-optimizers\npackages/opaque-patches"},
+            {"id": "alignment-and-transformers", "label": "Alignment and transformers",
+             "paths": "packages/opaque-alignment\npackages/opaque-transformers"},
+            {"id": "integration", "label": "Integration tests", "paths": "tests"}
+          ]
+        type: string
       timeout-minutes:
         description: Maximum runtime for each test-group matrix leg.
         required: false
@@ -66,35 +96,11 @@ jobs:
       # A matrix keeps every caller's suites in one collapsible Actions block
       # without sacrificing the parallelism of the previous separate jobs.
       matrix:
-        suite:
-          - id: foundation
-            label: Foundation
-            paths: |
-              packages/opaque-base
-              packages/opaque-accounting
-              packages/opaque-auditing
-          - id: dp-mechanisms
-            label: DP mechanisms
-            paths: |
-              packages/opaque-dpsgd
-              packages/opaque-dpftrl
-          - id: runtime-and-patches
-            label: Runtime and patches
-            paths: |
-              packages/opaque-engine
-              packages/opaque-optimizers
-              packages/opaque-patches
-          - id: alignment-and-transformers
-            label: Alignment and transformers
-            paths: |
-              packages/opaque-alignment
-              packages/opaque-transformers
-          - id: integration
-            label: Integration tests
-            paths: tests
+        suite: ${{ fromJSON(inputs.suites) }}
     env:
       ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
       ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
+      JUNIT_DIR: .junit-${{ inputs.environment-name }}-${{ matrix.suite.id }}
       COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-${{ matrix.suite.id }}
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
@@ -132,6 +138,15 @@ jobs:
             fi
           done <<< "$TEST_PATHS"
           exit "$failed"
+      - name: Require executed tests
+        if: ${{ inputs.min-executed-tests > 0 }}
+        env:
+          MIN_EXECUTED: ${{ inputs.min-executed-tests }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_executed_tests.py \
+            --report-dir "$JUNIT_DIR" --min-executed "$MIN_EXECUTED"
       - uses: ./.github/actions/upload-python-coverage
         if: ${{ !cancelled() }}
         with:
