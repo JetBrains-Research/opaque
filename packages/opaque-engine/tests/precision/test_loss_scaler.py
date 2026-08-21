@@ -78,9 +78,10 @@ def test_factory_custom_init_scale():
     assert state.scale == 128.0
 
 
-def test_factory_validates_growth_factor():
+@pytest.mark.parametrize("bad", [1.0, float("inf"), float("nan")])
+def test_factory_validates_growth_factor(bad):
     with pytest.raises(ValueError, match="growth_factor"):
-        loss_scaler(growth_factor=1.0)
+        loss_scaler(growth_factor=bad)
 
 
 def test_factory_validates_backoff_factor():
@@ -191,6 +192,16 @@ def test_all_finite_false_when_any_leaf_has_nan():
     grads = _grads_pytree()
     grads["bf16"][2] = float("nan")
     assert all_finite(grads) is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    [complex(float("inf"), 0.0), complex(0.0, float("nan"))],
+)
+def test_all_finite_false_when_a_complex_leaf_is_non_finite(value):
+    assert (
+        all_finite({"complex": torch.tensor([value], dtype=torch.complex64)}) is False
+    )
 
 
 def test_all_finite_ignores_integer_leaves():
