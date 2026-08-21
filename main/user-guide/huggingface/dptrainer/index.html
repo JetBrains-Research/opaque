@@ -3328,6 +3328,9 @@ analyses driven by <code>compute_metrics</code>.</p>
 <li><code>save_model(output_dir=None)</code> — write weights + tokenizer +
   <code>training_args.bin</code> + <code>accountant.json</code>.  The accountant always
   travels with the saved model.</li>
+<li><code>save_accountant(output_dir=None)</code> — write just <code>accountant.json</code> and
+  return its path, for building your own final artifact without
+  re-saving the model.</li>
 </ul>
 <p>Checkpointing during training is driven by <code>save_strategy</code> /
 <code>save_steps</code> on <code>TrainingArguments</code>; resume from a checkpoint
