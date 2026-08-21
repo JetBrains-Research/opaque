@@ -503,3 +503,53 @@ def _worker_per_group_adaptive_training_gloo(
         assert all(torch.equal(gathered[0], value) for value in gathered[1:])
     finally:
         _cleanup_ddp()
+
+
+def _worker_noise_seed_out_of_int64_range_gloo(
+    rank: int, world_size: int, port: int
+) -> None:
+    """Sync a shared key whose seed does not fit a signed 64-bit reduction.
+
+    ``RngKey.seed`` is canonicalized to unsigned 64-bit, so roughly half of all
+    ``fold_in``-derived keys set the top bit and fall outside the signed
+    ``int64`` domain a scalar reduction can carry.  The documented
+    per-rank-stream recipe produces exactly such keys.
+    """
+    import pytest
+
+    from opaque.random import fold_in
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        shared = fold_in(key(5), 1)
+        assert int(shared.seed) > 2**63 - 1, (
+            "fixture must use a seed outside the int64 domain"
+        )
+
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=shared)
+        noised, state = noise_fn(_shared_clipped(), state)
+        synced = sync(state)
+        assert synced._step_counter == 1
+
+        # A per-rank key must still be rejected, and by seed rather than by
+        # some artifact of the encoding.
+        per_rank_fn, per_rank_state = gaussian_noise(
+            noise_multiplier=1.0, key=fold_in(shared, rank)
+        )
+        _, per_rank_state = per_rank_fn(_shared_clipped(), per_rank_state)
+        with pytest.raises(RuntimeError, match="seed"):
+            sync(per_rank_state)
+
+        # The shared key was accepted, so every rank drew the same noise on the
+        # same input — the property `sync` exists to enforce.
+        first_leaf = tree_leaves(noised.pytree)[0]
+        gathered = [torch.zeros_like(first_leaf) for _ in range(world_size)]
+        dist.all_gather(gathered, first_leaf)
+        assert all(torch.equal(gathered[0], value) for value in gathered[1:])
+    finally:
+        _cleanup_ddp()
+
+
+def _shared_clipped() -> dict[str, torch.Tensor]:
+    """A rank-independent clipped pytree, so any cross-rank difference is noise."""
+    return clipped({"w": torch.ones(3)}, max_norm=1.0)

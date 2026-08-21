@@ -7,6 +7,7 @@ import torch.distributed as dist
 from dpsgd_ddp_helpers import (
     _spawn_gloo,
     _worker_cpu_gloo_training_contract,
+    _worker_noise_seed_out_of_int64_range_gloo,
     _worker_per_group_adaptive_state_gloo,
     _worker_per_group_adaptive_training_gloo,
 )
@@ -25,6 +26,13 @@ def test_per_group_adaptive_clipping_state_syncs_uneven_ranks() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_per_group_adaptive_state_gloo)
+
+
+def test_noise_state_sync_accepts_a_seed_past_int64_max() -> None:
+    """Half of all `fold_in`-derived seeds set the top bit; sync must survive."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_noise_seed_out_of_int64_range_gloo)
 
 
 @pytest.mark.slow
