@@ -14,9 +14,11 @@
 # here against 0.978 on KStack. Via the exact identity ||dW' - dW||/||dW|| =
 # sqrt(1 - g^2), that is 65.1% of dW replaced EVERY step, against 20.9% on KStack.
 #
-# Worse, 0.7591 is BELOW the uniform-spread floor sqrt(r_keep/r) = 0.8292: the
-# top-r_keep momentum directions capture LESS of R's energy than a random
-# selection would. Momentum is actively misaligned with where R's mass sits.
+# CORRECTED FLOOR: the projection is two-sided (R' = U_keep^T R V_keep), so the
+# isotropic floor is r_keep/r = 0.6875, NOT sqrt(r_keep/r) = 0.829. Verified by
+# Monte Carlo (two-sided 0.6866, one-sided 0.8287). So 0.759 is ABOVE the random
+# floor: the selection is only marginally better than random here, versus nearly
+# lossless (0.978) on KStack. It was never 'worse than random'.
 #
 # The mechanism: rotation keeps only the top-r_keep directions of R's MOMENTUM, so
 # it is benign exactly when the momentum spectrum is concentrated -- which needs a

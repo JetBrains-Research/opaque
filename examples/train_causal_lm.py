@@ -3029,7 +3029,28 @@ def main():
                                 _v = _agg("r_norm_old")
                                 _vn = _agg("r_norm_new")
                                 if _v and _v > 1e-12:
+                                    # RATIO OF MEANS -- kept for continuity with
+                                    # every run to date, but it is dominated by the
+                                    # few layers with the largest ||R||. Simulated:
+                                    # per-layer ratios averaging 0.925 log as 0.743
+                                    # when 20 large-||R|| layers retain 0.70 and 180
+                                    # small ones retain 0.95.
                                     wb_metrics["rotation/r_norm_growth"] = _vn / _v
+                                # MEAN OF RATIOS -- the quantity the exact identity
+                                # ||dW' - dW||/||dW|| = sqrt(1 - g^2) is about, since
+                                # that identity is per-layer. Read this one.
+                                _pl = [
+                                    e["r_norm_new"] / e["r_norm_old"]
+                                    for e in per_layer.values()
+                                    if e.get("r_norm_old", 0.0) > 1e-12
+                                    and "r_norm_new" in e
+                                ]
+                                if _pl:
+                                    wb_metrics["rotation/r_norm_growth_perlayer"] = (
+                                        sum(_pl) / len(_pl)
+                                    )
+                                    wb_metrics["rotation/r_norm_growth_min"] = min(_pl)
+                                    wb_metrics["rotation/r_norm_growth_max"] = max(_pl)
                                 _v = _agg("subspace_sin")
                                 if _v is not None:
                                     wb_metrics["rotation/r_subspace_angle"] = _v

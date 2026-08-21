@@ -5,8 +5,10 @@
 # momentum, so it needs a roughly stationary objective. On CoLA that fails because
 # a randomly-initialised head co-trains at 10x the adapter lr:
 #   r_norm_growth 0.759 (CoLA) vs 0.978 (KStack) -> 65% of dW replaced per
-#   rotation vs 21%, and BELOW the uniform-spread floor sqrt(11/16)=0.829, i.e.
-#   the kept momentum directions captured LESS of R than a random pick would.
+#   rotation vs 21%. CORRECTED FLOOR (2026-08-22): the projection is two-sided,
+#   so the isotropic floor is r_keep/r = 0.6875, NOT sqrt(11/16) = 0.829. So
+#   0.759 is ABOVE the random floor -- the selection is only marginally better
+#   than random here, versus nearly lossless (0.978) on KStack.
 # All four rotating arms lost to frozen (0.6276 Matthews):
 #   tau=1 0.4343 | tau=10 0.5513 | tau=50 0.5440 | p_e=0.125 0.2032
 #
