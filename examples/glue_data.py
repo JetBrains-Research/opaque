@@ -104,8 +104,20 @@ def build_glue_datasets(
     # and the paper trains on all of them, so the default is everything.
     if num_train_samples is not None and num_train_samples < len(train):
         train = train.shuffle(seed=seed).select(range(num_train_samples))
+
+    # Truncating VALIDATION is refused outright, not silently honoured. Every
+    # published GLUE figure is computed on the full split, and a correlation over
+    # a few hundred rows is dominated by sampling noise -- CoLA's Matthews on 100
+    # of 1043 rows is not the same measurement. The trainer's global default is
+    # --num-eval-samples 100, sized for a causal-LM smoke test, so without this
+    # guard every GLUE run would quietly report an incomparable number.
     if num_eval_samples is not None and num_eval_samples < len(evaluation):
-        evaluation = evaluation.select(range(num_eval_samples))
+        raise ValueError(
+            f"refusing to evaluate {task.name} on {num_eval_samples} of "
+            f"{len(evaluation)} validation rows: published figures use the full "
+            "split, so the result would not be comparable. Pass "
+            "num_eval_samples=None (--num-eval-samples 0) to use all of it."
+        )
 
     def tokenize(batch):
         texts = [batch[k] for k in task.keys]

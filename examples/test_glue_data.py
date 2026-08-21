@@ -125,7 +125,7 @@ def test_collate_shapes_dtypes_and_padding(task_name):
     task = g.resolve_task(task_name)
     tok = AutoTokenizer.from_pretrained("roberta-base")
     train, _ = g.build_glue_datasets(
-        task, tok, max_seq_len=128, num_train_samples=64, num_eval_samples=32
+        task, tok, max_seq_len=128, num_train_samples=64, num_eval_samples=None
     )
     collate = g.make_glue_collate(task, tok, torch.device("cpu"))
     batch = next(iter(DataLoader(train, batch_size=8, collate_fn=collate)))
@@ -231,7 +231,7 @@ def test_rotating_xse_trains_roberta():
         ).loss
 
     train, evaluation = g.build_glue_datasets(
-        task, tok, max_seq_len=64, num_train_samples=64, num_eval_samples=64
+        task, tok, max_seq_len=64, num_train_samples=64, num_eval_samples=None
     )
     collate = g.make_glue_collate(task, tok, device)
     train_loader = DataLoader(train, batch_size=8, collate_fn=collate)
@@ -292,3 +292,102 @@ def test_rotating_xse_trains_roberta():
     loss_after, metric_after = evaluate(trainable)
     assert torch.isfinite(torch.tensor(loss_after)), "loss went non-finite"
     assert 0.0 <= metric_after <= 1.0
+
+
+def test_refuses_to_truncate_the_validation_split():
+    """The single most dangerous default on this path.
+
+    The trainer's global --num-eval-samples default is 100, sized for a causal-LM
+    smoke test. Honouring it on GLUE would compute CoLA's Matthews over 100 of
+    1043 rows and report it as if comparable to the paper's 67.0. Nothing about
+    the resulting run would look wrong in W&B, which is exactly how ~225 runs came
+    to carry invalid downstream numbers. So it raises.
+    """
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained("roberta-base")
+    with pytest.raises(ValueError, match="refusing to evaluate"):
+        g.build_glue_datasets(
+            g.resolve_task("rte"), tok, max_seq_len=64, num_eval_samples=100
+        )
+    # None (the trainer maps 0 -> None) is the supported way to say "all".
+    _, evaluation = g.build_glue_datasets(
+        g.resolve_task("rte"), tok, max_seq_len=64, num_eval_samples=None
+    )
+    assert len(evaluation) == 277
+
+
+def test_train_subsampling_is_still_allowed():
+    """Train subsampling is a legitimate ablation, unlike eval subsampling."""
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained("roberta-base")
+    train, _ = g.build_glue_datasets(
+        g.resolve_task("rte"), tok, max_seq_len=64, num_train_samples=64
+    )
+    assert len(train) == 64
+
+
+def test_glue_preset_reproduces_the_paper_setup():
+    """Pin the preset against LoRA-XS Appendix D.1 / Table 7.
+
+    Every value here is a comparability requirement, not a preference: drift in
+    any of them silently invalidates the comparison to their Table 1, and the
+    resulting run still looks perfectly healthy. Notably lora_modules must be the
+    4-module GLUE set and NOT the 7-module set the KStack presets use.
+    """
+    import sys
+
+    sys.argv = [
+        "train_causal_lm.py",
+        "--preset",
+        "roberta-large-glue",
+        "--glue-task",
+        "rte",
+    ]
+    import train_causal_lm
+
+    args = train_causal_lm.parse_args()
+    assert args.task_type == "sequence-classification"
+    assert args.model_name == "FacebookAI/roberta-large"
+    assert args.lora_modules == [
+        "query",
+        "value",
+        "attention.output.dense",
+        "intermediate.dense",
+    ]
+    assert args.lora_alpha == 16
+    assert args.lora_xs_sigma == 1e-5
+    assert args.max_seq_len == 128
+    assert args.batch_size == 32
+    assert args.lr_warmup_ratio == pytest.approx(0.06)
+    assert args.optimizer == "adamw"
+    assert args.dtype == "float32"
+    # Forced: sdpa + an attention mask is incompatible with vmap.
+    assert args.attention == "eager"
+    # 0 = whole split. 5000/100 would truncate both.
+    assert args.num_train_samples == 0
+    assert args.num_eval_samples == 0
+
+
+def test_explicit_flags_override_the_preset():
+    """`_set` must not clobber what the caller passed -- the rank sweep needs it."""
+    import sys
+
+    sys.argv = [
+        "train_causal_lm.py",
+        "--preset",
+        "roberta-large-glue",
+        "--glue-task",
+        "cola",
+        "--lora-r",
+        "4",
+        "--learning-rate",
+        "6e-4",
+    ]
+    import train_causal_lm
+
+    args = train_causal_lm.parse_args()
+    assert args.lora_r == 4
+    assert args.learning_rate == pytest.approx(6e-4)
+    assert args.lora_alpha == 16, "alpha stays fixed across ranks, as in the paper"

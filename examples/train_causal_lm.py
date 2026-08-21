@@ -63,9 +63,16 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorForLanguageModeling,
 )
+
+# examples/ is sys.path[0] when this file is run as a script, so a bare import
+# resolves. Kept as a sibling module rather than inlined because the trainer
+# cannot run on macOS and glue_data is the only part of the classification path
+# that can be tested locally -- see examples/test_glue_data.py.
+import glue_data
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
@@ -302,6 +309,7 @@ def parse_args():
             "mellum-kstack",
             "qwen-7b-kstack",
             "qwen-coder-kstack-lora",
+            "roberta-large-glue",
         ],
         default="smoke",
         help=(
@@ -309,7 +317,8 @@ def parse_args():
             "smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 "
             "with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at "
             "ε=3 with adafactor @ 5e-4, qwen-coder-kstack-lora=tuned vanilla LoRA "
-            "baseline for the same model/dataset with SGD)."
+            "baseline for the same model/dataset with SGD, roberta-large-glue="
+            "the LoRA-XS paper's GLUE setup so our numbers sit in their Table 1)."
         ),
     )
 
@@ -319,6 +328,18 @@ def parse_args():
         type=str,
         default="gpt2",
         help="HuggingFace model name or local path",
+    )
+    model_group.add_argument(
+        "--task-type",
+        type=str,
+        choices=["causal-lm", "sequence-classification"],
+        default="causal-lm",
+        help=(
+            "What to train. 'causal-lm' is the default next-token objective. "
+            "'sequence-classification' loads AutoModelForSequenceClassification "
+            "and trains on a GLUE task selected with --glue-task, which is how "
+            "our numbers become comparable to the LoRA-XS paper's Table 1."
+        ),
     )
     model_group.add_argument(
         "--attention",
@@ -336,6 +357,30 @@ def parse_args():
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
+    data_group.add_argument(
+        "--lr-warmup-ratio",
+        type=float,
+        default=None,
+        help=(
+            "Warmup as a fraction of total steps, resolved once the dataset size "
+            "is known; overrides --lr-warmup-steps when set. The LoRA-XS paper "
+            "uses 0.06 on GLUE. Worth having as a ratio and not a step count "
+            "because GLUE task sizes differ by 3x, and zero warmup under AdamW is "
+            "exactly what blew up the full-LoRA baseline (ref-lora-r16-adamw-lr1e3)."
+        ),
+    )
+    data_group.add_argument(
+        "--glue-task",
+        type=str,
+        default=None,
+        help=(
+            "GLUE task for --task-type sequence-classification: cola, sst2, mrpc, "
+            "stsb, qnli, rte, mnli, qqp. Required for that task type and ignored "
+            "otherwise. --dataset/--dataset-split/--dataset-text-field are all "
+            "unused on this path: the split is GLUE's own `validation`, because "
+            "that is what every published number is computed on."
+        ),
+    )
     data_group.add_argument(
         "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
     )
@@ -1105,6 +1150,60 @@ def parse_args():
         )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
+    elif args.preset == "roberta-large-glue":
+        # The LoRA-XS paper's GLUE setup (arXiv 2405.17604v3, ECAI 2025 --
+        # Appendix D.1 and Table 7), reproduced so our rows can sit in their
+        # Table 1. Deviating from any of these makes the comparison incomparable,
+        # so they are set here rather than left to the caller:
+        #   modules  Wq, Wv, Wo, FC1 -- NOT the 7-module set the KStack presets
+        #            use. "attention.output.dense" and not "output.dense",
+        #            because the latter also matches the FFN's FC2.
+        #   alpha    16, fixed across every rank in their sweep
+        #   sigma    1e-5 for the R init
+        #   seq len  128, batch 32, warmup ratio 0.06
+        # AdamW because that is what they used; the per-task learning rate comes
+        # from their Table 7 and has to be passed with --learning-rate (it varies
+        # by task AND rank, so there is no single defensible default).
+        #
+        # NOTE eval_steps is per-STEP here, and GLUE tasks are small: RTE is 2.5k
+        # examples, so an epoch is ~78 steps at batch 32. 10 would evaluate ~8x
+        # per epoch; 25 keeps the eval cost sane while still resolving the curve.
+        _set("model_name", "FacebookAI/roberta-large")
+        _set("task_type", "sequence-classification")
+        _set("num_epochs", 20)
+        # 0 means "the whole split". The global defaults are 5000 train / 100
+        # eval, sized for a causal-LM smoke test, and both are actively wrong
+        # here: 5000 would truncate CoLA (8551), SST-2 (67k) and QNLI (105k),
+        # and 100 would cut every validation split down from 277-1043 rows.
+        # A correlation over 100 rows is not comparable to anything published.
+        _set("num_train_samples", 0)
+        _set("num_eval_samples", 0)
+        _set("batch_size", 32)
+        _set("microbatch_size", 32)
+        _set("eval_batch_size", 32)
+        _set("log_steps", 1)
+        _set("eval_steps", 25)
+        _set("learning_rate", 1e-3)
+        _set("optimizer", "adamw")
+        _set("lora_method", "lora-xs")
+        _set("lora_r", 16)
+        _set("lora_alpha", 16)
+        _set("lora_xs_sigma", 1e-5)
+        _set("max_seq_len", 128)
+        _set("weight_decay", 0.0)
+        _set("lr_schedule", "linear")
+        _set("lr_warmup_ratio", 0.06)
+        _set(
+            "lora_modules",
+            ["query", "value", "attention.output.dense", "intermediate.dense"],
+        )
+        # float32, not bfloat16. The KStack presets run bf16 on a 7B model where
+        # memory forces it; RoBERTa-large is 355M, and GLUE's reported figures
+        # are correlations (Matthews, Pearson) that are far more sensitive to
+        # numerical noise than a token-averaged loss is.
+        _set("dtype", "float32")
+        # Forced, not defaulted -- see the classification branch below.
+        args.attention = "eager"
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -1206,6 +1305,21 @@ def main():
     # Attention implementation: SDPA is the default in recent HuggingFace Transformers
     # and provides up to 3.6x memory savings over eager at seq_len=1024 with vmap.
     # Use --attention eager to override (e.g., for debugging).
+    # Classification FORCES eager, regardless of --attention. transformers'
+    # SDPA path calls `torch.all(mask == 1)` in
+    # _prepare_4d_attention_mask_for_sdpa to skip a no-op mask, and that is
+    # data-dependent control flow, which vmap rejects outright. The causal-LM
+    # path never trips it only because its collate passes no attention_mask at
+    # all -- an encoder has no causal mask to hide padding behind, so it must.
+    # Left as a silent default this surfaces as an opaque vmap error several
+    # minutes into a GPU run, so it is decided here.
+    _cls_forces_eager = args.task_type == "sequence-classification"
+    if _cls_forces_eager and args.attention != "eager":
+        print(
+            "Attention: forcing eager (--attention sdpa is incompatible with "
+            "vmap when an attention mask is passed)"
+        )
+        args.attention = "eager"
     use_eager = args.attention == "eager" or device.type == "mps"
 
     # When a specific SDPA backend is requested, enable only that one globally.
@@ -1220,9 +1334,66 @@ def main():
             setter(name == args.sdpa_backend)
         print(f"SDPA backend forced: {args.sdpa_backend}")
 
+    # Resolve the GLUE task before the config, since num_labels feeds into it.
+    _is_cls = args.task_type == "sequence-classification"
+    glue_task = None
+    if _is_cls:
+        if not args.glue_task:
+            raise ValueError(
+                "--task-type sequence-classification requires --glue-task "
+                f"(one of: {', '.join(sorted(glue_data.GLUE_TASKS))})"
+            )
+        glue_task = glue_data.resolve_task(args.glue_task)
+        print(
+            f"\nGLUE task: {glue_task.name} "
+            f"({'regression' if glue_task.is_regression else f'{glue_task.num_labels}-way'}, "
+            f"reported metric: {glue_task.metric})"
+        )
+    elif args.glue_task:
+        raise ValueError(
+            "--glue-task is only meaningful with "
+            "--task-type sequence-classification"
+        )
+
+    if _is_cls:
+        # Rejected UP FRONT rather than silently ignored. Each of these is
+        # meaningless on a classification head, and a run that quietly skips a
+        # requested eval looks identical in W&B to one that ran it, which is how
+        # ~225 runs came to carry invalid downstream numbers.
+        _unsupported = [
+            flag
+            for flag, on in (
+                ("--eval-bpb", getattr(args, "eval_bpb", False)),
+                ("--eval-humaneval", getattr(args, "eval_humaneval", False)),
+                ("--eval-mbpp", getattr(args, "eval_mbpp", False)),
+                ("--audit", getattr(args, "audit", False)),
+            )
+            if on
+        ]
+        if _unsupported:
+            raise SystemExit(
+                "these flags are causal-LM only and cannot be used with "
+                f"--task-type sequence-classification: {', '.join(_unsupported)}. "
+                "BPB is bits-per-byte of a token stream, HumanEval/MBPP are code "
+                "generation, and the auditing canaries assume a text corpus. The "
+                f"reported figure for {glue_task.name} is eval/{glue_task.metric}."
+            )
+
     # Load model config and disable dropout
     print(f"\nLoading model: {args.model_name}...")
-    config = AutoConfig.from_pretrained(args.model_name)
+    if _is_cls:
+        config = AutoConfig.from_pretrained(
+            args.model_name,
+            num_labels=glue_task.num_labels,
+            # STS-B is a regression task. Without this, HF infers
+            # single_label_classification from num_labels=1 and applies
+            # cross-entropy to a 1-logit output, which trains to a constant.
+            problem_type=(
+                "regression" if glue_task.is_regression else "single_label_classification"
+            ),
+        )
+    else:
+        config = AutoConfig.from_pretrained(args.model_name)
 
     dropout_attrs = [
         "attn_pdrop",
@@ -1260,14 +1431,17 @@ def main():
     # Initialize profiler
     profiler = TrainingProfiler(device)
 
+    _model_cls = (
+        AutoModelForSequenceClassification if _is_cls else AutoModelForCausalLM
+    )
     try:
-        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+        model = _model_cls.from_pretrained(args.model_name, **model_kwargs)
     except TypeError as exc:
         if "unexpected keyword argument 'dtype'" not in str(exc):
             raise
         model_kwargs.pop("dtype")
         model_kwargs["torch_dtype"] = torch_dtype
-        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+        model = _model_cls.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
     profiler, _ = profiler.mark("model_loaded")
     print_memory(device, "After model load")
@@ -1357,7 +1531,7 @@ def main():
             manifold_mode=args.lora_xs_manifold_mode,
             oft_mode=args.lora_xs_oft_mode,
             manifold_init_sigma_w=args.lora_xs_manifold_init_sigma_w,
-            task_type="CAUSAL_LM",
+            task_type=("SEQ_CLS" if _is_cls else "CAUSAL_LM"),
         )
     else:
         lora_config = LoraConfig(
@@ -1366,7 +1540,7 @@ def main():
             target_modules=args.lora_modules,
             lora_dropout=0.0,
             bias="none",
-            task_type="CAUSAL_LM",
+            task_type=("SEQ_CLS" if _is_cls else "CAUSAL_LM"),
             use_dora=args.lora_dora,
             use_rslora=args.lora_rslora,
             init_lora_weights=True if args.lora_init == "default" else args.lora_init,
@@ -1401,85 +1575,136 @@ def main():
     print_memory(device, "After LoRA")
 
     # Load and prepare dataset
-    print(f"\nLoading dataset: {args.dataset}...")
-    if args.dataset_subset:
-        print(f"  Subset: {args.dataset_subset}")
-    print(f"  Split: {args.dataset_split}")
-    print(f"  Text field: {args.dataset_text_field}")
+    #
+    # Two paths. The causal-LM path streams a text corpus and carves eval off the
+    # head of the stream. The GLUE path cannot do that: published GLUE numbers are
+    # computed on the task's own `validation` split, so slicing train would make
+    # every comparison to the LoRA-XS paper's Table 1 meaningless. glue_data owns
+    # that logic and is unit-tested (examples/test_glue_data.py); this branch only
+    # wires it in.
+    if _is_cls:
+        print(f"\nLoading GLUE task: {glue_task.name}")
+        try:
+            train_dataset, eval_dataset = glue_data.build_glue_datasets(
+                glue_task,
+                tokenizer,
+                max_seq_len=args.max_seq_len,
+                # None means "all of it", which is what the paper does. GLUE
+                # tasks are small (RTE 2.5k, MRPC 3.7k), so subsampling is
+                # opt-in only; the preset sets both counts to 0 = all.
+                num_train_samples=(
+                    args.num_train_samples if args.num_train_samples > 0 else None
+                ),
+                num_eval_samples=(
+                    args.num_eval_samples if args.num_eval_samples > 0 else None
+                ),
+                seed=args.seed,
+            )
+        except ValueError as exc:
+            # build_glue_datasets refuses to truncate the validation split.
+            # Surfaced as a clean exit, not a traceback: the fix is a flag.
+            raise SystemExit(str(exc)) from exc
+        if args.num_train_samples > 0:
+            print(
+                f"  WARNING: subsampling train to {len(train_dataset)} rows; "
+                "the paper trains on the full split"
+            )
+        print(
+            f"  train: {len(train_dataset)}  validation: {len(eval_dataset)}  "
+            "(GLUE's own validation split)"
+        )
+        # A 3-tuple, unlike the causal path's 1-tuple. The grad functions below
+        # are built with batch_argnums matched to this arity.
+        collate = glue_data.make_glue_collate(glue_task, tokenizer, device)
+    else:
+        # Load and prepare dataset
+        print(f"\nLoading dataset: {args.dataset}...")
+        if args.dataset_subset:
+            print(f"  Subset: {args.dataset_subset}")
+        print(f"  Split: {args.dataset_split}")
+        print(f"  Text field: {args.dataset_text_field}")
 
-    total_needed = args.num_train_samples + args.num_eval_samples
-    dataset = _load_streaming_subset(
-        dataset_name=args.dataset,
-        dataset_subset=args.dataset_subset,
-        dataset_split=args.dataset_split,
-        dataset_text_field=args.dataset_text_field,
-        total_needed=total_needed,
-    )
-    print(f"  Total examples in dataset: {len(dataset)}")
+        total_needed = args.num_train_samples + args.num_eval_samples
+        dataset = _load_streaming_subset(
+            dataset_name=args.dataset,
+            dataset_subset=args.dataset_subset,
+            dataset_split=args.dataset_split,
+            dataset_text_field=args.dataset_text_field,
+            total_needed=total_needed,
+        )
+        print(f"  Total examples in dataset: {len(dataset)}")
 
-    # Validate we have enough data
-    if len(dataset) < total_needed:
-        raise ValueError(
-            f"Dataset has {len(dataset)} examples but need {total_needed} "
-            f"(train={args.num_train_samples} + eval={args.num_eval_samples})"
+        # Validate we have enough data
+        if len(dataset) < total_needed:
+            raise ValueError(
+                f"Dataset has {len(dataset)} examples but need {total_needed} "
+                f"(train={args.num_train_samples} + eval={args.num_eval_samples})"
+            )
+
+        # Show sample of raw data
+        if len(dataset) > 0:
+            sample = dataset[0]
+            sample_text = sample[args.dataset_text_field]
+            print("\n  Sample data (first example):")
+            print(f"    Text length: {len(sample_text)} chars")
+            print(f"    Preview: {sample_text[:200]}...")
+
+        # Split into eval and train using skip/take
+        print(
+            f"\nPreparing {args.num_eval_samples} eval + {args.num_train_samples} train samples..."
+        )
+        eval_dataset = dataset.take(args.num_eval_samples)
+        train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
+
+        # Tokenize function
+        def tokenize_function(examples):
+            return tokenizer(
+                examples[args.dataset_text_field],
+                truncation=True,
+                max_length=args.max_seq_len,
+            )
+
+        # Tokenize each split separately
+        print(f"\nTokenizing (max_seq_len={args.max_seq_len})...")
+        eval_cols_to_remove = eval_dataset.column_names
+        train_cols_to_remove = train_dataset.column_names
+
+        eval_dataset = eval_dataset.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=eval_cols_to_remove,
+            desc="Tokenizing eval",
+        )
+        train_dataset = train_dataset.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=train_cols_to_remove,
+            desc="Tokenizing train",
         )
 
-    # Show sample of raw data
-    if len(dataset) > 0:
-        sample = dataset[0]
-        sample_text = sample[args.dataset_text_field]
-        print("\n  Sample data (first example):")
-        print(f"    Text length: {len(sample_text)} chars")
-        print(f"    Preview: {sample_text[:200]}...")
-
-    # Split into eval and train using skip/take
-    print(
-        f"\nPreparing {args.num_eval_samples} eval + {args.num_train_samples} train samples..."
-    )
-    eval_dataset = dataset.take(args.num_eval_samples)
-    train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
-
-    # Tokenize function
-    def tokenize_function(examples):
-        return tokenizer(
-            examples[args.dataset_text_field],
-            truncation=True,
-            max_length=args.max_seq_len,
+        print(
+            f"Prepared datasets: {len(train_dataset)} train samples, {len(eval_dataset)} eval samples"
         )
 
-    # Tokenize each split separately
-    print(f"\nTokenizing (max_seq_len={args.max_seq_len})...")
-    eval_cols_to_remove = eval_dataset.column_names
-    train_cols_to_remove = train_dataset.column_names
+        # Create data collator (HF primitive for batching + creating labels)
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer,
+            mlm=False,  # False for causal LM (GPT-style)
+        )
 
-    eval_dataset = eval_dataset.map(
-        tokenize_function,
-        batched=True,
-        remove_columns=eval_cols_to_remove,
-        desc="Tokenizing eval",
-    )
-    train_dataset = train_dataset.map(
-        tokenize_function,
-        batched=True,
-        remove_columns=train_cols_to_remove,
-        desc="Tokenizing train",
-    )
+        # Collate: data_collator handles padding, then extract tensors + move to device.
+        # Used by all DataLoaders that feed into per_example_loss_fn.
+        def collate(examples):
+            batch = data_collator(examples)
+            return (batch["input_ids"].to(device),)
 
-    print(
-        f"Prepared datasets: {len(train_dataset)} train samples, {len(eval_dataset)} eval samples"
-    )
-
-    # Create data collator (HF primitive for batching + creating labels)
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False,  # False for causal LM (GPT-style)
-    )
-
-    # Collate: data_collator handles padding, then extract tensors + move to device.
-    # Used by all DataLoaders that feed into per_example_loss_fn.
-    def collate(examples):
-        batch = data_collator(examples)
-        return (batch["input_ids"].to(device),)
+    # DataLoader batch arity, and therefore which positional args of
+    # per_example_loss_fn carry per-example data. Causal passes (input_ids,);
+    # classification passes (input_ids, attention_mask, labels). Threading this
+    # through as one value keeps the three clipped_grad call sites below from
+    # drifting apart -- multi-element batch_argnums is an already-supported path
+    # (packages/opaque-core/tests/clipping/test_empty_batch.py).
+    _batch_argnums = (1, 2, 3) if _is_cls else (1,)
 
     # Privacy auditing setup: designate canaries and remove held-out ones
     audit_cf = None
@@ -1643,7 +1868,28 @@ def main():
     # Define per-example loss
     _pad_id = tokenizer.pad_token_id
 
-    def per_example_loss_fn(trainable, input_ids):
+    def _cls_per_example_loss_fn(trainable, input_ids, attention_mask, labels):
+        """Per-example classification loss.
+
+        The batch dim is re-added, deliberately. clipped_grad vmaps over
+        batch_argnums, which STRIPS that dim: a (B, L) input arrives here as
+        (L,) and a (B,) label as a 0-d scalar. Decoder models tolerate a 1-D
+        input_ids, which is why the causal branch below never needs this, but
+        RobertaModel.forward unpacks exactly two dims
+        (`batch_size, seq_length = input_shape`) and raises otherwise.
+
+        labels.reshape(1) rather than unsqueeze(0) so it also accepts an
+        already-1-element tensor, which is what the non-vmap'd probe paths pass.
+        """
+        output = fmodel(
+            merged_params(trainable),
+            input_ids.unsqueeze(0),
+            attention_mask=attention_mask.unsqueeze(0),
+            labels=labels.reshape(1),
+        )
+        return output.loss
+
+    def _lm_per_example_loss_fn(trainable, input_ids):
         # Mask padding out of the loss.
         #
         # `collate` returns only input_ids and drops the collator's `labels`,
@@ -1666,6 +1912,12 @@ def main():
         )
         output = fmodel(merged_params(trainable), input_ids, labels=labels)
         return output.loss
+
+    # One name for the rest of the file. The two implementations differ in arity,
+    # which is what _batch_argnums above tracks.
+    per_example_loss_fn = (
+        _cls_per_example_loss_fn if _is_cls else _lm_per_example_loss_fn
+    )
 
     # Build canary DataLoader for auditing
     canary_loader = None
@@ -1705,17 +1957,50 @@ def main():
             f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
         )
 
+    # Set by eval_loss on the classification path: the figure the LoRA-XS paper
+    # actually reports for this task (accuracy / Matthews / Pearson). None on the
+    # causal path, where eval loss is the reported quantity.
+    _last_eval_metric: float | None = None
+
     def eval_loss(trainable):
-        """Compute eval loss using DataLoader."""
+        """Mean eval loss over the eval DataLoader.
+
+        Classification runs FULL batches through fmodel directly rather than
+        looping per_example_loss_fn: that function re-adds a batch dim for vmap's
+        benefit, so feeding it a real (B, L) batch would produce (1, B, L). Full
+        batches are also what makes the metric computable -- accuracy, Matthews
+        and Pearson all need logits pooled across the whole split, which a scalar
+        loss cannot provide. Sets `_last_eval_metric` for the caller to log.
+        """
+        nonlocal _last_eval_metric
         with torch.no_grad():
+            if _is_cls:
+                total_loss = 0.0
+                total = 0
+                logits_all: list[torch.Tensor] = []
+                labels_all: list[torch.Tensor] = []
+                for input_ids, attention_mask, labels in eval_loader:
+                    out = fmodel(
+                        merged_params(trainable),
+                        input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                    )
+                    total_loss += out.loss.item() * len(input_ids)
+                    total += len(input_ids)
+                    logits_all.append(out.logits.detach().float())
+                    labels_all.append(labels.detach())
+                _last_eval_metric = glue_data.glue_metric(
+                    glue_task, torch.cat(logits_all), torch.cat(labels_all)
+                )
+                return total_loss / total
+
             total_loss = 0.0
             total_tokens = 0
-
             for (input_ids,) in eval_loader:
                 loss = per_example_loss_fn(trainable, input_ids)
                 total_loss += loss.item() * len(input_ids)
                 total_tokens += len(input_ids)
-
             return total_loss / total_tokens
 
     def eval_bpb(trainable, n_samples=512, microbatch=2):
@@ -1837,7 +2122,7 @@ def main():
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=_batch_argnums,
             initial_clipping_norm=clip_norm,
             target_quantile=1.0 - args.target_clipping_rate,
             clipping_norm_max=args.clipping_norm_max,
@@ -1851,7 +2136,7 @@ def main():
         grad_fn, clip_state = auto_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=_batch_argnums,
             R=clip_norm,
             gamma=args.auto_clipping_gamma,
             normalize_by=args.batch_size,
@@ -1863,7 +2148,7 @@ def main():
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=_batch_argnums,
             clipping_norm=clip_norm,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
@@ -1996,6 +2281,19 @@ def main():
             f"--lr-min-ratio must be in [0, 1], got {args.lr_min_ratio}"
         )
     peak_lr = args.learning_rate
+    # --lr-warmup-ratio wins when set: GLUE task sizes differ by ~3x, so the
+    # paper's 0.06 is only expressible as a fraction of total steps, which is not
+    # known until the dataset is loaded.
+    if args.lr_warmup_ratio is not None:
+        if not 0.0 <= args.lr_warmup_ratio < 1.0:
+            raise ValueError(
+                f"--lr-warmup-ratio must be in [0, 1), got {args.lr_warmup_ratio}"
+            )
+        args.lr_warmup_steps = int(round(args.lr_warmup_ratio * total_steps))
+        print(
+            f"LR warmup: {args.lr_warmup_steps} steps "
+            f"({args.lr_warmup_ratio:.3g} x {total_steps} total)"
+        )
     warmup = max(0, int(args.lr_warmup_steps))
     lr_min = peak_lr * args.lr_min_ratio
     decay_span = max(1, total_steps - warmup)
@@ -2273,6 +2571,11 @@ def main():
     # eval_loss_ema is a smoothed metric robust to per-checkpoint eval noise.
     best_eval_loss = initial_eval_loss
     best_eval_step = 0
+    # GLUE's reported figures are higher-is-better, so they need their own
+    # running max rather than reusing the loss minimum. Seeded from the
+    # pre-training eval so a run that never improves still reports a number.
+    best_glue_score: float | None = _last_eval_metric
+    best_glue_step = 0
     best_snapshot = (
         {k: v.detach().cpu().clone() for k, v in trainable_params.items()}
         if args.restore_best_checkpoint and is_main_process
@@ -2313,7 +2616,11 @@ def main():
 
         # Iterate through Poisson-sampled batches
         for step_idx, batch in enumerate(epoch_loader):
-            (input_ids,) = batch
+            # batch is (input_ids,) on the causal path and
+            # (input_ids, attention_mask, labels) on the classification one;
+            # element 0 is input_ids either way, which is all this loop needs
+            # directly. The rest is splatted into grad_fn below.
+            input_ids = batch[0]
 
             # === Accounting (data-independent, before execution) ===
             accounting |= mechanism(noise_multiplier)
@@ -2326,7 +2633,7 @@ def main():
                 # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
-                        trainable_params, input_ids, state=clip_state
+                        trainable_params, *batch, state=clip_state
                     )
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
@@ -2759,6 +3066,26 @@ def main():
                     f"  → Eval: loss={current_eval_loss:.4f} "
                     f"(min={best_eval_loss:.4f}@{best_eval_step}), ε={epsilon:.3f}"
                 )
+                # On GLUE the loss is not the reported quantity -- the paper's
+                # Table 1 is accuracy / Matthews / Pearson. Logged under its own
+                # task-specific key AND a generic one, so a sweep across tasks can
+                # be aggregated without knowing which metric each task uses.
+                # `_best` tracks the max because all three are higher-is-better,
+                # unlike loss.
+                if _is_cls and _last_eval_metric is not None:
+                    metrics[f"eval/{glue_task.metric}"] = _last_eval_metric
+                    metrics["eval/glue_score"] = _last_eval_metric
+                    if (
+                        best_glue_score is None
+                        or _last_eval_metric > best_glue_score
+                    ):
+                        best_glue_score = _last_eval_metric
+                        best_glue_step = global_step
+                    metrics["eval/glue_score_max"] = best_glue_score
+                    eval_msg += (
+                        f", {glue_task.metric}={_last_eval_metric:.4f} "
+                        f"(max={best_glue_score:.4f}@{best_glue_step})"
+                    )
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
@@ -2871,6 +3198,17 @@ def main():
     # comparison uses min / EMA instead of the noisy final-step value.
     if use_wandb:
         wandb.run.summary["eval/loss_min"] = best_eval_loss
+        if _is_cls and best_glue_score is not None:
+            # The headline number for this run. Both the final and the max are
+            # recorded: the max is what the LoRA-XS paper reports (best epoch,
+            # then median over seeds), the final is what an honest fixed-budget
+            # protocol reports, and the full-LoRA overfitting curve showed how far
+            # apart those two can be.
+            wandb.run.summary[f"eval/{glue_task.metric}"] = _last_eval_metric
+            wandb.run.summary["eval/glue_score"] = _last_eval_metric
+            wandb.run.summary["eval/glue_score_max"] = best_glue_score
+            wandb.run.summary["eval/glue_score_max_step"] = best_glue_step
+            wandb.run.summary["eval/glue_metric_name"] = glue_task.metric
         wandb.run.summary["eval/loss_min_step"] = best_eval_step
         if _ema_beta > 0:
             wandb.run.summary["eval/loss_ema"] = eval_loss_ema
