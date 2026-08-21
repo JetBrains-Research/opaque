@@ -120,12 +120,12 @@ from opaque.optimizers import adamw
 strategy = blt_strategy(max_buffers=10)
 second_strategy = blt_strategy(max_buffers=10)
 noise_fn, noise_state = mf_gaussian_noise(
-  grad_template,
-  strategy,
-  n_steps=1000,
-  noise_multiplier=noise_multiplier,
-  key=key(42),
-  second_moment_strategy=second_strategy,
+    grad_template,
+    strategy,
+    n_steps=1000,
+    noise_multiplier=noise_multiplier,
+    key=key(42),
+    second_moment_strategy=second_strategy,
 )
 
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
@@ -134,7 +134,9 @@ opt_state = optimizer.init(params)
 # Per-step:
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 updates, opt_state = optimizer.update(
-  noisy_grads, opt_state, params=p,
+    noisy_grads,
+    opt_state,
+    params=p,
 )
 ```
 
@@ -156,7 +158,9 @@ from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, batch_argnums=1,
+    loss_fn,
+    clipping_norm=1.0,
+    batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
@@ -183,7 +187,7 @@ sequences internally: `z` (raw iterate), `x` (Polyak-Ruppert average,
 the published params), `y = (1-β)z + βx` (forward-pass weights).
 
 ```python
-from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers import adamw, get_eval_params, schedule_free
 
 optimizer = schedule_free(adamw(lr=1e-3), beta=0.9, warmup_steps=100)
 opt_state = optimizer.init(params)
@@ -193,9 +197,15 @@ for step in range(num_steps):
     updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
 
-# At save / eval time, read the published x_t directly off the state:
-eval_params = opt_state.x
+# At save / eval time, use the published x_t — not the trainer's y_t:
+eval_params = get_eval_params(opt_state)
 ```
+
+`get_eval_params` returns a cloned snapshot of the Polyak-Ruppert
+average `x_t`. After restoring optimizer state,
+`get_train_params(opt_state)` reconstructs the interpolated iterate
+`y_t = (1−β)z_t + β x_t` so training can resume from the same weights
+the last `update` produced.
 
 **DP-utility note**: under DP, `x_t = (1/n) Σ z_s` is a Polyak-Ruppert
 average of noised iterates. When per-step iterate noise is approximately

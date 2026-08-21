@@ -7,7 +7,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
-from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers import adamw, get_eval_params, get_train_params, schedule_free
 from opaque.optimizers.types import ScheduleFreeState
 
 
@@ -196,3 +196,78 @@ class TestScheduleFreeWrapper:
         delta, state = opt.update(grads, state, params=params)
         for k in state.x:
             torch.testing.assert_close(state.x[k], state.z[k])
+
+
+class TestScheduleFreeEvalParams:
+    def test_init_eval_and_train_match_params(self, params):
+        opt = schedule_free(adamw(lr=1e-3), beta=0.9)
+        state = opt.init(params)
+        eval_params = get_eval_params(state)
+        train_params = get_train_params(state)
+        for k in params:
+            torch.testing.assert_close(eval_params[k], params[k])
+            torch.testing.assert_close(train_params[k], params[k])
+
+    def test_eval_params_are_published_x_not_train_y(self, params, grads):
+        opt = schedule_free(adamw(lr=1e-2), beta=0.9)
+        state = opt.init(params)
+        y = params
+        for _ in range(4):
+            delta, state = opt.update(grads, state, params=y)
+            y = torchopt.apply_updates(y, delta, inplace=False)
+        eval_params = get_eval_params(state)
+        train_params = get_train_params(state)
+        assert any(not torch.equal(eval_params[k], y[k]) for k in y)
+        for k in y:
+            torch.testing.assert_close(eval_params[k], state.x[k])
+            torch.testing.assert_close(train_params[k], y[k])
+            expected_y = (1.0 - state.beta) * state.z[k] + state.beta * state.x[k]
+            torch.testing.assert_close(train_params[k], expected_y)
+
+    def test_eval_snapshot_is_detached_from_state(self, params, grads):
+        opt = schedule_free(adamw(lr=1e-2), beta=0.9)
+        state = opt.init(params)
+        delta, state = opt.update(grads, state, params=params)
+        _ = torchopt.apply_updates(params, delta, inplace=False)
+        eval_params = get_eval_params(state)
+        x_before = {k: v.clone() for k, v in state.x.items()}
+        for k in eval_params:
+            eval_params[k].add_(1.0)
+            torch.testing.assert_close(state.x[k], x_before[k])
+
+    def test_rejects_non_schedule_free_state(self, params):
+        opt = adamw(lr=1e-3)
+        state = opt.init(params)
+        with pytest.raises(TypeError, match="ScheduleFreeState"):
+            get_eval_params(state)
+        with pytest.raises(TypeError, match="ScheduleFreeState"):
+            get_train_params(state)
+
+    def test_checkpoint_round_trip_preserves_eval_and_train_params(self, params, grads):
+        from opaque.serialization import from_state_dict, state_dict
+
+        opt = schedule_free(adamw(lr=1e-2), beta=0.9)
+        state = opt.init(params)
+        y = params
+        for _ in range(5):
+            delta, state = opt.update(grads, state, params=y)
+            y = torchopt.apply_updates(y, delta, inplace=False)
+        eval_before = get_eval_params(state)
+        train_before = get_train_params(state)
+        restored = from_state_dict(opt.init(params), state_dict(state))
+        eval_after = get_eval_params(restored)
+        train_after = get_train_params(restored)
+        for k in params:
+            torch.testing.assert_close(eval_after[k], eval_before[k])
+            torch.testing.assert_close(train_after[k], train_before[k])
+            torch.testing.assert_close(train_after[k], y[k])
+        delta_live, _ = opt.update(
+            {k: v.clone() for k, v in grads.items()}, state, params=y
+        )
+        delta_restored, _ = opt.update(
+            {k: v.clone() for k, v in grads.items()},
+            restored,
+            params=get_train_params(restored),
+        )
+        for k in params:
+            torch.testing.assert_close(delta_restored[k], delta_live[k])

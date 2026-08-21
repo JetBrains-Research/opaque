@@ -26,7 +26,10 @@ Update step (gradient computed at ``y_t``)::
 
 The wrapper presents the standard ``GradientTransformation`` interface,
 but its update returns a delta that takes the trainer's ``params``
-(treated as ``y_t``) to ``y_{t+1}``.
+(treated as ``y_t``) to ``y_{t+1}``.  Call :func:`get_eval_params` at
+save / evaluation boundaries to read the published ``x_t`` sequence;
+:func:`get_train_params` reconstructs the interpolated ``y_t`` used
+during training.
 
 DP / privacy notes.
 
@@ -38,14 +41,13 @@ DP / privacy notes.
   ``updates`` as usual (same as without this wrapper); the public ``update``
   surface does not add DP metadata kwargs.
 
-Trainer-integration caveat (Phase B).  The wrapper's published params
-are ``x_t``, not the ``params`` argument the trainer passes in
-(``y_t``).  Saving / evaluating against ``y_t`` would defeat the
-purpose of schedule-free averaging.  The wrapper exposes the published
-params as the ``x`` field of :class:`ScheduleFreeState`, which trainer
-integrations should consult at save / eval boundaries.  This is the
-dependency that gates schedule-free's usefulness through ``DPTrainer``;
-the wrapper itself is correct end-to-end as a library API.
+Trainer-integration caveat.  The wrapper's published params are
+``x_t``, not the ``params`` argument the trainer passes in (``y_t``).
+Saving / evaluating against ``y_t`` would defeat the purpose of
+schedule-free averaging.  Use :func:`get_eval_params` at save / eval
+boundaries (and :func:`get_train_params` if a later training step
+needs the interpolated iterate restored from optimizer state).
+``DPTrainer`` does not yet switch sequences automatically.
 """
 
 from __future__ import annotations
@@ -74,6 +76,8 @@ class ScheduleFreeState:
     Attributes:
         z: Raw iterate (pytree matching params).
         x: Uniformly-averaged published weights (pytree matching params).
+            Prefer :func:`get_eval_params` over reading this field
+            directly; the accessor returns a detached snapshot.
         inner: State of the wrapped ``GradientTransformation``.
         step: Number of completed updates.
         beta: Interpolation coefficient β.
@@ -114,8 +118,10 @@ def schedule_free(
 
     Returns:
         A ``torchopt.base.GradientTransformation`` whose state is a
-        :class:`ScheduleFreeState`.  Read ``state.x`` to retrieve the
-        published weights for saving / evaluation.
+        :class:`ScheduleFreeState`.  Use :func:`get_eval_params` to
+        retrieve the published weights for saving / evaluation, and
+        :func:`get_train_params` to reconstruct the interpolated
+        training iterate.
     """
     if not 0.0 <= beta <= 1.0:
         raise ValueError(f"beta must satisfy 0 <= beta <= 1, got {beta}")
@@ -195,4 +201,63 @@ def schedule_free(
     return GradientTransformation(init_fn, update_fn)
 
 
-__all__ = ["ScheduleFreeState", "schedule_free"]
+def _require_schedule_free_state(state: Any, *, caller: str) -> ScheduleFreeState:
+    if not isinstance(state, ScheduleFreeState):
+        raise TypeError(
+            f"{caller} expects ScheduleFreeState, got {type(state).__name__}"
+        )
+    return state
+
+
+def get_eval_params(state: ScheduleFreeState) -> TensorPytree:
+    """Return a snapshot of the published schedule-free weights ``x_t``.
+
+    Evaluation and checkpointed model weights should use this sequence,
+    not the trainer's interpolated iterate ``y_t``.  The returned pytree
+    is cloned, so in-place evaluation mutation cannot corrupt optimizer
+    state.
+
+    Args:
+        state: Optimizer state produced by :func:`schedule_free`.
+
+    Returns:
+        A pytree matching ``state.x``.
+
+    Raises:
+        TypeError: If ``state`` is not a :class:`ScheduleFreeState`.
+    """
+    state = _require_schedule_free_state(state, caller="get_eval_params")
+    return tree_map(lambda p: p.detach().clone(), state.x)
+
+
+def get_train_params(state: ScheduleFreeState) -> TensorPytree:
+    """Reconstruct the interpolated training iterate ``y_t``.
+
+    ``y_t = (1 − β) z_t + β x_t``.  After restoring optimizer state
+    from a checkpoint, this is the iterate a trainer should resume
+    from; it matches the ``params`` pytree :func:`schedule_free`
+    ``update`` last produced.
+
+    Args:
+        state: Optimizer state produced by :func:`schedule_free`.
+
+    Returns:
+        A pytree matching the trainer's ``params`` / ``y_t``.
+
+    Raises:
+        TypeError: If ``state`` is not a :class:`ScheduleFreeState`.
+    """
+    state = _require_schedule_free_state(state, caller="get_train_params")
+    return tree_map(
+        lambda z, x: ((1.0 - state.beta) * z + state.beta * x).detach().clone(),
+        state.z,
+        state.x,
+    )
+
+
+__all__ = [
+    "ScheduleFreeState",
+    "get_eval_params",
+    "get_train_params",
+    "schedule_free",
+]

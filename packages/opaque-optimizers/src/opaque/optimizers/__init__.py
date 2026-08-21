@@ -8,7 +8,8 @@ Headline factories:
 - :func:`radam`, :func:`lion`, :func:`ademamix`, :func:`adafactor`,
   :func:`adagrad`, :func:`adadelta`, :func:`rmsprop`,
   :func:`schedule_free` — additional families, some via ``torchopt``
-  re-export.
+  re-export.  Schedule-free evaluation uses :func:`get_eval_params`;
+  :func:`get_train_params` reconstructs the interpolated training iterate.
 
 State dataclasses live in :mod:`opaque.optimizers.types`.
 """
@@ -20,6 +21,8 @@ from opaque.api.optimizers import (
     adam,
     adamw,
     ademamix,
+    get_eval_params,
+    get_train_params,
     lion,
     radam,
     rmsprop,
@@ -35,6 +38,8 @@ __all__ = [
     "adam",
     "adamw",
     "ademamix",
+    "get_eval_params",
+    "get_train_params",
     "lion",
     "radam",
     "rmsprop",

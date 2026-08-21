@@ -45,7 +45,10 @@ from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
+    loss_fn,
+    clipping_norm=1.0,
+    argnums=0,
+    batch_argnums=1,
 )
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
@@ -99,6 +102,7 @@ bounded. Good debugging baseline:
 
 ```python
 from opaque.optimizers import sgd
+
 optimizer = sgd(lr=0.01, momentum=0.9)
 ```
 
@@ -109,6 +113,7 @@ Enable it to ablate:
 
 ```python
 from opaque.optimizers import rmsprop
+
 optimizer = rmsprop(lr=1e-2, alpha=0.99, noise_bias_correction=True)
 ```
 
@@ -119,6 +124,7 @@ subtracts a matching cumulative term:
 
 ```python
 from opaque.optimizers import adagrad
+
 optimizer = adagrad(lr=1e-2, noise_bias_correction=True)
 ```
 
@@ -246,7 +252,8 @@ second_strategy = band_mf_strategy(bands=8, momentum=0.999)
 
 # Noise: passing second_moment_strategy creates two MF streams (g, g²).
 noise_fn, noise_state = mf_gaussian_noise(
-    grad_template, strategy,
+    grad_template,
+    strategy,
     n_steps=1000,
     noise_multiplier=noise_multiplier,
     key=key(42),
@@ -265,7 +272,8 @@ for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     updates, opt_state = optimizer.update(
-        noisy_grads, opt_state,
+        noisy_grads,
+        opt_state,
         params=params,
     )
     params = torchopt.apply_updates(params, updates)
@@ -380,11 +388,9 @@ Schedule-free averages optimizer iterates. Its DP variance reduction depends
 on their covariance, so there is no universal $\sqrt{n}$ reduction.
 
 ```python
-from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers import adamw, get_eval_params, schedule_free
 
-optimizer = schedule_free(
-    adamw(lr=1e-3, noise_bias_correction=True), beta=0.9
-)
+optimizer = schedule_free(adamw(lr=1e-3, noise_bias_correction=True), beta=0.9)
 opt_state = optimizer.init(params)
 
 # Train as usual: trainer treats `params` as y_t.
@@ -393,8 +399,8 @@ for batch in dataloader:
     updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
 
-# At save / eval time, read the published x_t directly off the state:
-eval_params = opt_state.x
+# At save / eval time, use the published x_t — not the trainer's y_t:
+eval_params = get_eval_params(opt_state)
 ```
 
 ### Weight decay and privacy
@@ -424,8 +430,10 @@ from opaque.optimizers import adamw
 from opaque.scheduling import cosine_schedule, with_warmup
 
 decay = cosine_schedule(
-    init_value=1e-3, end_value=0.0,
-    transition_steps=900, transition_begin=100,
+    init_value=1e-3,
+    end_value=0.0,
+    transition_steps=900,
+    transition_begin=100,
 )
 schedule = with_warmup(decay, transition_steps=100)
 optimizer = adamw(lr=schedule, weight_decay=0.01, noise_bias_correction=True)
@@ -483,5 +491,5 @@ the output of the DP noise mechanism into `optimizer.update()`.
 ## API reference
 
 See [Optimizers API Reference](../reference/optimizers.md) for full factory
-signatures, knob descriptions, and the `serialization` /
-`schedule_free` submodule helpers.
+signatures, knob descriptions, `get_eval_params` /
+`get_train_params`, and serialization.

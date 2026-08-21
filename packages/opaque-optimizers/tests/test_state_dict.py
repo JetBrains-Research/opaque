@@ -18,6 +18,8 @@ from opaque.optimizers import (
     adagrad,
     adamw,
     ademamix,
+    get_eval_params,
+    get_train_params,
     lion,
     radam,
     rmsprop,
@@ -432,6 +434,13 @@ class TestScheduleFree:
             torch.testing.assert_close(restored.z[k], state.z[k])
         assert restored.step == state.step
         assert restored.beta == state.beta
+        for k in state.x:
+            torch.testing.assert_close(
+                get_eval_params(restored)[k], get_eval_params(state)[k]
+            )
+            torch.testing.assert_close(
+                get_train_params(restored)[k], get_train_params(state)[k]
+            )
 
 
 class TestRobustness:

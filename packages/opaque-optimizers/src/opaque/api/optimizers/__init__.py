@@ -33,9 +33,9 @@ Opaque-built:
   correction; whether that helps in practice depends on the workload.
 - :func:`schedule_free` — generic wrapper around any base
   ``GradientTransformation`` (Opaque-built or torchopt-imported)
-  implementing Defazio's schedule-free averaging.  Read the published
-  ``x`` weights for saving / evaluation directly from the state's
-  ``state.x`` field (see :class:`opaque.optimizers.types.ScheduleFreeState`).
+  implementing Defazio's schedule-free averaging.  Read published
+  weights with :func:`get_eval_params`; reconstruct the interpolated
+  training iterate with :func:`get_train_params`.
 
 DP-aware behavior is selected at ``update()`` time by passing metadata
 wrappers on ``updates`` (not separate ``noise_stddev=`` / ``noisy_squared_grads``
@@ -77,7 +77,11 @@ from opaque.api.optimizers._ademamix import ademamix
 from opaque.api.optimizers._lion import lion
 from opaque.api.optimizers._radam import radam
 from opaque.api.optimizers._rmsprop import rmsprop
-from opaque.api.optimizers._schedule_free import schedule_free
+from opaque.api.optimizers._schedule_free import (
+    get_eval_params,
+    get_train_params,
+    schedule_free,
+)
 from opaque.api.optimizers._sgd import sgd
 
 from . import distributed as _distributed_optimizer_registration  # noqa: F401
@@ -89,6 +93,8 @@ __all__ = [
     "adam",
     "adamw",
     "ademamix",
+    "get_eval_params",
+    "get_train_params",
     "lion",
     "radam",
     "rmsprop",
