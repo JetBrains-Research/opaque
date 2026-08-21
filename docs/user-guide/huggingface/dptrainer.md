@@ -95,9 +95,7 @@ The standard surface from `Trainer` is preserved:
   travels with the saved model.
 - `save_accountant(output_dir=None)` — write just `accountant.json` and
   return its path, for building your own final artifact without
-  re-saving the model.  Returns `None` when there is nothing to write:
-  before any `train()` call, or on a rank that `args.should_save`
-  excludes.  Rank-gated but not a collective — it performs no barrier.
+  re-saving the model.
 
 Checkpointing during training is driven by `save_strategy` /
 `save_steps` on `TrainingArguments`; resume from a checkpoint
