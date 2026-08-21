@@ -15,6 +15,7 @@ sync function: each subsystem registers its types on import.
 from __future__ import annotations
 
 import contextlib
+import inspect
 from dataclasses import fields, is_dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -313,9 +314,58 @@ def gather_pytree(pytree: Any, dim: int = 0) -> Any:
     return _merge_gathered_pytrees(gathered, device=device, dim=dim)
 
 
+_VALID_FIELD_OPS = frozenset(
+    {
+        "sum",
+        "mean",
+        "max",
+        "min",
+        "product",
+        "assert_equal",
+        "assert_optional_equal",
+        "local",
+    }
+)
+
+
+def _validate_field_op(field_name: str, field_op: Any) -> None:
+    """Reject an unusable ``field_ops`` entry before any collective is issued.
+
+    Callables are checked against the one supported signature,
+    ``fn(value, device)``.  Introspection deliberately does not follow
+    ``functools.wraps``, so the arity checked is the one that will actually be
+    called; a callable that exposes no signature at all is left to the call.
+    """
+    if isinstance(field_op, str):
+        if field_op not in _VALID_FIELD_OPS:
+            raise ValueError(
+                f"field_ops[{field_name!r}] has unsupported operation {field_op!r}. "
+                f"Expected one of {sorted(_VALID_FIELD_OPS)} or a callable."
+            )
+        return
+    if not callable(field_op):
+        raise ValueError(
+            f"field_ops[{field_name!r}] must be an operation name or a callable, "
+            f"got {type(field_op).__name__}."
+        )
+    try:
+        signature = inspect.signature(field_op, follow_wrapped=False)
+    except (TypeError, ValueError):
+        return
+    try:
+        signature.bind(None, None)
+    except TypeError as error:
+        raise ValueError(
+            f"field_ops[{field_name!r}] must be callable as fn(value, device), "
+            f"but its signature is {signature}: {error}."
+        ) from error
+
+
 def sync_object(
     state: Any,
-    field_ops: Mapping[str, str | Callable[..., float | int | None]],
+    field_ops: Mapping[
+        str, str | Callable[[Any, torch.device | None], float | int | None]
+    ],
     device: torch.device | None = None,
 ) -> Any:
     """All-reduce scalar fields of a dataclass, returning a new instance.
@@ -323,20 +373,21 @@ def sync_object(
     ``field_ops`` maps field name to a reduction op string
     (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal" |
     "assert_optional_equal" | "local"``) or to a callable
-    ``fn(value[, device]) -> float | int | None``.
+    ``fn(value, device) -> float | int | None``.
     Every dataclass field must be present in this mapping. ``"local"`` marks a
     field whose rank-local value is intentionally carried through unchanged.
 
-    **Callable semantics:** invoked on the raw field value (any type).  If the
-    return value is a real ``float`` or ``int`` (not ``bool``), it replaces the
-    field in the returned dataclass (same as the legacy numeric-reduction path).
-    If the return value is ``None``, the callable is treated as **assertion
-    only** — no field update.
+    **Callable semantics:** a callable must accept exactly ``fn(value, device)``
+    and is invoked once, on the raw field value (any type).  A real ``float`` or
+    ``int`` return (not ``bool``) replaces the field in the returned dataclass;
+    a ``None`` return makes the callable **assertion only** — no field update.
+    Exceptions propagate unchanged, so a callable that issues collectives issues
+    them exactly once.
 
-    The complete schema is validated before any distributed collective begins,
-    and operations execute in dataclass declaration order rather than mapping
-    insertion order. This prevents rank-local values from changing the
-    collective schedule.
+    The complete schema — operation names and callable signatures alike — is
+    validated before any distributed collective begins, and operations execute
+    in dataclass declaration order rather than mapping insertion order. This
+    prevents rank-local values from changing the collective schedule.
     """
     if not is_dataclass(state):
         raise TypeError(f"state must be a dataclass, got {type(state)}")
@@ -356,23 +407,8 @@ def sync_object(
             "field_ops must define every dataclass field; " + "; ".join(details) + "."
         )
 
-    valid_ops = {
-        "sum",
-        "mean",
-        "max",
-        "min",
-        "product",
-        "assert_equal",
-        "assert_optional_equal",
-        "local",
-    }
     for field in dataclass_fields:
-        field_op = field_ops[field.name]
-        if isinstance(field_op, str) and field_op not in valid_ops:
-            raise ValueError(
-                f"field_ops[{field.name!r}] has unsupported operation {field_op!r}. "
-                f"Expected one of {sorted(valid_ops)} or a callable."
-            )
+        _validate_field_op(field.name, field_ops[field.name])
 
     if not is_distributed():
         return state
@@ -385,10 +421,7 @@ def sync_object(
         if field_op == "local":
             continue
         if callable(field_op):
-            try:
-                result = field_op(value, device)
-            except TypeError:
-                result = field_op(value)
+            result = field_op(value, device)
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
             if isinstance(value, bool):

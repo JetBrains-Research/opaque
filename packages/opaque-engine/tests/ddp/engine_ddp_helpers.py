@@ -755,6 +755,7 @@ def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) ->
     """Exercise schema mismatches without leaving Gloo ranks desynchronized."""
     from opaque.api.engine.clipping._clipped_grad import ClippedGradAux
     from opaque.api.engine.clipping._distributed import sync_clipped_grad_aux
+    from opaque.api.engine.distributed._state import reduce_scalar, sync_object
     from opaque.api.engine.profiling._distributed import (
         sync_perf_state,
         sync_perf_tracker,
@@ -815,6 +816,20 @@ def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) ->
         )
         with pytest.raises(RuntimeError, match="StepPerf presence mismatch"):
             sync_perf_state(state)
+
+        # A field callable that fails after reducing must reduce exactly once,
+        # even when its signature would also accept a single argument.
+        reductions: list[int] = []
+
+        def _reduce_then_fail(value: int, device: torch.device | None = None) -> int:
+            reductions.append(reduce_scalar(value, op="sum", device=device))
+            raise TypeError("field callable failed after a collective")
+
+        with pytest.raises(TypeError, match="failed after a collective"):
+            sync_object(
+                _ScalarExactnessState(1), field_ops={"value": _reduce_then_fail}
+            )
+        assert reductions == [world_size]
 
         token = torch.tensor([1.0])
         dist.all_reduce(token, op=dist.ReduceOp.SUM)
