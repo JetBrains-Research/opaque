@@ -336,6 +336,7 @@ def scenario_batch_eval_metrics(
         batch_eval_metrics=True,
         include_for_metrics=["inputs", "loss"],
         privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
     eval_ds = TinyDataset(n=20, seq_len=4, vocab=cfg.vocab_size, seed=101)
