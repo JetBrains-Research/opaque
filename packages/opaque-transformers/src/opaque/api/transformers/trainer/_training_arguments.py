@@ -293,7 +293,7 @@ class TrainingArguments:
     lr_scheduler_kwargs: dict[str, Any] | str | None = field(default_factory=dict)
     # ``>= 1`` is an absolute step count; ``(0, 1)`` is a fraction of the
     # total training steps.
-    warmup_steps: float = 0
+    warmup_steps: int | float = 0
 
     # =================================================================
     # Training duration

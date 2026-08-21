@@ -48,7 +48,7 @@ class _Args:
 
     lr_scheduler: str = "linear"
     learning_rate: float = BASE_LR
-    warmup_steps: float = 0
+    warmup_steps: int | float = 0
     lr_scheduler_kwargs: dict[str, Any] = field(default_factory=dict)
     metric_for_best_model: str | None = None
 

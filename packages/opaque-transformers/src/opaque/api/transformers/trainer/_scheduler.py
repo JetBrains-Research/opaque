@@ -68,7 +68,7 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
 
 def get_warmup_steps(
     num_training_steps: int,
-    warmup_steps: float,
+    warmup_steps: int | float,
 ) -> int:
     """Resolve ``warmup_steps`` to an absolute step count.
 

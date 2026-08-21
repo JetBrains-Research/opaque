@@ -285,7 +285,7 @@ class RuntimeCheckpoint:
         default=None,
         metadata={"compare_on_resume": True, "drift": "shape"},
     )
-    warmup_steps: float | None = field(
+    warmup_steps: int | float | None = field(
         default=None,
         metadata={"compare_on_resume": True, "drift": "shape"},
     )
@@ -313,7 +313,7 @@ def save_dp_runtime_state(
     mf_max_participations: int | None = None,
     lr_scheduler: str | None = None,
     learning_rate: float | None = None,
-    warmup_steps: float | None = None,
+    warmup_steps: int | float | None = None,
     lr_scheduler_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""

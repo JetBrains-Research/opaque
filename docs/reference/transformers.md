@@ -226,7 +226,7 @@ Dataclass surface.  Every field listed here exists on
 | `optim_args` | `dict \| str \| None` | `None` |
 | `lr_scheduler` | `SchedulerType \| str \| Schedule` | `"linear"` |
 | `lr_scheduler_kwargs` | `dict \| str \| None` | `{}` |
-| `warmup_steps` | `float` | `0` |
+| `warmup_steps` | `int \| float` | `0` |
 
 `optim` supports `{"adam", "adamw", "sgd", "rmsprop", "adagrad",
 "adafactor", "ademamix", "lion", "radam", "adadelta",
