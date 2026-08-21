@@ -143,7 +143,7 @@ def scenario_runtime_foundation(
     rank: int,
     world_size: int,
     output_dir: str,
-    backend: str | None = None,
+    use_cpu: bool = False,
     **_,
 ) -> None:
     """Verify rank/world plumbing + checkpoint gating."""
@@ -162,7 +162,7 @@ def scenario_runtime_foundation(
         privacy_target_epsilon=8.0,
         privacy_target_delta=1e-5,
         report_to=[],
-        use_cpu=backend == "gloo",
+        use_cpu=use_cpu,
     )
     ds = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
     trainer = DPTrainer(
@@ -302,25 +302,25 @@ def _run_eval_gather_case(
 def scenario_eval_gather(
     rank: int,
     output_dir: str,
-    backend: str | None = None,
+    use_cpu: bool = False,
     **_,
 ) -> None:
     """Verify evaluation gathers uneven rank-local shards in dataset order."""
-    _run_eval_gather_case(rank, output_dir, eval_size=5, use_cpu=backend == "gloo")
+    _run_eval_gather_case(rank, output_dir, eval_size=5, use_cpu=use_cpu)
 
 
 def scenario_eval_gather_empty_rank(
     rank: int,
     output_dir: str,
-    backend: str | None = None,
+    use_cpu: bool = False,
     **_,
 ) -> None:
     """Verify evaluation gathers when one rank receives no examples."""
-    _run_eval_gather_case(rank, output_dir, eval_size=1, use_cpu=backend == "gloo")
+    _run_eval_gather_case(rank, output_dir, eval_size=1, use_cpu=use_cpu)
 
 
 def scenario_batch_eval_metrics(
-    rank: int, world_size: int, output_dir: str, **_
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
 ) -> None:
     """Verify DDP ``batch_eval_metrics`` runs on gathered batch payloads."""
     cfg = TinyConfig(vocab_size=32, hidden_size=8)
@@ -368,7 +368,7 @@ def scenario_batch_eval_metrics(
 
 
 def scenario_rank_gating_and_worker_seed(
-    rank: int, world_size: int, output_dir: str, **_
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
 ) -> None:
     """Verify rank-gated logging/saving and worker seed rank wiring."""
     cfg = TinyConfig()
@@ -381,6 +381,7 @@ def scenario_rank_gating_and_worker_seed(
         report_to=[],
         dataloader_num_workers=2,
         privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
     )
     trainer = DPTrainer(
         model=model,
@@ -443,7 +444,9 @@ def scenario_gather_paths(rank: int, world_size: int, **_) -> None:
     assert gathered_tree["pred"].shape == (2 * world_size, 3)
 
 
-def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
+def scenario_env_backend_diagnostic(
+    output_dir: str, use_cpu: bool = False, **_
+) -> None:
     """Vendor backends are accepted by args but error on unavailable runtime."""
     cfg = TinyConfig()
     model = TinyForCausalLM(cfg)
@@ -455,6 +458,7 @@ def scenario_env_backend_diagnostic(output_dir: str, **_) -> None:
         report_to=[],
         ddp_backend="xccl",
         privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
     )
     try:
         DPTrainer(
@@ -498,13 +502,19 @@ def main() -> int:
     args = parser.parse_args()
 
     output_dir = args.output_dir or tempfile.mkdtemp(prefix="dpt_ddp_")
-    _setup_ddp(args.rank, args.world_size, args.port, backend=args.backend)
+    device = _setup_ddp(args.rank, args.world_size, args.port, backend=args.backend)
     try:
+        # `_setup_ddp` owns backend resolution, so scenarios receive the
+        # placement it decided rather than re-deriving it from the raw
+        # `--backend` argument, which is unset whenever the backend is being
+        # auto-selected.  `_setup_ddp` also exports `LOCAL_RANK`, so a scenario
+        # that builds `TrainingArguments` without this flag puts rank 1 on
+        # `cuda:1`.
         SCENARIOS[args.scenario](
             rank=args.rank,
             world_size=args.world_size,
             output_dir=output_dir,
-            backend=args.backend,
+            use_cpu=device.type == "cpu",
         )
     finally:
         dist.destroy_process_group()
