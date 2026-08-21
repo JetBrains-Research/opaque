@@ -24,7 +24,7 @@ from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import sum_gradients
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.torch.functional import make_functional
-from opaque.patches import apply_model_patches
+from opaque.transformers.patches import apply_model_patches
 from opaque.random import key
 
 pytestmark = [pytest.mark.slow, pytest.mark.cuda]

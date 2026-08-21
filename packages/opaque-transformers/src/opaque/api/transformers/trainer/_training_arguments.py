@@ -430,7 +430,7 @@ class TrainingArguments:
     # False}`` for models whose forward depends on the HF ``DynamicCache``.
     use_performance_kernels: bool = False
     # Flat ``dict[str, bool]`` forwarded as-is to
-    # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
+    # ``opaque.transformers.patches.apply_model_patches`` kwargs (no key translation).
     # Supported keys: ``rope``, ``rms_norm``, ``activation``,
     # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
     # ``eager_attention``, ``batchify``.  ``fused_linear_cross_entropy``
@@ -438,7 +438,7 @@ class TrainingArguments:
     # is incompatible with ``compute_metrics`` /
     # ``preprocess_logits_for_metrics``.
     performance_kernels_config: dict[str, Any] | str | None = None
-    # Whether ``opaque.patches.apply_model_patches`` should apply compat
+    # Whether ``opaque.transformers.patches.apply_model_patches`` should apply compat
     # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe
     # masking / collator / checkpoint hooks).  Default ``True``.  Set to
     # ``False`` for custom models designed to be vmap-safe without

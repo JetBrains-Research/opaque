@@ -56,10 +56,10 @@ should work but is not extensively tested. First-class distributed backends are
 NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
 and are not covered by default CI.
 
-## Kernel patching lives in `opaque.patches`
+## Kernel patching lives in `opaque.transformers.patches`
 
 Kernel optimization and Hugging Face model patches are provided by
-`opaque.patches`. Triton kernels require CUDA; on CPU, MPS, or without
+`opaque.transformers.patches`. Triton kernels require CUDA; on CPU, MPS, or without
 Triton, compatible non-kernel patches remain available. Configure them with
 the explicit flags described in [Model Patches — DPTrainer
 integration](user-guide/huggingface/model-patches.md#dptrainer-integration).

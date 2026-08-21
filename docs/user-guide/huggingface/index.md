@@ -1,7 +1,7 @@
 # Hugging Face Integration
 
 Opaque ships a Hugging Face–style trainer (`opaque.transformers.DPTrainer`)
-plus a per-model patch surface (`opaque.patches`) so existing
+plus a per-model patch surface (`opaque.transformers.patches`) so existing
 `transformers` models can be trained under DP-SGD with the familiar
 `Trainer.train()` / `evaluate()` / `predict()` interface.
 

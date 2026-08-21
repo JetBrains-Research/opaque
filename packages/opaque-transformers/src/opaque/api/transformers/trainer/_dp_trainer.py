@@ -546,7 +546,7 @@ class DPTrainer:
         # Explicit patch sites (no import-time mutation of HF globals):
         # 1) global runtime compat (masking / collator / checkpoint hooks)
         # 2) ``apply_model_patches(..., compat=use_compat_patches, performance=True, kernels=use_performance_kernels)``
-        from opaque.patches import apply_runtime_patches
+        from opaque.transformers.patches import apply_runtime_patches
 
         apply_runtime_patches(compat=True)
         self._apply_opaque_model_patches()
@@ -796,9 +796,11 @@ class DPTrainer:
         for custom or non-HF ``nn.Module`` fixtures.
         """
         try:
-            from opaque.patches import apply_model_patches
+            from opaque.transformers.patches import apply_model_patches
         except ImportError:
-            log.debug("opaque.patches unavailable; skipping model patches.")
+            log.debug(
+                "opaque.transformers.patches unavailable; skipping model patches."
+            )
             return
 
         kwargs = self.args.performance_kernels_config or {}

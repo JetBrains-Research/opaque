@@ -1,6 +1,6 @@
 """Fused Triton kernels (with PyTorch fallbacks) for Opaque.
 
-Power the Hugging Face kernel-patching layer (``opaque.patches.transformers.components``)
+Power the Hugging Face kernel-patching layer (``opaque.transformers.patches.families.components``)
 and are usable directly as fast drop-in ops. When Triton is unavailable,
 pure-PyTorch implementations are used as fallbacks so the public API works
 everywhere.

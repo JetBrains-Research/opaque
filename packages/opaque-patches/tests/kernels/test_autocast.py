@@ -359,7 +359,7 @@ def _build_tiny_llama():
 def test_tiny_llama_under_autocast_and_patches(amp_dtype: torch.dtype):
     """Tiny offline LlamaModel + apply_model_patches + autocast → finite forward+backward."""
     pytest.importorskip("transformers")
-    from opaque.patches import apply_model_patches
+    from opaque.transformers.patches import apply_model_patches
 
     torch.manual_seed(0)
     model = _build_tiny_llama()
@@ -391,7 +391,7 @@ def test_tiny_llama_under_autocast_and_patches(amp_dtype: torch.dtype):
 def test_tiny_llama_under_autocast_dp_step(amp_dtype: torch.dtype):
     """Same tiny model under apply_model_patches + autocast + vmap(grad) + clipped_grad."""
     pytest.importorskip("transformers")
-    from opaque.patches import apply_model_patches
+    from opaque.transformers.patches import apply_model_patches
 
     torch.manual_seed(0)
     model = _build_tiny_llama()

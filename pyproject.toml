@@ -47,10 +47,7 @@ dependencies = [
 auditing = ["opaque-auditing>=0.0.0.dev0"]
 dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
 alignment = ["opaque-alignment>=0.0.0.dev0"]
-transformers = [
-    "opaque-transformers>=0.0.0.dev0",
-    "opaque-patches[transformers]>=0.0.0.dev0",
-]
+transformers = ["opaque-transformers>=0.0.0.dev0"]
 trl = ["opaque-transformers[trl]>=0.0.0.dev0"]
 all = [
     "opaque[auditing]",

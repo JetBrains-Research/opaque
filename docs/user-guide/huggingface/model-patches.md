@@ -1,6 +1,6 @@
 # Model Patches and Kernels
 
-`opaque.patches` is a standalone library that makes Hugging Face
+`opaque.transformers.patches` is a standalone library that makes Hugging Face
 Transformers models work under `torch.func.vmap(grad(...))` and
 provides fused Triton kernels for the hot ops on the forward /
 backward path. It predates and operates independently of
@@ -30,7 +30,7 @@ Two concerns are handled:
 ## API surface
 
 ```python
-from opaque.patches import apply_runtime_patches, apply_model_patches
+from opaque.transformers.patches import apply_runtime_patches, apply_model_patches
 
 apply_runtime_patches()                       # global HF shims, once at startup
 

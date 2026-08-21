@@ -104,7 +104,7 @@ which uses saved-tensor hooks that `torch.func` rejects on its own. Call
 torch.func.{grad, vjp, jacrev, hessian} don't yet support saved tensor hooks`.
 It ships with `opaque-torch`, so this needs no `opaque-patches` install;
 `opaque.torch.apply_runtime_patches()` selects it as the provider's one runtime
-concern, and `opaque.patches.apply_runtime_patches()` forwards there before
+concern, and `opaque.transformers.patches.apply_runtime_patches()` forwards there before
 applying the Hugging Face patches, so either call covers it. `DPTrainer` applies the runtime patches during
 construction, so trainer-driven flows are already covered. Plain eager
 checkpointing, outside any functional transform, needs no patch.

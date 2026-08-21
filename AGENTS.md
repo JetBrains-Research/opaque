@@ -35,8 +35,8 @@ ships an `__init__.py`.
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-dpftrl` | `opaque.api.dpftrl.*`, `opaque.api.accounting.dpftrl.*`; façade `opaque.dpftrl` | MF mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers, DP-FTRL-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-auditing` | `opaque.api.auditing.*`; façade `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) | `opaque-engine`, `opaque-accounting` |
-| `opaque-patches` | `opaque.api.patches.*`; façade `opaque.patches` | Torch checkpoint patches + HF Transformers compat (vmap-safe attention, KV cache) + fused Triton kernels (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine` |
-| `opaque-transformers` | `opaque.api.transformers.*`; façade `opaque.transformers` | HF trainer + integration | `opaque-engine`, `opaque-patches`, transformers, peft |
+| `opaque-patches` | `opaque.api.patches.kernels`; façade `opaque.patches.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine`, `opaque-torch` |
+| `opaque-transformers` | `opaque.api.transformers.*`; façades `opaque.transformers`, `opaque.transformers.patches` | HF trainer + integration, plus the HF Transformers and PEFT compatibility patches (vmap-safe attention, KV cache, LoRA fusion) | `opaque-engine`, `opaque-torch`, `opaque-patches`, transformers, peft |
 | `opaque-alignment` | `opaque.api.alignment.*`; façade `opaque.alignment` | DP-safe preference learning (DPO, SFT); self-contained fused-preference kernel, so no `opaque-patches` dependency | `opaque-engine`, `opaque-torch`, `opaque-base`, transformers, datasets, peft |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
@@ -136,9 +136,8 @@ pip install opaque-dpsgd                 # DP-SGD mechanisms
 pip install opaque-dpsgd[optimizers]     # DP-SGD + opaque-optimizers
 pip install opaque-dpftrl                # MF (DP-FTRL) mechanisms
 pip install opaque-auditing              # empirical privacy auditing
-pip install opaque-patches               # PyTorch checkpoint + HF compat patches
-pip install opaque-patches[transformers] # + HF Transformers + PEFT extras
-pip install opaque-transformers          # HF trainer integration
+pip install opaque-patches               # fused Triton kernels + PyTorch fallbacks
+pip install opaque-transformers          # HF trainer integration + HF/PEFT patches
 pip install opaque-alignment             # DP-safe preference learning (DPO, SFT)
 pip install "opaque[all]"                # everything
 ```
@@ -156,7 +155,6 @@ Everything else lives in the relevant package's
 
 | Extra | Pulls in |
 | --- | --- |
-| `opaque-patches[transformers]` | `transformers`, `peft` |
 | `opaque-dpsgd[optimizers]` | `opaque-optimizers` (backend-neutral functional optimizers) |
 | `opaque-dpftrl[optimizers]` | `opaque-optimizers` |
 | `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
@@ -164,21 +162,27 @@ Everything else lives in the relevant package's
 
 ## Patching model (on-import)
 
-`opaque.patches` exposes explicit entry points. `opaque.transformers`
+Patches are applied explicitly, never on import. `opaque.transformers`
 does not patch Hugging Face globals at import time; `DPTrainer`
 applies runtime and model patches during construction, and non-trainer
-flows should call `opaque.patches.apply_runtime_patches()` once plus
-`opaque.patches.apply_model_patches(model)` for each model instance.
+flows should call `opaque.transformers.patches.apply_runtime_patches()` once
+plus `opaque.transformers.patches.apply_model_patches(model)` for each model
+instance. That first call forwards its flags to
+`opaque.torch.apply_runtime_patches()` before applying the Hugging Face layer —
+fixing Hugging Face requires fixing torch — so one call covers both.
 There is no top-level `opaque.patch_all()`.
 
-Patch submodules:
+Patch surfaces, by owner:
 
-- `opaque.patches.torch` — gradient-checkpointing for `torch.utils.checkpoint`.
+- `opaque.torch.apply_runtime_patches` / `opaque.torch.checkpoint` — the
+  Torch-core shims, including gradient-checkpointing for
+  `torch.utils.checkpoint`.
+- `opaque.transformers.patches` — the orchestrator entry points, plus
+  `.families` (HF model patches: vmap-safe attention, KV cache, per-model
+  component replacements, custom-family registry), `.peft` (vmap-safe linear,
+  MLP, QKV), `.runtime`, and `.types`.
 - `opaque.patches.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
-  fused CE, LoRA).
-- `opaque.patches.transformers` — HF Transformers model patches
-  (vmap-safe attention, KV cache, per-model component replacements).
-- `opaque.patches.peft` — PEFT/LoRA patches (vmap-safe linear, MLP, QKV).
+  fused CE, LoRA), with PyTorch fallbacks.
 - `opaque.transformers` — compatibility-only runtime (Poisson-collator
   compat, trainer integration).
 

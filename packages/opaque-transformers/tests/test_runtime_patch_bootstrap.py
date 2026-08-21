@@ -23,7 +23,7 @@ def _run(code: str) -> str:
 @pytest.mark.slow
 def test_subprocess_apply_runtime_patches_sets_state():
     out = _run(
-        "from opaque.patches import apply_runtime_patches, is_runtime_patched\n"
+        "from opaque.transformers.patches import apply_runtime_patches, is_runtime_patched\n"
         "apply_runtime_patches(compat=True)\n"
         "print(is_runtime_patched())"
     )

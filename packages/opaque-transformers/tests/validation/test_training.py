@@ -72,7 +72,7 @@ def gpt2_with_lora(gpt2_model_and_tokenizer):
 
     model = get_peft_model(model, lora_config)
     try:
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         apply_model_patches(model, compat=True, performance=False)
     except ImportError:

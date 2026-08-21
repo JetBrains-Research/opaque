@@ -60,7 +60,7 @@ import torch.distributed as dist
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
-from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.transformers.patches import apply_model_patches, apply_runtime_patches
 from opaque.torch.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()

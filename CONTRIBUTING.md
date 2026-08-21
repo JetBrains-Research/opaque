@@ -58,7 +58,7 @@ packages/
 ├── opaque-dpsgd/        # DP-SGD noise, adaptive clipping, and sampling
 ├── opaque-dpftrl/       # Correlated-noise DP-FTRL mechanisms and sampling
 ├── opaque-auditing/     # Empirical privacy auditing
-├── opaque-patches/      # PyTorch, Transformers, and Triton patches
+├── opaque-patches/      # Fused Triton kernels with PyTorch fallbacks
 ├── opaque-transformers/ # Hugging Face trainer integration
 └── opaque-alignment/    # DP-safe SFT and DPO primitives
 

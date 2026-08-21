@@ -2369,7 +2369,6 @@ all = [
     { name = "opaque-alignment" },
     { name = "opaque-auditing" },
     { name = "opaque-dpftrl" },
-    { name = "opaque-patches", extra = ["transformers"] },
     { name = "opaque-transformers", extra = ["trl"] },
 ]
 auditing = [
@@ -2379,7 +2378,6 @@ dpftrl = [
     { name = "opaque-dpftrl" },
 ]
 transformers = [
-    { name = "opaque-patches", extra = ["transformers"] },
     { name = "opaque-transformers" },
 ]
 trl = [
@@ -2431,7 +2429,6 @@ requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-optimizers", editable = "packages/opaque-optimizers" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
-    { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
     { name = "opaque-torch", editable = "packages/opaque-torch" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
     { name = "opaque-transformers", extras = ["trl"], marker = "extra == 'trl'", editable = "packages/opaque-transformers" },
@@ -2646,21 +2643,12 @@ dependencies = [
     { name = "torch" },
 ]
 
-[package.optional-dependencies]
-transformers = [
-    { name = "peft" },
-    { name = "transformers" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "opaque-engine", editable = "packages/opaque-engine" },
     { name = "opaque-torch", editable = "packages/opaque-torch" },
-    { name = "peft", marker = "extra == 'transformers'", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.9.0" },
-    { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.57.0,<6" },
 ]
-provides-extras = ["transformers"]
 
 [[package]]
 name = "opaque-torch"

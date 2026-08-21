@@ -89,7 +89,7 @@ def run_clipped_grad_test(model, tokenizer, device=None):
         device = next(model.parameters()).device
 
     try:
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         apply_model_patches(model, compat=True, performance=False)
     except ImportError:

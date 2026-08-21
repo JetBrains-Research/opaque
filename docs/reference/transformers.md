@@ -17,7 +17,7 @@ from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 from opaque.transformers.trl import SFTConfig, SFTTrainer, DPOConfig, DPOTrainer
 
 # Global HF runtime shims (only needed when using HF primitives without DPTrainer):
-from opaque.patches import apply_runtime_patches
+from opaque.transformers.patches import apply_runtime_patches
 ```
 
 | Symbol | Purpose |
@@ -27,7 +27,7 @@ from opaque.patches import apply_runtime_patches
 | `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
-| `opaque.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
+| `opaque.transformers.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
 
 ## `DPTrainer`
 
@@ -556,7 +556,7 @@ weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
 ## Runtime patches
 
 ```python
-from opaque.patches import apply_runtime_patches
+from opaque.transformers.patches import apply_runtime_patches
 
 apply_runtime_patches(compat=True)  # install the global HF shims once
 ```

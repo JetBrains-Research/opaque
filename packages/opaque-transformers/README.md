@@ -22,11 +22,11 @@ and gate on CUDA + Triton at runtime.
 
 Runtime compat patches (vmap-safe masking, collator / checkpoint hooks) are
 applied when you construct :class:`opaque.transformers.trainer.DPTrainer`, or
-when you call :func:`opaque.patches.apply_runtime_patches` explicitly (e.g. in
+when you call :func:`opaque.transformers.patches.apply_runtime_patches` explicitly (e.g. in
 a notebook that uses HF primitives without the trainer).
 
 ```python
-from opaque.patches import apply_runtime_patches, is_runtime_patched
+from opaque.transformers.patches import apply_runtime_patches, is_runtime_patched
 from opaque.transformers import DPTrainer
 
 apply_runtime_patches(compat=True)  # global runtime shims — idempotent
@@ -46,5 +46,5 @@ assert is_runtime_patched()
 - **`opaque.transformers`** / **`opaque.transformers.trainer`** — thin
   re-export façades (same pattern as `opaque-engine`: `opaque.api.*` for
   implementation, `opaque.*` for stable imports).
-- **`opaque.patches.transformers`** — vmap-safe runtime patches and optional
-  Triton kernel hooks (see `opaque.patches`).
+- **`opaque.transformers.patches.families`** — vmap-safe runtime patches and optional
+  Triton kernel hooks (see `opaque.transformers.patches`).

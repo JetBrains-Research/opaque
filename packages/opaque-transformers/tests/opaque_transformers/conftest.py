@@ -16,7 +16,7 @@ from ._helpers import qwen2_config, qwen2_tokenizer  # noqa: F401
 @pytest.fixture(scope="session", autouse=True)
 def _apply_opaque_hf_patches():
     transformers = pytest.importorskip("transformers")  # noqa: F841
-    from opaque.patches import apply_runtime_patches
+    from opaque.transformers.patches import apply_runtime_patches
 
     apply_runtime_patches()
     return

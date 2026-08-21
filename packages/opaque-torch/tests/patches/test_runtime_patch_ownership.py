@@ -5,7 +5,7 @@
 ``apply_runtime_patches`` here covers the Torch-core concerns and nothing else:
 no higher layer need be installed for it to work, and installing one must not be
 required for its probe to tell the truth. The cross-layer half of that contract
-— that ``opaque.patches.apply_runtime_patches()`` also satisfies this probe — is
+— that ``opaque.transformers.patches.apply_runtime_patches()`` also satisfies this probe — is
 tested where the delegation lives.
 
 These run in subprocesses: the patches are process-global and idempotent, so a

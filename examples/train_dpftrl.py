@@ -120,7 +120,7 @@ from transformers import (
 )
 
 from opaque.torch.device import sdpa_autocast_under_vmap_broken
-from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.transformers.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
 
