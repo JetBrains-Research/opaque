@@ -227,8 +227,7 @@ Dataclass surface.  Every field listed here exists on
 | `optim_args` | `dict \| str \| None` | `None` |
 | `lr_scheduler` | `SchedulerType \| str \| Schedule` | `"linear"` |
 | `lr_scheduler_kwargs` | `dict \| str \| None` | `{}` |
-| `warmup_ratio` | `float` | `0.0` |
-| `warmup_steps` | `int` | `0` |
+| `warmup_steps` | `int \| float` | `0` |
 
 `optim` supports `{"adam", "adamw", "sgd", "rmsprop", "adagrad",
 "adafactor", "ademamix", "lion", "radam", "adadelta",
@@ -335,7 +334,8 @@ NPU, XLA) are rejected with a redirect message.
 `__post_init__` runs cross-field validation idempotently:
 
 - Strategy strings validated against allowed sets.
-- `warmup_steps` overrides `warmup_ratio` when both are set.
+- `warmup_steps` must be a non-negative number: a step count when `>= 1`,
+  a fraction of the total training steps when in `(0, 1)`.
 - `save_strategy="best"` requires `eval_strategy != "no"`.
 - `load_best_model_at_end=True` requires both `save_strategy != "no"`
   and `eval_strategy != "no"`.

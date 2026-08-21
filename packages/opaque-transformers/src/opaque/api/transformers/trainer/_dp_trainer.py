@@ -3876,8 +3876,8 @@ class DPTrainer:
 
         Dispatches via :func:`opaque.api.transformers.trainer._scheduler.build_lr_schedule`,
         which reads ``args.lr_scheduler``, ``args.lr_scheduler_kwargs``,
-        and ``args.warmup_steps`` / ``args.warmup_ratio``.  Override in a
-        subclass to supply a different schedule.
+        and ``args.warmup_steps``.  Override in a subclass to supply a
+        different schedule.
         """
         return build_lr_schedule(self.args, num_training_steps)
 
@@ -4956,7 +4956,6 @@ class DPTrainer:
             lr_scheduler=a.lr_scheduler,
             learning_rate=a.learning_rate,
             warmup_steps=a.warmup_steps,
-            warmup_ratio=a.warmup_ratio,
             lr_scheduler_kwargs=(
                 a.lr_scheduler_kwargs
                 if isinstance(a.lr_scheduler_kwargs, dict)
@@ -5415,7 +5414,6 @@ class DPTrainer:
             "lr_scheduler": a.lr_scheduler,
             "learning_rate": a.learning_rate,
             "warmup_steps": a.warmup_steps,
-            "warmup_ratio": a.warmup_ratio,
             "lr_scheduler_kwargs": (
                 a.lr_scheduler_kwargs
                 if isinstance(a.lr_scheduler_kwargs, dict)

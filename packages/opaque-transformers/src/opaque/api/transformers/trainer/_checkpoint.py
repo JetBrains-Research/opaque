@@ -285,11 +285,7 @@ class RuntimeCheckpoint:
         default=None,
         metadata={"compare_on_resume": True, "drift": "shape"},
     )
-    warmup_steps: int | None = field(
-        default=None,
-        metadata={"compare_on_resume": True, "drift": "shape"},
-    )
-    warmup_ratio: float | None = field(
+    warmup_steps: int | float | None = field(
         default=None,
         metadata={"compare_on_resume": True, "drift": "shape"},
     )
@@ -317,8 +313,7 @@ def save_dp_runtime_state(
     mf_max_participations: int | None = None,
     lr_scheduler: str | None = None,
     learning_rate: float | None = None,
-    warmup_steps: int | None = None,
-    warmup_ratio: float | None = None,
+    warmup_steps: int | float | None = None,
     lr_scheduler_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
@@ -349,8 +344,7 @@ def save_dp_runtime_state(
         ),
         lr_scheduler=lr_scheduler,
         learning_rate=(float(learning_rate) if learning_rate is not None else None),
-        warmup_steps=(int(warmup_steps) if warmup_steps is not None else None),
-        warmup_ratio=(float(warmup_ratio) if warmup_ratio is not None else None),
+        warmup_steps=(float(warmup_steps) if warmup_steps is not None else None),
         lr_scheduler_kwargs=lr_scheduler_kwargs,
     )
     # ``torch.save`` of a dataclass round-trips via pickle.  Kept as

@@ -231,8 +231,9 @@ class DPOConfig(TrainingArguments):
         implement them.
 
         Fields TRL has that opaque does not implement raise
-        ``ValueError``: ``padding_free``, ``truncation_mode='keep_end'``,
-        ``pad_token``, and nonzero ``router_aux_loss_coef``.
+        ``ValueError``: ``padding_free``, ``truncation_mode='keep_end'``, and
+        ``pad_token``. A nonzero ``router_aux_loss_coef`` warns and trains as
+        if it were 0.
 
         HF-inherited fields go through the same translation as
         :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same

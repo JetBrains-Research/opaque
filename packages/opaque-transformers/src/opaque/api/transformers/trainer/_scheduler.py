@@ -68,18 +68,17 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
 
 def get_warmup_steps(
     num_training_steps: int,
-    warmup_steps: int,
-    warmup_ratio: float,
+    warmup_steps: int | float,
 ) -> int:
-    """Resolve HF's ``{warmup_steps, warmup_ratio}`` pair to an integer
-    step count.
+    """Resolve ``warmup_steps`` to an absolute step count.
 
-    ``warmup_steps`` wins when ``> 0``; otherwise ``warmup_ratio`` is
-    applied to ``num_training_steps``.
+    A value ``>= 1`` is already a step count and is truncated to an int; a
+    value in ``(0, 1)`` is a fraction of ``num_training_steps``. Mirrors
+    HF's ``TrainingArguments.get_warmup_steps``.
     """
-    if warmup_steps > 0:
+    if warmup_steps >= 1:
         return int(warmup_steps)
-    return math.ceil(num_training_steps * warmup_ratio)
+    return math.ceil(num_training_steps * warmup_steps)
 
 
 def _validate_kwargs(name: str, kwargs: dict[str, Any]) -> None:
@@ -100,9 +99,9 @@ def build_lr_schedule(
     """Build a step -> learning-rate callable from HF-style training arguments.
 
     Reads ``args.lr_scheduler``, ``args.warmup_steps``,
-    ``args.warmup_ratio``, ``args.learning_rate``, and
-    ``args.lr_scheduler_kwargs``.  Returns a callable suitable for
-    passing as the ``lr`` argument of any torchopt optimizer factory.
+    ``args.learning_rate``, and ``args.lr_scheduler_kwargs``.  Returns a
+    callable suitable for passing as the ``lr`` argument of any torchopt
+    optimizer factory.
 
     ``args.lr_scheduler`` may also be a :data:`Schedule` recipe;
     in that case the recipe is returned as-is and the HF-name dispatch
@@ -115,11 +114,11 @@ def build_lr_schedule(
     # (SchedulerType is an Enum subclass; the class itself is callable
     # via ``SchedulerType(x)``), but instances of the enum aren't.
     if not isinstance(raw, (str, SchedulerType)) and callable(raw):
-        if args.warmup_steps or args.warmup_ratio:
+        if args.warmup_steps:
             raise ValueError(
-                "warmup_steps / warmup_ratio are incompatible with a "
-                "user-supplied lr_scheduler Schedule; compose "
-                "with_warmup(schedule, ...) into the recipe yourself."
+                "warmup_steps is incompatible with a user-supplied "
+                "lr_scheduler Schedule; compose with_warmup(schedule, ...) "
+                "into the recipe yourself."
             )
         if args.lr_scheduler_kwargs:
             raise ValueError(
@@ -153,7 +152,7 @@ def build_lr_schedule(
 
     _validate_kwargs(name, kwargs)
 
-    W = get_warmup_steps(num_training_steps, args.warmup_steps, args.warmup_ratio)
+    W = get_warmup_steps(num_training_steps, args.warmup_steps)
     decay_steps = max(1, num_training_steps - W)
 
     if name == "constant":

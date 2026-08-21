@@ -62,7 +62,6 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
         "adam_beta1",
         "adam_beta2",
         "adam_epsilon",
-        "warmup_steps",
         "lr_scheduler_kwargs",
         # Training duration
         "num_train_epochs",
@@ -264,6 +263,22 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     return {"optim": optim_str}
 
 
+def _warmup_collapse(hf: dict[str, Any]) -> dict[str, Any]:
+    """Collapse HF's warmup knobs onto opaque's single ``warmup_steps``.
+
+    Transformers 4.x carried an integer ``warmup_steps`` beside a
+    fractional ``warmup_ratio`` and resolved the pair as "steps wins when
+    non-zero".  5.x dropped the ratio and taught ``warmup_steps`` to read a
+    value below 1 as a fraction of the total instead.  Opaque follows 5.x,
+    so both forms pass straight through: a 4.x ratio is already the
+    fractional encoding and needs no arithmetic.
+    """
+    steps = hf.get("warmup_steps") or 0
+    if steps:
+        return {"warmup_steps": steps}
+    return {"warmup_steps": hf.get("warmup_ratio") or 0}
+
+
 def _max_grad_norm_to_clipping(hf: dict[str, Any]) -> dict[str, Any]:
     """Loosely map HF's global grad-norm clip → opaque ``clipping_norm``.
 
@@ -291,10 +306,26 @@ HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "gradient_accumulation_steps": _batch_collapse,
     "auto_find_batch_size": _batch_collapse,
     "optim": _optim_collapse,
+    "warmup_steps": _warmup_collapse,
+    "warmup_ratio": _warmup_collapse,
     "max_grad_norm": _max_grad_norm_to_clipping,
     "use_liger_kernel": _liger_to_perf_kernels,
     "liger_kernel_config": _liger_to_perf_kernels,
 }
+
+
+# ---------------------------------------------------------------------------
+# Fields the manifest classifies that only exist on *older* supported
+# transformers. The declared range spans a major boundary, so the manifest
+# has to cover the union of both surfaces; these names are absent from the
+# newest release and must not be read as manifest drift.
+# ---------------------------------------------------------------------------
+HF_LEGACY_FIELDS: frozenset[str] = frozenset(
+    {
+        # Removed in 5.x, which folded the fraction into ``warmup_steps``.
+        "warmup_ratio",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
