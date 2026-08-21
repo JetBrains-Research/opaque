@@ -2464,11 +2464,26 @@ def main():
     # optimizer. This gate controls layer discovery (init needs frozen_params),
     # the frozen= argument to update(), and the rotation/* diagnostics -- so
     # omitting adamw here would construct xse_adamw and then never rotate.
-    _xse_active = (
-        args.optimizer in ("sgd", "adamw")
-        and args.lora_method == "lora-xs"
-        and getattr(args, "lora_xse_p_e", 0.0) > 0
+    # Requesting rotation with an optimizer that has no xse wrapper is an ERROR,
+    # not a no-op. Only xse_sgd and xse_adamw exist, so with --optimizer adafactor
+    # (the trainer's DEFAULT) the branches above build a plain optimizer, this gate
+    # is False, and --lora-xse-p-e is silently ignored: the run trains as frozen
+    # LoRA-XS while its config says p_e=0.3125 and its name says otherwise. An
+    # audit of all 363 runs to date found none affected -- every LoRA-XS run used
+    # sgd or adamw -- but nothing was stopping it, and a rotation arm that quietly
+    # did not rotate is indistinguishable in W&B from one that did.
+    _xse_requested = (
+        args.lora_method == "lora-xs" and getattr(args, "lora_xse_p_e", 0.0) > 0
     )
+    if _xse_requested and args.optimizer not in ("sgd", "adamw"):
+        raise SystemExit(
+            f"--lora-xse-p-e {args.lora_xse_p_e} requires --optimizer sgd or "
+            f"adamw, got {args.optimizer!r}. Rotation is implemented only as "
+            "xse_sgd / xse_adamw; with any other optimizer the rotation would be "
+            "silently skipped and the run would secretly be frozen LoRA-XS. "
+            "Pass --lora-xse-p-e 0 to train frozen on purpose."
+        )
+    _xse_active = _xse_requested and args.optimizer in ("sgd", "adamw")
     if _xse_active:
         opt_state = base_opt.init(trainable_params, frozen_params)
     else:
