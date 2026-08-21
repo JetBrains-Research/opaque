@@ -572,3 +572,55 @@ def test_rotation_warmup_rejects_negative():
     with pytest.raises(ValueError, match="rotation_warmup_steps must be >= 0"):
         xse_sgd(lr=1e-3, lora_alpha=16, p_e=0.25, rotation_step_interval=1,
                 rotation_warmup_steps=-1, momentum=0.9)
+
+
+@pytest.mark.parametrize("source,floor", [("core", 0.8292), ("momentum", None)])
+def test_keep_source_retention_floor(source, floor, monkeypatch):
+    """XSE_KEEP_SOURCE=core must hit the provable retention floor sqrt(r_keep/r).
+
+    The rotation is exactly an orthogonal projection of the weight update, so the
+    retained energy fraction is g^2 with g = ||R'||/||R||. Choosing the kept frames
+    as R's own top singular directions maximises g (Eckart-Young), giving the
+    deterministic floor g >= sqrt(r_keep/r) by pigeonhole. "momentum" has no such
+    bound -- measured 0.978 on causal LM but 0.759 on CoLA, BELOW this floor,
+    which is what makes the switch a provable improvement there.
+    """
+    import importlib
+
+    monkeypatch.setenv("XSE_KEEP_SOURCE", source)
+    import lora_privacy.peft_lora_xs.xse as xse
+
+    importlib.reload(xse)
+    assert xse._KEEP_SOURCE == source
+
+    r, r_keep = 16, 11
+    torch.manual_seed(0)
+    worst = 1.0
+    for _ in range(200):
+        R = torch.randn(r, r, dtype=torch.float64)
+        M = torch.randn(r, r, dtype=torch.float64)
+        sel = R if source == "core" else M
+        U, _S, Vh = torch.linalg.svd(sel)
+        Up, Vp = U[:, :r_keep], Vh.T[:, :r_keep]
+        worst = min(worst, ((Up.T @ R @ Vp).norm() / R.norm()).item())
+    if floor is not None:
+        assert worst >= floor, f"core keep rule dipped to {worst:.4f} < {floor}"
+    else:
+        # momentum selection on an independent M concentrates at the RANDOM floor
+        # r_keep/r = 0.6875, well below the core rule's guarantee.
+        assert worst < 0.8292, "momentum keep unexpectedly matched the core floor"
+
+    monkeypatch.delenv("XSE_KEEP_SOURCE", raising=False)
+    importlib.reload(xse)
+
+
+def test_keep_source_rejects_unknown(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("XSE_KEEP_SOURCE", "gradient")
+    import lora_privacy.peft_lora_xs.xse as xse
+
+    with pytest.raises(ValueError, match="XSE_KEEP_SOURCE must be"):
+        importlib.reload(xse)
+    monkeypatch.delenv("XSE_KEEP_SOURCE", raising=False)
+    importlib.reload(xse)
