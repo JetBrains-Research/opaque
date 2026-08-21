@@ -70,10 +70,9 @@ def _drop_router_aux_loss(value: Any) -> str | None:
     if not value:
         return None  # already 0 — nothing is being withheld.
     return (
-        "the MoE router load-balancing loss is batch-coupled — it is a property "
-        "of the whole batch, so it has no per-example gradient to clip and "
-        "cannot enter opaque's DP objective. Training proceeds as if the "
-        "coefficient were 0.0"
+        "the MoE router load-balancing loss is a batch-level statistic with no "
+        "per-example gradient to clip, so it cannot enter opaque's DP "
+        "objective; training proceeds as if the coefficient were 0.0"
     )
 
 
