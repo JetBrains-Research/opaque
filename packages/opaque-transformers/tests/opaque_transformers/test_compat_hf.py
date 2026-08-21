@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import multiprocessing
 import warnings
 
@@ -420,12 +421,12 @@ def test_normalize_dp_overrides_accepts_epsilon_only():
 
 
 # ---------------------------------------------------------------------------
-# Manifest engine — unbucketed fields
+# Manifest engine — fields no bucket claims
 # ---------------------------------------------------------------------------
 
 
 def _apply(values, defaults):
-    """Drive the engine with an empty manifest, so every field is unbucketed."""
+    """Drive the engine with an empty manifest, so no field is classified."""
     return _apply_manifest(
         source_values=values,
         source_defaults=defaults,
@@ -439,61 +440,75 @@ def _apply(values, defaults):
     )
 
 
-def test_unbucketed_field_at_default_is_skipped():
+def test_unclassified_field_at_default_is_skipped():
     """An untouched field carries no instruction to drop and cannot affect ε."""
     assert _apply({"novel_knob": 0.0}, {"novel_knob": 0.0}) == {}
 
 
-def test_unbucketed_none_default_is_skipped():
+def test_unclassified_none_default_is_skipped():
     """Upstream deprecating a field to a ``None`` placeholder must not break callers."""
     assert _apply({"novel_knob": None}, {"novel_knob": None}) == {}
 
 
-def test_unbucketed_field_the_user_set_raises():
+def test_unclassified_field_the_user_set_raises():
     """Silently dropping a deliberately configured knob could invalidate accounting."""
     with pytest.raises(ValueError, match="not classified"):
         _apply({"novel_knob": 0.05}, {"novel_knob": 0.0})
 
 
-def test_unbucketed_field_with_unknown_default_raises():
+def test_unclassified_field_with_unknown_default_raises():
     """No default to compare against means we cannot prove the user left it alone."""
     with pytest.raises(ValueError, match="not classified"):
         _apply({"novel_knob": 0.05}, {})
 
 
 # ---------------------------------------------------------------------------
-# Warmup: HF's single float knob → opaque's (steps, ratio) pair
+# Warmup: HF's two knobs (4.x) / one knob (5.x) → opaque's warmup_steps
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("hf_value", "expected_steps", "expected_ratio"),
+    ("hf", "expected"),
     [
-        (0, 0, 0.0),
-        (0.05, 0, 0.05),
-        (0.999, 0, 0.999),
-        (1, 1, 0.0),
-        (1.0, 1, 0.0),
-        (25, 25, 0.0),
-        (25.7, 25, 0.0),
-        (None, 0, 0.0),
+        ({}, 0),
+        ({"warmup_steps": None}, 0),
+        ({"warmup_steps": 0}, 0),
+        ({"warmup_steps": 0.05}, 0.05),
+        ({"warmup_steps": 25}, 25),
+        # transformers 4.x shape: the fraction lived in its own field, and
+        # opaque's warmup_steps now reads exactly that encoding.
+        ({"warmup_steps": 0, "warmup_ratio": 0.05}, 0.05),
+        ({"warmup_steps": 0, "warmup_ratio": 0.0}, 0),
     ],
 )
-def test_warmup_collapse(hf_value, expected_steps, expected_ratio):
-    """Below 1 is a fraction of training; 1 and above is an absolute step count."""
-    out = _warmup_collapse({"warmup_steps": hf_value})
-    assert out["warmup_steps"] == expected_steps
-    assert out["warmup_ratio"] == pytest.approx(expected_ratio)
+def test_warmup_collapse(hf, expected):
+    """Both upstream shapes land on a single ``warmup_steps``, value unchanged."""
+    assert _warmup_collapse(hf)["warmup_steps"] == pytest.approx(expected)
 
 
-def test_warmup_collapse_preserves_resolved_step_count(tmp_path):
-    """Opaque must resolve a fractional warmup to the same step count as HF."""
+def test_warmup_collapse_prefers_steps_when_both_set():
+    """Matches HF 4.x's ``get_warmup_steps``: a non-zero step count wins."""
+    assert _warmup_collapse({"warmup_steps": 25, "warmup_ratio": 0.05}) == {
+        "warmup_steps": 25
+    }
+
+
+@pytest.mark.parametrize("warmup", [0, 0.05, 0.5, 1, 25, 25.7])
+def test_warmup_resolves_to_the_same_step_count_as_hf(warmup):
+    """Opaque's resolution of ``warmup_steps`` must agree with HF's, exactly."""
+    total = 200
+    expected = int(warmup) if warmup >= 1 else math.ceil(total * warmup)
+    assert get_warmup_steps(total, warmup) == expected
+
+
+def test_warmup_matches_upstream_get_warmup_steps(tmp_path):
+    """Cross-check the resolution against the installed transformers itself."""
     total = 200
     try:
         hf_args = _hf_args(tmp_path, warmup_steps=0.05)
     except ValueError:
         pytest.skip("upstream treats warmup_steps as an integer step count only")
-    out = _warmup_collapse({"warmup_steps": hf_args.warmup_steps})
+    collapsed = _warmup_collapse({"warmup_steps": hf_args.warmup_steps})
     assert get_warmup_steps(
-        total, out["warmup_steps"], out["warmup_ratio"]
+        total, collapsed["warmup_steps"]
     ) == hf_args.get_warmup_steps(total)

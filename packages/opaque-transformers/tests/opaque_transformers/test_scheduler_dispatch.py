@@ -48,8 +48,7 @@ class _Args:
 
     lr_scheduler: str = "linear"
     learning_rate: float = BASE_LR
-    warmup_steps: int = 0
-    warmup_ratio: float = 0.0
+    warmup_steps: float = 0
     lr_scheduler_kwargs: dict[str, Any] = field(default_factory=dict)
     metric_for_best_model: str | None = None
 
@@ -73,21 +72,24 @@ def _assert_pointwise(ours, hf_lam, num_total, *, beyond=100, tol=1e-9):
 
 
 class TestGetWarmupSteps:
-    def test_warmup_steps_only(self):
-        assert get_warmup_steps(1000, 50, 0.0) == 50
+    def test_absolute_step_count(self):
+        assert get_warmup_steps(1000, 50) == 50
 
-    def test_warmup_ratio_only(self):
-        assert get_warmup_steps(1000, 0, 0.1) == 100
+    def test_fraction_of_total(self):
+        assert get_warmup_steps(1000, 0.1) == 100
 
-    def test_warmup_steps_wins_when_both_set(self):
-        assert get_warmup_steps(1000, 50, 0.1) == 50
+    def test_one_is_a_step_count_not_a_fraction(self):
+        assert get_warmup_steps(1000, 1) == 1
 
-    def test_zero_when_neither(self):
-        assert get_warmup_steps(1000, 0, 0.0) == 0
+    def test_fractional_step_count_truncates(self):
+        assert get_warmup_steps(1000, 50.7) == 50
 
-    def test_ratio_uses_ceil(self):
+    def test_zero_is_no_warmup(self):
+        assert get_warmup_steps(1000, 0) == 0
+
+    def test_fraction_uses_ceil(self):
         # 1000 * 0.0501 = 50.1 -> ceil = 51
-        assert get_warmup_steps(1000, 0, 0.0501) == 51
+        assert get_warmup_steps(1000, 0.0501) == 51
 
 
 # ---------------------------------------------------------------------------
@@ -415,15 +417,15 @@ class TestPointwiseParity:
 
 
 # ---------------------------------------------------------------------------
-# warmup resolution via warmup_ratio
+# warmup resolution from a fractional warmup_steps
 # ---------------------------------------------------------------------------
 
 
-class TestWarmupRatio:
-    def test_warmup_ratio_resolves_to_steps(self):
-        # ratio 0.05 of 1000 -> 50 warmup steps
+class TestFractionalWarmupSteps:
+    def test_fraction_resolves_to_steps(self):
+        # 0.05 of 1000 -> 50 warmup steps
         ours = build_lr_schedule(
-            _Args(lr_scheduler="linear", warmup_ratio=0.05),
+            _Args(lr_scheduler="linear", warmup_steps=0.05),
             num_training_steps=1000,
         )
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, 50, 1000))
@@ -525,8 +527,8 @@ class TestUserSuppliedRecipe:
     """``lr_scheduler`` accepts a Schedule recipe directly.
 
     When a recipe is passed, the HF-name dispatch is bypassed and the
-    recipe is returned as-is; ``warmup_steps`` / ``warmup_ratio`` /
-    ``lr_scheduler_kwargs`` are HF-name-dispatch-only and must be unset.
+    recipe is returned as-is; ``warmup_steps`` / ``lr_scheduler_kwargs``
+    are HF-name-dispatch-only and must be unset.
     """
 
     def test_recipe_returned_unchanged(self):
@@ -543,19 +545,19 @@ class TestUserSuppliedRecipe:
         from opaque.scheduling import cosine_schedule
 
         recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
-        with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
+        with pytest.raises(ValueError, match="warmup_steps is incompatible"):
             build_lr_schedule(
                 _Args(lr_scheduler=recipe, warmup_steps=10),
                 num_training_steps=100,
             )
 
-    def test_warmup_ratio_rejected_with_recipe(self):
+    def test_fractional_warmup_rejected_with_recipe(self):
         from opaque.scheduling import cosine_schedule
 
         recipe = cosine_schedule(init_value=1e-3, end_value=0.0, transition_steps=100)
-        with pytest.raises(ValueError, match="warmup_steps / warmup_ratio"):
+        with pytest.raises(ValueError, match="warmup_steps is incompatible"):
             build_lr_schedule(
-                _Args(lr_scheduler=recipe, warmup_ratio=0.1),
+                _Args(lr_scheduler=recipe, warmup_steps=0.1),
                 num_training_steps=100,
             )
 
@@ -614,8 +616,8 @@ class TestWarmupEdgeCases:
     """HF-parity around degenerate warmup parameter combinations."""
 
     def test_linear_no_warmup(self):
-        # ``warmup_steps=0`` and ``warmup_ratio=0`` ⇒ the warmup ramp
-        # collapses to the identity transform.  HF and ours must match.
+        # ``warmup_steps=0`` ⇒ the warmup ramp collapses to the identity
+        # transform.  HF and ours must match.
         ours = build_lr_schedule(
             _Args(lr_scheduler="linear", warmup_steps=0),
             num_training_steps=200,

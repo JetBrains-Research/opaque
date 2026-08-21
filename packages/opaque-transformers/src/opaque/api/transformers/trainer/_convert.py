@@ -162,18 +162,12 @@ def _apply_manifest(
             opaque[name] = value
             continue
 
-        # Unbucketed field still at its default: the user expressed no
-        # intent, so there is nothing to drop and nothing that can move the
-        # privacy accounting. Skip it rather than failing the conversion —
-        # otherwise a field upstream added (or deprecated to a ``None``
-        # placeholder) breaks every call, including one that never touched it.
+        # Unclassified but untouched: no intent to honor, and nothing that
+        # can move the accounting.
         if name in source_defaults and _is_default(value, source_defaults[name]):
             continue
 
-        # Unbucketed field the user actually set: surface as a hard error so
-        # the canary test can catch upstream additions before they bite a
-        # user, and so a deliberately configured knob is never dropped
-        # silently.
+        # Unclassified and user-set: never drop a knob someone configured.
         errors.append(
             f"  - {source_label}.{name}={value!r}: field is not classified by "
             f"the opaque argument manifest (neither DIRECT, RENAME, TRANSFORM, "

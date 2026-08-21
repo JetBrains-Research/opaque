@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 # TRL is the optional ``opaque[trl]`` extra. Skip the entire module when
@@ -26,7 +28,6 @@ def _trl_args(tmp_path, **overrides):
         save_strategy="no",
         report_to=[],
         use_cpu=True,
-        router_aux_loss_coef=overrides.pop("router_aux_loss_coef", 0.0),
         **overrides,
     )
 
@@ -114,29 +115,39 @@ def test_reject_packing(tmp_path):
         )
 
 
-def test_reject_router_aux_loss(tmp_path):
-    """A deliberately set MoE aux-loss coefficient is a hard error."""
-    with pytest.raises(ValueError, match="router_aux_loss_coef"):
-        SFTConfig.from_trl(
+def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
+    """A deliberately set MoE aux-loss coefficient converts, loudly, to no-op.
+
+    Opaque cannot compute the router load-balancing term — it is coupled
+    across the batch, so it has no per-example gradient to clip — but a
+    coefficient it silently ignores would train differently than the user
+    asked, so say so.
+    """
+    with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
+        cfg = SFTConfig.from_trl(
             _trl_args(tmp_path, router_aux_loss_coef=0.5),
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
+    assert cfg is not None
 
 
-def test_trl_default_router_aux_loss_is_tolerated(tmp_path):
-    """TRL's own non-zero default must not block conversion.
+def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
+    """TRL's own non-zero default is not a user request, so it warns about nothing.
 
-    TRL ships ``router_aux_loss_coef=0.001``; treating that as a deliberate
-    request made every unmodified TRL config unconvertible.
+    TRL ships ``router_aux_loss_coef=0.001``; warning on that would fire on
+    every unmodified TRL config.
     """
     default_coef = trl.SFTConfig.__dataclass_fields__["router_aux_loss_coef"].default
-    cfg = SFTConfig.from_trl(
-        _trl_args(tmp_path, router_aux_loss_coef=default_coef),
-        privacy_noise_multiplier=0.8,
-        clipping_norm=1.0,
-    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = SFTConfig.from_trl(
+            _trl_args(tmp_path, router_aux_loss_coef=default_coef),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
     assert cfg is not None
+    assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
 def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):

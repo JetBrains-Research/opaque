@@ -330,7 +330,6 @@ class TestRuntimeCheckpointDriftMetadata:
             ("lr_scheduler", "shape"),
             ("learning_rate", "shape"),
             ("warmup_steps", "shape"),
-            ("warmup_ratio", "shape"),
             ("lr_scheduler_kwargs", "shape"),
         ],
     )

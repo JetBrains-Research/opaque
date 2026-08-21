@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, Any
 from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
 
 from ._convert import (
+    _ROUTER_AUX_LOSS_DROP_REASON,
     _convert_trl_config,
     _import_trl,
     _reject_if_truthy,
     _reject_pad_token,
     _reject_truncation_mode,
-    _router_aux_loss_transform,
 )
 
 if TYPE_CHECKING:
@@ -113,7 +113,6 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
 
 TRL_DPO_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "loss_type": _loss_type_transform,
-    "router_aux_loss_coef": _router_aux_loss_transform,
 }
 
 
@@ -135,6 +134,7 @@ TRL_DPO_DROP_FIELDS: dict[str, str] = {
         "reference heads; this TRL flag is silently honored at its True "
         "mode and ignored otherwise."
     ),
+    "router_aux_loss_coef": _ROUTER_AUX_LOSS_DROP_REASON,
 }
 
 

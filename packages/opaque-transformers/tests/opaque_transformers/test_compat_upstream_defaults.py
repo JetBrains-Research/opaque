@@ -50,45 +50,37 @@ def _fractional_warmup_config(trl_cls, tmp_path):
 
 
 @pytest.mark.parametrize(("trl_cls", "opaque_cls"), _FLAVORS)
-def test_fractional_warmup_steps_becomes_warmup_ratio(tmp_path, trl_cls, opaque_cls):
-    """A fractional ``warmup_steps`` is a *ratio* upstream; opaque must keep it.
-
-    HF resolves ``warmup_steps`` as ``int(w) if w >= 1 else ceil(total * w)``,
-    so 0.05 means "5% of training". Opaque splits that across its integer
-    ``warmup_steps`` and fractional ``warmup_ratio`` pair.
-    """
+def test_fractional_warmup_steps_convert(tmp_path, trl_cls, opaque_cls):
+    """A fractional ``warmup_steps`` means 5% of training, and stays that."""
     cfg = opaque_cls.from_trl(
         _fractional_warmup_config(trl_cls, tmp_path),
         privacy_noise_multiplier=0.8,
     )
-    assert cfg.warmup_ratio == pytest.approx(0.05)
-    assert cfg.warmup_steps == 0
+    assert cfg.warmup_steps == pytest.approx(0.05)
 
 
 @pytest.mark.parametrize(("trl_cls", "opaque_cls"), _FLAVORS)
 def test_absolute_warmup_steps_stay_absolute(tmp_path, trl_cls, opaque_cls):
-    """``warmup_steps >= 1`` is a step count and must not become a ratio."""
+    """``warmup_steps >= 1`` is a step count and must not become a fraction."""
     cfg = opaque_cls.from_trl(
         trl_cls(output_dir=str(tmp_path), warmup_steps=25, **_HOST),
         privacy_noise_multiplier=0.8,
     )
     assert cfg.warmup_steps == 25
-    assert cfg.warmup_ratio == 0.0
 
 
 @pytest.mark.parametrize(("trl_cls", "opaque_cls"), _FLAVORS)
-def test_unclassified_field_the_user_set_still_raises(tmp_path, trl_cls, opaque_cls):
-    """Tolerating unset fields must not tolerate ones the user configured.
+def test_legacy_warmup_ratio_converts_to_warmup_steps(tmp_path, trl_cls, opaque_cls):
+    """Transformers 4.x's ``warmup_ratio`` lands on opaque's ``warmup_steps``.
 
-    ``warmup_ratio`` is HF's deprecated warmup alias and no opaque manifest
-    bucket claims it. Left alone it must not block the conversion; set
-    explicitly it must raise, because silently dropping a knob someone
-    deliberately configured could invalidate the privacy accounting.
+    Opaque follows 5.x, where a value below 1 already *is* the fractional
+    encoding, so the 4.x ratio carries across untouched rather than being
+    dropped as an unsupported alias.
     """
     if "warmup_ratio" not in trl_cls.__dataclass_fields__:
-        pytest.skip("upstream dropped the deprecated warmup_ratio alias")
-    with pytest.raises(ValueError, match="not classified"):
-        opaque_cls.from_trl(
-            trl_cls(output_dir=str(tmp_path), warmup_ratio=0.05, **_HOST),
-            privacy_noise_multiplier=0.8,
-        )
+        pytest.skip("upstream dropped warmup_ratio in favour of a float warmup_steps")
+    cfg = opaque_cls.from_trl(
+        trl_cls(output_dir=str(tmp_path), warmup_ratio=0.05, **_HOST),
+        privacy_noise_multiplier=0.8,
+    )
+    assert cfg.warmup_steps == pytest.approx(0.05)

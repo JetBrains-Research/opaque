@@ -264,22 +264,19 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
 
 
 def _warmup_collapse(hf: dict[str, Any]) -> dict[str, Any]:
-    """Split HF's single ``warmup_steps`` knob into opaque's steps/ratio pair.
+    """Collapse HF's warmup knobs onto opaque's single ``warmup_steps``.
 
-    HF's ``warmup_steps`` is a float in which a value below 1 means a
-    *fraction* of the total training steps rather than a step count — its
-    ``get_warmup_steps`` resolves ``int(w) if w >= 1 else ceil(total * w)``.
-    Opaque keeps the older two-field shape (integer ``warmup_steps`` plus
-    fractional ``warmup_ratio``), so route the fractional form to
-    ``warmup_ratio`` and the absolute form to ``warmup_steps``. Copying the
-    float straight across would trip opaque's ``warmup_steps`` int check.
+    Transformers 4.x carried an integer ``warmup_steps`` beside a
+    fractional ``warmup_ratio`` and resolved the pair as "steps wins when
+    non-zero".  5.x dropped the ratio and taught ``warmup_steps`` to read a
+    value below 1 as a fraction of the total instead.  Opaque follows 5.x,
+    so both forms pass straight through: a 4.x ratio is already the
+    fractional encoding and needs no arithmetic.
     """
-    value = float(hf.get("warmup_steps") or 0.0)
-    if value >= 1:
-        return {"warmup_steps": int(value), "warmup_ratio": 0.0}
-    if value > 0:
-        return {"warmup_steps": 0, "warmup_ratio": value}
-    return {"warmup_steps": 0, "warmup_ratio": 0.0}
+    steps = hf.get("warmup_steps") or 0
+    if steps:
+        return {"warmup_steps": steps}
+    return {"warmup_steps": hf.get("warmup_ratio") or 0}
 
 
 def _max_grad_norm_to_clipping(hf: dict[str, Any]) -> dict[str, Any]:
@@ -310,10 +307,25 @@ HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "auto_find_batch_size": _batch_collapse,
     "optim": _optim_collapse,
     "warmup_steps": _warmup_collapse,
+    "warmup_ratio": _warmup_collapse,
     "max_grad_norm": _max_grad_norm_to_clipping,
     "use_liger_kernel": _liger_to_perf_kernels,
     "liger_kernel_config": _liger_to_perf_kernels,
 }
+
+
+# ---------------------------------------------------------------------------
+# Fields the manifest classifies that only exist on *older* supported
+# transformers. The declared range spans a major boundary, so the manifest
+# has to cover the union of both surfaces; these names are absent from the
+# newest release and must not be read as manifest drift.
+# ---------------------------------------------------------------------------
+HF_LEGACY_FIELDS: frozenset[str] = frozenset(
+    {
+        # Removed in 5.x, which folded the fraction into ``warmup_steps``.
+        "warmup_ratio",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
