@@ -10,6 +10,7 @@ from dpsgd_ddp_helpers import (
     _worker_noise_seed_out_of_int64_range_gloo,
     _worker_per_group_adaptive_state_gloo,
     _worker_per_group_adaptive_training_gloo,
+    _worker_summed_noise_scaling_gloo,
 )
 
 pytestmark = pytest.mark.distributed
@@ -26,6 +27,13 @@ def test_per_group_adaptive_clipping_state_syncs_uneven_ranks() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_per_group_adaptive_state_gloo)
+
+
+def test_summed_noise_scaling_matches_the_key_regime() -> None:
+    """Independent keys realize the advertised sqrt(W); a shared key scales by W."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_summed_noise_scaling_gloo)
 
 
 def test_noise_state_sync_accepts_a_seed_past_int64_max() -> None:

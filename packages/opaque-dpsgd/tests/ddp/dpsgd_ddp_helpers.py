@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import socket
 
@@ -553,3 +554,56 @@ def _worker_noise_seed_out_of_int64_range_gloo(
 def _shared_clipped() -> dict[str, torch.Tensor]:
     """A rank-independent clipped pytree, so any cross-rank difference is noise."""
     return clipped({"w": torch.ones(3)}, max_norm=1.0)
+
+
+def _worker_summed_noise_scaling_gloo(rank: int, world_size: int, port: int) -> None:
+    """Pin the two aggregation regimes `reduce_pytree`'s metadata cannot tell apart.
+
+    ``gradients.py`` states that summing noised local queries scales
+    ``noise_stddev`` by ``sqrt(world_size)``.  That holds only when the summands
+    are *independent* — per-rank keys.  ``sync_gaussian_noise_state`` enforces
+    the opposite (seed equality), and summing identical draws multiplies the
+    realized noise by ``world_size`` while the published metadata still claims
+    ``sqrt(world_size)``.
+
+    Neither is a defect in the reduction: ``NoisedPytree`` carries no provenance
+    that would let it detect which regime it is in.  It is a sharp edge, so both
+    sides are measured here rather than left to the docstring.
+    """
+    import pytest
+
+    from opaque.distributed import reduce_pytree
+    from opaque.random import fold_in
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        shared_key = key(11)
+        sigma = 1.0
+        samples = 20_000
+        wide = clipped({"w": torch.zeros(samples)}, max_norm=1.0)
+
+        # Independent per-rank streams: the advertised sqrt(W) is realized.
+        indep_fn, indep_state = gaussian_noise(
+            noise_multiplier=sigma, key=fold_in(shared_key, rank)
+        )
+        indep, _ = indep_fn(wide, indep_state)
+        indep_sum = reduce_pytree(indep, op="sum")
+        realized = indep_sum.pytree["w"].std().item()
+        claimed = indep_sum.noise_stddev
+        assert claimed == pytest.approx(sigma * math.sqrt(world_size))
+        assert realized == pytest.approx(claimed, rel=0.05), (
+            f"independent summands realized {realized}, metadata claims {claimed}"
+        )
+
+        # Shared key: every rank drew the same noise, so summing multiplies it
+        # by W.  The metadata still reports sqrt(W) — this is the trap.
+        shared_fn, shared_state = gaussian_noise(noise_multiplier=sigma, key=shared_key)
+        shared, _ = shared_fn(wide, shared_state)
+        shared_sum = reduce_pytree(shared, op="sum")
+        shared_realized = shared_sum.pytree["w"].std().item()
+        assert shared_sum.noise_stddev == pytest.approx(sigma * math.sqrt(world_size))
+        assert shared_realized == pytest.approx(sigma * world_size, rel=0.05), (
+            "identical summands must scale linearly, not by sqrt(W)"
+        )
+    finally:
+        _cleanup_ddp()
