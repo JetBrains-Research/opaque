@@ -98,6 +98,12 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Execution](execution.md)** — Backend-neutral `compile`, `checkpoint`,
   and `optimize_saved_activations` with lazy per-backend binding and
   `ExecutionProfile` capability discovery
+- **[Torch provider](torch.md)** — `opaque.torch` — the shipped provider's
+  Torch-only surface
+  - `opaque.torch.apply_runtime_patches()` — the Torch-core runtime patches;
+    today one concern, `vmap_checkpointing`
+  - `opaque.torch.checkpoint` — the individual installers and the capability
+    probes behind that concern
 
 ### Hugging Face integration
 
@@ -105,8 +111,13 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `DPTrainer` — full constructor, methods, callback wiring, overridable hooks
   - `TrainingArguments` — every field grouped by concern (privacy, compute, patches, save, eval, …)
   - `opaque.transformers.trainer.types` — `EvaluationResult`, `TrainOutput` return types
-  - `opaque.transformers.patches.apply_runtime_patches` / `is_runtime_patched` — install/query the global runtime shims
+  - `opaque.transformers.patches` — the Hugging Face and PEFT patches:
+    `apply_model_patches`, `apply_runtime_patches` / `is_runtime_patched`
+    (which forwards to the provider's, so one call covers both layers), plus
+    `.families` for registering your own model family
   - `opaque.transformers.trl` — TRL-style `SFTTrainer` / `DPOTrainer` (+ `SFTConfig` / `DPOConfig`), built on `DPTrainer`
+  - `opaque.kernels` — the fused Triton kernels the model patches install,
+    importable standalone with PyTorch fallbacks
 
 ## Quick Reference
 

@@ -27,7 +27,9 @@ from opaque.transformers.patches import apply_runtime_patches
 | `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
-| `opaque.transformers.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
+| `opaque.transformers.patches.apply_runtime_patches` | Install the global HF runtime shims, and the Torch-core shims they depend on, in one call (only needed when using HF primitives without `DPTrainer`). |
+| `opaque.transformers.patches.apply_model_patches` | Apply the per-model HF + PEFT patches to one model instance. |
+| `opaque.transformers.patches.families` | Register a model family of your own so it participates in the vmap-safety and kernel patches. |
 
 ## `DPTrainer`
 

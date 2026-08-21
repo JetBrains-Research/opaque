@@ -188,7 +188,7 @@ Patch surfaces, by owner:
 
 ## Key architectural notes
 
-### Kernel pattern (`opaque.performance.kernels`)
+### Kernel pattern (`opaque.kernels`)
 
 Triton kernels use a two-level `autograd.Function` for `vmap(grad())`
 support: `Opaque_Foo` main entry + `_FooBackward` with their own `vmap()`
@@ -225,6 +225,16 @@ mechanisms — exactly like fixed clipping. Adaptive clipping is the only
 clipping rule whose threshold drifts across steps, so it is the only one
 that violates the constant per-step sensitivity assumption MF privacy
 proofs require, and it correctly stays in `opaque.dpsgd.clipping`.
+
+A patch lives with the library it rebinds. Patches that rebind torch belong to
+`opaque-torch`; patches that rebind `transformers` or `peft` belong to
+`opaque-transformers`; the fused kernels a patch installs are `opaque-kernels`.
+Each layer applies its own and forwards down, so a caller makes one call:
+`opaque.transformers.patches.apply_runtime_patches` passes its flags to
+`opaque.torch.apply_runtime_patches` before applying the Hugging Face layer.
+Add a new patch to the wheel that owns the module it mutates, and give it an
+idempotency guard on the patched object rather than a module-level flag —
+callers apply the runtime patches more than once.
 
 ### Test design
 

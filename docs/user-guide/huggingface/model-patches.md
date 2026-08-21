@@ -1,12 +1,17 @@
 # Model Patches and Kernels
 
-`opaque.transformers.patches` is a standalone library that makes Hugging Face
-Transformers models work under `torch.func.vmap(grad(...))` and
-provides fused Triton kernels for the hot ops on the forward /
-backward path. It predates and operates independently of
-`DPTrainer` — any code that drives DP-SGD over HF models (the
-trainer, a hand-rolled training loop, a custom orchestration layer)
-can use the same APIs.
+`opaque.transformers.patches` makes Hugging Face Transformers models work
+under `torch.func.vmap(grad(...))`, and wires in the fused Triton kernels
+(`opaque.kernels`) for the hot ops on the forward / backward path. It operates
+independently of `DPTrainer` — any code that drives DP-SGD over HF models (the
+trainer, a hand-rolled training loop, a custom orchestration layer) can use the
+same APIs.
+
+Three wheels meet here. `opaque-torch` owns the Torch-core shims and applies
+them through `opaque.torch.apply_runtime_patches`; `opaque-transformers` owns
+the Hugging Face and PEFT patches and forwards to the provider before applying
+its own, so one call covers both; `opaque-kernels` owns the fused kernels the
+model patches install.
 
 The fused kernels preserve separate software provenance from scholarly method
 attribution. In this guide, the relevant primary papers are
