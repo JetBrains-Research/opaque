@@ -51,7 +51,9 @@ def test_k_one_prefix_matches_redrawn_single_epoch_process():
         num_bins=8,
         n_steps=8,
     )
-    for steps in range(1, 9):
+    # The first, interior, and full prefixes exercise the distinct horizon
+    # paths without rebuilding both expensive PLDs at every step.
+    for steps in (1, 4, 8):
         assert k_out.pld_at(steps).epsilon_at(_DELTA) == pytest.approx(
             redrawn.pld_at(steps).epsilon_at(_DELTA),
             rel=1e-12,

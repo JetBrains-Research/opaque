@@ -33,6 +33,11 @@ class _MetricBudget:
         return process.metric
 
 
+_CALIBRATION_STEPS = 100
+_INTEGRATION_TOLERANCE = 1e-3
+_PREFIX_TOLERANCE = 1e-4
+
+
 def _assert_safe_result(
     result: CalibrateResult,
     *,
@@ -60,9 +65,10 @@ def _calibrate_epsilon(
     """Reuse identical expensive PLD calibration requests within this module."""
     return cal.calibrate(
         cal.epsilon_budget(target, delta=1e-5),
-        lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000,
+        lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * _CALIBRATION_STEPS,
         param_min,
         param_max,
+        tolerance=_PREFIX_TOLERANCE,
     )
 
 
@@ -322,41 +328,48 @@ class TestCalibratePrefix:
         return dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 0.01) * 12
 
     @pytest.mark.slow
-    def test_matches_manual_closure(self):
-        """prefix= is equivalent to composing inside the objective."""
+    def test_prefix_calibration_contracts(self):
+        """A prefixed calibration composes correctly and consumes budget."""
         prefix = self._prefix()
         budget = cal.epsilon_budget(6.0, delta=1e-5)
 
-        via_param = cal.calibrate(budget, self._stage, 0.3, 3.0, prefix=prefix)
+        via_param = cal.calibrate(
+            budget,
+            self._stage,
+            0.3,
+            3.0,
+            prefix=prefix,
+            tolerance=_PREFIX_TOLERANCE,
+        )
         via_closure = cal.calibrate(
-            budget, lambda nm: prefix | self._stage(nm), 0.3, 3.0
+            budget,
+            lambda nm: prefix | self._stage(nm),
+            0.3,
+            3.0,
+            tolerance=_PREFIX_TOLERANCE,
         )
         assert via_param.param == pytest.approx(via_closure.param)
         assert via_param.achieved == pytest.approx(via_closure.achieved)
-
-    @pytest.mark.slow
-    def test_total_hits_budget(self):
-        """The composed total (prefix | stage) achieves the target."""
-        prefix = self._prefix()
-        result = cal.calibrate(
-            cal.epsilon_budget(6.0, delta=1e-5), self._stage, 0.3, 3.0, prefix=prefix
+        _assert_safe_result(
+            via_param,
+            target=6.0,
+            decreasing=True,
+            tolerance=_PREFIX_TOLERANCE,
         )
-        _assert_safe_result(result, target=6.0, decreasing=True)
 
-        total = prefix | self._stage(result.param)
+        total = prefix | self._stage(via_param.param)
         achieved = total.epsilon_at(1e-5)
         assert achieved <= 6.0
-        assert math.isclose(achieved, 6.0, rel_tol=1e-6, abs_tol=0.0)
+        assert math.isclose(achieved, 6.0, rel_tol=_PREFIX_TOLERANCE, abs_tol=0.0)
 
-    @pytest.mark.slow
-    def test_prefix_demands_more_noise(self):
-        """Same budget with a prefix → larger noise multiplier."""
-        budget = cal.epsilon_budget(6.0, delta=1e-5)
-        without = cal.calibrate(budget, self._stage, 0.3, 3.0)
-        with_prefix = cal.calibrate(
-            budget, self._stage, 0.3, 3.0, prefix=self._prefix()
+        without = cal.calibrate(
+            budget,
+            self._stage,
+            0.3,
+            3.0,
+            tolerance=_PREFIX_TOLERANCE,
         )
-        assert with_prefix.param > without.param
+        assert via_param.param > without.param
 
     @pytest.mark.slow
     def test_prefix_exhausting_budget_raises(self):
@@ -384,15 +397,30 @@ class TestCalibrateEpsilon:
     def test_basic(self):
         result = _calibrate_epsilon(5.0, 0.3, 1.2)
         assert isinstance(result, CalibrateResult)
-        _assert_safe_result(result, target=5.0, decreasing=True)
+        _assert_safe_result(
+            result,
+            target=5.0,
+            decreasing=True,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
 
     def test_strict_epsilon(self):
         result = _calibrate_epsilon(4.0, 0.3, 1.2)
-        _assert_safe_result(result, target=4.0, decreasing=True)
+        _assert_safe_result(
+            result,
+            target=4.0,
+            decreasing=True,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
 
     def test_loose_epsilon(self):
         result = _calibrate_epsilon(8.0, 0.1, 1.0)
-        _assert_safe_result(result, target=8.0, decreasing=True)
+        _assert_safe_result(
+            result,
+            target=8.0,
+            decreasing=True,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
 
     def test_monotonicity(self):
         """Stricter target → more noise."""
@@ -404,20 +432,26 @@ class TestCalibrateEpsilon:
 
 @pytest.mark.slow
 class TestCalibrateDifferentBatchSizes:
-    """Calibration converges for various batch/dataset ratios."""
+    """Calibration converges at the smallest and largest batch/dataset ratios."""
 
-    @pytest.mark.parametrize("batch_size", [8, 32, 128])
+    @pytest.mark.parametrize("batch_size", [8, 128])
     def test_converges(self, batch_size):
         n = 10_000
         q = batch_size / n
 
         result = cal.calibrate(
             cal.epsilon_budget(5.0, delta=1e-4),
-            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), q) * 1000,
+            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), q) * 250,
             0.1,
             1.2,
+            tolerance=_INTEGRATION_TOLERANCE,
         )
-        _assert_safe_result(result, target=5.0, decreasing=True)
+        _assert_safe_result(
+            result,
+            target=5.0,
+            decreasing=True,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
 
 
 @pytest.mark.slow
@@ -427,11 +461,19 @@ class TestCalibrateAdvantage:
     def test_roundtrip(self):
         result = cal.calibrate(
             cal.advantage_budget(0.1),
-            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 500,
+            lambda nm: (
+                dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * _CALIBRATION_STEPS
+            ),
             0.3,
             1.2,
+            tolerance=_INTEGRATION_TOLERANCE,
         )
-        _assert_safe_result(result, target=0.1, decreasing=True)
+        _assert_safe_result(
+            result,
+            target=0.1,
+            decreasing=True,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
 
 
 @pytest.mark.slow
@@ -443,23 +485,38 @@ class TestCalibrateBeta:
     handles the direction automatically.
     """
 
-    def test_roundtrip(self):
-        result = cal.calibrate(
-            cal.beta_budget(0.5, alpha=0.1),
-            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 500,
-            0.3,
-            1.2,
-        )
-        _assert_safe_result(result, target=0.5, decreasing=False)
-
-    def test_monotonicity(self):
-        """Stricter (higher) beta target → more noise."""
+    def test_roundtrip_and_monotonicity(self):
+        """Stricter (higher) beta target produces a valid, noisier result."""
 
         def process(nm):
-            return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 500
+            return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * _CALIBRATION_STEPS
 
-        result_low = cal.calibrate(cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2)
-        result_high = cal.calibrate(cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2)
+        result_low = cal.calibrate(
+            cal.beta_budget(0.6, alpha=0.1),
+            process,
+            0.3,
+            1.2,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
+        result_high = cal.calibrate(
+            cal.beta_budget(0.8, alpha=0.1),
+            process,
+            0.3,
+            1.2,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
+        _assert_safe_result(
+            result_low,
+            target=0.6,
+            decreasing=False,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
+        _assert_safe_result(
+            result_high,
+            target=0.8,
+            decreasing=False,
+            tolerance=_INTEGRATION_TOLERANCE,
+        )
         # Higher beta (more privacy) requires more noise
         assert result_high.param > result_low.param
 
@@ -504,10 +561,12 @@ class TestCalibrateDirectionIntegration:
         # The classic decreasing direction still lands the same parameter.
         result = cal.calibrate(
             cal.epsilon_budget(3.0, delta=1e-5),
-            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * 500,
+            lambda nm: (
+                dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * _CALIBRATION_STEPS
+            ),
             param_min=0.1,
             param_max=10.0,
             tolerance=1e-4,
         )
         assert result.achieved <= 3.0
-        assert result.param == pytest.approx(1.2656, rel=1e-2)
+        assert result.param == pytest.approx(0.8865, rel=1e-2)

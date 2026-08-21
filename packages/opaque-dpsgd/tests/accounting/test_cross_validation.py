@@ -695,6 +695,7 @@ class TestCalibrationCrossValidation:
             lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), q) * steps,
             0.1,
             1.2,
+            tolerance=1e-4,
         )
         assert result.converged
 
@@ -710,6 +711,7 @@ class TestCalibrationCrossValidation:
             lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 500,
             0.3,
             1.2,
+            tolerance=1e-4,
         )
         assert result.converged
 

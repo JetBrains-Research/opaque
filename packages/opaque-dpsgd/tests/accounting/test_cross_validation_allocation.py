@@ -22,6 +22,8 @@ Run with::
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import pytest
 
 pytest.importorskip("random_allocation")
@@ -49,6 +51,7 @@ _ALPHA_ORDERS = list(range(2, 61))
 _CASES = [(1.0, 8), (1.0, 64), (2.0, 64), (1.0, 128)]
 
 
+@lru_cache
 def _reference(fn, sigma: float, t: int) -> float:
     params = PrivacyParams(
         sigma=sigma, num_steps=t, num_selected=1, num_epochs=1, delta=_DELTA
@@ -56,6 +59,7 @@ def _reference(fn, sigma: float, t: int) -> float:
     return fn(params, SchemeConfig(allocation_direct_alpha_orders=_ALPHA_ORDERS))
 
 
+@lru_cache
 def _ours(sigma: float, t: int) -> float:
     return dpsgd_acc.random_allocation(
         dpsgd_acc.gaussian(sigma), num_bins=t, n_steps=t
