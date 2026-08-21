@@ -90,12 +90,12 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-The `sync()` machinery is type-dispatched: clipping and noise states
-register themselves with `opaque.distributed._state.register_sync_type`
-and provide the right per-state aggregation rule. Lower-level scalar
-reductions, native-array gathers, and object syncs live in `_state.py`;
-they're internal plumbing for the registered DP runtime objects rather
-than headline API.
+The `sync()` machinery is type-dispatched: clipping and noise states register
+themselves with `register_sync_type` and provide the right per-state
+aggregation rule. `register_sync_type` and `sync_object` are public, so a
+mechanism with state of its own joins the same dispatch; `sync()` fails closed
+on an unregistered type. See
+[Synchronizing state you wrote](../user-guide/distributed.md#synchronizing-state-you-wrote).
 
 ## Privacy Ordering
 

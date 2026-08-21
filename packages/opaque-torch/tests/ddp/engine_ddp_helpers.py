@@ -691,6 +691,61 @@ def _worker_gather_optional_ragged(rank: int, world_size: int, port: int) -> Non
         _cleanup_ddp()
 
 
+@dataclass(frozen=True)
+class _RareEventState:
+    """A mechanism author's own state, shaped like the documented example."""
+
+    hits: int
+    examples: int
+    threshold: float
+    seed: int
+
+
+def _worker_custom_sync_seam_gloo(rank: int, world_size: int, port: int) -> None:
+    """The public seam a new mechanism uses to cross ranks.
+
+    Mirrors ``docs/user-guide/distributed.md``: describe each field, register
+    the type, then ``sync()`` finds it — including the fail-closed behaviour
+    that keeps state from crossing ranks unsynchronized by omission.
+    """
+    from opaque.distributed import register_sync_type, sync, sync_object
+
+    _setup_gloo(rank, world_size, port)
+    try:
+
+        def _sync_rare_event(state: _RareEventState) -> _RareEventState:
+            return sync_object(
+                state,
+                field_ops={
+                    "hits": "sum",
+                    "examples": "sum",
+                    "threshold": "assert_equal",
+                    "seed": "local",
+                },
+            )
+
+        # Unregistered types are refused rather than passed through.
+        with pytest.raises(TypeError, match="No sync function registered"):
+            sync(_RareEventState(hits=1, examples=2, threshold=0.5, seed=rank))
+
+        register_sync_type(_RareEventState, _sync_rare_event)
+
+        synced = sync(
+            _RareEventState(hits=rank + 1, examples=10, threshold=0.5, seed=rank)
+        )
+        assert synced.hits == 3
+        assert synced.examples == 2 * 10
+        assert synced.threshold == 0.5
+        # ``local`` keeps a rank-local field rank-local, on purpose.
+        assert synced.seed == rank
+
+        # A field that must agree and does not is an error, not a reduction.
+        with pytest.raises(RuntimeError):
+            sync(_RareEventState(hits=1, examples=1, threshold=float(rank), seed=rank))
+    finally:
+        _cleanup_ddp()
+
+
 def _worker_scalar_exactness_gloo(rank: int, world_size: int, port: int) -> None:
     from opaque.api.engine.distributed._state import (
         assert_scalar_equal,

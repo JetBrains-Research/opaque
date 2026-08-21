@@ -268,16 +268,22 @@ subsystem registers behind `sync()` is internal.
 | Function | Purpose |
 |----------|---------|
 | `is_distributed()` | `True` when the active provider reports more than one process |
-| `get_rank()` | Current rank (0 if not distributed) |
-| `get_world_size()` | Number of processes (1 if not distributed) |
+| `get_rank()`, `process_index()` | Current rank (0 if not distributed) |
+| `get_world_size()`, `num_processes()` | Number of processes (1 if not distributed) |
+| `is_main_process()` | `True` on rank 0, and always `True` if not distributed |
+| `local_shard(dataset, rank=, world_size=)` | This rank's contiguous `DatasetShard` view of a sequence; copies nothing |
 | `sum_gradients(grads)` | Return a summed gradient PyTree |
 | `reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Return a Python float or integer reduced across ranks |
 | `all_reduce(value, op)` | Return an all-reduced native array without mutation |
 | `gather_pytree(pytree)` | Gather and concatenate native-array leaves of a PyTree |
+| `gather_for_metrics(value)` | Gather one array along its leading axis, for metrics only — never the gradient path |
 | `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
+| `sync_object(state, field_ops)` | Reduce the fields of a dataclass under a per-field op, returning a new instance |
+| `register_sync_type(type, fn)` | Register a state type so `sync()` can dispatch to it |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
-| `barrier()` | Blocking barrier across all ranks |
+| `assert_string_equal(v, name)` | Raise `RuntimeError` if an optional string differs across ranks |
+| `barrier()`, `wait_for_everyone()` | Blocking barrier across all ranks |
 
 ### Type-specific sync behavior
 
@@ -298,6 +304,57 @@ The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
 helpers needed.
 
 See [API Reference](../reference/distributed.md) for full docstrings.
+
+## Synchronizing state you wrote
+
+A mechanism with state of its own joins the same `sync()` dispatch rather than
+reducing by hand. Describe how each field crosses ranks with `sync_object`, then
+register the type once:
+
+```python
+from dataclasses import dataclass
+
+from opaque.distributed import register_sync_type, sync_object
+from opaque.random import RngKey
+
+
+@dataclass(frozen=True)
+class RareEventState:
+    hits: int          # rank-local count; the global total is what matters
+    examples: int      # ditto
+    threshold: float   # must already agree, or the ranks disagree on the query
+    key: RngKey        # rank-local by construction
+
+
+def sync_rare_event_state(state: RareEventState) -> RareEventState:
+    return sync_object(
+        state,
+        field_ops={
+            "hits": "sum",
+            "examples": "sum",
+            "threshold": "assert_equal",
+            "key": "local",
+        },
+    )
+
+
+register_sync_type(RareEventState, sync_rare_event_state)
+```
+
+Every field must appear in `field_ops`; there is no default, and the schema is
+validated in full before any collective runs, so a forgotten field surfaces as
+an error rather than as one rank's number. `"local"` declares a field
+rank-local on purpose.
+
+Besides `"sum"`, `"mean"`, `"max"`, `"min"`, and `"product"`, `"assert_equal"`
+raises when the ranks disagree — the right op for anything that defines the
+query, such as a threshold, a horizon, or a step counter, where reducing would
+paper over a divergence that has already broken the privacy analysis. A field
+op may also be a callable.
+
+`sync()` fails closed: an unregistered type raises `TypeError` naming what is
+registered. Registration walks the MRO, so registering a base class covers its
+subclasses.
 
 ## Limitations
 

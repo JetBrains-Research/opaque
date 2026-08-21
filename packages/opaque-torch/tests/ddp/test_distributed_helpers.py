@@ -13,6 +13,7 @@ import torch
 import torch.distributed as dist
 from engine_ddp_helpers import (
     _spawn_gloo,
+    _worker_custom_sync_seam_gloo,
     _worker_gather_optional_ragged,
     _worker_in_place_wrapper_reduction_gloo,
     _worker_scalar_exactness_gloo,
@@ -76,6 +77,15 @@ def test_scalar_reductions_preserve_integer_and_float64_exactness() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_scalar_exactness_gloo)
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_custom_mechanism_state_joins_the_public_sync_dispatch() -> None:
+    """The seam a new mechanism uses, exercised as the guide documents it."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_custom_sync_seam_gloo)
 
 
 @pytest.mark.slow

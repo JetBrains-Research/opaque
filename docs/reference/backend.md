@@ -94,16 +94,37 @@ def _torch_impl(logits, indices):
     return torch.log_softmax(logits, dim=-1).gather(-1, indices)
 ```
 
-Guard a call where an implementation may be missing:
+Guard a call where an implementation may be missing, and provide a fallback:
 
 ```python
 if selective_log_softmax.supports("torch"):
     scores = selective_log_softmax(logits, indices)
+else:
+    scores = ops.sum(ops.multiply(logits, mask), axis=-1)
 ```
+
+Declarations made through this façade are `PrimitiveTier.OPTIONAL` — the
+default, and the only tier valid outside the engine. `PrimitiveTier.CORE` is
+the profile every provider must implement in full before it may activate, so a
+`CORE` declaration made in user code appends to that profile and makes every
+shipped provider incomplete: `set_backend` then raises
+`IncompleteBackendError` for the rest of the process, including for code that
+never touches the extension. The core-profile machinery stays at
+`opaque.api.engine.primitive`, where providers built inside this repository
+work.
 
 ::: opaque.primitive.primitive
     options:
         show_source: true
+        heading_level: 3
+
+::: opaque.primitive.Primitive
+    options:
+        show_source: false
+        heading_level: 3
+
+::: opaque.primitive.PrimitiveTier
+    options:
         heading_level: 3
 
 ::: opaque.primitive.BackendProvider
@@ -112,5 +133,29 @@ if selective_log_softmax.supports("torch"):
         heading_level: 3
 
 ::: opaque.primitive.supports
+    options:
+        heading_level: 3
+
+::: opaque.primitive.registered_backends
+    options:
+        heading_level: 3
+
+::: opaque.primitive.PrimitiveError
+    options:
+        heading_level: 3
+
+::: opaque.primitive.UnsupportedPrimitiveError
+    options:
+        heading_level: 3
+
+::: opaque.primitive.IncompleteBackendError
+    options:
+        heading_level: 3
+
+::: opaque.primitive.DuplicatePrimitiveRegistrationError
+    options:
+        heading_level: 3
+
+::: opaque.primitive.InvalidPrimitiveRegistrationError
     options:
         heading_level: 3

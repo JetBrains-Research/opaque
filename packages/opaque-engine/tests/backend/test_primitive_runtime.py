@@ -27,6 +27,7 @@ from opaque.api.engine.primitive import (
     Primitive,
     PrimitiveTier,
     UnsupportedPrimitiveError,
+    core_profile,
     lazy_implementation,
     primitive,
     supports,
@@ -224,6 +225,14 @@ def test_async_contexts_do_not_overwrite_each_other() -> None:
 
 
 def test_primitive_facade_is_reexport_only() -> None:
+    """The facade adapts nothing; it re-exports the extension surface.
+
+    The portable-core machinery stays behind the impl path — a CORE
+    declaration from outside Opaque makes every shipped provider incomplete —
+    so it is checked there rather than through the facade.
+    """
     assert facade.Primitive is Primitive
-    assert facade.CORE_PROFILE_VERSION == CORE_PROFILE_VERSION
-    assert facade.CORE_PRIMITIVES is CORE_PRIMITIVES
+    assert facade.primitive is primitive
+    assert facade.BackendProvider is BackendProvider
+    assert core_profile().version == CORE_PROFILE_VERSION
+    assert tuple(CORE_PRIMITIVES) == core_profile().primitives

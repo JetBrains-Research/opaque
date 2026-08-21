@@ -1,47 +1,42 @@
-"""Public surface for declaring and dispatching primitives."""
+"""Public surface for declaring and dispatching primitives.
+
+An extension declares a primitive here and registers an implementation per
+backend; the dispatch machinery resolves it from the active backend.
+Declarations made through this façade are ``PrimitiveTier.OPTIONAL``, the
+default and the only tier valid outside the engine — guard a call with
+``.supports(...)`` and provide a fallback where an implementation is missing.
+
+The portable-core machinery — ``CORE_PRIMITIVES``, ``core_profile``,
+``declare_core_primitives``, ``validate_core_primitives`` — governs the contract
+every provider must satisfy before it may activate. It stays at
+``opaque.api.engine.primitive``: a ``CORE`` declaration made outside the engine
+appends to that global profile and makes every shipped provider incomplete.
+"""
 
 from opaque.api.engine.primitive import (
-    CORE_PRIMITIVES,
-    CORE_PROFILE_VERSION,
     BackendProvider,
-    CoreProfile,
     DuplicatePrimitiveRegistrationError,
     IncompleteBackendError,
     InvalidPrimitiveRegistrationError,
-    LazyImplementation,
     Primitive,
     PrimitiveError,
     PrimitiveTier,
     UnsupportedPrimitiveError,
-    core_profile,
-    declare_core_primitives,
-    lazy_implementation,
     primitive,
     registered_backends,
-    registered_primitives,
     supports,
-    validate_core_primitives,
 )
 
 __all__ = [
     "BackendProvider",
-    "CORE_PROFILE_VERSION",
-    "CORE_PRIMITIVES",
-    "CoreProfile",
     "DuplicatePrimitiveRegistrationError",
     "IncompleteBackendError",
     "InvalidPrimitiveRegistrationError",
-    "LazyImplementation",
     "Primitive",
     "PrimitiveError",
     "PrimitiveTier",
     "UnsupportedPrimitiveError",
-    "core_profile",
-    "declare_core_primitives",
-    "lazy_implementation",
     "primitive",
     "registered_backends",
-    "registered_primitives",
     "supports",
-    "validate_core_primitives",
 ]

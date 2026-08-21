@@ -56,6 +56,24 @@ class IncompleteBackendError(PrimitiveError):
         self.missing_primitives = missing_primitives
         self.profile_version = profile_version
         missing = ", ".join(missing_primitives)
+        # A CORE declaration appends to the global profile every provider must
+        # satisfy, so declaring one outside Opaque makes every shipped provider
+        # incomplete forever.  Name that cause instead of blaming the provider,
+        # which is what the missing primitive's own module says.
+        foreign = tuple(
+            name for name in missing_primitives if not name.startswith("opaque.")
+        )
+        if foreign:
+            super().__init__(
+                f"Backend {backend_name!r} cannot activate because "
+                f"{', '.join(foreign)} was declared as a CORE primitive outside "
+                "Opaque. CORE is the profile every provider must implement in "
+                "full, so adding to it makes the shipped providers incomplete. "
+                "Declare extension primitives with "
+                "`@primitive(tier=PrimitiveTier.OPTIONAL)` — the default — and "
+                "guard their use with `.supports(...)`."
+            )
+            return
         super().__init__(
             f"Backend {backend_name!r} does not satisfy portable core profile "
             f"v{profile_version}; missing: {missing}."
@@ -209,8 +227,32 @@ class Primitive:
             self.register(backend_name, implementation, replace=replace)
 
     def supports(self, backend: Backend | str | None = None) -> bool:
-        """Return whether ``backend`` has a registered implementation."""
-        backend_name = _backend_name(backend)
+        """Return whether ``backend`` has a registered implementation.
+
+        Args:
+            backend: A backend object, a backend name, or ``None`` for the
+                active backend. Naming a first-party backend answers about the
+                installation rather than about what this process happens to
+                have imported — the provider is discovered first if it has not
+                been already, so the answer does not depend on import order.
+
+        Returns:
+            Whether that backend implements this primitive.
+
+        With ``None`` and no backend active the answer is ``False`` — nothing
+        is selected, so nothing supports it — rather than an error. Name the
+        backend when you mean "is this available at all"; leave it out when you
+        mean "can the context I am in do this right now".
+        """
+        backend_name = _active_backend_name() if backend is None else None
+        if backend is None and backend_name is None:
+            return False
+        if backend_name is None:
+            backend_name = _backend_name(backend)
+        with self._lock:
+            if backend_name in self._implementations:
+                return True
+        _ensure_provider_discovered(backend_name)
         with self._lock:
             return backend_name in self._implementations
 
@@ -448,14 +490,66 @@ def _validate_backend_name(backend_name: str) -> None:
 
 def _backend_name(backend: Backend | str | None) -> str:
     if backend is None:
-        from opaque.api.engine.backend._registry import active_backend
+        from opaque.api.engine.backend._registry import (
+            BackendNotSelectedError,
+            active_backend,
+        )
 
         backend = active_backend()
+        if backend is None:
+            raise BackendNotSelectedError(
+                "No backend is active, so there is nothing for the default "
+                "`backend=None` to refer to. Name one explicitly — "
+                "`supports(primitive, 'torch')` — or activate one with "
+                "`set_backend(...)` / `ensure_backend(array)` first."
+            )
     backend_name = (
         backend if isinstance(backend, str) else getattr(backend, "name", None)
     )
     _validate_backend_name(backend_name)
     return backend_name
+
+
+def _active_backend_name() -> str | None:
+    from opaque.api.engine.backend._registry import active_backend
+
+    backend = active_backend()
+    return None if backend is None else getattr(backend, "name", None)
+
+
+_DISCOVERY_ATTEMPTED: set[object] = set()
+"""First-party backends already offered to load, so a miss is tried once."""
+
+
+def _ensure_provider_discovered(backend_name: str) -> None:
+    """Load a named first-party provider so support checks see its registry.
+
+    A provider registers its implementations when its backend is constructed,
+    so a support check made before that answers about this process's import
+    history rather than about the installation — ``supports(p, "torch")`` would
+    be False at module scope and True after the first tensor touched the
+    engine. A caller who names a backend is asking the second question ("is
+    this usable here?"), so the provider is loaded before answering.
+
+    Loading constructs the backend; it does not *activate* it, so a support
+    check never changes which backend subsequent dispatch selects. A provider
+    that is not installed, or a name that is not a first-party backend, leaves
+    the answer at False.
+    """
+    from opaque.api.engine.backend import _registry
+
+    try:
+        kind = _registry.KnownBackend(backend_name)
+    except ValueError:
+        return
+    with _PRIMITIVES_LOCK:
+        if kind in _DISCOVERY_ATTEMPTED:
+            return
+        _DISCOVERY_ATTEMPTED.add(kind)
+    try:
+        _registry._load_backend(kind)
+    except _registry.BackendProviderError:
+        return
 
 
 __all__ = [
