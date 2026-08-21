@@ -127,6 +127,16 @@ would be worst-case across the family rather than instance-specific. The
 μ-GDP method's inferred μ̂ pins down a single curve, so its `beta_at` /
 `advantage` are sharp.
 
+### Threshold selection and confidence
+
+When `threshold` is omitted, the audit selects the most accurate threshold
+from the labeled canary scores. Opaque applies a Bonferroni correction over all
+at-most `m + 1` candidate score thresholds before reporting a confidence-bound
+result, where `m` is the number of canaries. This preserves the requested
+family-wise significance under the null. Pass `threshold=` only for a
+pre-specified threshold chosen independently of the canary labels; that is a
+single test and is not multiplicity-corrected.
+
 ## Integration with training
 
 The four-step API separates concerns: **partition** (before training),
