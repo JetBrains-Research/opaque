@@ -800,6 +800,20 @@ def parse_args():
     )
     # LoRA-XSe: exploration via momentum SVD rotation
     lora_group.add_argument(
+        "--lora-xse-rotation-warmup-steps",
+        type=int,
+        default=0,
+        help=(
+            "Train this many steps before the FIRST rotation. Rotation keeps the "
+            "top directions of R's momentum, so it needs a roughly stationary "
+            "objective; a randomly-initialised classification head co-training at "
+            "10x the adapter lr breaks that, and all four rotating CoLA arms lost "
+            "to frozen. Delaying rotation lets the head settle and momentum "
+            "concentrate first. 0 = rotate from the start (every run before "
+            "2026-08-21). Only used when --lora-xse-p-e > 0."
+        ),
+    )
+    lora_group.add_argument(
         "--lora-xse-p-e",
         type=float,
         default=0.0,
@@ -2436,6 +2450,7 @@ def main():
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
                 rotation_step_interval=args.lora_xse_rotation_step_interval,
+                rotation_warmup_steps=args.lora_xse_rotation_warmup_steps,
             )
         else:
             from opaque.optimizers import sgd
@@ -2460,6 +2475,7 @@ def main():
                 lora_alpha=args.lora_alpha,
                 p_e=args.lora_xse_p_e,
                 rotation_step_interval=args.lora_xse_rotation_step_interval,
+                rotation_warmup_steps=args.lora_xse_rotation_warmup_steps,
                 # beta2 = 0.99, not the 0.999 default: the second-moment
                 # timescale 1/(1-beta2) must not outrun the rotation interval,
                 # or freshly inserted directions (whose nu starts at 0) take a

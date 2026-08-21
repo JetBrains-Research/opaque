@@ -487,3 +487,88 @@ def test_head_keys_are_discoverable_under_peft():
     # roberta's head is dense{weight,bias} + out_proj{weight,bias}
     assert len(head) == 4, f"expected 4 head tensors, got {len(head)}: {head}"
     assert not any("lora_xs" in k for k in head), "pattern caught adapter tensors"
+
+
+@pytest.mark.slow
+def test_rotation_warmup_suppresses_then_enables_rotation():
+    """--lora-xse-rotation-warmup-steps must actually gate the FIRST rotation.
+
+    The observable is the frozen B factor: rotation rewrites it, nothing else
+    does. So B unchanged after `warmup` steps and changed after one more step is
+    exactly the property, and it cannot be faked by a no-op.
+
+    A silently-ignored warmup would look identical in W&B to a working one, which
+    is the same failure shape as the adafactor no-op and the truncated GLUE split.
+    """
+    import torchopt
+    from opaque.clipping import clipped_grad
+    from opaque.functional import make_functional
+    from peft import get_peft_model
+    from transformers import AutoModelForSequenceClassification
+
+    from lora_privacy.peft_lora_xs import LoraXSConfig, xse_sgd
+
+    WARMUP = 4
+    model = AutoModelForSequenceClassification.from_pretrained(
+        "roberta-base", num_labels=2, attn_implementation="eager"
+    )
+    for p in model.parameters():
+        p.requires_grad = False
+    model = get_peft_model(
+        model,
+        LoraXSConfig(
+            r=8, lora_alpha=16, sigma=1e-5, lora_dropout=0.0,
+            target_modules=GLUE_MODULES, task_type="SEQ_CLS",
+        ),
+    )
+    fmodel, trainable, frozen = make_functional(
+        model, disable_autograd_tracking=True, partition_trainable=True
+    )
+
+    def loss_fn(t, ids, mask, labels):
+        return fmodel(
+            {**frozen, **t}, ids.unsqueeze(0),
+            attention_mask=mask.unsqueeze(0), labels=labels.reshape(1),
+        ).loss
+
+    torch.manual_seed(0)
+    ids = torch.randint(4, 900, (4, 16))
+    mask = torch.ones(4, 16, dtype=torch.long)
+    labels = torch.tensor([0, 1, 0, 1])
+
+    grad_fn, clip_state = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=(1, 2, 3), clipping_norm=1e6,
+        normalize_by=4, microbatch_size=4, return_aux=True,
+    )
+    opt = xse_sgd(
+        lr=1e-3, lora_alpha=16, p_e=0.25, rotation_step_interval=1,
+        rotation_warmup_steps=WARMUP, momentum=0.9,
+    )
+    state = opt.init(trainable, frozen)
+    b_keys = [k for k in frozen if "lora_xs_B" in k]
+    assert b_keys
+    b0 = {k: frozen[k].clone() for k in b_keys}
+
+    def step():
+        nonlocal trainable, state, frozen, clip_state
+        (g, _a), clip_state = grad_fn(trainable, ids, mask, labels, state=clip_state)
+        u, state, frozen = opt.update(g, state, params=trainable, frozen=frozen)
+        trainable = torchopt.apply_updates(trainable, u)
+
+    for _ in range(WARMUP):
+        step()
+    assert all(torch.equal(b0[k], frozen[k]) for k in b_keys), (
+        f"B changed during the {WARMUP} warmup steps — rotation was not suppressed"
+    )
+    step()  # step WARMUP+1: the first rotation must fire here
+    assert any(not torch.equal(b0[k], frozen[k]) for k in b_keys), (
+        "B never changed after warmup — rotation never started at all"
+    )
+
+
+def test_rotation_warmup_rejects_negative():
+    from lora_privacy.peft_lora_xs import xse_sgd
+
+    with pytest.raises(ValueError, match="rotation_warmup_steps must be >= 0"):
+        xse_sgd(lr=1e-3, lora_alpha=16, p_e=0.25, rotation_step_interval=1,
+                rotation_warmup_steps=-1, momentum=0.9)
