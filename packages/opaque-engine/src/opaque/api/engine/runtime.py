@@ -69,7 +69,24 @@ def distributed_world_size() -> int:
 
 @primitive(name="opaque.runtime.distributed.all_reduce")
 def distributed_all_reduce(value: object, op: ReduceOp = ReduceOp.SUM) -> object:
-    """Return ``value`` reduced across distributed workers."""
+    """Return ``value`` reduced across distributed workers.
+
+    Accepts a native array or a Python ``float`` / ``int`` and returns the same
+    kind.  An array reduces in its own dtype.  A Python scalar reduces at the
+    provider's widest exact representation for that kind — ``float`` is a
+    float64 and must not be narrowed to reach the wire — so the result never
+    depends on a framework-global default dtype.  ``int`` stays exact; an
+    integer ``mean`` divides in Python rather than through a float tensor.
+
+    Args:
+        value: Native array, or a Python ``float`` / ``int``. ``bool`` is
+            rejected.
+        op: ``sum``, ``mean``, ``max``, ``min``, or ``product``.
+
+    Returns:
+        The reduced value, of the same kind as ``value``. Outside a live
+        process group, providers return it unchanged.
+    """
     raise NotImplementedError
 
 

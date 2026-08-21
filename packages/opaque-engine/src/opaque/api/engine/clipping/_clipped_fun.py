@@ -104,8 +104,10 @@ def _all_finite(value: Any) -> Any:
         finite = (
             ops.all(ops.isfinite(leaf))
             if ops.is_floating(leaf) or ops.is_complex(leaf)
-            # Integer and boolean leaves cannot carry NaN or Inf.
-            else ops.scalar(True, like=leaf)
+            # Integer and boolean leaves cannot carry NaN or Inf.  The dtype
+            # is explicit because ``like`` supplies the leaf's own, and this
+            # constant has to stay boolean to fold with the predicates above.
+            else ops.scalar(True, dtype=ops.boolean(), like=leaf)
         )
         result = finite if result is None else ops.minimum(result, finite)
     if result is None:

@@ -713,6 +713,24 @@ def _worker_scalar_exactness_gloo(rank: int, world_size: int, port: int) -> None
         float_value = float(rank)
         assert reduce_scalar(float_value, op="max") == 1.0
 
+        # A Python float is a float64 and must reach the wire as one.  Both
+        # of these fail if the reduction narrows to the framework's default
+        # dtype: the mean rounds to 3.1415927410125732 at float32 and to
+        # 3.140625 at bfloat16, and the sum cannot represent 2e17 at float32.
+        precise = 3.14159265358979
+        assert reduce_scalar(precise, op="mean") == precise
+        assert reduce_scalar(1e17 + 1.0, op="sum") == (1e17 + 1.0) * world_size
+
+        # ...including when a process-global default says otherwise.  This is
+        # a legitimate setting in low-precision training, and it must not
+        # reach a DP-relevant scalar.
+        previous_default = torch.get_default_dtype()
+        torch.set_default_dtype(torch.bfloat16)
+        try:
+            assert reduce_scalar(precise, op="mean") == precise
+        finally:
+            torch.set_default_dtype(previous_default)
+
         with pytest.raises(RuntimeError, match="integer"):
             assert_scalar_equal(integer_value, name="integer")
         with pytest.raises(RuntimeError, match="float"):

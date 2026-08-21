@@ -101,9 +101,21 @@ def grad_and_value(
 ) -> Callable[..., Any]:
     """Return an executable that differentiates with its invocation backend.
 
+    The executable takes the same arguments as ``fn`` and returns
+    ``(grads, value)`` — gradients first. ``grads`` mirrors the structure of
+    the differentiated argument, so a pytree of parameters yields a pytree of
+    the same shape; with a tuple ``argnums`` it is a tuple of those, in the
+    order given. With ``has_aux``, the second element becomes ``(value, aux)``,
+    so the whole result is ``(grads, (value, aux))``.
+
+    ``fn`` must return a scalar (or ``(scalar, aux)``), and ``aux`` must be
+    arrays or containers of them — providers unwrap it through the transform
+    and cannot carry Python scalars out.
+
     Args:
         fn: The function to differentiate.
-        argnums: Which argument(s) to differentiate with respect to.
+        argnums: Which argument(s) to differentiate with respect to. An
+            ``int`` gives one gradient; a tuple gives one per entry.
         has_aux: Whether ``fn`` returns ``(value, aux)``.
         values_only: Declares that the caller reads the result as a value
             and will not differentiate it again. Providers that eagerly
@@ -113,6 +125,10 @@ def grad_and_value(
             performance hint in both cases, never a change to the returned
             numbers: a provider must still honor an enclosing transform
             that does differentiate the result.
+
+    Returns:
+        A callable with ``fn``'s signature returning ``(grads, value)``, or
+        ``(grads, (value, aux))`` when ``has_aux`` is set.
     """
     return _deferred_transform(
         _grad_and_value_transform,
@@ -131,16 +147,33 @@ def vmap(
 ) -> Callable[..., Any]:
     """Return an executable vectorized with its invocation backend.
 
+    ``fn`` sees one slice of each mapped argument and is written as if for a
+    single example; the executable maps it over the batch. Arrays created
+    inside ``fn`` are per-element, and the mapped axis must have the same
+    length on every mapped argument.
+
     Args:
         fn: The function to vectorize over the mapped axes.
-        in_axes: Input axes specification (provider semantics).
-        out_axes: Output axes specification (provider semantics).
+        in_axes: Which axis of each argument to map over. An ``int`` applies
+            to every argument; ``None`` broadcasts an argument unmapped; a
+            structure matching the arguments (a tuple, or a pytree mirroring
+            one) sets them individually.
+        out_axes: Where the mapped axis lands in each result. ``0`` (default)
+            makes it the leading axis; another ``int`` inserts it at that
+            position; a structure matching the outputs sets them individually.
         randomness: How framework-native RNG ops inside ``fn`` behave
             across the mapped batch: ``"same"`` (default) shares one draw
-            across batch elements, ``"different"`` draws independently,
-            ``"error"`` rejects RNG ops. Providers whose RNG model is
-            purely key-based (no ambient generator state under the
-            transform) may ignore this hint.
+            across batch elements — every element gets *identical* values,
+            which is rarely what a mechanism wants — ``"different"`` draws
+            independently, and ``"error"`` rejects RNG ops outright.
+            Opaque's own randomness is keyed and does not go through an
+            ambient generator, so this setting does not reach it: derive a
+            key per element instead of relying on ``"different"``. Providers
+            whose RNG model is purely key-based may ignore the hint entirely.
+
+    Returns:
+        A callable with ``fn``'s signature, accepting batched arguments and
+        returning batched results.
     """
     return _deferred_transform(
         _vmap_transform,

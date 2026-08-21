@@ -56,9 +56,14 @@ def distributed_all_reduce(
         device = None
         if distributed_is_initialized() and dist.get_backend() == "nccl":
             device = torch.device("cuda", torch.cuda.current_device())
+        # A Python float *is* a float64, so reduce it as one.  Reducing at
+        # ``torch.get_default_dtype()`` would let a process-global setting
+        # decide a DP-relevant scalar's precision: under a bfloat16 default
+        # ``3.14159265358979`` comes back as ``3.140625``, and even the
+        # float32 default cannot hold a sum past 2**24 exactly.
         reduced = torch.tensor(
             value,
-            dtype=torch.int64 if integer else torch.get_default_dtype(),
+            dtype=torch.int64 if integer else torch.float64,
             device=device,
         )
     else:

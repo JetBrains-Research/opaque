@@ -198,6 +198,11 @@ Everything between the two `astype` calls — including any `erf` / `erfinv` /
 Accept a `compute_dtype=None` argument and resolve it this way, so a caller can
 ask for `float64` end to end, exactly as the shipped mechanisms allow.
 
+The recipes above spell dtypes as `torch.float32` / `torch.float64`, which is
+right for training code that already imports torch. Inside a mechanism, reach
+for `ops.float32()`, `ops.float64()` and `ops.boolean()` instead — a provider's
+own dtype object binds the mechanism to that one backend.
+
 ## What's compatible with `torch.amp` and what isn't
 
 | `torch.amp` primitive | Opaque counterpart |

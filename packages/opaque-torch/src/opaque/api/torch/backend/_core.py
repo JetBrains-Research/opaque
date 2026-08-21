@@ -68,22 +68,45 @@ def float32() -> torch.dtype:
     return torch.float32
 
 
+@_TORCH.implements(ops.float64)
+def float64() -> torch.dtype:
+    return torch.float64
+
+
+@_TORCH.implements(ops.boolean)
+def boolean() -> torch.dtype:
+    return torch.bool
+
+
 @_TORCH.implements(ops.real_dtype)
 def real_dtype(value: Any) -> torch.dtype:
     value_dtype = value if isinstance(value, torch.dtype) else value.dtype
     return torch.empty((), dtype=value_dtype).real.dtype
 
 
+def _placement(dtype: Any, like: Any) -> tuple[Any, Any]:
+    """Resolve ``(dtype, device)`` for a creation op.
+
+    ``like`` supplies both, matching ``zeros_like`` and the keyed ``normal``
+    draw; an explicit ``dtype`` overrides its dtype half.  Taking only the
+    device would put a constant beside an ``float64`` leaf at the default
+    ``float32`` without saying so.
+    """
+    if like is None:
+        return dtype, None
+    return (dtype if dtype is not None else like.dtype), like.device
+
+
 @_TORCH.implements(ops.scalar)
 def scalar(value: Any, *, dtype: Any = None, like: Any = None) -> torch.Tensor:
-    device = like.device if like is not None else None
-    return torch.tensor(value, dtype=dtype, device=device)
+    resolved_dtype, device = _placement(dtype, like)
+    return torch.tensor(value, dtype=resolved_dtype, device=device)
 
 
 @_TORCH.implements(ops.zeros)
 def zeros(shape: Any, *, dtype: Any = None, like: Any = None) -> torch.Tensor:
-    device = like.device if like is not None else None
-    return torch.zeros(shape, dtype=dtype, device=device)
+    resolved_dtype, device = _placement(dtype, like)
+    return torch.zeros(shape, dtype=resolved_dtype, device=device)
 
 
 @_TORCH.implements(ops.zeros_like)
@@ -141,14 +164,19 @@ def erfinv(value: Any) -> torch.Tensor:
     return torch.erfinv(value)
 
 
+def _as_dtype(value: Any) -> torch.dtype:
+    """Accept an array or a dtype, as the dtype predicates already do."""
+    return value.dtype if isinstance(value, torch.Tensor) else value
+
+
 @_TORCH.implements(ops.finfo_eps)
 def finfo_eps(value_dtype: Any) -> float:
-    return float(torch.finfo(value_dtype).eps)
+    return float(torch.finfo(_as_dtype(value_dtype)).eps)
 
 
 @_TORCH.implements(ops.finfo_smallest_normal)
 def finfo_smallest_normal(value_dtype: Any) -> float:
-    return float(torch.finfo(value_dtype).smallest_normal)
+    return float(torch.finfo(_as_dtype(value_dtype)).smallest_normal)
 
 
 @_TORCH.implements(ops.to_host)
@@ -271,8 +299,14 @@ def all(value: Any, axis: Any = None) -> torch.Tensor:
 
 
 @_TORCH.implements(ops.nan_to_num)
-def nan_to_num(value: Any) -> torch.Tensor:
-    return torch.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0)
+def nan_to_num(
+    value: Any,
+    *,
+    nan: float = 0.0,
+    posinf: float = 0.0,
+    neginf: float = 0.0,
+) -> torch.Tensor:
+    return torch.nan_to_num(value, nan=nan, posinf=posinf, neginf=neginf)
 
 
 @_TORCH.implements(ops.clamp)
@@ -302,7 +336,7 @@ def squeeze(value: Any, axis: int | None = None) -> torch.Tensor:
 
 @_TORCH.implements(ops.promote_dtype)
 def promote_dtype(first: Any, second: Any) -> torch.dtype:
-    return torch.promote_types(first, second)
+    return torch.promote_types(_as_dtype(first), _as_dtype(second))
 
 
 def _under_differentiating_transform() -> bool:

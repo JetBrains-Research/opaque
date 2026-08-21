@@ -136,6 +136,24 @@ def reduce_scalar(
     active): non-distributed contexts return ``value`` unchanged, except
     that an integer ``mean`` is returned as a float so the result type
     does not depend on whether a process group is live.
+
+    The reduction happens at full Python-scalar precision — a ``float`` is a
+    float64 on the wire and an ``int`` stays exact — so results do not depend
+    on a framework-global default dtype.  That matters here because the
+    scalars crossing this function are DP-relevant: clipping rates, batch
+    sizes and norms that feed a sensitivity bound.
+
+    Args:
+        value: A Python ``float`` or ``int``. ``bool`` is rejected.
+        op: ``sum``, ``mean``, ``max``, ``min``, or ``product``.
+
+    Returns:
+        The reduced scalar. ``int`` inputs return ``int`` except under
+        ``mean``, which always returns ``float``.
+
+    Raises:
+        TypeError: If ``value`` is not a float or int, or the provider
+            returns a non-scalar.
     """
     if isinstance(value, bool) or not isinstance(value, (float, int)):
         raise TypeError(f"value must be a float or int, got {type(value)}")

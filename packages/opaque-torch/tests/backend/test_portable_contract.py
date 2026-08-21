@@ -180,3 +180,153 @@ def test_one_key_two_shapes_are_not_independent_draws() -> None:
 
     folded = random.normal(random.fold_in(k, 0), (8,))
     assert not torch.equal(long, folded)
+
+
+def test_like_carries_device_and_dtype_for_creation_ops() -> None:
+    """``like=`` means the same thing everywhere it appears.
+
+    Taking only the device would put a constant beside a ``float64`` leaf at
+    the provider's default ``float32`` without saying so — the class of silent
+    precision loss this contract exists to close.
+    """
+    leaf = torch.zeros(2, dtype=torch.float64)
+
+    assert ops.scalar(1.0, like=leaf).dtype is torch.float64
+    assert ops.zeros((2,), like=leaf).dtype is torch.float64
+    assert random.normal(random.key(1), (2,), like=leaf).dtype is torch.float64
+
+    # An explicit dtype overrides ``like``'s half of that.
+    assert ops.scalar(1.0, dtype=ops.float32(), like=leaf).dtype is torch.float32
+    assert ops.zeros((2,), dtype=ops.boolean(), like=leaf).dtype is torch.bool
+
+
+def test_neutral_dtype_constructors_cover_the_documented_choices() -> None:
+    assert ops.float32() is torch.float32
+    assert ops.float64() is torch.float64
+    assert ops.boolean() is torch.bool
+
+    assert not ops.is_low_precision(ops.float32())
+    assert not ops.is_low_precision(ops.float64())
+    assert ops.is_low_precision(torch.bfloat16)
+    assert ops.is_low_precision(torch.float16)
+
+
+def test_nan_to_num_substitutes_zero_and_takes_explicit_values() -> None:
+    """The default differs from NumPy and Torch, and must stay that way.
+
+    Saturating an infinity to the dtype's largest finite value would hand a DP
+    aggregate the biggest number it can hold; zero is the only substitution
+    that leaves the sensitivity bound intact.
+    """
+    value = torch.tensor([float("nan"), float("inf"), float("-inf"), 1.0])
+
+    assert ops.nan_to_num(value).tolist() == [0.0, 0.0, 0.0, 1.0]
+    assert ops.nan_to_num(value, nan=-1.0, posinf=2.0, neginf=-2.0).tolist() == [
+        -1.0,
+        2.0,
+        -2.0,
+        1.0,
+    ]
+    # ...and saturation stays expressible for callers that want it.
+    largest = torch.finfo(torch.float32).max
+    assert ops.nan_to_num(value, posinf=largest)[1].item() == largest
+
+
+def test_clamp_bounds_values_but_not_nan() -> None:
+    value = torch.tensor([float("nan"), 5.0, -5.0])
+    clamped = ops.clamp(value, lo=0.0, hi=1.0)
+
+    assert clamped[1].item() == 1.0
+    assert clamped[2].item() == 0.0
+    assert torch.isnan(clamped[0])
+
+
+def test_reductions_and_predicates_return_arrays_not_python_numbers() -> None:
+    """Staying an array is what lets a result survive ``vmap``."""
+    assert ops.is_array(ops.sum(torch.ones(3)))
+    assert ops.shape(ops.sum(torch.ones(3))) == ()
+    assert ops.shape(ops.sum(torch.ones(2, 3), axis=0)) == (3,)
+    assert ops.is_array(ops.mean(torch.ones(3)))
+
+    predicate = ops.all(ops.isfinite(torch.ones(3)))
+    assert ops.is_array(predicate)
+    assert ops.dtype(predicate) is torch.bool
+    assert ops.dtype(ops.greater(torch.ones(2), torch.zeros(2))) is torch.bool
+
+    # ``minimum`` on booleans is the portable logical AND for folding
+    # per-leaf predicates together.
+    left = torch.tensor([True, True])
+    right = torch.tensor([True, False])
+    assert ops.minimum(left, right).tolist() == [True, False]
+    assert ops.maximum(left, right).tolist() == [True, True]
+
+    assert ops.scalar_item(ops.sum(torch.ones(3))) == 3.0
+
+
+def test_dtype_helpers_accept_an_array_or_a_dtype() -> None:
+    leaf = torch.ones(2, dtype=torch.float32)
+
+    assert ops.finfo_eps(leaf) == ops.finfo_eps(torch.float32)
+    assert ops.finfo_smallest_normal(leaf) == ops.finfo_smallest_normal(torch.float32)
+    assert ops.promote_dtype(leaf, torch.float64) is torch.float64
+    assert ops.promote_dtype(torch.float32, torch.float64) is torch.float64
+    assert ops.real_dtype(torch.complex64) is torch.float32
+    assert ops.real_dtype(torch.float32) is torch.float32
+    assert ops.is_floating(leaf)
+    assert not ops.is_complex(leaf)
+
+
+def test_accumulator_dtype_widens_per_array() -> None:
+    assert ops.accumulator_dtype(torch.ones(2, dtype=torch.float32)) is torch.float64
+    # A low-precision leaf accumulates at float32, not float64.
+    assert ops.accumulator_dtype(torch.ones(2, dtype=torch.bfloat16)) is torch.float32
+
+
+def test_indexing_and_shape_ops_follow_the_documented_semantics() -> None:
+    value = torch.ones(3, 2)
+
+    assert ops.shape(ops.slice_array(value, 0)) == (2,)
+    assert ops.shape(ops.slice_array(value, slice(0, 2))) == (2, 2)
+    # A tuple indexes successive axes, so this drops both.
+    assert ops.shape(ops.slice_array(value, (0, 1))) == ()
+
+    assert ops.shape(ops.expand_dims(torch.ones(2), -1)) == (2, 1)
+    assert ops.shape(ops.squeeze(torch.ones(1, 2, 1))) == (2,)
+    assert ops.shape(ops.squeeze(torch.ones(1, 2, 1), axis=0)) == (2, 1)
+    # Squeezing a non-unit axis leaves the array alone rather than raising.
+    assert ops.shape(ops.squeeze(torch.ones(1, 2, 1), axis=1)) == (1, 2, 1)
+
+    assert ops.shape(ops.concatenate([torch.ones(2), torch.ones(3)])) == (5,)
+    assert ops.shape(ops.concatenate(t for t in (torch.ones(2), torch.ones(3)))) == (5,)
+
+
+def test_arithmetic_follows_ieee_rather_than_raising() -> None:
+    assert ops.divide(torch.tensor([7]), torch.tensor([2])).item() == 3.5
+    assert ops.divide(torch.tensor([1.0]), torch.tensor([0.0])).item() == float("inf")
+    assert torch.isnan(ops.pow(torch.tensor([-8.0]), 1 / 3.0))
+
+
+def test_grad_and_value_returns_gradients_first() -> None:
+    def loss(params, batch):
+        return ops.sum(ops.multiply(params, batch))
+
+    params = torch.ones(3)
+    batch = torch.arange(3.0)
+
+    grads, value = autodiff.grad_and_value(loss)(params, batch)
+    assert torch.equal(grads, batch)
+    assert ops.scalar_item(value) == 3.0
+
+    def loss_with_aux(params, batch):
+        return ops.sum(ops.multiply(params, batch)), ops.sum(batch)
+
+    grads, (value, aux) = autodiff.grad_and_value(loss_with_aux, has_aux=True)(
+        params, batch
+    )
+    assert torch.equal(grads, batch)
+    assert ops.scalar_item(aux) == 3.0
+
+    both, value = autodiff.grad_and_value(loss, argnums=(0, 1))(params, batch)
+    assert len(both) == 2
+    assert torch.equal(both[0], batch)
+    assert torch.equal(both[1], params)
