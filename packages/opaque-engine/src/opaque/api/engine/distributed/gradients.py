@@ -52,7 +52,16 @@ def _assert_object_equal(value: Any, *, name: str) -> None:
         )
 
 
-def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
+def assert_public_metadata_equal(value: Any, *, name: str) -> None:
+    """Raise unless a wrapper's public metadata is identical on every rank.
+
+    Shared with the Torch provider's in-place reductions
+    (``opaque.torch.distributed.reduce_pytree_``) rather than reimplemented
+    there: the two paths must agree on what "same bound on every rank" means,
+    and a :class:`~opaque.types.PerGroup` bound stores a ``MappingProxyType``
+    that no duck-typed ``isinstance(..., dict)`` fallback matches and no
+    object-gather can pickle.
+    """
     if not is_distributed():
         return
     metadata_kind = (
@@ -153,9 +162,9 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
 
     if isinstance(pytree, ClippedPytree):
         _assert_wrapper_reduction_supported(pytree, op)
-        _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
+        assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
         if _is_noised(pytree):
-            _assert_public_metadata_equal(
+            assert_public_metadata_equal(
                 pytree.noise_stddev,
                 name="NoisedPytree.noise_stddev",
             )

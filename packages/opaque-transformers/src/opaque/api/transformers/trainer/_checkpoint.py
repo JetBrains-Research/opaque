@@ -42,7 +42,7 @@ RNG_STATE_NAME = "rng_state.pth"
 # inner state. Version-3 bundles carry pre-split streams and state
 # layouts; failing loudly here beats silently resuming with different
 # noise, so there is deliberately no migration path during development.
-DP_STATE_BUNDLE_VERSION = 4
+DP_STATE_BUNDLE_VERSION = 5
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 

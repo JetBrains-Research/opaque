@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from opaque.random.types import RngKey
 
 
+# Root of every key this mechanism derives.  A mechanism's whole key space
+# hangs off one namespaced string, so a caller who hands the same base key to
+# two mechanisms still gets independent noise from each; ``"column"`` and
+# ``"leaf"`` are sub-derivations beneath that root and need no namespace of
+# their own.  See ``docs/reference/rng.md``.
+MF_GAUSSIAN_STREAM_FOLD = "opaque.dpftrl.mf_gaussian"
+
+
 @dataclasses.dataclass(frozen=True)
 class MFNoiseState(NoiseState):
     """Immutable state for provider-native matrix-factorization noise."""
@@ -82,7 +90,7 @@ def _iid_normal_noise(
             noise = ops.zeros(ops.shape(leaf), dtype=sample_dtype, like=leaf)
         else:
             noise = normal(
-                rng_fold_in(key, "mf_gaussian_leaf", leaf_index),
+                rng_fold_in(key, "leaf", leaf_index),
                 ops.shape(leaf),
                 dtype=sample_dtype,
                 like=leaf,
@@ -199,7 +207,7 @@ def _apply_plan(
             previous = _iid_normal_noise(
                 target_tree,
                 stddev,
-                key=rng_fold_in(key, "mf_gaussian_column", step - 1),
+                key=rng_fold_in(key, MF_GAUSSIAN_STREAM_FOLD, "column", step - 1),
                 compute_dtype=compute_dtype,
             )
             correlated = _tree_add(
@@ -315,7 +323,7 @@ def _matrix_factorization_noise(
         step = st._step_counter
         _check_mf_horizon(step, horizon)
         ensure_backend(clipped_grads)
-        step_key = rng_fold_in(st._rng_key, "mf_gaussian_column", step)
+        step_key = rng_fold_in(st._rng_key, MF_GAUSSIAN_STREAM_FOLD, "column", step)
         iid_noise = _iid_normal_noise(
             clipped_grads,
             stddev,

@@ -20,7 +20,7 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-from opaque.api.engine.distributed._state import assert_scalar_equal
+from opaque.api.engine.distributed.gradients import assert_public_metadata_equal
 from opaque.api.engine.pytree import tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
@@ -81,35 +81,6 @@ def all_reduce_(tensor: torch.Tensor, op: str = "sum") -> None:
         tensor.div_(dist.get_world_size())
 
 
-def _assert_object_equal(value: Any, *, name: str) -> None:
-    if not _is_distributed():
-        return
-    gathered = [None] * _world_size()
-    dist.all_gather_object(gathered, value)
-    mismatched = [idx for idx, other in enumerate(gathered) if other != value]
-    if mismatched:
-        raise RuntimeError(
-            f"{name} mismatch across ranks: mismatched ranks={mismatched}."
-        )
-
-
-def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
-    if not _is_distributed():
-        return
-    if value is None:
-        _assert_object_equal(value, name=name)
-        return
-    groups = getattr(value, "groups", None)
-    values = getattr(value, "values", None)
-    if isinstance(groups, dict) and isinstance(values, dict):
-        _assert_object_equal(groups, name=f"{name}.groups")
-        _assert_object_equal(set(values), name=f"{name}.values.keys")
-        for group_name, group_value in values.items():
-            assert_scalar_equal(group_value, name=f"{name}.values[{group_name!r}]")
-        return
-    assert_scalar_equal(value, name=name)
-
-
 def _assert_wrapper_reduction_supported(pytree: ClippedPytree, op: str) -> None:
     if op not in _WRAPPER_REDUCTION_OPS:
         raise TypeError(
@@ -152,9 +123,9 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
                 f"In-place {type(pytree).__name__} reduction would change metadata; "
                 "use reduce_pytree() instead."
             )
-        _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
+        assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
         if _is_noised(pytree):
-            _assert_public_metadata_equal(
+            assert_public_metadata_equal(
                 pytree.noise_stddev,
                 name="NoisedPytree.noise_stddev",
             )

@@ -40,6 +40,62 @@ index, and adaptive per-group clipping uses sorted group order. Preserve that
 structure across a checkpoint: reordering or inserting leaves/groups can
 change the substream assigned to an existing leaf/group.
 
+## Domain separation
+
+`fold_in` hashes integers and strings down disjoint paths: `fold_in(k, 1)` and
+`fold_in(k, "1")` are different keys, and no chain of integer folds can reach a
+key derived through a string fold. Opaque divides the two.
+
+**Integers are the caller's** — steps, ranks, epochs, leaf and group indices,
+and every key `split` returns, since `split(k, n)` *is*
+`fold_in(k, i) for i in range(n)`.
+
+**Strings root a mechanism.** Anything that draws randomness folds one unique,
+namespaced string into the key it was handed, once, and derives everything else
+beneath that tag:
+
+```python
+from opaque.random import fold_in, normal
+
+MY_STREAM = "mylab.rare_events.noise"   # yours, and nobody else's
+
+
+def my_noise(grads, *, key, step):
+    step_key = fold_in(key, MY_STREAM, step)
+    return [
+        leaf + normal(fold_in(step_key, i), leaf.shape, like=leaf)
+        for i, leaf in enumerate(grads)
+    ]
+```
+
+Without a root, the derivation you would write is `fold_in(key, step)` — and so
+is everyone else's. Two mechanisms handed the same base key then draw the same
+numbers, and nothing reports it: not a test, not an error, not an accountant.
+
+Keys are pure inputs, so two further rules follow:
+
+- **Every distinct draw needs a distinct key.** Calling `normal` twice with one
+  key replays the same values; it does not continue a stream.
+- **One key, two shapes are not independent.** `normal(k, (4,))` is a prefix of
+  `normal(k, (8,))`. Fold before changing shape.
+
+### Tags Opaque already occupies
+
+Each shipped mechanism roots its own key space. Do not reuse these tags; any
+other namespaced string is free.
+
+| Tag | Mechanism |
+| --- | --- |
+| `opaque.dpsgd.gaussian` | `opaque.dpsgd.noise.gaussian_noise` (both streams) |
+| `opaque.dpsgd.adaptive_clipping` | `opaque.dpsgd.clipping` adaptive threshold noise |
+| `opaque.dpftrl.mf_gaussian` | `opaque.dpftrl.noise.mf_gaussian_noise` |
+| `opaque.dpftrl.second_moment.first` / `.second` | paired MF release with private second moments |
+| `opaque.paired.first` / `opaque.paired.second` | paired first/second-moment streams |
+| `opaque.auditing.canary_selection` / `opaque.auditing.coin_flip` | `opaque.auditing.coin_flip` |
+
+Sub-derivations beneath a root — a step counter, a leaf index, `"leaf"`,
+`"column"` — need no namespace of their own.
+
 ## Quick Reference
 
 ### Essential Imports
@@ -85,13 +141,17 @@ for step in range(100):
 ### Per-Step Derivation
 
 ```python
-# Using fold_in for step-based keys
+# Root your mechanism once, then derive integers beneath it
 base_key = key(42)
-step_key = fold_in(base_key, 0)
+stream = fold_in(base_key, "mylab.rare_events.noise")
+step_key = fold_in(stream, 0)
 
 # Multiple values (variadic)
-step_rank_key = fold_in(base_key, step, rank)
+step_rank_key = fold_in(stream, step, rank)
 ```
+
+Passing `base_key` straight to a shipped mechanism is fine — `gaussian_noise`
+and friends root themselves. The root above is for randomness *you* draw.
 
 ### PyTorch Reproducibility
 
@@ -228,9 +288,11 @@ key_v2 = fold_in(base_key, "v2")
 - ValueError if no data values are provided
 
 **Use Cases:**
-- Step counters in loops: `fold_in(base, step)`
-- Distributed training: `fold_in(base, step, rank)`
-- DataLoader workers: `fold_in(base, step, rank, worker_id)`
+- Rooting a mechanism you wrote: `fold_in(base, "mylab.my_mechanism")` —
+  see [Domain separation](#domain-separation)
+- Step counters in loops: `fold_in(stream, step)`
+- Distributed training: `fold_in(stream, step, rank)`
+- DataLoader workers: `fold_in(stream, step, rank, worker_id)`
 - Checkpointing (deterministic resume key)
 - Versioning DP mechanisms
 

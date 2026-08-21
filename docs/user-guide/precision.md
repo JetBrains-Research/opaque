@@ -164,6 +164,40 @@ well, so splitting a batch does not degrade the result — a `bfloat16` run
 accumulates in `float32` and casts once at the end. That costs one `float32`
 copy of the summed output; pass `compute_dtype=torch.bfloat16` to trade it back.
 
+## Writing your own noise at low precision
+
+A mechanism you write inherits none of the rules above, and the one that matters
+most is easy to miss: the draw itself is not where precision is lost.
+`normal(key, shape, dtype=...)` returns a sample in the requested dtype, but a
+provider draws at no less than `float32` internally, so a `bfloat16` request is
+that draw cast down, not a coarser Gaussian. What degrades the result is the
+arithmetic **around** it — add a `float32` noise sample to a `bfloat16` leaf in
+`bfloat16` and every intermediate rounds to ~3 decimal digits.
+
+Upcast the whole expression and cast once at the end:
+
+```python
+from opaque import ops
+from opaque.random import normal
+
+def add_noise(leaf, stddev, key):
+    in_dtype = ops.dtype(leaf)
+    # `float32` unless the leaf is already wider; this is the same one-line
+    # rule `gaussian_noise` and `mf_gaussian_noise` apply internally.
+    compute_dtype = ops.float32() if ops.is_low_precision(in_dtype) else in_dtype
+
+    value = ops.astype(leaf, compute_dtype)
+    noise = normal(key, ops.shape(value), dtype=compute_dtype, like=value)
+    result = ops.add(value, ops.multiply(noise, stddev))
+
+    return ops.astype(result, in_dtype)   # downcast once, at the boundary
+```
+
+Everything between the two `astype` calls — including any `erf` / `erfinv` /
+`clamp` a truncated or bounded mechanism needs — stays at `compute_dtype`.
+Accept a `compute_dtype=None` argument and resolve it this way, so a caller can
+ask for `float64` end to end, exactly as the shipped mechanisms allow.
+
 ## What's compatible with `torch.amp` and what isn't
 
 | `torch.amp` primitive | Opaque counterpart |

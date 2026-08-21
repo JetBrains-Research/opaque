@@ -33,6 +33,14 @@ if TYPE_CHECKING:
 
     from .types import MfStrategy
 
+# Stream roots for the paired MF release. Namespaced strings rather than the
+# integers `0` and `1`: `split(key, 2)` is exactly `fold_in(key, 0)` and
+# `fold_in(key, 1)`, so integer roots here would alias the keys a caller gets
+# from the most ordinary derivation in the API. See the note beside
+# ``PAIRED_FIRST_STREAM_FOLD`` in ``opaque.api.engine.noise_allocation``.
+SECOND_MOMENT_FIRST_STREAM_FOLD = "opaque.dpftrl.second_moment.first"
+SECOND_MOMENT_SECOND_STREAM_FOLD = "opaque.dpftrl.second_moment.second"
+
 
 @dataclasses.dataclass(frozen=True)
 class SecondMomentMFNoiseState(NoiseState):
@@ -85,7 +93,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 0),
+        key=rng_fold_in(key, SECOND_MOMENT_FIRST_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
     second_fn, second_state, second_row_l2_at = _make_raw_mf_noise(
@@ -94,7 +102,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 1),
+        key=rng_fold_in(key, SECOND_MOMENT_SECOND_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
 

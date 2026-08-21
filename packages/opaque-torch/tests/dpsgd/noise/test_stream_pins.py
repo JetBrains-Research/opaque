@@ -17,7 +17,7 @@ import torch
 from opaque.backend import clear_backend, set_backend
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import fold_in, key, normal
-from opaque.types import clipped
+from opaque.types import SecondMomentClippingOutput, clipped
 
 
 @pytest.fixture(autouse=True)
@@ -69,10 +69,10 @@ class TestGaussianNoiseStreamPins:
         out2, state = noise_fn(clipped(grads, max_norm=1.0), state)
 
         expected = {
-            "step1_a": [-5.1886880398e-01, -7.7415519953e-01, 1.4632741213e00],
-            "step1_b": [-1.3098659515e00, 7.1730536222e-01],
-            "step2_a": [-1.1790795326e00, -1.2313234806e00, -2.1688857079e00],
-            "step2_b": [-5.0522208214e-01, 3.4721356630e-01],
+            "step1_a": [3.6460036039e-01, -1.2531291246e00, -1.1062886715e00],
+            "step1_b": [5.4445260763e-01, 1.3330521584e00],
+            "step2_a": [-4.8303824663e-01, 6.2823516130e-01, -5.4210251570e-01],
+            "step2_b": [-3.0942159891e-01, 2.1230118275e00],
         }
         for got, want in (
             (out1.pytree["a"], expected["step1_a"]),
@@ -88,6 +88,55 @@ class TestGaussianNoiseStreamPins:
             )
         assert out1.noise_stddev == 1.0
         assert out2.noise_stddev == 1.0
+
+    def test_paired_stream_golden(self):
+        """Pins both roots of the paired release, not just the single stream.
+
+        The paired streams hang off their own ``fold_in`` roots, so the
+        single-stream pins above cannot see a change to them: moving those
+        roots alters every paired run's realized noise while leaving the
+        rest of this file green. That gap is the reason this test exists.
+        """
+        paired = SecondMomentClippingOutput(
+            grads=clipped({"a": torch.zeros(3)}, max_norm=1.0),
+            squared_grads=clipped({"a": torch.zeros(3)}, max_norm=1.0),
+        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(7))
+
+        out1, state = noise_fn(paired, state)
+        out2, state = noise_fn(paired, state)
+
+        expected = {
+            "step1_first": [2.4316213131e00, -1.9548139572e00, 6.0785740614e-01],
+            "step1_second": [5.1532679796e-01, -2.7336843014e00, 8.9876586199e-01],
+            "step2_first": [-2.0656938553e00, -1.4037373066e00, 7.6630246639e-01],
+            "step2_second": [-2.3482582569e00, 2.6921105385e00, -1.1755086184e00],
+        }
+        for got, want in (
+            (out1.noisy_grads.pytree["a"], expected["step1_first"]),
+            (out1.noisy_squared_grads.pytree["a"], expected["step1_second"]),
+            (out2.noisy_grads.pytree["a"], expected["step2_first"]),
+            (out2.noisy_squared_grads.pytree["a"], expected["step2_second"]),
+        ):
+            torch.testing.assert_close(
+                got,
+                torch.tensor(want, dtype=torch.float32),
+                rtol=0.0,
+                atol=0.0,
+            )
+
+    def test_paired_streams_are_independent(self):
+        """The two streams must not share a root, at any step."""
+        paired = SecondMomentClippingOutput(
+            grads=clipped({"a": torch.zeros(8)}, max_norm=1.0),
+            squared_grads=clipped({"a": torch.zeros(8)}, max_norm=1.0),
+        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(11))
+        for _ in range(3):
+            out, state = noise_fn(paired, state)
+            assert not torch.equal(
+                out.noisy_grads.pytree["a"], out.noisy_squared_grads.pytree["a"]
+            )
 
     def test_leaf_order_not_shape_determines_stream(self):
         """Each leaf's noise comes from its flatten-order fold, so a leaf's

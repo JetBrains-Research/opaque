@@ -105,6 +105,24 @@ fold_in(k, 0).seed != fold_in(k, 1).seed
 fold_in(k, 42).seed != fold_in(k, "42").seed  # int vs str distinguished
 ```
 
+That last line is more than a curiosity: integers and strings are hashed down
+disjoint paths, and Opaque divides them. Integers belong to the caller — steps,
+ranks, epochs, leaf and group indices, and every key `split` returns. A unique,
+namespaced string tag roots a mechanism; code that draws its own randomness
+folds one in, then derives everything beneath it.
+
+```python
+stream = fold_in(k, "mylab.rare_events.noise")   # yours, and nobody else's
+step_key = fold_in(stream, step)
+```
+
+Skip the root and you write `fold_in(k, step)`, which is what every mechanism
+writes: two of them handed the same base key draw byte-identical noise, and no
+test, error, or accountant reports it. Passing a bare `key(42)` to
+`gaussian_noise` or a sampler is fine — those root themselves. See
+[Domain separation](../reference/rng.md#domain-separation) for the rule and the
+tags already taken.
+
 ### Backend semantics and limits
 
 `key`, `split`, and `fold_in` are backend-neutral: the same inputs derive the

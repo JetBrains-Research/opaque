@@ -100,6 +100,14 @@ def _compute_clipping_stats(
     return num_clipped, total, clipping_rate
 
 
+# Root of every key this mechanism derives.  A mechanism's whole key space
+# hangs off one namespaced string, so a caller who hands the same base key to
+# this rule and to a noise mechanism still gets independent draws from each.
+# Without a root the obvious derivation — ``fold_in(key, step)`` — is what
+# *every* mechanism writes.  See ``docs/reference/rng.md``.
+ADAPTIVE_CLIPPING_STREAM_FOLD = "opaque.dpsgd.adaptive_clipping"
+
+
 def _normal_scalar(*, key: RngKey) -> float:
     """Draw a float32 scalar and materialize it at the state transition boundary.
 
@@ -119,7 +127,10 @@ def _sample_noisy_clipping_rate(
     fraction_noise_std: float,
 ) -> float:
     """Add DP Gaussian noise to clipping rate using step-folded RNG key."""
-    noise = _normal_scalar(key=fold_in(key, step)) * fraction_noise_std
+    noise = (
+        _normal_scalar(key=fold_in(key, ADAPTIVE_CLIPPING_STREAM_FOLD, step))
+        * fraction_noise_std
+    )
     return clipping_rate + noise
 
 
@@ -517,7 +528,12 @@ def adaptive_clipped_grad(
                     threshold = current_pg.values[gname]
                     rate = per_group_rates.get(gname, 0.0)
 
-                    group_key = fold_in(state._rng_key, state._step, i)
+                    group_key = fold_in(
+                        state._rng_key,
+                        ADAPTIVE_CLIPPING_STREAM_FOLD,
+                        state._step,
+                        i,
+                    )
                     noise = _normal_scalar(key=group_key) * config["fraction_noise_std"]
                     noisy_rate = rate + noise
 
@@ -543,7 +559,12 @@ def adaptive_clipped_grad(
                     per_group_num_clipped[gname] = nc
 
                     # Independent noise per group: fold in both step and group index
-                    group_key = fold_in(state._rng_key, state._step, i)
+                    group_key = fold_in(
+                        state._rng_key,
+                        ADAPTIVE_CLIPPING_STREAM_FOLD,
+                        state._step,
+                        i,
+                    )
                     noise = _normal_scalar(key=group_key) * config["fraction_noise_std"]
                     noisy_rate = rate + noise
 

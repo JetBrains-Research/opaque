@@ -23,6 +23,7 @@ from opaque.random import fold_in
 from opaque.types import PerGroup
 
 from ._adaptive import (
+    ADAPTIVE_CLIPPING_STREAM_FOLD,
     AdaptiveClippedGradAux,
     AdaptiveClipState,
     _adaptive_clipping_norm_update,
@@ -79,7 +80,12 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         new_values: dict[str, float] = {}
         for i, gname in enumerate(sorted(current_pg.values.keys())):
             global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
-            group_key = fold_in(state._rng_key, step_for_noise, i)
+            group_key = fold_in(
+                state._rng_key,
+                ADAPTIVE_CLIPPING_STREAM_FOLD,
+                step_for_noise,
+                i,
+            )
             noise = _normal_scalar(key=group_key) * state._fraction_noise_std
             noisy_rate = global_rate + noise
 

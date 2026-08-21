@@ -244,7 +244,7 @@ def _worker_in_place_wrapper_reduction_gloo(
     rank: int, world_size: int, port: int
 ) -> None:
     from opaque.torch.distributed import all_reduce_, reduce_pytree_, sum_gradients_
-    from opaque.types import ClippedPytree, SecondMomentClippingOutput
+    from opaque.types import ClippedPytree, PerGroup, SecondMomentClippingOutput
 
     _setup_gloo(rank, world_size, port)
     try:
@@ -272,6 +272,46 @@ def _worker_in_place_wrapper_reduction_gloo(
         # in-place API refuses metadata-changing reductions.
         with pytest.raises(TypeError, match="would change metadata"):
             reduce_pytree_(gradients, op="mean")
+
+        # A PerGroup bound must survive the in-place path.  ``PerGroup``
+        # stores its mappings as ``MappingProxyType``, which no duck-typed
+        # ``isinstance(..., dict)`` check matches and no object-gather can
+        # pickle, so a per-group bound that reaches the scalar branch aborts
+        # the step with ``TypeError: cannot pickle 'mappingproxy' object``.
+        per_group_norm = PerGroup(groups={"w": "weights"}, values={"weights": 1.0})
+        per_group_grads = ClippedPytree(
+            {"w": torch.tensor([1.0, 2.0]) * scale}, max_norm=per_group_norm
+        )
+        assert sum_gradients_(per_group_grads) is None
+        assert torch.allclose(per_group_grads.pytree["w"], torch.tensor([11.0, 22.0]))
+        assert per_group_grads.max_norm == per_group_norm
+
+        # ...and the equality check must still fire on a real divergence,
+        # per group and on the metadata kind itself.
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.values\['weights'\] mismatch",
+        ):
+            sum_gradients_(
+                ClippedPytree(
+                    {"w": torch.tensor([1.0])},
+                    max_norm=PerGroup(
+                        groups={"w": "weights"},
+                        values={"weights": float(rank + 1)},
+                    ),
+                )
+            )
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"ClippedPytree\.max_norm\.kind mismatch",
+        ):
+            sum_gradients_(
+                ClippedPytree(
+                    {"w": torch.tensor([1.0])},
+                    max_norm=per_group_norm if rank == 0 else 1.0,
+                )
+            )
     finally:
         _cleanup_ddp()
 

@@ -132,3 +132,51 @@ def test_to_host_detaches_from_autograd() -> None:
     host = ops.to_host(source * 2)
 
     assert host.tolist() == [2.0, 2.0, 2.0]
+
+
+def test_low_precision_draws_keep_full_resolution() -> None:
+    """A provider draws at no less than ``float32``, then returns the request.
+
+    Nothing in the surface forces the sample *itself* to be computed in the
+    requested dtype, and it must not be: a Gaussian generated natively in
+    ``bfloat16`` would be coarser than the same draw made in ``float32`` and
+    cast down, which silently shrinks the noise's effective support.  Torch
+    already satisfies this, so the check is a conformance pin for the next
+    provider rather than a bug report about this one.
+
+    Resolution of the *arithmetic* around the draw is a separate obligation and
+    belongs to the mechanism — see ``docs/user-guide/precision.md``.
+    """
+    for dtype in (torch.bfloat16, torch.float16):
+        drawn = random.normal(random.key(11), (20_000,), dtype=dtype)
+        upcast = random.normal(random.key(11), (20_000,), dtype=torch.float32)
+
+        assert drawn.dtype is dtype
+        assert len(torch.unique(drawn)) >= len(torch.unique(upcast.to(dtype)))
+
+
+def test_like_supplies_dtype_and_placement_for_draws() -> None:
+    leaf = torch.zeros(4, dtype=torch.float64)
+
+    assert random.normal(random.key(3), (4,), like=leaf).dtype is torch.float64
+    # An explicit dtype wins over ``like``'s.
+    assert (
+        random.normal(random.key(3), (4,), dtype=torch.float32, like=leaf).dtype
+        is torch.float32
+    )
+
+
+def test_one_key_two_shapes_are_not_independent_draws() -> None:
+    """Pins the hazard the ``normal`` docstring warns about.
+
+    Changing only the shape does not produce a fresh sample; it extends the
+    same one.  A mechanism that varies shape per leaf without folding first
+    hands correlated noise to every leaf.
+    """
+    k = random.key(5)
+    short = random.normal(k, (4,))
+    long = random.normal(k, (8,))
+    assert torch.equal(short, long[:4])
+
+    folded = random.normal(random.fold_in(k, 0), (8,))
+    assert not torch.equal(long, folded)
