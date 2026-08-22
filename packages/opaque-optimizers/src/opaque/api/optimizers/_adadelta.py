@@ -30,13 +30,16 @@ def adadelta(
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, AdadeltaState]], AdadeltaState]:
-    if (
-        not 0 <= rho < 1
-        or eps <= 0
-        or weight_decay < 0
-        or (update_rms_clip is not None and update_rms_clip <= 0)
-    ):
-        raise ValueError("invalid Adadelta hyperparameters")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if not 0 <= rho < 1:
+        raise ValueError(f"rho must satisfy 0 <= rho < 1, got {rho}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+    if update_rms_clip is not None and update_rms_clip <= 0:
+        raise ValueError(
+            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        )
     zeros = tree_map(ops.zeros_like, params)
     initial = AdadeltaState(
         zeros,

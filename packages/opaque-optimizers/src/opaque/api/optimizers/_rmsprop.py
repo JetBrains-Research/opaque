@@ -31,13 +31,16 @@ def rmsprop(
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, RMSpropState]], RMSpropState]:
-    if (
-        not 0 <= alpha < 1
-        or eps <= 0
-        or weight_decay < 0
-        or (update_rms_clip is not None and update_rms_clip <= 0)
-    ):
-        raise ValueError("invalid RMSprop hyperparameters")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if not 0 <= alpha < 1:
+        raise ValueError(f"alpha must satisfy 0 <= alpha < 1, got {alpha}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+    if update_rms_clip is not None and update_rms_clip <= 0:
+        raise ValueError(
+            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        )
     initial = RMSpropState(
         tree_map(ops.zeros_like, params),
         init_per_group_phi(params) if noise_bias_correction else 0.0,

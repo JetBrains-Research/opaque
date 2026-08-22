@@ -311,11 +311,11 @@ class TestBCMode:
 
 class TestValidation:
     def test_negative_decay_rate_required(self):
-        with pytest.raises(ValueError, match="invalid Adafactor"):
+        with pytest.raises(ValueError, match="decay_rate"):
             adafactor({"w": torch.ones(1)}, decay_rate=0.5)
 
     def test_zero_eps_raises(self):
-        with pytest.raises(ValueError, match="invalid Adafactor"):
+        with pytest.raises(ValueError, match="positive"):
             adafactor({"w": torch.ones(1)}, eps_grad=0.0)
 
 

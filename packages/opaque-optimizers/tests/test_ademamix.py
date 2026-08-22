@@ -139,9 +139,9 @@ class TestSecondMomentMode:
 
 class TestValidation:
     def test_three_betas_required(self, params):
-        with pytest.raises(ValueError, match=r"invalid AdEMAMix|betas"):
+        with pytest.raises(ValueError, match="three"):
             ademamix(params, betas=(0.9, 0.999))
 
     def test_negative_alpha_raises(self, params):
-        with pytest.raises(ValueError, match=r"invalid AdEMAMix|alpha"):
+        with pytest.raises(ValueError, match="non-negative"):
             ademamix(params, alpha=-1.0)

@@ -29,8 +29,15 @@ def adagrad(
     decoupled_weight_decay: bool = True,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, AdagradState]], AdagradState]:
-    if eps <= 0 or weight_decay < 0 or initial_accumulator_value < 0:
-        raise ValueError("invalid Adagrad hyperparameters")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+    if initial_accumulator_value < 0:
+        raise ValueError(
+            "initial_accumulator_value must be non-negative, got "
+            f"{initial_accumulator_value}"
+        )
     initial = AdagradState(
         tree_map(
             lambda p: ops.add(ops.zeros_like(p), initial_accumulator_value), params

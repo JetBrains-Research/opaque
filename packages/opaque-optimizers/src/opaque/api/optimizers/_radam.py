@@ -48,15 +48,20 @@ def radam(
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, RAdamState]], RAdamState]:
-    if (
-        len(betas) != 2
-        or not all(0 <= beta < 1 for beta in betas)
-        or eps <= 0
-        or weight_decay < 0
-    ):
-        raise ValueError("invalid RAdam hyperparameters")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if len(betas) != 2:
+        raise ValueError(f"betas must contain exactly two values, got {betas}")
+    if not 0 <= betas[0] < 1:
+        raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {betas[0]}")
+    if not 0 <= betas[1] < 1:
+        raise ValueError(f"beta_2 must satisfy 0 <= beta_2 < 1, got {betas[1]}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
     if update_rms_clip is not None and update_rms_clip <= 0:
-        raise ValueError("update_rms_clip must be positive")
+        raise ValueError(
+            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        )
     b1, b2 = betas
     initial = RAdamState(
         tree_map(ops.zeros_like, params),

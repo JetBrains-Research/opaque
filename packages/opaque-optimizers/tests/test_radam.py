@@ -221,21 +221,21 @@ class TestSecondMomentSubstitution:
 
 class TestValidation:
     def test_eps_positive(self, params):
-        with pytest.raises(ValueError, match=r"invalid RAdam|eps"):
+        with pytest.raises(ValueError, match="eps"):
             radam(params, eps=0.0)
 
     def test_betas_two_values(self, params):
-        with pytest.raises(ValueError, match=r"invalid RAdam|betas"):
+        with pytest.raises(ValueError, match="exactly two"):
             radam(params, betas=(0.9,))  # type: ignore[arg-type]
 
     def test_beta_range(self, params):
-        with pytest.raises(ValueError, match=r"invalid RAdam|betas"):
+        with pytest.raises(ValueError, match="beta_2"):
             radam(params, betas=(0.9, 1.0))
 
     def test_negative_weight_decay(self, params):
-        with pytest.raises(ValueError, match=r"invalid RAdam|weight_decay"):
+        with pytest.raises(ValueError, match="weight_decay"):
             radam(params, weight_decay=-1.0)
 
     def test_update_rms_clip_positive(self, params):
-        with pytest.raises(ValueError, match=r"update_rms_clip|invalid RAdam"):
+        with pytest.raises(ValueError, match="update_rms_clip"):
             radam(params, update_rms_clip=0.0)

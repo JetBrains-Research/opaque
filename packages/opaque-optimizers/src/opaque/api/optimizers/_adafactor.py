@@ -88,15 +88,18 @@ def adafactor(
     decoupled_weight_decay: bool = True,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, AdafactorState]], AdafactorState]:
-    if (
-        not 0 <= beta1 < 1
-        or decay_rate >= 0
-        or eps_grad <= 0
-        or eps_root <= 0
-        or weight_decay < 0
-        or update_rms_clip <= 0
-    ):
-        raise ValueError("invalid Adafactor hyperparameters")
+    if decay_rate >= 0:
+        raise ValueError(f"decay_rate must be negative, got {decay_rate}")
+    if eps_grad <= 0 or eps_root <= 0:
+        raise ValueError(
+            f"eps_grad and eps_root must be positive, got {eps_grad}, {eps_root}"
+        )
+    if not 0 <= beta1 < 1:
+        raise ValueError(f"beta1 must satisfy 0 <= beta1 < 1, got {beta1}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+    if update_rms_clip <= 0:
+        raise ValueError(f"update_rms_clip must be positive, got {update_rms_clip}")
     paths, leaves, spec = tree_flatten_with_paths(params)
     initial = AdafactorState(
         tree_map(ops.zeros_like, params) if beta1 else None,

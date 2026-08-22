@@ -333,17 +333,17 @@ class TestSecondMomentSubstitution:
 
 class TestValidation:
     def test_eps_positive(self):
-        with pytest.raises(ValueError, match="invalid Adadelta"):
+        with pytest.raises(ValueError, match="eps"):
             adadelta({"w": torch.ones(1)}, eps=0.0)
 
     def test_rho_range(self):
-        with pytest.raises(ValueError, match="invalid Adadelta"):
+        with pytest.raises(ValueError, match="rho"):
             adadelta({"w": torch.ones(1)}, rho=1.0)
 
     def test_negative_weight_decay(self):
-        with pytest.raises(ValueError, match="invalid Adadelta"):
+        with pytest.raises(ValueError, match="weight_decay"):
             adadelta({"w": torch.ones(1)}, weight_decay=-1.0)
 
     def test_update_rms_clip_positive(self):
-        with pytest.raises(ValueError, match="invalid Adadelta"):
+        with pytest.raises(ValueError, match="update_rms_clip"):
             adadelta({"w": torch.ones(1)}, update_rms_clip=-0.5)

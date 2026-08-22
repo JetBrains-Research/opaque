@@ -31,16 +31,21 @@ def ademamix(
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, AdEMAMixState]], AdEMAMixState]:
-    if (
-        len(betas) != 3
-        or not all(0 <= beta < 1 for beta in betas)
-        or alpha < 0
-        or eps <= 0
-        or weight_decay < 0
-    ):
-        raise ValueError("invalid AdEMAMix hyperparameters")
+    if len(betas) != 3:
+        raise ValueError(f"betas must contain exactly three values, got {betas}")
+    for _name, _beta in zip(("β₁", "β₂", "β₃"), betas, strict=True):
+        if not 0 <= _beta < 1:
+            raise ValueError(f"{_name} must satisfy 0 <= b < 1, got {_beta}")
+    if alpha < 0:
+        raise ValueError(f"alpha must be non-negative, got {alpha}")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if weight_decay < 0:
+        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
     if update_rms_clip is not None and update_rms_clip <= 0:
-        raise ValueError("update_rms_clip must be positive")
+        raise ValueError(
+            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        )
     b1, b2, b3 = betas
     zeros = tree_map(ops.zeros_like, params)
     initial = AdEMAMixState(

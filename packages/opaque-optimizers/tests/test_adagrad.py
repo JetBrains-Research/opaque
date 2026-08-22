@@ -252,13 +252,13 @@ class TestWeightDecay:
 
 class TestValidation:
     def test_negative_eps_raises(self):
-        with pytest.raises(ValueError, match="invalid Adagrad"):
+        with pytest.raises(ValueError, match="eps"):
             adagrad({"w": torch.ones(1)}, eps=0.0)
 
     def test_negative_initial_accumulator_raises(self):
-        with pytest.raises(ValueError, match="invalid Adagrad"):
+        with pytest.raises(ValueError, match="initial_accumulator_value"):
             adagrad({"w": torch.ones(1)}, initial_accumulator_value=-1.0)
 
     def test_negative_weight_decay_raises(self):
-        with pytest.raises(ValueError, match="invalid Adagrad"):
+        with pytest.raises(ValueError, match="weight_decay"):
             adagrad({"w": torch.ones(1)}, weight_decay=-0.1)

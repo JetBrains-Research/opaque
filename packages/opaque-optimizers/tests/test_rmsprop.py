@@ -251,13 +251,13 @@ class TestSecondMomentMode:
 
 class TestValidation:
     def test_negative_alpha_raises(self):
-        with pytest.raises(ValueError, match="invalid RMSprop"):
+        with pytest.raises(ValueError, match="alpha"):
             rmsprop({"w": torch.ones(1)}, alpha=-0.1)
 
     def test_alpha_one_raises(self):
-        with pytest.raises(ValueError, match="invalid RMSprop"):
+        with pytest.raises(ValueError, match="alpha"):
             rmsprop({"w": torch.ones(1)}, alpha=1.0)
 
     def test_negative_eps_raises(self):
-        with pytest.raises(ValueError, match="invalid RMSprop"):
+        with pytest.raises(ValueError, match="eps"):
             rmsprop({"w": torch.ones(1)}, eps=0.0)
