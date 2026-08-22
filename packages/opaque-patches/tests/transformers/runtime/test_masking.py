@@ -1,3 +1,5 @@
+import inspect
+
 import pytest
 
 pytest.importorskip("transformers")
@@ -236,3 +238,47 @@ class TestSlidingWindowCausalMask:
         assert mask[0, 0, 1, 2] == neg_inf, "col 2 (abs 0) should be out of window"
         assert mask[0, 0, 1, 3] == neg_inf, "col 3 (abs 1) should be out of window"
         assert mask[0, 0, 1, 4] == neg_inf, "col 4 (abs 2) should be out of window"
+
+
+def test_ignore_causal_mask_shim_accepts_the_upstream_signature():
+    """The shim must be callable exactly as transformers calls the real thing.
+
+    ``masking_utils`` calls ``_ignore_causal_mask_sdpa`` positionally, and the
+    upstream signature has grown across the supported range — 5.x inserted
+    ``q_offset``. A shim that names the parameters raises ``TypeError`` at the
+    call site, which surfaces only once a model actually builds a mask. Bind the
+    shim against upstream's own signature so the mismatch is caught here.
+    """
+    masking_utils = pytest.importorskip("transformers.masking_utils")
+
+    from opaque.api.patches.transformers.runtime.masking import (
+        _vmap_safe_ignore_causal_mask_sdpa,
+    )
+
+    upstream = getattr(
+        _vmap_safe_ignore_causal_mask_sdpa,
+        "_original",
+        masking_utils._ignore_causal_mask_sdpa,
+    )
+    signature = inspect.signature(upstream)
+    bound = signature.bind(None, *range(len(signature.parameters) - 1))
+    inspect.signature(_vmap_safe_ignore_causal_mask_sdpa).bind(*bound.args)
+
+
+def test_ignore_causal_mask_shim_short_circuits_on_a_padding_mask():
+    """A present mask forces mask creation without consulting the original."""
+    from opaque.api.patches.transformers.runtime.masking import (
+        _vmap_safe_ignore_causal_mask_sdpa,
+    )
+
+    calls: list[object] = []
+    previous = getattr(_vmap_safe_ignore_causal_mask_sdpa, "_original", None)
+    _vmap_safe_ignore_causal_mask_sdpa._original = lambda *a, **k: calls.append(a)
+    try:
+        assert _vmap_safe_ignore_causal_mask_sdpa(object(), 1, 2, 3, 4, None) is False
+        assert calls == []
+    finally:
+        if previous is None:
+            del _vmap_safe_ignore_causal_mask_sdpa._original
+        else:
+            _vmap_safe_ignore_causal_mask_sdpa._original = previous
