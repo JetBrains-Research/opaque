@@ -239,6 +239,23 @@ class TestAucCI:
         ci2 = estimate.attack_auc(confidence=0.95, num_samples=20, key=key(42))
         assert ci1 == ci2
 
+    def test_ci_requires_explicit_key(self):
+        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+
+        with pytest.raises(ValueError, match="requires an explicit RNG key"):
+            estimate.attack_auc(confidence=0.95, num_samples=20)
+
+    def test_ci_ignores_unrelated_global_numpy_draws(self):
+        rng = np.random.default_rng(7)
+        estimate = _make_estimate(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
+
+        expected = estimate.attack_auc(confidence=0.95, num_samples=50, key=key(19))
+        np.random.seed(91)
+        np.random.normal(size=1000)
+        actual = estimate.attack_auc(confidence=0.95, num_samples=50, key=key(19))
+
+        assert actual == expected
+
     def test_point_estimate_unchanged(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         val = estimate.attack_auc()
@@ -437,6 +454,17 @@ class TestCoinFlipFunction:
         np.testing.assert_array_equal(first._in_mask, expected_mask)
         np.testing.assert_array_equal(first.canary_indices, second.canary_indices)
         np.testing.assert_array_equal(first._in_mask, second._in_mask)
+
+    def test_coin_flip_ignores_unrelated_global_numpy_draws(self):
+        dataset = list(range(100))
+        expected = auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+
+        np.random.seed(99)
+        np.random.random(1000)
+        actual = auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+
+        np.testing.assert_array_equal(actual.canary_indices, expected.canary_indices)
+        np.testing.assert_array_equal(actual._in_mask, expected._in_mask)
 
 
 class TestScoreIdentifierJoin:
