@@ -169,7 +169,8 @@ exclude:
       - packages/opaque-engine/src/opaque/api/engine/clipping
       - packages/opaque-engine/src/opaque/api/engine/functional
       - packages/opaque-engine/src/opaque/api/engine/random
-      - packages/opaque-kernels/src/opaque/api/patches
+      - packages/opaque-kernels/src/opaque/api/kernels
+      - packages/opaque-transformers/src/opaque/api/transformers/patches
 
 # Resolve every workspace package so inspections, vulnerability checks, license
 # audit, and SBOM generation see the same dependency graph as CI.
