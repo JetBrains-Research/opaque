@@ -9,6 +9,7 @@ import pytest
 # TRL is the optional ``opaque[trl]`` extra. Skip the entire module when
 # unavailable so test runs without ``trl`` installed don't error out.
 trl = pytest.importorskip("trl")
+_SFT_FIELDS = trl.SFTConfig.__dataclass_fields__
 
 from opaque.transformers.trl import SFTConfig  # noqa: E402
 
@@ -115,6 +116,10 @@ def test_reject_packing(tmp_path):
         )
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _SFT_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
     """A deliberately set MoE aux-loss coefficient converts, loudly, to no-op.
 
@@ -132,6 +137,10 @@ def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
     assert cfg is not None
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _SFT_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
     """TRL's own non-zero default is not a user request, so it warns about nothing.
 
@@ -150,6 +159,10 @@ def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _SFT_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
     """Asking for no aux loss gets no aux loss, so there is nothing to warn about.
 
@@ -167,6 +180,10 @@ def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
+@pytest.mark.skipif(
+    "trust_remote_code" not in _SFT_FIELDS,
+    reason="TRL does not expose trust_remote_code",
+)
 def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):
     cfg = SFTConfig.from_trl(
         _trl_args(

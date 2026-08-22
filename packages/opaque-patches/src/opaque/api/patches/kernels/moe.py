@@ -33,7 +33,14 @@ except ImportError:
 
 
 def _route_weights(top_k_index, top_k_weights, num_experts):
-    """(.., K) routing -> (.., E) dense per-expert weight (0 for unrouted)."""
+    """Return dense ``(.., E)`` per-expert routing weights.
+
+    Transformers families expose either the top-k weights selected by the
+    router or an already-dense expert-weight vector. Normalize both forms for
+    the shared MoE kernel.
+    """
+    if top_k_weights.shape[-1] == num_experts:
+        return top_k_weights
     experts = torch.arange(num_experts, device=top_k_index.device)
     onehot = (top_k_index.unsqueeze(-1) == experts).to(top_k_weights.dtype)
     return (top_k_weights.unsqueeze(-1) * onehot).sum(dim=-2)
@@ -90,9 +97,11 @@ def _moe_backward(grad_out, x, gate_up_proj, down_proj, w_te, batch_dims):
     return dx.to(x.dtype), dgate_up, ddown, dw_te
 
 
-def _dw_te_to_dtw(dw_te, top_k_index, dtype):
-    """Map (.., E) routing-weight grad to (.., K) via the selected experts."""
-    return torch.gather(dw_te, -1, top_k_index.long()).to(dtype)
+def _dw_te_to_dtw(dw_te, top_k_index, top_k_weights):
+    """Restore a dense routing gradient or gather it for top-k routing."""
+    if top_k_weights.shape[-1] == dw_te.shape[-1]:
+        return dw_te.to(top_k_weights.dtype)
+    return torch.gather(dw_te, -1, top_k_index.long()).to(top_k_weights.dtype)
 
 
 class _MoEBackward(torch.autograd.Function):
@@ -108,7 +117,7 @@ class _MoEBackward(torch.autograd.Function):
             dx,
             dgate_up,
             ddown,
-            _dw_te_to_dtw(dw_te, top_k_index, top_k_weights.dtype),
+            _dw_te_to_dtw(dw_te, top_k_index, top_k_weights),
         )
 
     @staticmethod
@@ -127,7 +136,7 @@ class _MoEBackward(torch.autograd.Function):
         dx, dgate_up, ddown, dw_te = _moe_backward(
             grad_out, x, gate_up_proj, down_proj, w_te, batch_dims=1
         )
-        dtw = _dw_te_to_dtw(dw_te, top_k_index, top_k_weights.dtype)
+        dtw = _dw_te_to_dtw(dw_te, top_k_index, top_k_weights)
         # dx/dtw batched at 0 (per-token); dgate_up/ddown batched at 0 (per-sample
         # grads of the shared weights — exactly what DP-SGD needs).
         return (dx, dgate_up, ddown, dtw), (0, 0, 0, 0)

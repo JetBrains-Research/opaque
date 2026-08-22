@@ -125,7 +125,17 @@ def build_moe_model(family, device, attn_impl="sdpa", **config_overrides):
 
     from opaque.patches import apply_model_patches
 
-    mod = importlib.import_module(f"transformers.models.{family}.modeling_{family}")
+    module_path = f"transformers.models.{family}.modeling_{family}"
+    try:
+        mod = importlib.import_module(module_path)
+    except ModuleNotFoundError as error:
+        if error.name in {f"transformers.models.{family}", module_path}:
+            import transformers
+
+            pytest.skip(
+                f"{family} is unavailable in transformers {transformers.__version__}"
+            )
+        raise
     if not any(n.endswith("Experts") for n in dir(mod)):
         import transformers
 

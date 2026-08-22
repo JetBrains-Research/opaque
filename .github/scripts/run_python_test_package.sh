@@ -4,7 +4,6 @@
 set -euo pipefail
 
 : "${ALLOW_EMPTY_TEST_SELECTION:=false}"
-: "${ALLOW_TEST_FAILURE:=false}"
 : "${COVERAGE_FILE:?COVERAGE_FILE must be set}"
 : "${PYTEST_MARKER:?PYTEST_MARKER must be set}"
 : "${REPORT_DURATIONS:=false}"
@@ -44,9 +43,5 @@ if [[ "$status" -eq 5 && "$ALLOW_EMPTY_TEST_SELECTION" == "true" ]]; then
 fi
 if [[ "$status" -ne 5 ]]; then
   printf '%s\n' "$TEST_PATH" >> "$TEST_RESULTS_FILE"
-fi
-if [[ "$ALLOW_TEST_FAILURE" == "true" ]]; then
-  echo "::warning::pytest exited with status $status for $TEST_PATH in this advisory lane."
-  exit 0
 fi
 exit "$status"

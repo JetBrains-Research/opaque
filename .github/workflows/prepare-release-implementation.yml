@@ -315,7 +315,6 @@ jobs:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
     with:
-      allow-test-failure: true
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: minimum
       environment-name: minimum-dependencies
@@ -402,7 +401,6 @@ jobs:
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
     with:
       allow-empty-test-selection: true
-      allow-test-failure: true
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: minimum
       environment-name: cuda-minimum-dependencies
