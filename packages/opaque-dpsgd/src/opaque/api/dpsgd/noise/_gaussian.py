@@ -62,6 +62,14 @@ from opaque.types import (
 if TYPE_CHECKING:
     from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 
+# Root of every key this mechanism derives.  A mechanism's whole key space
+# hangs off one namespaced string, so a caller who hands the same base key to
+# two mechanisms still gets independent noise from each.  Without a root the
+# obvious derivation — ``fold_in(key, step)`` — is what *every* mechanism
+# writes, and two of them drawing from it produce byte-identical noise with
+# nothing to signal it.  See ``docs/reference/rng.md``.
+GAUSSIAN_STREAM_FOLD = "opaque.dpsgd.gaussian"
+
 _SQRT2 = math.sqrt(2.0)
 
 
@@ -70,7 +78,8 @@ class GaussianNoiseState(NoiseState):
     """Immutable state for Gaussian noise generation.
 
     Holds an immutable RNG key for deterministic per-step derivation.
-    Noise for step ``t`` is generated from ``fold_in(_rng_key, t)``.
+    Noise for step ``t`` is generated from
+    ``fold_in(_rng_key, GAUSSIAN_STREAM_FOLD, t)``.
 
     Attributes:
         _step_counter: Number of noise_fn calls made.
@@ -323,14 +332,20 @@ def gaussian_noise(
                 noise_multiplier=resolved_noise_multiplier,
             )
         )
-        # Two independent noise streams; fold-in tags namespace them so they
-        # don't collide with the single-stream key derivation
-        # (``fold_in(_rng_key, _step_counter)``).
+        # Two independent noise streams, both beneath this mechanism's root
+        # so they cannot collide with each other or with the single-stream
+        # derivation (``fold_in(_rng_key, GAUSSIAN_STREAM_FOLD, step)``).
         first_step_key = rng_fold_in(
-            rng_fold_in(st._rng_key, PAIRED_FIRST_STREAM_FOLD), st._step_counter
+            st._rng_key,
+            GAUSSIAN_STREAM_FOLD,
+            PAIRED_FIRST_STREAM_FOLD,
+            st._step_counter,
         )
         second_step_key = rng_fold_in(
-            rng_fold_in(st._rng_key, PAIRED_SECOND_STREAM_FOLD), st._step_counter
+            st._rng_key,
+            GAUSSIAN_STREAM_FOLD,
+            PAIRED_SECOND_STREAM_FOLD,
+            st._step_counter,
         )
         noisy_grads = _add_noise_tree(
             first_clipped.pytree,
@@ -389,7 +404,7 @@ def gaussian_noise(
             )
 
         effective_stddev = _clipped_stddev(grads)
-        step_key = rng_fold_in(st._rng_key, st._step_counter)
+        step_key = rng_fold_in(st._rng_key, GAUSSIAN_STREAM_FOLD, st._step_counter)
         noisy_tree = _add_noise_tree(
             grads.pytree,
             effective_stddev,

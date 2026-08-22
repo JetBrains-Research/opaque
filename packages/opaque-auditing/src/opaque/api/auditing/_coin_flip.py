@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 
 __all__ = ["CanaryScores", "CoinFlip", "canary_scores", "coin_flip"]
 
-_CANARY_SELECTION_DOMAIN = "auditing.canary_selection"
-_COIN_FLIP_DOMAIN = "auditing.coin_flip"
+_CANARY_SELECTION_DOMAIN = "opaque.auditing.canary_selection"
+_COIN_FLIP_DOMAIN = "opaque.auditing.coin_flip"
 
 
 @dataclasses.dataclass(frozen=True)

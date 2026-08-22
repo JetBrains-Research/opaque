@@ -260,7 +260,7 @@ class TestPairedStreamReproducibility:
         )
 
     def test_first_and_second_streams_have_different_noise(self):
-        """fold_in(key, 1) vs fold_in(key, 2) namespacing gives independent streams."""
+        """Paired streams stay independent after namespaced string tags."""
         noise_fn, state = gaussian_noise(
             noise_multiplier=1.0,
             bound=5.0,

@@ -24,6 +24,10 @@ from opaque.types import ClipState, PerGroup, SecondMomentClippingOutput, clippe
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
+# Without a root the obvious derivation — ``fold_in(key, step)`` — is what
+# every mechanism writes.  See ``docs/reference/rng.md``.
+ADAPTIVE_CLIPPING_STREAM_FOLD = "opaque.dpsgd.adaptive_clipping"
+
 
 @dataclass(frozen=True)
 class AdaptiveClippedGradAux(ClippedGradAux):
@@ -106,7 +110,7 @@ def _sample_noisy_clipping_rate(
     fraction_noise_std: float,
 ) -> float:
     """Add DP Gaussian noise to clipping rate using step-folded RNG key."""
-    step_key = fold_in(key, step)
+    step_key = fold_in(key, ADAPTIVE_CLIPPING_STREAM_FOLD, step)
     generator = generator_from_key(step_key)
     noise = torch.randn(1, generator=generator).item() * fraction_noise_std
     return clipping_rate + noise
@@ -495,7 +499,9 @@ def adaptive_clipped_grad(
                     threshold = current_pg.values[gname]
                     rate = per_group_rates.get(gname, 0.0)
 
-                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
+                    group_key = fold_in(
+                        state._rng_key, ADAPTIVE_CLIPPING_STREAM_FOLD, state._step, i
+                    )
                     generator = generator_from_key(group_key)
                     noise = (
                         torch.randn(1, generator=generator).item()
@@ -526,7 +532,9 @@ def adaptive_clipped_grad(
                     rate = nc / max(1.0, float(batch_size))
 
                     # Independent noise per group: fold in both step and group index
-                    group_key = fold_in(fold_in(state._rng_key, state._step), i)
+                    group_key = fold_in(
+                        state._rng_key, ADAPTIVE_CLIPPING_STREAM_FOLD, state._step, i
+                    )
                     generator = generator_from_key(group_key)
                     noise = (
                         torch.randn(1, generator=generator).item()
