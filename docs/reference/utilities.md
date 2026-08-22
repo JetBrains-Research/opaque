@@ -96,3 +96,9 @@ usage in DP-SGD.
     options:
       show_source: true
       heading_level: 3
+
+::: opaque.pytree.types
+    options:
+      show_source: true
+      heading_level: 3
+      members: true

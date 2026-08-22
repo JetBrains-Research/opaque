@@ -265,7 +265,8 @@ synchronization.
 
 Collectives return new values and never require in-place mutation. In
 single-process mode, reductions return an equivalent new native array.
-The table lists what `opaque.distributed` exports; the sync plumbing each
+The table lists the `opaque.distributed` surface, including the
+`gradients` submodule primitive; the sync plumbing each
 subsystem registers behind `sync()` is internal.
 
 | Function | Purpose |
@@ -337,7 +338,7 @@ register the type once:
 from dataclasses import dataclass
 
 from opaque.distributed import register_sync_type, sync_object
-from opaque.random import RngKey
+from opaque.random.types import RngKey
 
 
 @dataclass(frozen=True)

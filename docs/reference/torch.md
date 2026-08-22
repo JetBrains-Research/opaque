@@ -5,7 +5,8 @@ torch-shaped and therefore live in the `opaque-torch` wheel rather than the
 neutral engine. `opaque.torch.functional.make_functional` and
 `opaque.torch.random` are documented with
 [Utilities](utilities.md) and [RNG](rng.md); this page covers the
-distributed, device, and checkpoint-compat surfaces.
+distributed, device, checkpoint-compat, and functional-transform
+introspection surfaces.
 
 ## In-place distributed collectives
 

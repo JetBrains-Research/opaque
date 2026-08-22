@@ -1,6 +1,6 @@
 """Portable, backend-dispatched array operations.
 
-The exported callables are canonical :class:`~opaque.primitive.Primitive`
+The exported callables are canonical :class:`~opaque.primitive.types.Primitive`
 objects.  They accept and return native arrays and dtype objects of the active
 backend; Opaque deliberately does not wrap either.
 """

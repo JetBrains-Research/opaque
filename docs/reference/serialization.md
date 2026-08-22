@@ -101,6 +101,12 @@ types may register handlers with `opaque.serialization.register_serializer`,
 or — when a leaf carries no run state and the template reproduces it —
 declare it inert with `opaque.serialization.register_template_restored`.
 
+::: opaque.serialization.types
+    options:
+        show_source: true
+        heading_level: 3
+        members: true
+
 ::: opaque.serialization
     options:
       show_source: true

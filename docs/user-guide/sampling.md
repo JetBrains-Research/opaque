@@ -488,8 +488,8 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSampler` + `truncated_batch_size` | Bounded above | Weaker than plain Poisson (same `sample_rate`) | Production, stable batch sizes / memory |
-| `RandomAllocationSampler` (`opaque.dpsgd`) | Variable (Binomial) | Stronger than Poisson at rate `1/num_bins` | DP-SGD, whole-epoch passes |
-| `CyclicPoissonSampler` (`opaque.dpftrl`) | Variable | `dpftrl_acc.poisson` | DP-FTRL; identity MF → `bands=1`; BandMF → `bands` = strategy |
+| `RandomAllocationSampler` (`opaque.dpsgd.sampling`) | Variable (Binomial) | Stronger than Poisson at rate `1/num_bins` | DP-SGD, whole-epoch passes |
+| `CyclicPoissonSampler` (`opaque.dpftrl.sampling`) | Variable | `dpftrl_acc.poisson` | DP-FTRL; identity MF → `bands=1`; BandMF → `bands` = strategy |
 | `BallsInBinsSampler` | Variable (Binomial) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
