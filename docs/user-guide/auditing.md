@@ -204,6 +204,9 @@ ci = estimate.attack_auc(confidence=0.95, key=key(42))
 print(f"AUC 95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")
 ```
 
+`key` is required when requesting a CI: bootstrap resampling must be
+reproducible and must not depend on global NumPy state.
+
 The `attack_` prefix distinguishes these from the (audit-side) `beta_at`
 that reads the theoretical f-DP β at the inferred μ̂-GDP.
 
