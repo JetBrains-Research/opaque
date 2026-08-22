@@ -117,11 +117,12 @@ k = key(42)
 
 # Nondeterministic (for prototyping)
 k = random_key()  # Uses system entropy
-
-# From torch.Generator
-gen = torch.Generator().manual_seed(42)
-k = RngKey(seed=42)  # Equivalent for reproducible use
 ```
+
+`key()` and `random_key()` are the only supported ways to make a key; the
+`RngKey` dataclass is the type they return, for annotations and `isinstance`.
+To hand a key to Torch, convert in that direction with
+[`generator_from_key`](#generator_from_keyrng_key-rngkey--torchgenerator).
 
 ### Splitting Keys
 

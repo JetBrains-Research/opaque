@@ -239,29 +239,32 @@ loss is the only consumer of the forward output;
 
 ## Profiling
 
-### step_perf + PerfState
+### step_perf + perf_state
 
-Use `step_perf` to measure individual training steps and `PerfState` to
-accumulate throughput statistics across a run.
+Use `step_perf` to measure individual training steps and `perf_state` to
+accumulate throughput statistics across a run. The state is threaded like
+every other Opaque state object: `add` returns a new one.
 
 ```python
-from opaque.profiling import step_perf, print_memory
-from opaque.profiling.types import PerfState
+from opaque.profiling import perf_state, print_memory, step_perf
 
 print_memory(device, "start")
-perf_state = PerfState(device=device)
+state = perf_state(device)
 
 for batch in dataloader:
     with step_perf(device, batch_size=len(batch["input_ids"])) as perf:
         train_step(batch)
         perf.mark("clip")
 
-    perf_state = perf_state.add(perf.result)
-    # e.g., perf.result.step_time_sec, perf.result.memory_peak_gb
+    state = state.add(perf.perf)
+    # e.g., perf.perf.step_time_sec, perf.perf.memory_peak_gb
 
 print_memory(device, "end")
-print(perf_state.to_dict(prefix="train/"))
+print(state.to_dict(prefix="train/"))
 ```
+
+For several named stages (`train` / `eval` / …), `perf_tracker(device)`
+accumulates each one for you.
 
 For one-off memory snapshots, use `print_memory(device, label)`
 or `get_memory_stats(device)`.

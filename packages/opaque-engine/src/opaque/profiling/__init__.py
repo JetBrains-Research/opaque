@@ -10,6 +10,7 @@ checks and type annotations, matching :mod:`opaque.scheduling` and
 from opaque.api.engine.profiling import (
     empty_cache,
     get_memory_stats,
+    perf_state,
     perf_tracker,
     print_memory,
     reset_peak_memory,
@@ -20,6 +21,7 @@ from opaque.profiling import types
 __all__ = [
     "empty_cache",
     "get_memory_stats",
+    "perf_state",
     "perf_tracker",
     "print_memory",
     "reset_peak_memory",

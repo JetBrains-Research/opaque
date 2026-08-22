@@ -451,7 +451,7 @@ proc = dpftrl_acc.poisson(
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
 Uses Monte Carlo PLD accounting. `inner` must be
-`mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
+`mf_gaussian(nm, band_mf_strategy(...))` — strategy coefficients and band width
 are read from `inner.strategy`. `p0` is the per-example participation rate per
 iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
 Control the Monte Carlo budget per query
