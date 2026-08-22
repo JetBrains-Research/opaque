@@ -919,9 +919,14 @@ class DPTrainer:
           seed.  DP-valid either way.
         - **``ignore_data_skip=True``** disables the sampler-state
           restore on resume.  The new run starts each epoch from
-          ``iter_count=0`` with a fresh subsample sequence, again
-          DP-valid; useful when the dataset shape changed since
-          checkpoint write.
+          ``iter_count=0`` with a fresh subsample sequence; useful when
+          the dataset shape changed since checkpoint write.  DP-valid
+          only under ``sampling_mode="poisson"``, where inclusion is an
+          independent Bernoulli draw per step.  Under participation
+          schemas -- ``b_min_sep``, ``balls_in_bins``,
+          ``random_allocation``, ``k_out_of_t`` -- a restarted cursor
+          would spend participations the accounted sensitivity assumes
+          are separated, so construction raises.
         - **Accountant on resume** preserves heterogeneous composition:
           the saved ``Accountant`` is loaded as the *prefix* and
           calibration of the remaining steps targets the original
