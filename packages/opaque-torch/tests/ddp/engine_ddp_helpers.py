@@ -962,12 +962,14 @@ def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) ->
         with pytest.raises(RuntimeError, match="StepPerf presence mismatch"):
             sync_perf_state(state)
 
-        # A field callable that fails after reducing must reduce exactly once,
-        # even when its signature would also accept a single argument.
+        # A field callable that fails after reducing must reduce exactly once.
+        # The TypeError below is raised by the callback body, not by a signature
+        # mismatch, so retrying the call would issue the collective twice and
+        # desynchronise the ranks.
         reductions: list[int] = []
 
-        def _reduce_then_fail(value: int, device: torch.device | None = None) -> int:
-            reductions.append(reduce_scalar(value, op="sum", device=device))
+        def _reduce_then_fail(value: int) -> int:
+            reductions.append(reduce_scalar(value, op="sum"))
             raise TypeError("field callable failed after a collective")
 
         with pytest.raises(TypeError, match="failed after a collective"):
