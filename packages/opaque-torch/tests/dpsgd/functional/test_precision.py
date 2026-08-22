@@ -177,7 +177,7 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
     optimizer_step, opt_state = adamw(params, lr=1e-2)
     updates, _ = optimizer_step(noised, opt_state, params=params)
     new_params = apply_updates(params, updates)
-    return grads, new_params
+    return grads.pytree, new_params
 
 
 @pytest.mark.cuda
