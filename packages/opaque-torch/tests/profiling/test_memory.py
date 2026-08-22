@@ -7,8 +7,8 @@ across different devices (CUDA, MPS, CPU).
 import pytest
 import torch
 
-from opaque.profiling import PerfState, StepPerf, get_memory_stats, step_perf
-from opaque.profiling.types import MemoryStats
+from opaque.profiling import get_memory_stats, step_perf
+from opaque.profiling.types import MemoryStats, PerfState, StepPerf
 
 # Test on available devices
 DEVICES = ["cpu"]

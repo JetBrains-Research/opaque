@@ -44,7 +44,7 @@ backend = active_backend()      # the active backend, or None
 
 ## Identity and errors
 
-::: opaque.backend.KnownBackend
+::: opaque.backend.types.KnownBackend
     options:
         show_source: true
         heading_level: 3
@@ -76,7 +76,8 @@ and register an implementation per backend. The declaring code stays neutral;
 dispatch resolves the implementation from the active backend.
 
 ```python
-from opaque.primitive import BackendProvider, primitive
+from opaque.primitive import primitive
+from opaque.primitive.types import BackendProvider
 
 
 @primitive
@@ -141,16 +142,16 @@ work.
         show_source: true
         heading_level: 3
 
-::: opaque.primitive.Primitive
+::: opaque.primitive.types.Primitive
     options:
         show_source: false
         heading_level: 3
 
-::: opaque.primitive.PrimitiveTier
+::: opaque.primitive.types.PrimitiveTier
     options:
         heading_level: 3
 
-::: opaque.primitive.BackendProvider
+::: opaque.primitive.types.BackendProvider
     options:
         show_source: false
         heading_level: 3

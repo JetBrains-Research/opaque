@@ -256,7 +256,7 @@ def poisson(
     examples.
 
     Args:
-        inner: ``mf_gaussian(nm, BandMfStrategy(...))`` or
+        inner: ``mf_gaussian(nm, band_mf_strategy(...))`` or
             ``mf_gaussian(nm, identity_strategy())``.
         sample_rate: Per-step Poisson sampling probability ``∈ (0, 1]``.
         n_steps: Total number of training rounds.  For ``BandMfStrategy``

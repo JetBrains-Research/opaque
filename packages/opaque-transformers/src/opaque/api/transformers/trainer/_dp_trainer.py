@@ -49,7 +49,7 @@ from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad, clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import apply_updates
-from opaque.profiling import PerfTracker, perf_tracker
+from opaque.profiling import perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
     from_state_dict as opaque_from_state_dict,
@@ -81,6 +81,7 @@ from transformers.trainer_utils import (
 from transformers.utils import find_labels
 
 if TYPE_CHECKING:
+    from opaque.profiling.types import PerfTracker
     from opaque.random.types import RngKey
 from . import _checkpoint as ckpt
 from . import _distributed, _dpftrl, _eval, _hub

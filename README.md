@@ -33,7 +33,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
 | `opaque-engine` | `opaque.{types,pytree,random,backend,ops,autodiff,distributed,scheduling,profiling,optimizers,...}` | Torch-free substrate: dispatched primitives and backend registry, pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, backend-neutral optimizer rules, schedules + warmup, distributed helpers, profiler |
-| `opaque-torch` | `opaque.torch.{functional,random,distributed,device,checkpoint}` | PyTorch provider: Torch implementations of the engine's primitives, `make_functional`, torch RNG bridges, in-place DDP collectives, checkpoint compat |
+| `opaque-torch` | `opaque.torch.{functional,random,distributed,device,checkpoint,transforms}` | PyTorch provider: Torch implementations of the engine's primitives, `make_functional`, torch RNG bridges, in-place DDP collectives, checkpoint compat |
 | `opaque-optimizers` | `opaque.optimizers` | Facade over the engine's backend-neutral optimizer factories (DP-aware AdamW-BC and friends) |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |

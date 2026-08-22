@@ -254,7 +254,7 @@ def test_unknown_backend_name_is_rejected_without_activation() -> None:
 
 
 def test_facade_reexports_complete_lifecycle_surface() -> None:
-    assert facade.KnownBackend is KnownBackend
+    assert facade.types.KnownBackend is KnownBackend
     assert facade.ensure_backend is ensure_backend
     assert facade.clear_backend is clear_backend
     assert facade.active_backend is active_backend

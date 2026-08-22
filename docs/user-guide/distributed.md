@@ -147,13 +147,16 @@ grads = dist_utils.sum_gradients(grads)
 This sums the clipped gradient contributions from all devices. After this
 call, every rank holds the same total clipped gradient sum in `grads`.
 
-For more general reductions, use:
+For more general reductions, reach for the `gradients` submodule, which owns
+the lower-level primitive:
 
-- `reduce_pytree(pytree, op)` to return a reduced pytree
+- `gradients.reduce_pytree(pytree, op)` to return a reduced pytree
 - `sum_gradients(grads)` for a DP-specific sum
 
 ```python
-avg_grads = dist_utils.reduce_pytree(grads, op="mean")
+from opaque.distributed import gradients
+
+avg_grads = gradients.reduce_pytree(grads, op="mean")
 summed_grads = dist_utils.sum_gradients(grads)
 ```
 
@@ -262,7 +265,8 @@ synchronization.
 
 Collectives return new values and never require in-place mutation. In
 single-process mode, reductions return an equivalent new native array.
-The table lists what `opaque.distributed` exports; the sync plumbing each
+The table lists the `opaque.distributed` surface, including the
+`gradients` submodule primitive; the sync plumbing each
 subsystem registers behind `sync()` is internal.
 
 | Function | Purpose |
@@ -273,7 +277,7 @@ subsystem registers behind `sync()` is internal.
 | `is_main_process()` | `True` on rank 0, and always `True` if not distributed |
 | `local_shard(dataset, rank=, world_size=)` | This rank's contiguous `DatasetShard` view of a sequence; copies nothing |
 | `sum_gradients(grads)` | Return a summed gradient PyTree |
-| `reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
+| `gradients.reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Return a Python float or integer reduced across ranks |
 | `all_reduce(value, op)` | Return an all-reduced native array without mutation |
 | `gather_pytree(pytree)` | Gather and concatenate native-array leaves of a PyTree |
@@ -334,7 +338,7 @@ register the type once:
 from dataclasses import dataclass
 
 from opaque.distributed import register_sync_type, sync_object
-from opaque.random import RngKey
+from opaque.random.types import RngKey
 
 
 @dataclass(frozen=True)

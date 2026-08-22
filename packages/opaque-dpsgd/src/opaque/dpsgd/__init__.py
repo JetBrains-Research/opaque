@@ -12,7 +12,9 @@ DP bias-correction and private second-moment paths) live in
 Clipping state and aux types (including ``AdaptiveClipState``,
 ``AdaptiveClippedGradAux``, and AUTO-S types) live in
 :mod:`opaque.dpsgd.clipping.types`.  ``GaussianNoiseState`` lives in
-:mod:`opaque.dpsgd.noise.types`.
+:mod:`opaque.dpsgd.noise.types`.  The samplers —
+``PoissonSampler``, ``RandomAllocationSampler``, ``KOutOfTSampler`` —
+are reached through :mod:`opaque.dpsgd.sampling`, which owns all three.
 
 The :mod:`opaque.dpsgd.accounting` subpackage (DP-SGD-specific privacy
 accounting factories, requires ``opaque-accounting``) is **lazy-imported**:
@@ -35,7 +37,6 @@ from opaque.dpsgd.clipping import (
     per_group,
 )
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpsgd.sampling import PoissonSampler
 
 if TYPE_CHECKING:
     # Static type checkers see ``accounting`` as a real attribute; at
@@ -78,6 +79,4 @@ __all__ = [
     "per_group",
     # Noise mechanisms
     "gaussian_noise",
-    # Sampling
-    "PoissonSampler",
 ]

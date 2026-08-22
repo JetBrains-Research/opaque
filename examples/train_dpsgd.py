@@ -81,7 +81,7 @@ from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
 from opaque.distributed.gradients import sum_gradients
-from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise, noise_stddev
 from opaque.profiling import (
     perf_tracker,
     print_memory,
@@ -105,7 +105,6 @@ from opaque.scheduling import (
 )
 from opaque.scheduling.types import Schedule
 from opaque.types import (
-    ClippedPytree,
     PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
@@ -147,15 +146,6 @@ def _compile_grad_fn(grad_fn, *, backend, mode):
 def _effective(value):
     """Extract scalar from float or PerGroup for logging/printing."""
     return value.effective if isinstance(value, PerGroup) else value
-
-
-def _noise_stddev(max_norm, noise_multiplier, *, per_group=True):
-    """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if per_group and isinstance(max_norm, PerGroup):
-        return ClippedPytree(pytree={}, max_norm=max_norm).noise_stddev_for(
-            noise_multiplier=noise_multiplier
-        )
-    return noise_multiplier * max_norm
 
 
 def _step_clip_norm(grads_tuple):
@@ -1841,7 +1831,9 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = _noise_stddev(initial_bound, noise_multiplier)
+    initial_noise_std = noise_stddev(
+        initial_bound, noise_multiplier=noise_multiplier
+    )
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
@@ -1913,7 +1905,7 @@ def main():
 
                 step_clip_norm = _step_clip_norm(grads_tuple)
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
-                noise_stddev = _step_noise_stddev(noisy_grads)
+                step_noise_std = _step_noise_stddev(noisy_grads)
                 if is_ddp:
                     noise_state = sync(noise_state)
                 sp.mark("noise")
@@ -1956,7 +1948,7 @@ def main():
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
-                        "train/noise_std": _effective(noise_stddev),
+                        "train/noise_std": _effective(step_noise_std),
                         "train/lr": current_lr,
                         **tracker.train.last.to_dict(prefix="train/"),
                     }
@@ -1975,9 +1967,9 @@ def main():
                             wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                                 1.0, float(batch_size)
                             )
-                            if isinstance(noise_stddev, PerGroup):
+                            if isinstance(step_noise_std, PerGroup):
                                 wb_metrics[f"group/noise_std/{gname}"] = (
-                                    noise_stddev.values[gname]
+                                    step_noise_std.values[gname]
                                 )
                     wandb.log(wb_metrics, step=global_step)
 
@@ -1988,7 +1980,7 @@ def main():
                     f"Loss: {avg_loss:.4f} | "
                     f"Clip: norm={_effective(step_clip_norm):.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
-                    f"Noise: σ={_effective(noise_stddev):.4f} | "
+                    f"Noise: σ={_effective(step_noise_std):.4f} | "
                     f"Time: {last.step_time_sec:.2f}s | Mem: "
                     f"{f'{last.memory_peak_gb:.1f}GB' if last.memory_peak_gb is not None else 'n/a'}"
                 )

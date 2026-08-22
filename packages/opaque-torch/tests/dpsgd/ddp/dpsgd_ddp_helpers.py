@@ -560,7 +560,7 @@ def _shared_clipped() -> dict[str, torch.Tensor]:
 
 
 def _worker_summed_noise_scaling_gloo(rank: int, world_size: int, port: int) -> None:
-    """Pin the two aggregation regimes `reduce_pytree`'s metadata cannot tell apart.
+    """Pin the two aggregation regimes `gradients.reduce_pytree`'s metadata cannot tell apart.
 
     ``gradients.py`` states that summing noised local queries scales
     ``noise_stddev`` by ``sqrt(world_size)``.  That holds only when the summands
@@ -575,7 +575,7 @@ def _worker_summed_noise_scaling_gloo(rank: int, world_size: int, port: int) -> 
     """
     import pytest
 
-    from opaque.distributed import reduce_pytree
+    from opaque.distributed.gradients import reduce_pytree
     from opaque.random import fold_in
 
     _setup_gloo(rank, world_size, port)

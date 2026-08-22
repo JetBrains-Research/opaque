@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from opaque.torch import under_functorch_transform
+from opaque.torch.transforms import under_functorch_transform
 
 logger = logging.getLogger(__name__)
 

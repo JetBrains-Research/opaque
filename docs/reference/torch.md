@@ -5,7 +5,8 @@ torch-shaped and therefore live in the `opaque-torch` wheel rather than the
 neutral engine. `opaque.torch.functional.make_functional` and
 `opaque.torch.random` are documented with
 [Utilities](utilities.md) and [RNG](rng.md); this page covers the
-distributed, device, and checkpoint-compat surfaces.
+distributed, device, checkpoint-compat, and functional-transform
+introspection surfaces.
 
 ## In-place distributed collectives
 
@@ -35,7 +36,7 @@ in-place variants DDP training loops use to avoid re-allocating gradients.
         show_source: true
         heading_level: 3
 
-::: opaque.torch.device.DeviceCapabilities
+::: opaque.torch.device.types.DeviceCapabilities
     options:
         heading_level: 3
 
@@ -66,3 +67,13 @@ runtime patches of their own, so a caller makes a single call.
         heading_level: 3
         members: true
         filters: ["!^_"]
+
+## Functional-transform introspection
+
+A patch that must behave differently inside a `torch.func` transform asks
+here rather than probing `torch._C._functorch` itself.
+
+::: opaque.torch.transforms.under_functorch_transform
+    options:
+        show_source: true
+        heading_level: 3

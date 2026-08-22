@@ -12,6 +12,9 @@ Algorithm-specific factories live in their respective packages
   ``bsr``, ``lambda_cgd``, ``identity_mf``, ``poisson``, ``b_min_sep``,
   ``balls_in_bins``.
 
+Process, budget, and result dataclasses live in
+:mod:`opaque.accounting.types`.
+
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
 Rust crate (PyO3 bindings).
 
@@ -25,6 +28,7 @@ Example (requires ``opaque-dpsgd`` in the environment)::
     epsilon = training.epsilon_at(1e-5)
 """
 
+from opaque.accounting import types
 from opaque.api.accounting.core import (
     Accountant,
     __version__,
@@ -81,4 +85,6 @@ __all__ = [
     "risk_budget",
     "register_budget_serializer",
     "calibrate",
+    # Types
+    "types",
 ]

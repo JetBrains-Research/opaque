@@ -1,7 +1,10 @@
-"""Backend-dispatched pytree operations and structural helpers."""
+"""Backend-dispatched pytree operations and structural helpers.
+
+The ``ParamPath`` alias :func:`param_path` returns lives in
+:mod:`opaque.pytree.types`.
+"""
 
 from opaque.api.engine.pytree import (
-    ParamPath,
     global_norm,
     merge,
     param_path,
@@ -15,9 +18,9 @@ from opaque.api.engine.pytree import (
     tree_structure,
     tree_unflatten,
 )
+from opaque.pytree import types
 
 __all__ = [
-    "ParamPath",
     "global_norm",
     "merge",
     "param_path",
@@ -30,4 +33,5 @@ __all__ = [
     "tree_map_with_path",
     "tree_structure",
     "tree_unflatten",
+    "types",
 ]

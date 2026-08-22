@@ -24,7 +24,8 @@ import pytest
 import torch
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
-from opaque.precision import LossScaler, LossScalerState, all_finite, loss_scaler
+from opaque.precision import all_finite, loss_scaler
+from opaque.precision.types import LossScaler, LossScalerState
 from opaque.types import NoisedPytree, SecondMomentClippingOutput, clipped
 
 _CLIP = 1.0

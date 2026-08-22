@@ -7,6 +7,7 @@ from opaque.api.engine.random import (
     random_key,
     split,
 )
+from opaque.random import types
 
 __all__ = [
     "fold_in",
@@ -14,4 +15,5 @@ __all__ = [
     "normal",
     "random_key",
     "split",
+    "types",
 ]

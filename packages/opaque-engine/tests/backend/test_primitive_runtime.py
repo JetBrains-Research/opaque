@@ -232,9 +232,9 @@ def test_primitive_facade_is_reexport_only() -> None:
     declaration from outside Opaque makes every shipped provider incomplete —
     so it is checked there rather than through the facade.
     """
-    assert facade.Primitive is Primitive
+    assert facade.types.Primitive is Primitive
     assert facade.primitive is primitive
-    assert facade.BackendProvider is BackendProvider
+    assert facade.types.BackendProvider is BackendProvider
     assert core_profile().version == CORE_PROFILE_VERSION
     assert tuple(CORE_PRIMITIVES) == core_profile().primitives
 

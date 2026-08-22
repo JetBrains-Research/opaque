@@ -536,6 +536,31 @@ class PerfState:
         )
 
 
+def perf_state(device: Any) -> PerfState:
+    """Create an empty throughput accumulator for a run.
+
+    The counterpart of :func:`perf_tracker` for code that accumulates a
+    single stage by hand: thread the returned state through
+    :meth:`PerfState.add` after each step, the way every other Opaque
+    state object is threaded.
+
+    Args:
+        device: Device the run executes on, carried so
+            :func:`opaque.distributed.sync` can reduce the state across
+            ranks.
+
+    Returns:
+        A zeroed :class:`PerfState`.
+
+    Example:
+        >>> state = perf_state(device)
+        >>> with step_perf(device, batch_size=32) as perf:
+        ...     train_step(batch)
+        >>> state = state.add(perf.perf)
+    """
+    return PerfState(device=device)
+
+
 _STAGE_SHORTCUTS = frozenset({"train", "eval", "test"})
 
 

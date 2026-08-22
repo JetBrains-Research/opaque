@@ -71,7 +71,7 @@ class PerGroup:
     of a plain product.
 
     Attributes:
-        groups: Read-only mapping from :data:`~opaque.pytree.ParamPath`
+        groups: Read-only mapping from :data:`~opaque.pytree.types.ParamPath`
             (optree leaf path) to group name.  Flat ``named_parameters`` keys
             are stored as one-segment paths ``(name,)``; nested trees use
             multi-segment paths such as ``("layer", "weight")``.  A bare
@@ -136,7 +136,7 @@ class PerGroup:
         return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})
 
     def for_path(self, path: ParamPath | str) -> float:
-        """Look up the per-group value for a leaf :data:`~opaque.pytree.ParamPath`."""
+        """Look up the per-group value for a leaf :data:`~opaque.pytree.types.ParamPath`."""
         from opaque.api.engine.pytree import param_path
 
         return self.values[self.groups[param_path(path)]]
@@ -253,6 +253,10 @@ class ClippedPytree:
     ) -> float | PerGroup:
         """Noise standard deviation that ``gaussian(noise_multiplier)`` would apply.
 
+        Bound form of :func:`opaque.dpsgd.noise.noise_stddev`, which is the
+        same computation taken as a free function for callers who hold a
+        contribution bound but no clipped pytree.
+
         Named ``noise_stddev_for`` rather than ``noise_stddev`` to leave the
         ``noise_stddev`` slot free for the realised-stddev *field* on the
         :class:`NoisedPytree` subclass — a method on the parent and a field
@@ -287,23 +291,15 @@ class ClippedPytree:
             ValueError: ``noise_multiplier`` negative, ``allocation`` unknown,
                 or any per-group bound negative.
         """
-        if noise_multiplier < 0:
-            raise ValueError(
-                f"noise_multiplier must be non-negative, got {noise_multiplier}"
-            )
-        if allocation not in ("isotropic", "optimal"):
-            raise ValueError(
-                f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
-            )
-        if isinstance(self.max_norm, PerGroup):
-            if allocation == "isotropic":
-                return noise_multiplier * self.max_norm.effective
-            # Local import: ``opaque.api.engine.noise_allocation`` imports these types at
-            # module load; importing it at ``types`` import time would cycle.
-            from opaque.api.engine.noise_allocation import per_group_noise_stddev
+        # Local import: ``opaque.api.engine.noise_allocation`` imports these types
+        # at module load; importing it at ``types`` import time would cycle.
+        from opaque.api.engine.noise_allocation import noise_stddev
 
-            return per_group_noise_stddev(self.max_norm, noise_multiplier)
-        return noise_multiplier * float(self.max_norm)
+        return noise_stddev(
+            self.max_norm,
+            noise_multiplier=noise_multiplier,
+            allocation=allocation,
+        )
 
     def _scaled(self, scalar: float) -> ClippedPytree:
         return replace(

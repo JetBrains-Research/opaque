@@ -65,7 +65,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Sampling](sampling.md)** — Privacy-amplifying sampling
   - `PoissonSampler` — Standard Poisson sampling
   - `PoissonSampler` + `truncated_batch_size` — Bounded Poisson sampling
-  - `CyclicPoissonSampler` (`opaque.dpftrl`) — Cyclic Poisson over `bands` groups; `bands=1` = identity (full-data Poisson each step)
+  - `CyclicPoissonSampler` (`opaque.dpftrl.sampling`) — Cyclic Poisson over `bands` groups; `bands=1` = identity (full-data Poisson each step)
   - `BallsInBinsSampler` — Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` — Deterministic sequential batching (BLT)
 
@@ -88,7 +88,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Distributed](distributed.md)** — Multi-GPU training with DDP
   - `sum_gradients()` — Return-based DP gradient summation
   - `all_reduce()` — Generic tensor all-reduce (sum, mean, max, min)
-  - `reduce_pytree()` — Return-based generic PyTree reduction
+  - `gradients.reduce_pytree()` — Return-based generic PyTree reduction
   - `sync()` — Auto-dispatch sync for any state/aux type
   - `local_shard()` — Partition a dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` — Distributed utilities
@@ -202,7 +202,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `lambda_cgd()`           | DP-λCGD mechanism                 | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `bisr()`                 | BISR mechanism                    | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `balls_in_bins()`        | Balls-in-Bins amplification       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `poisson()` (`opaque.dpftrl`) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
+| `poisson()` (`opaque.dpftrl.sampling`) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
 
 ### Accounting (Composition & Metrics)
 
@@ -233,7 +233,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|----------------------------|---------------------------------------------------------------|
 | `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `PoissonSampler` (with `truncated_batch_size`) | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `CyclicPoissonSampler` (`opaque.dpftrl`) | Cyclic Poisson over `bands` groups; `bands=1` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler` (`opaque.dpftrl.sampling`) | Cyclic Poisson over `bands` groups; `bands=1` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |
 
@@ -282,7 +282,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |------------------------|-----------------------------|--------------------------------------------|
 | `sum_gradients()` | Return-based DP gradient summation | [Guide](../user-guide/distributed.md) |
 | `all_reduce()`         | Generic tensor all-reduce (sum, mean, max, min) | [Guide](../user-guide/distributed.md) |
-| `reduce_pytree()` | Return-based generic PyTree reduction | [Guide](../user-guide/distributed.md) |
+| `gradients.reduce_pytree()` | Return-based generic PyTree reduction | [Guide](../user-guide/distributed.md) |
 | `sync()`               | Auto-dispatch sync for any state/aux type | [Guide](../user-guide/distributed.md) |
 | `local_shard()`        | Partition dataset for DDP training | [Guide](../user-guide/distributed.md) |
 | `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |

@@ -25,7 +25,6 @@ from opaque.scheduling import (
     with_restarts,
     with_warmup,
 )
-from opaque.scheduling.types import CosineSchedule
 from transformers.trainer_utils import SchedulerType
 
 if TYPE_CHECKING:
@@ -206,14 +205,11 @@ def build_lr_schedule(
         # boundaries at ``k * decay_steps / cycles`` and the inner half-cosine
         # must span the *same* fractional length, else (for non-divisible
         # ``decay_steps``) the cosine bottoms out early and the cycle shapes
-        # drift from HF's fractional-progress formula.  ``cosine_schedule``'s
-        # factory truncates ``transition_steps`` to int, so build the inner
-        # ``CosineSchedule`` directly to preserve the fractional span.
-        cycle_length = decay_steps / cycles
-        inner = CosineSchedule(
-            init_value=float(base_lr),
-            end_value=0.0,
-            transition_steps=cycle_length,
+        # drift from HF's fractional-progress formula.
+        inner = cosine_schedule(
+            base_lr,
+            0.0,
+            decay_steps / cycles,
             num_cycles=0.5,
         )
         decay = with_restarts(

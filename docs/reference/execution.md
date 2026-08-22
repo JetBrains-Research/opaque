@@ -2,7 +2,7 @@
 
 Optional, backend-dispatched execution transforms. They are not part of the
 portable core profile: a provider registers them separately, and callers
-discover support through `ExecutionProfile`.
+discover support through `opaque.execution.types.ExecutionProfile`.
 
 ```python
 from opaque.execution import compile, checkpoint, optimize_saved_activations
@@ -37,12 +37,12 @@ composition order, and examples.
 
 ## Capability discovery
 
-::: opaque.execution.ExecutionProfile
+::: opaque.execution.types.ExecutionProfile
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.execution.ExecutionProfileSnapshot
+::: opaque.execution.types.ExecutionProfileSnapshot
     options:
         show_source: true
         heading_level: 3
@@ -57,5 +57,5 @@ composition order, and examples.
         show_source: true
         heading_level: 3
 
-`EXECUTION_PROFILE_VERSION` is the current version of the profile contract and
-is carried in every `ExecutionProfileSnapshot`.
+`opaque.execution.types.EXECUTION_PROFILE_VERSION` is the current version of the
+profile contract and is carried in every `ExecutionProfileSnapshot`.

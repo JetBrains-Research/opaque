@@ -45,6 +45,7 @@ from opaque.api.accounting.dpsgd import (
     poisson,
     random_allocation,
 )
+from opaque.dpsgd.accounting import types
 
 __all__ = [
     "adaclip",
@@ -53,4 +54,5 @@ __all__ = [
     "parallel_poisson",
     "poisson",
     "random_allocation",
+    "types",
 ]
