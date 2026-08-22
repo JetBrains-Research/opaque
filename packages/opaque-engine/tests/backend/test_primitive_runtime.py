@@ -24,6 +24,7 @@ from opaque.api.engine.primitive import (
     BackendProvider,
     DuplicatePrimitiveRegistrationError,
     IncompleteBackendError,
+    InvalidPrimitiveRegistrationError,
     Primitive,
     PrimitiveTier,
     UnsupportedPrimitiveError,
@@ -236,3 +237,75 @@ def test_primitive_facade_is_reexport_only() -> None:
     assert facade.BackendProvider is BackendProvider
     assert core_profile().version == CORE_PROFILE_VERSION
     assert tuple(CORE_PRIMITIVES) == core_profile().primitives
+
+
+def test_neutral_primitive_answers_an_unselected_context_from_its_declaration() -> None:
+    """The case that keeps capability probes out of calling code.
+
+    Callers of an operation with a correct backend-free answer should make
+    the call, not select a backend to ask whether they may.
+    """
+
+    @primitive(name="test.runtime.neutral-unselected", neutral=True)
+    def probe(value: object) -> str:
+        return f"neutral:{value}"
+
+    clear_backend()
+
+    assert probe("x") == "neutral:x"
+    # Answering neutrally is not a selection: nothing was activated to say
+    # "no provider owns this".
+    assert active_backend() is None
+
+
+def test_neutral_primitive_prefers_the_active_backend_implementation() -> None:
+    @primitive(name="test.runtime.neutral-registered", neutral=True)
+    def probe(value: object) -> str:
+        return f"neutral:{value}"
+
+    probe.register("neutral-registered", lambda value: f"provider:{value}")
+
+    with use_backend(_complete_backend("neutral-registered")):
+        assert probe("x") == "provider:x"
+
+
+def test_neutral_primitive_covers_a_backend_that_registered_nothing() -> None:
+    """Support and resolution stay about registrations; the call degrades."""
+
+    @primitive(name="test.runtime.neutral-unregistered", neutral=True)
+    def probe(value: object) -> str:
+        return f"neutral:{value}"
+
+    backend = _complete_backend("neutral-unregistered")
+
+    with use_backend(backend):
+        assert not probe.supports()
+        assert probe("x") == "neutral:x"
+        with pytest.raises(UnsupportedPrimitiveError) as error:
+            probe.resolve()
+
+    assert error.value.primitive_name == "test.runtime.neutral-unregistered"
+
+
+def test_a_primitive_without_a_neutral_default_still_fails_closed() -> None:
+    """Neutrality is opt-in: an unimplemented capability must still raise."""
+
+    @primitive(name="test.runtime.neutral-absent")
+    def probe(value: object) -> str:
+        raise NotImplementedError
+
+    backend = _complete_backend("neutral-absent")
+
+    with use_backend(backend), pytest.raises(UnsupportedPrimitiveError):
+        probe("x")
+
+    clear_backend()
+    with pytest.raises(BackendNotSelectedError):
+        probe("x")
+
+
+def test_neutral_default_is_part_of_a_primitive_identity() -> None:
+    Primitive("test.runtime.neutral-identity", neutral=True)
+
+    with pytest.raises(InvalidPrimitiveRegistrationError, match="backend-neutral"):
+        Primitive("test.runtime.neutral-identity")

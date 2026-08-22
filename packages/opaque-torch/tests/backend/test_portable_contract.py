@@ -351,3 +351,20 @@ def test_stack_joins_on_a_new_axis_where_concatenate_joins_an_existing_one() -> 
     stacked = ops.stack(parts)
     assert ops.dtype(stacked) is torch.float32
     assert torch.equal(ops.slice_array(stacked, 1), torch.zeros(4))
+
+
+def test_is_array_selects_the_provider_that_owns_its_argument() -> None:
+    """The neutral "did a backend produce this?" test.
+
+    Callers walking a mixed pytree ask this of every leaf, including in
+    contexts that have selected nothing yet, so a leaf belonging to no
+    provider answers instead of raising.
+    """
+    clear_backend()
+
+    assert not ops.is_array(3.0)
+    assert not ops.is_array({"leaf": "metadata"})
+    assert active_backend() is None
+
+    assert ops.is_array(torch.tensor([1.0]))
+    assert active_backend().name == "torch"

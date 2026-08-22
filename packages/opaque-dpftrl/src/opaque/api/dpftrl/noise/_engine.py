@@ -304,6 +304,10 @@ def _matrix_factorization_noise(
         raise ValueError(
             f"n_steps ({n_steps}) does not match execution-plan horizon ({horizon})."
         )
+    # ``ops.float32()`` takes no array to infer a provider from, so the
+    # default compute dtype has to be resolved under a selected backend.
+    # This is the one place the mechanism selects one; every per-step call
+    # below dispatches on the arrays it is handed.
     ensure_backend(grad_template)
     resolved_compute_dtype = _resolve_compute_dtype(compute_dtype)
     state = MFNoiseState(
@@ -322,7 +326,6 @@ def _matrix_factorization_noise(
     ) -> tuple[Any, MFNoiseState]:
         step = st._step_counter
         _check_mf_horizon(step, horizon)
-        ensure_backend(clipped_grads)
         step_key = rng_fold_in(st._rng_key, MF_GAUSSIAN_STREAM_FOLD, "column", step)
         iid_noise = _iid_normal_noise(
             clipped_grads,

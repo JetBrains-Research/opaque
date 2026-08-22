@@ -8,7 +8,13 @@ import pytest
 import torch
 
 from opaque.api.engine import runtime
-from opaque.api.engine.backend import Backend, ensure_backend, use_backend
+from opaque.api.engine.backend import (
+    Backend,
+    active_backend,
+    clear_backend,
+    ensure_backend,
+    use_backend,
+)
 from opaque.api.engine.clipping._clipped_grad import clipped_grad
 from opaque.api.engine.primitive import CORE_PRIMITIVES, UnsupportedPrimitiveError
 from opaque.api.torch.backend._runtime import profiling_trace_scope
@@ -53,14 +59,27 @@ def test_optional_runtime_capabilities_fail_at_the_public_call_site(
     assert error.value.backend_name == backend.name
 
 
-def test_trace_scope_fails_when_requested_by_unsupported_backend() -> None:
+def test_trace_scope_annotates_nothing_on_a_backend_without_a_profiler() -> None:
+    """A missing profiler drops the annotation, it does not fail the call."""
     backend = _CoreOnlyBackend()
 
-    with use_backend(backend), pytest.raises(UnsupportedPrimitiveError) as error:
-        runtime.trace_scope("opaque::clipped_grad")
+    with use_backend(backend):
+        assert not runtime.trace_scope.supports(backend)
+        with runtime.trace_scope("opaque::clipped_grad"):
+            traced = "body ran"
 
-    assert error.value.primitive_name == "opaque.runtime.observability.trace_scope"
-    assert error.value.backend_name == backend.name
+    assert traced == "body ran"
+
+
+def test_trace_scope_annotates_nothing_without_a_selected_backend() -> None:
+    """Annotating is not a reason to select a backend for the caller."""
+    clear_backend()
+
+    with runtime.trace_scope("opaque::clipped_grad"):
+        traced = "body ran"
+
+    assert traced == "body ran"
+    assert active_backend() is None
 
 
 def test_torch_supports_both_named_runtime_profiles() -> None:
@@ -100,16 +119,12 @@ def test_clipped_grad_routes_through_trace_scope(monkeypatch, return_aux) -> Non
     ensure_backend(torch.tensor(0.0))
 
     @contextmanager
-    def trace_scope(label: str):
+    def record_function(label: str):
         events.append(("enter", label))
         yield
         events.append(("exit", label))
 
-    monkeypatch.setattr(
-        runtime.trace_scope,
-        "resolve",
-        lambda backend=None: trace_scope,
-    )
+    monkeypatch.setattr(torch.autograd.profiler, "record_function", record_function)
 
     def loss_fn(param, data):
         return ((param - data) ** 2).mean()

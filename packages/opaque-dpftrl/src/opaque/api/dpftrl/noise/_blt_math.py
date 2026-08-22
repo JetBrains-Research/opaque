@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from opaque.api.engine import ops
-from opaque.api.engine.backend import ensure_backend
 
 from . import (
     _sensitivity as sensitivity,
@@ -89,7 +88,6 @@ class _StreamingMatrixBuilder:
                 else abstract_value.dtype
             )
         else:
-            ensure_backend(abstract_value)
             value_dtype = ops.dtype(abstract_value)
             dtype = ops.float32() if ops.is_low_precision(value_dtype) else value_dtype
         zero = streaming_matrix._zeros_like(abstract_value, dtype=dtype)

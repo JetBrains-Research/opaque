@@ -22,7 +22,6 @@ from scipy.linalg import toeplitz as scipy_toeplitz
 from scipy.optimize import minimize
 
 from opaque.api.engine import ops
-from opaque.api.engine.backend import ensure_backend
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
@@ -317,7 +316,6 @@ def inverse_as_streaming_matrix(
             divisor = streaming_matrix._scalar_like(coef[0], yi)
             if isinstance(yi, np.ndarray):
                 return yi / divisor, state
-            ensure_backend(yi)
             return ops.divide(yi, divisor), state
 
         inner = streaming_matrix._zeros_like(yi)
@@ -332,7 +330,6 @@ def inverse_as_streaming_matrix(
         if isinstance(yi, np.ndarray):
             xi = (yi - inner) / divisor
         else:
-            ensure_backend(yi, inner)
             xi = ops.divide(ops.subtract(yi, inner), divisor)
         return xi, (xi, *state[:-1])
 

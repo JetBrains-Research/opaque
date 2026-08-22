@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from opaque.api.engine import ops, runtime
-from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.clipping._clipped_fun import ClippingStats
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
@@ -414,9 +413,6 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
-        backend = ensure_backend(args, kwargs)
-        if not runtime.trace_scope.supports(backend):
-            return _grad_fn_impl(*args, state=state, **kwargs)
         with runtime.trace_scope("opaque::adaptive_clipped_grad"):
             return _grad_fn_impl(*args, state=state, **kwargs)
 

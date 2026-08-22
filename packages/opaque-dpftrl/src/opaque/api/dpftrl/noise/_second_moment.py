@@ -14,7 +14,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine import runtime
-from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.random import fold_in as rng_fold_in
 from opaque.types import (
@@ -202,15 +201,8 @@ def make_second_moment_mf_noise(
         clipped_input: Any,
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
-        if isinstance(clipped_input, SecondMomentClippingOutput):
-            backend = ensure_backend(
-                clipped_input.grads.pytree,
-                clipped_input.squared_grads.pytree,
-            )
-            if runtime.trace_scope.supports(backend):
-                with runtime.trace_scope("opaque::mf_gaussian_noise"):
-                    return _noise_fn_impl(clipped_input, st)
-        return _noise_fn_impl(clipped_input, st)
+        with runtime.trace_scope("opaque::mf_gaussian_noise"):
+            return _noise_fn_impl(clipped_input, st)
 
     return noise_fn, init_state
 

@@ -236,6 +236,37 @@ Add a new patch to the wheel that owns the module it mutates, and give it an
 idempotency guard on the patched object rather than a module-level flag —
 callers apply the runtime patches more than once.
 
+### Backend selection
+
+Mechanism code does not select or interrogate a backend. Dispatch does:
+calling any primitive infers the provider from the arrays in its arguments
+and activates it. So `ensure_backend(...)` before an `opaque.ops` call is
+redundant, and `ensure_backend(...)` to obtain a backend to pass to
+`.supports(...)` is a capability probe that belongs in the primitive.
+
+An operation with a correct answer that needs no provider — an annotation
+nothing can record, a predicate about the active backend whose answer with
+none active is simply "no" — is declared `@primitive(neutral=True)`, and
+its own body is that answer. Callers then just call it. `supports()` and
+`resolve()` keep reporting registered implementations only, so neutrality
+never hides a
+real capability gap: leave it off wherever a missing implementation means
+the caller asked for something the backend cannot do, so the call raises
+`UnsupportedPrimitiveError` instead of returning a plausible substitute.
+
+`ensure_backend` stays appropriate at an entry point that must run under a
+provider yet takes no array to infer one from — a no-argument primitive
+such as `ops.float32()`, or a distributed query. Name the array type
+(`ensure_backend(torch.Tensor)`) rather than allocating a dummy array.
+
+Dispatch does not re-check the arguments of a call once a backend is
+selected. That is deliberate: the walk is proportional to the pytree and
+would run on every primitive to re-derive an answer fixed for the run, and
+`torch.compile` cannot trace it. A value from another provider therefore
+reaches that provider's implementation and fails there. Where a site must
+genuinely check values against each other, call `ensure_backend(a, b)`
+there — it names the offending backends.
+
 ### Test design
 
 Do not add tests whose only purpose is pinning prose in documentation,

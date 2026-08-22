@@ -8,6 +8,7 @@ distributed, observability, or allocator-specific integrations.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -146,10 +147,17 @@ def peak_memory_trackable(device: object | None = None) -> bool:
     raise NotImplementedError
 
 
-@primitive(name="opaque.runtime.observability.trace_scope")
-def trace_scope(label: str) -> object:
-    """Return a provider-native trace annotation context manager."""
-    raise NotImplementedError
+@primitive(name="opaque.runtime.observability.trace_scope", neutral=True)
+def trace_scope(label: str) -> AbstractContextManager[None]:
+    """Return a context manager annotating its block in a provider trace.
+
+    The declaration is the backend-neutral default: with no backend
+    selected, or under a provider that exposes no native profiler, the
+    block runs unannotated instead of failing. Annotating is never the
+    point of a call, so wrap work in this scope unconditionally rather
+    than pairing it with a ``supports()`` probe.
+    """
+    return nullcontext()
 
 
 class RuntimeProfile(StrEnum):
