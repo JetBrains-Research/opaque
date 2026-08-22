@@ -25,21 +25,31 @@ def test_primitive_facade_exports_the_extension_surface_only() -> None:
     impl path for provider authors inside this repository.
     """
     assert set(primitive.__all__) == {
-        "BackendProvider",
         "DuplicatePrimitiveRegistrationError",
         "IncompleteBackendError",
         "InvalidPrimitiveRegistrationError",
-        "Primitive",
         "PrimitiveError",
-        "PrimitiveTier",
         "UnsupportedPrimitiveError",
         "primitive",
         "registered_backends",
         "supports",
+        "types",
     }
     assert all(
         getattr(primitive, name) is getattr(api_primitive, name)
         for name in primitive.__all__
+        if name != "types"
+    )
+    # The declaration vocabulary is annotated against, not called: it lives
+    # in the sibling ``types`` module, like every other concern's.
+    assert set(primitive.types.__all__) == {
+        "BackendProvider",
+        "Primitive",
+        "PrimitiveTier",
+    }
+    assert all(
+        getattr(primitive.types, name) is getattr(api_primitive, name)
+        for name in primitive.types.__all__
     )
     for provider_only in (
         "CORE_PRIMITIVES",

@@ -12,7 +12,8 @@ noise → optimizer:
 - **Abstract state bases**: ``ClipState`` and ``NoiseState`` —
   markers shared across DP-SGD and DP-FTRL implementations.
 - **Aliases**: ``MaxNorm``, ``NoiseStddev`` — opaque-typed unions
-  used in wrapper metadata fields.
+  used in wrapper metadata fields.  The structural ``ParamPath``
+  alias belongs to its own concern and lives in :mod:`opaque.pytree`.
 - **Factories**: ``clipped()`` and ``noised()`` — manual wrapper
   constructors for callers that already produced privatised values.
 """
@@ -24,7 +25,6 @@ from opaque.api.engine.types import (
     NoisedPytree,
     NoiseState,
     NoiseStddev,
-    ParamPath,
     PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
@@ -40,7 +40,6 @@ __all__ = [
     "NoiseState",
     "NoiseStddev",
     "NoisedPytree",
-    "ParamPath",
     "PerGroup",
     "SecondMomentClippingOutput",
     "SecondMomentNoiseOutput",

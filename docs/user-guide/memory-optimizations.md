@@ -245,7 +245,8 @@ Use `step_perf` to measure individual training steps and `PerfState` to
 accumulate throughput statistics across a run.
 
 ```python
-from opaque.profiling import step_perf, PerfState, print_memory
+from opaque.profiling import step_perf, print_memory
+from opaque.profiling.types import PerfState
 
 print_memory(device, "start")
 perf_state = PerfState(device=device)

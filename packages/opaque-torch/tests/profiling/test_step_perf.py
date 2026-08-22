@@ -6,14 +6,8 @@ import warnings
 import pytest
 import torch
 
-from opaque.profiling import (
-    PerfStage,
-    PerfState,
-    PerfTracker,
-    StepPerf,
-    perf_tracker,
-    step_perf,
-)
+from opaque.profiling import perf_tracker, step_perf
+from opaque.profiling.types import PerfStage, PerfState, PerfTracker, StepPerf
 
 DEVICES = ["cpu"]
 if torch.cuda.is_available():

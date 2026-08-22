@@ -1,9 +1,10 @@
-"""Fused Triton kernels — SwiGLU, GeGLU, RoPE, RMSNorm, fused CE, MoE, LoRA."""
+"""Fused Triton kernels — SwiGLU, GeGLU, RoPE, RMSNorm, fused CE, MoE, LoRA.
+
+The ``ACTIVATION_*`` selector constants ``opaque_lora_mlp`` dispatches on
+live in :mod:`opaque.kernels.types`.
+"""
 
 from opaque.api.kernels import (
-    ACTIVATION_GEGLU_APPROX,
-    ACTIVATION_GEGLU_EXACT,
-    ACTIVATION_SWIGLU,
     opaque_cross_entropy_loss,
     opaque_fused_add_rms_norm,
     opaque_geglu_approx,
@@ -19,11 +20,9 @@ from opaque.api.kernels import (
     opaque_slow_rope,
     opaque_swiglu,
 )
+from opaque.kernels import types
 
 __all__ = [
-    "ACTIVATION_GEGLU_APPROX",
-    "ACTIVATION_GEGLU_EXACT",
-    "ACTIVATION_SWIGLU",
     "opaque_cross_entropy_loss",
     "opaque_fused_add_rms_norm",
     "opaque_geglu_approx",
@@ -38,4 +37,5 @@ __all__ = [
     "opaque_rope_qk",
     "opaque_slow_rope",
     "opaque_swiglu",
+    "types",
 ]

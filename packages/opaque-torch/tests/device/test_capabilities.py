@@ -4,11 +4,11 @@ import pytest
 import torch
 
 from opaque.torch.device import (
-    DeviceCapabilities,
     device_capabilities,
     fused_kernels_available,
     sdpa_autocast_under_vmap_broken,
 )
+from opaque.torch.device.types import DeviceCapabilities
 
 
 class TestDeviceCapabilities:

@@ -24,15 +24,15 @@ A leaf that is neither registered nor a generic container nor a
 primitive raises ``TypeError`` on both save and restore rather than
 being dropped. Declare the genuinely inert ones — vendor structure
 handles and the like — with :func:`register_template_restored`.
+
+The ``Serializer`` protocol and the ``StateDictFn`` /
+``FromStateDictFn`` / ``SerializedState`` aliases a registration is
+written against live in :mod:`opaque.serialization.types`.
 """
 
 from __future__ import annotations
 
 from opaque.api.base.serialization import (
-    FromStateDictFn,
-    SerializedState,
-    Serializer,
-    StateDictFn,
     from_state_dict,
     lookup_serializer,
     register_serializer,
@@ -40,16 +40,14 @@ from opaque.api.base.serialization import (
     resolve_serializer,
     state_dict,
 )
+from opaque.serialization import types
 
 __all__ = [
-    "FromStateDictFn",
-    "SerializedState",
-    "Serializer",
-    "StateDictFn",
     "from_state_dict",
     "lookup_serializer",
     "register_serializer",
     "register_template_restored",
     "resolve_serializer",
     "state_dict",
+    "types",
 ]

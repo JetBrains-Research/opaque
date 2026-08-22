@@ -35,7 +35,7 @@ in-place variants DDP training loops use to avoid re-allocating gradients.
         show_source: true
         heading_level: 3
 
-::: opaque.torch.device.DeviceCapabilities
+::: opaque.torch.device.types.DeviceCapabilities
     options:
         heading_level: 3
 
@@ -66,3 +66,13 @@ runtime patches of their own, so a caller makes a single call.
         heading_level: 3
         members: true
         filters: ["!^_"]
+
+## Functional-transform introspection
+
+A patch that must behave differently inside a `torch.func` transform asks
+here rather than probing `torch._C._functorch` itself.
+
+::: opaque.torch.transforms.under_functorch_transform
+    options:
+        show_source: true
+        heading_level: 3

@@ -1,11 +1,11 @@
-"""HF Transformers compat patches — vmap-safe attention, KV cache, custom-family registry."""
+"""HF Transformers compat patches — vmap-safe attention, KV cache, custom-family registry.
+
+The callable contracts a custom family is written against —
+``FamilyPatchFn``, ``ForwardFactory``, ``ForwardFn``, ``ModelPatchFn``,
+``ModulePatcher`` — live in :mod:`opaque.transformers.patches.types`.
+"""
 
 from opaque.api.transformers.patches.families import (
-    FamilyPatchFn,
-    ForwardFactory,
-    ForwardFn,
-    ModelPatchFn,
-    ModulePatcher,
     apply_transformers_model_patches,
     family_name,
     make_apply_family_patches,
@@ -18,11 +18,6 @@ from opaque.api.transformers.patches.families import (
 )
 
 __all__ = [
-    "FamilyPatchFn",
-    "ForwardFactory",
-    "ForwardFn",
-    "ModelPatchFn",
-    "ModulePatcher",
     "apply_transformers_model_patches",
     "family_name",
     "make_apply_family_patches",

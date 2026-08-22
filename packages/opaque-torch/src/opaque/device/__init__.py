@@ -1,19 +1,50 @@
-"""Transitional facade: ``opaque.device`` moved to ``opaque.torch.device``.
+"""Deprecated alias: ``opaque.device`` moved to :mod:`opaque.torch.device`.
 
-Shipped by the Torch provider wheel while downstream code migrates;
-scheduled for removal once the migration completes.
+Device capabilities are a property of the Torch provider, so the surface
+belongs under ``opaque.torch``, not at the backend-neutral namespace
+root. Every name the module ever exported still resolves here — including
+``DeviceCapabilities``, now at :mod:`opaque.torch.device.types` — each
+with a ``DeprecationWarning`` naming its replacement. The module is
+removed in the next minor release.
 """
 
-from opaque.torch.device import (
-    DeviceCapabilities,
-    device_capabilities,
-    fused_kernels_available,
-    sdpa_autocast_under_vmap_broken,
-)
+from __future__ import annotations
+
+import warnings
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - resolved lazily at runtime
+    from opaque.torch.device import (
+        device_capabilities,
+        fused_kernels_available,
+        sdpa_autocast_under_vmap_broken,
+        types,
+    )
+    from opaque.torch.device.types import DeviceCapabilities
 
 __all__ = [
     "DeviceCapabilities",
     "device_capabilities",
     "fused_kernels_available",
     "sdpa_autocast_under_vmap_broken",
+    "types",
 ]
+
+# Names that moved further than the module itself did.
+_RELOCATED = {"DeviceCapabilities": "opaque.torch.device.types"}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve against ``opaque.torch.device``, warning on every access."""
+    if name not in __all__:
+        raise AttributeError(f"module 'opaque.device' has no attribute {name!r}")
+
+    from importlib import import_module
+
+    target = _RELOCATED.get(name, "opaque.torch.device")
+    warnings.warn(
+        f"opaque.device is deprecated; use {target}.{name} instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return getattr(import_module(target), name)

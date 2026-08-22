@@ -35,9 +35,7 @@ dependencies = [
 # ``__init__``).
 py-modules = [
     "opaque.autodiff",
-    "opaque.execution",
     "opaque.ops",
-    "opaque.primitive",
     "opaque.types",
     "opaque.pytree",
     "opaque.sampling",
@@ -50,6 +48,8 @@ include = [
     "opaque.backend*",
     "opaque.random*",
     "opaque.distributed*",
+    "opaque.execution*",
+    "opaque.primitive*",
     "opaque.functional*",
     "opaque.scheduling*",
     "opaque.profiling*",

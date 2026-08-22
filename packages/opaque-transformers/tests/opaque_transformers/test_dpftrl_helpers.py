@@ -15,12 +15,6 @@ from torch.utils.data import Dataset
 
 from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.transformers.trainer import _dpftrl
-from opaque.dpftrl import (
-    BallsInBinsSampler,
-    BMinSepSampler,
-    CyclicPoissonSampler,
-    SequentialBatchSampler,
-)
 from opaque.dpftrl.noise.types import (
     BandMfStrategy,
     BisrStrategy,
@@ -28,6 +22,12 @@ from opaque.dpftrl.noise.types import (
     BsrStrategy,
     IdentityStrategy,
     LambdaCgdStrategy,
+)
+from opaque.dpftrl.sampling import (
+    BallsInBinsSampler,
+    BMinSepSampler,
+    CyclicPoissonSampler,
+    SequentialBatchSampler,
 )
 from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
 from opaque.random import key

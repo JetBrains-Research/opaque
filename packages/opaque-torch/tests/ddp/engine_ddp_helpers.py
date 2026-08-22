@@ -178,7 +178,8 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
     from opaque.api.engine.distributed._state import reduce_scalar
     from opaque.distributed import sync
-    from opaque.profiling import PerfState, step_perf
+    from opaque.profiling import step_perf
+    from opaque.profiling.types import PerfState
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -435,7 +436,8 @@ def _worker_core_collectives_gloo(rank: int, world_size: int, port: int) -> None
         reduce_pytree,
         sync,
     )
-    from opaque.profiling import PerfState, step_perf
+    from opaque.profiling import step_perf
+    from opaque.profiling.types import PerfState
     from opaque.torch.distributed import all_reduce_
     from opaque.types import ClippedPytree, NoisedPytree, PerGroup
 
@@ -905,7 +907,7 @@ def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) ->
         sync_perf_state,
         sync_perf_tracker,
     )
-    from opaque.profiling import PerfState, PerfTracker, StepPerf
+    from opaque.profiling.types import PerfState, PerfTracker, StepPerf
 
     @dataclass(frozen=True)
     class _CompatibleAux(ClippedGradAux):

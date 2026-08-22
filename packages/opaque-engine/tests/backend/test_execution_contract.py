@@ -204,6 +204,17 @@ def test_deferred_transform_caches_per_backend_and_switches() -> None:
 
 
 def test_execution_facade_exports_match_engine_module() -> None:
-    assert execution_facade.__all__ == execution.__all__
-    for name in execution.__all__:
+    """The transforms sit at the root, the profile vocabulary in ``types``.
+
+    Together the two cover the engine module exactly: nothing the impl
+    publishes is dropped, and nothing is published twice.
+    """
+    root = [name for name in execution_facade.__all__ if name != "types"]
+    assert sorted(root + list(execution_facade.types.__all__)) == sorted(
+        execution.__all__
+    )
+    assert not set(root) & set(execution_facade.types.__all__)
+    for name in root:
         assert getattr(execution_facade, name) is getattr(execution, name)
+    for name in execution_facade.types.__all__:
+        assert getattr(execution_facade.types, name) is getattr(execution, name)

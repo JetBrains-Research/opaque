@@ -22,10 +22,6 @@ from typing import TYPE_CHECKING, Any
 
 from opaque.accounting import per_step
 from opaque.dpftrl import (
-    BallsInBinsSampler,
-    BMinSepSampler,
-    CyclicPoissonSampler,
-    SequentialBatchSampler,
     band_mf_strategy,
     bisr_strategy,
     blt_strategy,
@@ -42,6 +38,12 @@ from opaque.dpftrl.accounting import (
 from opaque.dpftrl.accounting import mf_gaussian
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
+)
+from opaque.dpftrl.sampling import (
+    BallsInBinsSampler,
+    BMinSepSampler,
+    CyclicPoissonSampler,
+    SequentialBatchSampler,
 )
 from opaque.dpsgd.sampling import (
     KOutOfTSampler,

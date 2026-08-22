@@ -8,12 +8,8 @@ import torch
 from opaque.api.engine.autodiff import grad_and_value, vmap
 from opaque.api.engine.backend import active_backend, clear_backend
 from opaque.api.torch.backend import torch_backend
-from opaque.execution import (
-    ExecutionProfile,
-    checkpoint,
-    compile,
-    optimize_saved_activations,
-)
+from opaque.execution import checkpoint, compile, optimize_saved_activations
+from opaque.execution.types import ExecutionProfile
 from opaque.torch.checkpoint import apply_checkpoint_patch
 
 
