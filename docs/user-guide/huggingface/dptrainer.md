@@ -93,6 +93,9 @@ The standard surface from `Trainer` is preserved:
 - `save_model(output_dir=None)` — write weights + tokenizer +
   `training_args.bin` + `accountant.json`.  The accountant always
   travels with the saved model.
+- `save_accountant(output_dir=None)` — write just `accountant.json` and
+  return its path, for building your own final artifact without
+  re-saving the model.
 
 Checkpointing during training is driven by `save_strategy` /
 `save_steps` on `TrainingArguments`; resume from a checkpoint

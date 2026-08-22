@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from opaque.api.dpsgd.noise._gaussian import GaussianNoiseState
 from opaque.api.engine.distributed._state import (
-    assert_scalar_equal,
+    assert_string_equal,
     register_sync_type,
     sync_object,
 )
@@ -23,8 +23,16 @@ _NOISE_STATE_FIELD_OPS: dict[str, str] = {
 
 
 def _assert_rng_key_equal(state: GaussianNoiseState, state_name: str) -> None:
-    """Assert that the RNG key seed matches across ranks."""
-    assert_scalar_equal(int(state._rng_key.seed), name=f"{state_name}.seed")
+    """Assert that the RNG key seed matches across ranks.
+
+    Seeds are canonicalized to unsigned 64-bit, so roughly half of them fall
+    outside the signed ``int64`` domain the scalar reductions use — every
+    ``fold_in``-derived key has even odds of setting the top bit. They are
+    compared as text instead: a seed is opaque identity material rather than a
+    magnitude, and ``assert_string_equal`` costs one ``all_gather_object``
+    against the two reductions ``assert_scalar_equal`` issues.
+    """
+    assert_string_equal(str(state._rng_key.seed), name=f"{state_name}.seed")
 
 
 def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:

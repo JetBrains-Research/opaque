@@ -125,6 +125,7 @@ def test_bf16_optimizer_step_finite_cpu():
         assert torch.isfinite(p).all(), "adamw produced non-finite param update"
 
 
+@pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda required")
 def test_bf16_full_pipeline_cuda():
     """Same end-to-end claim on CUDA (bf16 hardware path)."""
@@ -179,6 +180,7 @@ def _step_simple(model: nn.Module, x: torch.Tensor, y: torch.Tensor):
     return grads, new_params
 
 
+@pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="TF32 is CUDA-only")
 @pytest.mark.usefixtures("_saved_tf32")
 def test_tf32_on_off_parity_within_tolerance():
@@ -202,6 +204,7 @@ def test_tf32_on_off_parity_within_tolerance():
         torch.testing.assert_close(p_off, p_on, rtol=2e-3, atol=1e-4)
 
 
+@pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="TF32 is CUDA-only")
 @pytest.mark.usefixtures("_saved_tf32")
 def test_tf32_via_set_float32_matmul_precision():
@@ -244,7 +247,7 @@ def _step_eager_no_autocast(model, x, y):
         loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
-    return grads
+    return grads.pytree
 
 
 def _step_with_autocast(model, x, y, *, loss_scale: float = 1.0):
@@ -271,9 +274,10 @@ def _step_with_autocast(model, x, y, *, loss_scale: float = 1.0):
         pre_clipping_transform=lambda g: tuple(t / loss_scale for t in g),
     )
     grads, _ = grad_fn(params, x, y, state=clip_state)
-    return grads
+    return grads.pytree
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_bare_probe_runs():
     """Sanity: vmap(grad(autocast(loss))) executes without exception."""
@@ -286,6 +290,7 @@ def test_fp16_autocast_bare_probe_runs():
     assert len(grads) > 0
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_bare_probe_parity_to_fp32():
     """Bare autocast grads should be near fp32 reference (no underflow yet)."""
@@ -302,6 +307,7 @@ def test_fp16_autocast_bare_probe_parity_to_fp32():
         assert diff < 1e-2, f"fp16 autocast mse vs fp32 too large: {diff:.5f}"
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_with_loss_scale_preserves_clipping_invariant():
     """Clipping must see *unscaled* grads — sensitivity calibration would break otherwise."""
@@ -317,6 +323,7 @@ def test_fp16_autocast_with_loss_scale_preserves_clipping_invariant():
         torch.testing.assert_close(a, b, rtol=1e-3, atol=1e-4)
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_with_loss_scale_no_underflow():
     """Loss-scale prevents gradient underflow with very small inputs."""
@@ -330,6 +337,7 @@ def test_fp16_autocast_with_loss_scale_no_underflow():
         assert torch.isfinite(g).all(), "scaled fp16 produced non-finite grad"
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_with_loss_scaler_primitive_matches_inline_lambda():
     """Functional ``loss_scaler`` matches the inline-lambda baseline.
@@ -368,10 +376,11 @@ def test_fp16_autocast_with_loss_scaler_primitive_matches_inline_lambda():
     )
     g_primitive, _ = grad_fn(params, x, y, state=clip_state)
 
-    for a, b in zip(g_inline, g_primitive, strict=True):
+    for a, b in zip(g_inline, g_primitive.pytree, strict=True):
         torch.testing.assert_close(a, b, rtol=1e-6, atol=1e-6)
 
 
+@pytest.mark.cuda
 @_AUTOCAST_REQUIRES_CUDA
 def test_fp16_autocast_full_pipeline_with_optimizer():
     """End-to-end: autocast → scaled-grad → clipped → noised → adamw step."""
@@ -409,3 +418,57 @@ def test_fp16_autocast_full_pipeline_with_optimizer():
         assert torch.isfinite(p).all(), (
             "fp16 autocast pipeline produced non-finite params"
         )
+
+
+@pytest.mark.cuda
+@_AUTOCAST_REQUIRES_CUDA
+def test_fp16_autocast_overflow_is_observed_and_still_produces_a_step():
+    """The overflow branch, on the path that can actually overflow.
+
+    ``return_stats`` reports finiteness of the *pre-clipping* per-example
+    gradients, so a scale large enough to overflow fp16 must set
+    ``all_finite=False`` while clipping still returns a bounded, finite
+    contribution — that is what lets the surrounding loop compose the
+    accountant on every attempted step instead of branching on the batch.
+    """
+    from opaque.precision import loss_scaler
+
+    torch.manual_seed(0)
+    model = _build_model().cuda()
+    x = torch.randn(5, 8, device="cuda")
+    y = torch.randn(5, 4, device="cuda")
+
+    fmodel, params = make_functional(model)
+
+    def run(scale: float):
+        scaler, scaler_state = loss_scaler(init_scale=scale)
+
+        def loss_fn(p, xi, yi):
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                pred = fmodel(p, xi.unsqueeze(0)).squeeze(0)
+                loss = ((pred - yi) ** 2).mean()
+            return scaler.scale_loss(loss, scaler_state)
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            pre_clipping_transform=lambda g: scaler.unscale_grads(g, scaler_state),
+            return_stats=True,
+        )
+        (grads, stats), _ = grad_fn(params, x, y, state=clip_state)
+        return grads, stats
+
+    grads, stats = run(128.0)
+    assert stats.all_finite is True
+
+    overflowed, overflow_stats = run(float(2**30))
+    assert overflow_stats.all_finite is False, (
+        "a scale past finfo(float16).max must be visible to the loss scaler"
+    )
+    for g in overflowed.pytree:
+        assert torch.isfinite(g).all(), (
+            "clipping must sanitize the overflow rather than propagate it"
+        )
+    assert overflowed.sensitivity == grads.sensitivity

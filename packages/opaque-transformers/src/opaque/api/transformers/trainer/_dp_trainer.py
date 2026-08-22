@@ -3881,8 +3881,8 @@ class DPTrainer:
 
         Dispatches via :func:`opaque.api.transformers.trainer._scheduler.build_lr_schedule`,
         which reads ``args.lr_scheduler``, ``args.lr_scheduler_kwargs``,
-        and ``args.warmup_steps`` / ``args.warmup_ratio``.  Override in a
-        subclass to supply a different schedule.
+        and ``args.warmup_steps``.  Override in a subclass to supply a
+        different schedule.
         """
         return build_lr_schedule(self.args, num_training_steps)
 
@@ -4710,20 +4710,8 @@ class DPTrainer:
             Path(target).mkdir(parents=True, exist_ok=True)
             self._save_model_artifacts(target)
             self._save_training_args(target)
-            # Privacy provenance travels with every saved model.  Use the
-            # live ``_ctx`` accountant when training is mid-flight (most up
-            # to date), otherwise the trainer-level slot populated by the
-            # ``_setup_training`` finally block.
-            accountant = (
-                self._ctx.accounting if self._ctx is not None else self._accountant
-            )
-            if accountant is not None:
-                self._save_accountant(target, accountant)
-            else:
-                log.info(
-                    "save_model called before any training run; "
-                    "no accountant to serialise (model only)."
-                )
+            # Privacy provenance travels with every saved model.
+            self.save_accountant(target)
         # Barrier so non-saving ranks don't proceed before the save lands.
         _distributed.barrier(self._ddp)
         # A direct user save with push_to_hub=True also publishes (HF parity).
@@ -4731,6 +4719,52 @@ class DPTrainer:
         # ``push_to_hub`` itself.
         if a.push_to_hub and not _internal_call:
             _hub.push_to_hub(self, commit_message="Model save", revision=a.hub_revision)
+
+    def save_accountant(self, output_dir: str | None = None) -> str | None:
+        """Write the privacy accountant to ``accountant.json``; return its path.
+
+        The privacy provenance of a run without the model weights beside it.
+        :meth:`save_model` calls this, so a caller that wants only the
+        accounting no longer has to re-save the whole model to harvest it.
+
+        Uses the live accountant off the active training context when
+        training is mid-flight (most up to date), otherwise the
+        trainer-level slot that :meth:`train` populates when the inner loop
+        exits — so this is accurate both from inside a callback and after
+        ``train()`` returns.
+
+        Args:
+            output_dir: Directory to write into, created if missing.
+                Defaults to ``args.output_dir``.
+
+        Returns:
+            The path written, or ``None`` when there was nothing to write:
+            either no training has run yet (no accountant exists), or this
+            rank is not the saving rank under ``args.should_save``.
+
+        Note:
+            Rank-gated but not a collective — it performs no barrier, so
+            ranks are not synchronised on return. Call it on every rank and
+            add your own barrier if a later step depends on the file being
+            on disk.
+        """
+        target = output_dir or self._effective_output_dir()
+        if target is None:
+            raise ValueError(
+                "save_accountant requires output_dir (arg or args.output_dir)"
+            )
+        accountant = self._ctx.accounting if self._ctx is not None else self._accountant
+        if accountant is None:
+            log.info(
+                "save_accountant called before any training run; "
+                "no accountant to serialise."
+            )
+            return None
+        if not _distributed.should_save(self.args, self._ddp):
+            return None
+        Path(target).mkdir(parents=True, exist_ok=True)
+        self._save_accountant(target, accountant)
+        return str(Path(target) / ckpt.DP_ACCOUNTANT_NAME)
 
     def _save_checkpoint(self, model: Any = None, trial: Any = None) -> str:
         """Write a complete ``checkpoint-<step>`` directory; returns its path.
@@ -4928,7 +4962,6 @@ class DPTrainer:
             lr_scheduler=a.lr_scheduler,
             learning_rate=a.learning_rate,
             warmup_steps=a.warmup_steps,
-            warmup_ratio=a.warmup_ratio,
             lr_scheduler_kwargs=(
                 a.lr_scheduler_kwargs
                 if isinstance(a.lr_scheduler_kwargs, dict)
@@ -5465,7 +5498,6 @@ class DPTrainer:
             "lr_scheduler": a.lr_scheduler,
             "learning_rate": a.learning_rate,
             "warmup_steps": a.warmup_steps,
-            "warmup_ratio": a.warmup_ratio,
             "lr_scheduler_kwargs": (
                 a.lr_scheduler_kwargs
                 if isinstance(a.lr_scheduler_kwargs, dict)

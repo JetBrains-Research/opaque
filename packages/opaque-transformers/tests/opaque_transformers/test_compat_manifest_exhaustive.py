@@ -19,6 +19,7 @@ hf = pytest.importorskip("transformers")
 from opaque.api.transformers.trainer._hf_convert import (  # noqa: E402
     HF_DIRECT_FIELDS,
     HF_DROP_FIELDS,
+    HF_LEGACY_FIELDS,
     HF_REJECTED_FIELDS,
     HF_RENAME_MAP,
     HF_TRANSFORM_MAP,
@@ -220,11 +221,12 @@ def test_hf_manifest_does_not_have_phantom_fields():
 
     Catches the reverse drift: HF removes a field, and opaque's manifest
     still references it. The fix is to delete the phantom entry from the
-    manifest constant.
+    manifest constant — or, if the field is still live on an older release
+    inside the supported range, to declare it in ``HF_LEGACY_FIELDS``.
     """
     upstream = _all_hf_field_names()
     covered = _opaque_buckets_for_hf()
-    phantoms = covered - upstream
+    phantoms = covered - upstream - HF_LEGACY_FIELDS
     assert not phantoms, (
         f"opaque argument manifest references HF fields that no longer exist "
         f"upstream:\n  {sorted(phantoms)}\n\n"

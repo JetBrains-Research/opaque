@@ -35,9 +35,10 @@ jobs:
       models: read
     outputs:
       base_tag: ${{ steps.plan.outputs.base_tag }}
+      branch_action: ${{ steps.plan.outputs.branch_action }}
       commit_range: ${{ steps.plan.outputs.commit_range }}
-      create_branch: ${{ steps.plan.outputs.create_branch }}
       maintenance_branch: ${{ steps.plan.outputs.maintenance_branch }}
+      maintenance_branch_sha: ${{ steps.plan.outputs.maintenance_branch_sha }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
       source_branch: ${{ steps.plan.outputs.source_branch }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -211,6 +212,7 @@ jobs:
           |---|---|
           | Source branch | \`${{ steps.plan.outputs.source_branch }}\` |
           | Maintenance branch | \`${{ steps.plan.outputs.maintenance_branch }}\` |
+          | Branch action | \`${{ steps.plan.outputs.branch_action }}\` |
           | Target SHA | \`${{ steps.plan.outputs.target_sha }}\` |
           | Base tag | \`${{ steps.plan.outputs.base_tag || '<none>' }}\` |
           | Version | \`${{ steps.plan.outputs.version }}\` |
@@ -620,26 +622,51 @@ jobs:
           --expected-tag '${{ needs.plan.outputs.tag }}'
           --expected-target-sha '${{ needs.plan.outputs.target_sha }}'
 
-      - name: Create maintenance branch
-        if: needs.plan.outputs.create_branch == 'true'
+      - name: Create or fast-forward maintenance branch
+        if: needs.plan.outputs.branch_action != 'none'
         env:
+          BRANCH_ACTION: ${{ needs.plan.outputs.branch_action }}
           BRANCH: ${{ needs.plan.outputs.maintenance_branch }}
+          EXPECTED_BRANCH_SHA: ${{ needs.plan.outputs.maintenance_branch_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-            remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
-            if [[ "$remote_sha" != "$TARGET_SHA" ]]; then
-              echo "::error::$BRANCH was created at $remote_sha while this candidate was running; it will not be moved."
+          case "$BRANCH_ACTION" in
+            create)
+              if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+                remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
+                if [[ "$remote_sha" != "$TARGET_SHA" ]]; then
+                  echo "::error::$BRANCH was created at $remote_sha while this candidate was running; it will not be moved."
+                  exit 1
+                fi
+                echo "$BRANCH already exists at the candidate SHA; continuing an interrupted finalization."
+              else
+                gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+                  -f ref="refs/heads/$BRANCH" \
+                  -f sha="$TARGET_SHA"
+              fi
+              ;;
+            fast-forward)
+              remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
+              if [[ "$remote_sha" != "$EXPECTED_BRANCH_SHA" ]]; then
+                echo "::error::$BRANCH moved from $EXPECTED_BRANCH_SHA to ${remote_sha:-<missing>} while this candidate was running; it will not be moved."
+                exit 1
+              fi
+              git fetch --force origin '+refs/tags/*:refs/tags/*'
+              intervening_tags=$(git tag --merged "$TARGET_SHA" --no-merged "$EXPECTED_BRANCH_SHA")
+              if [[ -n "$intervening_tags" ]]; then
+                echo "::error::$BRANCH gained tags after $EXPECTED_BRANCH_SHA while this candidate was running: $intervening_tags"
+                exit 1
+              fi
+              git push origin "$TARGET_SHA:refs/heads/$BRANCH" \
+                "--force-with-lease=refs/heads/$BRANCH:$EXPECTED_BRANCH_SHA"
+              ;;
+            *)
+              echo "::error::Unexpected maintenance branch action: $BRANCH_ACTION"
               exit 1
-            fi
-            echo "$BRANCH already exists at the candidate SHA; continuing an interrupted finalization."
-          else
-            gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/heads/$BRANCH" \
-              -f sha="$TARGET_SHA"
-          fi
+              ;;
+          esac
 
       - name: Inspect immutable release tag
         id: tag
@@ -661,7 +688,7 @@ jobs:
           fi
 
       - name: Verify selected maintenance branch has not moved
-        if: needs.plan.outputs.create_branch != 'true' && steps.tag.outputs.exists != 'true'
+        if: needs.plan.outputs.branch_action == 'none' && steps.tag.outputs.exists != 'true'
         env:
           BRANCH: ${{ needs.plan.outputs.maintenance_branch }}
           TARGET_SHA: ${{ needs.plan.outputs.target_sha }}

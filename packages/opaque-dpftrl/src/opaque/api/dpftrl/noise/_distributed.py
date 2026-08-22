@@ -1,8 +1,10 @@
 """Distributed-rank state validation for matrix-factorization noise.
 
-Registers a :class:`opaque.dpftrl.noise._engine.MFNoiseState` sync
-handler with :func:`opaque.distributed.sync` at import time.  Imported
-for its side effects from :mod:`opaque.dpftrl.noise`; not re-exported.
+Registers the single-stream :class:`opaque.dpftrl.noise._engine.MFNoiseState`
+and the paired
+:class:`opaque.dpftrl.noise._second_moment.SecondMomentMFNoiseState` sync
+handlers with :func:`opaque.distributed.sync` at import time.  Imported for
+its side effects from :mod:`opaque.dpftrl.noise`; not re-exported.
 """
 
 from __future__ import annotations
@@ -12,8 +14,9 @@ import json
 from dataclasses import replace
 
 from opaque.api.dpftrl.noise._engine import MFNoiseState
+from opaque.api.dpftrl.noise._second_moment import SecondMomentMFNoiseState
 from opaque.api.engine.distributed._state import (
-    assert_scalar_equal,
+    assert_string_equal,
     register_sync_type,
     sync_object,
 )
@@ -90,8 +93,15 @@ _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
 
 
 def _assert_rng_key_equal(state: MFNoiseState, state_name: str) -> None:
-    """Assert that the RNG key seed matches across ranks."""
-    assert_scalar_equal(int(state._rng_key.seed), name=f"{state_name}.seed")
+    """Assert that the RNG key seed matches across ranks.
+
+    Seeds are canonicalized to unsigned 64-bit, so roughly half of them fall
+    outside the signed ``int64`` domain the scalar reductions use — the same
+    constraint that ``_normalize_int64_fingerprint`` handles for latched
+    sensitivity fingerprints. A seed is opaque identity material rather than a
+    magnitude, so it is compared as text.
+    """
+    assert_string_equal(str(state._rng_key.seed), name=f"{state_name}.seed")
 
 
 def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
@@ -110,7 +120,29 @@ def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
     return sync_object(state, field_ops=_MF_NOISE_STATE_FIELD_OPS)
 
 
+def sync_second_moment_mf_noise_state(
+    state: SecondMomentMFNoiseState,
+) -> SecondMomentMFNoiseState:
+    """Validate both paired MF noise streams across ranks.
+
+    :class:`SecondMomentMFNoiseState` inherits from ``NoiseState`` rather than
+    from :class:`MFNoiseState`, so the MRO walk in :func:`sync` does not reach
+    the single-stream handler and this type needs its own registration.
+
+    Each stream carries its own key, step counter, and latched sensitivity, so
+    both are validated. They are always visited in the same order, which keeps
+    the collective schedule identical on every rank.
+    """
+    if not is_distributed():
+        return state
+    return SecondMomentMFNoiseState(
+        _first_state=sync_mf_noise_state(state._first_state),
+        _second_state=sync_mf_noise_state(state._second_state),
+    )
+
+
 register_sync_type(MFNoiseState, sync_mf_noise_state)
+register_sync_type(SecondMomentMFNoiseState, sync_second_moment_mf_noise_state)
 
 
 __all__ = [
@@ -118,4 +150,5 @@ __all__ = [
     "fingerprint_scalar_max_norm",
     "mf_per_group_sync_fingerprint_for_latch",
     "sync_mf_noise_state",
+    "sync_second_moment_mf_noise_state",
 ]

@@ -331,8 +331,12 @@ page. There is no `CHANGELOG.md` to maintain.
 1. **Choose the release line.** Open **Actions → Prepare Release** and use
    GitHub's **Use workflow from** selector:
    - For a new `X.Y` line, select `main` and enter the complete version
-     (`X.Y.Z`, `X.Y.Z.rcN`, and so on). Preparation fails if
-     `release/X.Y` already exists.
+     (`X.Y.Z`, `X.Y.Z.rcN`, and so on). Preparation creates `release/X.Y` when
+     it does not already exist.
+   - For an existing line whose next patch is already on `main`, select `main`
+     and enter the complete patch version. Preparation fast-forwards
+     `release/X.Y` only when its current head is an ancestor of the selected
+     `main` SHA and no tag occurs in the new history.
    - For an existing line, select `release/X.Y`. Leave the version blank to
      infer the next stable patch from the latest reachable `vX.Y.Z` tag, or
      enter an explicit matching version for a prerelease, post-release, or
@@ -360,11 +364,13 @@ page. There is no `CHANGELOG.md` to maintain.
 ### Maintenance release lines
 
 The first green release of an `X.Y` series creates `release/X.Y`
-automatically. Subsequent fixes land on `main` first and are backported through
-ordinary pull requests to each maintained release branch. Prepare each patch
-from its own branch; for example, `v1.1.2` notes are generated from the exact
-`v1.1.1..<selected release/1.1 SHA>` range even when `release/1.2` is also
-active.
+automatically. Subsequent fixes land on `main` first. When the release branch
+can be fast-forwarded to the chosen `main` SHA and no tag occurs in that new
+history, Prepare Release updates it automatically for the patch. Otherwise,
+backport through an ordinary pull request to the maintained release branch and
+prepare the patch from that branch; for example, `v1.1.2` notes are generated
+from the exact `v1.1.1..<selected release/1.1 SHA>` range even when
+`release/1.2` is also active.
 
 ### Release-note conventions
 

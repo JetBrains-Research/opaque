@@ -286,13 +286,14 @@ class TrainingArguments:
     optim_args: dict[str, Any] | str | None = None
     # Accepts an HF-style name (string or :class:`SchedulerType` enum)
     # *or* an :data:`~opaque.scheduling.types.Schedule` recipe directly.
-    # When a recipe is supplied, ``warmup_steps``/``warmup_ratio``/
-    # ``lr_scheduler_kwargs`` must be unset — the recipe owns its own
-    # composition (compose ``with_warmup(...)`` yourself).
+    # When a recipe is supplied, ``warmup_steps``/``lr_scheduler_kwargs``
+    # must be unset — the recipe owns its own composition (compose
+    # ``with_warmup(...)`` yourself).
     lr_scheduler: SchedulerType | str | Schedule = "linear"
     lr_scheduler_kwargs: dict[str, Any] | str | None = field(default_factory=dict)
-    warmup_ratio: float = 0.0
-    warmup_steps: int = 0
+    # ``>= 1`` is an absolute step count; ``(0, 1)`` is a fraction of the
+    # total training steps.
+    warmup_steps: int | float = 0
 
     # =================================================================
     # Training duration
@@ -769,19 +770,18 @@ class TrainingArguments:
             raise ValueError(f"save_steps must be > 0, got {self.save_steps}")
 
         # --- 6. Warmup / dataloader sanity ----------------------------------
-        if self.warmup_ratio is None:
-            self.warmup_ratio = 0.0
-        if self.warmup_ratio < 0 or self.warmup_ratio > 1:
-            raise ValueError("warmup_ratio must lie in range [0,1]")
-        if not isinstance(self.warmup_steps, int) or self.warmup_steps < 0:
+        if self.warmup_steps is None:
+            self.warmup_steps = 0
+        if isinstance(self.warmup_steps, bool) or not isinstance(
+            self.warmup_steps, (int, float)
+        ):
             raise ValueError(
-                "warmup_steps must be of type int and must be 0 or a positive integer."
+                "warmup_steps must be a number: a step count when >= 1, or a "
+                f"fraction of the total training steps when in (0, 1). Got "
+                f"{self.warmup_steps!r}."
             )
-        if self.warmup_ratio > 0 and self.warmup_steps > 0:
-            log.info(
-                "Both warmup_ratio and warmup_steps given, warmup_steps "
-                "will override any effect of warmup_ratio during training"
-            )
+        if self.warmup_steps < 0:
+            raise ValueError(f"warmup_steps must be >= 0, got {self.warmup_steps}")
 
         if self.torch_empty_cache_steps is not None and not (
             isinstance(self.torch_empty_cache_steps, int)
@@ -1194,6 +1194,18 @@ class TrainingArguments:
     def fp16(self) -> bool:
         """fp16 training is unsupported (bf16 only); always ``False``."""
         return False
+
+    @property
+    def warmup_ratio(self) -> float:
+        """Fractional part of ``warmup_steps``, for transformers 4.x readers.
+
+        4.x kept the fraction in its own field and its model-card helper
+        still reads it; opaque follows 5.x, where a ``warmup_steps`` below
+        1 *is* the fraction.
+        """
+        if 0 < self.warmup_steps < 1:
+            return float(self.warmup_steps)
+        return 0.0
 
     # =================================================================
     # Device resolution (bypasses Accelerate)

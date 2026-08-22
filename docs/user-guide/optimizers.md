@@ -150,12 +150,27 @@ chose it), so we can subtract it from the biased estimate.
 For Adam-family optimizers (`adamw`, `ademamix`):
 
 $$\phi_t = \beta_2 \phi_{t-1} + (1-\beta_2) \Phi_t, \qquad
-\hat{v}^{\text{corrected}}_t = \max\!\bigl(\hat{v}_t - \hat{\phi}_t,\; \gamma\bigr)$$
+\hat{v}^{\text{corrected}}_t = \begin{cases}
+\hat{v}_t - \hat{\phi}_t & \text{where that is positive} \\
+\hat{v}_t & \text{elsewhere}
+\end{cases}$$
 
 This is Algorithm 2 from
 [Chooi et al. (arXiv:2511.07843)](https://arxiv.org/abs/2511.07843).
 Cheap (one extra scalar EMA), no changes to the noise mechanism, works
 with any i.i.d. Gaussian noise source.
+
+Coordinates where the noise estimate has overtaken the second moment fall
+back to the *uncorrected* $\hat{v}_t$ rather than being clamped to a small
+positive floor. Their signal-variance estimate is non-positive and therefore
+meaningless; flooring would divide by $\approx \epsilon$ and amplify pure
+noise by ${\sim}1/\epsilon$, whereas falling back to $\hat{v}_t$ degrades
+them to the non-private behavior, which is bounded. The additive $\epsilon$
+in $\sqrt{\hat{v}^{\text{corrected}}} + \epsilon$ is what keeps the
+denominator away from zero. The separate floor seen in some optimizers
+belongs to the *private second-moment* branch (`noisy_squared_grads`), where
+$\hat{v}$ comes from an externally privatised $g^2$ stream and can be
+genuinely negative — not to this $\phi$-EMA path.
 
 For `rmsprop`: same idea, but $\phi$ accumulates with the same EMA
 decay $\alpha$ as $v$ (and there's no `(1−α^t)` divide because
@@ -163,7 +178,8 @@ RMSprop doesn't bias-correct $v$ either).  Subtracting $\phi$ from
 $v$ directly gives the unbiased estimate.
 
 For `adagrad`: cumulative $\Phi_\text{acc} = \sum_s \sigma_s^2$
-(no decay) matches the cumulative $v_\text{acc}$.  **Mandatory** for
+(no decay) matches the cumulative $v_\text{acc}$, and the same
+non-positive-means-uncorrected fallback applies.  **Mandatory** for
 DP-Adagrad — without it, the denominator runs away with $t \cdot \sigma^2$
 of accumulated noise variance and learning halts.
 

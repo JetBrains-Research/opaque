@@ -118,6 +118,7 @@ is the caller's loop.
 | `save_metrics(split, metrics, combined=True)` | Write `metrics.json` / `all_results.json` under `output_dir`. |
 | `save_state()` | Write `trainer_state.json` under the effective output directory. |
 | `save_model(output_dir=None)` | Write model weights + tokenizer + `training_args.bin` + `accountant.json`.  Does NOT write the DP runtime bundle (sampler / optimizer / RNG); resume requires `_save_checkpoint`'s output (driven by `save_strategy`). |
+| `save_accountant(output_dir=None)` | Write only `accountant.json` and return its path.  Writes no model weights, so it is safe to call after an external saver has already mutated the model. |
 
 ### Distributed flags
 
@@ -231,8 +232,7 @@ Dataclass surface.  Every field listed here exists on
 | `optim_args` | `dict \| str \| None` | `None` |
 | `lr_scheduler` | `SchedulerType \| str \| Schedule` | `"linear"` |
 | `lr_scheduler_kwargs` | `dict \| str \| None` | `{}` |
-| `warmup_ratio` | `float` | `0.0` |
-| `warmup_steps` | `int` | `0` |
+| `warmup_steps` | `int \| float` | `0` |
 
 `optim` supports `{"adam", "adamw", "sgd", "rmsprop", "adagrad",
 "adafactor", "ademamix", "lion", "radam", "adadelta",
@@ -339,7 +339,8 @@ NPU, XLA) are rejected with a redirect message.
 `__post_init__` runs cross-field validation idempotently:
 
 - Strategy strings validated against allowed sets.
-- `warmup_steps` overrides `warmup_ratio` when both are set.
+- `warmup_steps` must be a non-negative number: a step count when `>= 1`,
+  a fraction of the total training steps when in `(0, 1)`.
 - `save_strategy="best"` requires `eval_strategy != "no"`.
 - `load_best_model_at_end=True` requires both `save_strategy != "no"`
   and `eval_strategy != "no"`.

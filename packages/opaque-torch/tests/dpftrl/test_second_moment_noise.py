@@ -470,3 +470,28 @@ class TestSecondMomentMFNoise:
         assert not torch.allclose(
             output.noisy_squared_grads.pytree["w"], raw_sq, atol=1e-6
         )
+
+
+def test_paired_state_has_a_registered_sync_handler():
+    """``sync`` dispatches on type, and the paired state is not an ``MFNoiseState``.
+
+    :class:`SecondMomentMFNoiseState` inherits from ``NoiseState``, so the MRO
+    walk in :func:`opaque.distributed.sync` does not find the single-stream
+    handler and this type needs a registration of its own.  The documented
+    distributed loop calls ``sync(noise_state)``, so an unregistered paired
+    state makes every private-second-moment run raise ``TypeError``.  Dispatch
+    happens whether or not a process group exists, which is why this needs no
+    ranks.
+    """
+    from opaque.distributed import sync
+
+    _, state = mf_gaussian_noise(
+        {"w": torch.zeros(4, 3), "b": torch.zeros(4)},
+        identity_strategy(),
+        n_steps=2,
+        noise_multiplier=1.0,
+        key=key(7),
+        second_moment_strategy=identity_strategy(),
+    )
+    assert isinstance(state, SecondMomentMFNoiseState)
+    assert sync(state) is state

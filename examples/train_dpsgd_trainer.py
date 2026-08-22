@@ -484,25 +484,19 @@ def parse_args() -> argparse.Namespace:
             "constant_with_warmup, linear, cosine, polynomial, "
             "inverse_sqrt, cosine_with_restarts, cosine_with_min_lr, "
             "cosine_warmup_with_min_lr, warmup_stable_decay.  Compose "
-            "warmup with any of the above via --warmup-ratio / "
-            "--warmup-steps (e.g. `--lr-scheduler linear "
-            "--warmup-ratio 0.1` is with_warmup(linear, ...))."
-        ),
-    )
-    train_group.add_argument(
-        "--warmup-ratio",
-        type=float,
-        default=0.0,
-        help=(
-            "Fraction of training steps used as warmup; ignored when "
-            "--warmup-steps > 0."
+            "warmup with any of the above via --warmup-steps (e.g. "
+            "`--lr-scheduler linear --warmup-steps 0.1` is "
+            "with_warmup(linear, ...))."
         ),
     )
     train_group.add_argument(
         "--warmup-steps",
-        type=int,
+        type=float,
         default=0,
-        help="Number of warmup steps (overrides --warmup-ratio when > 0).",
+        help=(
+            "Warmup length: a number of steps when >= 1, or a fraction of "
+            "the total training steps when between 0 and 1."
+        ),
     )
     train_group.add_argument(
         "--lr-scheduler-kwargs",
@@ -1067,7 +1061,6 @@ def main() -> int:
         optim=args.optimizer,
         lr_scheduler=args.lr_scheduler,
         lr_scheduler_kwargs=args.lr_scheduler_kwargs,
-        warmup_ratio=args.warmup_ratio,
         warmup_steps=args.warmup_steps,
         seed=args.seed,
         data_seed=args.data_seed,
