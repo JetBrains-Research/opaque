@@ -59,6 +59,13 @@ clear_backend()
 | One call carrying arrays from two providers | `MixedBackendError` |
 | An array from a provider other than the active one | `BackendMismatchError` |
 
+A few operations have a correct answer with no provider at all — annotating a
+trace when nothing can record it, asking whether a value is a native array when
+nothing is active to own one. Those are declared *neutral* and answer instead
+of raising in the first row's case; every other row still raises. Calling code
+therefore does not select or probe a backend to use them. See
+[declaring an operation](../reference/backend.md#declaring-an-operation).
+
 ## Torch-only surfaces
 
 Some features are inherently framework-shaped and live in `opaque-torch` rather

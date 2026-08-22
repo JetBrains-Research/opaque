@@ -103,6 +103,29 @@ else:
     scores = ops.sum(ops.multiply(logits, mask), axis=-1)
 ```
 
+When the fallback is the *same* for every caller — the operation has a
+correct answer without a provider — declare the primitive `neutral=True`
+instead. Its own body becomes that answer, used wherever dispatch has none:
+no backend is selected and the arguments identify none, or the selected
+backend registered no implementation. Callers then make the call:
+
+```python
+@primitive(neutral=True)
+def trace_scope(label: str) -> AbstractContextManager[None]:
+    return nullcontext()          # a provider without a profiler annotates nothing
+
+
+with trace_scope("my_step"):      # no supports() probe, no backend to select
+    ...
+```
+
+`supports()` and `resolve()` keep reporting registered implementations only,
+so a neutral primitive is callable where both say a backend has nothing.
+Leave `neutral` off where a missing implementation means the caller asked
+for something the backend cannot do: that must raise
+`UnsupportedPrimitiveError` at the call site rather than resolve to a
+plausible-looking substitute.
+
 Declarations made through this façade are `PrimitiveTier.OPTIONAL` — the
 default, and the only tier valid outside the engine. `PrimitiveTier.CORE` is
 the profile every provider must implement in full before it may activate, so a

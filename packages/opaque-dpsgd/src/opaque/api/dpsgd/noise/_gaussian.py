@@ -7,7 +7,6 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine import ops, runtime
-from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import (
     PAIRED_FIRST_STREAM_FOLD,
     PAIRED_SECOND_STREAM_FOLD,
@@ -365,17 +364,6 @@ def gaussian_noise(
 
     def noise_fn(grads, st):
         """Add Gaussian noise to a clipped pytree (or paired stream)."""
-        if isinstance(grads, SecondMomentClippingOutput):
-            backend = ensure_backend(
-                grads.grads.pytree,
-                grads.squared_grads.pytree,
-            )
-        elif isinstance(grads, ClippedPytree):
-            backend = ensure_backend(grads.pytree)
-        else:
-            return _noise_fn_impl(grads, st)
-        if not runtime.trace_scope.supports(backend):
-            return _noise_fn_impl(grads, st)
         with runtime.trace_scope("opaque::gaussian_noise"):
             return _noise_fn_impl(grads, st)
 

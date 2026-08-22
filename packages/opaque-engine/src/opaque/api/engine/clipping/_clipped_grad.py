@@ -71,35 +71,6 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
         )
 
 
-def _make_trace_scope_runner() -> Callable[..., Any]:
-    """Build the per-call runner for the optional profiling scope.
-
-    Capability and implementation are resolved once, at grad-fn
-    construction, so compiled callers trace the provider's native scope
-    object (e.g. ``torch.autograd.profiler.record_function``) instead of
-    the dispatch machinery. With no backend active yet (or no scope
-    support) the runner is a plain passthrough.
-    """
-    from opaque.api.engine.primitive import PrimitiveError
-
-    try:
-        if not runtime.trace_scope.supports():
-            raise PrimitiveError
-        scope = runtime.trace_scope.resolve()
-    except PrimitiveError:
-
-        def run_plain(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-            return fn(*args, **kwargs)
-
-        return run_plain
-
-    def run_scoped(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        with scope("opaque::clipped_grad"):
-            return fn(*args, **kwargs)
-
-    return run_scoped
-
-
 def clipped_grad(
     loss_fn: Callable,
     argnums: int | tuple[int, ...] = 0,
@@ -309,16 +280,15 @@ def clipped_grad(
         _scale_fn=_scale_fn,
     )
 
-    _run_with_trace_scope = _make_trace_scope_runner()
-
     if return_stats:
 
         def grad_fn_wrapper(*args, state, **kwargs):
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
-            (clipped_grads, stats), returned_state = _run_with_trace_scope(
-                clipped_grad_fn, *args, state=state, **kwargs
-            )
+            with runtime.trace_scope("opaque::clipped_grad"):
+                (clipped_grads, stats), returned_state = clipped_grad_fn(
+                    *args, state=state, **kwargs
+                )
             return (clipped_grads, stats), returned_state
 
         return grad_fn_wrapper, clip_state
@@ -331,9 +301,8 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            result, returned_state = _run_with_trace_scope(
-                clipped_grad_fn, *args, state=state, **kwargs
-            )
+            with runtime.trace_scope("opaque::clipped_grad"):
+                result, returned_state = clipped_grad_fn(*args, state=state, **kwargs)
             return result, returned_state
 
         return grad_fn_wrapper, clip_state
@@ -343,9 +312,10 @@ def clipped_grad(
             if batch_size_from_args(args, batch_argnums_tuple) == 0:
                 return _empty_batch_response(args, state)
 
-            (clipped_grads, aux), returned_state = _run_with_trace_scope(
-                clipped_grad_fn, *args, state=state, **kwargs
-            )
+            with runtime.trace_scope("opaque::clipped_grad"):
+                (clipped_grads, aux), returned_state = clipped_grad_fn(
+                    *args, state=state, **kwargs
+                )
             grad_aux = ClippedGradAux(
                 loss_values=aux.values,
                 grad_norms=aux.norms,

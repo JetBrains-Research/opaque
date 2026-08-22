@@ -236,6 +236,33 @@ Add a new patch to the wheel that owns the module it mutates, and give it an
 idempotency guard on the patched object rather than a module-level flag —
 callers apply the runtime patches more than once.
 
+### Backend selection
+
+Mechanism code does not select or interrogate a backend. Dispatch does:
+calling any primitive infers the provider from the arrays in its arguments
+and activates it. So `ensure_backend(...)` before an `opaque.ops` call is
+redundant, and `ensure_backend(...)` to obtain a backend to pass to
+`.supports(...)` is a capability probe that belongs in the primitive.
+
+An operation with a correct answer that needs no provider — an annotation
+nothing can record, a predicate about the active backend whose answer with
+none active is simply "no" — is declared `@primitive(neutral=True)`, and
+its own body is that answer. Callers then just call it. `supports()` and
+`resolve()` keep reporting registered implementations only, so neutrality
+never hides a
+real capability gap: leave it off wherever a missing implementation means
+the caller asked for something the backend cannot do, so the call raises
+`UnsupportedPrimitiveError` instead of returning a plausible substitute.
+
+`ensure_backend` stays appropriate at an entry point that must run under a
+provider yet takes no array to infer one from — a no-argument primitive
+such as `ops.float32()`, or a distributed query. Name the array type
+(`ensure_backend(torch.Tensor)`) rather than allocating a dummy array.
+
+Per-call argument validation (mixed backends, mismatch against the sticky
+selection) is the dispatch layer's opt-in, `OPAQUE_VALIDATE_BACKEND_ARGS=1`.
+Do not hand-roll it at individual call sites.
+
 ### Test design
 
 Do not add tests whose only purpose is pinning prose in documentation,

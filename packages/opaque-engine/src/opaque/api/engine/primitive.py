@@ -145,6 +145,7 @@ class Primitive:
         name: str,
         *,
         tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
+        neutral: bool = False,
     ) -> Primitive:
         _validate_primitive_name(name)
         normalized_tier = _normalize_tier(tier)
@@ -156,6 +157,12 @@ class Primitive:
                         f"Primitive {name!r} is already declared with tier "
                         f"{existing.tier.value!r}."
                     )
+                if existing.neutral is not bool(neutral):
+                    held = "with" if existing.neutral else "without"
+                    raise InvalidPrimitiveRegistrationError(
+                        f"Primitive {name!r} is already declared {held} a "
+                        "backend-neutral default."
+                    )
                 return existing
             primitive = super().__new__(cls)
             _PRIMITIVES[name] = primitive
@@ -166,30 +173,40 @@ class Primitive:
         name: str,
         *,
         tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
+        neutral: bool = False,
     ) -> None:
         with _PRIMITIVES_LOCK:
             if getattr(self, "_initialized", False):
                 return
             self.name = name
             self.tier = _normalize_tier(tier)
+            self.neutral = bool(neutral)
             self._implementations: dict[str, Implementation | LazyImplementation] = {}
             self._declaration: Implementation | None = None
+            self._neutral_default: Implementation | None = None
             self._lock = threading.RLock()
             self._initialized = True
         if self.tier is PrimitiveTier.CORE:
             declare_core_primitives(self)
 
     def __repr__(self) -> str:
-        return f"Primitive({self.name!r}, tier={self.tier.value!r})"
+        neutral = ", neutral=True" if self.neutral else ""
+        return f"Primitive({self.name!r}, tier={self.tier.value!r}{neutral})"
 
     def bind(self, declaration: Declaration) -> Primitive:
-        """Attach a real function declaration and preserve its metadata."""
+        """Attach a real function declaration and preserve its metadata.
+
+        A neutral primitive's declaration is also its backend-neutral
+        default: the body runs whenever no provider answers the call.
+        """
         if not callable(declaration):
             raise InvalidPrimitiveRegistrationError(
                 f"Declaration for primitive {self.name!r} must be callable."
             )
         with self._lock:
             self._declaration = declaration
+            if self.neutral:
+                self._neutral_default = declaration
             update_wrapper(self, declaration)
         return self
 
@@ -243,6 +260,11 @@ class Primitive:
         is selected, so nothing supports it — rather than an error. Name the
         backend when you mean "is this available at all"; leave it out when you
         mean "can the context I am in do this right now".
+
+        This reports registered implementations only. A neutral primitive is
+        callable wherever this returns ``False``, falling back to its own
+        declaration, so guard a call with it only when the neutral answer is
+        not the one you want.
         """
         backend_name = _active_backend_name() if backend is None else None
         if backend is None and backend_name is None:
@@ -262,7 +284,12 @@ class Primitive:
             return tuple(sorted(self._implementations))
 
     def resolve(self, backend: Backend | str | None = None) -> Implementation:
-        """Resolve the callable implementation for ``backend``."""
+        """Resolve the callable implementation registered for ``backend``.
+
+        Raises :class:`UnsupportedPrimitiveError` when the backend registered
+        none, for a neutral primitive too: this asks for a provider's
+        implementation, not for the value a call would produce.
+        """
         backend_name = _backend_name(backend)
         with self._lock:
             implementation = self._implementations.get(backend_name)
@@ -278,11 +305,16 @@ class Primitive:
         With a sticky active backend the per-call argument walk is skipped;
         set ``OPAQUE_VALIDATE_BACKEND_ARGS=1`` to re-enable full inference
         (mixed-backend and mismatch validation) on every dispatched call.
+
+        A neutral primitive runs its own declaration wherever dispatch has
+        no answer — no backend is selected and the arguments identify none,
+        or the selected one registered no implementation — so callers do
+        not have to select or probe a backend to make the call.
         """
         from opaque.api.engine.backend import _registry
 
         if _VALIDATE_DISPATCH_ARGS:
-            backend = _registry.ensure_backend(args, kwargs)
+            backend = self._dispatch_backend(args, kwargs)
         else:
             # Eager dispatch always consults the context-local ContextVar,
             # preserving the documented lifecycle (an unselected context
@@ -298,11 +330,15 @@ class Primitive:
             else:
                 backend = _registry._ACTIVE.get()
             if backend is None:
-                backend = _registry.ensure_backend(args, kwargs)
+                backend = self._dispatch_backend(args, kwargs)
+        if backend is None:
+            return self._neutral_default(*args, **kwargs)
         # Lock-free fast path: registrations are append-only, and dict reads
         # are atomic, so a hit needs no lock; misses — and instances whose
         # ``resolve`` was overridden (test stubs) — go through resolve().
         implementation = self._implementations.get(backend.name)
+        if implementation is None and self._neutral_default is not None:
+            implementation = self._neutral_default
         if (
             implementation is None
             or isinstance(implementation, LazyImplementation)
@@ -310,6 +346,26 @@ class Primitive:
         ):
             return self.resolve(backend)(*args, **kwargs)
         return implementation(*args, **kwargs)
+
+    def _dispatch_backend(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Backend | None:
+        """Select the backend for one call, or ``None`` to answer neutrally.
+
+        ``None`` comes back only for a neutral primitive in a context that
+        neither selected a backend nor received a value identifying one —
+        the case its own declaration exists to answer. Every other
+        selection failure (mixed backends, a mismatch against the sticky
+        selection) still raises, neutral or not.
+        """
+        from opaque.api.engine.backend import _registry
+
+        try:
+            return _registry.ensure_backend(args, kwargs)
+        except _registry.BackendNotSelectedError:
+            if self._neutral_default is None:
+                raise
+            return None
 
 
 class BackendProvider:
@@ -346,6 +402,7 @@ def primitive(
     *,
     tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
     name: str | None = None,
+    neutral: bool = False,
 ) -> Primitive: ...
 
 
@@ -355,6 +412,7 @@ def primitive(
     *,
     tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
     name: str | None = None,
+    neutral: bool = False,
 ) -> Callable[[Declaration], Primitive]: ...
 
 
@@ -363,11 +421,32 @@ def primitive(
     *,
     tier: PrimitiveTier | str = PrimitiveTier.OPTIONAL,
     name: str | None = None,
+    neutral: bool = False,
 ) -> Primitive | Callable[[Declaration], Primitive]:
-    """Declare a backend-dispatched primitive from a real function."""
+    """Declare a backend-dispatched primitive from a real function.
+
+    Args:
+        declaration: The function being declared. Its body raises
+            ``NotImplementedError`` for an ordinary primitive, whose whole
+            behavior comes from a provider.
+        tier: ``OPTIONAL`` (the default) or ``CORE``.
+        name: Canonical identity; derived from the declaration when omitted.
+        neutral: Whether the declaration body is a backend-neutral default.
+            Set it when the operation has a correct answer without a
+            provider — an annotation that annotates nothing, a predicate
+            about the active backend that no backend can satisfy — so
+            callers make the call unconditionally instead of pairing it
+            with a ``supports()`` probe and a hand-written fallback. Leave
+            it at ``False`` where a missing implementation means the caller
+            asked for something this backend cannot do; that must raise
+            :class:`UnsupportedPrimitiveError` at the call site rather than
+            resolve to a plausible-looking substitute.
+    """
 
     def decorate(function: Declaration) -> Primitive:
-        operation = Primitive(name or _declaration_name(function), tier=tier)
+        operation = Primitive(
+            name or _declaration_name(function), tier=tier, neutral=neutral
+        )
         return operation.bind(function)
 
     if declaration is None:

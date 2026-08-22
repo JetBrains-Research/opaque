@@ -26,7 +26,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine import runtime
-from opaque.api.engine.backend import ensure_backend
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.random.types import RngKey
 from opaque.types import NoisedPytree, PerGroup, SecondMomentClippingOutput
@@ -141,12 +140,8 @@ def mf_gaussian_noise(
         clipped_grads: Any,
         st: MFNoiseState,
     ) -> tuple[NoisedPytree, MFNoiseState]:
-        if hasattr(clipped_grads, "pytree"):
-            backend = ensure_backend(clipped_grads.pytree)
-            if runtime.trace_scope.supports(backend):
-                with runtime.trace_scope("opaque::mf_gaussian_noise"):
-                    return _noise_fn_impl(clipped_grads, st)
-        return _noise_fn_impl(clipped_grads, st)
+        with runtime.trace_scope("opaque::mf_gaussian_noise"):
+            return _noise_fn_impl(clipped_grads, st)
 
     def _noise_fn_impl(
         clipped_grads: Any,

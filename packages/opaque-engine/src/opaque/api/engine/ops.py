@@ -10,15 +10,20 @@ from typing import Any
 from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 
-@primitive(tier=PrimitiveTier.CORE)
+@primitive(tier=PrimitiveTier.CORE, neutral=True)
 def is_array(value: object) -> bool:
     """Return whether ``value`` is an array of the active backend.
 
     False for Python scalars, numpy arrays under a non-numpy backend, and
     every pytree container. Use it to skip non-array leaves when walking a
     pytree, which may legitimately hold metadata beside its arrays.
+
+    A native array selects its provider before the answer is computed, so
+    this doubles as the neutral "did a backend produce this?" test: in a
+    context that selected nothing, a value belonging to no provider is
+    ``False`` rather than an error, because nothing is active to own it.
     """
-    raise NotImplementedError
+    return False
 
 
 @primitive(tier=PrimitiveTier.CORE)

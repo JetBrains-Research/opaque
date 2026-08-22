@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from opaque.api.engine import ops, pytree
-from opaque.api.engine.backend import BackendNotSelectedError, ensure_backend
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,7 +28,6 @@ def _is_host_array(value: object) -> bool:
 def _zeros_like(value: Any, *, dtype: Any = None) -> Any:
     if _is_host_array(value):
         return np.zeros_like(value, dtype=dtype)
-    ensure_backend(value)
     zero = ops.zeros_like(value)
     return zero if dtype is None else ops.astype(zero, dtype)
 
@@ -37,21 +35,18 @@ def _zeros_like(value: Any, *, dtype: Any = None) -> Any:
 def _add(left: Any, right: Any) -> Any:
     if _is_host_array(left) or _is_host_array(right):
         return left + right
-    ensure_backend(left, right)
     return ops.add(left, right)
 
 
 def _multiply(left: Any, right: Any) -> Any:
     if _is_host_array(left) or _is_host_array(right):
         return left * right
-    ensure_backend(left, right)
     return ops.multiply(left, right)
 
 
 def _scalar_like(value: Any, like: Any, *, dtype: Any = None) -> Any:
     if _is_host_array(like):
         return np.asarray(value, dtype=dtype or like.dtype)
-    ensure_backend(like)
     return ops.scalar(value, dtype=dtype or ops.dtype(like), like=like)
 
 
@@ -74,7 +69,6 @@ class StreamingMatrix:
             if _is_host_array(abstract_value):
                 return init_multiply_fn(abstract_value)
 
-            ensure_backend(abstract_value)
             if ops.is_array(abstract_value):
                 return init_multiply_fn(abstract_value)
 
@@ -88,7 +82,6 @@ class StreamingMatrix:
             if _is_host_array(value):
                 return multiply_next_fn(value, state)
 
-            ensure_backend(value)
             if ops.is_array(value):
                 return multiply_next_fn(value, state)
 
@@ -127,13 +120,9 @@ class StreamingMatrix:
         """Multiply by another StreamingMatrix or a native/host array."""
         if isinstance(other, StreamingMatrix):
             return multiply_streaming_matrices(self, other)
-        if _is_host_array(other):
+        if _is_host_array(other) or ops.is_array(other):
             return multiply_array(self, other)
-        try:
-            ensure_backend(other)
-        except BackendNotSelectedError:
-            return NotImplemented
-        return multiply_array(self, other) if ops.is_array(other) else NotImplemented
+        return NotImplemented
 
     def __mul__(self, other: float) -> StreamingMatrix:
         """Multiply by a scalar."""
@@ -162,7 +151,6 @@ def multiply_array(A: StreamingMatrix, x: Any) -> Any:
         n = x.shape[0]
         item = x.__getitem__
     else:
-        ensure_backend(x)
         n = ops.shape(x)[0]
 
         def item(index):
@@ -220,14 +208,7 @@ def prefix_sum() -> StreamingMatrix:
 
 def diagonal(diag: Any) -> StreamingMatrix:
     """Create an infinite diagonal matrix, repeating the final coefficient."""
-    native_diag = None
-    try:
-        ensure_backend(diag)
-        if ops.is_array(diag):
-            native_diag = diag
-    except BackendNotSelectedError:
-        pass
-
+    native_diag = diag if ops.is_array(diag) else None
     host_diag = None if native_diag is not None else np.asarray(diag)
     length = ops.shape(native_diag)[0] if native_diag is not None else len(host_diag)
     if length == 0:
@@ -241,7 +222,6 @@ def diagonal(diag: Any) -> StreamingMatrix:
         if native_diag is None:
             coefficient = _scalar_like(host_diag[coefficient_index], value)
         else:
-            ensure_backend(value, native_diag)
             coefficient = ops.slice_array(native_diag, coefficient_index)
         return _multiply(value, coefficient), index + 1
 
@@ -265,7 +245,6 @@ def momentum_sgd_matrix(
         if _is_host_array(abstract_value):
             dtype = np.result_type(abstract_value.dtype, lr_schedule.dtype)
         else:
-            ensure_backend(abstract_value)
             dtype = ops.accumulator_dtype(abstract_value)
         zero = _zeros_like(abstract_value, dtype=dtype)
         return 0, zero, zero
