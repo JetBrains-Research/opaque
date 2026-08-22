@@ -59,6 +59,14 @@ clear_backend()
 | One call carrying arrays from two providers | `MixedBackendError` |
 | An array from a provider other than the active one | `BackendMismatchError` |
 
+The last two rows are what backend *selection* reports: when dispatch infers
+from the arguments because nothing is selected yet, or when you call
+`ensure_backend(...)` yourself. Once a backend is selected, dispatch trusts it
+and stops inspecting arguments — re-checking them would cost a walk of the
+whole pytree on every call — so a stray array from another provider reaches
+that provider and fails there instead. Pass the values to `ensure_backend(...)`
+where you need them checked against each other.
+
 A few operations have a correct answer with no provider at all — annotating a
 trace when nothing can record it, asking whether a value is a native array when
 nothing is active to own one. Those are declared *neutral* and answer instead

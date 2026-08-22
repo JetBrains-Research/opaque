@@ -259,9 +259,13 @@ provider yet takes no array to infer one from — a no-argument primitive
 such as `ops.float32()`, or a distributed query. Name the array type
 (`ensure_backend(torch.Tensor)`) rather than allocating a dummy array.
 
-Per-call argument validation (mixed backends, mismatch against the sticky
-selection) is the dispatch layer's opt-in, `OPAQUE_VALIDATE_BACKEND_ARGS=1`.
-Do not hand-roll it at individual call sites.
+Dispatch does not re-check the arguments of a call once a backend is
+selected. That is deliberate: the walk is proportional to the pytree and
+would run on every primitive to re-derive an answer fixed for the run, and
+`torch.compile` cannot trace it. A value from another provider therefore
+reaches that provider's implementation and fails there. Where a site must
+genuinely check values against each other, call `ensure_backend(a, b)`
+there — it names the offending backends.
 
 ### Test design
 

@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import importlib
-import os
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import update_wrapper
 from typing import TYPE_CHECKING, Any, TypeVar, overload
-
-_VALIDATE_DISPATCH_ARGS = os.environ.get("OPAQUE_VALIDATE_BACKEND_ARGS", "") == "1"
 
 if TYPE_CHECKING:
     from opaque.api.engine.backend._protocol import Backend
@@ -300,11 +297,16 @@ class Primitive:
         return implementation
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        """Infer or validate a backend, then dispatch its implementation.
+        """Select a backend, then dispatch its implementation.
 
-        With a sticky active backend the per-call argument walk is skipped;
-        set ``OPAQUE_VALIDATE_BACKEND_ARGS=1`` to re-enable full inference
-        (mixed-backend and mismatch validation) on every dispatched call.
+        A selected backend is trusted: the arguments are walked only to
+        infer one, never to re-check one already active. Re-checking would
+        cost a walk proportional to the pytree on every primitive call, to
+        re-derive an answer that is fixed for the run, and it is not
+        traceable — so a value from another provider reaches that
+        provider's implementation and fails there rather than at dispatch.
+        Pass values to ``ensure_backend(...)`` at a site that must check
+        them against each other.
 
         A neutral primitive runs its own declaration wherever dispatch has
         no answer — no backend is selected and the arguments identify none,
@@ -313,24 +315,21 @@ class Primitive:
         """
         from opaque.api.engine.backend import _registry
 
-        if _VALIDATE_DISPATCH_ARGS:
-            backend = self._dispatch_backend(args, kwargs)
+        # Eager dispatch always consults the context-local ContextVar,
+        # preserving the documented lifecycle (an unselected context
+        # fails closed even when another context holds an active
+        # backend). Inside a traced graph (torch.compile) ContextVar
+        # reads are untraceable, so the traced branch trusts the
+        # module-global mirror instead — sound because tracing runs
+        # under the active backend and the mirror is only trusted
+        # while a single backend name has ever been active in this
+        # process (both are plain globals compiled graphs can guard).
+        if _registry._SINGLE_BACKEND and _registry._IS_COMPILING():
+            backend = _registry._ACTIVE_HINT
         else:
-            # Eager dispatch always consults the context-local ContextVar,
-            # preserving the documented lifecycle (an unselected context
-            # fails closed even when another context holds an active
-            # backend). Inside a traced graph (torch.compile) ContextVar
-            # reads are untraceable, so the traced branch trusts the
-            # module-global mirror instead — sound because tracing runs
-            # under the active backend and the mirror is only trusted
-            # while a single backend name has ever been active in this
-            # process (both are plain globals compiled graphs can guard).
-            if _registry._SINGLE_BACKEND and _registry._IS_COMPILING():
-                backend = _registry._ACTIVE_HINT
-            else:
-                backend = _registry._ACTIVE.get()
-            if backend is None:
-                backend = self._dispatch_backend(args, kwargs)
+            backend = _registry._ACTIVE.get()
+        if backend is None:
+            backend = self._dispatch_backend(args, kwargs)
         if backend is None:
             return self._neutral_default(*args, **kwargs)
         # Lock-free fast path: registrations are append-only, and dict reads
