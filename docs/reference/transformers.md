@@ -4,6 +4,9 @@ API reference for `opaque.transformers` — `DPTrainer`,
 `TrainingArguments`, and the public state objects. For task-shaped
 usage guides, see [Hugging Face Integration](../user-guide/huggingface/index.md).
 
+This integration is Torch-only: `DPTrainer`, the Hugging Face model patches,
+PEFT integration, and the Triton kernels are built directly on PyTorch.
+
 ## Overview
 
 The `opaque.transformers` namespace re-exports the trainer surface:
@@ -14,7 +17,7 @@ from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 from opaque.transformers.trl import SFTConfig, SFTTrainer, DPOConfig, DPOTrainer
 
 # Global HF runtime shims (only needed when using HF primitives without DPTrainer):
-from opaque.patches import apply_runtime_patches
+from opaque.transformers.patches import apply_runtime_patches
 ```
 
 | Symbol | Purpose |
@@ -24,7 +27,9 @@ from opaque.patches import apply_runtime_patches
 | `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
-| `opaque.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
+| `opaque.transformers.patches.apply_runtime_patches` | Install the global HF runtime shims, and the Torch-core shims they depend on, in one call (only needed when using HF primitives without `DPTrainer`). |
+| `opaque.transformers.patches.apply_model_patches` | Apply the per-model HF + PEFT patches to one model instance. |
+| `opaque.transformers.patches.families` | Register a model family of your own so it participates in the vmap-safety and kernel patches. |
 
 ## `DPTrainer`
 
@@ -58,8 +63,8 @@ DPTrainer(
 | `compute_loss_func` | `Callable[[outputs, labels], Tensor] \| None` | Per-example loss override; **called under vmap** with one example's `outputs` and `labels`. Not HF's `(outputs, labels, num_items_in_batch) -> scalar` signature. |
 | `compute_metrics` | `Callable[[EvalPrediction], dict] \| None` | Standard HF callback over concatenated predictions / label_ids / inputs / losses. |
 | `callbacks` | `list[TrainerCallback] \| None` | User callbacks; `DefaultFlowCallback` is auto-prepended. |
-| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.**  Passing non-`None` raises `RuntimeError`: DPTrainer owns the functional torchopt optimizer. |
-| `optimizer_cls_and_kwargs` | `tuple[Callable, dict] \| None` | DPTrainer-specific.  Override the default torchopt factory.  Validated against the functional contract at construction. |
+| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.** Passing non-`None` raises `RuntimeError`: DPTrainer owns the explicit-state optimizer. |
+| `optimizer_cls_and_kwargs` | `tuple[Callable, dict] \| None` | DPTrainer-specific. Override the default optimizer factory. Validated against the explicit-state contract at construction. |
 | `preprocess_logits_for_metrics` | `Callable \| None` | Vmap-batched.  Lets `compute_metrics` consume a reduced representation of logits. |
 
 The constructor seeds Python / NumPy / torch global RNGs from
@@ -157,7 +162,7 @@ clip-noise-step.
 | `compute_per_example_loss(fmodel, params, inputs, *, return_logits=False)` | Per-example loss; called under vmap.  Primary extension point for custom training objectives. |
 | `prediction_step(model, inputs, prediction_loss_only, ignore_keys=None)` | Override only if the default ModelOutput-shaped eval is wrong for the model. |
 | `evaluation_loop(dataloader, *, description, prediction_loss_only, ignore_keys, metric_key_prefix)` | Override only if the full eval loop needs custom orchestration. |
-| `create_optimizer()` | Override only to swap the functional torchopt optimizer; prefer `optimizer_cls_and_kwargs`. |
+| `create_optimizer()` | Override only to swap the explicit-state optimizer; prefer `optimizer_cls_and_kwargs`. |
 | `create_scheduler(num_training_steps)` | Override only for LR schedules outside the built-in factory. |
 | `get_train_dataloader()` | Override only to swap the sampler family.  DP-correctness requires the sampler produces each example with independent probability `ctx.sample_rate`. |
 | `get_eval_dataloader(eval_dataset=None)` | Standard `DataLoader` — usually no override needed. |
@@ -554,7 +559,7 @@ weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
 ## Runtime patches
 
 ```python
-from opaque.patches import apply_runtime_patches
+from opaque.transformers.patches import apply_runtime_patches
 
 apply_runtime_patches(compat=True)  # install the global HF shims once
 ```

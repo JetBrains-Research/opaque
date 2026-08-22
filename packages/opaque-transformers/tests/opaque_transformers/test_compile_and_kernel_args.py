@@ -114,7 +114,7 @@ def test_use_performance_kernels_default_keeps_kv_cache_and_compat_on(
     def _spy(model, **kwargs):
         calls.append({"model": model, "kwargs": kwargs})
 
-    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+    monkeypatch.setattr("opaque.transformers.patches.apply_model_patches", _spy)
 
     _tiny_trainer(tmp_path)  # use_performance_kernels default is False
     assert len(calls) == 1
@@ -134,7 +134,7 @@ def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatc
 
     # _performance_kernels.py imports apply_model_patches lazily inside the function body,
     # so patch the source location rather than the consumer's module.
-    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+    monkeypatch.setattr("opaque.transformers.patches.apply_model_patches", _spy)
 
     _trainer, model = _tiny_trainer(tmp_path, use_performance_kernels=True)
     assert len(calls) == 1
@@ -146,14 +146,14 @@ def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatc
 
 def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeypatch):
     """``performance_kernels_config`` is a flat dict forwarded as-is to
-    ``apply_model_patches`` kwargs — no key translation, opaque-patches
+    ``apply_model_patches`` kwargs — no key translation, opaque-kernels
     keys used directly."""
     calls: list[dict] = []
 
     def _spy(model, **kwargs):
         calls.append({"kwargs": kwargs})
 
-    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+    monkeypatch.setattr("opaque.transformers.patches.apply_model_patches", _spy)
 
     _tiny_trainer(
         tmp_path,
@@ -178,7 +178,7 @@ def test_performance_kernels_config_can_disable_kv_cache(tmp_path, monkeypatch):
     def _spy(model, **kwargs):
         calls.append({"kwargs": kwargs})
 
-    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+    monkeypatch.setattr("opaque.transformers.patches.apply_model_patches", _spy)
 
     _tiny_trainer(tmp_path, performance_kernels_config={"kv_cache": False})
     assert len(calls) == 1

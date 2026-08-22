@@ -12,6 +12,11 @@ reverse-engineering individual modules.
 | `loss_scaler` | `opaque.precision.loss_scaler` | Dynamic loss scaling for `fp16` — multiplies loss before backward, unscales grads before clipping. |
 | `compute_dtype` | Kwarg on clipping + noise factories | Precision at which sensitivity-bound and noise sampling are computed. **DP-critical**: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one. |
 
+`opaque.precision.loss_scaler` and `opaque.precision.all_finite` dispatch to
+the active engine provider (Torch) through the same functional interface.
+There is no portable autocast abstraction: `torch.autocast(...)` is used
+directly when needed.
+
 ## The DP-critical invariant
 
 The privacy accountant is calibrated to `noise_multiplier · C`, where C is the
@@ -68,9 +73,11 @@ the unscale as `pre_clipping_transform` so clipping sees the true magnitudes.
 from opaque.accounting import Accountant
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpsgd.clipping import clipped_grad
+from opaque.optimizers import adamw, apply_updates
 from opaque.precision import loss_scaler
 
 scaler, scaler_state = loss_scaler()  # defaults match torch.amp.GradScaler
+optimizer_step, opt_state = adamw(params, lr=learning_rate)
 accountant = Accountant()
 step_process = dpsgd_acc.poisson(
     dpsgd_acc.gaussian(noise_multiplier),
@@ -94,7 +101,8 @@ grad_fn, clip_state = clipped_grad(
 # in the step:
 (grads, stats), clip_state = grad_fn(params, x, y, state=clip_state)
 noisy, noise_state = noise_fn(grads, noise_state)
-opt_state, params = optimizer.update(noisy, opt_state, params=params)
+updates, opt_state = optimizer_step(noisy, opt_state, params=params)
+params = apply_updates(params, updates)
 accountant = accountant | step_process
 scaler_state = scaler.update(scaler_state, stats.all_finite)
 ```
@@ -156,14 +164,53 @@ well, so splitting a batch does not degrade the result — a `bfloat16` run
 accumulates in `float32` and casts once at the end. That costs one `float32`
 copy of the summed output; pass `compute_dtype=torch.bfloat16` to trade it back.
 
+## Writing your own noise at low precision
+
+A mechanism you write inherits none of the rules above, and the one that matters
+most is easy to miss: the draw itself is not where precision is lost.
+`normal(key, shape, dtype=...)` returns a sample in the requested dtype, but a
+provider draws at no less than `float32` internally, so a `bfloat16` request is
+that draw cast down, not a coarser Gaussian. What degrades the result is the
+arithmetic **around** it — add a `float32` noise sample to a `bfloat16` leaf in
+`bfloat16` and every intermediate rounds to ~3 decimal digits.
+
+Upcast the whole expression and cast once at the end:
+
+```python
+from opaque import ops
+from opaque.random import normal
+
+def add_noise(leaf, stddev, key):
+    in_dtype = ops.dtype(leaf)
+    # `float32` unless the leaf is already wider; this is the same one-line
+    # rule `gaussian_noise` and `mf_gaussian_noise` apply internally.
+    compute_dtype = ops.float32() if ops.is_low_precision(in_dtype) else in_dtype
+
+    value = ops.astype(leaf, compute_dtype)
+    noise = normal(key, ops.shape(value), dtype=compute_dtype, like=value)
+    result = ops.add(value, ops.multiply(noise, stddev))
+
+    return ops.astype(result, in_dtype)   # downcast once, at the boundary
+```
+
+Everything between the two `astype` calls — including any `erf` / `erfinv` /
+`clamp` a truncated or bounded mechanism needs — stays at `compute_dtype`.
+Accept a `compute_dtype=None` argument and resolve it this way, so a caller can
+ask for `float64` end to end, exactly as the shipped mechanisms allow.
+
+The recipes above spell dtypes as `torch.float32` / `torch.float64`, which is
+right for training code that already imports torch. Inside a mechanism, reach
+for `ops.float32()`, `ops.float64()` and `ops.boolean()` instead — a provider's
+own dtype object binds the mechanism to that one backend.
+
 ## What's compatible with `torch.amp` and what isn't
 
 | `torch.amp` primitive | Opaque counterpart |
 |-----------------------|---------------------|
 | `torch.amp.autocast(device_type, dtype=...)` | Used directly; nothing to wrap. The trainer enters it around the loss closure. |
 | `torch.amp.GradScaler` | `opaque.precision.loss_scaler` — functional analog. State is a frozen dataclass; defaults match `GradScaler` (`init_scale=2**16`, `growth_factor=2.0`, `backoff_factor=0.5`, `growth_interval=2000`). |
-| `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-patches` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
-| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and unscale, while the surrounding loop always runs its noised optimizer and accountant steps; raw finiteness only backs off the private scale. |
+| `torch.amp.custom_fwd` / `custom_bwd` | Not used — the functional DP step goes through `vmap(grad(...))`, which does not interact with custom autograd. Triton kernels in `opaque-kernels` consult `torch.is_autocast_enabled()` directly at the wrapper boundary. |
+| `GradScaler.step(optimizer)` (fuses inf-check + optimizer.step + skip) | Caller-owned. `loss_scaler` returns the schedule and unscale, while the surrounding loop always runs its noised `optimizer_step(...)` and accountant steps; raw finiteness only backs off the private scale. |
 
 The structural gap — the scaler doesn't own the optimizer call — is forced by
 the functional path: per-example gradients are returned as a pytree by

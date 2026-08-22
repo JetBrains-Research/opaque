@@ -1,0 +1,5 @@
+"""PEFT / LoRA fusion patches — wires fused LoRA kernels onto PEFT modules."""
+
+from opaque.api.transformers.patches.peft import apply_peft_model_patches
+
+__all__ = ["apply_peft_model_patches"]

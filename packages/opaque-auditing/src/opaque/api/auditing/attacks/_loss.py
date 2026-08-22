@@ -1,8 +1,9 @@
 """Loss-based membership scoring for privacy auditing.
 
-Computes per-example membership scores using the same ``torch.func.vmap``
-and ``batch_argnums`` pattern as :func:`opaque.clipped_grad`. Higher scores
-indicate higher likelihood of being a training member.
+Computes per-example membership scores with the engine's vectorizing
+transform, following the same ``batch_argnums`` pattern as
+:func:`opaque.clipped_grad`. Higher scores indicate higher likelihood of
+being a training member.
 """
 
 from __future__ import annotations
@@ -13,11 +14,14 @@ import numpy as np
 
 from opaque.api.auditing.attacks._helpers import (
     _bind_scores,
+    _detach_tree,
     _extract_batch_tensors,
     _merge_args,
     _scoring_loader,
     _validate_batch_argnums,
 )
+from opaque.autodiff import vmap
+from opaque.ops import to_host
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,7 +44,8 @@ def loss_scores(
     """Compute membership scores as negative per-example loss.
 
     Higher score = lower loss = more likely a training member.
-    Uses ``torch.func.vmap`` for per-example loss computation, following
+    Uses the provider's vectorizing transform for per-example loss
+    computation, following
     the same ``batch_argnums`` convention as :func:`~opaque.clipped_grad`.
 
     The scorer builds its own loader over the partition's canaries and
@@ -76,8 +81,10 @@ def loss_scores(
             reduction ``scores - reference_scores``. Typically obtained by
             calling ``loss_scores`` on the untrained model before training.
         batch_size: Batch size of the internal loader. Defaults to 32.
-        collate_fn: Collation for the internal loader. Defaults to
-            ``torch.utils.data.default_collate``.
+        collate_fn: Collation for the internal loader. By default, native
+            arrays are stacked along a new leading axis and mappings and
+            sequences are recursed; other example types need an explicit
+            collate.
 
     Returns:
         A :class:`~opaque.auditing.types.CanaryScores`, shape ``(n,)``:
@@ -111,8 +118,6 @@ def loss_scores(
         )
         estimate = auditing.one_run(scores, coin_flip=cf)
     """
-    import torch
-
     _validate_batch_argnums(batch_argnums, len(args))
     loader = _scoring_loader(
         dataset=dataset,
@@ -122,22 +127,31 @@ def loss_scores(
         reference_scores=reference_scores,
     )
 
-    # Build in_dims for vmap: None for non-batch args, 0 for batch args
+    # Build in_axes for vmap: None for non-batch args, 0 for batch args
     n_args = len(args) + len(batch_argnums)
-    in_dims = tuple(0 if i in batch_argnums else None for i in range(n_args))
-    per_example_fn = torch.func.vmap(loss_fn, in_dims=in_dims)
+    in_axes = tuple(0 if i in batch_argnums else None for i in range(n_args))
+    # ``randomness="error"``: a loss that draws from framework RNG would
+    # score each canary against a batch-shared draw, making the audit's
+    # membership scores depend on the batching. Reject it instead.
+    per_example_fn = vmap(loss_fn, in_axes=in_axes, randomness="error")
+
+    # Scoring wants values, not graphs: detached inputs keep the provider
+    # from recording gradients across the forward passes.
+    args = tuple(_detach_tree(arg) for arg in args)
 
     all_positions: list[int] = []
     all_scores: list[np.ndarray] = []
-    with torch.no_grad():
-        for positions, batch in loader:
-            all_positions.extend(int(position) for position in positions)
-            batch_tensors = _extract_batch_tensors(batch, batch_argnums)
+    for positions, batch in loader:
+        all_positions.extend(int(position) for position in positions)
+        batch_tensors = tuple(
+            _detach_tree(tensor)
+            for tensor in _extract_batch_tensors(batch, batch_argnums)
+        )
 
-            full_args = _merge_args(args, batch_tensors, batch_argnums)
+        full_args = _merge_args(args, batch_tensors, batch_argnums)
 
-            losses = per_example_fn(*full_args)
-            all_scores.append(-losses.detach().cpu().numpy())
+        losses = per_example_fn(*full_args)
+        all_scores.append(-np.asarray(to_host(losses)))
 
     scores = np.concatenate(all_scores) if all_scores else np.empty(0)
 

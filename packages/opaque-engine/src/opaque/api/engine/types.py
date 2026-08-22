@@ -31,8 +31,7 @@ from numbers import Real
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import ParamPath, tree_map
 
 if TYPE_CHECKING:
@@ -45,21 +44,11 @@ if TYPE_CHECKING:
 # ===========================================================================
 
 
-# A pytree whose leaves are ``torch.Tensor``.  Restricted to the
-# concrete container types the rest of the library actually rebuilds
-# and serialises (``dict``, ``list``, ``tuple``); custom ``Mapping`` /
-# ``Sequence`` subclasses are intentionally excluded.
-#
-# Real ``|`` union (not a string) so ``typing.get_type_hints()`` and
-# ``typing.get_args()`` see the alias correctly.  Recursion is encoded
-# with forward references; static checkers expand the alias to ``Any``,
-# which is fine — the alias is documentation-grade typing.
-TensorPytree = (
-    torch.Tensor
-    | dict[str, "TensorPytree"]
-    | list["TensorPytree"]
-    | tuple["TensorPytree", ...]
-)
+# A backend-neutral pytree used for native-array payloads. The portable
+# structural contract covers ``dict``, ``list``, and ``tuple`` containers;
+# providers may additionally traverse nodes from their native registries.
+# ``Any`` intentionally leaves native array and provider extension types open.
+TensorPytree = Any
 
 
 # ===========================================================================
@@ -82,7 +71,7 @@ class PerGroup:
     of a plain product.
 
     Attributes:
-        groups: Read-only mapping from :data:`~opaque.pytree.ParamPath`
+        groups: Read-only mapping from :data:`~opaque.pytree.types.ParamPath`
             (optree leaf path) to group name.  Flat ``named_parameters`` keys
             are stored as one-segment paths ``(name,)``; nested trees use
             multi-segment paths such as ``("layer", "weight")``.  A bare
@@ -147,7 +136,7 @@ class PerGroup:
         return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})
 
     def for_path(self, path: ParamPath | str) -> float:
-        """Look up the per-group value for a leaf :data:`~opaque.pytree.ParamPath`."""
+        """Look up the per-group value for a leaf :data:`~opaque.pytree.types.ParamPath`."""
         from opaque.api.engine.pytree import param_path
 
         return self.values[self.groups[param_path(path)]]
@@ -212,18 +201,9 @@ def _validate_public_scalar(scalar: Any, *, op: str) -> float:
 
 def _scale_tensor_leaves(pytree: Any, scalar: float) -> Any:
     return tree_map(
-        lambda leaf: leaf * scalar if isinstance(leaf, torch.Tensor) else leaf,
+        lambda leaf: ops.multiply(leaf, scalar) if ops.is_array(leaf) else leaf,
         pytree,
     )
-
-
-def _apply_tensor_method(pytree: Any, method: str, *args: Any, **kwargs: Any) -> Any:
-    def _apply(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
-            return getattr(leaf, method)(*args, **kwargs)
-        return leaf
-
-    return tree_map(_apply, pytree)
 
 
 def _scale_max_norm(max_norm: MaxNorm, factor: float) -> MaxNorm:
@@ -273,6 +253,10 @@ class ClippedPytree:
     ) -> float | PerGroup:
         """Noise standard deviation that ``gaussian(noise_multiplier)`` would apply.
 
+        Bound form of :func:`opaque.dpsgd.noise.noise_stddev`, which is the
+        same computation taken as a free function for callers who hold a
+        contribution bound but no clipped pytree.
+
         Named ``noise_stddev_for`` rather than ``noise_stddev`` to leave the
         ``noise_stddev`` slot free for the realised-stddev *field* on the
         :class:`NoisedPytree` subclass — a method on the parent and a field
@@ -307,23 +291,15 @@ class ClippedPytree:
             ValueError: ``noise_multiplier`` negative, ``allocation`` unknown,
                 or any per-group bound negative.
         """
-        if noise_multiplier < 0:
-            raise ValueError(
-                f"noise_multiplier must be non-negative, got {noise_multiplier}"
-            )
-        if allocation not in ("isotropic", "optimal"):
-            raise ValueError(
-                f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
-            )
-        if isinstance(self.max_norm, PerGroup):
-            if allocation == "isotropic":
-                return noise_multiplier * self.max_norm.effective
-            # Local import: ``opaque.api.engine.noise_allocation`` imports these types at
-            # module load; importing it at ``types`` import time would cycle.
-            from opaque.api.engine.noise_allocation import per_group_noise_stddev
+        # Local import: ``opaque.api.engine.noise_allocation`` imports these types
+        # at module load; importing it at ``types`` import time would cycle.
+        from opaque.api.engine.noise_allocation import noise_stddev
 
-            return per_group_noise_stddev(self.max_norm, noise_multiplier)
-        return noise_multiplier * float(self.max_norm)
+        return noise_stddev(
+            self.max_norm,
+            noise_multiplier=noise_multiplier,
+            allocation=allocation,
+        )
 
     def _scaled(self, scalar: float) -> ClippedPytree:
         return replace(
@@ -367,17 +343,34 @@ class ClippedPytree:
 
     def clone(self) -> ClippedPytree:
         """Clone tensor leaves while preserving metadata."""
-        return replace(self, pytree=_apply_tensor_method(self.pytree, "clone"))
+        return replace(
+            self,
+            pytree=tree_map(
+                lambda leaf: ops.clone(leaf) if ops.is_array(leaf) else leaf,
+                self.pytree,
+            ),
+        )
 
     def detach(self) -> ClippedPytree:
         """Detach tensor leaves while preserving metadata."""
-        return replace(self, pytree=_apply_tensor_method(self.pytree, "detach"))
+        return replace(
+            self,
+            pytree=tree_map(
+                lambda leaf: ops.detach(leaf) if ops.is_array(leaf) else leaf,
+                self.pytree,
+            ),
+        )
 
     def to(self, *args: Any, **kwargs: Any) -> ClippedPytree:
         """Call ``Tensor.to`` on tensor leaves while preserving metadata."""
         return replace(
             self,
-            pytree=_apply_tensor_method(self.pytree, "to", *args, **kwargs),
+            pytree=tree_map(
+                lambda leaf: (
+                    ops.transfer(leaf, *args, **kwargs) if ops.is_array(leaf) else leaf
+                ),
+                self.pytree,
+            ),
         )
 
 

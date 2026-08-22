@@ -10,6 +10,7 @@ from opaque.api.optimizers.types import (
     RAdamState,
     RMSpropState,
     ScheduleFreeState,
+    SGDState,
 )
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "LionState",
     "RAdamState",
     "RMSpropState",
+    "SGDState",
     "ScheduleFreeState",
 ]

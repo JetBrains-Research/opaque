@@ -6,6 +6,10 @@ without creating package dependency cycles.
 
 Exposed helpers:
 
+- :func:`noise_stddev` — the stddev a Gaussian mechanism applies to a given
+  contribution bound; polymorphic over ``float`` / :class:`~opaque.types.PerGroup`
+  and over the allocation rule.  Re-exported publicly as
+  :func:`opaque.dpsgd.noise.noise_stddev`.
 - :func:`per_group_noise_stddev` — single-stream MSE-optimal allocation.
 - :func:`paired_noise_stddevs` — paired first + element-wise-squared release;
   polymorphic in each stream (``float`` or :class:`~opaque.types.PerGroup`).
@@ -14,20 +18,31 @@ Exposed helpers:
   mechanisms.
 
 Constants :data:`PAIRED_FIRST_STREAM_FOLD` and :data:`PAIRED_SECOND_STREAM_FOLD`
-namespace RNG ``fold_in`` tags for the two streams relative to the single-stream
-derivation (``fold_in(key, step)``).
+name the two streams of a paired release.  A mechanism folds them beneath its
+own root, so the two streams separate from each other and from that mechanism's
+single-stream derivation.
 """
 
 from __future__ import annotations
 
 import math
+from typing import Any, Literal
 
 from opaque.api.engine.types import ClippedPytree, PerGroup, SecondMomentClippingOutput
 
-# Tags for `fold_in(base_key, tag)` before `fold_in(..., step_counter)` so
-# paired streams do not collide with single-stream key derivation.
-PAIRED_FIRST_STREAM_FOLD = 1
-PAIRED_SECOND_STREAM_FOLD = 2
+# Folded beneath a mechanism's own root and before its step counter, so the
+# two paired streams separate from each other and from its single stream.
+#
+# These are dotted strings, not small integers, and that is load-bearing.
+# `fold_in` hashes ints and strs down disjoint paths, so a string tag can
+# never be reached by folding an integer. Small integers cannot be reserved
+# this way: `split(key, n)` is defined as `fold_in(key, i) for i in
+# range(n)`, so tagging a stream `1` would make it the *same* key as
+# `split(base)[1]` — the most ordinary line a caller can write. Integers
+# belong to the caller (steps, ranks, leaf and group indices, `split`);
+# every stream root Opaque derives for itself is a namespaced string.
+PAIRED_FIRST_STREAM_FOLD = "opaque.paired.first"
+PAIRED_SECOND_STREAM_FOLD = "opaque.paired.second"
 
 
 def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:
@@ -93,6 +108,79 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
             for k, c in max_norm.values.items()
         },
     )
+
+
+def noise_stddev(
+    max_norm: Any,
+    *,
+    noise_multiplier: float,
+    allocation: Literal["isotropic", "optimal"] = "optimal",
+) -> float | PerGroup:
+    r"""Standard deviation ``gaussian(noise_multiplier)`` applies to ``max_norm``.
+
+    A pure function of the contribution bound — it needs no gradients, so it
+    answers the question before a step has run, for calibration sweeps and
+    telemetry.  :meth:`opaque.types.ClippedPytree.noise_stddev_for` is the
+    same computation reached from a clipped pytree you already hold.
+
+    Scalar ``max_norm``: returns ``noise_multiplier * max_norm``; ``allocation``
+    is validated but does not change the result.
+
+    :class:`~opaque.types.PerGroup` ``max_norm``:
+
+    - ``allocation="optimal"`` (default): MSE-optimal Mahalanobis allocation
+      :math:`\sigma_i = \text{nm} \cdot \sqrt{B_i \cdot \sum_j B_j}`,
+      returned as a :class:`~opaque.types.PerGroup`.
+    - ``allocation="isotropic"``: the scalar
+      ``noise_multiplier * max_norm.effective``, uniform across leaves.
+
+    Privacy accounting is ``gaussian(noise_multiplier)`` under either
+    allocation — the Mahalanobis constraint is satisfied with equality, so
+    per-group allocation costs nothing in the accountant.
+
+    ``noise_multiplier == 0`` is the non-private run and returns zero for
+    every group, short-circuiting before the ``0 * max_norm`` product so a
+    disabled clip (``max_norm = +inf``) gives ``0`` rather than ``NaN`` —
+    matching what :func:`opaque.dpsgd.noise.gaussian_noise` and
+    :func:`opaque.dpftrl.noise.mf_gaussian_noise` do internally.
+
+    Args:
+        max_norm: Per-record contribution bound: a scalar, or a
+            :class:`~opaque.types.PerGroup` of per-group bounds (typically
+            ``clipped_grads.max_norm``).
+        noise_multiplier: Gaussian noise multiplier.  Must be non-negative.
+        allocation: How to spread noise across groups when ``max_norm`` is
+            :class:`~opaque.types.PerGroup`.  Ignored for a scalar bound.
+
+    Returns:
+        Scalar (``float``) or :class:`~opaque.types.PerGroup` of standard
+        deviations, ready to feed a Gaussian noise mechanism.
+
+    Raises:
+        ValueError: ``noise_multiplier`` negative, ``allocation`` unknown, or
+            any per-group bound negative.
+    """
+    if noise_multiplier < 0:
+        raise ValueError(
+            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        )
+    if allocation not in ("isotropic", "optimal"):
+        raise ValueError(
+            f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
+        )
+    if isinstance(max_norm, PerGroup):
+        if allocation == "isotropic":
+            return (
+                0.0
+                if noise_multiplier == 0.0
+                else noise_multiplier * max_norm.effective
+            )
+        return per_group_noise_stddev(max_norm, noise_multiplier)
+    # Non-private run: force σ = 0 before the ``nm * max_norm`` product so a
+    # disabled clip (max_norm = +inf) gives ``0`` rather than ``0 * inf = NaN``.
+    if noise_multiplier == 0.0:
+        return 0.0
+    return noise_multiplier * float(max_norm)
 
 
 def _validate_paired_sensitivity(value: float | PerGroup, *, label: str) -> None:
@@ -265,6 +353,7 @@ def resolve_paired_clipped(
 __all__ = [
     "PAIRED_FIRST_STREAM_FOLD",
     "PAIRED_SECOND_STREAM_FOLD",
+    "noise_stddev",
     "paired_noise_stddevs",
     "per_group_noise_stddev",
     "resolve_paired_clipped",

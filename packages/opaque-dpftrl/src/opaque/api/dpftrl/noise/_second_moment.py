@@ -13,8 +13,7 @@ import dataclasses
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-import torch
-
+from opaque.api.engine import runtime
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.random import fold_in as rng_fold_in
 from opaque.types import (
@@ -32,6 +31,14 @@ if TYPE_CHECKING:
     from opaque.random.types import RngKey
 
     from .types import MfStrategy
+
+# Stream roots for the paired MF release. Namespaced strings rather than the
+# integers `0` and `1`: `split(key, 2)` is exactly `fold_in(key, 0)` and
+# `fold_in(key, 1)`, so integer roots here would alias the keys a caller gets
+# from the most ordinary derivation in the API. See the note beside
+# ``PAIRED_FIRST_STREAM_FOLD`` in ``opaque.api.engine.noise_allocation``.
+SECOND_MOMENT_FIRST_STREAM_FOLD = "opaque.dpftrl.second_moment.first"
+SECOND_MOMENT_SECOND_STREAM_FOLD = "opaque.dpftrl.second_moment.second"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,7 +67,7 @@ def make_second_moment_mf_noise(
     max_participations: int | None,
     noise_multiplier: float,
     key: RngKey,
-    compute_dtype: torch.dtype = torch.float32,
+    compute_dtype: object | None = None,
 ) -> tuple[
     Callable[
         [Any, SecondMomentMFNoiseState],
@@ -85,7 +92,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 0),
+        key=rng_fold_in(key, SECOND_MOMENT_FIRST_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
     second_fn, second_state, second_row_l2_at = _make_raw_mf_noise(
@@ -94,7 +101,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 1),
+        key=rng_fold_in(key, SECOND_MOMENT_SECOND_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
 
@@ -103,7 +110,7 @@ def make_second_moment_mf_noise(
         _second_state=second_state,
     )
 
-    def noise_fn(
+    def _noise_fn_impl(
         clipped_input: Any,
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
@@ -189,6 +196,13 @@ def make_second_moment_mf_noise(
                 ),
             ),
         )
+
+    def noise_fn(
+        clipped_input: Any,
+        st: SecondMomentMFNoiseState,
+    ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
+        with runtime.trace_scope("opaque::mf_gaussian_noise"):
+            return _noise_fn_impl(clipped_input, st)
 
     return noise_fn, init_state
 

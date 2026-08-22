@@ -10,6 +10,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 from __future__ import annotations
 
 import multiprocessing
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,13 @@ def _default_args(**overrides) -> TrainingArguments:
     the test fixtures' CPU-resident model parameters and produce a
     device mismatch).  Tests that explicitly need an accelerator can
     override.
+
+    Allocates a fresh ``output_dir`` per call: xdist's loadscope runs the
+    classes in this file concurrently, and trainers sharing the relative
+    default directory race each other's checkpoint writes and rotations.
     """
     defaults = {
+        "output_dir": tempfile.mkdtemp(prefix="opaque-dp-trainer-test-"),
         "per_device_train_batch_size": 4,
         "clipping_norm": 1.0,
         "privacy_target_epsilon": 10.0,
@@ -420,6 +426,34 @@ class TestDPTrainerTrain:
                 changed = True
                 break
         assert changed, "Model parameters did not change after training"
+
+    def test_train_counts_input_tokens_seen(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """The token-seen counter path (with its scalar all-reduce) runs."""
+        model, tokenizer = gpt2_with_lora
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                # Own output dir + no checkpointing: this test only reads the
+                # token counter and must not add a concurrent checkpoint
+                # writer to the shared default directory under xdist.
+                output_dir=str(tmp_path),
+                save_strategy="no",
+                max_steps=2,
+                eval_strategy="no",
+                logging_steps=999,
+                include_num_input_tokens_seen=True,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+
+        trainer.train()
+
+        assert trainer.state.num_input_tokens_seen > 0
 
     def test_model_generates_after_training(self, gpt2_with_lora, tiny_lm_dataset):
         """Verify model.generate() works after param restoration."""

@@ -1,12 +1,17 @@
 # Model Patches and Kernels
 
-`opaque.patches` is a standalone library that makes Hugging Face
-Transformers models work under `torch.func.vmap(grad(...))` and
-provides fused Triton kernels for the hot ops on the forward /
-backward path. It predates and operates independently of
-`DPTrainer` — any code that drives DP-SGD over HF models (the
-trainer, a hand-rolled training loop, a custom orchestration layer)
-can use the same APIs.
+`opaque.transformers.patches` makes Hugging Face Transformers models work
+under `torch.func.vmap(grad(...))`, and wires in the fused Triton kernels
+(`opaque.kernels`) for the hot ops on the forward / backward path. It operates
+independently of `DPTrainer` — any code that drives DP-SGD over HF models (the
+trainer, a hand-rolled training loop, a custom orchestration layer) can use the
+same APIs.
+
+Three wheels meet here. `opaque-torch` owns the Torch-core shims and applies
+them through `opaque.torch.apply_runtime_patches`; `opaque-transformers` owns
+the Hugging Face and PEFT patches and forwards to the provider before applying
+its own, so one call covers both; `opaque-kernels` owns the fused kernels the
+model patches install.
 
 The fused kernels preserve separate software provenance from scholarly method
 attribution. In this guide, the relevant primary papers are
@@ -30,7 +35,7 @@ Two concerns are handled:
 ## API surface
 
 ```python
-from opaque.patches import apply_runtime_patches, apply_model_patches
+from opaque.transformers.patches import apply_runtime_patches, apply_model_patches
 
 apply_runtime_patches()                       # global HF shims, once at startup
 
@@ -47,7 +52,10 @@ apply_model_patches(
 ```
 
 `apply_runtime_patches()` should be called once near process startup,
-before creating checkpointed models or HF data collators.
+before creating checkpointed models or HF data collators. It forwards its flags
+to `opaque.torch.apply_runtime_patches()` first — making Hugging Face work under
+a functional transform requires the Torch-core shims — so this one call covers
+both layers.
 `apply_model_patches(model)` runs after the model is instantiated and
 after any PEFT / LoRA wrapping, so the patcher sees the final module
 graph.
@@ -285,7 +293,7 @@ blocks (up to 65536), avoiding materialisation of the full
 The kernel honours `label_smoothing` natively (`F.cross_entropy(...,
 label_smoothing=...)` parity) — pass `label_smoothing=...` as a loss
 kwarg and the kernel applies the smoothed formula directly.
-Available standalone as `opaque.patches.kernels.opaque_cross_entropy_loss`.
+Available standalone as `opaque.kernels.opaque_cross_entropy_loss`.
 
 ### Fused linear cross-entropy
 
@@ -350,7 +358,7 @@ Phi-3 (combined qkv_proj), Cohere (no transpose).
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.patches.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 h = opaque_swiglu(gate, up)
 loss = opaque_cross_entropy_loss(logits, labels)

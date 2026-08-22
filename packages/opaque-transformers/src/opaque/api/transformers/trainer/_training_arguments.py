@@ -39,7 +39,7 @@ DP-correct invariants worth flagging:
 - ``clipping_norm`` is the **per-example DP clipping bound**. Pass a
   positive scalar for a single global clip, or a ``dict`` / JSON object
   with a required ``"fallback"`` key (default clip) plus substring
-  pattern keys for :func:`opaque.api.engine.clipping.per_group` semantics. Adaptive /
+  pattern keys for :func:`opaque.dpsgd.clipping.per_group` semantics. Adaptive /
   auto clipping hyperparameters stay in ``clipping_mode`` and
   ``clipping_kwargs`` (not per-group norms). Pass ``math.inf`` to
   **disable clipping** entirely (the single canonical no-clip bound) —
@@ -51,7 +51,7 @@ DP-correct invariants worth flagging:
   ``per_device_train_batch_size * world_size`` (the ``train_batch_size``
   HF property). Internal microbatch chunking under OOM retry never
   changes the logical batch — privacy accounting is unaffected.
-- ``optim`` accepts the torchopt-backed names DPTrainer wires
+- ``optim`` accepts the backend-neutral optimizer names DPTrainer wires
   (``adam``, ``adamw``, ``adamw-bc`` = DP bias-corrected AdamW, ``sgd``,
   ``lion``, ``ademamix``, ``adafactor``, ``rmsprop``, ``adagrad``,
   ``radam``, ``adadelta``, ``schedule_free``) plus HF aliases that map
@@ -83,7 +83,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from opaque.api.engine.device import device_capabilities
+from opaque.torch.device import device_capabilities
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
@@ -431,7 +431,7 @@ class TrainingArguments:
     # False}`` for models whose forward depends on the HF ``DynamicCache``.
     use_performance_kernels: bool = False
     # Flat ``dict[str, bool]`` forwarded as-is to
-    # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
+    # ``opaque.transformers.patches.apply_model_patches`` kwargs (no key translation).
     # Supported keys: ``rope``, ``rms_norm``, ``activation``,
     # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
     # ``eager_attention``, ``batchify``.  ``fused_linear_cross_entropy``
@@ -439,7 +439,7 @@ class TrainingArguments:
     # is incompatible with ``compute_metrics`` /
     # ``preprocess_logits_for_metrics``.
     performance_kernels_config: dict[str, Any] | str | None = None
-    # Whether ``opaque.patches.apply_model_patches`` should apply compat
+    # Whether ``opaque.transformers.patches.apply_model_patches`` should apply compat
     # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe
     # masking / collator / checkpoint hooks).  Default ``True``.  Set to
     # ``False`` for custom models designed to be vmap-safe without

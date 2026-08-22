@@ -1,6 +1,8 @@
 # API Reference
 
-Opaque provides a functional API for differential privacy in PyTorch. This
+Opaque provides a functional API for differential privacy. Portable array,
+autodiff, pytree, and random operations infer their provider (Torch) from the
+first backend-bearing execution call and keep that provider active. This
 reference documents all public functions and classes.
 
 Install via `opaque` (and `opaque[...]` extras) when using this API. Module
@@ -13,6 +15,15 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ### Core utilities
 
+- **[Backends](backend.md)** — Provider selection for the dispatched engine
+  - `set_backend()`, `use_backend()`, `active_backend()`, `clear_backend()`
+  - `primitive()`, `BackendProvider` — declare an operation the engine lacks
+
+- **[Ops](ops.md)** — Portable array operations the mechanisms are written in
+
+- **[Autodiff](autodiff.md)** — Dispatched functional transforms
+  - `grad_and_value()`, `vmap()`
+
 - **[Serialization](serialization.md)** — Flat `state_dict` / `from_state_dict` for
   explicit state trees (optimizers, accounting, clip/noise state, …);
   template-driven restore; optional `register_serializer` for custom types
@@ -21,11 +32,12 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `RngKey` — Immutable key type
   - `key()`, `random_key()` — Create keys
   - `split()`, `fold_in()` — Manipulate keys
-  - `set_reproducible_pytorch_seed()` — PyTorch/cuDNN reproducibility
-  - `generator_from_key()` — PyTorch generator bridge
+  - `opaque.torch.random.set_reproducible_pytorch_seed()` — PyTorch/cuDNN reproducibility
+  - `opaque.torch.random.generator_from_key()` — PyTorch generator bridge
 
 - **[Utilities](utilities.md)** — Functional and PyTree utilities
-  - `make_functional()` — Convert `nn.Module` to functional form
+  - `opaque.torch.functional.make_functional()` — Convert a PyTorch
+    `nn.Module` to functional form
   - `tree_map()`, `tree_map_with_path()`, `partition()`, `merge()`, `global_norm()`, `tree_leaves()`
 
 ### DP-SGD components
@@ -53,11 +65,11 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Sampling](sampling.md)** — Privacy-amplifying sampling
   - `PoissonSampler` — Standard Poisson sampling
   - `PoissonSampler` + `truncated_batch_size` — Bounded Poisson sampling
-  - `CyclicPoissonSampler` (`opaque.dpftrl`) — Cyclic Poisson over `bands` groups; `bands=1` = identity (full-data Poisson each step)
+  - `CyclicPoissonSampler` (`opaque.dpftrl.sampling`) — Cyclic Poisson over `bands` groups; `bands=1` = identity (full-data Poisson each step)
   - `BallsInBinsSampler` — Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` — Deterministic sequential batching (BLT)
 
-- **[Schedules](schedules.md)** — LR schedules for TorchOpt functional optimizers
+- **[Schedules](schedules.md)** — LR schedules for functional optimizers
   - `constant_schedule()` — Constant LR
   - `cosine_schedule()` — Cosine annealing
   - `inverse_sqrt_schedule()` — Inverse-square-root decay
@@ -74,12 +86,24 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `attack_auc()`, `attack_beta_at()` — Attack-side empirical metrics
 
 - **[Distributed](distributed.md)** — Multi-GPU training with DDP
-  - `sum_gradients()` / `sum_gradients_()` — Copy-returning and in-place DP gradient summation
+  - `sum_gradients()` — Return-based DP gradient summation
   - `all_reduce()` — Generic tensor all-reduce (sum, mean, max, min)
-  - `reduce_pytree()` / `reduce_pytree_()` — Copy-returning and in-place generic PyTree reduction
+  - `gradients.reduce_pytree()` — Return-based generic PyTree reduction
   - `sync()` — Auto-dispatch sync for any state/aux type
   - `local_shard()` — Partition a dataset for DDP training
   - `is_distributed()`, `get_rank()`, `get_world_size()` — Distributed utilities
+
+### Execution transforms
+
+- **[Execution](execution.md)** — Backend-neutral `compile`, `checkpoint`,
+  and `optimize_saved_activations` with lazy per-backend binding and
+  `ExecutionProfile` capability discovery
+- **[Torch provider](torch.md)** — `opaque.torch` — the shipped provider's
+  Torch-only surface
+  - `opaque.torch.apply_runtime_patches()` — the Torch-core runtime patches;
+    today one concern, `vmap_checkpointing`
+  - `opaque.torch.checkpoint` — the individual installers and the capability
+    probes behind that concern
 
 ### Hugging Face integration
 
@@ -87,8 +111,13 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `DPTrainer` — full constructor, methods, callback wiring, overridable hooks
   - `TrainingArguments` — every field grouped by concern (privacy, compute, patches, save, eval, …)
   - `opaque.transformers.trainer.types` — `EvaluationResult`, `TrainOutput` return types
-  - `opaque.patches.apply_runtime_patches` / `is_runtime_patched` — install/query the global runtime shims
+  - `opaque.transformers.patches` — the Hugging Face and PEFT patches:
+    `apply_model_patches`, `apply_runtime_patches` / `is_runtime_patched`
+    (which forwards to the provider's, so one call covers both layers), plus
+    `.families` for registering your own model family
   - `opaque.transformers.trl` — TRL-style `SFTTrainer` / `DPOTrainer` (+ `SFTConfig` / `DPOConfig`), built on `DPTrainer`
+  - `opaque.kernels` — the fused Triton kernels the model patches install,
+    importable standalone with PyTorch fallbacks
 
 ## Quick Reference
 
@@ -104,16 +133,20 @@ from opaque.random import key
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1, param_max=5.0,
+    param_min=0.1,
+    param_max=5.0,
 )
 
 # Set up DP components
 grad_fn, clip_state = clipped_grad(
-    loss_fn, clipping_norm=1.0, batch_argnums=1,
+    loss_fn,
+    clipping_norm=1.0,
+    batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=result.param, key=key(42),
+    noise_multiplier=result.param,
+    key=key(42),
 )
 
 # Training loop
@@ -169,7 +202,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `lambda_cgd()`           | DP-λCGD mechanism                 | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `bisr()`                 | BISR mechanism                    | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `balls_in_bins()`        | Balls-in-Bins amplification       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `poisson()` (`opaque.dpftrl`) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
+| `poisson()` (`opaque.dpftrl.sampling`) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
 
 ### Accounting (Composition & Metrics)
 
@@ -200,7 +233,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|----------------------------|---------------------------------------------------------------|
 | `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `PoissonSampler` (with `truncated_batch_size`) | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
-| `CyclicPoissonSampler` (`opaque.dpftrl`) | Cyclic Poisson over `bands` groups; `bands=1` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler` (`opaque.dpftrl.sampling`) | Cyclic Poisson over `bands` groups; `bands=1` = identity | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |
 
@@ -232,13 +265,24 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `OneRunEstimate.attack_auc()`       | Empirical attack AUC            | [Guide](../user-guide/auditing.md)             |
 | `OneRunEstimate.attack_beta_at()`   | Empirical attack β at given FPR | [Guide](../user-guide/auditing.md)             |
 
+### Backend
+
+| Function                | Purpose                              | User Guide                          |
+|-------------------------|--------------------------------------|-------------------------------------|
+| `set_backend()`         | Activate a provider by name          | [Guide](../user-guide/backends.md)  |
+| `use_backend()`         | Scope a provider selection           | [Guide](../user-guide/backends.md)  |
+| `active_backend()`      | Query the active provider            | [Guide](../user-guide/backends.md)  |
+| `clear_backend()`       | Return to inference from arguments   | [Guide](../user-guide/backends.md)  |
+| `primitive()`           | Declare a dispatched operation       | [Guide](../user-guide/backends.md)  |
+| `BackendProvider`       | Register per-backend implementations | [Guide](../user-guide/backends.md)  |
+
 ### Distributed
 
 | Function               | Purpose                     | User Guide                                 |
 |------------------------|-----------------------------|--------------------------------------------|
-| `sum_gradients()` / `sum_gradients_()` | DP gradient summation (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `sum_gradients()` | Return-based DP gradient summation | [Guide](../user-guide/distributed.md) |
 | `all_reduce()`         | Generic tensor all-reduce (sum, mean, max, min) | [Guide](../user-guide/distributed.md) |
-| `reduce_pytree()` / `reduce_pytree_()` | Generic PyTree reduction (copy-returning / in-place) | [Guide](../user-guide/distributed.md) |
+| `gradients.reduce_pytree()` | Return-based generic PyTree reduction | [Guide](../user-guide/distributed.md) |
 | `sync()`               | Auto-dispatch sync for any state/aux type | [Guide](../user-guide/distributed.md) |
 | `local_shard()`        | Partition dataset for DDP training | [Guide](../user-guide/distributed.md) |
 | `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
@@ -269,7 +313,8 @@ Opaque's API follows these principles:
 1. **Functional-first**: Immutable state, pure functions
 2. **Composable**: Small, focused functions that combine naturally
 3. **Type-safe**: Comprehensive type hints
-4. **PyTorch-native**: Built on `torch.func`, works with standard PyTorch
+4. **Backend-neutral**: Mechanisms dispatch through `opaque.ops`; `opaque-torch`
+   is the provider shipped today
 5. **JAX-inspired**: API closely mirrors JAX-Privacy for familiarity
 
 ## See also

@@ -356,6 +356,13 @@ Empirical ROC AUC of the membership inference attack. Returns point
 estimate by default, or `(lower, upper)` CI tuple when `confidence` is
 provided. Independent of the audit method.
 
+`key` is **required** whenever `confidence` is given, and a `ValueError`
+says so. The CI comes from bootstrap resampling, so without an explicit key
+the interval would move between runs on identical scores — a difference a
+reader would read as a property of the audit rather than of the resampling.
+It is unused for the point estimate, which is a deterministic function of
+the counts.
+
 ### attack_beta_at
 
 ```python

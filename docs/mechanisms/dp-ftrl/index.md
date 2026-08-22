@@ -24,6 +24,11 @@ The simplest case (sensitivity 1, no correlation) is the
 as a sanity check or when comparing against vanilla DP-SGD on equal
 footing.
 
+Every strategy is a host-side recipe whose `coefficients(...)` query returns
+NumPy arrays; `mf_gaussian_noise` executes it eagerly over the gradient
+provider's native arrays. See
+[Providers, dtype, and state](../../user-guide/noise.md#providers-dtype-and-state).
+
 ## Pairing with sampling
 
 DP-FTRL pairs the noise mechanism with one of three amplification

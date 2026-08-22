@@ -1,198 +1,70 @@
-"""Schedule-Free wrapper (Defazio et al., 2024).
-
-Composes around any base ``GradientTransformation`` (Adam, AdamW,
-Lion, AdEMAMix, …) to give it Defazio's schedule-free averaging — a
-training mode that produces published checkpoints from a Polyak-Ruppert-
-style uniform average rather than relying on an external LR schedule
-(warmup, cosine, …).
-
-Reference:
-    Defazio, Yaida, Cutkosky, "The Road Less Scheduled",
-    arXiv:2405.15682.
-
-Three weight sequences::
-
-    z_t  : raw iterate updated by the wrapped optimizer
-    x_t  : uniform-averaged "published" weights (saved checkpoint)
-    y_t  : interpolation y_t = (1 − β) z_t + β x_{t-1} — used for
-           forward passes during training
-
-Update step (gradient computed at ``y_t``)::
-
-    g_t   = ∇L(y_t)
-    z_{t+1} = z_t − wrapped_optimizer_update(g_t)
-    x_{t+1} = (1 − 1/(t+1)) x_t + (1/(t+1)) z_{t+1}
-    y_{t+1} = (1 − β) z_{t+1} + β x_{t+1}
-
-The wrapper presents the standard ``GradientTransformation`` interface,
-but its update returns a delta that takes the trainer's ``params``
-(treated as ``y_t``) to ``y_{t+1}``.
-
-DP / privacy notes.
-
-- The privacy mechanism (clipping, noise) attaches to the gradient at
-  ``y_t`` exactly as in vanilla DP-SGD; the published average ``x_t``
-  is a deterministic function of the (already-private) ``z`` trajectory,
-  so by post-processing the privacy guarantee is unchanged.
-- Wrapped optimizers consume ``NoisedPytree`` / ``SecondMomentNoiseOutput`` on
-  ``updates`` as usual (same as without this wrapper); the public ``update``
-  surface does not add DP metadata kwargs.
-
-Trainer-integration caveat (Phase B).  The wrapper's published params
-are ``x_t``, not the ``params`` argument the trainer passes in
-(``y_t``).  Saving / evaluating against ``y_t`` would defeat the
-purpose of schedule-free averaging.  The wrapper exposes the published
-params as the ``x`` field of :class:`ScheduleFreeState`, which trainer
-integrations should consult at save / eval boundaries.  This is the
-dependency that gates schedule-free's usefulness through ``DPTrainer``;
-the wrapper itself is correct end-to-end as a library API.
-"""
+"""Schedule-free averaging wrapper for engine optimizer factories."""
 
 from __future__ import annotations
 
-import dataclasses
 from typing import TYPE_CHECKING, Any
 
-try:
-    from torchopt.base import GradientTransformation
-except ImportError as exc:
-    raise ImportError(
-        "torchopt is required for opaque.optimizers. "
-        "Install it with: pip install 'torchopt>=0.7.3'"
-    ) from exc
-
+from opaque.api.engine import ops
+from opaque.api.optimizers.types import ScheduleFreeState
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
-    from opaque.types import TensorPytree
-
-
-@dataclasses.dataclass(frozen=True)
-class ScheduleFreeState:
-    """State for the schedule-free wrapper.
-
-    Attributes:
-        z: Raw iterate (pytree matching params).
-        x: Uniformly-averaged published weights (pytree matching params).
-        inner: State of the wrapped ``GradientTransformation``.
-        step: Number of completed updates.
-        beta: Interpolation coefficient β.
-    """
-
-    z: TensorPytree
-    x: TensorPytree
-    inner: Any  # opaque ChainState — the inner GradientTransformation's state
-    step: int
-    beta: float
+    from collections.abc import Callable
 
 
 def schedule_free(
-    base: GradientTransformation,
+    params: Any,
+    base: Callable[..., tuple[Callable[..., tuple[Any, Any]], Any]],
     *,
     beta: float = 0.9,
     warmup_steps: int = 0,
-) -> GradientTransformation:
-    """Wrap a base optimizer with schedule-free averaging.
+    **base_kwargs: Any,
+) -> tuple[Callable[..., tuple[Any, ScheduleFreeState]], ScheduleFreeState]:
+    """Wrap an optimizer factory while retaining raw and published weights.
 
-    The trainer treats the returned object as a normal optimizer: it
-    feeds in ``y_t`` as ``params``, the wrapper internally maintains
-    ``z_t`` and ``x_t``, and the returned update advances ``y_t`` to
-    ``y_{t+1}``.
-
-    Args:
-        base: Any ``GradientTransformation`` (e.g.
-            :func:`opaque.optimizers._adamw`, :func:`opaque.optimizers._lion`,
-            :func:`torchopt.sgd`, …).  Its ``init`` is called on
-            ``params`` and its ``update`` consumes the gradient at
-            ``y_t``.
-        beta: Interpolation coefficient between ``z`` and ``x`` for the
-            forward-pass weights ``y``.  Paper default 0.9.
-        warmup_steps: When > 0, the averaging weight on the first
-            ``warmup_steps`` is set to 0 (i.e. ``x`` follows ``z``
-            exactly during warm-up).  Useful for early instability;
-            disable by leaving at 0.
-
-    Returns:
-        A ``torchopt.base.GradientTransformation`` whose state is a
-        :class:`ScheduleFreeState`.  Read ``state.x`` to retrieve the
-        published weights for saving / evaluation.
+    ``base`` receives ``params`` followed by ``base_kwargs`` and must follow
+    the engine optimizer factory protocol.  The returned state exposes ``x``
+    for evaluation/checkpointing and the step returns the signed delta from
+    the training weights ``y`` to the next interpolation.
     """
-    if not 0.0 <= beta <= 1.0:
-        raise ValueError(f"beta must satisfy 0 <= beta <= 1, got {beta}")
+    if not 0 <= beta <= 1:
+        raise ValueError("beta must satisfy 0 <= beta <= 1")
     if warmup_steps < 0:
-        raise ValueError(f"warmup_steps must be non-negative, got {warmup_steps}")
+        raise ValueError("warmup_steps must be non-negative")
+    inner_step, inner_state = base(params, **base_kwargs)
+    state = ScheduleFreeState(
+        tree_map(ops.clone, params), tree_map(ops.clone, params), inner_state, 0, beta
+    )
 
-    def init_fn(params: Any) -> ScheduleFreeState:
-        # ``params`` represents y₀; we initialise z = x = y₀ so the
-        # interpolation matches the input on the first step.
-        z = tree_map(lambda p: p.clone(), params)
-        x = tree_map(lambda p: p.clone(), params)
-        return ScheduleFreeState(
-            z=z,
-            x=x,
-            inner=base.init(params),
-            step=0,
-            beta=beta,
-        )
-
-    def update_fn(
-        updates: Any,
-        state: ScheduleFreeState,
-        *,
-        params: Any = None,
-        inplace: bool = False,
+    def step(
+        grads: Any, state: ScheduleFreeState, *, params: Any
     ) -> tuple[Any, ScheduleFreeState]:
-        # ``updates`` is the gradient ∇L(y_t); ``params`` is y_t.
-        if params is None:
-            raise ValueError(
-                "schedule_free requires `params` (interpreted as y_t) "
-                "to be passed at update time."
-            )
-        # Step the wrapped optimizer to get its delta (already
-        # negative-LR-scaled by the wrapped chain).  Crucially, the
-        # base optimizer is told ``params=state.z`` rather than ``y_t``:
-        # decoupled / L2 weight decay must reference the raw iterate
-        # ``z`` (which is what the inner optimizer's update is being
-        # added to), not the interpolated ``y`` we use for the forward
-        # pass.  Mismatching this regularises the wrong tensor and
-        # quietly changes the algorithm.
-        inner_update, new_inner = base.update(
-            updates, state.inner, params=state.z, inplace=inplace
-        )
-        # z_{t+1} = z_t + inner_update  (inner_update is the negative
-        # step the wrapped optimizer would have applied to params).
-        new_z = tree_map(lambda z, du: z + du, state.z, inner_update)
-        # Uniform average over post-warmup iterates::
-        #
-        #   x_{t+1} = (1 − w) x_t + w z_{t+1}
-        #
-        # During warm-up (``state.step < warmup_steps``) we set ``x=z``
-        # so the average doesn't anchor to early-training noise.  After
-        # warm-up we use ``w = 1 / post_warmup_t``: the first averaged
-        # iterate has ``w=1`` (start a fresh average), and subsequent
-        # iterates get the standard Polyak-Ruppert ``1/n`` weight.
-        # Using the global ``t`` here (the bug) leaves ``x`` anchored to
-        # the warmup-end ``z`` because the first post-warmup step would
-        # only move it by ``1/(warmup_steps+1)``.
+        inner_update, inner = inner_step(grads, state.inner, params=state.z)
+        z = tree_map(ops.add, state.z, inner_update)
         t = state.step + 1
         if state.step < warmup_steps:
-            new_x = tree_map(lambda _, z: z.clone(), state.x, new_z)
+            x = tree_map(ops.clone, z)
         else:
-            post_warmup_t = t - warmup_steps  # 1 on the first post-warmup step
-            w = 1.0 / float(post_warmup_t)
-            new_x = tree_map(lambda x, z: (1.0 - w) * x + w * z, state.x, new_z)
-        # y_{t+1} = (1 − β) z_{t+1} + β x_{t+1}
-        new_y = tree_map(
-            lambda z, x: (1.0 - state.beta) * z + state.beta * x, new_z, new_x
+            weight = 1.0 / (t - warmup_steps)
+            x = tree_map(
+                lambda old, value: ops.add(
+                    ops.multiply(old, 1 - weight), ops.multiply(value, weight)
+                ),
+                state.x,
+                z,
+            )
+        y = tree_map(
+            lambda raw, average: ops.add(
+                ops.multiply(raw, 1 - state.beta), ops.multiply(average, state.beta)
+            ),
+            z,
+            x,
         )
-        # Delta: y_{t+1} − y_t (current params).  The trainer applies
-        # this as ``params + delta``, recovering y_{t+1}.
-        delta = tree_map(lambda y_new, y_old: y_new - y_old, new_y, params)
-        return delta, ScheduleFreeState(
-            z=new_z, x=new_x, inner=new_inner, step=t, beta=state.beta
+        return tree_map(ops.subtract, y, params), ScheduleFreeState(
+            z, x, inner, t, state.beta
         )
 
-    return GradientTransformation(init_fn, update_fn)
+    return step, state
 
 
-__all__ = ["ScheduleFreeState", "schedule_free"]
+__all__ = ["schedule_free"]

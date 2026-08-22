@@ -5,9 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-torchopt = pytest.importorskip("torchopt")
-
-from opaque.optimizers import adafactor
+from opaque.optimizers import adafactor, apply_updates
 from opaque.optimizers.types import AdafactorState
 from opaque.types import (
     PerGroup,
@@ -31,14 +29,14 @@ def matrix_grads(matrix_params):
     return {k: torch.randn_like(v) for k, v in matrix_params.items()}
 
 
-def _af_state(chain_state) -> AdafactorState:
-    return chain_state[0]
+def _af_state(state: AdafactorState) -> AdafactorState:
+    return state
 
 
 class TestVanilla:
     def test_state_factored_for_matrices_scalar_for_vectors(self, matrix_params):
-        opt = adafactor(lr=1e-3)
-        st = _af_state(opt.init(matrix_params))
+        _, state = adafactor(matrix_params, lr=1e-3)
+        st = _af_state(state)
         assert isinstance(st, AdafactorState)
         # Three flat leaves; per-leaf v_state tuple of length 2 (factored)
         # for matrices, length 1 (scalar) for the bias vector.
@@ -49,50 +47,48 @@ class TestVanilla:
     def test_factored_v_shapes_match_axes(self):
         """For a (rows, cols) matrix, v_row has shape (rows,) and v_col (cols,)."""
         params = {"w": torch.randn(8, 4)}
-        opt = adafactor(lr=1e-3)
-        st = _af_state(opt.init(params))
+        _, state = adafactor(params, lr=1e-3)
+        st = _af_state(state)
         v_row, v_col = st.v_flat[0]
         assert v_row.shape == (8,)
         assert v_col.shape == (4,)
 
     def test_step_increments(self, matrix_params, matrix_grads):
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
-        _, state = opt.update(matrix_grads, state, params=matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
+        _, state = step(matrix_grads, state, params=matrix_params)
         assert _af_state(state).step == 1
-        _, state = opt.update(matrix_grads, state, params=matrix_params)
+        _, state = step(matrix_grads, state, params=matrix_params)
         assert _af_state(state).step == 2
 
     def test_apply_updates_changes_params(self, matrix_params, matrix_grads):
-        opt = adafactor(lr=1e-3)
+        step, state = adafactor(matrix_params, lr=1e-3)
         orig = {k: v.clone() for k, v in matrix_params.items()}
-        state = opt.init(matrix_params)
-        updates, _ = opt.update(matrix_grads, state, params=matrix_params)
-        new = torchopt.apply_updates(matrix_params, updates)
+        updates, _ = step(matrix_grads, state, params=matrix_params)
+        new = apply_updates(matrix_params, updates)
         assert any(not torch.equal(new[k], orig[k]) for k in matrix_params)
 
     def test_first_moment_optional(self, matrix_params, matrix_grads):
-        opt0 = adafactor(lr=1e-3, beta1=0.0)
-        opt1 = adafactor(lr=1e-3, beta1=0.9)
-        st0 = _af_state(opt0.init(matrix_params))
-        st1 = _af_state(opt1.init(matrix_params))
+        _, state0 = adafactor(matrix_params, lr=1e-3, beta1=0.0)
+        _, state1 = adafactor(matrix_params, lr=1e-3, beta1=0.9)
+        st0 = _af_state(state0)
+        st1 = _af_state(state1)
         assert st0.m is None
         assert st1.m is not None
 
     def test_decoupled_wd_zero_grad(self):
         params = {"w": torch.ones(3) * 2.0}
         grads = {"w": torch.zeros(3)}
-        opt = adafactor(lr=0.1, weight_decay=0.5, decoupled_weight_decay=True)
-        state = opt.init(params)
-        updates, _ = opt.update(grads, state, params=params)
+        step, state = adafactor(
+            params, lr=0.1, weight_decay=0.5, decoupled_weight_decay=True
+        )
+        updates, _ = step(grads, state, params=params)
         # update = -lr * (0 + wd * params)
         expected = -0.1 * 0.5 * params["w"]
         torch.testing.assert_close(updates["w"], expected, atol=1e-6, rtol=0.0)
 
     def test_finite_updates(self, matrix_params, matrix_grads):
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
-        updates, _ = opt.update(matrix_grads, state, params=matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
+        updates, _ = step(matrix_grads, state, params=matrix_params)
         for k in matrix_params:
             assert torch.isfinite(updates[k]).all()
 
@@ -108,15 +104,13 @@ class TestUpdateRmsClip:
             "large": torch.ones(4, 4),
             "small": torch.tensor([10.0, 0.0, 0.0, 0.0]),
         }
-        threshold = 0.9
+        threshold = 0.7
         common = {"lr": 1.0, "eps_root": 1.0, "weight_decay": 0.0}
-        opt = adafactor(**common, update_rms_clip=threshold)
-        opt_no_clip = adafactor(**common, update_rms_clip=1e9)
+        step, state = adafactor(params, **common, update_rms_clip=threshold)
+        step_no_clip, state_no_clip = adafactor(params, **common, update_rms_clip=1e9)
 
-        updates, _ = opt.update(grads, opt.init(params), params=params)
-        unclipped, _ = opt_no_clip.update(
-            grads, opt_no_clip.init(params), params=params
-        )
+        updates, _ = step(grads, state, params=params)
+        unclipped, _ = step_no_clip(grads, state_no_clip, params=params)
 
         global_rms = torch.sqrt(
             sum(update.pow(2).sum() for update in unclipped.values())
@@ -145,19 +139,21 @@ class TestUpdateRmsClip:
             "large": torch.ones(4, 4),
             "small": torch.tensor([10.0, 0.0, 0.0, 0.0]),
         }
-        threshold = 0.9
+        threshold = 0.47
         common = {"lr": 1.0, "eps_root": 1.0, "weight_decay": 0.0}
-        no_momentum = adafactor(**common, update_rms_clip=1e9)
-        clipped = adafactor(**common, beta1=0.5, update_rms_clip=threshold)
-        momentum_unclipped = adafactor(**common, beta1=0.5, update_rms_clip=1e9)
+        step_no_momentum, state_no_momentum = adafactor(
+            params, **common, update_rms_clip=1e9
+        )
+        step_clipped, state_clipped = adafactor(
+            params, **common, beta1=0.5, update_rms_clip=threshold
+        )
+        step_unclipped, state_unclipped = adafactor(
+            params, **common, beta1=0.5, update_rms_clip=1e9
+        )
 
-        normalized, _ = no_momentum.update(
-            grads, no_momentum.init(params), params=params
-        )
-        updates, _ = clipped.update(grads, clipped.init(params), params=params)
-        unclipped, _ = momentum_unclipped.update(
-            grads, momentum_unclipped.init(params), params=params
-        )
+        normalized, _ = step_no_momentum(grads, state_no_momentum, params=params)
+        updates, _ = step_clipped(grads, state_clipped, params=params)
+        unclipped, _ = step_unclipped(grads, state_unclipped, params=params)
 
         global_rms = torch.sqrt(
             sum(update.pow(2).sum() for update in normalized.values())
@@ -185,19 +181,15 @@ class TestExplicitKwargsRejected:
     Python ``TypeError`` from the unknown-keyword check."""
 
     def test_noise_stddev_rejected(self, matrix_params, matrix_grads):
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
         with pytest.raises(TypeError, match="noise_stddev"):
-            opt.update(matrix_grads, state, params=matrix_params, noise_stddev=0.5)
+            step(matrix_grads, state, params=matrix_params, noise_stddev=0.5)
 
     def test_noisy_squared_grads_rejected(self, matrix_params, matrix_grads):
         sq = {k: v.pow(2) for k, v in matrix_grads.items()}
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
         with pytest.raises(TypeError, match="noisy_squared_grads"):
-            opt.update(
-                matrix_grads, state, params=matrix_params, noisy_squared_grads=sq
-            )
+            step(matrix_grads, state, params=matrix_params, noisy_squared_grads=sq)
 
 
 class TestBCMode:
@@ -205,10 +197,9 @@ class TestBCMode:
 
     def test_default_keeps_phi_zero(self, matrix_params, matrix_grads):
         """Default ``noise_bias_correction=False``: φ stays at 0."""
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=0.5),
                 state,
                 params=matrix_params,
@@ -217,10 +208,9 @@ class TestBCMode:
 
     def test_explicit_true_advances_phi(self, matrix_params, matrix_grads):
         """Explicit ``noise_bias_correction=True``: φ advances under NoisedPytree updates."""
-        opt = adafactor(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3, noise_bias_correction=True)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=0.5),
                 state,
                 params=matrix_params,
@@ -229,10 +219,9 @@ class TestBCMode:
 
     def test_explicit_false_keeps_phi_zero(self, matrix_params, matrix_grads):
         """Explicit ``noise_bias_correction=False``: φ stays at 0 (same as default)."""
-        opt = adafactor(lr=1e-3, noise_bias_correction=False)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3, noise_bias_correction=False)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=0.5),
                 state,
                 params=matrix_params,
@@ -242,11 +231,10 @@ class TestBCMode:
     def test_phi_advances_under_noisy_metadata(self, matrix_params, matrix_grads):
         """With BC on, φ tracks the β₂_t-EMA of σ² per leaf."""
         sigma = 0.5
-        opt = adafactor(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3, noise_bias_correction=True)
         # Drive 8 steps of constant σ; phi should approach σ² steady state.
         for _ in range(8):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 state,
                 params=matrix_params,
@@ -269,9 +257,8 @@ class TestBCMode:
             },
             values={"attn": 0.2, "mlp": 0.8},
         )
-        opt = adafactor(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(matrix_params)
-        _, state = opt.update(
+        step, state = adafactor(matrix_params, lr=1e-3, noise_bias_correction=True)
+        _, state = step(
             noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=matrix_params,
@@ -293,28 +280,26 @@ class TestBCMode:
     def test_bc_changes_updates(self, matrix_params, matrix_grads):
         """With non-zero σ, BC actually changes the update vs vanilla."""
         sigma = 0.5
-        opt_bc = adafactor(lr=1e-3, noise_bias_correction=True)
-        opt_no = adafactor(lr=1e-3, noise_bias_correction=False)
-        s_bc = opt_bc.init(matrix_params)
-        s_no = opt_no.init(matrix_params)
+        step_bc, s_bc = adafactor(matrix_params, lr=1e-3, noise_bias_correction=True)
+        step_no, s_no = adafactor(matrix_params, lr=1e-3, noise_bias_correction=False)
         # Run a few warmup steps so phi has built up.
         for _ in range(3):
-            _, s_bc = opt_bc.update(
+            _, s_bc = step_bc(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 s_bc,
                 params=matrix_params,
             )
-            _, s_no = opt_no.update(
+            _, s_no = step_no(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
                 s_no,
                 params=matrix_params,
             )
-        u_bc, _ = opt_bc.update(
+        u_bc, _ = step_bc(
             noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
             s_bc,
             params=matrix_params,
         )
-        u_no, _ = opt_no.update(
+        u_no, _ = step_no(
             noised(matrix_grads, max_norm=1.0, noise_stddev=sigma),
             s_no,
             params=matrix_params,
@@ -327,11 +312,11 @@ class TestBCMode:
 class TestValidation:
     def test_negative_decay_rate_required(self):
         with pytest.raises(ValueError, match="decay_rate"):
-            adafactor(decay_rate=0.5)
+            adafactor({"w": torch.ones(1)}, decay_rate=0.5)
 
     def test_zero_eps_raises(self):
         with pytest.raises(ValueError, match="positive"):
-            adafactor(eps_grad=0.0)
+            adafactor({"w": torch.ones(1)}, eps_grad=0.0)
 
 
 class TestScaleAware:
@@ -368,11 +353,12 @@ class TestScaleAware:
         denominator near ``sqrt(v̂) ≈ |g|`` instead, producing a materially
         different update.
         """
-        opt = adafactor(lr=1.0, eps_root=1e-3, update_rms_clip=1e9)
-        state = opt.init(small_params)
+        step, state = adafactor(
+            small_params, lr=1.0, eps_root=1e-3, update_rms_clip=1e9
+        )
         for _ in range(5):
-            _, state = opt.update(dp_scale_grads, state, params=small_params)
-        updates, _ = opt.update(dp_scale_grads, state, params=small_params)
+            _, state = step(dp_scale_grads, state, params=small_params)
+        updates, _ = step(dp_scale_grads, state, params=small_params)
 
         for name, grad in dp_scale_grads.items():
             floored = grad / 1e-3
@@ -398,11 +384,10 @@ class TestScaleAware:
         are equal after RMS clipping.
         """
         # Compare: scale-aware Adafactor vs update = lr * g / rms(g) (rms-sgd).
-        opt = adafactor(lr=1e-3, eps_root=1e-3)
-        state = opt.init(small_params)
+        step, state = adafactor(small_params, lr=1e-3, eps_root=1e-3)
         for _ in range(10):
-            _, state = opt.update(dp_scale_grads, state, params=small_params)
-        updates, _ = opt.update(dp_scale_grads, state, params=small_params)
+            _, state = step(dp_scale_grads, state, params=small_params)
+        updates, _ = step(dp_scale_grads, state, params=small_params)
 
         # Construct the "RMS-SGD" reference for the matrix leaf.
         g_mat = dp_scale_grads["fc1.weight"]
@@ -438,11 +423,12 @@ class TestScaleAware:
         scale = 1e-3  # DP-clipped magnitude
 
         def run_steps(grads, n=10):
-            opt = adafactor(lr=1.0, update_rms_clip=1e9)  # disable rms clip
-            state = opt.init(small_params)
+            step, state = adafactor(
+                small_params, lr=1.0, update_rms_clip=1e9
+            )  # disable rms clip
             for _ in range(n):
-                _, state = opt.update(grads, state, params=small_params)
-            updates, _ = opt.update(grads, state, params=small_params)
+                _, state = step(grads, state, params=small_params)
+            updates, _ = step(grads, state, params=small_params)
             return updates
 
         g_large = g_base
@@ -476,15 +462,13 @@ class TestScaleAware:
         # sigma must be < gradient_scale so phi < v and the correction is active.
         # dp_scale_grads ~ 1e-4 → v ~ 1e-8; sigma = 5e-5 → phi ~ 2.5e-9 < v.
         sigma = 5e-5
-        opt_bc = adafactor(lr=1e-3, noise_bias_correction=True)
-        opt_no = adafactor(lr=1e-3, noise_bias_correction=False)
-        s_bc = opt_bc.init(small_params)
-        s_no = opt_no.init(small_params)
+        step_bc, s_bc = adafactor(small_params, lr=1e-3, noise_bias_correction=True)
+        step_no, s_no = adafactor(small_params, lr=1e-3, noise_bias_correction=False)
 
         noisy_g = noised(dp_scale_grads, max_norm=1e-4, noise_stddev=sigma)
         for _ in range(10):
-            _, s_bc = opt_bc.update(noisy_g, s_bc, params=small_params)
-            _, s_no = opt_no.update(noisy_g, s_no, params=small_params)
+            _, s_bc = step_bc(noisy_g, s_bc, params=small_params)
+            _, s_no = step_no(noisy_g, s_no, params=small_params)
 
         # phi should have advanced under BC.
         assert all(v > 0.0 for v in _af_state(s_bc).phi_flat), (
@@ -492,7 +476,7 @@ class TestScaleAware:
         )
 
         # BC and no-BC updates should differ.
-        u_bc, _ = opt_bc.update(noisy_g, s_bc, params=small_params)
-        u_no, _ = opt_no.update(noisy_g, s_no, params=small_params)
+        u_bc, _ = step_bc(noisy_g, s_bc, params=small_params)
+        u_no, _ = step_no(noisy_g, s_no, params=small_params)
         any_diff = any(not torch.allclose(u_bc[k], u_no[k]) for k in small_params)
         assert any_diff, "BC had no effect on updates at DP gradient scale"

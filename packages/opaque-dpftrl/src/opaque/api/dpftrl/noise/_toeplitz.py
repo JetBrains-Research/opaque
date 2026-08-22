@@ -15,12 +15,16 @@ from __future__ import annotations
 import dataclasses
 import functools
 from collections.abc import Callable
-from typing import Any, Protocol, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar
 
 import numpy as np
-import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
-from scipy.signal import lfilter as scipy_lfilter
+from scipy.optimize import minimize
+
+from opaque.api.engine import ops
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike, NDArray
 
 from . import (
     _checks as checks,
@@ -45,7 +49,7 @@ class _OptimCallbackArgs:
     """Information passed to the callback on each optimization step."""
 
     step: int
-    loss: torch.Tensor
+    loss: float
     grad: Any | None
     params: Any
     state: Any
@@ -59,49 +63,118 @@ class _EarlyStopException(Exception):
         super().__init__("Early stop")
 
 
+def _refine_stalled_analytic_optimization(
+    loss_fn: Callable,
+    initial_params: NDArray[np.float64],
+    optimized_params: NDArray[np.float64],
+    bounds: list[tuple[float | None, float | None]] | None,
+    max_optimizer_steps: int,
+    *,
+    force: bool = False,
+) -> NDArray[np.float64]:
+    """Recover a feasible descent step when L-BFGS-B stops at its initializer.
+
+    Rational BLT parameterizations have narrow feasible regions.  L-BFGS-B
+    occasionally tests only infeasible trial points and incorrectly reports
+    relative-reduction convergence at the initial point.  A normalized,
+    bounded Armijo step is scale independent and supplies a conservative
+    fallback for analytic objectives only.
+    """
+    initial_value, _ = loss_fn(initial_params)
+    optimized_value, _ = loss_fn(optimized_params)
+    if not force and optimized_value < initial_value * (1.0 - 1e-12):
+        return optimized_params
+
+    if bounds is None:
+        lower = np.full_like(initial_params, -np.inf)
+        upper = np.full_like(initial_params, np.inf)
+    else:
+        lower = np.asarray(
+            [-np.inf if lower is None else lower for lower, _ in bounds],
+            dtype=np.float64,
+        )
+        upper = np.asarray(
+            [np.inf if upper is None else upper for _, upper in bounds],
+            dtype=np.float64,
+        )
+
+    params = optimized_params.copy()
+    for _ in range(min(max_optimizer_steps, 100)):
+        value, gradient = loss_fn(params)
+        gradient = np.asarray(gradient, dtype=np.float64)
+        gradient_norm = float(np.linalg.norm(gradient))
+        if (
+            not np.isfinite(value)
+            or not np.isfinite(gradient_norm)
+            or gradient_norm == 0
+        ):
+            break
+        step = min(1e-2, 1.0 / gradient_norm)
+        direction = gradient / gradient_norm
+        accepted = False
+        for _ in range(40):
+            candidate = np.clip(params - step * direction, lower, upper)
+            candidate_value, _ = loss_fn(candidate)
+            if (
+                np.isfinite(candidate_value)
+                and candidate_value < value - 1e-4 * step * gradient_norm
+            ):
+                params = candidate
+                accepted = True
+                break
+            step *= 0.5
+        if not accepted:
+            break
+    return params
+
+
 def _lbfgs_optimize(
     loss_fn: Callable,
-    params: torch.Tensor,
+    params: ArrayLike,
     *,
     max_optimizer_steps: int = 250,
     grad: bool = False,
     callback: _CallbackFnType = lambda _: None,
     bounds: list[tuple[float | None, float | None]] | None = None,
-) -> torch.Tensor:
-    """Optimize a differentiable loss function using L-BFGS.
+    restart_stalled_analytic_optimization: bool = False,
+) -> NDArray[np.float64]:
+    """Optimize a scalar loss function using L-BFGS-B.
 
-    Uses scipy's L-BFGS-B optimizer. Parameters are internally cast to
-    float64 for numerical stability.
+    When ``grad`` is true, ``loss_fn`` returns ``(value, gradient)`` and the
+    analytic gradient is passed through to SciPy. Otherwise SciPy numerically
+    differentiates the scalar objective. Parameters are canonical NumPy
+    float64 arrays throughout the host-side optimization.
+
+    ``restart_stalled_analytic_optimization`` is an opt-in recovery for
+    rational objectives with narrow feasible regions.  It takes one bounded
+    Armijo step before restarting L-BFGS-B when the initial run stalls.
     """
-    from scipy.optimize import minimize
-
-    original_dtype = params.dtype
-    params_np = params.detach().double().numpy().copy()
+    params_np = np.asarray(params, dtype=np.float64).copy()
 
     step_counter = [0]
 
     def scipy_loss(x):
-        x_tensor = torch.tensor(x, dtype=torch.float64, requires_grad=not grad)
-
+        x = np.asarray(x, dtype=np.float64)
+        result = loss_fn(x)
         if grad:
-            loss_val, grad_val = loss_fn(x_tensor)
-            loss_np = float(loss_val.detach())
-            if isinstance(grad_val, torch.Tensor):
-                grad_np = grad_val.detach().numpy().copy()
-            else:
-                grad_np = grad_val
+            loss_value, gradient = result
+            loss_np = float(loss_value)
+            gradient_np = np.asarray(gradient, dtype=np.float64)
+            if gradient_np.shape != x.shape:
+                raise ValueError(
+                    "Analytic gradient must have the same shape as parameters: "
+                    f"{gradient_np.shape} != {x.shape}"
+                )
         else:
-            loss_val = loss_fn(x_tensor)
-            loss_val.backward()
-            loss_np = float(loss_val.detach())
-            grad_np = x_tensor.grad.numpy().copy()
+            loss_np = float(result)
+            gradient_np = None
 
         cb_result = callback(
             _OptimCallbackArgs(
                 step=step_counter[0],
-                loss=torch.tensor(loss_np),
-                grad=torch.tensor(grad_np) if grad_np is not None else None,
-                params=x_tensor.detach(),
+                loss=loss_np,
+                grad=gradient_np,
+                params=x.copy(),
                 state=None,
             )
         )
@@ -110,20 +183,66 @@ def _lbfgs_optimize(
         if cb_result:
             raise _EarlyStopException(x)
 
-        return loss_np, grad_np.astype("float64")
+        return (loss_np, gradient_np) if grad else loss_np
 
     try:
         result = minimize(
             scipy_loss,
             params_np,
             method="L-BFGS-B",
-            jac=True,
+            jac=grad,
             bounds=bounds,
             options={"maxiter": max_optimizer_steps, "ftol": 1e-15, "gtol": 1e-10},
         )
-        optimal_params = torch.tensor(result.x, dtype=original_dtype)
+        optimal_params = np.asarray(result.x, dtype=np.float64)
+        if grad and restart_stalled_analytic_optimization:
+            recovered_params = _refine_stalled_analytic_optimization(
+                loss_fn,
+                params_np,
+                optimal_params,
+                bounds,
+                1,
+            )
+            recovered_value, _ = loss_fn(recovered_params)
+            optimal_value, _ = loss_fn(optimal_params)
+            if recovered_value < optimal_value * (1.0 - 1e-12):
+                restarted = minimize(
+                    scipy_loss,
+                    recovered_params,
+                    method="L-BFGS-B",
+                    jac=True,
+                    bounds=bounds,
+                    options={
+                        "maxiter": max_optimizer_steps,
+                        "ftol": 1e-15,
+                        "gtol": 1e-10,
+                    },
+                )
+                restarted_params = np.asarray(restarted.x, dtype=np.float64)
+                restarted_value, _ = loss_fn(restarted_params)
+                if restarted_value < recovered_value * (1.0 - 1e-12):
+                    optimal_params = restarted_params
+                else:
+                    optimal_params = _refine_stalled_analytic_optimization(
+                        loss_fn,
+                        recovered_params,
+                        recovered_params,
+                        bounds,
+                        max_optimizer_steps - 1,
+                        force=True,
+                    )
+            else:
+                optimal_params = recovered_params
+        elif grad:
+            optimal_params = _refine_stalled_analytic_optimization(
+                loss_fn,
+                params_np,
+                optimal_params,
+                bounds,
+                max_optimizer_steps,
+            )
     except _EarlyStopException as e:
-        optimal_params = torch.tensor(e.params, dtype=original_dtype)
+        optimal_params = np.asarray(e.params, dtype=np.float64)
 
     return optimal_params
 
@@ -145,30 +264,30 @@ __all__ = [
 ]
 
 
-def _l2_norm_squared(x: torch.Tensor) -> torch.Tensor:
-    return torch.dot(x, x)
+def _l2_norm_squared(x: NDArray[np.float64]) -> np.float64:
+    return np.dot(x, x)
 
 
-def _reconcile(coef: torch.Tensor, n: int | None = None) -> tuple[torch.Tensor, int]:
+def _reconcile(
+    coef: ArrayLike, n: int | None = None
+) -> tuple[NDArray[np.float64], int]:
     """Reconcile Toeplitz coefficients with matrix size."""
     n = n or len(coef)
-    coef = torch.as_tensor(coef, dtype=torch.float64)[:n]
+    coef = np.asarray(coef, dtype=np.float64)[:n]
     return coef, n
 
 
-def pad_coefs_to_n(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
+def pad_coefs_to_n(coef: ArrayLike, n: int | None = None) -> NDArray[np.float64]:
     """Materialize length-n Toeplitz coefficients (zero-padded)."""
     coef, n = _reconcile(coef, n)
-    result = torch.zeros(n, dtype=coef.dtype)
+    result = np.zeros(n, dtype=np.float64)
     result[: len(coef)] = coef
     return result
 
 
 def inverse_as_streaming_matrix(
-    coef: torch.Tensor,
+    coef: ArrayLike,
     column_normalize_for_n: int | None = None,
-    *,
-    inverse_coefficients: torch.Tensor | None = None,
 ) -> streaming_matrix.StreamingMatrix:
     """Create C^{-1} as a StreamingMatrix.
 
@@ -177,127 +296,54 @@ def inverse_as_streaming_matrix(
 
     This implements Algorithm 9 from https://arxiv.org/abs/2306.08153.
 
-    The returned matrix carries a closed-form ``row_norms_squared``:
-    C^{-1} is lower-triangular Toeplitz, so its squared row norms are
-    ``cumsum(inverse_coef**2)`` (rescaled by the normalization diagonal
-    when ``column_normalize_for_n`` is set).  That is O(bands * n) at
-    query time instead of the O(bands * n^2) generic probing.
-
     Args:
         coef: Toeplitz coefficients of the strategy matrix.
         column_normalize_for_n: If set, column-normalize C for this size.
-        inverse_coefficients: Optional known Toeplitz coefficients of the
-            un-normalized C^{-1}, treated as zero past their length (e.g.
-            BISR's banded inverse).  Skips the O(bands * n) inversion
-            recurrence inside the closed-form row norms.  Validated at
-            construction: raises ``ValueError`` unless
-            ``toeplitz(coef) @ toeplitz(inverse_coefficients)`` is the
-            identity.  That check spans as many terms as the longer of the
-            two coefficient windows, so the hint is only trusted out to that
-            horizon; row norms past it are computed by the inversion
-            recurrence instead, because a hint that merely agrees with the
-            inverse over the checked window may still have a nonzero tail
-            beyond it.  Gradients do not flow through the hint (it is
-            redundant with ``coef``); a grad-carrying hint falls back to
-            the probing path like a grad-carrying ``coef`` does.
 
     Returns:
         A StreamingMatrix representing C^{-1}.
-
-    Raises:
-        ValueError: If ``inverse_coefficients`` does not invert ``coef``.
     """
     coef, _ = _reconcile(coef, column_normalize_for_n)
     bands = coef.shape[0]
 
-    hint_requires_grad = False
-    inv_hint: torch.Tensor | None = None
-    hint_horizon = 0
-    if inverse_coefficients is not None:
-        hint_requires_grad = (
-            isinstance(inverse_coefficients, torch.Tensor)
-            and inverse_coefficients.requires_grad
-        )
-        inv_hint = (
-            torch.as_tensor(inverse_coefficients).detach().cpu().to(torch.float64)
-        )
-        # Entries past both coefficient windows hold only the truncation
-        # tail of a length-n coef (e.g. BISR's dense strategy recovery),
-        # not an inconsistency inside the n x n matrix — ignore them.
-        window = max(coef.shape[0], inv_hint.shape[0])
-        hint_horizon = window
-        product = np.convolve(coef.detach().cpu().numpy(), inv_hint.numpy())[:window]
-        identity = np.zeros_like(product)
-        identity[0] = 1.0
-        if not np.allclose(product, identity, atol=1e-8):
-            raise ValueError(
-                "inverse_coefficients is not the Toeplitz inverse of coef: "
-                "max |toeplitz(coef) @ toeplitz(inverse_coefficients) - I| = "
-                f"{np.abs(product - identity).max():.3e}"
-            )
-
     def init(abstract_yi):
-        dtype = abstract_yi.dtype
-        if dtype in (torch.float16, torch.bfloat16):
-            dtype = torch.float32
-        zero = torch.zeros_like(abstract_yi, dtype=dtype)
-        return zero.unsqueeze(0).expand(bands - 1, *zero.shape).clone()
+        return tuple(
+            streaming_matrix._zeros_like(abstract_yi) for _ in range(bands - 1)
+        )
 
     def _next(yi, state):
         if bands == 1:
-            coef0 = coef[0].to(device=state.device, dtype=state.dtype)
-            return yi.to(state.dtype) / coef0, state
-        coef_local = coef.to(device=state.device, dtype=state.dtype)
-        inner = torch.tensordot(coef_local[1:], state, dims=1)
-        xi = (yi.to(state.dtype) - inner) / coef_local[0]
-        new_state = torch.roll(state, 1, dims=0)
-        new_state[0] = xi
-        return xi, new_state
+            divisor = streaming_matrix._scalar_like(coef[0], yi)
+            if isinstance(yi, np.ndarray):
+                return yi / divisor, state
+            return ops.divide(yi, divisor), state
+
+        inner = streaming_matrix._zeros_like(yi)
+        for coefficient, previous_xi in zip(coef[1:], state, strict=True):
+            scaled = streaming_matrix._multiply(
+                streaming_matrix._scalar_like(coefficient, previous_xi),
+                previous_xi,
+            )
+            inner = streaming_matrix._add(inner, scaled)
+
+        divisor = streaming_matrix._scalar_like(coef[0], yi)
+        if isinstance(yi, np.ndarray):
+            xi = (yi - inner) / divisor
+        else:
+            xi = ops.divide(ops.subtract(yi, inner), divisor)
+        return xi, (xi, *state[:-1])
 
     Cinv = streaming_matrix.StreamingMatrix.from_array_implementation(init, _next)
 
-    col_norms: torch.Tensor | None = None
     if column_normalize_for_n is not None:
         full_coef = pad_coefs_to_n(coef, column_normalize_for_n)
-        col_norms = torch.sqrt(torch.cumsum(full_coef**2, dim=0)).flip(0)
+        col_norms = np.sqrt(np.cumsum(full_coef**2))[::-1].copy()
         Cinv = streaming_matrix.scale_rows_and_columns(Cinv, row_scale=col_norms)
 
-    # ``fallback`` has no row_norms_squared_fn, so calling its
-    # row_norms_squared runs the generic probing — no recursion.
-    fallback = Cinv
-
-    def _row_norms_squared(n: int) -> torch.Tensor:
-        if coef.requires_grad or hint_requires_grad:
-            # lfilter would silently detach the autograd graph; keep the
-            # differentiable probing path for optimization use.
-            return fallback.row_norms_squared(n)
-        if n == 0:
-            return torch.zeros(0, dtype=torch.float64, device="cpu")
-        if inv_hint is not None and n <= hint_horizon:
-            # Validation only checked the convolution through ``hint_horizon``,
-            # so the hint reproduces the true inverse coefficients only that
-            # far. Zero-padding it past that point would silently assume the
-            # inverse terminates there and under-report the row norms.
-            inv_coefs = pad_coefs_to_n(inv_hint, n)
-        else:
-            impulse = np.zeros(n)
-            impulse[0] = 1.0
-            inv_coefs = torch.from_numpy(
-                scipy_lfilter([1.0], coef.detach().cpu().numpy(), impulse)
-            )
-        norms = torch.cumsum(inv_coefs.square(), dim=0)
-        if col_norms is not None:
-            # Past ``column_normalize_for_n`` the probing path repeats the
-            # last diagonal entry (see ``diagonal``); mirror that here.
-            idx = torch.arange(n, device="cpu").clamp(max=col_norms.numel() - 1)
-            scale = col_norms.detach().cpu()[idx]
-            norms = norms * scale.square()
-        return norms
-
-    return dataclasses.replace(Cinv, row_norms_squared_fn=_row_norms_squared)
+    return Cinv
 
 
-def optimal_max_error_strategy_coefs(n: int) -> torch.Tensor:
+def optimal_max_error_strategy_coefs(n: int) -> NDArray[np.float64]:
     """Returns optimal Toeplitz strategy coefficients for max error.
 
     From Fichtenberger, Henzinger, and Upadhyay:
@@ -309,13 +355,13 @@ def optimal_max_error_strategy_coefs(n: int) -> torch.Tensor:
     Returns:
         Tensor of Toeplitz coefficients.
     """
-    k = torch.arange(n, dtype=torch.float64)
-    ratios = (2 * k - 1) / (2 * k)
-    ratios[0] = 1.0
-    return torch.cumprod(ratios, dim=0)
+    k = np.arange(n, dtype=np.float64)
+    ratios = np.ones(n, dtype=np.float64)
+    ratios[1:] = (2 * k[1:] - 1) / (2 * k[1:])
+    return np.cumprod(ratios)
 
 
-def optimal_max_error_noising_coefs(n: int) -> torch.Tensor:
+def optimal_max_error_noising_coefs(n: int) -> NDArray[np.float64]:
     """Returns optimal Toeplitz noising coefficients for max error.
 
     Args:
@@ -325,14 +371,14 @@ def optimal_max_error_noising_coefs(n: int) -> torch.Tensor:
         Coefficients of C^{-1}.
     """
     c = optimal_max_error_strategy_coefs(n)
-    result = c.clone()
+    result = c.copy()
     result[1:n] = c[1:n] - c[: n - 1]
     return result
 
 
 def materialize_lower_triangular(
-    coef: torch.Tensor, n: int | None = None
-) -> torch.Tensor:
+    coef: ArrayLike, n: int | None = None
+) -> NDArray[np.float64]:
     """Create a lower-triangular Toeplitz matrix from coefficients.
 
     Example: coef=[a,b,c], n=4 gives::
@@ -351,17 +397,14 @@ def materialize_lower_triangular(
     """
     full_coef = pad_coefs_to_n(coef, n)
     n_actual = len(full_coef)
-    original_device = full_coef.device
-    col = full_coef.detach().cpu().numpy()
-    row = torch.zeros(n_actual, dtype=full_coef.dtype).numpy()
+    col = full_coef
+    row = np.zeros(n_actual, dtype=np.float64)
     row[0] = col[0]
     toeplitz_np = scipy_toeplitz(col, row)
-    return torch.from_numpy(toeplitz_np).to(
-        device=original_device, dtype=full_coef.dtype
-    )
+    return np.asarray(toeplitz_np, dtype=np.float64)
 
 
-def solve_banded(coef: torch.Tensor, rhs: torch.Tensor) -> torch.Tensor:
+def solve_banded(coef: ArrayLike, rhs: ArrayLike) -> NDArray[np.float64]:
     """Solve T_{coef} x = rhs for banded Toeplitz T.
 
     Args:
@@ -371,22 +414,22 @@ def solve_banded(coef: torch.Tensor, rhs: torch.Tensor) -> torch.Tensor:
     Returns:
         Solution x.
     """
-    return (
-        streaming_matrix.multiply_array(
-            inverse_as_streaming_matrix(coef),
-            rhs.unsqueeze(1) if rhs.ndim == 1 else rhs,
-        ).squeeze(-1)
-        if rhs.ndim == 1
-        else streaming_matrix.multiply_array(inverse_as_streaming_matrix(coef), rhs)
-    )
+    coef = np.asarray(coef, dtype=np.float64)
+    rhs = np.asarray(rhs, dtype=np.float64)
+    result = np.empty_like(rhs, dtype=np.float64)
+    for i in range(len(rhs)):
+        width = min(i, len(coef) - 1)
+        inner = np.tensordot(coef[1 : width + 1], result[i - width : i][::-1], axes=1)
+        result[i] = (rhs[i] - inner) / coef[0]
+    return result
 
 
 def multiply(
-    lhs_coef: torch.Tensor,
-    rhs_coef: torch.Tensor,
+    lhs_coef: ArrayLike,
+    rhs_coef: ArrayLike,
     n: int | None = None,
     skip_checks: bool = False,
-) -> torch.Tensor:
+) -> NDArray[np.float64]:
     """Multiply two lower-triangular Toeplitz matrices (via convolution).
 
     Args:
@@ -406,16 +449,10 @@ def multiply(
     lhs_coef, n = _reconcile(lhs_coef, n)
     rhs_coef, _ = _reconcile(rhs_coef, n)
 
-    # Differentiable convolution via FFT (supports autograd for L-BFGS
-    # optimization of BLT/banded Toeplitz with workload_coef).
-    full_len = len(lhs_coef) + len(rhs_coef) - 1
-    fa = torch.fft.rfft(lhs_coef, n=full_len)
-    fb = torch.fft.rfft(rhs_coef, n=full_len)
-    conv = torch.fft.irfft(fa * fb, n=full_len)[:n]
-    return conv
+    return np.convolve(lhs_coef, rhs_coef)[:n]
 
 
-def inverse_coef(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
+def inverse_coef(coef: ArrayLike, n: int | None = None) -> NDArray[np.float64]:
     """Find the inverse coefficients of a Toeplitz matrix.
 
     Args:
@@ -426,24 +463,24 @@ def inverse_coef(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
         Toeplitz coefficients of C^{-1}.
     """
     coef, n = _reconcile(coef, n)
-    e0 = torch.zeros(n, dtype=coef.dtype)
+    e0 = np.zeros(n, dtype=np.float64)
     e0[0] = 1.0
     return solve_banded(coef, e0)
 
 
-def sensitivity_squared(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
+def sensitivity_squared(coef: ArrayLike, n: int | None = None) -> np.float64:
     """Sensitivity^2 under single participation."""
     coef, _ = _reconcile(coef, n)
     return _l2_norm_squared(coef)
 
 
 def minsep_sensitivity_squared(
-    strategy_coef: torch.Tensor,
+    strategy_coef: ArrayLike,
     min_sep: int,
     max_participations: int | None = None,
     n: int | None = None,
     skip_checks: bool = False,
-) -> torch.Tensor:
+) -> np.float64:
     """Returns the sensitivity squared of the Toeplitz matrix under min-sep.
 
     Reference: https://arxiv.org/abs/2405.13763, Theorem 2.
@@ -461,17 +498,15 @@ def minsep_sensitivity_squared(
     coef, n = _reconcile(strategy_coef, n)
 
     if not skip_checks:
-        if not torch.all(coef >= 0):
-            raise ValueError(
-                f"coef must be non-negative, found min={coef.min().item()}"
-            )
+        if not np.all(coef >= 0):
+            raise ValueError(f"coef must be non-negative, found min={coef.min()}")
         if len(coef) > 1:
             incr = coef[1:] - coef[:-1]
             max_incr = incr.max()
             if max_incr > 0:
                 raise ValueError(
                     f"coef must be non-increasing, found increase "
-                    f"{max_incr.item()} at index {incr.argmax().item()}"
+                    f"{max_incr} at index {incr.argmax()}"
                 )
         if min_sep <= 0:
             raise ValueError("min_sep must be positive")
@@ -482,23 +517,23 @@ def minsep_sensitivity_squared(
 
     padding = (min_sep - n) % min_sep
     full_coef = pad_coefs_to_n(coef, n + padding)
-    vector = full_coef.reshape(-1, min_sep).cumsum(dim=0).flatten()
+    vector = full_coef.reshape(-1, min_sep).cumsum(axis=0).flatten()
     if min_sep * k < len(vector):
         vector[min_sep * k :] = (
             vector[min_sep * k :] - vector[: len(vector) - min_sep * k]
         )
-    return torch.dot(vector[:n], vector[:n])
+    return np.dot(vector[:n], vector[:n])
 
 
 def per_query_error(
     *,
-    strategy_coef: torch.Tensor | None = None,
-    noising_coef: torch.Tensor | None = None,
+    strategy_coef: ArrayLike | None = None,
+    noising_coef: ArrayLike | None = None,
     n: int | None = None,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
     skip_checks: bool = False,
-) -> torch.Tensor:
+) -> NDArray[np.float64]:
     """Expected per-query squared error for a (banded) Toeplitz mechanism.
 
     Exactly one of ``strategy_coef`` and ``noising_coef`` must be provided.
@@ -523,39 +558,37 @@ def per_query_error(
         if workload_coef is not None:
             workload_coef = pad_coefs_to_n(workload_coef, n)
         else:
-            workload_coef = torch.ones(n, dtype=strategy_coef.dtype)
+            workload_coef = np.ones(n, dtype=np.float64)
         B_coef = solve_banded(strategy_coef, workload_coef)
     else:
         assert noising_coef is not None
         noising_coef, n = _reconcile(noising_coef, n)
         if workload_coef is None:
-            B_coef = torch.cumsum(noising_coef, dim=0)
+            B_coef = np.cumsum(noising_coef)
         else:
             B_coef = multiply(workload_coef, noising_coef, n=n, skip_checks=skip_checks)
 
-    error = torch.cumsum(B_coef**2, dim=0)
+    error = np.cumsum(B_coef**2)
     if query_weights is None:
         return error
 
-    query_weights = torch.as_tensor(
-        query_weights, dtype=error.dtype, device=error.device
-    )
+    query_weights = np.asarray(query_weights, dtype=np.float64)
     if query_weights.ndim != 1 or query_weights.shape[0] != n:
         raise ValueError(
             f"query_weights must have shape ({n},), got {tuple(query_weights.shape)}"
         )
-    return error * query_weights.square()
+    return error * np.square(query_weights)
 
 
 def max_error(
     *,
-    strategy_coef: torch.Tensor | None = None,
-    noising_coef: torch.Tensor | None = None,
+    strategy_coef: ArrayLike | None = None,
+    noising_coef: ArrayLike | None = None,
     n: int | None = None,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
     skip_checks: bool = False,
-) -> torch.Tensor:
+) -> np.float64:
     """Max-over-iterations squared error for a Toeplitz mechanism."""
     return per_query_error(
         strategy_coef=strategy_coef,
@@ -569,13 +602,13 @@ def max_error(
 
 def mean_error(
     *,
-    strategy_coef: torch.Tensor | None = None,
-    noising_coef: torch.Tensor | None = None,
+    strategy_coef: ArrayLike | None = None,
+    noising_coef: ArrayLike | None = None,
     n: int | None = None,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
     skip_checks: bool = False,
-) -> torch.Tensor:
+) -> np.float64:
     """Mean-over-iterations squared error for a Toeplitz mechanism."""
     return per_query_error(
         strategy_coef=strategy_coef,
@@ -593,21 +626,21 @@ class ErrorOrLossFn(Protocol):
     def __call__(
         self,
         *,
-        strategy_coef: torch.Tensor,
+        strategy_coef: NDArray[np.float64],
         n: int | None = None,
-        workload_coef: torch.Tensor | None = None,
-        query_weights: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        workload_coef: ArrayLike | None = None,
+        query_weights: ArrayLike | None = None,
+    ) -> float:
         raise NotImplementedError
 
 
 def loss(
-    strategy_coef: torch.Tensor,
+    strategy_coef: ArrayLike,
     n: int | None = None,
     error_fn: ErrorOrLossFn = mean_error,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
-) -> torch.Tensor:
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
+) -> float:
     """Error of C on a workload under single participation.
 
     Returns error * sensitivity_squared.
@@ -624,7 +657,7 @@ def loss(
         Total squared error times sensitivity.
     """
     strategy_coef, n = _reconcile(strategy_coef, n)
-    error_kwargs: dict[str, torch.Tensor | int] = {
+    error_kwargs: dict[str, ArrayLike | int] = {
         "strategy_coef": strategy_coef,
         "n": n,
     }
@@ -641,15 +674,66 @@ mean_loss = functools.partial(loss, error_fn=mean_error)
 max_loss = functools.partial(loss, error_fn=max_error)
 
 
+def _mean_loss_and_gradient(
+    strategy_coef: ArrayLike,
+    *,
+    n: int,
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
+) -> tuple[float, NDArray[np.float64]]:
+    """Return the default BandMF objective and its exact host Jacobian."""
+    coef = np.asarray(strategy_coef, dtype=np.float64)
+    if coef.ndim != 1 or coef.size == 0 or coef[0] == 0.0:
+        return 1e100, np.zeros_like(coef)
+    if workload_coef is None:
+        workload = np.ones(n, dtype=np.float64)
+    else:
+        workload = pad_coefs_to_n(workload_coef, n)
+
+    b_coef = np.empty(n, dtype=np.float64)
+    b_jacobian = np.empty((n, len(coef)), dtype=np.float64)
+    for index in range(n):
+        width = min(index, len(coef) - 1)
+        previous = b_coef[index - width : index][::-1]
+        previous_jacobian = b_jacobian[index - width : index][::-1]
+        numerator = workload[index] - np.dot(coef[1 : width + 1], previous)
+        b_coef[index] = numerator / coef[0]
+        numerator_jacobian = -np.sum(
+            coef[1 : width + 1, np.newaxis] * previous_jacobian,
+            axis=0,
+        )
+        numerator_jacobian[1 : width + 1] -= previous
+        b_jacobian[index] = numerator_jacobian / coef[0]
+        b_jacobian[index, 0] -= b_coef[index] / coef[0]
+
+    per_query_error = np.cumsum(b_coef**2)
+    per_query_error_jacobian = np.cumsum(
+        2.0 * b_coef[:, np.newaxis] * b_jacobian,
+        axis=0,
+    )
+    if query_weights is not None:
+        weights_squared = np.square(np.asarray(query_weights, dtype=np.float64))
+        per_query_error *= weights_squared
+        per_query_error_jacobian *= weights_squared[:, np.newaxis]
+
+    error = float(per_query_error.mean())
+    error_jacobian = per_query_error_jacobian.mean(axis=0)
+    sensitivity = float(np.dot(coef, coef))
+    return (
+        error * sensitivity,
+        error_jacobian * sensitivity + error * 2.0 * coef,
+    )
+
+
 def optimize(
     n: int,
     bands: int,
-    strategy_coef: torch.Tensor | None = None,
+    strategy_coef: ArrayLike | None = None,
     max_optimizer_steps: int = 250,
     loss_fn=mean_loss,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
-) -> torch.Tensor:
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
+) -> NDArray[np.float64]:
     """Optimize banded Toeplitz strategy for a given workload.
 
     The resulting strategy can be used for single- and multi-participation
@@ -670,7 +754,7 @@ def optimize(
     Returns:
         Optimized coefficients with L2 norm 1.
     """
-    loss_kwargs: dict[str, torch.Tensor | int] = {"n": n}
+    loss_kwargs: dict[str, ArrayLike | int] = {"n": n}
     if workload_coef is not None:
         loss_kwargs["workload_coef"] = workload_coef
     if query_weights is not None:
@@ -682,9 +766,20 @@ def optimize(
     if strategy_coef.shape[0] != bands:
         raise ValueError(f"{strategy_coef.shape=} != {bands=}")
 
+    loss_and_gradient = (
+        functools.partial(
+            _mean_loss_and_gradient,
+            n=n,
+            workload_coef=workload_coef,
+            query_weights=query_weights,
+        )
+        if loss_fn is mean_loss
+        else None
+    )
     params = _lbfgs_optimize(
-        partial_loss,
+        loss_and_gradient if loss_and_gradient is not None else partial_loss,
         strategy_coef,
         max_optimizer_steps=max_optimizer_steps,
+        grad=loss_and_gradient is not None,
     )
-    return params / torch.linalg.norm(params)
+    return params / np.linalg.norm(params)

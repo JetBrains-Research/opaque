@@ -2,16 +2,16 @@
 
 Opaque keeps training state in explicit values (clip state, noise state,
 optimizer state, schedules, [`Accountant`](accounting.md) / [`DpProcess`](accounting.md),
-…). Use `opaque.serialization` for a single **flat**
-`dict[str, Any]` suitable for `torch.save` / `torch.load`.
+…). Use `opaque.serialization` for a single **flat** `dict[str, Any]` suitable
+for a framework-native checkpoint writer.
 
 Restore is **template-driven**: pass a freshly constructed object of the same
 shape as at save time; keys present in the checkpoint overwrite leaves, and
 missing keys keep template values (forward compatibility when new fields appear).
 
 Dispatch resolves a leaf by exact type and then by `__mro__`, so a subclass
-of a registered type — a custom `torch.Tensor` subclass, for example — is
-serialized by the nearest base-class handler rather than dropped.
+of a registered type is serialized by the nearest base-class handler rather
+than dropped.
 (`torch.nn.Parameter` is common enough to get its own exact-type handler that
 preserves the subclass and its `requires_grad` flag on restore, so it does
 not rely on the `__mro__` fallback.) A leaf that is neither registered nor a
@@ -27,9 +27,31 @@ them and the template supplies them on load.
 `str()` form under the structural walker — for example, `groups.('a',)` for a
 flat leaf, or `groups.('layer', 'weight')` for a nested path — alongside
 `values.<group_name>`. When DP bias correction is enabled on Adam-family
-optimizers, `phi` is a path-keyed dict from `opt.init` so `from_state_dict`
-round-trips without resetting φ. NumPy `ndarray` leaves are supported alongside
-`torch.Tensor`.
+optimizers, `phi` is a path-keyed dict in the factory's initial state so `from_state_dict`
+round-trips without resetting φ. NumPy `ndarray` and Torch `Tensor` and
+`Parameter` leaves preserve their provider type,
+shape, dtype, and value when restored against a matching template.
+
+## Provider activation
+
+Native array handlers register when a provider loads, which any earlier
+backend-bearing Opaque call already did. When serialization is the first Opaque
+operation, select the provider first:
+
+```python
+from opaque.backend import set_backend
+from opaque.serialization import from_state_dict, state_dict
+
+set_backend("torch")
+flat = state_dict(params)
+restored = from_state_dict(parameter_template, flat)
+```
+
+The pure-Python `opaque-base` registry never imports a framework on its own.
+
+For DP-FTRL, serialize the whole `MFNoiseState` or `SecondMomentMFNoiseState`,
+not just its key or step counter: restoring it against a template built from
+the same mechanism configuration is what preserves the correlation buffers.
 
 Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting.md).
 
@@ -78,6 +100,12 @@ state, and any other value that flows through the DP training loop.  Custom
 types may register handlers with `opaque.serialization.register_serializer`,
 or — when a leaf carries no run state and the template reproduces it —
 declare it inert with `opaque.serialization.register_template_restored`.
+
+::: opaque.serialization.types
+    options:
+        show_source: true
+        heading_level: 3
+        members: true
 
 ::: opaque.serialization
     options:

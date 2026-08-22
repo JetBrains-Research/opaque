@@ -6,7 +6,7 @@ amplifier-supplied ``(n_steps, min_sep, max_participations)``.  The
 L-BFGS optimization is cached so a given recipe + amplification context
 runs the optimizer once across all (accounting + noise) consumers.
 ``lr_schedule`` is an :data:`opaque.scheduling.types.Schedule`
-(``Callable[[int], float]``) materialised to a tensor at workload-coefficient
+(``Callable[[int], float]``) materialised to a host array at workload-coefficient
 build time.
 
 References:
@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-import torch
+import numpy as np
 
+from opaque.api.dpftrl.noise._plan import MfExecutionPlan, toeplitz_execution_plan
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 
 from ._band_mf import _momentum_workload_coef
@@ -73,7 +74,7 @@ def _blt_optimize_cached(
     """Run BLT L-BFGS for the given recipe + amplification context."""
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-    lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
+    lr = np.asarray(lr_key, dtype=np.float64) if lr_key is not None else None
     workload_coef = _momentum_workload_coef(momentum, n_steps)
     return _blt_optimize(
         n=n_steps,
@@ -145,11 +146,24 @@ class BltStrategy:
 
     def coefficients(
         self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
-    ) -> torch.Tensor:
+    ) -> np.ndarray:
         blt = self._blt(
             n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
         )
         return _blt_toeplitz_coefs(blt, n_steps)
+
+    def execution_plan(
+        self, *, n_steps: int, min_sep: int = 1, max_participations: int | None = None
+    ) -> MfExecutionPlan:
+        blt = self._blt(
+            n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        return toeplitz_execution_plan(
+            _blt_toeplitz_coefs(blt, n_steps),
+            mode="blt",
+            buffer_decay=blt.buf_decay,
+            output_scale=blt.output_scale,
+        )
 
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
@@ -181,7 +195,7 @@ class BltStrategy:
             n=n_steps, min_sep=min_sep, max_participations=max_participations
         )
         if k == 1:
-            return float(_blt_sensitivity_squared(blt, n=n_steps).sqrt())
+            return float(np.sqrt(_blt_sensitivity_squared(blt, n=n_steps)))
         coefs = _blt_toeplitz_coefs(blt, n_steps)
         sens_sq = _toeplitz_minsep_sensitivity_squared(
             strategy_coef=coefs,
@@ -189,7 +203,7 @@ class BltStrategy:
             max_participations=max_participations,
             skip_checks=True,
         )
-        return float(sens_sq.sqrt())
+        return float(np.sqrt(sens_sq))
 
 
 def blt_strategy(

@@ -29,7 +29,12 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
 - **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
+- **`bsr_strategy()`** — BSR (Banded Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
+
+Every mechanism preserves each leaf's native array type, dtype, and device.
+See [Providers, dtype, and state](../user-guide/noise.md#providers-dtype-and-state)
+for how MF noise allocates and checkpoints its correlation buffers.
 
 All noise functions return `(noise_fn, state)`, where
 `noise_fn(grads, state) -> (noisy_grads, new_state)`.
@@ -95,7 +100,7 @@ transformation wrapper and no `ρ` knob.
 
 `mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the
-MSE-optimal allocation from `ClippedPytree.noise_stddev_for` (the same
+MSE-optimal allocation from `noise_stddev` (the same
 Mahalanobis allocation as `gaussian_noise`). Leaf→group keys are optree
 `ParamPath` tuples (build them with `per_group(params, …)`); nested
 parameter trees are supported. Trainer/examples keep flat
@@ -110,6 +115,27 @@ from a Gaussian renormalized over the interval (Chen and Hale, 2024).
 Bounds are absolute, in the same units as the gradient / clip norm.
 
 ::: opaque.dpsgd.noise.gaussian_noise
+
+### Noise standard deviation
+
+`noise_stddev` answers what `gaussian_noise(noise_multiplier)` will apply to
+a given contribution bound. It is a pure function of the bound, so a
+calibration sweep or a telemetry line can call it before a step has run;
+`ClippedPytree.noise_stddev_for` is the same computation reached from a
+clipped pytree you already hold.
+
+```python
+from opaque.dpsgd.noise import noise_stddev
+
+sigma = noise_stddev(clipping_norm, noise_multiplier=1.1)
+```
+
+The DP-FTRL matrix mechanisms compute this same value as their *base*
+stddev and then scale it per step by the strategy row norm
+(`σ_t = base · ‖row_t(C⁻¹)‖`), so it is not the stddev an MF mechanism
+applies — read `NoisedPytree.noise_stddev` off the output for that.
+
+::: opaque.dpsgd.noise.noise_stddev
 
 ## Matrix Factorization Noise
 
@@ -132,6 +158,10 @@ Bounds are absolute, in the same units as the gradient / clip norm.
       heading_level: 4
 
 ::: opaque.dpftrl.noise.bisr_strategy
+    options:
+      heading_level: 4
+
+::: opaque.dpftrl.noise.bsr_strategy
     options:
       heading_level: 4
 

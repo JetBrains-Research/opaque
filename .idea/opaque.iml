@@ -19,6 +19,7 @@
     <orderEntry type="module" module-name="opaque-engine" exported="" />
     <orderEntry type="module" module-name="opaque-optimizers" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
-    <orderEntry type="module" module-name="opaque-patches" exported="" />
+    <orderEntry type="module" module-name="opaque-kernels" exported="" />
+    <orderEntry type="module" module-name="opaque-torch" exported="" />
   </component>
 </module>

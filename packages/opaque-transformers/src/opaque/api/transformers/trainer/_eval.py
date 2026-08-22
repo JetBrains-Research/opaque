@@ -290,7 +290,7 @@ class _PredictionAccumulator:
         # shard produced no payload. ``gather_pytree`` treats local ``None`` as
         # an empty contribution while preserving rank order.
         if gather:
-            from opaque.api.engine.distributed._state import gather_pytree
+            from opaque.distributed import gather_pytree
 
             predictions = gather_pytree(predictions)
             labels = gather_pytree(labels)

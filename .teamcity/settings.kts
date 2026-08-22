@@ -25,8 +25,9 @@ private val linuxAmd64TestShards = listOf(
     TestShard("Dpftrl", "opaque-dpftrl", "packages/opaque-dpftrl"),
     TestShard("Dpsgd", "opaque-dpsgd", "packages/opaque-dpsgd"),
     TestShard("Engine", "opaque-engine", "packages/opaque-engine"),
+    TestShard("Kernels", "opaque-kernels", "packages/opaque-kernels"),
     TestShard("Optimizers", "opaque-optimizers", "packages/opaque-optimizers"),
-    TestShard("Patches", "opaque-patches", "packages/opaque-patches"),
+    TestShard("Torch", "opaque-torch", "packages/opaque-torch"),
     TestShard("Transformers", "opaque-transformers", "packages/opaque-transformers"),
     TestShard("Integration", "integration", "tests"),
 )

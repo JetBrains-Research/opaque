@@ -44,10 +44,11 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
 ### How it works
 
-1. `torch.func.grad_and_value` computes the gradient of `loss_fn` with respect
-   to the argument at position `argnums`.
-2. `torch.func.vmap` vectorizes this over the batch dimension of the arguments
-   at positions `batch_argnums`, producing one gradient per example.
+1. The active provider's autodiff transform computes the gradient of `loss_fn`
+   with respect to the argument at position `argnums`.
+2. The provider's vectorization transform maps this over the batch dimension
+   of the arguments at positions `batch_argnums`, producing one gradient per
+   example.
 3. Each per-example gradient is clipped to L2 norm at most `clipping_norm`.
 4. The clipped gradients are summed across the batch.
 
@@ -67,7 +68,7 @@ noise.
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
 | `normalize_by` | `float` | `1.0` | Divide the clipped sum and output bound by this constant. Set to expected batch size to get averaged gradients with bound = `clipping_norm / batch_size`. |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
-| `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
+| `dtype` | backend dtype \| `None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
 
 ### State flow
@@ -277,9 +278,10 @@ The loss function passed to `clipped_grad` must:
    produce per-example gradients.
 2. **Accept batched arguments** at the positions specified by `batch_argnums`.
    These arguments have a batch dimension that `vmap` maps over.
-3. **Be compatible with `torch.func`**. Operations using in-place mutation,
-   data-dependent control flow, or non-functional layers may fail under `vmap`
-   (see [Known Limitations](../limitations.md)).
+3. **Be compatible with the active provider's autodiff and vectorization
+   transforms**. For PyTorch, operations using in-place mutation,
+   data-dependent control flow, or non-functional layers may fail under
+   `torch.func.vmap` (see [Known Limitations](../limitations.md)).
 
 ## Common patterns
 
@@ -290,7 +292,7 @@ convert to functional form:
 
 ```python
 from opaque.dpsgd.clipping import clipped_grad
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 
 fmodel, params = make_functional(model)
 

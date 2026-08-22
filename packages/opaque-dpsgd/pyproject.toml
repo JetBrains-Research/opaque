@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-dpsgd"
 dynamic = ["version"]
-description = "Opaque DP-SGD: Gaussian noise (optionally bounded), per-group calibration, AdamW-BC"
+description = "Opaque DP-SGD: backend-neutral Gaussian noise and per-group calibration"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "dp-sgd", "pytorch", "privacy"]
+keywords = ["differential-privacy", "dp-sgd", "privacy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -24,13 +24,18 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.9.0",
     "opaque-engine>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
 optimizers = ["opaque-optimizers>=0.0.0.dev0"]
+
+# ARC-006: this package is backend-neutral, but its tests execute real
+# numerics and therefore need a backend. Declare that requirement rather
+# than relying on the monorepo dev environment to supply one.
+[dependency-groups]
+test = ["opaque-torch>=0.0.0.dev0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -49,6 +54,7 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 package = true
 
 [tool.uv.sources]
+opaque-torch = { workspace = true }
 opaque-engine = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-optimizers = { workspace = true }

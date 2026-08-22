@@ -1,7 +1,11 @@
 # Distributed Training
 
-Opaque supports multi-GPU training via PyTorch DistributedDataParallel
-(DDP). FSDP, Tensor Parallel, and Pipeline Parallel are not supported.
+Opaque's low-level eager process collectives run on the active engine provider
+(Torch). This guide's complete training workflow uses PyTorch
+DistributedDataParallel (DDP);
+Opaque does not own process launch or framework distributed initialization.
+FSDP, Tensor Parallel, and Pipeline Parallel training workflows are not
+supported.
 
 ## How DP-SGD works with DDP
 
@@ -37,11 +41,10 @@ There are two valid approaches to noise in distributed DP-SGD:
 ```python
 import torch
 import torch.distributed as dist
-import torchopt
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.functional import make_functional
+from opaque.torch.functional import make_functional
 import opaque.distributed as dist_utils
 from opaque.random import key, fold_in
 from opaque.distributed import local_shard
@@ -78,10 +81,9 @@ sampler = PoissonSampler(
 loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
 # Optimizer
-from opaque.optimizers import sgd
+from opaque.optimizers import apply_updates, sgd
 
-optimizer = sgd(lr=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = sgd(params, lr=0.01)
 
 # Training loop
 for batch_x, batch_y in loader:
@@ -97,8 +99,8 @@ for batch_x, batch_y in loader:
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # 4. Update
-    updates, opt_state = optimizer.update(noisy_grads, opt_state)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noisy_grads, opt_state, params=params)
+    params = apply_updates(params, updates)
 
 dist.destroy_process_group()
 ```
@@ -145,16 +147,17 @@ grads = dist_utils.sum_gradients(grads)
 This sums the clipped gradient contributions from all devices. After this
 call, every rank holds the same total clipped gradient sum in `grads`.
 
-For more general reductions, use:
+For more general reductions, reach for the `gradients` submodule, which owns
+the lower-level primitive:
 
-- `reduce_pytree(pytree, op)` to return a reduced copy
-- `reduce_pytree_(pytree, op)` for in-place reduction
-- `sum_gradients_(grads)` for in-place DP-specific sum
+- `gradients.reduce_pytree(pytree, op)` to return a reduced pytree
+- `sum_gradients(grads)` for a DP-specific sum
 
 ```python
-avg_grads = dist_utils.reduce_pytree(grads, op="mean")
-dist_utils.reduce_pytree_(grads, op="sum")
-dist_utils.sum_gradients_(grads)
+from opaque.distributed import gradients
+
+avg_grads = gradients.reduce_pytree(grads, op="mean")
+summed_grads = dist_utils.sum_gradients(grads)
 ```
 
 ## Adaptive clipping
@@ -249,42 +252,42 @@ For correlated noise mechanisms (`mf_gaussian_noise` with any MF strategy), each
 device must generate the same correlated noise stream. Pass the same
 `key=key(seed)` on every rank.
 
-Functional optimizers (TorchOpt) stay synchronized automatically because:
+Functional optimizers stay synchronized automatically because:
 
 1. After `sum_gradients`, all ranks hold the same gradient sum.
 2. After adding synchronized noise, all ranks hold the same noisy gradient.
-3. `optimizer.update` is a pure function: same inputs produce same outputs.
+3. `step` is a pure function: same inputs produce same outputs.
 
 So optimizer states evolve identically on all devices without explicit
 synchronization.
 
 ## `opaque.distributed` API summary
 
-Functions are split into copy-returning defaults and explicit in-place `_`
-variants. When `torch.distributed` is not initialized, high-level helpers such
-as `sum_gradients` and `reduce_pytree` are local no-ops, while direct
-collective wrappers such as `all_reduce` / `all_reduce_` require an initialized
-process group and raise `RuntimeError`.
+Collectives return new values and never require in-place mutation. In
+single-process mode, reductions return an equivalent new native array.
+The table lists the `opaque.distributed` surface, including the
+`gradients` submodule primitive; the sync plumbing each
+subsystem registers behind `sync()` is internal.
 
 | Function | Purpose |
 |----------|---------|
-| `is_distributed()` | `True` if `torch.distributed` is initialized |
-| `get_rank()` | Current rank (0 if not distributed) |
-| `get_world_size()` | Number of devices (1 if not distributed) |
-| `sum_gradients(grads)` | Return a summed copy of a gradient PyTree |
-| `sum_gradients_(grads)` | In-place AllReduce SUM on a gradient PyTree |
-| `reduce_pytree(pytree, op)` | Return a reduced copy of a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
-| `reduce_pytree_(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
-| `reduce_scalar(value, op, device, *, compute_dtype)` | Reduce a Python float or integer across ranks; floats default to fp32 and can request fp64, while integers use an exact int64 path |
-| `all_reduce(tensor, op)` | Return an all-reduced tensor copy |
-| `all_reduce_(tensor, op)` | In-place AllReduce on a single tensor |
-| `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
-| `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
-| `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
+| `is_distributed()` | `True` when the active provider reports more than one process |
+| `get_rank()`, `process_index()` | Current rank (0 if not distributed) |
+| `get_world_size()`, `num_processes()` | Number of processes (1 if not distributed) |
+| `is_main_process()` | `True` on rank 0, and always `True` if not distributed |
+| `local_shard(dataset, rank=, world_size=)` | This rank's contiguous `DatasetShard` view of a sequence; copies nothing |
+| `sum_gradients(grads)` | Return a summed gradient PyTree |
+| `gradients.reduce_pytree(pytree, op)` | Return a reduced PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
+| `reduce_scalar(value, op)` | Return a Python float or integer reduced across ranks |
+| `all_reduce(value, op)` | Return an all-reduced native array without mutation |
+| `gather_pytree(pytree)` | Gather and concatenate native-array leaves of a PyTree |
+| `gather_for_metrics(value)` | Gather one array along its leading axis, for metrics only — never the gradient path |
 | `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
-| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks; each `field_ops` entry is an operation name or a callable `fn(value, device)`, invoked once |
+| `sync_object(state, field_ops)` | Reduce the fields of a dataclass under a per-field op, returning a new instance; each `field_ops` entry is an operation name or a callable `fn(value)`, invoked once |
+| `register_sync_type(type, fn)` | Register a state type so `sync()` can dispatch to it |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
-| `barrier()` | Blocking barrier across all ranks |
+| `assert_string_equal(v, name)` | Raise `RuntimeError` if an optional string differs across ranks |
+| `barrier()`, `wait_for_everyone()` | Blocking barrier across all ranks |
 
 ### Type-specific sync behavior
 
@@ -325,15 +328,67 @@ reported stddev is the one you intend to record.
 
 See [API Reference](../reference/distributed.md) for full docstrings.
 
+## Synchronizing state you wrote
+
+A mechanism with state of its own joins the same `sync()` dispatch rather than
+reducing by hand. Describe how each field crosses ranks with `sync_object`, then
+register the type once:
+
+```python
+from dataclasses import dataclass
+
+from opaque.distributed import register_sync_type, sync_object
+from opaque.random.types import RngKey
+
+
+@dataclass(frozen=True)
+class RareEventState:
+    hits: int          # rank-local count; the global total is what matters
+    examples: int      # ditto
+    threshold: float   # must already agree, or the ranks disagree on the query
+    key: RngKey        # rank-local by construction
+
+
+def sync_rare_event_state(state: RareEventState) -> RareEventState:
+    return sync_object(
+        state,
+        field_ops={
+            "hits": "sum",
+            "examples": "sum",
+            "threshold": "assert_equal",
+            "key": "local",
+        },
+    )
+
+
+register_sync_type(RareEventState, sync_rare_event_state)
+```
+
+Every field must appear in `field_ops`; there is no default, and the schema is
+validated in full before any collective runs, so a forgotten field surfaces as
+an error rather than as one rank's number. `"local"` declares a field
+rank-local on purpose.
+
+Besides `"sum"`, `"mean"`, `"max"`, `"min"`, and `"product"`, `"assert_equal"`
+raises when the ranks disagree — the right op for anything that defines the
+query, such as a threshold, a horizon, or a step counter, where reducing would
+paper over a divergence that has already broken the privacy analysis. A field
+op may also be a callable.
+
+`sync()` fails closed: an unregistered type raises `TypeError` naming what is
+registered. Registration walks the MRO, so registering a base class covers its
+subclasses.
+
 ## Limitations
 
-- **DDP only.** FSDP, Tensor Parallel, and Pipeline Parallel are not
-  supported.
-- **Backend support tiers.** First-class backends are NCCL, Gloo, and MPI.
-  Vendor/runtime-dependent backends require environment-specific stacks and are
-  not covered by default CI lanes.
-- **Single-node primarily.** Multi-node DDP should work but is not
-  extensively tested.
+- **Eager process boundary.** The collectives are eager process-level calls;
+  compiler-staged or sharded execution is outside the shared profile.
+- **Framework-owned launch.** Opaque does not initialize process groups or
+  launch workers; the framework runtime owns that lifecycle.
+- **Training integration.** The end-to-end workflow in this guide supports DDP;
+  FSDP, Tensor Parallel, and Pipeline Parallel are not supported.
+- **Multi-node validation.** Multi-node execution depends on the framework
+  launcher/runtime and is not extensively tested by Opaque.
 
 ## API reference
 

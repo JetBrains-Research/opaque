@@ -42,12 +42,13 @@ plugins:
           paths:
             - packages/opaque-base/src
             - packages/opaque-engine/src
+            - packages/opaque-torch/src
             - packages/opaque-optimizers/src
             - packages/opaque-dpsgd/src
             - packages/opaque-dpftrl/src
             - packages/opaque-auditing/src
             - packages/opaque-accounting/src
-            - packages/opaque-patches/src
+            - packages/opaque-kernels/src
             - packages/opaque-transformers/src
             - packages/opaque-alignment/src
           options:
@@ -94,6 +95,7 @@ nav:
     - Overview: user-guide/index.md
     - Differential Privacy Concepts: user-guide/dp-concepts.md
     - Random Number Generation: user-guide/rng-key.md
+    - Backends: user-guide/backends.md
     - End-to-end pipelines:
       - DP-SGD: user-guide/dp-sgd.md
       - DP-FTRL: user-guide/dp-ftrl.md
@@ -147,6 +149,9 @@ nav:
     - Overview: development/index.md
   - API Reference:
     - Overview: reference/index.md
+    - Backend: reference/backend.md
+    - Ops: reference/ops.md
+    - Autodiff: reference/autodiff.md
     - Serialization: reference/serialization.md
     - Clipping: reference/clipping.md
     - Noise: reference/noise.md
@@ -154,6 +159,8 @@ nav:
     - Sampling: reference/sampling.md
     - Random: reference/rng.md
     - Distributed: reference/distributed.md
+    - Execution: reference/execution.md
+    - Torch provider: reference/torch.md
     - Auditing: reference/auditing.md
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md

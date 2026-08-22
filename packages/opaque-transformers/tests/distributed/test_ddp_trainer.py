@@ -26,6 +26,9 @@ from pathlib import Path
 import pytest
 import torch
 
+from opaque.api.transformers.trainer._distributed import resolve_ddp_state
+from opaque.backend import active_backend, clear_backend
+
 RUNNER = str(Path(__file__).resolve().parent / "_ddp_runner.py")
 
 
@@ -102,6 +105,17 @@ def _run_ddp(
 # ---------------------------------------------------------------------------
 
 
+def test_resolve_ddp_state_infers_torch_before_collectives() -> None:
+    clear_backend()
+
+    state = resolve_ddp_state(torch.device("cpu"))
+
+    assert not state.is_distributed
+    assert active_backend() is not None
+    assert active_backend().name == "torch"
+    clear_backend()
+
+
 def _skip_if_no_multi_gpu() -> None:
     if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
         pytest.skip("requires ≥2 CUDA devices")
@@ -131,6 +145,28 @@ def test_runtime_foundation_rank_world_world4(tmp_path) -> None:
     if not torch.cuda.is_available() or torch.cuda.device_count() < 4:
         pytest.skip("requires ≥4 CUDA devices")
     _run_ddp("runtime_foundation", world_size=4, output_dir=str(tmp_path))
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_runtime_checkpoint_preserves_rank_sampler_states(tmp_path) -> None:
+    _run_ddp(
+        "runtime_foundation",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_resume_restores_rank_local_sampler_state(tmp_path) -> None:
+    _run_ddp(
+        "rank_local_sampler_resume",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
 
 
 @pytest.mark.cuda

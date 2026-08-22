@@ -156,6 +156,3 @@ class TestEpsDeltaDeltaAt:
         est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         with pytest.raises(ValueError, match="epsilon must be >= 0"):
             est.eps_delta().delta_at(epsilon=-0.1)
-
-
-# ---- Contract: torch-free --------------------------------------------------

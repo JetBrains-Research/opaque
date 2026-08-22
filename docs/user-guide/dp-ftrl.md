@@ -2,13 +2,21 @@
 
 This guide walks through the full DP-FTRL pipeline: pick a
 matrix-factorization strategy, calibrate the noise multiplier for the
-*whole training run*, clip gradients, add correlated MF noise, run a
-torchopt step, and checkpoint state. Every import on this page comes
-from the `opaque.dpftrl.*` public façade.
+*whole training run*, clip gradients, add correlated MF noise, run an
+explicit-state optimizer step, and checkpoint state. DP-FTRL-specific imports
+on this page come from the `opaque.dpftrl.*` public façade; shared state,
+optimizer, RNG, and accounting APIs use their own public namespaces.
 
 For DP-FTRL theory and a side-by-side comparison of mechanisms, see
 [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md). For the DP-SGD
 counterpart, see [DP-SGD end-to-end](dp-sgd.md).
+
+Install `opaque-dpftrl` together with a provider wheel, or use the root extra
+`opaque[dpftrl]`, which brings `opaque-torch`. The first gradient template
+passed to `mf_gaussian_noise` selects the provider; gradients, noised outputs,
+correlation buffers, and paired second-moment streams all stay native to it, at
+their input dtype and device. See
+[Providers, dtype, and state](noise.md#providers-dtype-and-state).
 
 ## Why DP-FTRL
 
@@ -52,6 +60,12 @@ from opaque.dpftrl.noise import (
 
 strategy = band_mf_strategy(bands=10)
 ```
+
+Strategies are provider-independent host recipes. Their
+`coefficients(n_steps=..., min_sep=..., max_participations=...)` queries return
+NumPy arrays for inspection and accounting, while `mf_gaussian_noise` projects
+the recipe into an immutable numeric execution plan and applies that plan to
+provider-native arrays.
 
 See [DP-FTRL mechanisms](../mechanisms/dp-ftrl/index.md) for the
 choice criteria.
@@ -173,8 +187,15 @@ noise_fn, noise_state = mf_gaussian_noise(
     n_steps=1000,                   # total training steps
     noise_multiplier=noise_multiplier,
     key=key(0),
+    compute_dtype=None,              # active provider's float32
 )
 ```
+
+The `grad_template` and each later clipped pytree must contain native arrays
+from the same provider. Internal noise and correlation state use
+`compute_dtype`; `None` deliberately resolves to provider `float32`, while the
+returned leaves are cast back to their input dtypes and remain on their input
+devices.
 
 `mf_gaussian_noise` reads the per-step contribution bound from the
 `ClippedPytree` input on the **first call** and latches it for the
@@ -214,8 +235,7 @@ Same surface as DP-SGD:
 ```python
 from opaque.optimizers import adamw
 
-optimizer = adamw(lr=1e-3, noise_bias_correction=True)
-opt_state = optimizer.init(params)
+optimizer_step, opt_state = adamw(params, lr=1e-3, noise_bias_correction=True)
 ```
 
 Private second-moment AdamW pairs with `mf_gaussian_noise(...,
@@ -230,26 +250,33 @@ the learning rate or using suitable per-group bounds can help.
 ## 7. End-to-end loop
 
 ```python
-import torch
+from opaque.optimizers import apply_updates
 from opaque.serialization import state_dict
-from opaque.functional import make_functional
 
-fmodel, params = make_functional(model)
 for step, batch in enumerate(sampler):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
-    params = torchopt.apply_updates(params, updates)
+    updates, opt_state = optimizer_step(noised, opt_state, params=params)
+    params = apply_updates(params, updates)
 
-# Checkpoint:
-ckpt = {
+# Hand this flat mapping to the application's checkpoint writer.
+checkpoint = state_dict({
     "params": params,
     "opt_state": opt_state,
     "clip_state": clip_state,
-    "noise_state": noise_state,  # carries MF streaming-matrix state
-}
-torch.save(state_dict(ckpt), "step.pt")
+    "noise_state": noise_state,
+})
 ```
+
+Obtain functional `params` with `opaque.torch.functional.make_functional`.
+
+To resume, reconstruct the clipping, optimizer, and MF noise mechanisms with
+the same configuration, assemble a matching state template, and call
+`from_state_dict(template, checkpoint)`. Native-array handlers preserve
+provider-native state leaves when restored against a matching provider template.
+The restored `MFNoiseState` or `SecondMomentMFNoiseState` carries the saved key,
+step counter, and provider-native correlation buffers, so the next noise call
+matches uninterrupted execution within that provider.
 
 ## Runnable references
 

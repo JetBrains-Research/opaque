@@ -1,10 +1,9 @@
 # Random Number Generation
 
-Opaque uses explicit RNG keys instead of global random state. Every
-function that involves randomness — noise injection, sampling, adaptive
-clipping, and auditing — takes a `key` parameter. This follows the JAX PRNG
-model: no hidden state, fully deterministic, and safe in distributed
-settings.
+Opaque uses explicit RNG keys instead of global random state. Stochastic
+library APIs receive a `key` directly or state that retains one. This follows
+the JAX PRNG model: no hidden state is consumed, results replay within an
+active backend, and key derivation is explicit in distributed settings.
 
 ## Why explicit keys
 
@@ -32,7 +31,8 @@ of what other code has run.
 | `key(seed)` | Create a key from an integer seed |
 | `split(k, num=2)` | Derive `num` independent child keys |
 | `fold_in(k, *data)` | Mix a key with one or more int/str values |
-| `generator_from_key(k)` | Convert to `torch.Generator` |
+| `normal(k, shape, *, dtype=None, like=None)` | Draw backend-native keyed normal samples |
+| `opaque.torch.random.generator_from_key(k)` | Convert to `torch.Generator` |
 | `random_key()` | Non-deterministic key (uses system entropy) |
 
 ### `key(seed)`
@@ -105,13 +105,44 @@ fold_in(k, 0).seed != fold_in(k, 1).seed
 fold_in(k, 42).seed != fold_in(k, "42").seed  # int vs str distinguished
 ```
 
+That last line is more than a curiosity: integers and strings are hashed down
+disjoint paths, and Opaque divides them. Integers belong to the caller — steps,
+ranks, epochs, leaf and group indices, and every key `split` returns. A unique,
+namespaced string tag roots a mechanism; code that draws its own randomness
+folds one in, then derives everything beneath it.
+
+```python
+stream = fold_in(k, "mylab.rare_events.noise")   # yours, and nobody else's
+step_key = fold_in(stream, step)
+```
+
+Skip the root and you write `fold_in(k, step)`, which is what every mechanism
+writes: two of them handed the same base key draw byte-identical noise, and no
+test, error, or accountant reports it. Passing a bare `key(42)` to
+`gaussian_noise` or a sampler is fine — those root themselves. See
+[Domain separation](../reference/rng.md#domain-separation) for the rule and the
+tags already taken.
+
+### Backend semantics and limits
+
+`key`, `split`, and `fold_in` are backend-neutral: the same inputs derive the
+same `RngKey` whichever provider is active. Array-valued sampling is
+deliberately different — `normal()` hands the key to the active provider's
+native implementation, so the same arguments replay within one provider but are
+not promised to agree across providers. It takes dtype and placement from
+`dtype` or `like`, and an unsupported dtype or device raises the provider's own
+error rather than falling back. Keyed sampling never consumes the framework's
+global random state; randomness inside your model does not become keyed by
+being called from Opaque.
+
 ### `generator_from_key(k)`
 
 Convert an `RngKey` to a `torch.Generator` for use with PyTorch operations
 that require one.
 
 ```python
-from opaque.random import key, generator_from_key
+from opaque.random import key
+from opaque.torch.random import generator_from_key
 
 gen = generator_from_key(key(42))
 tensor = torch.randn(10, generator=gen)
@@ -133,7 +164,9 @@ k = random_key()  # different every time
 ```
 
 Use for prototyping and exploration when reproducibility is not needed.
-For production training, always use `key(seed)` with a fixed seed.
+`random_key()` is the explicit system-entropy boundary; deterministic Opaque
+APIs never call it as an implicit fallback. For production training, always
+use `key(seed)` with a fixed seed and record that seed with the checkpoint.
 
 ## Using keys with Opaque components
 
@@ -159,6 +192,11 @@ from opaque.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ```
+
+Samplers and auditing utilities select host-side indices with a private
+`numpy.random.default_rng` built from an explicit, domain-separated key — never
+NumPy's global RNG. Those streams replay for the installed NumPy, but are not a
+bitstream promise across versions.
 
 ### Adaptive clipping
 
@@ -237,24 +275,37 @@ noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 For per-rank key control, use `fold_in()`:
 
 ```python
+from opaque.distributed import get_rank
 from opaque.random import key, fold_in
-import torch.distributed as dist
 
-rank = dist.get_rank()
+rank = get_rank()
 
 # Synchronized noise — same key, no rank folded in
 step_key = fold_in(key(42), step)
 
-# Independent noise per rank — fold in rank
-step_key = fold_in(key(42), step, rank)
+# Independent local component — use a separate named domain and rank
+sample_key = fold_in(key(42), "sampler", rank, step)
 
 # Equivalent explicit chaining
-step_key = fold_in(fold_in(key(42), step), rank)
+sample_key = fold_in(fold_in(key(42), "sampler"), rank, step)
 ```
+
+Use the same noise key on every rank only when the mechanism requires
+synchronized noise, such as centralized DP-SGD. For independent local
+components, derive a component key first and then fold in a named rank domain.
+
+### Pytree and group streams
+
+Gaussian and matrix-factorization noise derive one stream per pytree leaf from
+the leaf's flattening index, and adaptive clipping derives per-group streams
+from sorted group order. Reordering or inserting leaves or groups therefore
+changes the substream an otherwise unchanged leaf gets, so treat that ordering
+as part of the mechanism's checkpointed configuration.
 
 ## Reproducibility
 
-Same key produces identical output across runs, platforms, and devices:
+Within one backend and supported dtype/device configuration, the same key and
+arguments produce identical output across runs:
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
@@ -272,13 +323,18 @@ noisy2, _ = noise_fn(grads, s2)
 assert torch.equal(noisy1["w"], noisy2["w"])
 ```
 
+Opaque promises semantic portability — stable key derivation and keyed native
+sampling — not a shared cross-backend bitstream. Provider-native device
+determinism can also be limited by the framework and hardware.
+
 Opaque controls only its own randomness. PyTorch operations like
 `torch.randn` or `torch.nn.Dropout` use PyTorch's global state and may
-vary across platforms. Use `set_reproducible_pytorch_seed` to configure
-framework-level determinism:
+vary across platforms. The `opaque-torch` provider exposes
+`set_reproducible_pytorch_seed` for framework-level determinism:
 
 ```python
-from opaque.random import set_reproducible_pytorch_seed, key
+from opaque.random import key
+from opaque.torch.random import set_reproducible_pytorch_seed
 
 set_reproducible_pytorch_seed(key(42))
 # Sets torch.manual_seed, torch.cuda.manual_seed_all
@@ -286,34 +342,34 @@ set_reproducible_pytorch_seed(key(42))
 # Disables torch.backends.cudnn.benchmark
 ```
 
-This has a 10-30% performance cost due to deterministic algorithm
-selection. Call it once at training startup if you need full reproducibility.
+This has a 10-30% performance cost due to deterministic algorithm selection.
+It is an explicit framework-global setting for model code, not a requirement
+for Opaque's keyed sampling. Call it once at training startup if user-model
+reproducibility needs it.
 
 ## Checkpoint and resume
 
-Because keys are values (not stateful objects), checkpointing is
-straightforward. Save the noise state and restore it:
+Because keys are values, noise state contains the base key and cursor needed
+to continue. Save that state through Opaque's serializer and restore it into a
+fresh state template built with the same mechanism configuration:
 
 ```python
-# Save
-state = {"noise_state": noise_state, "step": step, ...}
-torch.save(state, "checkpoint.pt")
+from opaque.serialization import from_state_dict, state_dict
 
-# Resume
-state = torch.load("checkpoint.pt")
-noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=key(42))
-# Advance to the saved step by setting the internal counter
-noise_state = state["noise_state"]
+# Save after any number of noise_fn calls.
+checkpoint = state_dict(noise_state)
+torch.save(checkpoint, "checkpoint.pt")
+
+# Resume. The template's key is replaced by the saved key.
+noise_fn, template_state = gaussian_noise(noise_multiplier=1.1, key=key(0))
+noise_state = from_state_dict(template_state, torch.load("checkpoint.pt"))
 ```
 
-Alternatively, reconstruct the key from the step counter using
-`fold_in`:
-
-```python
-# Resume from step 500
-k = fold_in(key(42), 500)
-noise_fn, noise_state = gaussian_noise(noise_multiplier=1.1, key=k)
-```
+The next noise result matches an uninterrupted run. Constructing a new noise
+function from `fold_in(base_key, step)` is not a substitute: that starts a fresh
+mechanism state at step zero. Restore samplers the same way, with
+`from_state_dict(template_sampler, snapshot)` — the template supplies the
+dataset, the snapshot the key and cursor.
 
 ## API reference
 

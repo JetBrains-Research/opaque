@@ -103,6 +103,11 @@ step = dpsgd_acc.parallel_poisson(
 
 ## Code examples
 
+`gaussian_noise` preserves the active provider's native array type, dtype, and
+device. Passing a Torch tensor to the noise function
+selects its provider automatically; use `opaque.backend.set_backend()` with a
+provider factory only when an earlier explicit selection is needed.
+
 ### Noise injection
 
 ```python

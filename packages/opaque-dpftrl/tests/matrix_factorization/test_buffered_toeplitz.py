@@ -1,9 +1,7 @@
 """Tests for Buffered Linear Toeplitz (BLT) mechanisms."""
 
-import dataclasses
-
+import numpy as np
 import pytest
-import torch
 
 from opaque.api.dpftrl.noise._blt_math import (
     BufferedToeplitz,
@@ -14,6 +12,7 @@ from opaque.api.dpftrl.noise._blt_math import (
     geometric_sum,
     get_init_blt,
     get_parameterized_loss,
+    get_parameterized_loss_and_gradient,
     inverse,
     inverse_as_streaming_matrix,
     iteration_error,
@@ -23,6 +22,7 @@ from opaque.api.dpftrl.noise._blt_math import (
     materialize,
     max_error,
     min_buf_decay_gap,
+    optimize,
     optimize_loss,
     penalized_loss,
     robust_max_error_Gamma_j,
@@ -30,6 +30,7 @@ from opaque.api.dpftrl.noise._blt_math import (
     sensitivity_squared,
     toeplitz_coefs,
 )
+from opaque.api.dpftrl.noise._plan import toeplitz_execution_plan
 from opaque.api.dpftrl.noise._toeplitz import materialize_lower_triangular
 
 
@@ -40,7 +41,7 @@ class TestBufferedToeplitz:
             output_scale=[0.3, 0.2],
         )
         assert blt._num_buffers == 2
-        assert blt.dtype == torch.float64
+        assert blt.dtype == np.float64
 
     def test_canonicalize_sorts_descending(self):
         blt = BufferedToeplitz.build(
@@ -69,13 +70,13 @@ class TestBufferedToeplitz:
         )
         M = materialize(blt, 3)
         expected = materialize_lower_triangular(toeplitz_coefs(blt, 3))
-        torch.testing.assert_close(M, expected)
+        np.testing.assert_allclose(M, expected)
 
     def test_empty_blt(self):
         blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
         coefs = toeplitz_coefs(blt, 3)
-        expected = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64)
-        torch.testing.assert_close(coefs, expected)
+        expected = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+        np.testing.assert_allclose(coefs, expected)
 
     def test_pillutla_score(self):
         blt = BufferedToeplitz.build(
@@ -100,8 +101,8 @@ class TestBLTInverse:
         C = materialize(blt, n)
         C_inv = materialize(inv_blt, n)
         product = C @ C_inv
-        torch.testing.assert_close(
-            product, torch.eye(n, dtype=torch.float64), atol=1e-8, rtol=1e-8
+        np.testing.assert_allclose(
+            product, np.eye(n, dtype=np.float64), atol=1e-8, rtol=1e-8
         )
 
     def test_single_buffer_inverse(self):
@@ -114,8 +115,8 @@ class TestBLTInverse:
         C = materialize(blt, n)
         C_inv = materialize(inv_blt, n)
         product = C @ C_inv
-        torch.testing.assert_close(
-            product, torch.eye(n, dtype=torch.float64), atol=1e-8, rtol=1e-8
+        np.testing.assert_allclose(
+            product, np.eye(n, dtype=np.float64), atol=1e-8, rtol=1e-8
         )
 
 
@@ -129,7 +130,7 @@ class TestBLTStreamingMatrix:
         dense = materialize(blt, n)
         streaming = as_streaming_matrix(blt)
         streaming_dense = streaming.materialize(n)
-        torch.testing.assert_close(streaming_dense, dense, atol=1e-8, rtol=1e-8)
+        np.testing.assert_allclose(streaming_dense, dense, atol=1e-8, rtol=1e-8)
 
     def test_inverse_streaming_matches_dense(self):
         blt = BufferedToeplitz.build(
@@ -138,10 +139,10 @@ class TestBLTStreamingMatrix:
         )
         n = 5
         C = materialize(blt, n)
-        C_inv_dense = torch.linalg.inv(C)
+        C_inv_dense = np.linalg.inv(C)
         C_inv_streaming = inverse_as_streaming_matrix(blt)
         C_inv_streaming_dense = C_inv_streaming.materialize(n)
-        torch.testing.assert_close(
+        np.testing.assert_allclose(
             C_inv_streaming_dense, C_inv_dense, atol=1e-8, rtol=1e-8
         )
 
@@ -149,60 +150,77 @@ class TestBLTStreamingMatrix:
         ("buf_decay", "output_scale"),
         [([0.7, 0.3], [0.4, 0.2]), ([0.5], [0.3]), ([], [])],
     )
-    def test_inverse_row_norms_closed_form_matches_probing_and_dense(
-        self, buf_decay, output_scale
-    ):
+    def test_plan_row_norms_match_probing_and_dense(self, buf_decay, output_scale):
         blt = BufferedToeplitz.build(buf_decay=buf_decay, output_scale=output_scale)
         n = 6
+        plan = toeplitz_execution_plan(
+            toeplitz_coefs(blt, n),
+            mode="blt",
+            buffer_decay=blt.buf_decay,
+            output_scale=blt.output_scale,
+        )
         C_inv = inverse_as_streaming_matrix(blt)
-        norms = C_inv.row_norms_squared(n)
-        probing = dataclasses.replace(
-            C_inv, row_norms_squared_fn=None
-        ).row_norms_squared(n)
-        torch.testing.assert_close(norms, probing, atol=1e-10, rtol=1e-10)
-        dense = torch.linalg.inv(materialize(blt, n))
-        torch.testing.assert_close(
-            norms, dense.square().sum(dim=1), atol=1e-8, rtol=1e-8
+        np.testing.assert_allclose(
+            np.square(plan.row_l2),
+            C_inv.row_norms_squared(n),
+            atol=1e-10,
+            rtol=1e-10,
+        )
+        dense = np.linalg.inv(materialize(blt, n))
+        np.testing.assert_allclose(
+            np.square(plan.row_l2),
+            np.square(dense).sum(axis=1),
+            atol=1e-8,
+            rtol=1e-8,
         )
 
-    def test_inverse_row_norms_closed_form_high_buffer_near_one_decays(self):
+    def test_plan_row_norms_high_buffer_near_one_decays(self):
         # The default 10-buffer init has decays within 1e-6 of 1.0 — a
         # regime where an expanded rational-transfer-function filter
-        # drifts from the truth by whole percents at long horizons.
+        # drifts from the truth by whole percents at long horizons. The
+        # plan's direct Toeplitz-inversion recurrence must agree with the
+        # buffer-recurrence streaming inverse.
         blt = get_init_blt(10)
         n = 1024
+        plan = toeplitz_execution_plan(
+            toeplitz_coefs(blt, n),
+            mode="blt",
+            buffer_decay=blt.buf_decay,
+            output_scale=blt.output_scale,
+        )
         C_inv = inverse_as_streaming_matrix(blt)
-        norms = C_inv.row_norms_squared(n)
-        probing = dataclasses.replace(
-            C_inv, row_norms_squared_fn=None
-        ).row_norms_squared(n)
-        torch.testing.assert_close(norms, probing, atol=1e-10, rtol=1e-10)
+        np.testing.assert_allclose(
+            np.square(plan.row_l2),
+            C_inv.row_norms_squared(n),
+            atol=1e-10,
+            rtol=1e-10,
+        )
 
 
 class TestGeometricSum:
     def test_finite(self):
-        a = torch.tensor(1.0, dtype=torch.float64)
-        r = torch.tensor(0.5, dtype=torch.float64)
+        a = np.array(1.0, dtype=np.float64)
+        r = np.array(0.5, dtype=np.float64)
         result = geometric_sum(a, r, num=4)
         expected = 1 + 0.5 + 0.25 + 0.125
         assert float(result) == pytest.approx(expected)
 
     def test_infinite(self):
-        a = torch.tensor(1.0, dtype=torch.float64)
-        r = torch.tensor(0.5, dtype=torch.float64)
+        a = np.array(1.0, dtype=np.float64)
+        r = np.array(0.5, dtype=np.float64)
         result = geometric_sum(a, r)
         assert float(result) == pytest.approx(2.0)
 
     def test_zero_ratio(self):
-        a = torch.tensor(3.0, dtype=torch.float64)
-        r = torch.tensor(0.0, dtype=torch.float64)
+        a = np.array(3.0, dtype=np.float64)
+        r = np.array(0.0, dtype=np.float64)
         result = geometric_sum(a, r, num=5)
         assert float(result) == pytest.approx(3.0)
 
     def test_near_one_ratio(self):
         """geometric_sum should be accurate when r is very close to 1."""
-        a = torch.tensor(1.0, dtype=torch.float64)
-        r = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        a = np.array(1.0, dtype=np.float64)
+        r = np.array(1 - 1e-10, dtype=np.float64)
         result = geometric_sum(a, r, num=100)
         # For r very close to 1, the sum should be close to n=100
         assert float(result) == pytest.approx(100.0, rel=1e-4)
@@ -213,8 +231,8 @@ class TestRobustGammaJ:
 
     def test_matches_brute_force_small_theta(self):
         """robust_max_error_Gamma_j matches brute force for theta far from 1."""
-        omega = torch.tensor(0.3, dtype=torch.float64)
-        theta = torch.tensor(0.5, dtype=torch.float64)
+        omega = np.array(0.3, dtype=np.float64)
+        theta = np.array(0.5, dtype=np.float64)
         n = 10
         result = robust_max_error_Gamma_j(omega, theta, n)
         # Brute force: sum_{i=1}^{n-1} geometric_sum(omega, theta, i) / n
@@ -224,10 +242,10 @@ class TestRobustGammaJ:
 
     def test_near_one_theta_finite(self):
         """robust_max_error_Gamma_j returns finite values for theta near 1."""
-        omega = torch.tensor(0.3, dtype=torch.float64)
-        theta = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        omega = np.array(0.3, dtype=np.float64)
+        theta = np.array(1 - 1e-10, dtype=np.float64)
         result = robust_max_error_Gamma_j(omega, theta, 1000)
-        assert torch.isfinite(result)
+        assert np.isfinite(result)
         assert float(result) > 0
 
 
@@ -236,10 +254,10 @@ class TestRobustGammaJK:
 
     def test_matches_brute_force_small_thetas(self):
         """robust_max_error_Gamma_jk matches brute force for small thetas."""
-        omega1 = torch.tensor(0.3, dtype=torch.float64)
-        theta1 = torch.tensor(0.5, dtype=torch.float64)
-        omega2 = torch.tensor(0.2, dtype=torch.float64)
-        theta2 = torch.tensor(0.4, dtype=torch.float64)
+        omega1 = np.array(0.3, dtype=np.float64)
+        theta1 = np.array(0.5, dtype=np.float64)
+        omega2 = np.array(0.2, dtype=np.float64)
+        theta2 = np.array(0.4, dtype=np.float64)
         n = 10
         result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, n)
         # Brute force
@@ -253,21 +271,21 @@ class TestRobustGammaJK:
 
     def test_both_near_one_finite(self):
         """robust_max_error_Gamma_jk handles both thetas near 1."""
-        omega1 = torch.tensor(0.3, dtype=torch.float64)
-        theta1 = torch.tensor(1 - 1e-10, dtype=torch.float64)
-        omega2 = torch.tensor(0.2, dtype=torch.float64)
-        theta2 = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        omega1 = np.array(0.3, dtype=np.float64)
+        theta1 = np.array(1 - 1e-10, dtype=np.float64)
+        omega2 = np.array(0.2, dtype=np.float64)
+        theta2 = np.array(1 - 1e-10, dtype=np.float64)
         result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, 1000)
-        assert torch.isfinite(result)
+        assert np.isfinite(result)
 
     def test_one_near_one_finite(self):
         """robust_max_error_Gamma_jk handles one theta near 1."""
-        omega1 = torch.tensor(0.3, dtype=torch.float64)
-        theta1 = torch.tensor(1 - 1e-10, dtype=torch.float64)
-        omega2 = torch.tensor(0.2, dtype=torch.float64)
-        theta2 = torch.tensor(0.5, dtype=torch.float64)
+        omega1 = np.array(0.3, dtype=np.float64)
+        theta1 = np.array(1 - 1e-10, dtype=np.float64)
+        omega2 = np.array(0.2, dtype=np.float64)
+        theta2 = np.array(0.5, dtype=np.float64)
         result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, 1000)
-        assert torch.isfinite(result)
+        assert np.isfinite(result)
 
 
 class TestIterationErrorRobust:
@@ -279,7 +297,7 @@ class TestIterationErrorRobust:
             output_scale=[-0.2, -0.1],
         )
         err = iteration_error(blt, 50)
-        assert torch.isfinite(err)
+        assert np.isfinite(err)
         assert float(err) > 0
 
     def test_identity_error(self):
@@ -363,28 +381,28 @@ class TestSensitivitySquared:
 
 class TestMinBufDecayGap:
     def test_basic(self):
-        theta = torch.tensor([0.9, 0.5, 0.3], dtype=torch.float64)
+        theta = np.array([0.9, 0.5, 0.3], dtype=np.float64)
         gap = min_buf_decay_gap(theta)
         assert float(gap) == pytest.approx(0.2)
 
     def test_duplicates(self):
-        theta = torch.tensor([0.5, 0.5], dtype=torch.float64)
+        theta = np.array([0.5, 0.5], dtype=np.float64)
         gap = min_buf_decay_gap(theta)
         assert float(gap) == pytest.approx(0.0)
 
 
 class TestBLTPairFromThetaPair:
     def test_inverse_property(self):
-        theta = torch.tensor([0.8, 0.4], dtype=torch.float64)
-        theta_hat = torch.tensor([0.6, 0.2], dtype=torch.float64)
+        theta = np.array([0.8, 0.4], dtype=np.float64)
+        theta_hat = np.array([0.6, 0.2], dtype=np.float64)
         blt, inv_blt = blt_pair_from_theta_pair(theta, theta_hat)
 
         n = 6
         C = materialize(blt, n)
         C_inv = materialize(inv_blt, n)
         product = C @ C_inv
-        torch.testing.assert_close(
-            product, torch.eye(n, dtype=torch.float64), atol=1e-6, rtol=1e-6
+        np.testing.assert_allclose(
+            product, np.eye(n, dtype=np.float64), atol=1e-6, rtol=1e-6
         )
 
 
@@ -396,7 +414,7 @@ class TestGetInitBLT:
     def test_default_init(self):
         blt = get_init_blt(num_buffers=3)
         assert blt._num_buffers == 3
-        assert blt.dtype == torch.float64
+        assert blt.dtype == np.float64
 
     def test_wrong_num_buffers(self):
         blt = BufferedToeplitz.build(
@@ -413,7 +431,7 @@ class TestLossFn:
         blt = get_init_blt(num_buffers=2)
         loss_val = loss(loss_fn, blt)
         assert float(loss_val) > 0
-        assert torch.isfinite(loss_val)
+        assert np.isfinite(loss_val)
 
     def test_min_sep(self):
         loss_fn = LossFn.build_min_sep(n=20, min_sep=2, max_participations=3)
@@ -428,7 +446,7 @@ class TestLossFn:
         penalized = penalized_loss(loss_fn, blt, inv_blt)
         plain = loss(loss_fn, blt)
         # Penalized loss should be close to plain loss (penalty is small)
-        assert torch.isfinite(penalized)
+        assert np.isfinite(penalized)
         # penalty_strength is 1e-8, so difference should be small
         assert float(penalized) == pytest.approx(float(plain), abs=1.0)
 
@@ -446,8 +464,8 @@ class TestParameterization:
         C = materialize(blt_out, n)
         C_inv = materialize(inv_blt_out, n)
         product = C @ C_inv
-        torch.testing.assert_close(
-            product, torch.eye(n, dtype=torch.float64), atol=1e-6, rtol=1e-6
+        np.testing.assert_allclose(
+            product, np.eye(n, dtype=np.float64), atol=1e-6, rtol=1e-6
         )
 
     def test_get_loss_fn(self):
@@ -457,8 +475,38 @@ class TestParameterization:
         params = param.params_from_blt(blt)
         opt_loss_fn = get_parameterized_loss(param, loss_fn)
         result = opt_loss_fn(params)
-        assert torch.isfinite(result)
+        assert np.isfinite(result)
         assert float(result) > 0
+
+    def test_min_sep_gradient_matches_centered_difference(self):
+        n = 30
+        loss_fn = LossFn.build_min_sep(
+            n=n,
+            min_sep=5,
+            max_participations=3,
+            workload_coef=np.power(0.9, np.arange(n)),
+        )
+        param = Parameterization.buf_decay_pair()
+        params = np.array([0.8, 0.35, 0.65, 0.15])
+        value_and_gradient = get_parameterized_loss_and_gradient(param, loss_fn)
+        assert value_and_gradient is not None
+
+        value, gradient = value_and_gradient(params)
+        scalar_loss = get_parameterized_loss(param, loss_fn)
+        step = 1e-7
+        centered_gradient = np.array(
+            [
+                (
+                    scalar_loss(params + np.eye(len(params))[i] * step)
+                    - scalar_loss(params - np.eye(len(params))[i] * step)
+                )
+                / (2.0 * step)
+                for i in range(len(params))
+            ]
+        )
+
+        assert np.isfinite(value)
+        np.testing.assert_allclose(gradient, centered_gradient, rtol=1e-6, atol=1e-6)
 
 
 class TestOptimizeLoss:
@@ -479,7 +527,7 @@ class TestOptimizeLoss:
         )
         # Allow tiny floating-point tolerance
         assert float(opt_loss) <= init_loss * (1 + 1e-10)
-        assert torch.isfinite(opt_loss)
+        assert np.isfinite(opt_loss)
 
     def test_two_buffers(self):
         loss_fn = LossFn.build_closed_form_single_participation(n=50)
@@ -487,8 +535,55 @@ class TestOptimizeLoss:
             loss_fn, num_buffers=2, max_optimizer_steps=50
         )
         assert opt_blt._num_buffers == 2
-        assert torch.isfinite(opt_loss)
+        assert np.isfinite(opt_loss)
         assert float(opt_loss) > 0
+
+    def test_min_sep_momentum_escapes_initialization(self):
+        """Analytic BLT gradients must avoid the old finite-difference stall."""
+        n = 100
+        loss_fn = LossFn.build_min_sep(
+            n=n,
+            min_sep=10,
+            max_participations=None,
+            workload_coef=np.power(0.9, np.arange(n)),
+        )
+        initial_loss = float(
+            loss(loss_fn, get_init_blt(num_buffers=1), skip_checks=True)
+        )
+
+        _blt, optimized_loss = optimize_loss(loss_fn, num_buffers=1)
+
+        assert float(optimized_loss) < initial_loss * 0.5
+
+    def test_representative_min_sep_momentum_converges_with_bounded_work(self):
+        """The n=500 BLT recovery must retain quality without the old fallback work."""
+        n = 500
+        loss_fn = LossFn.build_min_sep(
+            n=n,
+            min_sep=10,
+            max_participations=1,
+            workload_coef=np.power(0.9, np.arange(n)),
+        )
+        evaluations = []
+        blt = optimize(
+            n=n,
+            min_sep=10,
+            max_participations=1,
+            max_buffers=3,
+            workload_coef=np.power(0.9, np.arange(n)),
+            callback=lambda event: evaluations.append(event),
+        )
+        optimized_loss = float(loss(loss_fn, blt, skip_checks=True))
+        optimized_sensitivity = float(np.sqrt(sensitivity_squared(blt, n=n)))
+
+        # The feasible Armijo restart runs a second short L-BFGS-B pass.  This
+        # range distinguishes it from an immediate stall and the former
+        # 100-step fallback without depending on wall-clock timing.
+        assert 20 <= len(evaluations) <= 40
+        assert np.all(np.isfinite(blt.buf_decay))
+        assert np.all(np.isfinite(blt.output_scale))
+        assert optimized_loss <= 2.126025545777228
+        assert optimized_sensitivity <= 1.2023459630813556
 
 
 class TestFromRationalApprox:
@@ -499,8 +594,8 @@ class TestFromRationalApprox:
             max_pillutla_score=1 - 1e-6,
         )
         assert blt._num_buffers == 3
-        assert torch.all(blt.buf_decay > 0)
-        assert torch.all(blt.buf_decay < 1)
+        assert np.all(blt.buf_decay > 0)
+        assert np.all(blt.buf_decay < 1)
 
     def test_invalid_num_buffers(self):
         with pytest.raises(ValueError, match="num_buffers must be >= 1"):
