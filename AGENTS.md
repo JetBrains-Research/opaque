@@ -285,8 +285,8 @@ CI lane marker expressions:
   `-m "cuda and not slow"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
-  Failures in the Minimum dependencies lane are currently advisory, while
-  setup and resolution failures remain blocking.
+  Every selected pytest failure blocks its lane, dependency boundaries
+  included, alongside setup and resolution failures.
 
 ### Supported HF model families
 

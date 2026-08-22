@@ -1,13 +1,10 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the DPO NCA pairwise loss variant (work-unit γ.2).
+"""Tests for the DPO NCA pairwise loss variant.
 
-Covers :func:`nca_loss` (NCA pairwise loss):
-- ≥3 hand-computed reference cases (small, analytically tractable inputs).
-- NaN-injection (Tier-1) contract: a NaN in one example propagates only to
-  that example's loss.
-- Imports target the concrete implementation paths (public façade not wired
-  for this work-unit; façade wiring is γ.W).
+Shape, the analytic value at the origin, and NaN locality. Closed-form
+reference values live in ``tests/test_reference_values.py`` and parity against
+TRL's ``nca_pair`` in ``tests/test_trl_parity.py``.
 """
 
 from __future__ import annotations
@@ -15,7 +12,6 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F
 
 from opaque.api.alignment.dpo.loss._nca import nca_loss
 
@@ -45,28 +41,6 @@ class TestDpoNcaPair:
         out = nca_loss(c, r, beta=0.1)
         expected = _T(2.0 * math.log(2))
         assert out.shape == ()
-        assert torch.allclose(out, expected, atol=1e-6)
-
-    def test_positive_chosen_negative_rejected(self) -> None:
-        """c=1, r=-1, β=0.5 against reference formula."""
-        c = _T(1.0)
-        r = _T(-1.0)
-        beta = 0.5
-        cr = _T(beta * 1.0)
-        rr = _T(beta * (-1.0))
-        expected = -F.logsigmoid(cr) - 0.5 * F.logsigmoid(-cr) - 0.5 * F.logsigmoid(-rr)
-        out = nca_loss(c, r, beta=beta)
-        assert torch.allclose(out, expected, atol=1e-6)
-
-    def test_large_positive_chosen(self) -> None:
-        """c=2, r=0, β=1.0 against reference formula."""
-        c = _T(2.0)
-        r = _T(0.0)
-        beta = 1.0
-        cr = _T(beta * 2.0)
-        rr = _T(beta * 0.0)
-        expected = -F.logsigmoid(cr) - 0.5 * F.logsigmoid(-cr) - 0.5 * F.logsigmoid(-rr)
-        out = nca_loss(c, r, beta=beta)
         assert torch.allclose(out, expected, atol=1e-6)
 
     def test_batched_shape_and_finite(self) -> None:

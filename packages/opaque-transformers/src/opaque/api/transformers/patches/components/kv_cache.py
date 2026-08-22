@@ -13,13 +13,10 @@ def _disable_kv_cache(forward_fn):
     autograd metadata → cache) that defeat refcounting, so the patch
     addresses both memory paths.
 
-    This wrapper forces ``use_cache=False`` when ``past_key_values`` is
-    ``None`` or an empty cache, matching the approach used by Unsloth
-    (``if past_key_values is None and self.training: use_cache = False``).
-    Unlike Unsloth, we don't gate on ``self.training`` to avoid side effects
-    with LoRA modules — the condition ``past_key_values is None`` is
-    sufficient since the cache is only useful for autoregressive generation
-    with an existing cache.
+    This wrapper forces ``use_cache=False`` during training when
+    ``past_key_values`` is ``None`` or an empty cache. Generation must retain
+    its initial empty cache so it can populate it after the first decoding
+    step.
     """
     import functools
 
@@ -28,11 +25,21 @@ def _disable_kv_cache(forward_fn):
 
     @functools.wraps(forward_fn)
     def wrapper(*args, **kwargs):
+        import torch
+
+        model = args[0] if args else None
         past = kwargs.get("past_key_values")
-        has_cached_data = past is not None and (
-            not hasattr(past, "get_seq_length") or past.get_seq_length() > 0
-        )
-        if not has_cached_data:
+        if past is None:
+            has_cached_data = False
+        elif hasattr(past, "get_seq_length"):
+            has_cached_data = past.get_seq_length() > 0
+        else:
+            has_cached_data = len(past) > 0
+        if (
+            torch.is_grad_enabled()
+            and getattr(model, "training", False)
+            and not has_cached_data
+        ):
             kwargs["use_cache"] = False
         return forward_fn(*args, **kwargs)
 

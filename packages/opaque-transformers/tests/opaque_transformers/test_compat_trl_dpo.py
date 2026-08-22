@@ -8,6 +8,7 @@ import pytest
 
 # TRL is the optional ``opaque[trl]`` extra.
 trl = pytest.importorskip("trl")
+_DPO_FIELDS = trl.DPOConfig.__dataclass_fields__
 
 from opaque.transformers.trl import DPOConfig  # noqa: E402
 
@@ -123,6 +124,10 @@ def test_loss_type_aot_rejected(tmp_path):
         )
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _DPO_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
     """A deliberately set MoE aux-loss coefficient converts, loudly, to no-op."""
     with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
@@ -134,6 +139,10 @@ def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
     assert cfg is not None
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _DPO_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
     """TRL's own non-zero default is not a user request, so it warns about nothing."""
     default_coef = trl.DPOConfig.__dataclass_fields__["router_aux_loss_coef"].default
@@ -148,6 +157,10 @@ def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _DPO_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
 def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
     """Asking for no aux loss gets no aux loss, so there is nothing to warn about."""
     with warnings.catch_warnings(record=True) as caught:
@@ -161,6 +174,10 @@ def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
+@pytest.mark.skipif(
+    "trust_remote_code" not in _DPO_FIELDS,
+    reason="TRL does not expose trust_remote_code",
+)
 def test_trust_remote_code_overrides_model_init_kwargs(tmp_path):
     cfg = DPOConfig.from_trl(
         _trl_dpo_args(

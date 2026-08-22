@@ -20,6 +20,7 @@ from opaque.api.transformers.trainer._scheduler import get_warmup_steps
 
 # ``transformers`` is a required dep of opaque-transformers.
 hf = pytest.importorskip("transformers")
+_HF_FIELDS = hf.TrainingArguments.__dataclass_fields__
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,10 @@ def test_direct_field_max_steps_carries_through(tmp_path):
     assert opaque.max_steps == 123
 
 
+@pytest.mark.skipif(
+    "dataloader_multiprocessing_context" not in _HF_FIELDS,
+    reason="transformers does not expose dataloader_multiprocessing_context",
+)
 def test_dataloader_multiprocessing_context_carries_through(tmp_path):
     context = multiprocessing.get_all_start_methods()[0]
     opaque = TrainingArguments.from_hf(
@@ -142,6 +147,10 @@ def test_dataloader_multiprocessing_context_carries_through(tmp_path):
     assert opaque.dataloader_multiprocessing_context == context
 
 
+@pytest.mark.skipif(
+    "dataloader_in_order" not in _HF_FIELDS,
+    reason="transformers does not expose dataloader_in_order",
+)
 def test_dataloader_in_order_false_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="dataloader_in_order must be True"):
         TrainingArguments.from_hf(

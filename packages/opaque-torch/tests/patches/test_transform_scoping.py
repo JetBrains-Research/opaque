@@ -22,6 +22,11 @@ backport_only = pytest.mark.skipif(
     native_checkpoint_support(),
     reason="torch conditions create_graph natively; the backport is not applied",
 )
+torch_2_13_only = pytest.mark.skipif(
+    tuple(map(int, torch.__version__.split("+", maxsplit=1)[0].split(".")[:2]))
+    < (2, 13),
+    reason="full-graph transform support requires PyTorch 2.13+",
+)
 
 
 def cube(x):
@@ -135,6 +140,7 @@ def test_higher_order_rejects_saved_tensor_hooks():
         jacrev(grad(cube))(torch.tensor(2.0))
 
 
+@torch_2_13_only
 def test_compiles_the_dp_transform_with_the_patches_applied():
     grad_fn, state = clipped_grad(lambda w, x: ((x - w) ** 2).sum(), clipping_norm=1.0)
     args = (torch.tensor(3.0), torch.tensor([0.0, 7.0]))
@@ -146,6 +152,7 @@ def test_compiles_the_dp_transform_with_the_patches_applied():
     torch.testing.assert_close(compiled.pytree, eager.pytree)
 
 
+@torch_2_13_only
 def test_compiled_transform_rejects_saved_tensor_hooks():
     # PyTorch 2.13 can abort Dynamo tracing before it restores this thread-local
     # state. Preserve the pre-test state so the expected error cannot poison

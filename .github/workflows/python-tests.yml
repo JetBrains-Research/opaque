@@ -3,11 +3,6 @@ name: Python tests
 on:
   workflow_call:
     inputs:
-      allow-test-failure:
-        description: Report pytest failures without failing the job.
-        required: false
-        default: false
-        type: boolean
       allow-empty-test-selection:
         description: Treat an empty package selection as success.
         required: false
@@ -95,7 +90,6 @@ jobs:
             paths: tests
     env:
       ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
-      ALLOW_TEST_FAILURE: ${{ inputs.allow-test-failure }}
       COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-${{ matrix.suite.id }}
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}

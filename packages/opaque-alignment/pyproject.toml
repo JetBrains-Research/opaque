@@ -30,8 +30,9 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.9.0",
-    "transformers>=4.57.0,<6",
+    "transformers>=5.0.0,<6",
     "datasets>=2.0.0",
+    "numpy>=1.24",
     "peft>=0.13.0",
     # safetensors is the on-disk format for the DPO reference-logp cache
     # (`opaque.api.alignment.dpo.reference._precompute`). Already pulled in

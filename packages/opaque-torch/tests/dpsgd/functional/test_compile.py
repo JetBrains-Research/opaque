@@ -37,6 +37,13 @@ def _cpu_inductor_available() -> bool:
     return shutil.which("g++") is not None or shutil.which("clang++") is not None
 
 
+torch_2_13_only = pytest.mark.skipif(
+    tuple(map(int, torch.__version__.split("+", maxsplit=1)[0].split(".")[:2]))
+    < (2, 13),
+    reason="full-DP-transform compilation requires PyTorch 2.13+",
+)
+
+
 def _build_model_and_batch(seed: int = 0, in_features: int = 8, hidden: int = 16):
     torch.manual_seed(seed)
     model = nn.Sequential(
@@ -148,6 +155,7 @@ def test_compile_loss_closure_optimizer_step_parity(backend: str):
     [(8, 16), (128, 64)],
     ids=["flat_reduction", "blocked_reduction"],
 )
+@torch_2_13_only
 def test_compile_dp_transform_fullgraph_aot_eager(in_features: int, hidden: int):
     """fullgraph=True compiles the outer DP transform without graph breaks.
 

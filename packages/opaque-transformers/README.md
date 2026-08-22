@@ -12,11 +12,11 @@ conversion.
 
 Depends on `opaque-engine`, `opaque-kernels`, `opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, plus
-`transformers>=4.57`, `peft>=0.13`, and `datasets>=2.0`.
+`transformers>=5.0`, `peft>=0.13`, and `datasets>=2.0`.
 
-For Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy), install
-`opaque-kernels[transformers]` — kernels are a dependency of `opaque-kernels`
-and gate on CUDA + Triton at runtime.
+The Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy) ship in
+`opaque-kernels`, already a dependency of this package, and gate on CUDA +
+Triton at runtime.
 
 ## Quick start
 

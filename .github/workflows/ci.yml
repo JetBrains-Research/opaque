@@ -53,7 +53,6 @@ jobs:
     name: Linux amd64 (minimum dependencies)
     uses: ./.github/workflows/python-tests.yml
     with:
-      allow-test-failure: true
       dependency-selection: minimum
       environment-name: minimum-dependencies
       pytest-marker: not cuda and not mps and not slow and not distributed
@@ -115,7 +114,6 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       allow-empty-test-selection: true
-      allow-test-failure: true
       dependency-selection: minimum
       environment-name: cuda-minimum-dependencies
       pytest-marker: cuda and not slow

@@ -24,6 +24,7 @@ Tolerances are dtype-specific:
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -201,7 +202,11 @@ def _get_families():
             apply_qwen3_patches,
             apply_smollm3_patches,
         )
-    return sorted(set(supported_families()) - _PARITY_SKIP_FAMILIES)
+    return sorted(
+        family
+        for family in set(supported_families()) - _PARITY_SKIP_FAMILIES
+        if importlib.util.find_spec(f"transformers.models.{family}") is not None
+    )
 
 
 FAMILIES = _get_families()
@@ -476,7 +481,11 @@ def test_vmap_grad_parity(family, device):
 
 def test_parity_families_covered():
     """All registered families have at least one parity test passing."""
-    families = set(supported_families()) - _PARITY_SKIP_FAMILIES
+    families = {
+        family
+        for family in set(supported_families()) - _PARITY_SKIP_FAMILIES
+        if importlib.util.find_spec(f"transformers.models.{family}") is not None
+    }
     missing = families - set(FAMILIES)
     assert not missing, (
         f"Registered families missing from parity suite: {sorted(missing)}"
