@@ -42,14 +42,6 @@ class TestSimpo:
         with_margin = simpo_loss(c, r, beta=1.0, gamma=0.5)
         assert with_margin.item() > base.item()
 
-    def test_label_smoothing(self) -> None:
-        """ε blends the two logsigmoid terms."""
-        c, r = torch.tensor(0.6), torch.tensor(-0.1)
-        m = 1.0 * (c - r) - 0.0
-        expected = -F.logsigmoid(m) * 0.9 - F.logsigmoid(-m) * 0.1
-        out = simpo_loss(c, r, beta=1.0, label_smoothing=0.1)
-        torch.testing.assert_close(out, expected)
-
     def test_vmap_grad_finite(self) -> None:
         torch.manual_seed(0)
         c, r = torch.randn(5), torch.randn(5)

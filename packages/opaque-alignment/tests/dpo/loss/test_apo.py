@@ -1,15 +1,11 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the DPO APO loss variants (work-unit γ.2).
+"""Tests for the DPO APO loss variants (arXiv:2408.06266).
 
-Covers :func:`apo_zero_loss` and :func:`apo_down_loss` (arXiv:2408.06266),
-which share the implementation module ``_apo.py``.
-
-For each function:
-- ≥3 hand-computed reference cases (small, analytically tractable inputs).
-- vmap-safety (``torch.func.vmap(torch.func.grad(...))``) for ``apo_zero_loss``.
-- Imports target the concrete implementation paths (public façade not wired
-  for this work-unit; façade wiring is γ.W).
+Shape, the degenerate points where both terms sum to 1, and vmap-safety for
+:func:`apo_zero_loss`. Closed-form reference values live in
+``tests/test_reference_values.py`` and parity against TRL's ``apo_zero`` /
+``apo_down`` in ``tests/test_trl_parity.py``.
 """
 
 from __future__ import annotations
@@ -41,15 +37,6 @@ class TestDpoApoZero:
         out = apo_zero_loss(c, r, beta=0.1)
         assert out.shape == ()
         assert torch.allclose(out, _T(1.0), atol=1e-6)
-
-    def test_c1_rneg1_beta05(self) -> None:
-        """c=1, r=-1, β=0.5 → (1-sig(0.5)) + sig(-0.5)."""
-        c = _T(1.0)
-        r = _T(-1.0)
-        out = apo_zero_loss(c, r, beta=0.5)
-        # sig(-0.5) = 1 - sig(0.5); both terms are equal here.
-        expected = (1 - torch.sigmoid(_T(0.5))) + torch.sigmoid(_T(-0.5))
-        assert torch.allclose(out, expected, atol=1e-6)
 
     def test_c2_r2_beta1_is_one(self) -> None:
         """c=2, r=2, β=1 → (1-sig(2)) + sig(2) = 1.0 always."""
@@ -107,19 +94,6 @@ class TestDpoApoDown:
         out = apo_down_loss(c, r, beta=0.5)
         # b*c = b*(c-r) so lc + lr = sig(x) + (1-sig(x)) = 1
         assert torch.allclose(out, _T(1.0), atol=1e-6)
-
-    def test_c2_r1_beta05(self) -> None:
-        """c=2, r=1, β=0.5 → sig(1.0) + (1-sig(0.5))."""
-        c = _T(2.0)
-        r = _T(1.0)
-        beta = 0.5
-        expected = torch.sigmoid(_T(beta * 2.0)) + (
-            1 - torch.sigmoid(_T(beta * (2.0 - 1.0)))
-        )
-        out = apo_down_loss(c, r, beta=beta)
-        assert torch.allclose(out, expected, atol=1e-6)
-        # Sanity: b*c=1.0 != b*(c-r)=0.5, so result is not trivially 1.
-        assert not torch.allclose(out, _T(1.0), atol=1e-4)
 
     def test_batched_shape_preserved(self) -> None:
         """(B,) inputs → (B,) output."""
