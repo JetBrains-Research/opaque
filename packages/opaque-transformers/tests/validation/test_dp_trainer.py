@@ -200,6 +200,28 @@ class TestPrivacyBudgetValidation:
         assert args.privacy_target_epsilon == 8.0
 
 
+class TestIgnoreDataSkip:
+    """ignore_data_skip is DP-valid only for poisson sampling."""
+
+    def test_poisson_is_ok(self):
+        args = TrainingArguments(
+            use_cpu=True,
+            privacy_noise_multiplier=1.0,
+            ignore_data_skip=True,
+        )
+        assert args.sampling_mode == "poisson"
+        assert args.ignore_data_skip is True
+
+    def test_participation_schema_raises(self):
+        with pytest.raises(ValueError, match="ignore_data_skip=True is only DP-valid"):
+            TrainingArguments(
+                use_cpu=True,
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_band",
+                ignore_data_skip=True,
+            )
+
+
 class TestStopAtEpsilon:
     """Stop-at-ε: when both NM>0 and target_epsilon are set, the trainer
     halts at the first log boundary where the accumulated ε ≥ target.
