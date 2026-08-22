@@ -276,6 +276,7 @@ def test_ignore_causal_mask_shim_short_circuits_on_a_padding_mask():
     _vmap_safe_ignore_causal_mask_sdpa._original = lambda *a, **k: calls.append(a)
     try:
         assert _vmap_safe_ignore_causal_mask_sdpa(object(), 1, 2, 3, 4, None) is False
+        assert _vmap_safe_ignore_causal_mask_sdpa(padding_mask=object()) is False
         assert calls == []
     finally:
         if previous is None:
