@@ -36,7 +36,7 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_STATE_BUNDLE_VERSION = 3
+DP_STATE_BUNDLE_VERSION = 4  # namespaced mechanism RNG roots change noise streams
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 

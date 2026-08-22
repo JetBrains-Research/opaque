@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 
     from .types import MfStrategy
 
+# Integers `0` and `1` would alias `split(key, 2)`. See ``docs/reference/rng.md``.
+SECOND_MOMENT_FIRST_STREAM_FOLD = "opaque.dpftrl.second_moment.first"
+SECOND_MOMENT_SECOND_STREAM_FOLD = "opaque.dpftrl.second_moment.second"
+
 
 @dataclasses.dataclass(frozen=True)
 class SecondMomentMFNoiseState(NoiseState):
@@ -85,7 +89,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 0),
+        key=rng_fold_in(key, SECOND_MOMENT_FIRST_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
     second_fn, second_state, second_row_l2_at = _make_raw_mf_noise(
@@ -94,7 +98,7 @@ def make_second_moment_mf_noise(
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        key=rng_fold_in(key, 1),
+        key=rng_fold_in(key, SECOND_MOMENT_SECOND_STREAM_FOLD),
         compute_dtype=compute_dtype,
     )
 
