@@ -2,8 +2,13 @@
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
-``step()`` call must produce the same updates as if we had kept
-the original state.
+``step()`` call must produce *bit-identical* updates to the ones the
+retained state would have produced.
+
+:func:`_assert_round_trip` enforces two properties for every test: the
+comparison is exact (``rtol=atol=0``), and the restored state demonstrably
+influences the update, checked against a freshly-initialised one.  The second
+depends on :func:`_grad_sequence` actually evolving state.
 """
 
 from __future__ import annotations
@@ -46,73 +51,160 @@ def grads(params):
     return {k: torch.randn_like(v) for k, v in params.items()}
 
 
+def _grad_sequence(params, steps: int = 6, *, seed: int = 20260819):
+    """A deterministic, non-constant gradient sequence that evolves state.
+
+    Magnitude must vary: under a constant gradient a bias-corrected optimizer
+    is step-invariant (Adam has ``m̂ = g``, ``v̂ = g²`` exactly), so a fresh
+    state gives the same update as an evolved one.  Direction alone is not
+    enough either — Lion's ``sign(β₁m+(1−β₁)g)`` is identical from either
+    state when the last gradient dominates the momentum, so magnitudes ramp
+    *down* 4x → 1x.  Margins run 0.73 (Lion) to 1.1e+02 (RAdam); see
+    ``_MIN_STATE_SENSITIVITY``.
+
+    The explicit generator keeps the sequence off global RNG state.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    span = max(steps - 1, 1)
+    return [
+        {
+            # Drawn on CPU (where ``gen`` lives) and moved onto the leaf, so
+            # this keeps the device-following behavior of ``randn_like``.
+            k: torch.randn(v.shape, generator=gen, dtype=v.dtype).to(v.device)
+            * (1.0 + 3.0 * (span - i) / span)
+            for k, v in params.items()
+        }
+        for i in range(steps)
+    ]
+
+
+@pytest.fixture
+def grad_seq(params):
+    return _grad_sequence(params)
+
+
+# Minimum relative gap between an evolved-state update and a fresh-state one
+# for a round-trip comparison to carry information.  Measured margins across
+# the fixtures in this module run from 0.73 (Lion) to 1.1e+02 (RAdam), leaving
+# ≥70x headroom, while a fixture that stops evolving state fails loudly.
+_MIN_STATE_SENSITIVITY = 1e-2
+
+
+def _rel_gap(a, b) -> float:
+    """Relative L2 distance between two flat update pytrees."""
+    num = sum(((a[k] - b[k]) ** 2).sum() for k in a).sqrt()
+    den = sum((a[k] ** 2).sum() for k in a).sqrt()
+    return (num / den).item()
+
+
 def _round_trip(
     factory: Callable[..., tuple[Callable[..., tuple[Any, Any]], Any]],
     params,
-    grads,
-    steps: int = 5,
+    seq,
+    *,
+    wrap=None,
     **factory_kwargs,
 ):
-    """Train ``steps`` steps, serialise, restore on a fresh init,
-    assert the next update is identical."""
+    """Evolve state over ``seq[:-1]``, serialise, restore on a fresh init.
+
+    Returns the next update from the evolved, restored, and freshly
+    initialised state.  :func:`_assert_round_trip` compares the first two and
+    uses the third to confirm the comparison is informative.
+    """
+    wrap = wrap or (lambda g: g)
     step, state = factory(params, **factory_kwargs)
-    for _ in range(steps):
-        _, state = step(grads, state, params=params)
-    sd = state_dict(state)
+    for step_grads in seq[:-1]:
+        _, state = step(wrap(step_grads), state, params=params)
 
     # Fresh template — same shape, zeroed leaves.
     _step2, template = factory(params, **factory_kwargs)
-    restored = from_state_dict(template, sd)
+    restored = from_state_dict(template, state_dict(state))
 
-    # Both states should produce the same next update.
-    u_orig, _ = step(grads, state, params=params)
-    u_rest, _ = step(grads, restored, params=params)
-    return u_orig, u_rest
+    final = wrap(seq[-1])
+    u_evolved, _ = step(final, state, params=params)
+    u_restored, _ = step(final, restored, params=params)
+    _step3, fresh = factory(params, **factory_kwargs)
+    u_fresh, _ = step(final, fresh, params=params)
+    return u_evolved, u_restored, u_fresh
+
+
+def _assert_round_trip(u_evolved, u_restored, u_fresh):
+    """Assert an exact restore, and that the comparison could have failed.
+
+    ``from_state_dict`` puts the saved values back into the template, so the
+    follow-up update runs the same ops on the same bits: ``rtol=atol=0`` is
+    the contract.  At ``lr=1e-3`` the updates are ~1e-3, where the default
+    float32 ``atol=1e-5`` alone would absorb a genuine state difference.
+    """
+    for k in u_evolved:
+        torch.testing.assert_close(u_restored[k], u_evolved[k], rtol=0, atol=0)
+
+    gap = _rel_gap(u_evolved, u_fresh)
+    assert gap > _MIN_STATE_SENSITIVITY, (
+        f"round-trip assertion is vacuous: a freshly-initialised state produces "
+        f"the same update as the evolved one (relative gap {gap:.2e} <= "
+        f"{_MIN_STATE_SENSITIVITY:.0e}), so this test cannot detect a broken "
+        f"restore.  The gradient sequence is not evolving optimizer state."
+    )
+
+
+def _noised(sigma):
+    """``wrap`` for :func:`_round_trip` that attaches DP noise metadata."""
+    return lambda g: noised(g, max_norm=1.0, noise_stddev=sigma)
+
+
+def _second_moment(sigma=0.1):
+    """``wrap`` that also supplies a privatised ``g²`` stream."""
+
+    def wrap(g):
+        sq = {k: v.pow(2) + 0.01 for k, v in g.items()}
+        return SecondMomentNoiseOutput(
+            noised(g, max_norm=1.0, noise_stddev=sigma),
+            noised(sq, max_norm=1.0, noise_stddev=sigma),
+        )
+
+    return wrap
 
 
 class TestAdamW:
-    def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(adamw, params, grads, lr=1e-3, weight_decay=0.01)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
-
-    def test_round_trip_bc(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            adamw,
-            params,
-            noised(grads, max_norm=1.0, noise_stddev=0.5),
-            lr=1e-3,
-            noise_bias_correction=True,
+    def test_round_trip_vanilla(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(adamw, params, grad_seq, lr=1e-3, weight_decay=0.01)
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
-    def test_round_trip_second_moment(self, params, grads):
-        sq = {k: v.pow(2) + 0.01 for k, v in grads.items()}
-        output = SecondMomentNoiseOutput(
-            noised(grads, max_norm=1.0, noise_stddev=0.1),
-            noised(sq, max_norm=1.0, noise_stddev=0.1),
+    def test_round_trip_bc(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                adamw,
+                params,
+                grad_seq,
+                wrap=_noised(0.5),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
         )
-        u_orig, u_rest = _round_trip(adamw, params, output, lr=1e-3)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
-    def test_round_trip_l2_wd(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            adamw,
-            params,
-            grads,
-            lr=1e-3,
-            weight_decay=0.5,
-            decoupled_weight_decay=False,
+    def test_round_trip_second_moment(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(adamw, params, grad_seq, wrap=_second_moment(), lr=1e-3)
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
-    def test_round_trip_with_rms_clip(self, params, grads):
-        u_orig, u_rest = _round_trip(adamw, params, grads, lr=1e-3, update_rms_clip=0.5)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip_l2_wd(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                adamw,
+                params,
+                grad_seq,
+                lr=1e-3,
+                weight_decay=0.5,
+                decoupled_weight_decay=False,
+            )
+        )
+
+    def test_round_trip_with_rms_clip(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(adamw, params, grad_seq, lr=1e-3, update_rms_clip=0.5)
+        )
 
     def test_step_and_phi_preserved(self, params, grads):
         step, state = adamw(params, lr=1e-3, noise_bias_correction=True)
@@ -191,10 +283,10 @@ class TestAdamW:
             u_orig["layer2"]["weight"], u_rest["layer2"]["weight"]
         )
 
-    def test_torch_save_load_round_trip(self, params, grads, tmp_path):
+    def test_torch_save_load_round_trip(self, params, grad_seq, tmp_path):
         step, state = adamw(params, lr=1e-3, weight_decay=0.01)
-        for _ in range(3):
-            _, state = step(grads, state, params=params)
+        for step_grads in grad_seq[:-1]:
+            _, state = step(step_grads, state, params=params)
         sd = state_dict(state)
         path = tmp_path / "opt.pt"
         torch.save(sd, path)
@@ -202,17 +294,20 @@ class TestAdamW:
         assert set(sd_loaded.keys()) == set(sd.keys())
         _s2, template = adamw(params, lr=1e-3, weight_decay=0.01)
         restored = from_state_dict(template, sd_loaded)
-        u_orig, _ = step(grads, state, params=params)
-        u_rest, _ = step(grads, restored, params=params)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+
+        final = grad_seq[-1]
+        u_orig, _ = step(final, state, params=params)
+        u_rest, _ = step(final, restored, params=params)
+        _s3, fresh = adamw(params, lr=1e-3, weight_decay=0.01)
+        u_fresh, _ = step(final, fresh, params=params)
+        _assert_round_trip(u_orig, u_rest, u_fresh)
 
 
 class TestLion:
-    def test_round_trip(self, params, grads):
-        u_orig, u_rest = _round_trip(lion, params, grads, lr=1e-4, weight_decay=0.0)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(lion, params, grad_seq, lr=1e-4, weight_decay=0.0)
+        )
 
     def test_step_preserved(self, params, grads):
         step, state = lion(params, lr=1e-4)
@@ -225,21 +320,20 @@ class TestLion:
 
 
 class TestAdEMAMix:
-    def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(ademamix, params, grads, lr=1e-3)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip_vanilla(self, params, grad_seq):
+        _assert_round_trip(*_round_trip(ademamix, params, grad_seq, lr=1e-3))
 
-    def test_round_trip_bc(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            ademamix,
-            params,
-            noised(grads, max_norm=1.0, noise_stddev=0.4),
-            lr=1e-3,
-            noise_bias_correction=True,
+    def test_round_trip_bc(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                ademamix,
+                params,
+                grad_seq,
+                wrap=_noised(0.4),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
         step, state = ademamix(params, lr=1e-3, noise_bias_correction=True)
@@ -269,12 +363,14 @@ class TestAdafactor:
         torch.manual_seed(1)
         return {k: torch.randn_like(v) for k, v in matrix_params.items()}
 
-    def test_round_trip(self, matrix_params, matrix_grads):
-        u_orig, u_rest = _round_trip(
-            adafactor, matrix_params, matrix_grads, steps=3, lr=1e-3, beta1=0.9
+    @pytest.fixture
+    def matrix_grad_seq(self, matrix_params):
+        return _grad_sequence(matrix_params, 4)
+
+    def test_round_trip(self, matrix_params, matrix_grad_seq):
+        _assert_round_trip(
+            *_round_trip(adafactor, matrix_params, matrix_grad_seq, lr=1e-3, beta1=0.9)
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_factored_v_serialised(self, matrix_params, matrix_grads):
         """v_row / v_col tensors round-trip; the optree treespec is
@@ -329,21 +425,20 @@ class TestAdafactor:
 
 
 class TestRAdam:
-    def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(radam, params, grads, lr=1e-3)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip_vanilla(self, params, grad_seq):
+        _assert_round_trip(*_round_trip(radam, params, grad_seq, lr=1e-3))
 
-    def test_round_trip_bc(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            radam,
-            params,
-            noised(grads, max_norm=1.0, noise_stddev=0.3),
-            lr=1e-3,
-            noise_bias_correction=True,
+    def test_round_trip_bc(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                radam,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
         step, state = radam(params, lr=1e-3, noise_bias_correction=True)
@@ -363,21 +458,20 @@ class TestRAdam:
 
 
 class TestRMSprop:
-    def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(rmsprop, params, grads, lr=1e-2)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip_vanilla(self, params, grad_seq):
+        _assert_round_trip(*_round_trip(rmsprop, params, grad_seq, lr=1e-2))
 
-    def test_round_trip_bc(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            rmsprop,
-            params,
-            noised(grads, max_norm=1.0, noise_stddev=0.3),
-            lr=1e-2,
-            noise_bias_correction=True,
+    def test_round_trip_bc(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                rmsprop,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-2,
+                noise_bias_correction=True,
+            )
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_preserved(self, params, grads):
         step, state = rmsprop(params, lr=1e-2, noise_bias_correction=True)
@@ -397,21 +491,20 @@ class TestRMSprop:
 
 
 class TestAdagrad:
-    def test_round_trip_vanilla(self, params, grads):
-        u_orig, u_rest = _round_trip(adagrad, params, grads, lr=1e-2)
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
+    def test_round_trip_vanilla(self, params, grad_seq):
+        _assert_round_trip(*_round_trip(adagrad, params, grad_seq, lr=1e-2))
 
-    def test_round_trip_bc(self, params, grads):
-        u_orig, u_rest = _round_trip(
-            adagrad,
-            params,
-            noised(grads, max_norm=1.0, noise_stddev=0.3),
-            lr=1e-2,
-            noise_bias_correction=True,
+    def test_round_trip_bc(self, params, grad_seq):
+        _assert_round_trip(
+            *_round_trip(
+                adagrad,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-2,
+                noise_bias_correction=True,
+            )
         )
-        for k in u_orig:
-            torch.testing.assert_close(u_orig[k], u_rest[k])
 
     def test_phi_acc_preserved(self, params, grads):
         step, state = adagrad(params, lr=1e-2, noise_bias_correction=True)
@@ -431,23 +524,28 @@ class TestAdagrad:
 
 
 class TestScheduleFree:
-    def test_round_trip_over_adamw(self, params, grads):
+    def test_round_trip_over_adamw(self, params, grad_seq):
         step, state = schedule_free(params, adamw, lr=1e-3)
         p = params
-        for _ in range(4):
-            delta, state = step(grads, state, params=p)
+        for step_grads in grad_seq[:-1]:
+            delta, state = step(step_grads, state, params=p)
             p = apply_updates(p, delta)
         sd = state_dict(state)
         _s2, template = schedule_free(p, adamw, lr=1e-3)
         restored = from_state_dict(template, sd)
+        # x and z must come back bit-for-bit, not merely close.
         for k in state.x:
-            torch.testing.assert_close(restored.x[k], state.x[k])
-            torch.testing.assert_close(restored.z[k], state.z[k])
+            torch.testing.assert_close(restored.x[k], state.x[k], rtol=0, atol=0)
+            torch.testing.assert_close(restored.z[k], state.z[k], rtol=0, atol=0)
         assert restored.step == state.step
         assert restored.beta == state.beta
-        ep = restored.x
-        for k in ep:
-            torch.testing.assert_close(ep[k], state.x[k])
+
+        final = grad_seq[-1]
+        u_evolved, _ = step(final, state, params=p)
+        u_restored, _ = step(final, restored, params=p)
+        _s3, fresh = schedule_free(p, adamw, lr=1e-3)
+        u_fresh, _ = step(final, fresh, params=p)
+        _assert_round_trip(u_evolved, u_restored, u_fresh)
 
 
 class TestRobustness:
