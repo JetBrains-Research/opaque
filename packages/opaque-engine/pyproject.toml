@@ -37,7 +37,6 @@ py-modules = [
     "opaque.autodiff",
     "opaque.ops",
     "opaque.types",
-    "opaque.pytree",
     "opaque.sampling",
 ]
 
@@ -50,6 +49,7 @@ include = [
     "opaque.distributed*",
     "opaque.execution*",
     "opaque.primitive*",
+    "opaque.pytree*",
     "opaque.functional*",
     "opaque.scheduling*",
     "opaque.profiling*",

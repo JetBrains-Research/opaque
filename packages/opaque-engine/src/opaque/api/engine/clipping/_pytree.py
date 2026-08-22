@@ -32,7 +32,7 @@ Fields:
 def _tensor_path_leaves(
     pytree: Any,
 ) -> tuple[list[ParamPath], list[Any], Any]:
-    """Flatten tensor leaves with :data:`~opaque.pytree.ParamPath` keys."""
+    """Flatten tensor leaves with :data:`~opaque.pytree.types.ParamPath` keys."""
     paths, leaves, treedef = tree_flatten_with_paths(pytree)
     tensor_leaves: list[Any] = []
     for path, leaf in zip(paths, leaves, strict=True):
@@ -270,7 +270,7 @@ def _clip_pytree_per_group(
     return_zero: bool,
     compute_dtype: Any | None,
 ) -> tuple[Any, ClipPytreeAux]:
-    """Per-group clipping keyed by optree :data:`~opaque.pytree.ParamPath`."""
+    """Per-group clipping keyed by optree :data:`~opaque.pytree.types.ParamPath`."""
     paths, leaves, treedef = _tensor_path_leaves(pytree)
     _validate_per_group_paths(paths, pg)
     acc_dtype = _resolve_reduction_dtype(leaves, compute_dtype)

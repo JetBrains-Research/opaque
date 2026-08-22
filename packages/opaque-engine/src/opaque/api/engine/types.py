@@ -71,7 +71,7 @@ class PerGroup:
     of a plain product.
 
     Attributes:
-        groups: Read-only mapping from :data:`~opaque.pytree.ParamPath`
+        groups: Read-only mapping from :data:`~opaque.pytree.types.ParamPath`
             (optree leaf path) to group name.  Flat ``named_parameters`` keys
             are stored as one-segment paths ``(name,)``; nested trees use
             multi-segment paths such as ``("layer", "weight")``.  A bare
@@ -136,7 +136,7 @@ class PerGroup:
         return PerGroup(self.groups, {k: v / scalar for k, v in self.values.items()})
 
     def for_path(self, path: ParamPath | str) -> float:
-        """Look up the per-group value for a leaf :data:`~opaque.pytree.ParamPath`."""
+        """Look up the per-group value for a leaf :data:`~opaque.pytree.types.ParamPath`."""
         from opaque.api.engine.pytree import param_path
 
         return self.values[self.groups[param_path(path)]]

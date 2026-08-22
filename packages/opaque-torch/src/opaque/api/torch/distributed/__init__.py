@@ -102,7 +102,7 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
     """All-reduce tensor leaves in place.
 
     In-place wrapper reductions are accepted only when the wrapper metadata
-    stays unchanged.  Use the engine's ``opaque.distributed.reduce_pytree``
+    stays unchanged.  Use the engine's ``opaque.distributed.gradients.reduce_pytree``
     for reductions such as noised ``sum`` or clipped/noised ``mean`` that
     need updated metadata.
     """

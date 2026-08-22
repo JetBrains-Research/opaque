@@ -10,7 +10,9 @@ User-facing entry points:
 - :func:`apply_peft_model_patches` — PEFT-only variant.
 
 See :mod:`opaque.kernels`, :mod:`opaque.transformers.patches.families`,
-and :mod:`opaque.transformers.patches.peft` for the power-user submodules. The Torch-core
+and :mod:`opaque.transformers.patches.peft` for the power-user submodules,
+and :mod:`opaque.transformers.patches.types` for the callable contracts a
+custom family patch is written against. The Torch-core
 runtime patches belong to the provider —
 :func:`opaque.torch.apply_runtime_patches` and
 :mod:`opaque.torch.checkpoint` — and :func:`apply_runtime_patches` here
@@ -24,6 +26,7 @@ from opaque.api.transformers.patches import (
     apply_transformers_model_patches,
     is_runtime_patched,
 )
+from opaque.transformers.patches import types
 
 __all__ = [
     "apply_model_patches",
@@ -31,4 +34,5 @@ __all__ = [
     "apply_runtime_patches",
     "apply_transformers_model_patches",
     "is_runtime_patched",
+    "types",
 ]

@@ -12,10 +12,12 @@ from opaque.api.dpftrl.sampling import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
+from opaque.dpftrl.sampling import types
 
 __all__ = [
     "BMinSepSampler",
     "BallsInBinsSampler",
     "CyclicPoissonSampler",
     "SequentialBatchSampler",
+    "types",
 ]

@@ -13,7 +13,8 @@ noise → optimizer:
   markers shared across DP-SGD and DP-FTRL implementations.
 - **Aliases**: ``MaxNorm``, ``NoiseStddev`` — opaque-typed unions
   used in wrapper metadata fields.  The structural ``ParamPath``
-  alias belongs to its own concern and lives in :mod:`opaque.pytree`.
+  alias belongs to its own concern and lives in
+  :mod:`opaque.pytree.types`.
 - **Factories**: ``clipped()`` and ``noised()`` — manual wrapper
   constructors for callers that already produced privatised values.
 """

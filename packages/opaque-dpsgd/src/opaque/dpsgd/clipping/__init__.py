@@ -20,10 +20,12 @@ AUTO-S function-level helpers live in :mod:`opaque.dpsgd.clipping.fun`.
 
 from opaque.api.dpsgd.clipping import adaptive_clipped_grad
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad, per_group
+from opaque.dpsgd.clipping import types
 
 __all__ = [
     "adaptive_clipped_grad",
     "auto_clipped_grad",
     "clipped_grad",
     "per_group",
+    "types",
 ]

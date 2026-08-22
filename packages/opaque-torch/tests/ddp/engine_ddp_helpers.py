@@ -433,9 +433,9 @@ def _worker_core_collectives_gloo(rank: int, world_size: int, port: int) -> None
         is_main_process,
         num_processes,
         process_index,
-        reduce_pytree,
         sync,
     )
+    from opaque.distributed.gradients import reduce_pytree
     from opaque.profiling import step_perf
     from opaque.profiling.types import PerfState
     from opaque.torch.distributed import all_reduce_

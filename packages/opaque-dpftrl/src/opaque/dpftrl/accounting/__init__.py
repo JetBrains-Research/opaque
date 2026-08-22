@@ -59,10 +59,12 @@ from opaque.api.accounting.dpftrl import (
     mf_gaussian,
     poisson,
 )
+from opaque.dpftrl.accounting import types
 
 __all__ = [
     "b_min_sep",
     "balls_in_bins",
     "mf_gaussian",
     "poisson",
+    "types",
 ]

@@ -30,6 +30,7 @@ from opaque.api.engine.scheduling import (
     with_restarts,
     with_warmup,
 )
+from opaque.scheduling import types
 
 __all__ = [
     "constant_schedule",
@@ -42,4 +43,5 @@ __all__ = [
     "warmup_stable_decay",
     "with_restarts",
     "with_warmup",
+    "types",
 ]

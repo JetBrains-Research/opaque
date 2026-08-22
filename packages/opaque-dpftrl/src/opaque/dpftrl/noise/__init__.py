@@ -35,6 +35,7 @@ from opaque.api.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_gaussian_noise,
 )
+from opaque.dpftrl.noise import types
 
 __all__ = [
     "band_mf_strategy",
@@ -44,4 +45,5 @@ __all__ = [
     "identity_strategy",
     "lambda_cgd_strategy",
     "mf_gaussian_noise",
+    "types",
 ]
