@@ -282,27 +282,18 @@ def _wrap_assistant_content(template: str) -> str | None:
     )
     matches = list(assistant_block_pat.finditer(template))
     if not matches:
-        # No explicit assistant branch found.  Try a simpler heuristic:
-        # wrap the last {{ ... content ... }} expression in the template.
-        content_pat = re.compile(r"\{\{-?\s*[^}]*\bcontent\b[^}]*-?\}\}")
-        content_matches = list(content_pat.finditer(template))
-        if not content_matches:
-            return None
-        last = content_matches[-1]
-        return (
-            template[: last.start()]
-            + _GEN_START
-            + last.group()
-            + _GEN_END
-            + template[last.end() :]
-        )
+        return None
 
     # Take the last assistant branch start.
     last_branch_start = matches[-1].end()
 
-    # Find the first content expression after the branch tag — the one that
-    # renders the assistant reply (typically the next {{ … }}).
+    # Find the first content expression before the assistant branch ends. A
+    # shared expression after the branch would render every role and must be
+    # handled by a role-aware strategy below instead.
     substring = template[last_branch_start:]
+    next_control = re.search(r"\{%-?\s*(?:elif|else|endif|endfor)\b", substring)
+    if next_control is not None:
+        substring = substring[: next_control.start()]
     content_pat = re.compile(r"\{\{-?\s*[^}]*\bcontent\b[^}]*-?\}\}")
     m = content_pat.search(substring)
     if m is None:

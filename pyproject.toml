@@ -114,10 +114,11 @@ opaque-alignment = { workspace = true }
 # when CUDA + Triton are not importable.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
-  "pytest>=7.0.0",
+  "pytest>=9.0.0",
   "pytest-cov>=4.0.0",
   "pytest-xdist>=3.5.0",   # Parallel test execution (`-n auto`); CI shards within each job
   "ruff>=0.16.0,<0.17",
+  "setuptools>=68.0",     # Required by PyTorch's CPU dynamic-shape compiler
   "scipy>=1.11.0",         # Statistical tests
   # Cross-validation against reference DP accounting libraries. Imported by
   # packages/opaque-dpsgd/tests/accounting/test_cross_validation.py — not a
@@ -135,7 +136,8 @@ dev = [
 examples = [
   "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
-  "transformers>=4.57.0,<6",  # dual-support: 4.57 golden baseline + v5 (Mellum/MoE)
+  "numpy>=1.24",              # required by transformers 5 type annotations
+  "transformers>=5.0.0,<6",  # v5 baseline includes supported Mellum/MoE models
   "peft>=0.13.0",             # LoRA adapters (needed by all training examples)
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks

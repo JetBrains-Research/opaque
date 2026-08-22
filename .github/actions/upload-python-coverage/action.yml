@@ -42,4 +42,4 @@ runs:
       with:
         files: ${{ inputs.coverage-file }}
         flags: ${{ inputs.codecov-flag }}
-        fail_ci_if_error: false
+        fail_ci_if_error: true

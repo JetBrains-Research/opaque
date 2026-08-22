@@ -52,6 +52,7 @@ HF_DIRECT_FIELDS: frozenset[str] = frozenset(
     {
         # Output / scope
         "output_dir",
+        "logging_dir",
         # Batch sizes
         "per_device_eval_batch_size",
         "eval_accumulation_steps",
@@ -315,15 +316,23 @@ HF_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
 
 
 # ---------------------------------------------------------------------------
-# Fields the manifest classifies that only exist on *older* supported
-# transformers. The declared range spans a major boundary, so the manifest
-# has to cover the union of both surfaces; these names are absent from the
-# newest release and must not be read as manifest drift.
+# Fields the manifest classifies that exist only in some supported
+# transformers releases. The declared range spans a major boundary, so the
+# manifest covers the union of those surfaces.
 # ---------------------------------------------------------------------------
 HF_LEGACY_FIELDS: frozenset[str] = frozenset(
     {
         # Removed in 5.x, which folded the fraction into ``warmup_steps``.
         "warmup_ratio",
+        # Added after the 5.0 compatibility floor.
+        "dataloader_in_order",
+        "dataloader_multiprocessing_context",
+        "ddp_static_graph",
+        "group_by_length",
+        "logging_dir",
+        "trackio_bucket_id",
+        "trackio_static_space_id",
+        "train_sampling_strategy",
     }
 )
 
@@ -356,6 +365,10 @@ HF_REJECTED_FIELDS: dict[str, Callable[[Any], str | None]] = {
     "neftune_noise_alpha": _reject_if_truthy(
         "NEFTune embedding noise is not wired through the DP-SGD path "
         "(it would interact with the privacy accountant)."
+    ),
+    "group_by_length": _reject_if_truthy(
+        "Length-grouped batching is incompatible with Poisson subsampling. "
+        "Use the opaque sampling_mode options instead."
     ),
     # Hub auto-push.
     "hub_always_push": _reject_if_truthy(

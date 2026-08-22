@@ -68,8 +68,8 @@ environment block in the Actions graph while the groups still run in parallel.
 Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or `latest`
 (`uv` `highest`). Validation callers report every test phase taking at
 least five seconds, so newly slow tests cannot disappear behind a fixed-size
-duration table. Lower-bound pytest failures are advisory while dependency
-resolution and workflow failures remain blocking.
+duration table. Every selected pytest failure, dependency resolution failure,
+and workflow failure blocks its caller.
 
 `pr.yml`, `ci.yml`, and release preparation invoke the callable workflow for
 Linux amd64 tests, minimum and latest dependency boundaries, and macOS arm64,
