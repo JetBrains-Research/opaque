@@ -48,6 +48,30 @@ if TYPE_CHECKING:
 
 _FAMILY_REGISTRY: dict[str, ModelPatchFn] = {}
 
+_builtin_families_loaded = False
+
+
+def _ensure_builtin_families() -> None:
+    """Import the shipped family modules so their registrations land.
+
+    Each ``...patches.models.X`` module calls :func:`register_family` at import
+    time, so the registry is only populated as a side effect of importing that
+    package. Loading it here — on the first lookup rather than from some
+    package initializer — keeps dispatch correct no matter which module the
+    caller reached first: a lookup that found an empty registry would report
+    the family as unsupported and silently apply no model patches at all.
+
+    The shipped modules only build factory closures; the ``transformers``
+    modeling modules they target are imported lazily, inside the patch
+    functions, on first use.
+    """
+    global _builtin_families_loaded
+    if _builtin_families_loaded:
+        return
+    from opaque.api.transformers.patches import models  # noqa: F401
+
+    _builtin_families_loaded = True
+
 
 def register_family(name: str, apply_fn: ModelPatchFn) -> None:
     """Register a HuggingFace model family.
@@ -71,11 +95,13 @@ def register_family(name: str, apply_fn: ModelPatchFn) -> None:
 
 def get_family_apply_fn(name: str) -> ModelPatchFn | None:
     """Return the registered apply function for a family, or ``None``."""
+    _ensure_builtin_families()
     return _FAMILY_REGISTRY.get(name)
 
 
 def supported_families() -> list[str]:
     """List currently registered families (built-ins + user-registered)."""
+    _ensure_builtin_families()
     return sorted(_FAMILY_REGISTRY)
 
 
