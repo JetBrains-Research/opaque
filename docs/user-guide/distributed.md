@@ -298,11 +298,30 @@ following types are registered:
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
+| `SecondMomentMFNoiseState` | Validate both paired MF streams, in a fixed order |
 | `PerfState` | Aggregate step times (max), sample counts (sum), and peak memory (max) across ranks |
 
 The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
 `GaussianNoiseState`, so `sync()` handles it automatically — no extra
 helpers needed.
+
+### Noise scaling depends on the key, not on the reduction
+
+Summing noised local queries scales `noise_stddev` by `sqrt(world_size)` — but
+only when the summands are **independent**. `NoisedPytree` carries no record of
+which key produced it, so the reduction cannot tell the two regimes apart and
+always publishes the `sqrt(world_size)` figure:
+
+| Key per rank | Aggregation | Realized stddev | Published metadata |
+|---|---|---|---|
+| `fold_in(key, rank)` — independent | `sum` | `σ·√W` | `σ·√W` ✅ |
+| shared `key` — identical draws | `sum` | `σ·W` | `σ·√W` ⚠️ |
+| shared `key` | aggregate first, then noise once | `σ` | `σ` ✅ |
+
+`sync(noise_state)` *enforces* a shared seed, so the recommended flow is the
+third row: reduce the clipped gradients across ranks, then add noise once. Add
+noise per rank only with per-rank keys, and only when you have checked that the
+reported stddev is the one you intend to record.
 
 See [API Reference](../reference/distributed.md) for full docstrings.
 
