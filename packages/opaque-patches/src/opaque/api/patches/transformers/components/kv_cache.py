@@ -29,9 +29,12 @@ def _disable_kv_cache(forward_fn):
 
         model = args[0] if args else None
         past = kwargs.get("past_key_values")
-        has_cached_data = past is not None and (
-            not hasattr(past, "get_seq_length") or past.get_seq_length() > 0
-        )
+        if past is None:
+            has_cached_data = False
+        elif hasattr(past, "get_seq_length"):
+            has_cached_data = past.get_seq_length() > 0
+        else:
+            has_cached_data = len(past) > 0
         if (
             torch.is_grad_enabled()
             and getattr(model, "training", False)
