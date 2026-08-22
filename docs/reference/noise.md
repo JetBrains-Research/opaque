@@ -100,7 +100,7 @@ transformation wrapper and no `ρ` knob.
 
 `mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the
-MSE-optimal allocation from `ClippedPytree.noise_stddev_for` (the same
+MSE-optimal allocation from `noise_stddev` (the same
 Mahalanobis allocation as `gaussian_noise`). Leaf→group keys are optree
 `ParamPath` tuples (build them with `per_group(params, …)`); nested
 parameter trees are supported. Trainer/examples keep flat
@@ -115,6 +115,27 @@ from a Gaussian renormalized over the interval (Chen and Hale, 2024).
 Bounds are absolute, in the same units as the gradient / clip norm.
 
 ::: opaque.dpsgd.noise.gaussian_noise
+
+### Noise standard deviation
+
+`noise_stddev` answers what `gaussian_noise(noise_multiplier)` will apply to
+a given contribution bound. It is a pure function of the bound, so a
+calibration sweep or a telemetry line can call it before a step has run;
+`ClippedPytree.noise_stddev_for` is the same computation reached from a
+clipped pytree you already hold.
+
+```python
+from opaque.dpsgd.noise import noise_stddev
+
+sigma = noise_stddev(clipping_norm, noise_multiplier=1.1)
+```
+
+The DP-FTRL matrix mechanisms compute this same value as their *base*
+stddev and then scale it per step by the strategy row norm
+(`σ_t = base · ‖row_t(C⁻¹)‖`), so it is not the stddev an MF mechanism
+applies — read `NoisedPytree.noise_stddev` off the output for that.
+
+::: opaque.dpsgd.noise.noise_stddev
 
 ## Matrix Factorization Noise
 
