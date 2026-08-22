@@ -281,21 +281,23 @@ def vmap_create_sliding_window_causal_mask(
     return causal_mask
 
 
-def _vmap_safe_ignore_causal_mask_sdpa(
-    padding_mask, query_length, kv_length, kv_offset, local_attention_size=None
-) -> bool:
+def _vmap_safe_ignore_causal_mask_sdpa(padding_mask, *args, **kwargs) -> bool:
     """vmap-safe ``_ignore_causal_mask_sdpa``.
 
     The original calls ``padding_mask.all()`` — data-dependent control flow
     that breaks under vmap.  When ``padding_mask is None`` all remaining
     checks use Python ints so we delegate to the original.  When a mask is
     present we return ``False`` (force mask creation — needed for padding anyway).
+
+    Everything after the mask is forwarded verbatim rather than named. Upstream's
+    signature has grown across the supported ``transformers`` range — 5.x inserted
+    ``q_offset`` ahead of ``kv_offset`` — and a shim that spelled the parameters
+    out raised ``TypeError`` on the wider call. None of them are read here, so
+    there is nothing to gain by naming them.
     """
     if padding_mask is not None:
         return False
-    return _vmap_safe_ignore_causal_mask_sdpa._original(
-        padding_mask, query_length, kv_length, kv_offset, local_attention_size
-    )
+    return _vmap_safe_ignore_causal_mask_sdpa._original(padding_mask, *args, **kwargs)
 
 
 def apply_masking_patches(*, vmap_masking: bool = True) -> None:
