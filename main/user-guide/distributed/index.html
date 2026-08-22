@@ -1208,6 +1208,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#noise-scaling-depends-on-the-key-not-on-the-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Noise scaling depends on the key, not on the reduction
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3278,6 +3289,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#noise-scaling-depends-on-the-key-not-on-the-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Noise scaling depends on the key, not on the reduction
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3658,6 +3680,10 @@ following types are registered:</p>
 <td>Assert seed and step counter match for MF noise</td>
 </tr>
 <tr>
+<td><code>SecondMomentMFNoiseState</code></td>
+<td>Validate both paired MF streams, in a fixed order</td>
+</tr>
+<tr>
 <td><code>PerfState</code></td>
 <td>Aggregate step times (max), sample counts (sum), and peak memory (max) across ranks</td>
 </tr>
@@ -3666,6 +3692,45 @@ following types are registered:</p>
 <p>The bounded Gaussian path (<code>gaussian_noise(..., bound=...)</code>) also returns
 <code>GaussianNoiseState</code>, so <code>sync()</code> handles it automatically — no extra
 helpers needed.</p>
+<h3 id="noise-scaling-depends-on-the-key-not-on-the-reduction">Noise scaling depends on the key, not on the reduction<a class="headerlink" href="#noise-scaling-depends-on-the-key-not-on-the-reduction" title="Permanent link">&para;</a></h3>
+<p>Summing noised local queries scales <code>noise_stddev</code> by <code>sqrt(world_size)</code> — but
+only when the summands are <strong>independent</strong>. <code>NoisedPytree</code> carries no record of
+which key produced it, so the reduction cannot tell the two regimes apart and
+always publishes the <code>sqrt(world_size)</code> figure:</p>
+<table>
+<thead>
+<tr>
+<th>Key per rank</th>
+<th>Aggregation</th>
+<th>Realized stddev</th>
+<th>Published metadata</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fold_in(key, rank)</code> — independent</td>
+<td><code>sum</code></td>
+<td><code>σ·√W</code></td>
+<td><code>σ·√W</code> ✅</td>
+</tr>
+<tr>
+<td>shared <code>key</code> — identical draws</td>
+<td><code>sum</code></td>
+<td><code>σ·W</code></td>
+<td><code>σ·√W</code> ⚠️</td>
+</tr>
+<tr>
+<td>shared <code>key</code></td>
+<td>aggregate first, then noise once</td>
+<td><code>σ</code></td>
+<td><code>σ</code> ✅</td>
+</tr>
+</tbody>
+</table>
+<p><code>sync(noise_state)</code> <em>enforces</em> a shared seed, so the recommended flow is the
+third row: reduce the clipped gradients across ranks, then add noise once. Add
+noise per rank only with per-rank keys, and only when you have checked that the
+reported stddev is the one you intend to record.</p>
 <p>See <a href="../../reference/distributed/">API Reference</a> for full docstrings.</p>
 <h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
 <ul>
