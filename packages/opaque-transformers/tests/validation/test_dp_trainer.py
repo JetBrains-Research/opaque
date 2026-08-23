@@ -1914,7 +1914,9 @@ class TestDPTrainerCheckpointing:
             if trainer2.args.data_seed is not None
             else trainer2.args.seed
         )
-        assert sampler_keys == [fold_in(base_key, "ignore-data-skip", 2)]
+        assert sampler_keys == [
+            fold_in(base_key, "opaque.transformers.ignore_data_skip", 2)
+        ]
         assert sampler_keys[0] != base_key
 
     def test_resume_restores_callback_state(

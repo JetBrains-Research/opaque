@@ -3680,9 +3680,13 @@ class DPTrainer:
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
             if ctx.sampler_restart_step is not None:
-                # Restart ignored Poisson state on a cursor-derived stream.
+                # Restart ignored Poisson state on a cursor-derived stream so
+                # the post-resume steps do not replay the Bernoulli draws the
+                # discarded prefix already spent.
                 sampler_key = fold_in(
-                    sampler_key, "ignore-data-skip", ctx.sampler_restart_step
+                    sampler_key,
+                    "opaque.transformers.ignore_data_skip",
+                    ctx.sampler_restart_step,
                 )
             # Per-rank independent sampling: fold the rank into the key so
             # each shard draws a distinct Bernoulli(q) mask (see the block
