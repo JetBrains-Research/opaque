@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "intelij": {
+    "intellij": {
       "url": "http://127.0.0.1:64462/stream",
       "type": "http"
     }
