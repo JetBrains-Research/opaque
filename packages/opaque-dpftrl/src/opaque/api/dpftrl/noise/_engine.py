@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
     from opaque.random.types import RngKey
 
+MF_GAUSSIAN_STREAM_FOLD = "opaque.dpftrl.mf_gaussian"
+
 
 @dataclasses.dataclass(frozen=True)
 class MFNoiseState(NoiseState):
@@ -162,7 +164,13 @@ def _gaussian_linear_combination(
     for idx in torch.nonzero(matrix_row, as_tuple=False).flatten().tolist():
         coef = matrix_row[idx].to(dtype)
         generator = generator_from_key(
-            rng_fold_in(key, "mf_gaussian_column", idx, leaf_index)
+            rng_fold_in(
+                key,
+                MF_GAUSSIAN_STREAM_FOLD,
+                "mf_gaussian_column",
+                idx,
+                leaf_index,
+            )
         )
         try:
             noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
@@ -384,7 +392,9 @@ def _streaming_mf_noise(
         step = st._step_counter
         if horizon is not None:
             _check_mf_horizon(step, horizon)
-        step_key = rng_fold_in(st._rng_key, "mf_gaussian_column", step)
+        step_key = rng_fold_in(
+            st._rng_key, MF_GAUSSIAN_STREAM_FOLD, "mf_gaussian_column", step
+        )
         g = generator_from_key(step_key)
         s_state = st._inner_state
 

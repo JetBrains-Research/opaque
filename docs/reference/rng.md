@@ -196,8 +196,31 @@ key_v2 = fold_in(base_key, "v2")
 **Returns:** New RngKey derived from `rng_key` and all folded values
 
 **Raises:**
-- TypeError if any value is not int or str
+- TypeError if `rng_key` is not an `RngKey`, or any value is not int or str
+  (`bool` is rejected even though it subclasses `int`)
 - ValueError if no data values are provided
+
+Integers and strings occupy disjoint hash paths: `fold_in(k, 1)` is never
+the same key as `fold_in(k, "1")`. That split is load-bearing.
+
+- **Integers are the caller's.** Steps, ranks, epochs, leaf and group
+  indices, and every key `split` returns are integer folds.
+- **Strings root a mechanism.** A mechanism that draws randomness folds one
+  unique string tag into the key it was given, then derives steps beneath
+  that tag. Skipping the string is the failure the convention exists to
+  prevent: `fold_in(key, step)` is what every mechanism writes first, so two
+  mechanisms handed the same base key draw byte-identical noise.
+
+Do not reuse these shipped tags:
+
+| Tag | Occupied by |
+| --- | --- |
+| `opaque.dpsgd.gaussian` | `opaque.dpsgd.noise.gaussian_noise` (both streams) |
+| `opaque.dpsgd.adaptive_clipping` | adaptive clipping threshold noise |
+| `opaque.dpftrl.mf_gaussian` | `opaque.dpftrl.noise.mf_gaussian_noise` |
+| `opaque.dpftrl.second_moment.first` / `.second` | paired MF second-moment streams |
+| `opaque.paired.first` / `opaque.paired.second` | paired first/second-moment streams |
+| `opaque.auditing.canary_selection` / `opaque.auditing.coin_flip` | `opaque.auditing.coin_flip` |
 
 **Use Cases:**
 - Step counters in loops: `fold_in(base, step)`

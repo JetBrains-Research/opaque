@@ -50,7 +50,7 @@ class RngKey:
 
 def key(seed: int) -> RngKey:
     """Create a PRNG key from an integer seed."""
-    if not isinstance(seed, int):
+    if not isinstance(seed, int) or isinstance(seed, bool):
         raise TypeError(f"seed must be int, got {type(seed)}")
     return RngKey(seed=_to_uint64(seed))
 
@@ -61,6 +61,26 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
     Accepts a variable number of int/str arguments. Each value is folded
     sequentially, so ``fold_in(k, a, b)`` equals ``fold_in(fold_in(k, a), b)``.
 
+    Integers and strings are hashed down disjoint paths: ``fold_in(k, 1)`` and
+    ``fold_in(k, "1")`` are different keys, and no sequence of integer folds
+    can reach a key derived through a string fold.  That separation is what
+    makes the domain convention work, so the two kinds are used for different
+    jobs:
+
+    - **Integers are the caller's.** Steps, ranks, epochs, leaf and group
+      indices, and every key :func:`split` hands back are integer folds of a
+      key you already hold.
+    - **Strings root a mechanism.** A mechanism that draws randomness folds one
+      unique string tag into the key it was given, once, and derives everything
+      else beneath that tag.
+
+    Skipping the string root is the failure this convention exists to prevent:
+    ``fold_in(key, step)`` is the derivation *every* mechanism writes, so two
+    mechanisms handed the same base key draw byte-identical noise, and nothing
+    — not a test, an error, or an accountant — reports it.  See
+    ``docs/reference/rng.md`` for the convention and the tags Opaque's own
+    mechanisms already occupy.
+
     Args:
         rng_key: Base key.
         *data: One or more int or str values to fold in sequentially.
@@ -69,19 +89,23 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
         A new RngKey derived from the base key and all folded values.
 
     Raises:
-        TypeError: If any value is not int or str.
+        TypeError: If ``rng_key`` is not an :class:`RngKey` or any value is not
+            an int (excluding ``bool``) or str.
         ValueError: If no data values are provided.
 
     Example:
         >>> k = key(42)
-        >>> fold_in(k, 0)           # single value
-        >>> fold_in(k, step, rank)  # multiple values (step then rank)
+        >>> stream = fold_in(k, "mylab.rare_events")  # root your mechanism
+        >>> fold_in(stream, step)                     # then step, rank, leaf...
+        >>> fold_in(stream, step, rank)               # equals fold_in twice
     """
+    if not isinstance(rng_key, RngKey):
+        raise TypeError(f"rng_key must be RngKey, got {type(rng_key)}")
     if not data:
         raise ValueError("fold_in requires at least one data argument")
     result = rng_key
     for d in data:
-        if not isinstance(d, (int, str)):
+        if not isinstance(d, (int, str)) or isinstance(d, bool):
             raise TypeError(f"data must be int or str, got {type(d)}")
         mixed = _stable_hash64(result.seed, d)
         result = RngKey(seed=mixed, impl=result.impl)
@@ -89,7 +113,15 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
 
 
 def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
-    """Split a key into ``num`` independent child keys."""
+    """Split a key into ``num`` independent child keys.
+
+    Defined as ``fold_in(rng_key, i) for i in range(num)``, so the children are
+    exactly the integer folds of ``rng_key`` — which is why a mechanism roots
+    itself with a string tag rather than a small integer: an integer root would
+    hand out the same keys ``split`` does.  See :func:`fold_in`.
+    """
+    if not isinstance(num, int) or isinstance(num, bool):
+        raise TypeError(f"num must be int, got {type(num)}")
     if num < 1:
         raise ValueError(f"num must be >= 1, got {num}")
     return tuple(fold_in(rng_key, i) for i in range(num))

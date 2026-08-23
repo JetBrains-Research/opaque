@@ -50,6 +50,41 @@ def test_fold_in_variadic_equals_sequential():
     assert chained.seed == variadic.seed
 
 
+def test_fold_in_rejects_bool():
+    k = key(42)
+    with pytest.raises(TypeError, match="int or str"):
+        fold_in(k, True)
+
+
+def test_fold_in_rejects_non_int_str_data():
+    k = key(42)
+    with pytest.raises(TypeError, match="int or str"):
+        fold_in(k, 1.5)
+    with pytest.raises(TypeError, match="int or str"):
+        fold_in(k, [1])
+    with pytest.raises(TypeError, match="rng_key must be RngKey"):
+        fold_in(42, 0)  # type: ignore[arg-type]
+
+
+def test_split_rejects_non_int_num():
+    k = key(42)
+    with pytest.raises(TypeError, match="num must be int"):
+        split(k, True)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="num must be int"):
+        split(k, 2.0)  # type: ignore[arg-type]
+
+
+def test_key_rejects_bool():
+    with pytest.raises(TypeError, match="seed must be int"):
+        key(True)
+
+
+def test_integer_and_string_tags_occupy_disjoint_spaces():
+    base = key(1234)
+    for value in (0, 1, 2, 17):
+        assert fold_in(base, value).seed != fold_in(base, str(value)).seed
+
+
 def test_fold_in_variadic_three_values():
     """fold_in(k, a, b, c) == fold_in(fold_in(fold_in(k, a), b), c)."""
     k = key(0)

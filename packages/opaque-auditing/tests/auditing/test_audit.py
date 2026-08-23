@@ -436,8 +436,8 @@ class TestCoinFlipFunction:
     def test_coin_flip_uses_reproducible_domain_separated_keys(self):
         dataset = list(range(100))
         root_key = key(42)
-        selection_key = fold_in(root_key, "auditing.canary_selection")
-        coin_key = fold_in(root_key, "auditing.coin_flip")
+        selection_key = fold_in(root_key, "opaque.auditing.canary_selection")
+        coin_key = fold_in(root_key, "opaque.auditing.coin_flip")
         mechanism_key = fold_in(root_key, "mechanism.noise")
 
         assert len({selection_key.seed, coin_key.seed, mechanism_key.seed}) == 3

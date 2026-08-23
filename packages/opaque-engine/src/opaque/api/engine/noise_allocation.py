@@ -14,8 +14,9 @@ Exposed helpers:
   mechanisms.
 
 Constants :data:`PAIRED_FIRST_STREAM_FOLD` and :data:`PAIRED_SECOND_STREAM_FOLD`
-namespace RNG ``fold_in`` tags for the two streams relative to the single-stream
-derivation (``fold_in(key, step)``).
+name the two streams of a paired release.  A mechanism folds them beneath its
+own root, so the two streams separate from each other and from that mechanism's
+single-stream derivation.
 """
 
 from __future__ import annotations
@@ -24,10 +25,19 @@ import math
 
 from opaque.api.engine.types import ClippedPytree, PerGroup, SecondMomentClippingOutput
 
-# Tags for `fold_in(base_key, tag)` before `fold_in(..., step_counter)` so
-# paired streams do not collide with single-stream key derivation.
-PAIRED_FIRST_STREAM_FOLD = 1
-PAIRED_SECOND_STREAM_FOLD = 2
+# Folded beneath a mechanism's own root and before its step counter, so the
+# two paired streams separate from each other and from its single stream.
+#
+# These are dotted strings, not small integers, and that is load-bearing.
+# `fold_in` hashes ints and strs down disjoint paths, so a string tag can
+# never be reached by folding an integer. Small integers cannot be reserved
+# this way: `split(key, n)` is defined as `fold_in(key, i) for i in
+# range(n)`, so tagging a stream `1` would make it the *same* key as
+# `split(base)[1]` — the most ordinary line a caller can write. Integers
+# belong to the caller (steps, ranks, leaf and group indices, `split`);
+# every stream root Opaque derives for itself is a namespaced string.
+PAIRED_FIRST_STREAM_FOLD = "opaque.paired.first"
+PAIRED_SECOND_STREAM_FOLD = "opaque.paired.second"
 
 
 def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGroup:
