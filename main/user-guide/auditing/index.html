@@ -3530,6 +3530,8 @@ metrics directly from the estimate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
 </code></pre></div>
+<p><code>key</code> is required when requesting a CI: bootstrap resampling must be
+reproducible and must not depend on global NumPy state.</p>
 <p>The <code>attack_</code> prefix distinguishes these from the (audit-side) <code>beta_at</code>
 that reads the theoretical f-DP β at the inferred μ̂-GDP.</p>
 <h2 id="number-of-canaries">Number of canaries<a class="headerlink" href="#number-of-canaries" title="Permanent link">&para;</a></h2>

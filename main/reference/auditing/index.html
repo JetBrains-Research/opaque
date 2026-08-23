@@ -5863,7 +5863,9 @@ integration grid. The top-level <code>epsilon_at</code> / <code>delta_at</code> 
 </code></pre></div>
 <p>Empirical ROC AUC of the membership inference attack. Returns point
 estimate by default, or <code>(lower, upper)</code> CI tuple when <code>confidence</code> is
-provided. Independent of the audit method.</p>
+provided. A CI requires an explicit <code>key</code> so bootstrap resampling is
+reproducible and isolated from global NumPy state. Independent of the
+audit method.</p>
 <h3 id="attack_beta_at">attack_beta_at<a class="headerlink" href="#attack_beta_at" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_beta_at</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
 </code></pre></div>
