@@ -192,12 +192,7 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "mf_lambda_cgd": frozenset({"balls_in_bins"}),
 }
 
-# Restarting a sampler at cursor 0 while clipping, noise and the accountant
-# resume mid-horizon is DP-valid only when inclusion is an independent
-# Bernoulli(q) draw per step. Participation schemas (b-min-separation,
-# balls-in-bins, random allocation, k-out-of-t) treat earlier draws as
-# already spent; a restarted cursor understates epsilon. Allowlist so a
-# mode added later fails closed.
+# Participation samplers require restoring their saved cursor.
 _CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
 
 # Per-mechanism kwargs defaults auto-filled into
@@ -1015,12 +1010,9 @@ class TrainingArguments:
             and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
         ):
             raise ValueError(
-                f"ignore_data_skip=True is only DP-valid under "
-                f"sampling_mode in {sorted(_CURSOR_FREE_SAMPLING_MODES)}; "
-                f"got sampling_mode={self.sampling_mode!r}. Restarting the "
-                "sampler at cursor 0 while clipping, noise and the accountant "
-                "resume mid-horizon would spend participations this schedule "
-                "treats as already used. Restore the sampler snapshot, use "
+                f"ignore_data_skip=True requires sampling_mode in "
+                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
                 "poisson sampling, or start a fresh run."
             )
 

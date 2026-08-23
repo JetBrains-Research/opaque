@@ -246,6 +246,8 @@ class _TrainingContext:
     offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
     opt_name: str = "adamw"
     current_sampler: Any = None
+    # Checkpoint cursor for a distinct ignored-state Poisson stream.
+    sampler_restart_step: int | None = None
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
@@ -917,16 +919,9 @@ class DPTrainer:
           same number of mechanisms — and the resumed subsample sequence
           from iteration N onward matches a continuous run from the same
           seed.  DP-valid either way.
-        - **``ignore_data_skip=True``** disables the sampler-state
-          restore on resume.  The new run starts each epoch from
-          ``iter_count=0`` with a fresh subsample sequence; useful when
-          the dataset shape changed since checkpoint write.  DP-valid
-          only under ``sampling_mode="poisson"``, where inclusion is an
-          independent Bernoulli draw per step.  Under participation
-          schemas -- ``b_min_sep``, ``balls_in_bins``,
-          ``random_allocation``, ``k_out_of_t`` -- a restarted cursor
-          would spend participations the accounted sensitivity assumes
-          are separated, so construction raises.
+        - **``ignore_data_skip=True``** skips sampler-state restore.
+          Poisson resumes use a distinct stream; participation samplers
+          require the saved cursor.
         - **Accountant on resume** preserves heterogeneous composition:
           the saved ``Accountant`` is loaded as the *prefix* and
           calibration of the remaining steps targets the original
@@ -1112,6 +1107,11 @@ class DPTrainer:
                 self.state.global_step if resume_path is not None else 0
             ),
             microbatch_size_override=microbatch_size_override,
+            sampler_restart_step=(
+                self.state.global_step
+                if resume_path is not None and self.args.ignore_data_skip
+                else None
+            ),
         )
         self._ctx = ctx
 
@@ -1270,6 +1270,7 @@ class DPTrainer:
         prefix_accountant: Accountant | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
+        sampler_restart_step: int | None = None,
     ) -> _TrainingContext:
         """Functional conversion, clipping, calibration, optimizer.
 
@@ -1602,6 +1603,7 @@ class DPTrainer:
                 if self._functional_optimizer_factory is not None
                 else a.optim
             ),
+            sampler_restart_step=sampler_restart_step,
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
             mechanism_kind=mechanism_kind,
@@ -3677,6 +3679,11 @@ class DPTrainer:
             from opaque.random import fold_in, key
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
+            if ctx.sampler_restart_step is not None:
+                # Restart ignored Poisson state on a cursor-derived stream.
+                sampler_key = fold_in(
+                    sampler_key, "ignore-data-skip", ctx.sampler_restart_step
+                )
             # Per-rank independent sampling: fold the rank into the key so
             # each shard draws a distinct Bernoulli(q) mask (see the block
             # comment above).  No-op at world_size == 1, preserving the

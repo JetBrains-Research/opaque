@@ -286,7 +286,7 @@ NPU, XLA) are rejected with a redirect message.
 | `metric_for_best_model` | `str \| None` | `None` | Auto-prefixed with `eval_`.  Required for `save_strategy="best"` / `load_best_model_at_end=True`. |
 | `greater_is_better` | `bool \| None` | `None` | Inferred from metric name (`loss` suffix → `False`). |
 | `load_best_model_at_end` | `bool` | `False` | After training, restore the best-eval checkpoint.  Raises if no improving step recorded. |
-| `ignore_data_skip` | `bool` | `False` | Skip sampler-state restore on resume. DP-valid only for poisson sampling. |
+| `ignore_data_skip` | `bool` | `False` | Skip sampler-state restore. Poisson resumes use a distinct stream. |
 
 ### Distributed
 
