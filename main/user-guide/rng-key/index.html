@@ -3601,6 +3601,11 @@ first.</p>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">full</span>     <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">worker</span><span class="p">)</span> <span class="c1"># step → rank → worker</span>
 </code></pre></div>
 <p><code>fold_in(k, a, b)</code> is equivalent to <code>fold_in(fold_in(k, a), b)</code>.</p>
+<p>Integers and strings occupy disjoint hash paths, and that split is
+load-bearing. Integers are the caller's space (<code>split</code>, steps, ranks).
+Strings root a mechanism: fold one unique tag once, then derive steps
+beneath it. Opaque's shipped tags are listed in the
+<a href="../../reference/rng/">RNG reference</a>.</p>
 <p><code>fold_in</code> uses BLAKE2b hashing internally. Different data values produce
 different keys, and <code>int</code> versus <code>str</code> values are distinguished:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span> <span class="o">!=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span>
@@ -3636,7 +3641,9 @@ For production training, always use <code>key(seed)</code> with a fixed seed.</p
 </code></pre></div>
 <p>The noise function manages its own step counter internally. You provide a
 key at construction time; each call to <code>noise_fn</code> derives a new key from
-the base key and the current step counter, then increments the counter.</p>
+the mechanism's namespaced root, the base key, and the current step
+counter, then increments the counter. Two mechanisms handed the same base
+key therefore draw independent streams.</p>
 <h3 id="sampling">Sampling<a class="headerlink" href="#sampling" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>

@@ -3827,8 +3827,55 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 - <code>*data</code>: One or more int or str values to fold in sequentially</p>
 <p><strong>Returns:</strong> New RngKey derived from <code>rng_key</code> and all folded values</p>
 <p><strong>Raises:</strong>
-- TypeError if any value is not int or str
+- TypeError if <code>rng_key</code> is not an <code>RngKey</code>, or any value is not int or str
+  (<code>bool</code> is rejected even though it subclasses <code>int</code>)
 - ValueError if no data values are provided</p>
+<p>Integers and strings occupy disjoint hash paths: <code>fold_in(k, 1)</code> is never
+the same key as <code>fold_in(k, "1")</code>. That split is load-bearing.</p>
+<ul>
+<li><strong>Integers are the caller's.</strong> Steps, ranks, epochs, leaf and group
+  indices, and every key <code>split</code> returns are integer folds.</li>
+<li><strong>Strings root a mechanism.</strong> A mechanism that draws randomness folds one
+  unique string tag into the key it was given, then derives steps beneath
+  that tag. Skipping the string is the failure the convention exists to
+  prevent: <code>fold_in(key, step)</code> is what every mechanism writes first, so two
+  mechanisms handed the same base key draw byte-identical noise.</li>
+</ul>
+<p>Do not reuse these shipped tags:</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Occupied by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>opaque.dpsgd.gaussian</code></td>
+<td><code>opaque.dpsgd.noise.gaussian_noise</code> (both streams)</td>
+</tr>
+<tr>
+<td><code>opaque.dpsgd.adaptive_clipping</code></td>
+<td>adaptive clipping threshold noise</td>
+</tr>
+<tr>
+<td><code>opaque.dpftrl.mf_gaussian</code></td>
+<td><code>opaque.dpftrl.noise.mf_gaussian_noise</code></td>
+</tr>
+<tr>
+<td><code>opaque.dpftrl.second_moment.first</code> / <code>.second</code></td>
+<td>paired MF second-moment streams</td>
+</tr>
+<tr>
+<td><code>opaque.paired.first</code> / <code>opaque.paired.second</code></td>
+<td>paired first/second-moment streams</td>
+</tr>
+<tr>
+<td><code>opaque.auditing.canary_selection</code> / <code>opaque.auditing.coin_flip</code></td>
+<td><code>opaque.auditing.coin_flip</code></td>
+</tr>
+</tbody>
+</table>
 <p><strong>Use Cases:</strong>
 - Step counters in loops: <code>fold_in(base, step)</code>
 - Distributed training: <code>fold_in(base, step, rank)</code>
