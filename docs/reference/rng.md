@@ -285,8 +285,15 @@ key_v2 = fold_in(base_key, "v2")
 **Returns:** New RngKey derived from `rng_key` and all folded values
 
 **Raises:**
-- TypeError if any value is not int or str
+- TypeError if `rng_key` is not an `RngKey`, or any value is not int or str
+  (`bool` is rejected even though it subclasses `int`)
 - ValueError if no data values are provided
+
+Integers and strings are hashed down disjoint paths, which is what lets a
+string tag root a mechanism's key space — see
+[Domain separation](#domain-separation) for the convention and
+[Tags Opaque already occupies](#tags-opaque-already-occupies) for the tags
+that are taken.
 
 **Use Cases:**
 - Rooting a mechanism you wrote: `fold_in(base, "mylab.my_mechanism")` —

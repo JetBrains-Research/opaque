@@ -79,6 +79,7 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
         expected_steps_per_epoch=1,
         total_steps=1,
         current_sampler=None,
+        sampler_restart_step=None,
         mf=None,
         noise_multiplier=None,
     )

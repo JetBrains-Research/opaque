@@ -97,8 +97,8 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
     ``fold_in(key, step)`` is the derivation *every* mechanism writes, so two
     mechanisms handed the same base key draw byte-identical noise, and nothing
     — not a test, an error, or an accountant — reports it.  See
-    :doc:`the RNG reference </reference/rng>` for the convention and the tags
-    Opaque's own mechanisms already occupy.
+    ``docs/reference/rng.md`` for the convention and the tags Opaque's own
+    mechanisms already occupy.
 
     Args:
         rng_key: Base key.

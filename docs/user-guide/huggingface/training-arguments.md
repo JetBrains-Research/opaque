@@ -225,9 +225,8 @@ Resume claims:
   weights, load them at construction (`model=...`); the run begins with
   a zero accountant, which is correct only when the prior training had
   no DP cost (e.g. public-data warmup).
-- `ignore_data_skip=True` skips sampler-state restore (useful when
-  the dataset shape changed between runs); the resumed run starts
-  each epoch from a fresh subsample sequence.
+- `ignore_data_skip=True` skips sampler-state restore. Poisson resumes use a
+  distinct stream; participation samplers require the saved cursor.
 - `restore_callback_states_from_checkpoint=True` reads saved callback
   state and copies attributes back onto the live callback instances
   (e.g. `EarlyStoppingCallback`'s patience counter).

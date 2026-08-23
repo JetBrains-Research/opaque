@@ -281,7 +281,7 @@ def vmap_create_sliding_window_causal_mask(
     return causal_mask
 
 
-def _vmap_safe_ignore_causal_mask_sdpa(padding_mask, *args, **kwargs) -> bool:
+def _vmap_safe_ignore_causal_mask_sdpa(*args, **kwargs) -> bool:
     """vmap-safe ``_ignore_causal_mask_sdpa``.
 
     The original calls ``padding_mask.all()`` — data-dependent control flow
@@ -289,15 +289,17 @@ def _vmap_safe_ignore_causal_mask_sdpa(padding_mask, *args, **kwargs) -> bool:
     checks use Python ints so we delegate to the original.  When a mask is
     present we return ``False`` (force mask creation — needed for padding anyway).
 
-    Everything after the mask is forwarded verbatim rather than named. Upstream's
-    signature has grown across the supported ``transformers`` range — 5.x inserted
-    ``q_offset`` ahead of ``kv_offset`` — and a shim that spelled the parameters
-    out raised ``TypeError`` on the wider call. None of them are read here, so
-    there is nothing to gain by naming them.
+    Arguments are forwarded verbatim rather than named. Upstream's signature
+    has grown across the supported ``transformers`` range — 5.x inserted
+    ``q_offset`` ahead of ``kv_offset`` and calls this hook positionally — and a
+    shim that spelled the parameters out raised ``TypeError`` at every mask
+    build. Only the mask is read here, so there is nothing to gain by naming
+    the rest.
     """
+    padding_mask = args[0] if args else kwargs.get("padding_mask")
     if padding_mask is not None:
         return False
-    return _vmap_safe_ignore_causal_mask_sdpa._original(padding_mask, *args, **kwargs)
+    return _vmap_safe_ignore_causal_mask_sdpa._original(*args, **kwargs)
 
 
 def apply_masking_patches(*, vmap_masking: bool = True) -> None:

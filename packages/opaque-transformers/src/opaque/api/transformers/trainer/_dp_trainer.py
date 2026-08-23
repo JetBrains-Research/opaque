@@ -95,7 +95,7 @@ from ._eval import EvalPrediction
 from ._precision import eval_dtype
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
-from ._training_arguments import TrainingArguments
+from ._training_arguments import _CURSOR_FREE_SAMPLING_MODES, TrainingArguments
 from .types import EvaluationResult, TrainOutput
 
 __all__ = [
@@ -216,19 +216,6 @@ def _compile_with_fullgraph_fallback(
     return wrapper
 
 
-# Sampling modes whose privacy analysis does not depend on where in the
-# schedule a step falls, and which may therefore resume with a sampler
-# restarted at cursor 0 while clipping, noise and the accountant resume
-# mid-horizon. Poisson qualifies because inclusion is an independent
-# Bernoulli(q) draw per step and amplification composes per step. Every
-# other mode Opaque exposes fixes a participation pattern across the
-# horizon -- b-min-separation, the balls-in-bins partition, random
-# allocation, k-out-of-t -- whose sensitivity bound a restarted cursor
-# violates. Allowlist rather than denylist, so a mode added later fails
-# closed.
-_CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
-
-
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -259,6 +246,8 @@ class _TrainingContext:
     offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
     opt_name: str = "adamw"
     current_sampler: Any = None
+    # Checkpoint cursor for a distinct ignored-state Poisson stream.
+    sampler_restart_step: int | None = None
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
@@ -1128,6 +1117,11 @@ class DPTrainer:
                 self.state.global_step if resume_path is not None else 0
             ),
             microbatch_size_override=microbatch_size_override,
+            sampler_restart_step=(
+                self.state.global_step
+                if resume_path is not None and self.args.ignore_data_skip
+                else None
+            ),
         )
         self._ctx = ctx
 
@@ -1290,6 +1284,7 @@ class DPTrainer:
         prefix_accountant: Accountant | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
+        sampler_restart_step: int | None = None,
     ) -> _TrainingContext:
         """Functional conversion, clipping, calibration, optimizer.
 
@@ -1623,6 +1618,7 @@ class DPTrainer:
                 if self._functional_optimizer_factory is not None
                 else a.optim
             ),
+            sampler_restart_step=sampler_restart_step,
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
             mechanism_kind=mechanism_kind,
@@ -3680,6 +3676,15 @@ class DPTrainer:
             from opaque.random import fold_in, key
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
+            if ctx.sampler_restart_step is not None:
+                # Restart ignored Poisson state on a cursor-derived stream so
+                # the post-resume steps do not replay the Bernoulli draws the
+                # discarded prefix already spent.
+                sampler_key = fold_in(
+                    sampler_key,
+                    "opaque.transformers.ignore_data_skip",
+                    ctx.sampler_restart_step,
+                )
             # Per-rank independent sampling: fold the rank into the key so
             # each shard draws a distinct Bernoulli(q) mask (see the block
             # comment above).  No-op at world_size == 1, preserving the

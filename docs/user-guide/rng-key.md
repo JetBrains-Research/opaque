@@ -97,6 +97,12 @@ full     = fold_in(k, step, rank, worker) # step → rank → worker
 
 `fold_in(k, a, b)` is equivalent to `fold_in(fold_in(k, a), b)`.
 
+Integers and strings occupy disjoint hash paths, and that split is
+load-bearing. Integers are the caller's space (`split`, steps, ranks).
+Strings root a mechanism: fold one unique tag once, then derive steps
+beneath it. Opaque's shipped tags are listed in the
+[RNG reference](../reference/rng.md).
+
 `fold_in` uses BLAKE2b hashing internally. Different data values produce
 different keys, and `int` versus `str` values are distinguished:
 
@@ -182,7 +188,9 @@ noisy_grads, state = noise_fn(grads, state)
 
 The noise function manages its own step counter internally. You provide a
 key at construction time; each call to `noise_fn` derives a new key from
-the base key and the current step counter, then increments the counter.
+the mechanism's namespaced root, the base key, and the current step
+counter, then increments the counter. Two mechanisms handed the same base
+key therefore draw independent streams.
 
 ### Sampling
 

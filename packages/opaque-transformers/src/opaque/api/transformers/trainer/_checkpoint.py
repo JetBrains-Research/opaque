@@ -37,11 +37,12 @@ DP_SAMPLER_STATE_NAME = "dp_sampler_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-# Version 4: backend-neutral engine split — keyed per-leaf RNG streams
+# Version 5: backend-neutral engine split — keyed per-leaf RNG streams
 # (gaussian_noise / MF noise), factory-API optimizer states, streamed MF
-# inner state. Version-3 bundles carry pre-split streams and state
-# layouts; failing loudly here beats silently resuming with different
-# noise, so there is deliberately no migration path during development.
+# inner state, and namespaced mechanism RNG roots. Versions 3 and 4 carry
+# pre-split streams and state layouts, so a resumed run would draw
+# different noise; failing loudly here beats doing that silently, and
+# there is deliberately no migration path during development.
 DP_STATE_BUNDLE_VERSION = 5
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")

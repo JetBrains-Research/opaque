@@ -192,6 +192,18 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "mf_lambda_cgd": frozenset({"balls_in_bins"}),
 }
 
+# Sampling modes whose privacy analysis does not depend on where in the
+# schedule a step falls, and which may therefore resume with a sampler
+# restarted at cursor 0 while clipping, noise and the accountant resume
+# mid-horizon. Poisson qualifies because inclusion is an independent
+# Bernoulli(q) draw per step and amplification composes per step. Every
+# other mode Opaque exposes fixes a participation pattern across the
+# horizon -- b-min-separation, the balls-in-bins partition, random
+# allocation, k-out-of-t -- whose sensitivity bound a restarted cursor
+# violates. Allowlist rather than denylist, so a mode added later fails
+# closed.
+_CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
+
 # Per-mechanism kwargs defaults auto-filled into
 # ``privacy_noise_mechanism_kwargs`` when the user leaves them blank.
 # Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
@@ -1000,6 +1012,17 @@ class TrainingArguments:
                 f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
                 f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
                 f"(omit sampling_mode or set 'auto' to pick automatically)."
+            )
+
+        if (
+            self.ignore_data_skip
+            and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
+        ):
+            raise ValueError(
+                f"ignore_data_skip=True requires sampling_mode in "
+                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
+                "poisson sampling, or start a fresh run."
             )
 
         if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
