@@ -3709,9 +3709,8 @@ keys win on collision with the defaults table.</p>
   weights, load them at construction (<code>model=...</code>); the run begins with
   a zero accountant, which is correct only when the prior training had
   no DP cost (e.g. public-data warmup).</li>
-<li><code>ignore_data_skip=True</code> skips sampler-state restore (useful when
-  the dataset shape changed between runs); the resumed run starts
-  each epoch from a fresh subsample sequence.</li>
+<li><code>ignore_data_skip=True</code> skips sampler-state restore. Poisson resumes use a
+  distinct stream; participation samplers require the saved cursor.</li>
 <li><code>restore_callback_states_from_checkpoint=True</code> reads saved callback
   state and copies attributes back onto the live callback instances
   (e.g. <code>EarlyStoppingCallback</code>'s patience counter).</li>
