@@ -354,7 +354,9 @@ estimate.attack_auc(*, confidence=None, num_samples=1000, key=None) -> float | t
 
 Empirical ROC AUC of the membership inference attack. Returns point
 estimate by default, or `(lower, upper)` CI tuple when `confidence` is
-provided. Independent of the audit method.
+provided. A CI requires an explicit `key` so bootstrap resampling is
+reproducible and isolated from global NumPy state. Independent of the
+audit method.
 
 ### attack_beta_at
 
