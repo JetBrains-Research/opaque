@@ -4,8 +4,9 @@ Opaque's mechanisms are backend-neutral. `opaque-engine` holds the algorithms â€
 clipping, noise, samplers, optimizer rules, accounting â€” written against a
 portable set of primitives (`opaque.ops`, `opaque.pytree`, `opaque.autodiff`,
 `opaque.random`). A **backend provider** supplies implementations of those
-primitives for one array framework. `opaque-torch` is the provider shipped
-today; `KnownBackend` also reserves the `jax` and `mlx` names.
+primitives for one array framework. `opaque-torch` is the default provider and
+`opaque-mlx` supports MLX on Apple Silicon; `KnownBackend` also reserves the
+`jax` name.
 
 Mechanism code is written once and runs on whichever provider is active, so
 training code normally never mentions this module.
@@ -16,10 +17,10 @@ Passing a native array or model to any Opaque call selects the matching
 provider:
 
 ```python
-import torch
+import mlx.core as mx
 from opaque import ops
 
-ops.sum(torch.ones(3))    # selects the Torch provider
+ops.sum(mx.ones((3,)))    # selects the MLX provider
 ```
 
 Selection is context-local and sticky: it stays active for the rest of the
@@ -36,6 +37,8 @@ Select a provider up front when setup runs before any native array exists:
 from opaque.backend import set_backend
 
 set_backend("torch")
+# or, on Apple Silicon with opaque-mlx installed:
+set_backend("mlx")
 ```
 
 `use_backend` scopes a selection, `active_backend` queries it, and
@@ -59,12 +62,13 @@ clear_backend()
 | One call carrying arrays from two providers | `MixedBackendError` |
 | An array from a provider other than the active one | `BackendMismatchError` |
 
-## Torch-only surfaces
+## Provider-specific surfaces
 
-Some features are inherently framework-shaped and live in `opaque-torch` rather
-than the engine: `make_functional`, the in-place DDP collectives, the Hugging
-Face model patches, and the Triton kernels. They are documented under
-[`opaque.torch`](../reference/torch.md).
+Some features are inherently framework-shaped. `opaque-torch` owns in-place
+DDP collectives, Hugging Face patches, and Triton kernels; `opaque-mlx` owns
+MLX module functionalization, device helpers, and explicit MLX-group lifecycle.
+They are documented under [`opaque.torch`](../reference/torch.md) and
+[`opaque.mlx`](../reference/mlx.md).
 
 See [`opaque.backend`](../reference/backend.md) for the API and
 [Installation](../getting-started/installation.md) for the wheel layout.

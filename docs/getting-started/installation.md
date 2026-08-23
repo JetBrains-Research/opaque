@@ -10,6 +10,7 @@
 
 - Python 3.11 through 3.13
 - PyTorch 2.9 or later for the default Torch bundle
+- Apple Silicon macOS for the optional MLX provider
 
 ## From JetBrains Packages
 
@@ -38,7 +39,8 @@ imported without PyTorch. Install it with only the providers an application
 uses:
 
 ```bash
-pip install opaque-engine opaque-torch  # PyTorch (the only provider today)
+pip install opaque-engine opaque-torch  # default PyTorch provider
+pip install opaque-engine opaque-mlx    # MLX on Apple Silicon
 ```
 
 Provider selection is inferred from the arrays passed to Opaque and remains
@@ -52,6 +54,7 @@ training loop:
 
 ```bash
 pip install opaque-dpftrl opaque-torch
+pip install opaque-dpftrl opaque-mlx
 ```
 
 The first Torch tensor passed as the gradient template to
@@ -73,6 +76,7 @@ handlers without selecting it; pass it to `set_backend` to make it active.
 ```bash
 pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
 pip install "opaque[dpftrl]"        # + opaque-dpftrl with default Torch
+pip install "opaque[mlx]"           # + MLX provider on Apple Silicon
 pip install "opaque[transformers]"  # + Torch-only Transformers integration
 pip install "opaque[all]"           # everything above
 ```

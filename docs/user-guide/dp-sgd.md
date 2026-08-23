@@ -14,11 +14,114 @@ under [User Guide](index.md): [clipping](clipping.md),
 ## Backend selection
 
 Install `opaque-dpsgd` together with the provider for your array runtime
-(`opaque-torch`). Passing native
+(`opaque-torch` or `opaque-mlx`). Passing native
 parameter and batch arrays to the clipping or noise function selects that
 provider automatically. To choose a provider before the first array-bearing
 call, use `opaque.backend.set_backend()` with the provider factory, such as
 `opaque.torch.torch_backend()`, or its name: `set_backend("torch")`.
+
+On Apple Silicon, install `opaque-mlx`, `opaque-dpsgd`, and
+`opaque-optimizers`, then select MLX with `set_backend("mlx")`. MLX has no
+native `float64`; mechanisms retain device-native `float32` accumulation and
+an explicit request for `opaque.ops.float64()` fails instead of using a host
+fallback.
+
+### Native MLX modules
+
+`opaque.mlx.functional.make_functional` adapts a conventional `mlx.nn.Module`
+to the explicit-parameter callable used by the training loop. It preserves the
+caller-owned module while the returned callable receives the current parameter
+pytree on each invocation:
+
+```python
+import mlx.core as mx
+import mlx.nn as nn
+
+from opaque.backend import set_backend
+from opaque.mlx.functional import make_functional
+
+set_backend("mlx")
+model = nn.Linear(2, 1)
+model_fn, params = make_functional(model)
+
+def loss_fn(explicit_params, features, targets):
+    return mx.mean(mx.square(model_fn(explicit_params, features) - targets))
+```
+
+The usual fixed, AUTO-S, and adaptive clipping factories accept this loss
+function unchanged. Keyed Gaussian and bounded Gaussian noise, per-group
+allocation, functional optimizers, loss scaling, schedules, and checkpoint
+restore all operate on the returned MLX parameter pytree. See
+[`examples/train_mlx_dpsgd.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_mlx_dpsgd.py)
+for a complete small loop.
+
+MLX compilation accepts array pytrees and scalar constants, not Opaque state
+dataclasses. To compile a clipping calculation, capture its explicit clip
+state in a closure, return the gradient array pytree, and keep threading the
+returned state in the surrounding Python loop. Do not pass `ClipState`,
+`NoiseState`, or optimizer-state objects directly to a compiled MLX function.
+
+### Native MLX-LM causal-LM example
+
+`examples/train_dpsgd_mlx.py` is a self-contained MLX/MLX-LM causal-LM example.
+It accepts a Hugging Face repository ID or local MLX model directory, loads the
+model and tokenizer through `mlx_lm.load`, installs native MLX-LM LoRA layers,
+and trains the explicit adapter tree with Opaque. Install the root examples
+dependency group first:
+
+```bash
+uv sync --group examples --all-packages --extra all
+uv run python examples/train_dpsgd_mlx.py --help
+```
+
+This short Apple Silicon smoke performs one private update, evaluates, writes
+a resumable checkpoint, exports an MLX-LM adapter, reloads it through
+`mlx_lm.load`, and executes a forward check:
+
+```bash
+uv run python examples/train_dpsgd_mlx.py \
+  --model-name HuggingFaceTB/SmolLM2-135M \
+  --dataset JetBrains/KExercises --dataset-text-field solution \
+  --num-train-samples 3 --num-eval-samples 1 --max-seq-len 16 \
+  --batch-size 2 --num-epochs 1 --stop-at-step 1 \
+  --clipping-mode fixed --noise-multiplier 0.2 --optimizer sgd \
+  --target-delta 1e-5 --no-wandb \
+  --checkpoint-path runs/mlx-smoke/checkpoint \
+  --adapter-path runs/mlx-smoke/adapter
+```
+
+Continue the same deterministic sampler/noise stream for the second step:
+
+```bash
+uv run python examples/train_dpsgd_mlx.py \
+  --model-name HuggingFaceTB/SmolLM2-135M \
+  --dataset JetBrains/KExercises --dataset-text-field solution \
+  --num-train-samples 3 --num-eval-samples 1 --max-seq-len 16 \
+  --batch-size 2 --num-epochs 1 --stop-at-step 2 \
+  --clipping-mode fixed --noise-multiplier 0.2 --optimizer sgd \
+  --target-delta 1e-5 --no-wandb \
+  --resume-from runs/mlx-smoke/checkpoint \
+  --checkpoint-path runs/mlx-smoke/checkpoint \
+  --adapter-path runs/mlx-smoke/adapter
+```
+
+The checkpoint contains explicit parameters, optimizer state, clipping state,
+noise RNG state, accountant state, and progress. It is private training state;
+do not publish it. The adapter directory is the inference artifact:
+
+```python
+import mlx_lm
+
+model, tokenizer = mlx_lm.load(
+    "HuggingFaceTB/SmolLM2-135M",
+    adapter_path="runs/mlx-smoke/adapter",
+)
+```
+
+One complete dataset row is one sampled privacy unit. Fixed token padding,
+prompt masking through `--dataset-prompt-field`, and causal shifting alter only
+which tokens contribute to that row's scalar loss; they never turn tokens into
+separately sampled or accounted units.
 
 ## Why DP-SGD
 
@@ -174,6 +277,10 @@ facility (or your application's storage layer), then restore it with
 
 - [`examples/train_dpsgd.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py)
   — full Torch causal-LM training script.
+- [`examples/train_dpsgd_mlx.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd_mlx.py)
+  — full native MLX-LM causal-LM training, resume, and adapter export script.
+- [`examples/train_mlx_dpsgd.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_mlx_dpsgd.py)
+  — small native MLX linear-model primitive loop.
 - `tests/integration/test_dpsgd_pipeline.py` — minimal smoke test
   exercising the same flow on a tiny LlamaConfig + LoRA model
   (and the Qwen2 variant for the real-HF case).

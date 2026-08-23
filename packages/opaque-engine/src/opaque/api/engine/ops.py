@@ -84,12 +84,15 @@ def float32() -> object:
     raise NotImplementedError
 
 
-@primitive(tier=PrimitiveTier.CORE)
+@primitive()
 def float64() -> object:
     """Return the provider's 64-bit floating-point dtype.
 
-    The widest float every provider must offer, and the one a ``compute_dtype``
-    argument takes to raise a mechanism's precision above the default.
+    This optional capability is the neutral spelling for a requested
+    ``float64`` compute dtype. Providers that lack native 64-bit arithmetic,
+    such as MLX, leave it unsupported rather than silently emulating it on the
+    host or treating ``float32`` as an equivalent substitute. Check
+    ``float64.supports()`` before selecting it dynamically.
     """
     raise NotImplementedError
 

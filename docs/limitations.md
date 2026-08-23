@@ -27,9 +27,21 @@ Keep them private or disable external logging. Hub uploads exclude the default
 
 ## Gradient checkpointing
 
-Supported under `vmap(grad(...))` via automatic patches. See
+The Torch/Hugging Face integration supports gradient checkpointing under
+`vmap(grad(...))` via automatic patches. See
 [Memory Optimizations](user-guide/memory-optimizations.md#gradient-checkpointing)
 for usage and limitations.
+
+## Native MLX-LM integration
+
+The MLX causal-LM path is an Apple Silicon example integration. It loads a
+native `mlx.nn.Module` from a supported Hugging Face repository ID or local MLX
+model directory. Model-family, quantization, custom-code, and tokenizer support
+are limited by the installed `mlx-lm` version. MLX supports `float32`,
+`float16`, and `bfloat16`, but not native `float64`.
+
+Distributed MLX training is limited to sharded Poisson sampling and requires an
+external compatible MLX launcher and transport.
 
 ## Flash Attention 2 incompatibility
 
@@ -48,9 +60,10 @@ model = AutoModelForCausalLM.from_pretrained(
 See [Model Patches — Attention implementations](user-guide/huggingface/model-patches.md#attention-implementations)
 for supported attention implementations.
 
-## DDP only
+## Torch DDP only
 
-Opaque supports `torch.nn.parallel.DistributedDataParallel` (DDP). FSDP,
+The Torch integration supports `torch.nn.parallel.DistributedDataParallel`
+(DDP). FSDP,
 Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
 should work but is not extensively tested. First-class distributed backends are
 NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks

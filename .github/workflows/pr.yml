@@ -121,6 +121,10 @@ jobs:
       runner: macos-latest
       timeout-minutes: 30
 
+  python-tests-mlx:
+    name: MLX provider
+    uses: ./.github/workflows/mlx-tests.yml
+
   python-tests-linux-arm64:
     name: Linux arm64 (locked)
     uses: ./.github/workflows/python-tests.yml
@@ -195,6 +199,7 @@ jobs:
       - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64
+      - python-tests-mlx
       - python-tests-linux-arm64
       - python-tests-cuda
       - python-tests-cuda-minimum

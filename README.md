@@ -1,12 +1,12 @@
 # Opaque
 
-Functional DP-SGD and DP-FTRL for PyTorch.
+Functional DP-SGD and DP-FTRL for PyTorch and MLX.
 
 Opaque provides composable primitives for differentially private model
-training in PyTorch: per-example gradient clipping, calibrated noise
+training across PyTorch and MLX: per-example gradient clipping, calibrated noise
 injection, privacy accounting, and Poisson sampling. A backend-neutral
-engine dispatches array work to the `opaque-torch` provider (built on
-`torch.func`), and every component uses a functional API with explicit
+engine dispatches array work to the default `opaque-torch` provider (built on
+`torch.func`) or `opaque-mlx` on Apple Silicon, and every component uses a functional API with explicit
 state — no hooks, no subclassing, no hidden mutation.
 
 > **Work in progress:** Opaque is research software under active development.
@@ -34,6 +34,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
 | `opaque-engine` | `opaque.{types,pytree,random,backend,ops,autodiff,distributed,scheduling,profiling,optimizers,...}` | Torch-free substrate: dispatched primitives and backend registry, pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, backend-neutral optimizer rules, schedules + warmup, distributed helpers, profiler |
 | `opaque-torch` | `opaque.torch.{functional,random,distributed,device,checkpoint}` | PyTorch provider: Torch implementations of the engine's primitives, `make_functional`, torch RNG bridges, in-place DDP collectives, checkpoint compat |
+| `opaque-mlx` | `opaque.mlx.{functional,distributed,device}` | MLX provider for Apple Silicon: native primitives, functional modules, explicit distributed groups, serialization, and observability |
 | `opaque-optimizers` | `opaque.optimizers` | Facade over the engine's backend-neutral optimizer factories (DP-aware AdamW-BC and friends) |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
@@ -79,6 +80,7 @@ Extras:
 ```bash
 pip install "opaque[auditing]"      # empirical privacy auditing
 pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
+pip install "opaque[mlx]"           # MLX provider on Apple Silicon
 pip install "opaque[transformers]"  # Hugging Face + patching components
 pip install "opaque[all]"           # all optional components
 ```

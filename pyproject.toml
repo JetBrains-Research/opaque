@@ -46,12 +46,14 @@ dependencies = [
 [project.optional-dependencies]
 auditing = ["opaque-auditing>=0.0.0.dev0"]
 dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
+mlx = ["opaque-mlx>=0.0.0.dev0"]
 alignment = ["opaque-alignment>=0.0.0.dev0"]
 transformers = ["opaque-transformers>=0.0.0.dev0"]
 trl = ["opaque-transformers[trl]>=0.0.0.dev0"]
 all = [
     "opaque[auditing]",
     "opaque[dpftrl]",
+    "opaque[mlx]",
     "opaque[alignment]",
     "opaque[transformers]",
     "opaque[trl]",
@@ -81,6 +83,7 @@ workspace.members = [
     "packages/opaque-base",
     "packages/opaque-engine",
     "packages/opaque-torch",
+    "packages/opaque-mlx",
     "packages/opaque-optimizers",
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
@@ -95,6 +98,7 @@ workspace.members = [
 opaque-base = { workspace = true }
 opaque-engine = { workspace = true }
 opaque-torch = { workspace = true }
+opaque-mlx = { workspace = true }
 opaque-optimizers = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
@@ -138,6 +142,7 @@ dev = [
 # Install with: `uv sync --group examples`
 examples = [
   "datasets>=2.0.0",          # HuggingFace datasets loader
+  "mlx-lm>=0.31.3,<0.32",    # Native MLX causal LMs and LoRA adapters
   "numpy>=1.24",              # required by transformers 5 type annotations
   "transformers>=5.0.0,<6",  # v5 baseline includes supported Mellum/MoE models
   "peft>=0.13.0",             # LoRA adapters (needed by all training examples)

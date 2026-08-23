@@ -137,3 +137,39 @@ jobs:
           else:
               raise AssertionError("dispatch without a backend must fail closed")
           PY
+
+  install-mlx:
+    name: opaque[mlx] on macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-*
+          path: dist/
+          merge-multiple: true
+      - name: Install the MLX extra from built wheels
+        run: |
+          opaque_wheels=(dist/opaque-*.whl)
+          if [[ "${#opaque_wheels[@]}" -ne 1 ]]; then
+            echo "::error::Expected one opaque wheel, found ${#opaque_wheels[@]}"
+            exit 1
+          fi
+          uv venv .mlx-venv
+          uv pip install --python .mlx-venv/bin/python --find-links dist "${opaque_wheels[0]}[mlx]"
+      - name: Verify MLX provider activation
+        run: |
+          .mlx-venv/bin/python - <<'PY'
+          import mlx.core as mx
+          from opaque import ops
+          from opaque.backend import set_backend
+
+          set_backend("mlx")
+          assert ops.scalar_item(ops.sum(mx.array([1, 2]))) == 3
+          PY

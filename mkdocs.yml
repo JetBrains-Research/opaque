@@ -1,5 +1,5 @@
 site_name: Opaque
-site_description: Functional DP-SGD and DP-FTRL for PyTorch
+site_description: Functional DP-SGD and DP-FTRL for PyTorch and MLX
 site_author: Opaque Contributors
 site_url: https://jetbrains-research.github.io/opaque/
 
@@ -43,6 +43,7 @@ plugins:
             - packages/opaque-base/src
             - packages/opaque-engine/src
             - packages/opaque-torch/src
+            - packages/opaque-mlx/src
             - packages/opaque-optimizers/src
             - packages/opaque-dpsgd/src
             - packages/opaque-dpftrl/src
@@ -161,6 +162,7 @@ nav:
     - Distributed: reference/distributed.md
     - Execution: reference/execution.md
     - Torch provider: reference/torch.md
+    - MLX provider: reference/mlx.md
     - Auditing: reference/auditing.md
     - Utilities: reference/utilities.md
     - Optimizers: reference/optimizers.md

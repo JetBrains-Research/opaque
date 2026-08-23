@@ -323,7 +323,7 @@ class BackendProvider:
 
     def implements(
         self,
-        operation: Primitive,
+        operation: Primitive | Declaration,
         *,
         replace: bool = False,
     ) -> Callable[[Declaration], Declaration]:

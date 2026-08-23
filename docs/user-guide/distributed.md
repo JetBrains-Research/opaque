@@ -1,11 +1,49 @@
 # Distributed Training
 
 Opaque's low-level eager process collectives run on the active engine provider
-(Torch). This guide's complete training workflow uses PyTorch
+(Torch or MLX). This guide's complete training workflow uses PyTorch
 DistributedDataParallel (DDP);
 Opaque does not own process launch or framework distributed initialization.
 FSDP, Tensor Parallel, and Pipeline Parallel training workflows are not
 supported.
+
+## MLX process groups
+
+On Apple Silicon, MLX users explicitly initialize and register the group that
+Opaque will use. Selecting `set_backend("mlx")`, importing `opaque.mlx`, and
+checking runtime capabilities never starts distributed communication:
+
+```python
+from opaque.backend import set_backend
+from opaque.mlx.distributed import clear_group, initialize, register_group
+
+set_backend("mlx")
+group = initialize(backend="ring", strict=True)
+
+# Or, when the application initialized MLX itself:
+# register_group(existing_mlx_group)
+
+# ... use opaque.distributed.sum_gradients(), sync(), and the normal DP loop ...
+
+clear_group()  # Stops Opaque collectives; it does not destroy MLX's global group.
+```
+
+Launch a two-rank local ring program with:
+
+```bash
+mlx.launch --backend ring -n 2 python train.py
+```
+
+The MLX runtime supports rank/world-size discovery, array reductions and
+gathers, Python scalar reductions, bounded object gathers, and barriers.
+Python scalars use the object collective so large integers and Python float
+width are not narrowed to an MLX array. Object payloads are limited to `64 MiB`
+and must be exchanged only between trusted ranks because they use pickle.
+
+`opaque.runtime.synchronize()` and `clear_memory_cache()` map to MLX runtime
+operations. `get_memory_stats()` reports active and peak memory, while cached
+and capacity fields remain `None` because MLX does not expose truthful values
+for them. MLX has no Opaque-supported profiler scope or resettable peak counter.
 
 ## How DP-SGD works with DDP
 

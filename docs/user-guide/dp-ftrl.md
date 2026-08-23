@@ -18,6 +18,38 @@ correlation buffers, and paired second-moment streams all stay native to it, at
 their input dtype and device. See
 [Providers, dtype, and state](noise.md#providers-dtype-and-state).
 
+On Apple Silicon, install `opaque-mlx`, `opaque-dpftrl`, and
+`opaque-optimizers`, then call `set_backend("mlx")` before the first
+array-bearing operation. MLX has no native `float64`; DP-FTRL retains
+device-native `float32` mechanism arithmetic and rejects an explicit
+`opaque.ops.float64()` request rather than using host emulation.
+
+### Native MLX modules
+
+Use `opaque.mlx.functional.make_functional` to adapt an `mlx.nn.Module` to
+DP-FTRL's explicit parameter-pytree loop:
+
+```python
+import mlx.core as mx
+import mlx.nn as nn
+
+from opaque.backend import set_backend
+from opaque.mlx.functional import make_functional
+
+set_backend("mlx")
+model_fn, params = make_functional(nn.Linear(2, 1))
+
+def loss_fn(explicit_params, features, targets):
+    return mx.mean(mx.square(model_fn(explicit_params, features) - targets))
+```
+
+The fixed and AUTO-S DP-FTRL clipping factories, all MF strategies, keyed
+correlated noise, private second moments, per-group bounds, functional
+optimizers, and state-dict restore accept the returned MLX parameter pytree.
+See [`examples/train_mlx_dpftrl.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_mlx_dpftrl.py)
+for a small runtime loop. Match the strategy with its sampler and accounting
+factory, and calibrate the noise multiplier, before treating a run as private.
+
 ## Why DP-FTRL
 
 DP-FTRL adds **correlated** Gaussian noise across training steps via
@@ -268,7 +300,8 @@ checkpoint = state_dict({
 })
 ```
 
-Obtain functional `params` with `opaque.torch.functional.make_functional`.
+Obtain functional `params` with `opaque.torch.functional.make_functional` for
+PyTorch or `opaque.mlx.functional.make_functional` for MLX.
 
 To resume, reconstruct the clipping, optimizer, and MF noise mechanisms with
 the same configuration, assemble a matching state template, and call
@@ -282,6 +315,8 @@ matches uninterrupted execution within that provider.
 
 - [`examples/train_dpftrl.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpftrl.py)
   — full DP-FTRL training script.
+- [`examples/train_mlx_dpftrl.py`](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_mlx_dpftrl.py)
+  — native MLX correlated-noise runtime loop.
 - `tests/integration/test_dpftrl_pipeline.py` — minimal smoke test
   exercising the same flow on a tiny LlamaConfig + LoRA model (and
   the Qwen2 variant).
