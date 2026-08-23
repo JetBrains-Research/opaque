@@ -192,6 +192,9 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "mf_lambda_cgd": frozenset({"balls_in_bins"}),
 }
 
+# Participation samplers require restoring their saved cursor.
+_CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
+
 # Per-mechanism kwargs defaults auto-filled into
 # ``privacy_noise_mechanism_kwargs`` when the user leaves them blank.
 # Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
@@ -1000,6 +1003,17 @@ class TrainingArguments:
                 f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
                 f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
                 f"(omit sampling_mode or set 'auto' to pick automatically)."
+            )
+
+        if (
+            self.ignore_data_skip
+            and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
+        ):
+            raise ValueError(
+                f"ignore_data_skip=True requires sampling_mode in "
+                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
+                "poisson sampling, or start a fresh run."
             )
 
         if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:

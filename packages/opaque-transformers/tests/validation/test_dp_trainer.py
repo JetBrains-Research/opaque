@@ -18,8 +18,9 @@ from _hf_shared import build_lm_dataset, make_gpt2
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import TrainerCallback as _HFTrainerCallback
 
+from opaque.api.transformers.trainer import _dpftrl
 from opaque.api.transformers.trainer._state import DPTrainerState
-from opaque.random import key, split
+from opaque.random import fold_in, key, split
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
 
@@ -198,6 +199,28 @@ class TestPrivacyBudgetValidation:
         )
         assert args.privacy_noise_multiplier == 1.0
         assert args.privacy_target_epsilon == 8.0
+
+
+class TestIgnoreDataSkip:
+    """Validate ignore_data_skip sampling modes."""
+
+    def test_poisson_is_ok(self):
+        args = TrainingArguments(
+            use_cpu=True,
+            privacy_noise_multiplier=1.0,
+            ignore_data_skip=True,
+        )
+        assert args.sampling_mode == "poisson"
+        assert args.ignore_data_skip is True
+
+    def test_participation_schema_raises(self):
+        with pytest.raises(ValueError, match="ignore_data_skip=True requires"):
+            TrainingArguments(
+                use_cpu=True,
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_band",
+                ignore_data_skip=True,
+            )
 
 
 class TestStopAtEpsilon:
@@ -1851,8 +1874,10 @@ class TestDPTrainerCheckpointing:
         with pytest.raises(RuntimeError, match="weights-only export"):
             trainer2.train(resume_from_checkpoint=ckpt_dir)
 
-    def test_ignore_data_skip_runs(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
-        """ignore_data_skip=True still completes training successfully."""
+    def test_ignore_data_skip_uses_new_poisson_stream(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path, monkeypatch
+    ):
+        """Use a distinct Poisson stream."""
         model, tokenizer = gpt2_with_lora
         trainer1 = DPTrainer(
             model=model,
@@ -1862,6 +1887,15 @@ class TestDPTrainerCheckpointing:
             eval_dataset=tiny_lm_dataset,
         )
         trainer1.train()
+
+        sampler_keys = []
+        original_build_sampler = _dpftrl.build_sampler
+
+        def record_sampler_key(**kwargs):
+            sampler_keys.append(kwargs["key"])
+            return original_build_sampler(**kwargs)
+
+        monkeypatch.setattr(_dpftrl, "build_sampler", record_sampler_key)
 
         model2, tokenizer2 = gpt2_with_lora
         trainer2 = DPTrainer(
@@ -1875,6 +1909,15 @@ class TestDPTrainerCheckpointing:
         )
         out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
         assert out2.global_step == 4
+        base_key = key(
+            trainer2.args.data_seed
+            if trainer2.args.data_seed is not None
+            else trainer2.args.seed
+        )
+        assert sampler_keys == [
+            fold_in(base_key, "opaque.transformers.ignore_data_skip", 2)
+        ]
+        assert sampler_keys[0] != base_key
 
     def test_resume_restores_callback_state(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
