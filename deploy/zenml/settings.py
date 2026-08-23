@@ -156,6 +156,19 @@ def training_settings(
     # deploy/zenml/run.py dp ...` reaches lora_privacy.peft_lora_xs.xse (which
     # reads these knobs). Only forwarded when actually set (empty => trainer
     # defaults apply). See docs/renyi-zenml-campaign-plan.md.
+    # THIS LIST IS A FOOTGUN. A knob that xse.py reads but that is missing here is
+    # silently ignored in the pod: the run completes, logs nothing unusual, and
+    # produces a result bit-identical to the default. That is exactly what happened
+    # on 2026-08-23 to XSE_ADAM_STATE, XSE_ADAM_PRECOND and XSE_KEEP_SOURCE --
+    # three ablations that appeared to run and were in fact comparing the default
+    # configuration to itself:
+    #   adamfix-carry (ADAM_STATE=carry)  0.692596 vs default 0.692545  (5.1e-5)
+    #   scalar-xse    (PRECOND=scalar)    0.692543 vs default 0.692545  (2.0e-6)
+    #   cola-keepcore (KEEP_SOURCE=core)  0.501631 vs default 0.501631  (0.0)
+    # The transport-vs-carry "null" reported from the first of those was therefore
+    # meaningless. Bit-identical numbers across an ablation are the signature.
+    #
+    # WHEN ADDING AN ENV KNOB TO xse.py, ADD IT HERE IN THE SAME COMMIT.
     _PASSTHROUGH_ENV = (
         "XSE_ADAPTIVE_DEPTH",
         "XSE_ADAPTIVE_DEPTH_ALPHA",
@@ -164,6 +177,10 @@ def training_settings(
         "XSE_MP_SHRINKAGE_END",
         "XSE_MP_SHRINKAGE_DECAY_STEPS",
         "XSE_RESET_IN_PLACE",
+        "XSE_ADAM_STATE",
+        "XSE_ADAM_PRECOND",
+        "XSE_KEEP_SOURCE",
+        "XSE_ADAPTIVE_DEPTH_SOURCE",
     )
     extra_envs += [
         {"name": _k, "value": os.environ[_k]}
