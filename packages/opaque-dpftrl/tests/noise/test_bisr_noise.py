@@ -7,13 +7,9 @@ import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._bisr import BisrStrategy, _native, bisr_strategy
-from opaque.api.dpftrl.noise._toeplitz import (
-    inverse_as_streaming_matrix,
-    materialize_lower_triangular,
-)
+from opaque.api.dpftrl.noise._toeplitz import inverse_as_streaming_matrix
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.random import key
-from opaque.serialization import state_dict
 from opaque.types import clipped
 
 _PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
@@ -31,55 +27,9 @@ class TestBisrStrategy:
         assert gram is not None
         assert len(gram) == 25 * 25
 
-    def test_schedule_weighted_gram_matches_dense_step_weighted_operator(self):
-        n_steps, min_sep, max_participations = 6, 2, 3
-        learning_rates = torch.tensor(
-            [1.0, 0.5, 2.0, 1.5, 0.25, 3.0], dtype=torch.float64
-        )
-        strategy = bisr_strategy(
-            bandwidth=3,
-            normalized=False,
-            momentum=0.3,
-            lr_schedule=lambda step: float(learning_rates[step]),
-        )
-
-        encoder = materialize_lower_triangular(
-            strategy.coefficients(n_steps=n_steps), n_steps
-        )
-        grouped_columns = torch.stack(
-            [encoder[:, bin_index::min_sep].sum(dim=1) for bin_index in range(min_sep)],
-            dim=1,
-        )
-        expected = grouped_columns.T @ torch.diag(learning_rates) ** 2 @ grouped_columns
-
-        gram = torch.tensor(
-            strategy.gram_matrix(
-                n_steps=n_steps,
-                min_sep=min_sep,
-                max_participations=max_participations,
-            ),
-            dtype=torch.float64,
-        ).reshape(min_sep, min_sep)
-        torch.testing.assert_close(gram, expected)
-
-    def test_uniform_schedule_matches_unweighted_gram(self):
-        kwargs = {"n_steps": 12, "min_sep": 3, "max_participations": 4}
-        unweighted = bisr_strategy(bandwidth=3, normalized=False, momentum=0.3)
-        weighted = bisr_strategy(
-            bandwidth=3,
-            normalized=False,
-            momentum=0.3,
-            lr_schedule=lambda _step: 1.0,
-        )
-
-        assert weighted.gram_matrix(**kwargs) == pytest.approx(
-            unweighted.gram_matrix(**kwargs)
-        )
-
-    def test_callable_schedule_is_not_serializable(self):
-        strategy = bisr_strategy(bandwidth=3, lr_schedule=lambda _step: 1.0)
-        with pytest.raises(TypeError, match="callable strategy field"):
-            state_dict(strategy)
+    def test_rejects_lr_schedule_that_does_not_change_runtime_strategy(self):
+        with pytest.raises(ValueError, match="does not accept lr_schedule"):
+            bisr_strategy(bandwidth=3, lr_schedule=lambda _step: 1.0)
 
     def test_streaming_matrix_present(self):
         assert bisr_strategy(bandwidth=4).streaming_matrix(**_PART) is not None

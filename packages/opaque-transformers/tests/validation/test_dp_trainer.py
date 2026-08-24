@@ -376,6 +376,53 @@ class TestStopAtEpsilon:
         assert out.global_step == 5
         assert trainer.state.privacy_target_epsilon_reached is False
 
+    def test_k_out_of_t_labels_full_horizon_bound(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        class StopAtTwo(_HFTrainerCallback):
+            def on_step_end(self, args, state, control, **kwargs):
+                if state.global_step == 2:
+                    control.should_training_stop = True
+
+        common = {
+            "output_dir": str(tmp_path),
+            "max_steps": 4,
+            "num_train_epochs": 1,
+            "eval_strategy": "no",
+            "save_strategy": "no",
+            "logging_steps": 1,
+            "sampling_mode": "k_out_of_t",
+            "sampling_kwargs": {"total_participations": 2},
+            "privacy_noise_multiplier": 1.0,
+            "privacy_target_epsilon": None,
+        }
+
+        model, tokenizer = gpt2_with_lora
+        first = DPTrainer(
+            model=model,
+            args=_default_args(**common),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[StopAtTwo()],
+        )
+        first_out = first.train()
+
+        assert first_out.global_step == 2
+        assert (
+            first_out.metrics["privacy_epsilon_full_horizon_upper_bound"]
+            == first_out.metrics["privacy_epsilon"]
+        )
+        privacy_logs = [
+            entry for entry in first.state.log_history if "privacy_epsilon" in entry
+        ]
+        assert privacy_logs
+        for entry in privacy_logs:
+            assert (
+                entry["privacy_epsilon_full_horizon_upper_bound"]
+                == entry["privacy_epsilon"]
+            )
+
     def test_no_stop_when_only_nm_set(self, gpt2_with_lora, tiny_lm_dataset):
         """NM-only path runs to max_steps regardless of accumulated ε."""
         model, tokenizer = gpt2_with_lora

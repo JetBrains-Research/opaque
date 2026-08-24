@@ -455,6 +455,30 @@ class TestClippingAndSamplingSurfaces:
                 sampling_mode="k_out_of_t",
             )
 
+    def test_k_out_of_t_rejects_uncertified_stop_at_epsilon(self):
+        with pytest.raises(ValueError, match="Stop-at-epsilon is not supported"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=4.0,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"total_participations": 2},
+            )
+
+    @pytest.mark.parametrize(
+        ("privacy_noise_multiplier", "total_participations"),
+        [(None, 2), (1.0, 1)],
+    )
+    def test_k_out_of_t_accepts_certifiable_budget_modes(
+        self, privacy_noise_multiplier, total_participations
+    ):
+        args = TrainingArguments(
+            privacy_noise_multiplier=privacy_noise_multiplier,
+            privacy_target_epsilon=4.0,
+            sampling_mode="k_out_of_t",
+            sampling_kwargs={"total_participations": total_participations},
+        )
+        assert args.sampling_mode == "k_out_of_t"
+
     def test_k_out_of_t_rejects_truncated_poisson_kwargs(self):
         with pytest.raises(ValueError, match="truncated_batch_size"):
             TrainingArguments(

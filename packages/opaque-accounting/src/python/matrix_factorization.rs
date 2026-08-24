@@ -346,6 +346,30 @@ pub fn py_lambda_cgd_gram_matrix(
     )?)
 }
 
+#[pyfunction]
+#[pyo3(name = "_lambda_cgd_prefix_gram_matrix", signature = (lambda_, prefix_steps, normalization_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
+pub fn py_lambda_cgd_prefix_gram_matrix(
+    lambda_: f64,
+    prefix_steps: usize,
+    normalization_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> PyResult<Vec<f64>> {
+    Ok(
+        crate::matrix_factorization::gram_matrix::lambda_cgd_prefix_gram_matrix(
+            lambda_,
+            prefix_steps,
+            normalization_steps,
+            min_sep,
+            max_participations,
+            normalized,
+            momentum,
+        )?,
+    )
+}
+
 /// Compute the BnB Gram matrix for DP-λCGD with LR-schedule weighting.
 ///
 /// Numerical computation: the effective column for bin i is
@@ -495,6 +519,28 @@ pub fn py_bisr_gram_matrix(
     Ok(crate::matrix_factorization::bisr_gram_matrix(
         &coefficients,
         n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+    )?)
+}
+
+#[pyfunction]
+#[pyo3(name = "_bisr_prefix_gram_matrix", signature = (coefficients, prefix_steps, normalization_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
+pub fn py_bisr_prefix_gram_matrix(
+    coefficients: Vec<f64>,
+    prefix_steps: usize,
+    normalization_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> PyResult<Vec<f64>> {
+    Ok(crate::matrix_factorization::bisr::bisr_prefix_gram_matrix(
+        &coefficients,
+        prefix_steps,
+        normalization_steps,
         min_sep,
         max_participations,
         normalized,

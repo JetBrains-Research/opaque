@@ -129,6 +129,44 @@ class BallsInBins(DpHorizonProcess):
             strategy_cache_key(self.inner.strategy, prefix_steps),
         )
 
+    def _correlated_gram_at(self, n_steps: int) -> tuple[float, ...]:
+        """Gram of the deployed strategy at an epoch boundary."""
+        s = self.inner.strategy
+        num_epochs = n_steps // self.num_bins
+
+        if isinstance(s, BltStrategy):
+            coefs = s.coefficients(
+                n_steps=self.n_steps,
+                min_sep=self.min_sep,
+                max_participations=self.max_participations,
+            )
+            return tuple(
+                _native.toeplitz_gram_matrix(
+                    list(coefs[:n_steps].tolist()),
+                    n_steps,
+                    self.num_bins,
+                    num_epochs,
+                    False,
+                )
+            )
+
+        if isinstance(s, (BisrStrategy, LambdaCgdStrategy)):
+            return s._gram_matrix_for_prefix(
+                prefix_steps=n_steps,
+                normalization_steps=self.n_steps,
+                min_sep=self.num_bins,
+                max_participations=num_epochs,
+            )
+
+        if isinstance(s, BsrStrategy):
+            return s.gram_matrix(
+                n_steps=n_steps,
+                min_sep=self.num_bins,
+                max_participations=num_epochs,
+            )
+
+        raise TypeError(f"Unsupported correlated strategy: {type(s).__name__}")
+
     @horizon_pld_cache(maxsize=8)
     def pld_at(
         self,
@@ -146,8 +184,9 @@ class BallsInBins(DpHorizonProcess):
 
         ``n_steps`` is rounded up to the next epoch (multiple of
         ``num_bins``; capped at ``self.n_steps``).  For horizon-
-        independent inners (Identity, BSR, BiSR, λ-CGD) the gram /
-        primitive is reparameterised by ``K_epochs = rounded // num_bins``.
+        independent inners (Identity and BSR) the gram / primitive is
+        reparameterised by ``K_epochs = rounded // num_bins``. Normalized BISR
+        and λ-CGD retain column norms from the deployed ``self.n_steps``.
         For BLT (the only retuning inner) the N-tuned Toeplitz first
         column is read at ``self.n_steps`` and the K-prefix gram is
         built via the closed-form Toeplitz gram on those coefficients,
@@ -161,8 +200,6 @@ class BallsInBins(DpHorizonProcess):
             raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
         rounded = min(-(-n_steps // self.num_bins) * self.num_bins, self.n_steps)
         num_epochs_K = rounded // self.num_bins
-        min_sep_K = self.num_bins
-        max_participations_K = num_epochs_K
 
         config = get_discretization(
             discretization=discretization,

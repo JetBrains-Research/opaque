@@ -26,11 +26,9 @@ class KOutOfT(DpHorizonProcess):
     bound that is 3–45 % conservative over the true k-out-of-t distribution.
 
     Prefix accounting (``pld_at(K)`` for ``K < n_steps``) with
-    ``total_participations > 1`` snaps to the full-horizon bound.  This gives
-    a tight, honest upper bound on ε at any intermediate step rather than the
-    heavily over-conservative cap bound.  Use ``pld_at(n_steps)`` directly
-    (i.e. calibrate against the total horizon) when setting
-    ``total_participations > 1``.
+    ``total_participations > 1`` returns that same full-horizon upper bound.
+    It is safe for calibration and accounting but does not represent privacy
+    spent by an intermediate step.
     """
 
     inner: _Inner
@@ -91,10 +89,7 @@ class KOutOfT(DpHorizonProcess):
         if noise_multiplier is None:
             return _native.non_private_pld(config)
         if n_steps < self.n_steps and self.total_participations > 1:
-            # Exact prefix accounting for k > 1 is not yet implemented.
-            # Snap to the full-horizon block bound: a 3–45 % conservative
-            # upper bound on ε for any K ≤ n_steps, far tighter than the
-            # cap bound used inside the Rust prefix path.
+            # A certified k > 1 prefix is not yet available.
             return self.pld_at(
                 self.n_steps,
                 discretization=discretization,

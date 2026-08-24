@@ -760,6 +760,15 @@ def lambda_cgd_gram_matrix(
         Flattened row-major b×b Gram matrix.
     """
 
+def _lambda_cgd_prefix_gram_matrix(
+    lambda_: float,
+    prefix_steps: int,
+    normalization_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    normalized: bool = True,
+    momentum: float = 0.0,
+) -> list[float]: ...
 def lambda_cgd_gram_matrix_lr(
     lambda_: float,
     momentum: float,
@@ -818,6 +827,15 @@ def bisr_gram_matrix(
 ) -> list[float]:
     """BnB Gram matrix for BISR with optional momentum."""
 
+def _bisr_prefix_gram_matrix(
+    coefficients: list[float],
+    prefix_steps: int,
+    normalization_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    normalized: bool = True,
+    momentum: float = 0.0,
+) -> list[float]: ...
 def bisr_gram_matrix_lr(
     coefficients: list[float],
     momentum: float,

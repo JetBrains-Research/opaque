@@ -20,14 +20,11 @@ parameters and keeps the accounting API uniform across all MF mechanisms.
 
 ```python
 from opaque.dpftrl.noise import bisr_strategy
-import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = bisr_strategy(
-    bandwidth=4, n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
+    bandwidth=4,
     momentum=0.9,
 )
 
@@ -45,11 +42,9 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `bandwidth` | Number of bands p (≥ 2). Higher = better utility, more PRNG replays. |
-| `n_steps` | Total training steps |
-| `min_sep` | Steps per epoch |
-| `max_participations` | Number of epochs |
+| `normalized` | Column-normalize C for the deployed horizon (default `True`). |
 | `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
-| `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
+| `inv_coefficients` | Optional explicit coefficients for (C^{-1}). |
 
 ### Accounting parameters
 
@@ -100,7 +95,12 @@ and computes the linear combination defined by the BISR coefficients.
 
 - **BnB sampling**: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).
 - **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
-- **`lr_schedule` affects accounting only**: BISR coefficients remain analytically determined by its existing workload model. Supplying a schedule uses the matching step-weighted Gram for Balls-in-Bins accounting; it does not change the BISR strategy or introduce additional optimizer parameters. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
+- **Learning-rate schedules do not alter privacy**: an optimizer schedule is
+  applied after the BISR mechanism and does not change its deployed strategy
+  matrix (C). `bisr_strategy(lr_schedule=...)` is therefore rejected instead
+  of silently changing only the accountant. Apply the schedule in the optimizer;
+  use BandMF or BLT when the strategy itself should be optimized for a scheduled
+  workload.
 - **Not BSR**: BISR bands the **inverse** square-root construction (generalized λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD with momentum and weight decay.
 - For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../../user-guide/dp-ftrl.md).
 

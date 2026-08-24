@@ -1101,6 +1101,22 @@ class TrainingArguments:
                     "that many optimizer steps, chosen uniformly over the run)."
                 )
             if (
+                self.sampling_mode == "k_out_of_t"
+                and int(self.sampling_kwargs["total_participations"]) > 1
+                and self.privacy_noise_multiplier is not None
+                and self.privacy_noise_multiplier > 0
+                and self.privacy_target_epsilon is not None
+            ):
+                raise ValueError(
+                    "Stop-at-epsilon is not supported for "
+                    "sampling_mode='k_out_of_t' with total_participations > 1: "
+                    "the accountant has a certified full-horizon bound, but no "
+                    "informative certified prefix bounds yet. Use target-only "
+                    "calibration (omit privacy_noise_multiplier), fixed-noise "
+                    "reporting (omit privacy_target_epsilon), or "
+                    "total_participations=1."
+                )
+            if (
                 self.sampling_mode in ("random_allocation", "k_out_of_t")
                 and {
                     "truncated_batch_size",

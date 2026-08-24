@@ -70,15 +70,20 @@ configuration mistake.
 ### Stop-at-ε
 
 When `privacy_target_epsilon` is set alongside a non-zero
-`privacy_noise_multiplier`, training halts at the first logging
-boundary where the accumulated ε from the privacy accountant meets or
-exceeds the target. The halt records `state.privacy_target_epsilon_reached
-= True` and surfaces as a normal early-stop control flow (callbacks see
-the final eval / save / log pass). The check runs every
-`logging_steps` (so setting `logging_steps=0` disables it
-silently — explicit logging is the contract for stop-at-ε visibility).
-A resume against a checkpoint where the budget is already spent
-short-circuits before the first training step.
+`privacy_noise_multiplier`, deterministic accountants predict the first step
+where accumulated epsilon meets or exceeds the target. The halt records
+`state.privacy_target_epsilon_reached = True` and surfaces as normal early-stop
+control flow. Monte Carlo accountants use the logging-boundary fallback. A
+resume against a checkpoint where the budget is already spent short-circuits
+before the first training step.
+
+For `sampling_mode="k_out_of_t"` with more than one participation, proper
+prefixes currently report the configured full-horizon upper bound. Because
+that bound cannot identify when an intermediate budget was crossed, combining
+a fixed `privacy_noise_multiplier` with `privacy_target_epsilon` is rejected.
+Target-only calibration and fixed-noise reporting remain supported. During
+either mode, intermediate metric payloads label the bound explicitly as
+`privacy_epsilon_full_horizon_upper_bound`.
 
 `clipping_norm` accepts a positive scalar (global clipping), a dict
 keyed by regex on parameter names with a `"fallback"` entry

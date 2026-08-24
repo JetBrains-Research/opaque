@@ -37,7 +37,6 @@ from ._engine import (
     _iid_normal_noise,
     _require_positive_int_horizon,
 )
-from ._schedule_fingerprint import materialize_schedule
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -55,34 +54,24 @@ def _native():
     return _n
 
 
-_lr_key = materialize_schedule
-
-
 @lru_cache(maxsize=256)
 def _lambda_cgd_gram_matrix_cached(
     lambda_: float,
     normalized: bool,
-    n_steps: int,
+    prefix_steps: int,
+    normalization_steps: int,
     min_sep: int,
     max_participations: int | None,
-    lr_key: tuple[float, ...] | None,
 ) -> tuple[float, ...]:
     """Gram sequence for λ-CGD; cached across repeated σ / PLD probes."""
-    if lr_key is not None:
-        return tuple(
-            _native().lambda_cgd_gram_matrix_lr(
-                lambda_,
-                0.0,
-                n_steps,
-                min_sep,
-                max_participations,
-                normalized,
-                list(lr_key),
-            )
-        )
     return tuple(
-        _native().lambda_cgd_gram_matrix(
-            lambda_, n_steps, min_sep, max_participations, normalized
+        _native()._lambda_cgd_prefix_gram_matrix(
+            lambda_,
+            prefix_steps,
+            normalization_steps,
+            min_sep,
+            max_participations,
+            normalized,
         )
     )
 
@@ -115,11 +104,21 @@ class LambdaCgdStrategy:
 
     lambda_: float
     normalized: bool = True
+    # Retained in the recipe schema so checkpoints with ``lr_schedule=None``
+    # continue to round-trip. Non-None values are rejected below.
     lr_schedule: Schedule | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
             raise ValueError(f"lambda_ must be in [0, 1), got {self.lambda_}")
+        if self.lr_schedule is not None:
+            raise ValueError(
+                "lambda_cgd_strategy does not accept lr_schedule: an optimizer "
+                "schedule does not alter the deployed λ-CGD strategy matrix or "
+                "its privacy Gram. Apply the schedule in the optimizer, or use "
+                "BandMF/BLT when the strategy itself must be optimized for a "
+                "scheduled workload."
+            )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         # [1, λ, λ², ..., λ^{n_steps-1}].
@@ -130,13 +129,28 @@ class LambdaCgdStrategy:
     def gram_matrix(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> tuple[float, ...]:
+        return self._gram_matrix_for_prefix(
+            prefix_steps=n_steps,
+            normalization_steps=n_steps,
+            min_sep=min_sep,
+            max_participations=max_participations,
+        )
+
+    def _gram_matrix_for_prefix(
+        self,
+        *,
+        prefix_steps: int,
+        normalization_steps: int,
+        min_sep: int,
+        max_participations: int | None,
+    ) -> tuple[float, ...]:
         return _lambda_cgd_gram_matrix_cached(
             self.lambda_,
             self.normalized,
-            n_steps,
+            prefix_steps,
+            normalization_steps,
             min_sep,
             max_participations,
-            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
@@ -198,8 +212,10 @@ def lambda_cgd_strategy(
     Args:
         lambda_: Correlation coefficient in [0, 1).
         normalized: Use column-normalized matrix (default True).
-        lr_schedule: Optional per-step learning-rate schedule used for
-            schedule-weighted Gram accounting. λ-CGD remains momentum-free.
+        lr_schedule: Unsupported compatibility argument. Optimizer learning-rate
+            schedules do not alter the deployed λ-CGD strategy or its privacy
+            Gram; use BandMF or BLT to optimize a strategy for a scheduled
+            workload.
 
     Returns:
         A :class:`LambdaCgdStrategy` recipe.

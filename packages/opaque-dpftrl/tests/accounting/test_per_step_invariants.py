@@ -518,12 +518,9 @@ def test_balls_in_bins_identity_supports_composition():
 
 
 # ---------------------------------------------------------------------------
-# BallsInBins(correlated MF): K-prefix gram matches a freshly-built strategy
-# at the shorter horizon for recipe-driven strategies (BSR, BiSR, λ-CGD).
-# For BLT (the only retuning inner) the K-prefix uses the N-tuned Toeplitz
-# first column, so the values may differ from a K-tuned re-build — they
-# stay bounded by ε(self) and monotone in K, which the parametrised
-# invariants above already check.
+# BallsInBins(correlated MF): horizon-independent recipes match a strategy
+# built at the shorter horizon. Normalized BISR and λ-CGD have a separate
+# deployed-N runtime oracle.
 # ---------------------------------------------------------------------------
 
 

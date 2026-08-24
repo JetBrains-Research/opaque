@@ -25,15 +25,11 @@ mechanism parameters in two places.
 
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
-import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = lambda_cgd_strategy(
     lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
 )
 
 # 2. Build accounting mechanism via strategy.as_mechanism
@@ -50,11 +46,7 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `lambda_` | Correlation coefficient in \([0, 1)\). \(\lambda = 0\) is DP-SGD. |
-| `n_steps` | Total training steps |
-| `min_sep` | Steps per epoch (= bins per epoch) |
-| `max_participations` | Number of epochs |
 | `normalized` | Column-normalize C (default True, gives sensitivity=1 for k=1) |
-| `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
 
 ### Accounting parameters
 
@@ -67,15 +59,17 @@ eps = training.epsilon_at(1e-5)
 ### Sensitivity
 
 The sensitivity depends only on the strategy matrix C, not on the optimizer
-workload. A supplied `lr_schedule` does not change sensitivity or noise; it
-selects the corresponding step-weighted Gram for Balls-in-Bins accounting. The
-sensitivity formula (Theorem 1, eq 15 of the paper) has a closed-form
-expression in terms of λ, min_sep, and max_participations.
+workload. The sensitivity formula (Theorem 1, eq 15 of the paper) has a
+closed-form expression in terms of λ, min_sep, and max_participations.
 
 ## Assumptions and limitations
 
 - Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
-- `lr_schedule` weights the BnB Gram on the training-step axis only; it does not add a momentum parameter or change the noise strategy. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
+- An optimizer learning-rate schedule is post-processing of the λ-CGD release
+  and does not change the privacy Gram. `lambda_cgd_strategy(lr_schedule=...)`
+  is rejected instead of changing only the accountant. Apply the schedule in
+  the optimizer; use BandMF or BLT when the strategy itself should be optimized
+  for a scheduled workload.
 - Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
 - **Private second moments (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. Pass `second_moment_strategy` explicitly.
 - Broader MF context: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).

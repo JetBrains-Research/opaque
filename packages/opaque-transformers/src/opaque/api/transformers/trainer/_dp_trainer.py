@@ -256,10 +256,25 @@ class _TrainingContext:
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
     mf: _dpftrl.MFContext | None = None
+    # Intermediate epsilon is the configured N-step bound in this mode. The
+    # metric helper labels it accordingly; fixed-noise stop-at-epsilon is
+    # rejected during argument validation because it needs informative
+    # certified prefixes.
+    prefix_epsilon_is_full_horizon_bound: bool = False
     # Predicted stop-at-ε crossing step (absolute), or ``None`` when the
-    # target is unreachable / unset / the accountant is Monte-Carlo based.
+    # target is unreachable, unset, or unavailable from prefix accounting.
     # See :func:`predict_stop_step`.
     stop_at_step: int | None = None
+
+
+def _privacy_epsilon_metrics(ctx: _TrainingContext, epsilon: float) -> dict[str, float]:
+    metrics = {
+        "privacy_epsilon": epsilon,
+        "privacy_delta": ctx.target_delta,
+    }
+    if ctx.prefix_epsilon_is_full_horizon_bound:
+        metrics["privacy_epsilon_full_horizon_upper_bound"] = epsilon
+    return metrics
 
 
 def predict_stop_step(
@@ -1147,10 +1162,7 @@ class DPTrainer:
                     return TrainOutput(
                         self.state.global_step,
                         0.0,
-                        {
-                            "privacy_epsilon": resumed_eps,
-                            "privacy_delta": ctx.target_delta,
-                        },
+                        _privacy_epsilon_metrics(ctx, resumed_eps),
                     )
 
         # Predict the stop-at-ε step once at setup (accounting is
@@ -1158,8 +1170,8 @@ class DPTrainer:
         # the in-loop check becomes a free integer comparison (#392).  Scoped
         # to the fixed-NM + target path on deterministic accountants; the
         # Monte-Carlo PLDs (b_min_sep / balls_in_bins) are non-monotone in k
-        # and thread-count-sensitive, so they keep the log-boundary check as
-        # their stop mechanism.
+        # and thread-count-sensitive, so they keep the log-boundary check.
+        # Unsupported accountants are rejected during argument validation.
         a = self.args
         if (
             a.privacy_noise_multiplier is not None
@@ -1507,6 +1519,9 @@ class DPTrainer:
         )
         _sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
         _trunc_cap = _sk.get("truncated_batch_size", _sk.get("max_batch_size"))
+        full_horizon_prefix_bound = (
+            a.sampling_mode == "k_out_of_t" and int(_sk["total_participations"]) > 1
+        )
         log.info(
             "Resolved privacy config: delta=%.2e, noise_multiplier=%.4f (%s), "
             "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
@@ -1518,6 +1533,12 @@ class DPTrainer:
             # None ⇒ unbounded Poisson PLD; int ⇒ truncated_poisson_gaussian_pld.
             int(_trunc_cap) if _trunc_cap is not None else None,
         )
+        if full_horizon_prefix_bound:
+            log.info(
+                "K-out-of-T prefixes report the %d-step epsilon upper bound; "
+                "intermediate metrics are labelled accordingly.",
+                total_steps,
+            )
 
         # --- Optimizer ---
         opt, opt_state = self.create_optimizer(
@@ -1608,6 +1629,7 @@ class DPTrainer:
             clip_norm=clip_norm,
             mechanism_kind=mechanism_kind,
             mf=mf,
+            prefix_epsilon_is_full_horizon_bound=full_horizon_prefix_bound,
         )
 
     def _inner_training_loop(
@@ -1944,9 +1966,8 @@ class DPTrainer:
             {
                 "train_loss": train_loss,
                 "train_steps": global_step,
-                "privacy_epsilon": final_epsilon,
-                "privacy_delta": ctx.target_delta,
                 "privacy_noise_multiplier": ctx.noise_multiplier,
+                **_privacy_epsilon_metrics(ctx, final_epsilon),
             }
         )
         if a.include_num_input_tokens_seen != "no":
@@ -4009,13 +4030,12 @@ class DPTrainer:
                 "batch_size": step_result.get("batch_size", 0),
                 "grad_norm": step_result.get("grad_norm", 0.0),
                 "learning_rate": ctx.lr_schedule(global_step - 1),
-                "privacy_epsilon": epsilon,
-                "privacy_delta": ctx.target_delta,
                 "privacy_clip_rate": step_result.get("clip_rate", 0.0),
                 "privacy_clipping_norm": step_result.get("clipping_norm", 0.0),
                 "privacy_noise_std": step_result.get("noise_std", 0.0),
                 "privacy_noise_multiplier": ctx.noise_multiplier,
             }
+            logs.update(_privacy_epsilon_metrics(ctx, epsilon))
             if "clip_rate_max" in step_result:
                 logs["privacy_clip_rate_max"] = step_result["clip_rate_max"]
             if "clipped_grad_norm" in step_result:

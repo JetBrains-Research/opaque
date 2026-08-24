@@ -198,14 +198,42 @@ pub fn lambda_cgd_gram_matrix(
     normalized: bool,
     momentum: f64,
 ) -> Result<Vec<f64>> {
+    lambda_cgd_prefix_gram_matrix(
+        lambda,
+        n_steps,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+    )
+}
+
+/// Compute a released prefix using column norms from the deployed horizon.
+pub(crate) fn lambda_cgd_prefix_gram_matrix(
+    lambda: f64,
+    prefix_steps: usize,
+    normalization_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> Result<Vec<f64>> {
     if !(0.0..1.0).contains(&lambda) {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
         )));
     }
-    if n_steps == 0 {
-        return Err(PldError::InvalidParameter("n_steps must be >= 1".into()));
+    if prefix_steps == 0 {
+        return Err(PldError::InvalidParameter(
+            "prefix_steps must be >= 1".into(),
+        ));
+    }
+    if normalization_steps < prefix_steps {
+        return Err(PldError::InvalidParameter(format!(
+            "normalization_steps ({normalization_steps}) must be >= prefix_steps ({prefix_steps})"
+        )));
     }
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
@@ -218,7 +246,7 @@ pub fn lambda_cgd_gram_matrix(
     }
 
     let b = min_sep;
-    let n = n_steps;
+    let n = prefix_steps;
     let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
@@ -231,6 +259,9 @@ pub fn lambda_cgd_gram_matrix(
 
     let ip_fn =
         |a: usize, c: usize| -> f64 { column_inner_product_momentum(lambda, momentum, n, a, c) };
+    let norm_fn = |col: usize| -> f64 {
+        column_inner_product_momentum(lambda, momentum, normalization_steps, col, col).sqrt()
+    };
 
     // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨m_{b*p+i}, m_{b*q+j}⟩ / (d_{b*p+i} · d_{b*q+j})
     //
@@ -259,7 +290,7 @@ pub fn lambda_cgd_gram_matrix(
                 (0..b).map(move |i| {
                     let col = b * p + i;
                     if col < n {
-                        ip_fn(col, col).sqrt()
+                        norm_fn(col)
                     } else {
                         1.0
                     }

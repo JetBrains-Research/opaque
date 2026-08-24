@@ -294,10 +294,36 @@ pub fn bisr_gram_matrix(
     normalized: bool,
     momentum: f64,
 ) -> Result<Vec<f64>> {
-    validate_common(coefficients, n_steps, min_sep, momentum)?;
+    bisr_prefix_gram_matrix(
+        coefficients,
+        n_steps,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+    )
+}
+
+/// Compute a released prefix using column norms from the deployed horizon.
+pub(crate) fn bisr_prefix_gram_matrix(
+    coefficients: &[f64],
+    prefix_steps: usize,
+    normalization_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> Result<Vec<f64>> {
+    validate_common(coefficients, prefix_steps, min_sep, momentum)?;
+    if normalization_steps < prefix_steps {
+        return Err(PldError::InvalidParameter(format!(
+            "normalization_steps ({normalization_steps}) must be >= prefix_steps ({prefix_steps})"
+        )));
+    }
 
     let b = min_sep;
-    let n = n_steps;
+    let n = prefix_steps;
     let k_inferred = n.div_ceil(b);
     let e = match max_participations {
         Some(k) => k.min(k_inferred),
@@ -308,7 +334,14 @@ pub fn bisr_gram_matrix(
         return Ok(vec![0.0; b * b]);
     }
 
-    let col0 = bisr_column_zero(coefficients, n);
+    let col0 = bisr_column_zero(
+        coefficients,
+        if normalized {
+            normalization_steps
+        } else {
+            prefix_steps
+        },
+    );
 
     // Precompute column norms for normalization
     let col_norms: Vec<f64> = if normalized {
@@ -318,7 +351,14 @@ pub fn bisr_gram_matrix(
                 let col = b * p + i;
                 if col < n {
                     norms.push(
-                        bisr_column_inner_product_momentum(&col0, momentum, n, col, col).sqrt(),
+                        bisr_column_inner_product_momentum(
+                            &col0,
+                            momentum,
+                            normalization_steps,
+                            col,
+                            col,
+                        )
+                        .sqrt(),
                     );
                 } else {
                     norms.push(1.0);
