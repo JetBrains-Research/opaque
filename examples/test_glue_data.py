@@ -668,3 +668,64 @@ def test_renorm_preserves_R_norm_through_a_real_rotation(renorm, monkeypatch):
         assert g < 0.999, f"renorm off, but ||R|| was preserved (g={g:.6f})"
     monkeypatch.delenv("XSE_RENORM", raising=False)
     importlib.reload(xse)
+
+
+def test_zero_explore_isolates_the_span_change(monkeypatch):
+    """The third rung of the decomposition ladder must differ from BOTH neighbours.
+
+    reset-in-place changes two things at once relative to a full rotation: the span
+    stops moving AND the explore band is zeroed. So its 30/70 split attributes to
+    "exploration" a residue that a full rotation actually keeps (the projections
+    P_B R P_A, order 0.083). XSE_ZERO_EXPLORE supplies the missing arm: the span
+    still moves, but the residue is removed.
+
+    Checked through the real _rotate_one_layer:
+      full rotation  -> span moves, explore band NONZERO
+      zero-explore   -> span moves, explore band ZERO
+      reset-in-place -> span FIXED,  explore band ZERO
+    """
+    import importlib
+
+    def rotate(env):
+        for k in ("XSE_ZERO_EXPLORE", "XSE_RESET_IN_PLACE"):
+            monkeypatch.delenv(k, raising=False)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        import lora_privacy.peft_lora_xs.xse as xse
+
+        importlib.reload(xse)
+        torch.manual_seed(0)
+        r, r_keep, r_e, d = 16, 11, 5, 192
+        B = torch.linalg.qr(torch.randn(d, r))[0]
+        A = torch.linalg.qr(torch.randn(d, r))[0].T
+        R, M = torch.randn(r, r), torch.randn(r, r)
+        layer = xse.LayerInfo(
+            prefix="m", adapter="default", a_key="A", b_key="B", r_key="R",
+            base_key="W", r=r, r_e=r_e, r_keep=r_keep, is_conv1d=False,
+            scaling=1.0, flat_index=0,
+        )
+        out = xse._rotate_one_layer(layer, R, M, A, B)
+        Rn = out["R_new"].to(torch.float32)
+        band = max(Rn[r_keep:, :].abs().max().item(), Rn[:, r_keep:].abs().max().item())
+        # How far the new output basis leaves the old span: the norm of its
+        # component orthogonal to col(B). Zero iff the span is unchanged.
+        Bn = out["B_new"].to(torch.float32)
+        moved = ((torch.eye(d) - B @ B.T) @ Bn).norm().item()
+        return band, moved
+
+    band_full, moved_full = rotate({})
+    band_zero, moved_zero = rotate({"XSE_ZERO_EXPLORE": "1"})
+    band_rip,  moved_rip  = rotate({"XSE_RESET_IN_PLACE": "1"})
+
+    assert band_full > 1e-6, "full rotation should retain a nonzero explore residue"
+    assert band_zero < 1e-12, f"zero-explore left {band_zero:.2e} in the band"
+    assert band_rip < 1e-12, f"reset-in-place left {band_rip:.2e} in the band"
+
+    assert moved_full > 1e-3, "full rotation should leave the old span"
+    assert moved_zero > 1e-3, "zero-explore must STILL move the span -- that is the point"
+    assert moved_rip < 1e-5, f"reset-in-place must not move the span (got {moved_rip:.2e})"
+
+    for k in ("XSE_ZERO_EXPLORE", "XSE_RESET_IN_PLACE"):
+        monkeypatch.delenv(k, raising=False)
+    import lora_privacy.peft_lora_xs.xse as xse
+    importlib.reload(xse)
