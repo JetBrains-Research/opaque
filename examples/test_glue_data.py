@@ -624,3 +624,47 @@ def test_keep_source_rejects_unknown(monkeypatch):
         importlib.reload(xse)
     monkeypatch.delenv("XSE_KEEP_SOURCE", raising=False)
     importlib.reload(xse)
+
+
+@pytest.mark.parametrize("renorm", ["0", "1"])
+def test_renorm_preserves_R_norm_through_a_real_rotation(renorm, monkeypatch):
+    """XSE_RENORM=1 must make ||R|| survive a rotation; =0 must contract it.
+
+    The rotation is an orthogonal projection of the weight update, hence a
+    contraction: ||R'|| = g||R|| with g <= 1 always. That is an implicit weight
+    decay of (1-g) per rotation, 3-4 orders of magnitude above the configured
+    weight_decay. Benign on causal LM (g = 0.978) and severe on CoLA (g = 0.759),
+    where the adapter ends ~488x below the frozen arm's final norm.
+
+    Driven through the REAL _rotate_one_layer, not a reimplementation -- three
+    earlier errors in this project came from checking a stand-in instead.
+    """
+    import importlib
+
+    monkeypatch.setenv("XSE_RENORM", renorm)
+    import lora_privacy.peft_lora_xs.xse as xse
+
+    importlib.reload(xse)
+    assert xse._RENORM is (renorm == "1")
+
+    torch.manual_seed(0)
+    r, r_keep, r_e, d = 16, 11, 5, 192
+    B = torch.linalg.qr(torch.randn(d, r))[0]
+    A = torch.linalg.qr(torch.randn(d, r))[0].T
+    R = torch.randn(r, r)
+    M = torch.randn(r, r)
+    layer = xse.LayerInfo(
+        prefix="m", adapter="default", a_key="A", b_key="B", r_key="R",
+        base_key="W", r=r, r_e=r_e, r_keep=r_keep, is_conv1d=False,
+        scaling=1.0, flat_index=0,
+    )
+    # NB the real signature is (layer, R_after_step, m_R, A_old, B_old) -- A before B.
+    out = xse._rotate_one_layer(layer, R, M, A, B)
+    before, after = R.norm().item(), out["R_new"].to(torch.float32).norm().item()
+    g = after / before
+    if renorm == "1":
+        assert abs(g - 1.0) < 1e-5, f"renorm on, but ||R|| moved by {g:.6f}"
+    else:
+        assert g < 0.999, f"renorm off, but ||R|| was preserved (g={g:.6f})"
+    monkeypatch.delenv("XSE_RENORM", raising=False)
+    importlib.reload(xse)

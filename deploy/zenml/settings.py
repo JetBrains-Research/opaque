@@ -181,6 +181,7 @@ def training_settings(
         "XSE_ADAM_PRECOND",
         "XSE_KEEP_SOURCE",
         "XSE_ADAPTIVE_DEPTH_SOURCE",
+        "XSE_RENORM",
     )
     extra_envs += [
         {"name": _k, "value": os.environ[_k]}
