@@ -14,6 +14,7 @@ in-package CI signal so regressions surface immediately.
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -21,7 +22,10 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.accounting import Accountant
+from opaque.accounting.types import CachedProcess, Repeated
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+from opaque.serialization import from_state_dict
 from opaque.transformers import TrainingArguments
 
 
@@ -294,6 +298,68 @@ class TestDpFtrlCheckpointRoundTrip:
         # Same mechanism + total steps + multiplier ⇒ deterministic ε.
         assert out1.metrics["privacy_epsilon"] == pytest.approx(
             out2.metrics["privacy_epsilon"], rel=1e-3
+        )
+
+    def test_band_mf_cache_boundaries_survive_resume(self, tmp_path):
+        outdir = tmp_path / "band-mf-boundaries"
+
+        def make_args(path: Path) -> TrainingArguments:
+            return TrainingArguments(
+                output_dir=str(path),
+                per_device_train_batch_size=4,
+                max_steps=8,
+                save_strategy="steps",
+                save_steps=4,
+                eval_strategy="steps",
+                eval_steps=3,
+                logging_strategy="steps",
+                logging_steps=2,
+                privacy_noise_mechanism="mf_band",
+                privacy_noise_mechanism_kwargs={"bands": 2},
+                sampling_mode="poisson",
+                privacy_noise_multiplier=1.0,
+                clipping_norm=1.0,
+                learning_rate=1e-3,
+                optim="sgd",
+                report_to=[],
+                disable_tqdm=True,
+                use_cpu=True,
+                seed=0,
+            )
+
+        dataset = _TinyDS()
+        torch.manual_seed(0)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=make_args(outdir),
+            train_dataset=dataset,
+            eval_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        fresh = trainer.train()
+
+        checkpoint = outdir / "checkpoint-4"
+        with (checkpoint / "accountant.json").open() as stream:
+            saved = from_state_dict(Accountant(), json.load(stream))
+        assert isinstance(saved.process, CachedProcess)
+
+        torch.manual_seed(0)
+        resumed_trainer = DPTrainer(
+            model=_TinyLM(),
+            args=make_args(tmp_path / "band-mf-resumed"),
+            train_dataset=dataset,
+            eval_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        resumed = resumed_trainer.train(resume_from_checkpoint=str(checkpoint))
+
+        process = resumed_trainer._accountant.process
+        while isinstance(process, CachedProcess):
+            process = process.inner
+        assert isinstance(process, Repeated)
+        assert process.count == 8
+        assert resumed.metrics["privacy_epsilon"] == pytest.approx(
+            fresh.metrics["privacy_epsilon"], rel=1e-9
         )
 
 

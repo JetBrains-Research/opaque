@@ -10,6 +10,11 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core._accountant import Accountant
 from opaque.api.accounting.core.calibration import epsilon_budget
+from opaque.api.accounting.core.composition.types import (
+    CachedProcess,
+    Composed,
+    Repeated,
+)
 
 # ============================================================================
 # Construction & composition
@@ -505,6 +510,17 @@ class TestAccountantCached:
         # Inner process should be the same CachedProcess (not double-wrapped)
         assert acct1.process is acct2.process
 
+    def test_cached_ordinary_prefix_remains_merge_barrier(self):
+        step = dpsgd_acc.gaussian(1.0)
+        accountant = acc.cached(Accountant() | (step * 3))
+
+        continued = accountant | step
+
+        assert isinstance(continued.process, Composed)
+        assert isinstance(continued.process.left, CachedProcess)
+        assert continued.process.left.inner == step * 3
+        assert continued.process.right is step
+
     def test_cached_random_allocation_step_preserves_prefix(self):
         horizon = dpsgd_acc.random_allocation(
             dpsgd_acc.gaussian(1.0),
@@ -517,15 +533,17 @@ class TestAccountantCached:
         assert cached_step is not step
         assert (cached_step * 2).pld() is horizon.pld_at(2)
 
-    def test_cached_random_allocation_accountant_warns_and_skips_boundary(self):
+    def test_cached_random_allocation_accountant_continues_prefix(self):
         horizon = dpsgd_acc.random_allocation(
             dpsgd_acc.gaussian(1.0),
             num_bins=2,
             n_steps=4,
         )
-        accountant = Accountant() | acc.per_step(horizon)
+        step = acc.cached(acc.per_step(horizon))
+        accountant = Accountant() | step
 
-        with pytest.warns(RuntimeWarning, match="whole-horizon"):
-            cached_accountant = acc.cached(accountant)
+        continued = acc.cached(accountant) | step
 
-        assert cached_accountant is accountant
+        assert isinstance(continued.process, Repeated)
+        assert continued.process.count == 2
+        assert continued.process.pld() is horizon.pld_at(2)

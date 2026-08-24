@@ -555,7 +555,8 @@ Heterogeneous two-process composition. Equivalent to `left | right`.
 ### `cached(process) -> DpProcess`
 
 Increases the LRU cache size from 8 to 16 entries and acts as an opaque merge
-barrier: the composition optimizer will not look through a cached node.
+barrier. A matching `PerStep` horizon suffix remains continuable across the
+boundary so correlated releases use one joint `pld_at(K)` prefix.
 
 **Note**: All `pld()` methods are automatically cached with `maxsize=8` via
 `@lru_cache`. Use `cached()` when you need:

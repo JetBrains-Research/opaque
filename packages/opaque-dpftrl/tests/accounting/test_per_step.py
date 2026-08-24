@@ -29,12 +29,17 @@ import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
 from opaque.api.accounting.core.composition._per_step import PerStep
-from opaque.api.accounting.core.composition.types import Repeated
+from opaque.api.accounting.core.composition.types import (
+    CachedProcess,
+    Composed,
+    Repeated,
+)
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     blt_strategy,
     identity_strategy,
 )
+from opaque.serialization import from_state_dict, state_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -107,9 +112,9 @@ class TestPerStepDeterministic:
 
 
 class TestPerStepAccountant:
-    def _proc(self, n_steps: int = 50) -> DpHorizonProcess:
+    def _proc(self, n_steps: int = 50, nm: float = 1.0) -> DpHorizonProcess:
         return ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            ftrl_acc.mf_gaussian(nm, identity_strategy()),
             sample_rate=0.01,
             n_steps=n_steps,
         )
@@ -176,19 +181,121 @@ class TestPerStepAccountant:
 
         assert cached_step is not step
         assert (cached_step * 5).pld() is proc.pld_at(5)
+        merged = cached_step | cached_step
+        assert isinstance(merged, Repeated)
+        assert merged.inner is cached_step
 
-    def test_cached_horizon_accountant_warns_and_skips_boundary(self):
-        proc = self._proc(10)
-        step = acc.per_step(proc)
+    @pytest.mark.parametrize("K", range(1, 6))
+    def test_cached_horizon_accountant_continues_prefix(self, K: int):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=6,
+        )
+        step = acc.cached(acc.per_step(proc))
         accountant = Accountant()
-        for _ in range(5):
+        for _ in range(K):
             accountant |= step
 
-        with pytest.warns(RuntimeWarning, match="whole-horizon"):
-            cached_accountant = acc.cached(accountant)
+        continued = acc.cached(accountant) | step
 
-        assert cached_accountant is accountant
-        assert cached_accountant.process.pld() is proc.pld_at(5)
+        assert isinstance(continued.process, Repeated)
+        assert continued.process.count == K + 1
+        assert continued.process.pld(discretization=0.1) is proc.pld_at(
+            K + 1, discretization=0.1
+        )
+
+    def test_cached_horizon_continues_across_boundaries_and_restore(self):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=8,
+        )
+        step = acc.cached(acc.per_step(proc))
+        accountant = Accountant()
+
+        for K in range(1, 9):
+            accountant |= step
+            if K in {3, 5, 7}:
+                accountant = acc.cached(accountant)
+            if K == 5:
+                accountant = from_state_dict(Accountant(), state_dict(accountant))
+
+        assert isinstance(accountant.process, Repeated)
+        assert accountant.process.count == 8
+        assert accountant.epsilon_at(_DELTA) == pytest.approx(
+            proc.pld_at(8).epsilon_at(_DELTA)
+        )
+
+    def test_continuation_repairs_restored_cache_fragments(self):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=8,
+        )
+        step = acc.cached(acc.per_step(proc))
+        fragmented = Accountant(
+            prefix=CachedProcess(
+                Composed(
+                    CachedProcess(Repeated(step, 2)),
+                    Repeated(step, 2),
+                )
+            )
+        )
+        restored = from_state_dict(Accountant(), state_dict(fragmented))
+
+        continued = restored | step
+
+        assert isinstance(continued.process, Repeated)
+        assert continued.process.count == 5
+        assert continued.process.pld(discretization=0.1) is proc.pld_at(
+            5, discretization=0.1
+        )
+
+    def test_cached_heterogeneous_prefix_keeps_only_prefix_opaque(self):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.01,
+            n_steps=6,
+        )
+        step = acc.cached(acc.per_step(proc))
+        prefix = acc.eps_delta(0.1, 1e-6)
+        accountant = Accountant() | prefix
+        for _ in range(3):
+            accountant |= step
+
+        continued = acc.cached(accountant) | step
+
+        assert isinstance(continued.process, Composed)
+        assert isinstance(continued.process.left, CachedProcess)
+        assert continued.process.left.inner == prefix
+        assert isinstance(continued.process.right, Repeated)
+        assert continued.process.right.count == 4
+        assert continued.process.right.pld(discretization=0.1) is proc.pld_at(
+            4, discretization=0.1
+        )
+
+    def test_cached_horizon_does_not_merge_a_different_sequence(self):
+        first = acc.cached(acc.per_step(self._proc(n_steps=6, nm=1.0)))
+        second = acc.cached(acc.per_step(self._proc(n_steps=6, nm=2.0)))
+        accountant = acc.cached(Accountant() | (first * 3))
+
+        continued = accountant | second
+
+        assert isinstance(continued.process, Composed)
+        assert isinstance(continued.process.left, CachedProcess)
+        assert continued.process.right is second
+
+    def test_cached_horizon_does_not_merge_across_an_intervening_release(self):
+        step = acc.cached(acc.per_step(self._proc(n_steps=6)))
+        intervening = acc.eps_delta(0.1, 1e-6)
+        accountant = acc.cached(Accountant() | (step * 2) | intervening)
+
+        continued = accountant | step
+
+        assert isinstance(continued.process, Composed)
+        assert isinstance(continued.process.left, CachedProcess)
+        assert continued.process.right is step
 
     def test_empty_accountant_is_zero(self):
         # Step-0 eval: empty accountant returns ε=0 regardless of step_proc.
