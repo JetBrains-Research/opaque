@@ -38,7 +38,7 @@ dependencies = [
     "opaque-engine>=0.0.0.dev0",
     "opaque-accounting>=0.0.0.dev0",
     "opaque-dpsgd>=0.0.0.dev0",
-    "opaque-optimizers>=0.0.0.dev0",
+    "opaque-optimizers>=999.9.9",
     "opaque-patches>=0.0.0.dev0",
 ]
 
