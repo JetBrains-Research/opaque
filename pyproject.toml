@@ -114,7 +114,7 @@ opaque-alignment = { workspace = true }
 # when CUDA + Triton are not importable.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
-  "pytest>=9.0.0",
+  "pytest>=9.1.1",
   "pytest-cov>=4.0.0",
   "pytest-xdist>=3.5.0",   # Parallel test execution (`-n auto`); CI shards within each job
   "ruff>=0.16.0,<0.17",
