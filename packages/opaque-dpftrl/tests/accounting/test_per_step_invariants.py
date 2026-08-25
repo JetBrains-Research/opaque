@@ -8,7 +8,7 @@ construction:
 
 - ``ε(pld_at(0))         == 0`` (empty accountant).
 - ``ε(pld_at(N))         == proc.epsilon_at(δ)``.
-- ``K1 ≤ K2 ⇒ ε(K1) ≤ ε(K2)`` (monotone; MC paths within slack).
+- ``K1 ≤ K2 ⇒ ε(K1) ≤ ε(K2)`` (monotone).
 - ``ε(K) ≤ ε(self)`` for ``K ≤ N`` (bounded by full).
 - For K = G · atomic_unit + r with r ∈ [0, atomic_unit):
   ``ε(G·M) ≤ ε(K) ≤ ε((G+1)·M)`` (sandwich; closed-form paths only).
@@ -48,7 +48,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _DELTA = 1e-5
-_MC_KW = {"num_mc_samples": 4000, "seed": 17}
+_MC_DELTA = 1e-2
+_MC_KW = {
+    "seed": 17,
+    "mc_resolution": 5e-3,
+    "mc_failure_probability": 1e-2,
+}
 
 
 def _atomic_unit(proc: DpHorizonProcess) -> int:
@@ -59,8 +64,7 @@ def _atomic_unit(proc: DpHorizonProcess) -> int:
 def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
     """K-step ε via ``per_step(proc) * K`` — the public API surface.
 
-    MC kwargs could be passed per call (``epsilon_at`` forwards
-    ``num_mc_samples`` / ``seed``); these tests pin them globally with the
+    MC kwargs could be passed per call; these tests pin them globally with the
     :func:`_seed_mc` fixture so every call site resolves the same config.
     """
     if K <= 0:
@@ -73,12 +77,12 @@ def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
 def _seed_mc():
     """Pin global MC discretization for MC-based amplifiers.
 
-    ``Repeated.pld()`` → ``repeated_pld(count)`` also forwards
-    ``num_mc_samples`` / ``seed`` per call; pinning them globally keeps
+    ``Repeated.pld()`` → ``repeated_pld(count)`` also forwards confidence
+    settings per call; pinning them globally keeps
     the shared helpers here parameter-free.  Set for the duration of the
     test.
     """
-    acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
+    acc.set_discretization(**_MC_KW)
     yield
     acc.set_discretization()  # restore defaults
 
@@ -227,20 +231,18 @@ class TestBMinSep:
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints(self):
         proc = self._proc(n_steps=32)
-        assert _eps_at(proc, 0, _DELTA) == 0.0
-        e_full = proc.pld(**_MC_KW).epsilon_at(_DELTA)
-        e_via_step = _eps_at(proc, 32, _DELTA)
+        assert _eps_at(proc, 0, _MC_DELTA) == 0.0
+        e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
+        e_via_step = _eps_at(proc, 32, _MC_DELTA)
         assert math.isclose(e_full, e_via_step, rel_tol=1e-9)
 
     @pytest.mark.usefixtures("_seed_mc")
-    def test_trend_increases(self):
-        """Aggregate ε increases between K=bands and K=N."""
+    def test_nonzero_prefix_charges_full_horizon(self):
+        """Fail-closed MC prefixes use the full-horizon bound."""
         proc = self._proc(n_steps=32, bands=4)
-        e_full = _eps_at(proc, 32, _DELTA)
-        e_small = _eps_at(proc, 4, _DELTA)
-        assert e_small < e_full, (
-            f"expected ε(K=4) < ε(K=32) in expectation, got {e_small} ≮ {e_full}"
-        )
+        e_full = _eps_at(proc, 32, _MC_DELTA)
+        e_small = _eps_at(proc, 4, _MC_DELTA)
+        assert e_small == pytest.approx(e_full)
 
 
 # ---------------------------------------------------------------------------
@@ -449,32 +451,29 @@ class TestKPrefixInvariants:
     def test_prefix_invariants(self, amp: str, mech: str):
         proc = _build(amp, mech)
         n, M = proc.n_steps, proc.atomic_unit
-        e_full = _eps_full(proc, _DELTA)
+        delta = _MC_DELTA if _is_mc_proc(proc) else _DELTA
+        e_full = _eps_full(proc, delta)
         checked_steps = {
             1,
             M,
             n // 2,
             n,
         }
-        epsilons = {K: _eps_via_step(proc, K, _DELTA) for K in checked_steps}
+        epsilons = {K: _eps_via_step(proc, K, delta) for K in checked_steps}
 
         assert math.isclose(epsilons[n], e_full, rel_tol=1e-9)
 
-        # MC paths have transcript noise: 10% slack at the test budget.
-        bound_slack = 0.10 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
         for K in (1, M, n // 2):
-            assert epsilons[K] <= e_full + bound_slack
+            assert epsilons[K] <= e_full + 1e-9
 
-        assert epsilons[M] < e_full
+        if _is_mc_proc(proc):
+            assert epsilons[M] == pytest.approx(e_full)
+        else:
+            assert epsilons[M] < e_full
 
-        # MC paths regenerate independent transcripts at each n_steps, so
-        # the per-K ε curve has MC noise; the monotone bound holds in
-        # expectation, with seed-dependent per-step gaps.  15% slack is
-        # empirically robust at the test's sample budget.
-        monotone_slack = 0.15 * max(e_full, 1.0) if _is_mc_proc(proc) else 1e-9
         prev = 0.0
         for K in sorted({M, n // 2, n}):
-            assert epsilons[K] >= prev - monotone_slack
+            assert epsilons[K] >= prev - 1e-9
             prev = epsilons[K]
 
     @pytest.mark.usefixtures("_seed_mc")
@@ -487,15 +486,14 @@ class TestKPrefixInvariants:
     @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_sandwich_at_intermediate_K(self, amp: str, mech: str):
-        if _is_mc_proc(_build(amp, mech)):
-            pytest.skip("MC path: sandwich holds in expectation only")
         proc = _build(amp, mech)
+        delta = _MC_DELTA if _is_mc_proc(proc) else _DELTA
         n, M = proc.n_steps, proc.atomic_unit
         K = max(1, min(n - 1, n // 2 + M // 2))
         G, _r = divmod(K, M)
-        e_lo = _eps_via_step(proc, G * M, _DELTA) if G > 0 else 0.0
-        e_K = _eps_via_step(proc, K, _DELTA)
-        e_hi = _eps_via_step(proc, min((G + 1) * M, n), _DELTA)
+        e_lo = _eps_via_step(proc, G * M, delta) if G > 0 else 0.0
+        e_K = _eps_via_step(proc, K, delta)
+        e_hi = _eps_via_step(proc, min((G + 1) * M, n), delta)
         assert e_lo - 1e-9 <= e_K <= e_hi + 1e-9
 
     @pytest.mark.usefixtures("_seed_mc")
@@ -503,10 +501,11 @@ class TestKPrefixInvariants:
         if (amp, mech) == ("BallsInBins", "IdentityMf"):
             pytest.skip("covered by the slow identity-composition case")
         proc = _build(amp, mech)
+        delta = _MC_DELTA if _is_mc_proc(proc) else _DELTA
         step = acc.per_step(proc)
         # step * K1 | step * K2 composes (same proc → merges to Repeated).
         combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
-        assert math.isfinite(combined.epsilon_at(_DELTA))
+        assert math.isfinite(combined.epsilon_at(delta))
 
 
 @pytest.mark.slow
@@ -531,7 +530,6 @@ def test_balls_in_bins_identity_supports_composition():
 _REGEN_NUM_BINS = 4
 _REGEN_N_FULL = 16
 _REGEN_K = 8
-_REGEN_TOL = 0.05  # generous: bnb_mc_pld is MC-based.
 
 
 def _bnb(mechanism, n_steps: int) -> BallsInBins:
@@ -539,52 +537,31 @@ def _bnb(mechanism, n_steps: int) -> BallsInBins:
 
 
 class TestRecipeDrivenGramRegen:
-    """``per_step(proc) * K`` matches a strategy built directly at horizon ``K``.
-
-    For each recipe-driven MF (BSR / BiSR / λ-CGD), build BnB at full
-    horizon and ``per_step * K``; independently build BnB at horizon ``K``
-    from a fresh strategy.  Both paths use the same ``bnb_mc_pld``
-    primitive on the same Gram structure, so ε agrees up to MC variance.
-    """
+    """Every correlated BnB nonzero prefix charges the full horizon."""
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_bsr(self):
         full = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
-        direct = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
         step = acc.per_step(proc)
-        e_at = (step * _REGEN_K).epsilon_at(_DELTA)
-        e_dir = (
-            _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
-            .pld(**_MC_KW)
-            .epsilon_at(_DELTA)
-        )
-        assert math.isclose(e_at, e_dir, rel_tol=_REGEN_TOL)
+        e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
+        e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
+        assert e_at == pytest.approx(e_full)
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_bisr(self):
         full = bisr_strategy(bandwidth=2)
-        direct = bisr_strategy(bandwidth=2)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
         step = acc.per_step(proc)
-        e_at = (step * _REGEN_K).epsilon_at(_DELTA)
-        e_dir = (
-            _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
-            .pld(**_MC_KW)
-            .epsilon_at(_DELTA)
-        )
-        assert math.isclose(e_at, e_dir, rel_tol=_REGEN_TOL)
+        e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
+        e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
+        assert e_at == pytest.approx(e_full)
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_lambda_cgd(self):
         full = lambda_cgd_strategy(lambda_=0.5)
-        direct = lambda_cgd_strategy(lambda_=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
         step = acc.per_step(proc)
-        e_at = (step * _REGEN_K).epsilon_at(_DELTA)
-        e_dir = (
-            _bnb(ftrl_acc.mf_gaussian(1.0, direct), _REGEN_K)
-            .pld(**_MC_KW)
-            .epsilon_at(_DELTA)
-        )
-        assert math.isclose(e_at, e_dir, rel_tol=_REGEN_TOL)
+        e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
+        e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
+        assert e_at == pytest.approx(e_full)

@@ -20,11 +20,12 @@ gram = [
 ]
 config = get_discretization(
     discretization=1e-3,
-    num_mc_samples=4_096,
     seed=173,
+    mc_resolution=5e-3,
+    mc_failure_probability=1e-2,
 ).to_native()
 pld = _native.bnb_mc_pld(gram, num_bins, 1.3, config)
-print(" ".join(repr(pld.epsilon_at(delta)) for delta in (1e-3, 1e-5, 1e-8)))
+print(" ".join(repr(pld.epsilon_at(delta)) for delta in (1e-2, 2e-2, 5e-2)))
 """
 
 

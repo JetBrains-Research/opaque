@@ -518,12 +518,10 @@ eps = acct.epsilon_at(delta=1e-5)
 ```
 
 For analytic DP-FTRL accountants, the K-step ε is bounded above by
-`proc.epsilon_at(delta)` and is monotone non-decreasing in K — both follow
-from the post-processing inequality on the deployed N-step mechanism.
-b-min-sep and correlated-strategy Balls-in-Bins remain Monte Carlo point
-estimates pending the RC-4 confidence correction, so this guarantee is not
-asserted for their reported ε values; Balls-in-Bins with `identity_strategy()`
-is analytic and does carry it. `K > proc.n_steps` raises `ValueError`.
+`proc.epsilon_at(delta)` and is monotone non-decreasing in K. For b-min-sep and
+correlated-strategy Balls-in-Bins, every nonzero K conservatively uses the
+full-horizon confidence-bounded PLD. Balls-in-Bins with `identity_strategy()`
+retains its exact prefix path. `K > proc.n_steps` raises `ValueError`.
 
 ### Serialization
 
@@ -569,19 +567,27 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 | `discretization` | 1e-4 | Grid spacing. Smaller = tighter, slower. |
 | `log_x_mass_truncation_bound` | -50.0 | Log tail mass cutoff. |
 | `max_grid_size` | 10,000,000 | Maximum grid bins before coarsening. |
+| `seed` | 42 | Monte Carlo RNG seed. |
+| `mc_resolution` | 1e-6 | Maximum unresolved MC mass, in delta units. |
+| `mc_failure_probability` | 1e-6 | Failure probability of the simultaneous MC bound. |
+
+At the two `1e-6` Monte Carlo defaults, the simultaneous bound requires about
+31.8 million samples per adjacency direction. Required counts above 50 million
+produce an advisory warning but are not capped.
 
 Discretization is always conservative: exact privacy-loss atoms, PMF
 coarsening, and histogram buckets are rounded upward to the grid. There is no
 option to request an optimistic or lower-bound accounting result.
 
-!!! warning
+!!! note "Monte Carlo confidence bounds"
     b-min-sep, and Balls-in-Bins with a **correlated** strategy (λCGD, BISR,
-    BSR, BLT), build their PLDs by Monte Carlo — those are empirical point
-    estimates. Conservative grid bucketing does not provide the RC-4
-    confidence correction; do not treat their reported ε values as upper
-    confidence bounds. Balls-in-Bins with `identity_strategy()`, and
-    `random_allocation`, are computed by an exact transform and are not
-    affected.
+    BSR, BLT), use simultaneous one-sided order-statistic bounds for both
+    adjacency directions. The sample count is derived from `mc_resolution` and
+    `mc_failure_probability`. Remaining uncertainty is placed at `+∞`, and the returned PLD
+    exposes `mc_confidence` and `mc_resolution`. Statistical confidence is
+    separate from DP delta. Balls-in-Bins with `identity_strategy()`, and
+    `random_allocation`, use deterministic transforms. Monte Carlo PLDs certify
+    ε/δ and advantage; β and Bayes risk fail closed to zero.
 
 ## API reference
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -21,18 +22,21 @@ class DiscretizationConfig:
         discretization: Grid spacing for the PLD PMF. Smaller = tighter, slower.
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
         max_grid_size: Maximum grid bins before automatic coarsening.
-        num_mc_samples: Number of Monte Carlo samples for MC-based accounting.
         seed: RNG seed for Monte Carlo reproducibility.
         max_conv_grid: Maximum convolution grid size for random-allocation PLD transform.
+        mc_resolution: Maximum unresolved Monte Carlo mass, in delta units.
+        mc_failure_probability: Failure probability of the simultaneous Monte
+            Carlo confidence band.
     """
 
     discretization: float = 1e-4
     log_x_mass_truncation_bound: float = -50.0
     max_grid_size: int = 10_000_000
     tail_mass_truncation: float = 1e-15
-    num_mc_samples: int = 100_000
     seed: int = 42
     max_conv_grid: int = 32_768
+    mc_resolution: float = 1e-6
+    mc_failure_probability: float = 1e-6
 
     def to_native(self) -> _native.DiscretizationConfig:
         """Convert to Rust DiscretizationConfig for FFI calls."""
@@ -41,10 +45,28 @@ class DiscretizationConfig:
             self.log_x_mass_truncation_bound,
             self.max_grid_size,
             self.tail_mass_truncation,
-            self.num_mc_samples,
             self.seed,
             self.max_conv_grid,
+            self.mc_resolution,
+            self.mc_failure_probability,
         )
+
+    @property
+    def resolved_num_mc_samples(self) -> int:
+        """Sample count required by the configured simultaneous confidence band."""
+        return self.to_native().resolved_num_mc_samples
+
+    def warn_if_large_mc(self) -> None:
+        """Warn when the derived Monte Carlo work is unusually large."""
+        required = self.resolved_num_mc_samples
+        if required > _MC_SAMPLE_WARNING_THRESHOLD:
+            warnings.warn(
+                f"Monte Carlo accounting requires {required:,} samples per "
+                f"adjacency direction for mc_resolution={self.mc_resolution} "
+                f"and mc_failure_probability={self.mc_failure_probability}.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
 
 __all__ = [
@@ -59,6 +81,7 @@ _active_config: ContextVar[DiscretizationConfig | None] = ContextVar(
     "opaque_accounting_active_discretization",
     default=None,
 )
+_MC_SAMPLE_WARNING_THRESHOLD = 50_000_000
 
 
 @contextmanager
@@ -76,9 +99,10 @@ def set_discretization(
     log_x_mass_truncation_bound: float = -50.0,
     max_grid_size: int = 10_000_000,
     tail_mass_truncation: float = 1e-15,
-    num_mc_samples: int = 100_000,
     seed: int = 42,
     max_conv_grid: int = 32_768,
+    mc_resolution: float = 1e-6,
+    mc_failure_probability: float = 1e-6,
 ) -> None:
     """Set module-level default discretization parameters.
 
@@ -96,10 +120,12 @@ def set_discretization(
         max_grid_size: If grid exceeds this many bins, coarsen discretization
             automatically. Default: 10,000,000.
         tail_mass_truncation: Chernoff tail budget during composition (Rust default 1e-15).
-        num_mc_samples: Number of Monte Carlo samples for MC-based accounting. Default: 100,000.
         seed: RNG seed for Monte Carlo reproducibility. Default: 42.
         max_conv_grid: Maximum convolution grid size before the native
             accountant uses its bounded-memory composition path.
+        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-6.
+        mc_failure_probability: Failure probability of the simultaneous Monte
+            Carlo confidence band. Default: 1e-6.
 
     Example::
 
@@ -115,9 +141,10 @@ def set_discretization(
         log_x_mass_truncation_bound=log_x_mass_truncation_bound,
         max_grid_size=max_grid_size,
         tail_mass_truncation=tail_mass_truncation,
-        num_mc_samples=num_mc_samples,
         seed=seed,
         max_conv_grid=max_conv_grid,
+        mc_resolution=mc_resolution,
+        mc_failure_probability=mc_failure_probability,
     )
 
 
@@ -127,9 +154,10 @@ def get_discretization(
     log_x_mass_truncation_bound: float | None = None,
     max_grid_size: int | None = None,
     tail_mass_truncation: float | None = None,
-    num_mc_samples: int | None = None,
     seed: int | None = None,
     max_conv_grid: int | None = None,
+    mc_resolution: float | None = None,
+    mc_failure_probability: float | None = None,
 ) -> DiscretizationConfig:
     """Get discretization config with hierarchical resolution.
 
@@ -145,9 +173,11 @@ def get_discretization(
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
         max_grid_size: Maximum grid size before coarsening (query-time override).
         tail_mass_truncation: Composition tail budget (query-time override).
-        num_mc_samples: Number of Monte Carlo samples (query-time override).
         seed: RNG seed for Monte Carlo (query-time override).
         max_conv_grid: Maximum convolution grid size (query-time override).
+        mc_resolution: Maximum unresolved Monte Carlo mass (query-time override).
+        mc_failure_probability: Confidence-band failure probability
+            (query-time override).
 
     Returns:
         Resolved DiscretizationConfig (always concrete, never None).
@@ -173,9 +203,10 @@ def get_discretization(
         and log_x_mass_truncation_bound is None
         and max_grid_size is None
         and tail_mass_truncation is None
-        and num_mc_samples is None
         and seed is None
         and max_conv_grid is None
+        and mc_resolution is None
+        and mc_failure_probability is None
     ):
         return base
 
@@ -195,11 +226,16 @@ def get_discretization(
         tail_mass_truncation=tail_mass_truncation
         if tail_mass_truncation is not None
         else base.tail_mass_truncation,
-        num_mc_samples=num_mc_samples
-        if num_mc_samples is not None
-        else base.num_mc_samples,
         seed=seed if seed is not None else base.seed,
         max_conv_grid=max_conv_grid
         if max_conv_grid is not None
         else base.max_conv_grid,
+        mc_resolution=mc_resolution
+        if mc_resolution is not None
+        else base.mc_resolution,
+        mc_failure_probability=(
+            mc_failure_probability
+            if mc_failure_probability is not None
+            else base.mc_failure_probability
+        ),
     )

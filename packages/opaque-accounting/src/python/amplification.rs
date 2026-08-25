@@ -101,7 +101,7 @@ pub fn py_parallel_poisson_gaussian_pld(
 ///     gram (list[float]): Flattened row-major b×b Gram matrix.
 ///     num_bins (int): Number of bins b.
 ///     sigma (float): Noise multiplier σ, must be > 0.
-///     config (DiscretizationConfig): Discretization configuration (includes num_mc_samples and seed).
+///     config (DiscretizationConfig): Discretization and Monte Carlo confidence configuration.
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution (asymmetric, remove + add).
@@ -128,7 +128,7 @@ pub fn py_bnb_mc_pld(
 ///     n_steps: Total training iterations n.
 ///     p: Per-iteration Poisson inclusion probability p (Algorithm 2), not the per-example rate p_0.
 ///     sigma: Raw noise multiplier σ (same as BandMf noise_multiplier).
-///     config: Discretization configuration (includes num_mc_samples and seed).
+///     config: Discretization and Monte Carlo confidence configuration.
 #[pyfunction]
 #[pyo3(name = "bandmf_b_min_sep_warm_mc_pld", signature = (strategy_coef, n_steps, p, sigma, config))]
 pub fn py_bandmf_b_min_sep_warm_mc_pld(

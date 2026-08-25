@@ -48,7 +48,8 @@ impl PyPld {
     ///     delta (float): Failure probability (typically 1e-5 to 1e-7).
     ///
     /// Returns:
-    ///     float: Epsilon value.
+    ///     float: Epsilon value. Monte Carlo PLDs return infinity when
+    ///         ``delta`` is at or below their reported unresolved mass.
     #[pyo3(text_signature = "(self, delta)")]
     fn epsilon_at(&self, delta: f64) -> f64 {
         self.inner.epsilon_at(delta)
@@ -78,6 +79,29 @@ impl PyPld {
     #[getter]
     fn infinity_mass(&self) -> f64 {
         self.inner.infinity_mass()
+    }
+
+    /// Failure probability of the Monte Carlo confidence event.
+    ///
+    /// Zero for analytic PLDs. This probability is statistical metadata and is
+    /// distinct from the mechanism's DP delta.
+    #[getter]
+    fn mc_failure_probability(&self) -> f64 {
+        self.inner.estimation_failure_probability()
+    }
+
+    /// Confidence level of the Monte Carlo PLD bound.
+    #[getter]
+    fn mc_confidence(&self) -> f64 {
+        self.inner.estimation_confidence()
+    }
+
+    /// Unresolved Monte Carlo mass in delta units.
+    ///
+    /// Zero for analytic PLDs.
+    #[getter]
+    fn mc_resolution(&self) -> f64 {
+        self.inner.mc_resolution()
     }
 
     /// Total-variation advantage.

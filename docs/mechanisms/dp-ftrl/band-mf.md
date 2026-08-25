@@ -131,16 +131,16 @@ for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
 Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 `examples/train_dpftrl.py`).
 
-!!! warning
-    Monte Carlo PLDs are empirical point estimates. Their conservative grid
-    bucketing does not replace the RC-4 confidence correction, so reported ε
-    values are not upper confidence bounds.
+!!! note "Monte Carlo confidence"
+    Monte Carlo PLDs use simultaneous one-sided order-statistic bounds. Their
+    unresolved mass is reported through `Pld.mc_resolution` and placed at
+    `+∞`; queries at or below that delta floor return infinite ε.
 
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
-| `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000`, override per query via `epsilon_at(delta, num_mc_samples=..., seed=...)` |
+| `b_min_sep()` | Yes | Confidence-bounded MC PLD; samples derive from `mc_resolution=1e-6` and `mc_failure_probability=1e-6` |
 
-For large `n_steps × num_mc_samples`, the implementation keeps **one copy** of
+For large `n_steps × resolved_num_mc_samples`, the implementation keeps **one copy** of
 the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them
 for every noise-multiplier probe during calibration (no Python list blow-up).
 Optional cap: set `OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES` (default ~4 GiB);
@@ -159,7 +159,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 ## Assumptions and limitations
 
-- **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. For Monte Carlo amplifications, RC-4 confidence correction is still required before a reported ε is an upper confidence bound.
+- **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. Monte Carlo guarantees hold with the confidence reported on the returned PLD.
 - **`lr_schedule` (optional)**: optimization applies the schedule on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\). The strategy remains Toeplitz, while its objective weights each step's squared error by \(\eta_t^2\). Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.
 - **Momentum \(\beta=0\)**: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).
 

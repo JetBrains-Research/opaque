@@ -46,6 +46,7 @@ be reduced to cheaper operations using structural equality (``==``):
 from __future__ import annotations
 
 import dataclasses
+import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -149,8 +150,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         """Compute the Privacy Loss Distribution.
 
@@ -168,10 +170,14 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
         ...
 
@@ -183,8 +189,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> float:
         """Smallest ε achieving (ε, δ)-DP.
 
@@ -194,18 +201,30 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
+        from .discretization import get_discretization
+
+        configured_resolution = get_discretization(
+            mc_resolution=mc_resolution
+        ).mc_resolution
+        effective_resolution = (
+            min(configured_resolution, delta / 2.0)
+            if delta > 0.0
+            else configured_resolution
+        )
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=effective_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).epsilon_at(delta)
 
     def delta_at(
@@ -216,8 +235,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> float:
         """Smallest δ achieving (ε, δ)-DP.
 
@@ -227,18 +247,20 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).delta_at(epsilon)
 
     def advantage(
@@ -248,8 +270,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> float:
         """Total-variation advantage (f-DP).
 
@@ -258,18 +281,20 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).advantage()
 
     def beta_at(
@@ -280,8 +305,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> float:
         """Type-II error at given Type-I error α.
 
@@ -291,18 +317,20 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).beta_at(alpha)
 
     def risk_at(
@@ -313,8 +341,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> float:
         """Bayes risk under optimal adversary.
 
@@ -324,18 +353,20 @@ class DpProcess(ABC):
             log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
             max_grid_size: Maximum grid size before coarsening (query-time override).
             max_conv_grid: Maximum convolution grid size for random-allocation PLD (query-time override).
-            num_mc_samples: Monte Carlo sample count for MC-based accounting
-                (query-time override; ignored by analytic PLDs).
             seed: RNG seed for Monte Carlo reproducibility
                 (query-time override; ignored by analytic PLDs).
+            mc_resolution: Maximum unresolved Monte Carlo mass.
+            mc_failure_probability: Failure probability of the simultaneous
+                Monte Carlo confidence band.
         """
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).risk_at(prior)
 
     # -- Composition operators -----------------------------------------------
@@ -371,8 +402,9 @@ class DpProcess(ABC):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         """PLD for ``count`` independent applications of this process.
 
@@ -382,13 +414,20 @@ class DpProcess(ABC):
         depends on the deployed N-step strategy's correlation matrix)
         override this to compute the true K-step PLD directly.
         """
+        from .discretization import get_discretization
+
+        configured_resolution = get_discretization(
+            mc_resolution=mc_resolution
+        ).mc_resolution
+        per_release_resolution = -math.expm1(math.log1p(-configured_resolution) / count)
         return self.pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=per_release_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).self_compose(count)
 
     def __mul__(self, count: int) -> DpProcess:

@@ -77,17 +77,22 @@ pub struct DiscretizationConfig {
     /// production depth (large t), or lower for faster exploratory runs.
     pub max_conv_grid: usize,
 
-    /// Number of Monte Carlo samples for MC-based PLD computation.
-    ///
-    /// Used by BnB Monte Carlo and b-min-sep accounting.
-    /// Ignored by analytic PLD paths (Gaussian, Poisson).
-    /// Default: 100,000.
-    pub num_mc_samples: usize,
-
     /// RNG seed for reproducibility of Monte Carlo PLD computation.
     ///
     /// Default: 42.
     pub seed: u64,
+
+    /// Maximum unresolved Monte Carlo probability mass.
+    ///
+    /// This has the same units as DP delta. The confidence-bounded empirical
+    /// PLD moves at most this mass to +infinity. Default: 1e-6.
+    pub mc_resolution: f64,
+
+    /// Failure probability of the simultaneous Monte Carlo confidence band.
+    ///
+    /// This is statistical confidence metadata, not mechanism delta. Default:
+    /// 1e-6.
+    pub mc_failure_probability: f64,
 }
 
 impl DiscretizationConfig {
@@ -116,8 +121,9 @@ impl DiscretizationConfig {
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
             max_conv_grid: 32_768,
-            num_mc_samples: 100_000,
             seed: 42,
+            mc_resolution: 1e-6,
+            mc_failure_probability: 1e-6,
         })
     }
 
@@ -131,6 +137,70 @@ impl DiscretizationConfig {
     pub fn with_max_conv_grid(mut self, max_conv_grid: usize) -> Self {
         self.max_conv_grid = max_conv_grid;
         self
+    }
+
+    /// Validate Monte Carlo confidence parameters and resolve the sample count.
+    ///
+    /// `num_directions` is two for Opaque's asymmetric add/remove accountants.
+    /// The simultaneous band allocates failure probability across every order
+    /// statistic and direction. The last order statistic has lower CDF bound
+    /// `(failure / (num_directions * n))^(1/n)`, so its unresolved tail is
+    /// `1 - (...)`; binary search finds the smallest `n` meeting the requested
+    /// resolution.
+    pub fn resolved_num_mc_samples(&self, num_directions: usize) -> Result<usize> {
+        if num_directions == 0 {
+            return Err(PldError::InvalidParameter(
+                "num_directions must be > 0".into(),
+            ));
+        }
+        self.validate_mc_parameters()?;
+
+        let residual = |n: usize| {
+            let per_rank = self.mc_failure_probability / (num_directions as f64 * n as f64);
+            -(per_rank.ln() / n as f64).exp_m1()
+        };
+
+        let mut upper = 1usize;
+        while residual(upper) > self.mc_resolution {
+            upper = upper.checked_mul(2).ok_or_else(|| {
+                PldError::InvalidParameter(format!(
+                    "requested mc_resolution={} requires too many samples",
+                    self.mc_resolution
+                ))
+            })?;
+        }
+        let mut lower = 1usize;
+        while lower < upper {
+            let midpoint = lower + (upper - lower) / 2;
+            if residual(midpoint) <= self.mc_resolution {
+                upper = midpoint;
+            } else {
+                lower = midpoint + 1;
+            }
+        }
+
+        Ok(lower)
+    }
+
+    /// Validate statistical confidence parameters without resolving work.
+    pub fn validate_mc_parameters(&self) -> Result<()> {
+        if !self.mc_resolution.is_finite() || self.mc_resolution <= 0.0 || self.mc_resolution >= 1.0
+        {
+            return Err(PldError::InvalidParameter(format!(
+                "mc_resolution must be finite and in (0, 1), got {}",
+                self.mc_resolution
+            )));
+        }
+        if !self.mc_failure_probability.is_finite()
+            || self.mc_failure_probability <= 0.0
+            || self.mc_failure_probability >= 1.0
+        {
+            return Err(PldError::InvalidParameter(format!(
+                "mc_failure_probability must be finite and in (0, 1), got {}",
+                self.mc_failure_probability
+            )));
+        }
+        Ok(())
     }
 
     /// Compute the effective discretization adapted to the given epsilon bounds.
@@ -157,8 +227,9 @@ impl Default for DiscretizationConfig {
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
             max_conv_grid: 32_768,
-            num_mc_samples: 100_000,
             seed: 42,
+            mc_resolution: 1e-6,
+            mc_failure_probability: 1e-6,
         }
     }
 }
@@ -193,6 +264,27 @@ mod tests {
         assert_eq!(config.discretization, 1e-4);
         assert_eq!(config.log_mass_truncation_bound, -50.0);
         assert_eq!(config.max_conv_grid, 32_768);
+        assert_eq!(config.mc_resolution, 1e-6);
+        assert_eq!(config.mc_failure_probability, 1e-6);
+    }
+
+    #[test]
+    fn test_resolved_mc_samples_meets_resolution() {
+        let config = DiscretizationConfig {
+            mc_resolution: 1e-3,
+            mc_failure_probability: 1e-4,
+            ..DiscretizationConfig::default()
+        };
+        let n = config.resolved_num_mc_samples(2).unwrap();
+        let per_rank = config.mc_failure_probability / (2.0 * n as f64);
+        let residual = -(per_rank.ln() / n as f64).exp_m1();
+        assert!(residual <= config.mc_resolution);
+        if n > 1 {
+            let previous = n - 1;
+            let per_rank = config.mc_failure_probability / (2.0 * previous as f64);
+            let residual = -(per_rank.ln() / previous as f64).exp_m1();
+            assert!(residual > config.mc_resolution);
+        }
     }
 
     #[test]

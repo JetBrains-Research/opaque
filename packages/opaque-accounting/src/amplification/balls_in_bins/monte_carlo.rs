@@ -36,12 +36,14 @@ use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
+use statrs::distribution::{Beta, ContinuousCDF};
+use std::collections::BTreeMap;
 
 use super::cyclic_cholesky::CyclicBandedCholesky;
 
 /// Number of samples assigned to one deterministic Monte Carlo stream.
 ///
-/// The shard count must depend only on `num_mc_samples`, not on the Rayon
+/// The shard count must depend only on the resolved sample count, not on the Rayon
 /// worker count: users expect a fixed seed to select the same samples on every
 /// machine.
 const SAMPLES_PER_SHARD: usize = 1024;
@@ -144,7 +146,7 @@ fn sample_privacy_loss_add(
 /// * `gram` — b×b Gram matrix (row-major, symmetric positive definite)
 /// * `num_bins` — Number of bins b
 /// * `sigma` — Noise multiplier
-/// * `config` — Discretization configuration (includes `num_mc_samples` and `seed`)
+/// * `config` — Discretization and Monte Carlo confidence configuration
 pub fn bnb_mc_pld(
     gram: &[f64],
     num_bins: usize,
@@ -152,7 +154,7 @@ pub fn bnb_mc_pld(
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
     let b = num_bins;
-    let num_samples = config.num_mc_samples;
+    let num_samples = config.resolved_num_mc_samples(2)?;
     let seed = config.seed;
 
     if gram.len() != b * b {
@@ -168,10 +170,6 @@ pub fn bnb_mc_pld(
             sigma
         )));
     }
-    if num_samples == 0 {
-        return Err(PldError::InvalidParameter("num_samples must be > 0".into()));
-    }
-
     // Cyclically banded Cholesky: the Gram wraps, so a linear band would
     // discard the corner (up to ~68% of the diagonal for λ-CGD).
     let chol = CyclicBandedCholesky::compute(gram, b, 1e-6)?;
@@ -191,7 +189,6 @@ pub fn bnb_mc_pld(
         )));
     }
 
-    let disc = config.discretization;
     let sigma2 = sigma * sigma;
     let inv_2sig2 = 1.0 / (2.0 * sigma2);
 
@@ -250,13 +247,18 @@ pub fn bnb_mc_pld(
         });
 
     // Build PMFs from samples
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
+    let (pmf_remove, remove_resolution) = samples_to_pmf(&mut remove_samples, config, 2)?;
+    let (pmf_add, add_resolution) = samples_to_pmf(&mut add_samples, config, 2)?;
 
-    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
+    Ok(
+        PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add).with_monte_carlo_guarantee(
+            config.mc_failure_probability,
+            remove_resolution.max(add_resolution),
+        ),
+    )
 }
 
-/// Convert MC samples into a discrete PMF on the PLD grid.
+/// Convert MC samples into a simultaneous upper-confidence PLD.
 ///
 /// # Errors
 ///
@@ -268,12 +270,14 @@ pub fn bnb_mc_pld(
 /// outright and `-inf` vanished, so the PMF silently lost mass and `Pmf::new`
 /// does no renormalisation.
 pub(crate) fn samples_to_pmf(
-    samples: &[f64],
-    discretization: f64,
-    max_grid_size: usize,
-) -> Result<Pmf> {
+    samples: &mut [f64],
+    config: &DiscretizationConfig,
+    num_directions: usize,
+) -> Result<(Pmf, f64)> {
     if samples.is_empty() {
-        return Ok(Pmf::new(discretization, 0, vec![1.0], 0.0, max_grid_size));
+        return Err(PldError::InvalidParameter(
+            "Monte Carlo samples must be non-empty".into(),
+        ));
     }
 
     if let Some((idx, bad)) = samples
@@ -291,58 +295,88 @@ pub(crate) fn samples_to_pmf(
         )));
     }
 
-    let n = samples.len() as f64;
-
-    let min_sample = samples.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_sample = samples.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-    let grid_lo = (min_sample / discretization).floor() as i64 - 1;
-    let grid_hi = (max_sample / discretization).ceil() as i64 + 1;
-    let num_buckets = (grid_hi - grid_lo + 1) as usize;
-
-    let effective_grid_size = num_buckets.min(max_grid_size);
-    let effective_disc = if num_buckets > max_grid_size {
-        (max_sample - min_sample) / (max_grid_size as f64 - 2.0)
-    } else {
-        discretization
-    };
-    let effective_lo = if num_buckets > max_grid_size {
-        (min_sample / effective_disc).floor() as i64 - 1
-    } else {
-        grid_lo
-    };
-
-    let mut probs = vec![0.0f64; effective_grid_size];
-    let mut infinity_mass = 0.0f64;
-
-    for &y in samples {
-        let bucket_idx = (y / effective_disc).ceil() as i64 - effective_lo;
-
-        if bucket_idx < 0 {
-            probs[0] += 1.0 / n;
-        } else if bucket_idx >= effective_grid_size as i64 {
-            infinity_mass += 1.0 / n;
-        } else {
-            probs[bucket_idx as usize] += 1.0 / n;
-        }
+    if num_directions == 0 {
+        return Err(PldError::InvalidParameter(
+            "num_directions must be > 0".into(),
+        ));
+    }
+    let required = config.resolved_num_mc_samples(num_directions)?;
+    if samples.len() < required {
+        return Err(PldError::InvalidParameter(format!(
+            "{} samples are insufficient; {} are required for \
+             mc_resolution={} and mc_failure_probability={}",
+            samples.len(),
+            required,
+            config.mc_resolution,
+            config.mc_failure_probability
+        )));
     }
 
-    // `Pmf::new` performs no renormalisation, so the histogram has to account
-    // for every sample itself.
-    let total: f64 = probs.iter().sum::<f64>() + infinity_mass;
-    debug_assert!(
-        (total - 1.0).abs() < 1e-9,
-        "samples_to_pmf lost mass: total = {}",
-        total
-    );
+    samples.sort_unstable_by(f64::total_cmp);
+    let n = samples.len();
+    let min_sample = samples[0];
+    let max_sample = samples[n - 1];
 
-    Ok(Pmf::new(
-        effective_disc,
-        effective_lo,
-        probs,
-        infinity_mass,
-        max_grid_size,
-    ))
+    let grid_lo = (min_sample / config.discretization).floor() as i64 - 1;
+    let grid_hi = (max_sample / config.discretization).ceil() as i64 + 1;
+    let num_buckets = (grid_hi - grid_lo + 1) as usize;
+
+    let effective_disc = if num_buckets > config.max_grid_size {
+        if config.max_grid_size < 3 {
+            return Err(PldError::InvalidParameter(
+                "max_grid_size must be at least 3 for Monte Carlo PLDs".into(),
+            ));
+        }
+        let ratio = (num_buckets as f64 / config.max_grid_size as f64).ceil() as usize;
+        config.discretization * ratio.next_power_of_two() as f64
+    } else {
+        config.discretization
+    };
+
+    // For rank j, F(X_(j)) has a Beta(j, n-j+1) lower confidence
+    // bound. Bonferroni allocation over every rank and adjacency direction
+    // makes all bounds simultaneous without relying on the data-dependent set
+    // of occupied grid buckets.
+    let per_rank_failure = config.mc_failure_probability / (num_directions as f64 * n as f64);
+    let mut masses = BTreeMap::new();
+    let mut previous_cdf_bound = 0.0f64;
+    let mut start = 0usize;
+    while start < n {
+        let bucket = (samples[start] / effective_disc).ceil() as i64;
+        let mut end = start + 1;
+        while end < n && (samples[end] / effective_disc).ceil() as i64 == bucket {
+            end += 1;
+        }
+        let beta = Beta::new(end as f64, (n - end + 1) as f64)
+            .map_err(|err| PldError::NumericalError(format!("invalid Beta bound: {err}")))?;
+        let cdf_bound = beta
+            .inverse_cdf(per_rank_failure)
+            .max(previous_cdf_bound)
+            .clamp(0.0, 1.0);
+        let mass = cdf_bound - previous_cdf_bound;
+        if mass > 0.0 {
+            masses.insert(bucket, mass);
+        }
+        previous_cdf_bound = cdf_bound;
+        start = end;
+    }
+
+    let infinity_mass = (1.0 - previous_cdf_bound).clamp(0.0, 1.0);
+    if infinity_mass > config.mc_resolution * (1.0 + 1e-10) {
+        return Err(PldError::NumericalError(format!(
+            "Monte Carlo confidence construction achieved resolution {}, \
+             exceeding requested {}",
+            infinity_mass, config.mc_resolution
+        )));
+    }
+    let pmf = Pmf::from_sparse(effective_disc, masses, infinity_mass, config.max_grid_size);
+    let total: f64 = pmf.probs.iter().sum::<f64>() + pmf.infinity_mass;
+    if (total - 1.0).abs() > 1e-9 {
+        return Err(PldError::NumericalError(format!(
+            "confidence PLD lost mass: total={total}"
+        )));
+    }
+    Ok((pmf, infinity_mass))
 }
 
 #[cfg(test)]
@@ -350,7 +384,11 @@ mod tests {
     use super::*;
 
     fn default_config() -> DiscretizationConfig {
-        DiscretizationConfig::default()
+        DiscretizationConfig {
+            mc_resolution: 5e-3,
+            mc_failure_probability: 1e-2,
+            ..DiscretizationConfig::default()
+        }
     }
 
     /// The window that used to produce |L| ~ 1e219 and `inf`.
@@ -367,14 +405,13 @@ mod tests {
     fn test_no_blowup_in_former_non_psd_window() {
         use crate::matrix_factorization::lambda_cgd_gram_matrix;
 
-        let mut cfg = default_config();
-        cfg.num_mc_samples = 2000;
+        let cfg = default_config();
         for &b in &[278usize, 280, 282, 285, 290, 295] {
             let e = 4;
             let gram = lambda_cgd_gram_matrix(0.9, b * e, b, Some(e), true, 0.0).unwrap();
             let pld = bnb_mc_pld(&gram, b, 1.5, &cfg)
                 .unwrap_or_else(|err| panic!("b={} failed: {}", b, err));
-            let eps = pld.epsilon_at(1e-5);
+            let eps = pld.epsilon_at(1e-2);
             assert!(eps.is_finite() && eps > 0.0, "b={}: eps={}", b, eps);
         }
     }
@@ -383,8 +420,10 @@ mod tests {
     #[test]
     fn test_samples_to_pmf_rejects_non_finite() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let samples = vec![0.1, 0.2, bad, 0.3];
-            let err = samples_to_pmf(&samples, 1e-4, 10_000);
+            let mut samples = vec![0.1, 0.2, bad, 0.3];
+            let mut config = default_config();
+            config.mc_resolution = 0.99;
+            let err = samples_to_pmf(&mut samples, &config, 2);
             assert!(err.is_err(), "{} must be rejected", bad);
         }
     }
@@ -392,10 +431,18 @@ mod tests {
     /// Every finite sample lands somewhere: the histogram conserves mass.
     #[test]
     fn test_samples_to_pmf_conserves_mass() {
-        let samples: Vec<f64> = (0..1000).map(|i| (i as f64 - 500.0) * 0.01).collect();
-        let pmf = samples_to_pmf(&samples, 1e-3, 10_000).unwrap();
+        let mut samples: Vec<f64> = (0..1000).map(|i| (i as f64 - 500.0) * 0.01).collect();
+        let mut config = default_config();
+        config.mc_resolution = 0.02;
+        let (pmf, resolution) = samples_to_pmf(&mut samples, &config, 2).unwrap();
         let total: f64 = pmf.probs.iter().sum::<f64>() + pmf.infinity_mass;
         assert!((total - 1.0).abs() < 1e-9, "total mass = {}", total);
+        assert!(resolution > 0.0);
+        assert!(resolution <= config.mc_resolution);
+        assert!(PrivacyLossDistribution::new_symmetric(pmf)
+            .with_monte_carlo_guarantee(config.mc_failure_probability, resolution)
+            .epsilon_at(resolution)
+            .is_infinite());
     }
 
     #[test]
@@ -430,7 +477,7 @@ mod tests {
         }
         let config = default_config();
         let pld = bnb_mc_pld(&gram, b, 1.0, &config).unwrap();
-        let eps = pld.epsilon_at(1e-5);
+        let eps = pld.epsilon_at(1e-2);
         assert!(eps > 0.0 && eps.is_finite(), "eps = {}", eps);
     }
 
@@ -446,7 +493,6 @@ mod tests {
         }
         let mut config = default_config();
         config.discretization = 1e-3;
-        config.num_mc_samples = 4096;
         config.seed = 173;
 
         let single_thread = rayon::ThreadPoolBuilder::new()
@@ -494,8 +540,8 @@ mod tests {
         }
         let config = default_config();
 
-        let eps_low = bnb_mc_pld(&gram, b, 0.5, &config).unwrap().epsilon_at(1e-5);
-        let eps_high = bnb_mc_pld(&gram, b, 2.0, &config).unwrap().epsilon_at(1e-5);
+        let eps_low = bnb_mc_pld(&gram, b, 0.5, &config).unwrap().epsilon_at(1e-2);
+        let eps_high = bnb_mc_pld(&gram, b, 2.0, &config).unwrap().epsilon_at(1e-2);
         assert!(
             eps_high < eps_low,
             "More noise: {} should be < {}",
@@ -509,9 +555,9 @@ mod tests {
         let config = default_config();
         assert!(bnb_mc_pld(&[1.0], 2, 1.0, &config).is_err());
         assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 0.0, &config).is_err());
-        let mut zero_mc = default_config();
-        zero_mc.num_mc_samples = 0;
-        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, &zero_mc).is_err());
+        let mut invalid_mc = default_config();
+        invalid_mc.mc_resolution = 0.0;
+        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, &invalid_mc).is_err());
     }
 
     #[test]
@@ -528,7 +574,35 @@ mod tests {
         }
         let config = default_config();
         let pld = bnb_mc_pld(&gram, b, 1.0, &config).unwrap();
-        let eps = pld.epsilon_at(1e-5);
+        let eps = pld.epsilon_at(1e-2);
         assert!(eps > 0.0 && eps.is_finite());
+    }
+
+    #[test]
+    fn test_identity_gram_confidence_bound_is_above_exact_oracle() {
+        use crate::amplification::random_allocation_gaussian_pld;
+
+        let b = 4;
+        let epochs: f64 = 2.0;
+        let sigma = 1.5;
+        let gram: Vec<f64> = (0..b)
+            .flat_map(|i| (0..b).map(move |j| if i == j { epochs } else { 0.0 }))
+            .collect();
+        let config = default_config();
+        let bounded = bnb_mc_pld(&gram, b, sigma, &config).unwrap();
+        let exact = random_allocation_gaussian_pld(sigma / epochs.sqrt(), b, 1, &config).unwrap();
+        for delta in [0.01, 0.02, 0.05] {
+            assert!(
+                bounded.epsilon_at(delta) >= exact.epsilon_at(delta) - 1e-10,
+                "delta={delta}: bounded={} exact={}",
+                bounded.epsilon_at(delta),
+                exact.epsilon_at(delta)
+            );
+        }
+        assert_eq!(
+            bounded.estimation_failure_probability(),
+            config.mc_failure_probability
+        );
+        assert!(bounded.mc_resolution() <= config.mc_resolution);
     }
 }

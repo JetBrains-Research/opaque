@@ -138,8 +138,9 @@ class BallsInBins(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         """K-step BnB PLD using N-tuned strategy quantities.
 
@@ -151,8 +152,8 @@ class BallsInBins(DpHorizonProcess):
         column is read at ``self.n_steps`` and the K-prefix gram is
         built via the closed-form Toeplitz gram on those coefficients,
         evaluated at participation context ``(K, num_bins, K_epochs)``.
-        K-prefix outputs are projections of the deployed mechanism, but finite
-        Monte Carlo PLDs are point estimates and need not preserve monotonicity.
+        Correlated-strategy Monte Carlo paths use the full-horizon confidence
+        bound for every nonzero prefix. Identity retains its exact prefix path.
         """
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -168,12 +169,25 @@ class BallsInBins(DpHorizonProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         )
         native_cfg = config.to_native()
 
         s = self.inner.strategy
+
+        if not isinstance(s, IdentityStrategy) and rounded < self.n_steps:
+            return self.pld_at(
+                self.n_steps,
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+                max_conv_grid=max_conv_grid,
+                seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
+            )
 
         # Identity (C = I) collapses onto random allocation, exactly.
         #
@@ -227,6 +241,7 @@ class BallsInBins(DpHorizonProcess):
                 min_sep=min_sep_K,
                 max_participations=max_participations_K,
             )
+        config.warn_if_large_mc()
         return _native.bnb_mc_pld(
             list(gram),
             self.num_bins,
@@ -241,18 +256,20 @@ class BallsInBins(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
-        """Return a point estimate, not an upper confidence bound."""
+        """Return the full-horizon PLD, confidence-bounded for MC strategies."""
         return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         )
 
 
