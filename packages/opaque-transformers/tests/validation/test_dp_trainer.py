@@ -2806,3 +2806,40 @@ class TestPredictStopStep:
             horizon=horizon,
         )
         assert resumed == fresh
+
+    def test_horizon_resume_advances_the_saved_run(self):
+        """Prediction replaces K with K+j for one correlated deployment."""
+        import opaque.accounting as accounting
+        import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.api.transformers.trainer._dp_trainer import predict_stop_step
+        from opaque.dpftrl.noise import identity_strategy
+
+        process = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            sample_rate=0.02,
+            n_steps=30,
+        )
+        run = accounting.per_step(process)
+        delta, horizon = 1e-5, 30
+        eps = [run.prefix(k).epsilon_at(delta) for k in range(1, horizon + 1)]
+        target = (eps[14] + eps[15]) / 2.0
+        fresh = predict_stop_step(
+            None,
+            run,
+            target_epsilon=target,
+            delta=delta,
+            k0=0,
+            horizon=horizon,
+        )
+
+        k0 = 5
+        resumed = predict_stop_step(
+            run.prefix(k0),
+            run,
+            target_epsilon=target,
+            delta=delta,
+            k0=k0,
+            horizon=horizon,
+        )
+
+        assert resumed == fresh

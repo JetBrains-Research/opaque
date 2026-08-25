@@ -502,9 +502,11 @@ class TestKPrefixInvariants:
             pytest.skip("covered by the slow identity-composition case")
         proc = _build(amp, mech)
         delta = _MC_DELTA if _is_mc_proc(proc) else _DELTA
-        step = acc.per_step(proc)
-        # step * K1 | step * K2 composes (same proc → merges to Repeated).
-        combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
+        # Two separately deployed, equal-configured horizon processes compose
+        # independently. A single run would be advanced through Accountant.
+        combined = (acc.per_step(proc) * (proc.n_steps // 2)) | (
+            acc.per_step(proc) * proc.atomic_unit
+        )
         assert math.isfinite(combined.epsilon_at(delta))
 
 
@@ -512,8 +514,9 @@ class TestKPrefixInvariants:
 @pytest.mark.usefixtures("_seed_mc")
 def test_balls_in_bins_identity_supports_composition():
     proc = _build("BallsInBins", "IdentityMf")
-    step = acc.per_step(proc)
-    combined = (step * (proc.n_steps // 2)) | (step * proc.atomic_unit)
+    combined = (acc.per_step(proc) * (proc.n_steps // 2)) | (
+        acc.per_step(proc) * proc.atomic_unit
+    )
     assert math.isfinite(combined.epsilon_at(_DELTA))
 
 

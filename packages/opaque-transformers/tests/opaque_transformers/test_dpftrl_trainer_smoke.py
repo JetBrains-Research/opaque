@@ -23,7 +23,8 @@ import torch
 from torch.utils.data import Dataset
 
 from opaque.accounting import Accountant
-from opaque.accounting.types import CachedProcess, Repeated
+from opaque.accounting.types import HorizonPrefix
+from opaque.api.transformers.trainer import _checkpoint as ckpt
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
 from opaque.serialization import from_state_dict
 from opaque.transformers import TrainingArguments
@@ -341,7 +342,10 @@ class TestDpFtrlCheckpointRoundTrip:
         checkpoint = outdir / "checkpoint-4"
         with (checkpoint / "accountant.json").open() as stream:
             saved = from_state_dict(Accountant(), json.load(stream))
-        assert isinstance(saved.process, CachedProcess)
+        assert isinstance(saved.process, HorizonPrefix)
+        assert saved.process.steps == 4
+        runtime = ckpt.load_dp_runtime_state(str(checkpoint / ckpt.DP_STATE_NAME))
+        assert runtime.horizon_run_id == saved.process.run_id
 
         torch.manual_seed(0)
         resumed_trainer = DPTrainer(
@@ -354,10 +358,9 @@ class TestDpFtrlCheckpointRoundTrip:
         resumed = resumed_trainer.train(resume_from_checkpoint=str(checkpoint))
 
         process = resumed_trainer._accountant.process
-        while isinstance(process, CachedProcess):
-            process = process.inner
-        assert isinstance(process, Repeated)
-        assert process.count == 8
+        assert isinstance(process, HorizonPrefix)
+        assert process.steps == 8
+        assert process.run_id == saved.process.run_id
         assert resumed.metrics["privacy_epsilon"] == pytest.approx(
             fresh.metrics["privacy_epsilon"], rel=1e-9
         )

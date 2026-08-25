@@ -233,7 +233,7 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
-    # Cached per-step ``DpProcess`` reused across step compositions.
+    # Reusable process or horizon-run handle advanced by the accountant.
     step_process: Any
     target_delta: float
     sample_rate: float
@@ -273,12 +273,13 @@ def predict_stop_step(
 ) -> int | None:
     """Predict the first accounted step where ε reaches ``target_epsilon``.
 
-    The accountant after ``k`` accrued steps is exactly
-    ``prefix ∘ step_process^(k - k0)`` — the per-step ``|=`` fold and the
-    ``Repeated`` (``*``) operator produce the same process — so for a
-    deterministic, monotone ε(k) the crossing step can be binary-searched
-    once at setup (~log2(horizon) ``epsilon_at`` probes) instead of being
-    measured during the training loop.
+    The accountant after ``k`` accrued steps is exactly the saved prefix
+    advanced by ``k - k0`` releases. For ordinary mechanisms this is
+    sequential composition; for a horizon run it replaces the active
+    ``K``-prefix with ``K + (k - k0)``. A deterministic, monotone ε(k) can
+    therefore be binary-searched once at setup (~log2(horizon)
+    ``epsilon_at`` probes) instead of being measured during the training
+    loop.
 
     Returns the absolute step count in ``(k0, horizon]``, or ``None`` when
     the target is not reached within the horizon or the ε sequence fails
@@ -293,11 +294,18 @@ def predict_stop_step(
 
     def eps(j: int) -> float:
         if j not in cache:
-            proc = (
-                step_process * j
-                if prefix_process is None
-                else prefix_process | (step_process * j)
-            )
+            from opaque.api.accounting.core.composition._per_step import PerStep
+
+            if isinstance(step_process, PerStep):
+                proc = (
+                    Accountant(prefix=prefix_process).advance(step_process, j).process
+                )
+            else:
+                proc = (
+                    step_process * j
+                    if prefix_process is None
+                    else prefix_process | (step_process * j)
+                )
             cache[j] = proc.epsilon_at(delta)
         return cache[j]
 
@@ -1103,6 +1111,11 @@ class DPTrainer:
 
         ctx = self._setup_training(
             prefix_accountant=prefix_accountant,
+            resume_noise_multiplier=(
+                runtime_payload.noise_multiplier
+                if runtime_payload is not None
+                else None
+            ),
             global_step_already_done=(
                 self.state.global_step if resume_path is not None else 0
             ),
@@ -1268,6 +1281,7 @@ class DPTrainer:
         self,
         *,
         prefix_accountant: Accountant | None = None,
+        resume_noise_multiplier: float | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
         sampler_restart_step: int | None = None,
@@ -1492,6 +1506,7 @@ class DPTrainer:
             total_steps,
             target_delta,
             prefix_accountant=prefix_accountant,
+            saved_noise_multiplier=resume_noise_multiplier,
             global_step_already_done=global_step_already_done,
         )
         calibration_source = (
@@ -4325,14 +4340,58 @@ class DPTrainer:
         target_delta,
         *,
         prefix_accountant: Accountant | None = None,
+        saved_noise_multiplier: float | None = None,
         global_step_already_done: int = 0,
     ):
         """Calibrate or return fixed noise multiplier.
 
-        When ``prefix_accountant`` is given, calibrates over the *remaining*
-        steps with the saved process composed on the left, so the run's final ε
-        equals ``privacy_target_epsilon``.
+        For ordinary sequential mechanisms, a saved prefix is composed with
+        the remaining steps during recalibration. A correlated horizon prefix
+        is one already-deployed mechanism and cannot change calibration
+        midstream, so resume validates and reuses its saved multiplier.
         """
+        active_horizon = (
+            prefix_accountant.active_horizon_prefix
+            if prefix_accountant is not None and global_step_already_done > 0
+            else None
+        )
+        if active_horizon is not None:
+            from opaque.api.accounting.core.composition._per_step import (
+                PerStep,
+                _same_horizon_process,
+            )
+
+            noise_multiplier = (
+                float(a.privacy_noise_multiplier)
+                if a.privacy_noise_multiplier is not None
+                else saved_noise_multiplier
+            )
+            if noise_multiplier is None:
+                raise ValueError(
+                    "Cannot resume a horizon process without its saved noise "
+                    "multiplier. Restore a complete DP checkpoint."
+                )
+            candidate = mechanism(noise_multiplier)
+            if not isinstance(candidate, PerStep):
+                raise TypeError(
+                    "Saved accountant has an active horizon prefix, but the "
+                    "current mechanism factory is not horizon-aware."
+                )
+            if not _same_horizon_process(
+                candidate.process,
+                active_horizon.process,
+            ):
+                raise ValueError(
+                    "Horizon resume requires the saved mechanism, horizon, and "
+                    "noise multiplier unchanged. Start a fresh independent run "
+                    "to change privacy parameters."
+                )
+            log.info(
+                "Reusing saved horizon noise multiplier: %.4f",
+                noise_multiplier,
+            )
+            return noise_multiplier
+
         if a.privacy_noise_multiplier is not None:
             log.info("Using fixed noise multiplier: %.4f", a.privacy_noise_multiplier)
             return a.privacy_noise_multiplier
@@ -4953,6 +5012,20 @@ class DPTrainer:
         else:
             mf_n_steps = mf_min_sep = mf_max_participations = None
 
+        # The runtime and accountant are separate checkpoint artefacts. Store
+        # the deployment lineage in both so a mixed/stale pair cannot silently
+        # continue a numerically equal but different correlated mechanism.
+        from opaque.api.accounting.core.composition._per_step import PerStep
+
+        active_horizon = ctx.accounting.active_horizon_prefix
+        if active_horizon is not None:
+            horizon_run_id: str | None = active_horizon.run_id
+        elif isinstance(ctx.step_process, PerStep):
+            # Covers a step-zero checkpoint before the first release.
+            horizon_run_id = ctx.step_process.run_id
+        else:
+            horizon_run_id = None
+
         a = self.args
         ckpt.save_dp_runtime_state(
             str(Path(ckpt_dir) / ckpt.DP_STATE_NAME),
@@ -4969,6 +5042,7 @@ class DPTrainer:
             mf_n_steps=mf_n_steps,
             mf_min_sep=mf_min_sep,
             mf_max_participations=mf_max_participations,
+            horizon_run_id=horizon_run_id,
             lr_scheduler=a.lr_scheduler,
             learning_rate=a.learning_rate,
             warmup_steps=a.warmup_steps,
@@ -5209,6 +5283,69 @@ class DPTrainer:
 
         if accountant is not None:
             ctx.accounting = accountant
+            self._bind_restored_horizon_run(ctx, runtime)
+
+    def _bind_restored_horizon_run(
+        self,
+        ctx: _TrainingContext,
+        runtime: ckpt.RuntimeCheckpoint,
+    ) -> None:
+        """Bind the live step handle to the checkpoint's deployment lineage.
+
+        ``_setup_training`` necessarily constructs a fresh handle. A resumed
+        horizon must instead advance the serialized run; process equality
+        validates its numerical configuration, while the duplicated runtime
+        ID detects mismatched checkpoint artefacts.
+        """
+        from opaque.api.accounting.core.composition._per_step import (
+            PerStep,
+            _same_horizon_process,
+        )
+
+        active = ctx.accounting.active_horizon_prefix
+        saved_run_id = getattr(runtime, "horizon_run_id", None)
+        live = ctx.step_process
+
+        if active is None:
+            if isinstance(live, PerStep) and self.state.global_step > 0:
+                raise ValueError(
+                    "Cannot resume horizon training: the checkpoint reports "
+                    f"{self.state.global_step} completed steps, but its "
+                    "accountant has no active horizon prefix."
+                )
+            if saved_run_id is None:
+                return
+            if not isinstance(live, PerStep):
+                raise ValueError(
+                    "Checkpoint records a horizon run, but the current "
+                    "mechanism is not horizon-aware."
+                )
+            # Valid for a step-zero checkpoint whose accountant is still the
+            # identity process.
+            ctx.step_process = PerStep(live.process, run_id=saved_run_id)
+            return
+
+        if not isinstance(live, PerStep):
+            raise ValueError(
+                "Saved accountant has an active horizon prefix, but the "
+                "current mechanism is not horizon-aware."
+            )
+        if not _same_horizon_process(live.process, active.process):
+            raise ValueError(
+                "Saved horizon accountant does not match the current "
+                "mechanism configuration. Resume with the original privacy "
+                "and matrix-factorization settings."
+            )
+        if saved_run_id is not None and saved_run_id != active.run_id:
+            raise ValueError(
+                "DP checkpoint lineage mismatch: dp_state.pt and "
+                "accountant.json describe different horizon runs."
+            )
+
+        # Version-4 checkpoints have no duplicated runtime ID. Their migrated
+        # accountant prefix supplies the authoritative legacy lineage after
+        # the mechanism-equality check above.
+        ctx.step_process = active.run
 
     def _load_rng_state(self, ckpt_dir: str) -> None:
         """Restore this rank's RNG snapshot from a checkpoint.

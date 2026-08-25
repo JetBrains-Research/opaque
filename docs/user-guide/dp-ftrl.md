@@ -99,10 +99,10 @@ how DP correctness is preserved.
 
 DP-FTRL processes are *whole-process*: feeding the bare process to
 `Accountant`'s `acct |= step` would over-count. Wrap with
-`acc.per_step(...)` to get a step-shaped adapter whose
-`per_step(proc) * K` materialises the strategy-aware K-prefix PLD —
-identical in shape to the DP-SGD `acct |= step` idiom but with the
-correct K-step bound under MF correlations:
+`acc.per_step(...)` to create one deployment handle whose `run * K`
+materialises the strategy-aware K-prefix PLD —
+the same loop idiom as DP-SGD, but with the correct K-step bound under MF
+correlations:
 
 ```python
 proc = dpftrl_acc.poisson(
@@ -118,6 +118,13 @@ for batch in dataloader:
     acct |= step
     eps_so_far = acct.epsilon_at(delta=1e-5)
 ```
+
+Keep the same handle for that deployed mechanism. Its serialized run identity,
+not structural equality of strategy parameters, tells the accountant that K+1
+continues prefix K. Calling `per_step(proc)` again declares a fresh independent
+deployment and the mechanism's actual state must do the same. Cache and
+checkpoint boundaries preserve the active identity and leave its
+`HorizonPrefix` symbolic.
 
 For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
 For Monte Carlo-backed b-min-sep and correlated Balls-in-Bins, every nonzero

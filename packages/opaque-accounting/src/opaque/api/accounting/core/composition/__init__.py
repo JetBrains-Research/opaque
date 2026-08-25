@@ -7,7 +7,8 @@ The convenience functions :func:`repeat`, :func:`compose`, and
 wrapper.
 
 The composition-node dataclasses (``Composed``, ``Repeated``,
-``CachedProcess``) live in :mod:`opaque.accounting.composition.types`.
+``CachedProcess``, ``HorizonPrefix``) live in
+:mod:`opaque.accounting.composition.types`.
 """
 
 from __future__ import annotations

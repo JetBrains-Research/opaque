@@ -11,10 +11,10 @@
 An Accountant tracks the accumulated privacy loss from composed DP processes.
 It provides a functional API: composing a new process returns a fresh Accountant.
 
-Merge optimization is handled entirely by :meth:`DpProcess.__or__`:
-identical steps are collapsed using structural equality (``==``), so
-``acct | step`` in a loop produces ``Repeated(step, n)`` — one
-``self_compose(n)`` (2 FFTs) instead of *n* heterogeneous composes.
+Ordinary merge optimization is handled by :meth:`DpProcess.__or__`: identical
+steps collapse using structural equality. Whole-horizon processes instead use
+an explicit deployment identity; advancing one run replaces its K-prefix with
+K+1, while an equal-configured fresh run composes independently.
 """
 
 from __future__ import annotations
@@ -31,6 +31,10 @@ from opaque.api.accounting.core.mechanisms.types import Identity
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import DpProcess
+    from opaque.api.accounting.core.composition._per_step import (
+        HorizonPrefix,
+        PerStep,
+    )
 
 __all__ = ["Accountant"]
 
@@ -105,15 +109,15 @@ class Accountant:
         self.process: DpProcess = Identity() if prefix is None else prefix
         self._budget: Budget | None = budget
 
-    def __or__(self, process: DpProcess) -> Accountant:
-        """Compose a new process onto this accountant.
+    def __or__(self, process: DpProcess | PerStep) -> Accountant:
+        """Compose a process or advance a horizon run.
 
         Returns a new Accountant with the composed process.  The original
         accountant is not modified.
 
-        Merge optimization is automatic: ``DpProcess.__or__`` uses
-        structural equality to collapse identical steps into a single
-        :class:`~opaque.accounting.composition.Repeated` node.
+        Ordinary merge optimization is automatic. A ``PerStep`` horizon run is
+        advanced explicitly by its deployment ID rather than structural
+        equality.
 
         Args:
             process: DpProcess to compose (e.g., from poisson(), gaussian(), etc.)
@@ -127,8 +131,84 @@ class Accountant:
             step = poisson(gaussian(1.1), 0.01)
             acct = acct | step  # One step
             acct = acct | step  # Collapsed into Repeated(step, 2)
+
+            horizon_run = per_step(horizon_process)
+            acct = acct | horizon_run  # HorizonPrefix(..., steps=1)
+            acct = acct | horizon_run  # Same prefix advanced to steps=2
         """
+        from opaque.api.accounting.core.composition._per_step import PerStep
+
+        if isinstance(process, PerStep):
+            return self.advance(process)
         return Accountant(budget=self._budget, prefix=self.process | process)
+
+    def advance(self, run: PerStep, count: int = 1) -> Accountant:
+        """Advance one deployed horizon run by ``count`` releases.
+
+        Advancing replaces the active ``K``-prefix with ``K + count``. It is
+        deliberately distinct from sequential composition: a fresh
+        :func:`~opaque.accounting.per_step` handle has a different ``run_id``
+        and is composed as an independent deployment.
+
+        Args:
+            run: Horizon run handle returned by ``per_step(process)``.
+            count: Positive number of releases to advance.
+
+        Returns:
+            New accountant with the advanced or newly started horizon run.
+
+        Raises:
+            TypeError: If ``run`` is not a ``PerStep`` handle.
+            ValueError: If ``count`` is invalid, the run configuration changed,
+                or the same run is no longer the active suffix.
+        """
+        from opaque.api.accounting.core.composition._per_step import (
+            PerStep,
+            _contains_horizon_run,
+            _join_horizon_frontier,
+            _same_horizon_process,
+            _split_horizon_frontier,
+        )
+
+        if not isinstance(run, PerStep):
+            raise TypeError(
+                f"advance() requires a PerStep run, got {type(run).__name__}."
+            )
+        if count < 1:
+            raise ValueError(f"count ({count}) must be >= 1")
+
+        closed, active = _split_horizon_frontier(self.process)
+        if active is not None and active.run_id == run.run_id:
+            if not _same_horizon_process(active.process, run.process):
+                raise ValueError(
+                    "Horizon run configuration changed while retaining the same "
+                    "run_id; start a fresh per_step(process) deployment instead."
+                )
+            process = _join_horizon_frontier(closed, active.advanced(count))
+            return Accountant(budget=self._budget, prefix=process)
+
+        if _contains_horizon_run(self.process, run.run_id):
+            raise ValueError(
+                "Cannot resume a horizon run after an intervening release; "
+                "start a fresh per_step(process) deployment."
+            )
+
+        current = (
+            _join_horizon_frontier(closed, active)
+            if active is not None
+            else self.process
+        )
+        process = current | run.prefix(count)
+        return Accountant(budget=self._budget, prefix=process)
+
+    @property
+    def active_horizon_prefix(self) -> HorizonPrefix | None:
+        """The rightmost continuable horizon prefix, if one exists."""
+        from opaque.api.accounting.core.composition._per_step import (
+            _split_horizon_frontier,
+        )
+
+        return _split_horizon_frontier(self.process)[1]
 
     def epsilon_at(self, delta: float) -> float:
         """Get epsilon for a target delta.
@@ -231,10 +311,21 @@ def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
 
 
 def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
+    from opaque.api.accounting.core.composition._per_step import (
+        _normalize_legacy_horizon_process,
+        _validate_legacy_horizon_state,
+    )
+
     budget = None
     if "budget" in state:
         budget = budget_from_state_dict(dict(state["budget"]))
-    return Accountant(budget=budget, prefix=_load_dp_process(dict(state["process"])))
+    process_state = dict(state["process"])
+    _validate_legacy_horizon_state(process_state)
+    process = _load_dp_process(process_state)
+    return Accountant(
+        budget=budget,
+        prefix=_normalize_legacy_horizon_process(process),
+    )
 
 
 def _register_accountant_serialization() -> None:

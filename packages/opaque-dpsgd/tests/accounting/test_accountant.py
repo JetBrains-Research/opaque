@@ -8,12 +8,12 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.accounting.types import HorizonPrefix
 from opaque.api.accounting.core._accountant import Accountant
 from opaque.api.accounting.core.calibration import epsilon_budget
 from opaque.api.accounting.core.composition.types import (
     CachedProcess,
     Composed,
-    Repeated,
 )
 
 # ============================================================================
@@ -530,7 +530,7 @@ class TestAccountantCached:
         step = acc.per_step(horizon)
         cached_step = acc.cached(step)
 
-        assert cached_step is not step
+        assert cached_step is step
         assert (cached_step * 2).pld() is horizon.pld_at(2)
 
     def test_cached_random_allocation_accountant_continues_prefix(self):
@@ -544,6 +544,7 @@ class TestAccountantCached:
 
         continued = acc.cached(accountant) | step
 
-        assert isinstance(continued.process, Repeated)
-        assert continued.process.count == 2
+        assert isinstance(continued.process, HorizonPrefix)
+        assert continued.process.steps == 2
+        assert continued.process.run_id == step.run_id
         assert continued.process.pld() is horizon.pld_at(2)

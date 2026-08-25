@@ -123,10 +123,11 @@ not by themselves certify a hypothesis-testing trade-off curve.
 | `k * proc`   | Same (reflected multiply)                    | `acc.repeat(proc, k)`  |
 | `a \| b`     | Heterogeneous composition                    | `acc.compose(a, b)`    |
 
-Composition is optimized at construction time: identical steps are collapsed
-via structural equality, nested repeats are flattened, and identity processes
-are elided. Composing the same step in a loop produces a single `Repeated` node
-with one `self_compose` call (2 FFTs), not `n` heterogeneous composes.
+Ordinary composition is optimized at construction time: identical steps are
+collapsed via structural equality, nested repeats are flattened, and identity
+processes are elided. Correlated whole-horizon runs use the explicit
+`HorizonRun`/`HorizonPrefix` lifecycle described under `per_step`; configuration
+equality alone never merges two deployments.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), 0.01)
@@ -514,16 +515,31 @@ proc = dpftrl_acc.balls_in_bins(
 )
 ```
 
-### `per_step(proc) -> PerStep`
+### `per_step(proc) -> HorizonRun` (`PerStep` compatibility name)
 
-Adapter that wraps a whole-horizon accountant so it composes step-by-step
-under `Accountant`'s `acct |= step` idiom. `per_step(proc) * K` materialises
-the process-aware K-prefix PLD via `proc.pld_at(K)`. Analytic mechanisms use a
-strategy-aware prefix bound. For b-min-sep and correlated-strategy
-Balls-in-Bins, every nonzero prefix conservatively charges the full-horizon
-confidence-bounded PLD. This preserves monotonicity and boundedness but gives
-up prefix tightness. Identity Balls-in-Bins retains its exact prefix path.
-`K > proc.n_steps` raises.
+Creates a fresh deployment handle for a whole-horizon process. Under an
+`Accountant`, `acct |= run` advances that deployment from prefix K to prefix
+K+1. `run * K` returns an explicit `HorizonPrefix` whose PLD is
+`proc.pld_at(K)`. The run's serialized `run_id` is lifecycle metadata: two
+equal-configured calls to `per_step(proc)` declare distinct deployments and
+the `Accountant` composes them separately. The caller must keep that declaration
+aligned with the mechanism's actual noise/state lifecycle.
+
+Do not compose a run handle directly with `|`, repeat a materialized prefix, or
+compose two prefixes from the same run. Use the `Accountant` to advance one run;
+call `per_step(proc)` again only when the actual mechanism starts a fresh
+independent deployment.
+
+After restoring an accountant directly, continue its active run with
+`acct.active_horizon_prefix.run`; trainer checkpoints perform this binding
+automatically.
+
+`run * K` materialises the process-aware K-prefix PLD via `proc.pld_at(K)`.
+Analytic mechanisms use a strategy-aware prefix bound. For b-min-sep and
+correlated-strategy Balls-in-Bins, every nonzero prefix conservatively charges
+the full-horizon confidence-bounded PLD. This preserves monotonicity and
+boundedness but gives up prefix tightness. Identity Balls-in-Bins retains its
+exact prefix path. `K > proc.n_steps` raises.
 
 - `proc` (DpHorizonProcess): The whole-process accountant
   (`dpftrl_acc.poisson(...)`, `b_min_sep(...)`, `balls_in_bins(...)`).
@@ -534,7 +550,8 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01, n_steps=15_624,
 )
 step = acc.per_step(proc)
-eps_K = (step * 1_000).epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
+prefix = step * 1_000
+eps_K = prefix.epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
 ```
 
 ---
@@ -555,8 +572,10 @@ Heterogeneous two-process composition. Equivalent to `left | right`.
 ### `cached(process) -> DpProcess`
 
 Increases the LRU cache size from 8 to 16 entries and acts as an opaque merge
-barrier. A matching `PerStep` horizon suffix remains continuable across the
-boundary so correlated releases use one joint `pld_at(K)` prefix.
+barrier. When an `Accountant` has an active `HorizonPrefix`, `cached(accountant)`
+caches only the closed process to its left and leaves that frontier symbolic.
+This is necessary because a materialized K-prefix cannot derive the correlated
+K+1 prefix. Calling `cached()` on a bare `HorizonRun` is therefore a no-op.
 
 **Note**: All `pld()` methods are automatically cached with `maxsize=8` via
 `@lru_cache`. Use `cached()` when you need:
@@ -594,6 +613,12 @@ flat = state_dict(step)
 step2 = from_state_dict(acc.identity(), flat)
 ```
 
+Accountant checkpoints serialize horizon run IDs. A legacy checkpoint with one
+`Repeated(PerStep, K)` group is migrated to `HorizonPrefix(K)` on load. If an
+older tree contains multiple equal-configured groups without IDs, loading fails
+closed: the data cannot establish whether they were cache fragments of one
+correlated transcript or independent deployments.
+
 ---
 
 ## Accountant
@@ -602,8 +627,8 @@ The `Accountant` class tracks accumulated privacy loss across a training loop.
 It provides a functional API: composing a new process returns a fresh
 `Accountant` (the original is not modified).
 
-Merge optimization is automatic. Composing the same `step` repeatedly in a loop
-produces a single `Repeated` node internally.
+Merge optimization is automatic for ordinary steps. Repeatedly advancing one
+whole-horizon run produces a single `HorizonPrefix` with the original run ID.
 
 ```python
 from opaque.accounting import Accountant

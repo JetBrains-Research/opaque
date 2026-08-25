@@ -22,9 +22,9 @@ class CachedProcess(DpProcess):
     Computes the PLD on the first :meth:`pld` call and caches it.
     Subsequent calls return the cached result.
 
-    Acts as an **opaque barrier** for merge optimization, except when
-    continuing the same :class:`PerStep` horizon sequence. Cached wrappers
-    can still merge via structural equality of their inner processes.
+    Acts as an **opaque barrier** for merge optimization. Horizon continuation
+    is represented explicitly by ``HorizonPrefix`` and handled by
+    ``Accountant.advance`` rather than inferred through this wrapper.
 
     Since every :meth:`DpProcess.pld` already caches, this wrapper's
     primary purpose is the merge barrier rather than caching (though it
@@ -59,16 +59,6 @@ class CachedProcess(DpProcess):
         from ._iter_cache_key import iter_cache_key
 
         return iter_cache_key(self, n_steps=n_steps)
-
-    def __or__(self, other: DpProcess) -> DpProcess:
-        right_leaf, right_count = other._leaf_and_count()
-        if self == right_leaf:
-            from ._repeated import Repeated
-
-            return Repeated(self, right_count + 1)
-
-        continued = _continue_horizon(self.inner, other)
-        return DpProcess.__or__(self, other) if continued is None else continued
 
     @pld_cache(maxsize=16)
     def pld(
@@ -116,94 +106,25 @@ class CachedProcess(DpProcess):
         )
 
 
-def _horizon_group(
-    process: DpProcess, *, through_boundary: bool = False
-) -> tuple[PerStep, DpProcess, int] | None:
-    """Return the horizon step, retained leaf, and repetition count."""
-    from ._repeated import Repeated
-
-    node = process
-    while through_boundary and isinstance(node, CachedProcess):
-        node = node.inner
-
-    if isinstance(node, Repeated):
-        leaf, count = node.inner, node.count
-    else:
-        leaf, count = node, 1
-
-    step = leaf
-    while isinstance(step, CachedProcess):
-        step = step.inner
-    if not isinstance(step, PerStep):
-        return None
-    return step, leaf, count
-
-
-def _continue_horizon(prefix: DpProcess, other: DpProcess) -> DpProcess | None:
-    """Continue a matching horizon suffix through cached boundaries."""
-    from ._composed import Composed
-    from ._repeated import Repeated
-
-    next_group = _horizon_group(other)
-    if next_group is None:
-        return None
-    next_step, leaf, next_count = next_group
-
-    node: DpProcess | None = prefix
-    count = next_count
-    while node is not None:
-        cached_node = node if isinstance(node, CachedProcess) else None
-        while isinstance(node, CachedProcess):
-            node = node.inner
-
-        active_group = _horizon_group(node)
-        if active_group is not None:
-            active_step, active_leaf, active_count = active_group
-            if active_step == next_step:
-                leaf = active_leaf
-                count += active_count
-                node = None
-                break
-        elif isinstance(node, Composed):
-            active_group = _horizon_group(node.right, through_boundary=True)
-            if active_group is not None:
-                active_step, active_leaf, active_count = active_group
-                if active_step == next_step:
-                    leaf = active_leaf
-                    count += active_count
-                    node = node.left
-                    continue
-
-        node = cached_node if cached_node is not None else node
-        break
-
-    if count == next_count:
-        return None
-
-    continued = Repeated(leaf, count)
-    if node is None:
-        return continued
-    cached_prefix = node if isinstance(node, CachedProcess) else CachedProcess(node)
-    return Composed(cached_prefix, continued)
-
-
 @overload
 def cached(process: Accountant) -> Accountant: ...
+@overload
+def cached(process: PerStep) -> PerStep: ...
 @overload
 def cached(process: DpProcess) -> CachedProcess: ...
 
 
-def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
+def cached(
+    process: DpProcess | Accountant,
+) -> CachedProcess | Accountant | PerStep:
     """Wrap a process so that its PLD is computed once and cached.
 
     Returns a :class:`CachedProcess` that computes the PLD lazily on
     the first :meth:`pld` call and caches the result for all subsequent calls.
 
-    ``CachedProcess`` also acts as an **opaque merge barrier** for ordinary
-    composition. A matching :class:`PerStep` horizon suffix remains
-    continuable so its accumulated PLD comes from one ``pld_at(K)`` query.
-    Cached wrappers can still merge via structural equality of their inner
-    processes.
+    ``CachedProcess`` also acts as an **opaque merge barrier**. When caching an
+    accountant with an active horizon prefix, only the closed prefix is wrapped;
+    the active frontier remains symbolic for explicit continuation.
 
     When called on an :class:`~opaque.accounting._accountant.Accountant`,
     returns a new Accountant whose inner process is cached.  Call before
@@ -236,10 +157,33 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
         :class:`Accountant` with its inner process cached.
     """
     from opaque.api.accounting.core._accountant import Accountant
+    from opaque.api.accounting.core.composition._per_step import (
+        _join_horizon_frontier,
+        _split_horizon_frontier,
+    )
+    from opaque.api.accounting.core.mechanisms.types import Identity
 
     match process:
         case Accountant():
-            return Accountant(budget=process._budget, prefix=cached(process.process))
+            closed, active = _split_horizon_frontier(process.process)
+            if active is None:
+                return Accountant(
+                    budget=process._budget,
+                    prefix=cached(process.process),
+                )
+            cached_closed = (
+                closed
+                if isinstance(closed, Identity | CachedProcess)
+                else CachedProcess(closed)
+            )
+            return Accountant(
+                budget=process._budget,
+                prefix=_join_horizon_frontier(cached_closed, active),
+            )
+        case PerStep():
+            # Horizon PLDs are already keyed by prefix length. There is no
+            # materialized one-step value that can accelerate K -> K+1.
+            return process
         case CachedProcess():
             return process
         case _:

@@ -1,21 +1,22 @@
-"""Contract tests for :class:`PerStep` / :func:`opaque.accounting.per_step`.
+"""Contracts for explicit horizon-run accounting.
 
-``PerStep`` wraps a whole-process :class:`DpHorizonProcess` so the K-fold
-:class:`Repeated` node materialises as ``proc.pld_at(K)`` (the
-K-prefix bound on the deployed N-step mechanism) rather than the K-fold
-self-composition of a single-step PLD.
+``PerStep`` is a deployment handle for one whole-horizon process.
+Multiplication materializes a :class:`HorizonPrefix`, and an
+:class:`Accountant` advances that same prefix by stable ``run_id``. Equal
+configuration is deliberately insufficient evidence that two releases belong
+to the same correlated deployment.
 
 These tests cover the contract:
 
 - ``PerStep(proc).pld() == proc.pld_at(1)``.
-- ``Repeated(PerStep(proc), K).pld() == proc.pld_at(K)`` for
-  any 1 ≤ K ≤ ``n_steps``.
-- ``Repeated(PerStep(proc), n_steps).pld() == proc.pld()`` (full-process
+- ``(PerStep(proc) * K).pld() == proc.pld_at(K)`` for any
+  1 ≤ K ≤ ``n_steps``.
+- ``(PerStep(proc) * n_steps).pld() == proc.pld()`` (full-process
   equivalence).
-- ``Accountant() |= PerStep(proc)`` advances count by 1 and merge-optimises
-  to ``Repeated`` after the second composition.
-- ``per_step(proc) * (n_steps + 1)`` raises at materialisation.
-- ``per_step(procA) | per_step(procB)`` raises when ``procA != procB``.
+- ``Accountant() |= run`` replaces prefix K by prefix K+1 for that run.
+- caching never materializes the active horizon frontier.
+- fresh equal-configured runs compose independently rather than merging.
+- ambiguous lineage is rejected instead of inferred from structural equality.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import pytest
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
-from opaque.api.accounting.core.composition._per_step import PerStep
+from opaque.accounting.types import HorizonPrefix, HorizonRun, PerStep
 from opaque.api.accounting.core.composition.types import (
     CachedProcess,
     Composed,
@@ -77,7 +78,16 @@ class TestPerStepDeterministic:
         proc = self._proc()
         step = acc.per_step(proc)
         assert isinstance(step, PerStep)
+        assert isinstance(step, HorizonRun)
         assert step.process is proc
+
+    def test_each_factory_call_creates_a_fresh_deployment(self):
+        proc = self._proc()
+        first = acc.per_step(proc)
+        second = acc.per_step(proc)
+
+        assert first.process is second.process
+        assert first.run_id != second.run_id
 
     def test_factory_rejects_non_horizon_process(self):
         with pytest.raises(TypeError, match="DpHorizonProcess"):
@@ -94,7 +104,11 @@ class TestPerStepDeterministic:
     def test_repeated_equals_pld_at_horizon_K(self, K: int):
         proc = self._proc(100)
         step = acc.per_step(proc)
-        e_repeated = (step * K).epsilon_at(_DELTA)
+        prefix = step * K
+        assert isinstance(prefix, HorizonPrefix)
+        assert prefix.steps == K
+        assert prefix.run_id == step.run_id
+        e_repeated = prefix.epsilon_at(_DELTA)
         e_at_K = proc.pld_at(K).epsilon_at(_DELTA)
         assert math.isclose(e_repeated, e_at_K, rel_tol=1e-9)
 
@@ -179,11 +193,12 @@ class TestPerStepAccountant:
         step = acc.per_step(proc)
         cached_step = acc.cached(step)
 
-        assert cached_step is not step
+        # A handle has no closed PLD to cache; prefix PLDs are already keyed by
+        # K on the horizon process itself.
+        assert cached_step is step
         assert (cached_step * 5).pld() is proc.pld_at(5)
-        merged = cached_step | cached_step
-        assert isinstance(merged, Repeated)
-        assert merged.inner is cached_step
+        with pytest.raises(TypeError, match="run handle"):
+            cached_step | cached_step
 
     @pytest.mark.parametrize("K", range(1, 6))
     def test_cached_horizon_accountant_continues_prefix(self, K: int):
@@ -199,8 +214,9 @@ class TestPerStepAccountant:
 
         continued = acc.cached(accountant) | step
 
-        assert isinstance(continued.process, Repeated)
-        assert continued.process.count == K + 1
+        assert isinstance(continued.process, HorizonPrefix)
+        assert continued.process.steps == K + 1
+        assert continued.process.run_id == step.run_id
         assert continued.process.pld(discretization=0.1) is proc.pld_at(
             K + 1, discretization=0.1
         )
@@ -221,36 +237,47 @@ class TestPerStepAccountant:
             if K == 5:
                 accountant = from_state_dict(Accountant(), state_dict(accountant))
 
-        assert isinstance(accountant.process, Repeated)
-        assert accountant.process.count == 8
+        assert isinstance(accountant.process, HorizonPrefix)
+        assert accountant.process.steps == 8
+        assert accountant.process.run_id == step.run_id
         assert accountant.epsilon_at(_DELTA) == pytest.approx(
             proc.pld_at(8).epsilon_at(_DELTA)
         )
 
-    def test_continuation_repairs_restored_cache_fragments(self):
+    def test_legacy_cached_repeat_migrates_to_explicit_prefix(self):
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
             sample_rate=0.01,
             n_steps=8,
         )
-        step = acc.cached(acc.per_step(proc))
-        fragmented = Accountant(
-            prefix=CachedProcess(
-                Composed(
-                    CachedProcess(Repeated(step, 2)),
-                    Repeated(step, 2),
-                )
-            )
-        )
-        restored = from_state_dict(Accountant(), state_dict(fragmented))
+        legacy = Accountant(prefix=CachedProcess(Repeated(acc.per_step(proc), 4)))
+        payload = state_dict(legacy)
+        del payload["process"]["inner"]["inner"]["run_id"]
 
-        continued = restored | step
+        restored = from_state_dict(Accountant(), payload)
+        active = restored.active_horizon_prefix
+        assert isinstance(active, HorizonPrefix)
+        assert active.steps == 4
 
-        assert isinstance(continued.process, Repeated)
-        assert continued.process.count == 5
+        continued = restored | active.run
+
+        assert isinstance(continued.process, HorizonPrefix)
+        assert continued.process.steps == 5
         assert continued.process.pld(discretization=0.1) is proc.pld_at(
             5, discretization=0.1
         )
+
+    def test_ambiguous_legacy_fragments_fail_closed(self):
+        proc = self._proc(n_steps=8)
+        left = acc.per_step(proc)
+        right = acc.per_step(proc)
+        legacy = Accountant(prefix=Composed(Repeated(left, 2), Repeated(right, 2)))
+        payload = state_dict(legacy)
+        del payload["process"]["left"]["inner"]["run_id"]
+        del payload["process"]["right"]["inner"]["run_id"]
+
+        with pytest.raises(ValueError, match="without deployment lineage"):
+            from_state_dict(Accountant(), payload)
 
     def test_cached_heterogeneous_prefix_keeps_only_prefix_opaque(self):
         proc = ftrl_acc.poisson(
@@ -269,13 +296,14 @@ class TestPerStepAccountant:
         assert isinstance(continued.process, Composed)
         assert isinstance(continued.process.left, CachedProcess)
         assert continued.process.left.inner == prefix
-        assert isinstance(continued.process.right, Repeated)
-        assert continued.process.right.count == 4
+        assert isinstance(continued.process.right, HorizonPrefix)
+        assert continued.process.right.steps == 4
+        assert continued.process.right.run_id == step.run_id
         assert continued.process.right.pld(discretization=0.1) is proc.pld_at(
             4, discretization=0.1
         )
 
-    def test_cached_horizon_does_not_merge_a_different_sequence(self):
+    def test_fresh_horizon_run_is_an_independent_sequence(self):
         first = acc.cached(acc.per_step(self._proc(n_steps=6, nm=1.0)))
         second = acc.cached(acc.per_step(self._proc(n_steps=6, nm=2.0)))
         accountant = acc.cached(Accountant() | (first * 3))
@@ -283,33 +311,35 @@ class TestPerStepAccountant:
         continued = accountant | second
 
         assert isinstance(continued.process, Composed)
-        assert isinstance(continued.process.left, CachedProcess)
-        assert continued.process.right is second
+        assert continued.process.left == first.prefix(3)
+        assert continued.process.right == second.prefix(1)
+        assert first.run_id != second.run_id
 
-    def test_cached_horizon_does_not_merge_across_an_intervening_release(self):
+    def test_same_run_cannot_cross_an_intervening_release(self):
         step = acc.cached(acc.per_step(self._proc(n_steps=6)))
         intervening = acc.eps_delta(0.1, 1e-6)
         accountant = acc.cached(Accountant() | (step * 2) | intervening)
 
-        continued = accountant | step
+        with pytest.raises(ValueError, match="intervening release"):
+            accountant | step
 
+        fresh = acc.per_step(step.process)
+        continued = accountant | fresh
         assert isinstance(continued.process, Composed)
         assert isinstance(continued.process.left, CachedProcess)
-        assert continued.process.right is step
+        assert continued.process.right == fresh.prefix(1)
 
     def test_empty_accountant_is_zero(self):
         # Step-0 eval: empty accountant returns ε=0 regardless of step_proc.
         accnt = Accountant()
         assert accnt.epsilon_at(_DELTA) == 0.0
 
-    def test_merge_collapses_to_repeated(self):
+    def test_accountant_advances_explicit_prefix(self):
         proc = self._proc(50)
         step = acc.per_step(proc)
-        # Two ``|`` compositions of the same leaf collapse via merge.
-        composed = step | step
-        assert isinstance(composed, Repeated)
-        assert composed.count == 2
-        assert composed.inner == step
+        accountant = Accountant().advance(step, 2)
+
+        assert accountant.process == step.prefix(2)
 
 
 # ---------------------------------------------------------------------------
@@ -325,54 +355,109 @@ class TestPerStepErrors:
             n_steps=n_steps,
         )
 
-    def test_overflow_at_materialisation(self):
+    def test_overflow_rejected_at_prefix_construction(self):
         proc = self._proc(50)
         step = acc.per_step(proc)
-        # The Repeated node builds fine; the raise happens at .pld() /
-        # .epsilon_at() when ``pld_at(count)`` is called.
         with pytest.raises(ValueError, match="exceeds n_steps"):
-            (step * 51).epsilon_at(_DELTA)
+            step * 51
 
-    def test_heterogeneous_compose_preserves_both_processes(self):
+    def test_run_handles_are_not_generic_processes(self):
         step_a = acc.per_step(self._proc(nm=1.0))
         step_b = acc.per_step(self._proc(nm=2.0))
-        composed = step_a | step_b
-        assert math.isfinite(composed.epsilon_at(_DELTA))
+        with pytest.raises(TypeError, match="run handle"):
+            step_a | step_b
 
-    def test_distinct_objects_with_equal_fields_still_compose(self):
-        # Structural equality, not identity: two separately-constructed procs
-        # with the same dataclass fields compare ``==``, so per_step adapters
-        # built from them merge under the ``__or__`` rule (procs match).
+    def test_equal_configured_fresh_runs_compose_independently(self):
         proc_a = self._proc(nm=1.0)
         proc_b = self._proc(nm=1.0)
         assert proc_a == proc_b
         assert proc_a is not proc_b
         step_a = acc.per_step(proc_a)
         step_b = acc.per_step(proc_b)
-        result = step_a | step_b
-        assert isinstance(result, Repeated)
-        assert result.count == 2
+        accountant = Accountant() | step_a
+        accountant |= step_b
 
-    def test_same_proc_object_composes(self):
+        assert isinstance(accountant.process, Composed)
+        assert accountant.process.left == step_a.prefix(1)
+        assert accountant.process.right == step_b.prefix(1)
+        assert step_a.run_id != step_b.run_id
+        expected = proc_a.pld_at(1).compose(proc_b.pld_at(1))
+        assert accountant.epsilon_at(_DELTA) == pytest.approx(
+            expected.epsilon_at(_DELTA)
+        )
+
+    def test_equal_band_mf_deployments_do_not_collapse_into_one_prefix(self):
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+            sample_rate=0.1,
+            n_steps=6,
+        )
+        accountant = Accountant() | acc.per_step(proc)
+        accountant |= acc.per_step(proc)
+
+        independent_epsilon = accountant.process.epsilon_at(
+            _DELTA,
+            discretization=0.1,
+        )
+        expected_independent = proc.pld_at(1, discretization=0.1).self_compose(2)
+        one_run_epsilon = proc.pld_at(2, discretization=0.1).epsilon_at(_DELTA)
+
+        # Concrete regression for the structural-equality bug: these bounds
+        # differ materially, so merging equal configuration into one run is
+        # not a harmless tree optimization.
+        assert independent_epsilon == pytest.approx(
+            expected_independent.epsilon_at(_DELTA)
+        )
+        assert independent_epsilon - one_run_epsilon > 0.2
+
+    def test_same_process_object_still_creates_distinct_runs(self):
         proc = self._proc(nm=1.0)
         step_a = acc.per_step(proc)
         step_b = acc.per_step(proc)
-        result = step_a | step_b
-        assert isinstance(result, Repeated)
-        assert result.count == 2
+        accountant = Accountant().advance(step_a).advance(step_b)
+
+        assert isinstance(accountant.process, Composed)
+        assert step_a.run_id != step_b.run_id
+
+    def test_same_run_prefix_cannot_be_composed_twice(self):
+        step = acc.per_step(self._proc())
+        prefix = step.prefix(2)
+
+        with pytest.raises(ValueError, match="same horizon run"):
+            prefix | prefix
+        with pytest.raises(ValueError, match="same horizon run"):
+            (acc.eps_delta(0.1, 0.0) | prefix) | prefix
+        with pytest.raises(ValueError, match="same horizon run"):
+            (acc.eps_delta(0.1, 0.0) | prefix) | (acc.eps_delta(0.2, 0.0) | prefix)
+
+    def test_materialized_prefix_cannot_be_repeated(self):
+        prefix = acc.per_step(self._proc()).prefix(2)
+
+        with pytest.raises(TypeError, match="deployed transcript"):
+            prefix * 2
+        with pytest.raises(TypeError, match="cannot be self-composed"):
+            Repeated(prefix, 2).pld()
+
+    def test_same_run_id_cannot_change_configuration(self):
+        first = acc.per_step(self._proc(nm=1.0))
+        spoofed = PerStep(self._proc(nm=2.0), run_id=first.run_id)
+        accountant = Accountant() | first
+
+        with pytest.raises(ValueError, match="configuration changed"):
+            accountant | spoofed
 
     def test_zero_count_raises(self):
         proc = self._proc(50)
         step = acc.per_step(proc)
         # __mul__ rejects count < 1 at construction.
-        with pytest.raises(ValueError, match="count must be >= 1"):
+        with pytest.raises(ValueError, match=r"steps .* must be >= 1"):
             step * 0
 
 
 # ---------------------------------------------------------------------------
-# Cross-amplification smoke: PerStep wraps every supported amplifier and
-# Repeated routes through repeated_pld correctly.  MC paths use the same
-# seeded config to keep results reproducible.
+# Cross-amplification smoke: every supported amplifier materializes an
+# explicit prefix through ``step * K``. MC paths use the same seeded config to
+# keep results reproducible.
 # ---------------------------------------------------------------------------
 
 
@@ -420,7 +505,7 @@ def _seed_mc():
 
 @pytest.mark.parametrize("amp", list(_AMPLIFICATIONS))
 class TestPerStepCrossAmp:
-    """``PerStep`` and ``Repeated(PerStep, K)`` work for every supported amp."""
+    """``PerStep`` and ``HorizonPrefix`` work for every supported amp."""
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_repeated_at_full_horizon_matches_proc(self, amp: str):
@@ -443,8 +528,7 @@ class TestPerStepCrossAmp:
 
         e_repeated = (step * K).epsilon_at(delta)
         e_at_K = proc.pld_at(K).epsilon_at(delta)
-        # Both paths route through the same pld_at(K) call
-        # (PerStep.repeated_pld is exactly that), so deterministic
+        # Both paths route through the same pld_at(K) call, so deterministic
         # equivalence; MC paths use the same global seed.
         assert math.isclose(e_repeated, e_at_K, rel_tol=1e-9)
 
@@ -466,6 +550,7 @@ class TestSerializationRegistryHardening:
         assert "CyclicPoisson" in _PROCESS_REGISTRY
         assert "BallsInBins" in _PROCESS_REGISTRY
         assert "PerStep" in _PROCESS_REGISTRY
+        assert "HorizonPrefix" in _PROCESS_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +561,7 @@ class TestSerializationRegistryHardening:
 
 class TestQueryTimeMcParams:
     """Confidence settings and ``seed`` flow from any ``pld()``-family call
-    through ``Repeated`` / ``CachedProcess`` / ``PerStep`` / ``Composed``
+    through ``HorizonPrefix`` / ``CachedProcess`` / ``Composed``
     down to the MC leaf's ``get_discretization`` — no global
     ``set_discretization`` mutation required.
     """

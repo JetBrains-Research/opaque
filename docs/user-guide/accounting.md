@@ -488,8 +488,8 @@ accumulated process exceeds the budget.
 DP-FTRL accountants are *whole-process* (`dpftrl_acc.poisson` / `b_min_sep` /
 `balls_in_bins` already cover all `n_steps` rounds), so feeding the bare
 process to `acct |= step` would over-count. Wrap the process with
-`acc.per_step(...)` to get a step-shaped adapter whose
-`per_step(proc) * K` materialises the strategy-aware K-prefix PLD (rather
+`acc.per_step(...)` to create a deployment handle whose `run * K`
+materialises the strategy-aware K-prefix PLD (rather
 than the K-fold composition of a single-step PLD, which would double-count
 the workload coefficients):
 
@@ -516,6 +516,16 @@ for batch in dataloader:
 
 eps = acct.epsilon_at(delta=1e-5)
 ```
+
+The accountant advances one deployed run by its serialized `run_id`; it does
+not infer correlation from equal parameters. A second `acc.per_step(proc)` call
+declares a fresh independent deployment, so the mechanism's actual noise/state
+lifecycle must agree. Keep using the original handle (or
+`acct.active_horizon_prefix.run` after restoring an accountant) to continue the
+current run.
+
+`cached(acct)` caches only privacy loss before the active horizon prefix, so
+logging and evaluation cannot split the correlated transcript.
 
 For analytic DP-FTRL accountants, the K-step ε is bounded above by
 `proc.epsilon_at(delta)` and is monotone non-decreasing in K. For b-min-sep and

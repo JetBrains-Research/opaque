@@ -36,7 +36,7 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_STATE_BUNDLE_VERSION = 4  # namespaced mechanism RNG roots change noise streams
+DP_STATE_BUNDLE_VERSION = 5  # adds serialized horizon-run lineage
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -275,6 +275,10 @@ class RuntimeCheckpoint:
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
     )
+    # Stable identity shared with the accountant's active HorizonPrefix. It is
+    # validated explicitly during restore rather than compared with the fresh
+    # setup-time handle, whose ID is expected to differ.
+    horizon_run_id: str | None = None
 
     # --- LR-schedule shape (trajectory-relevant, privacy-neutral) ---
     lr_scheduler: str | None = field(
@@ -311,6 +315,7 @@ def save_dp_runtime_state(  # noqa: PLR0913
     mf_n_steps: int | None = None,
     mf_min_sep: int | None = None,
     mf_max_participations: int | None = None,
+    horizon_run_id: str | None = None,
     lr_scheduler: str | None = None,
     learning_rate: float | None = None,
     warmup_steps: int | float | None = None,
@@ -342,6 +347,7 @@ def save_dp_runtime_state(  # noqa: PLR0913
         mf_max_participations=(
             int(mf_max_participations) if mf_max_participations is not None else None
         ),
+        horizon_run_id=(str(horizon_run_id) if horizon_run_id is not None else None),
         lr_scheduler=lr_scheduler,
         learning_rate=(float(learning_rate) if learning_rate is not None else None),
         warmup_steps=(float(warmup_steps) if warmup_steps is not None else None),
@@ -372,9 +378,14 @@ def load_dp_runtime_state(path: str) -> RuntimeCheckpoint:
             f"(got {type(bundle).__name__}); checkpoint may be from an older "
             "trainer version."
         )
-    if bundle.version != DP_STATE_BUNDLE_VERSION:
+    if bundle.version not in {4, DP_STATE_BUNDLE_VERSION}:
         raise ValueError(
             f"unsupported dp_state bundle version {bundle.version} "
-            f"(expected {DP_STATE_BUNDLE_VERSION})"
+            f"(expected 4 or {DP_STATE_BUNDLE_VERSION})"
         )
+    if bundle.version == 4:
+        # Version 4 predates explicit accountant/runtime lineage. Complete
+        # legacy checkpoints can still bind to the migrated accountant prefix
+        # after mechanism equality is validated by the trainer.
+        bundle.horizon_run_id = None
     return bundle

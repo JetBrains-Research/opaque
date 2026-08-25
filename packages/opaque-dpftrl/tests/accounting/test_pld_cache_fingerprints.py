@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.accounting import Accountant
+from opaque.accounting.types import PerStep
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
 
 
@@ -21,7 +25,8 @@ def test_distinct_materialized_schedules_do_not_share_cached_plds() -> None:
     constant = _prefix_process(lambda _step: 1.0)
     ramp = _prefix_process(lambda step: 1.0 + 0.01 * step)
 
-    assert constant == ramp
+    assert constant != ramp  # distinct deployments
+    assert constant.process == ramp.process
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 
@@ -29,8 +34,18 @@ def test_equal_materialized_schedules_reuse_cached_plds() -> None:
     first = _prefix_process(lambda step: 1.0 + 0.01 * step)
     second = _prefix_process(lambda step: float(1.0 + 0.01 * step))
 
-    assert first == second
+    assert first != second  # distinct deployments
+    assert first.process == second.process
     assert first.pld(discretization=0.1) is second.pld(discretization=0.1)
+
+
+def test_run_continuation_compares_materialized_schedule() -> None:
+    constant = _prefix_process(lambda _step: 1.0)
+    ramp = _prefix_process(lambda step: 1.0 + 0.01 * step)
+    spoofed = PerStep(ramp.process, run_id=constant.run_id)
+
+    with pytest.raises(ValueError, match="configuration changed"):
+        Accountant(prefix=constant) | spoofed
 
 
 def test_distinct_mf_gaussian_parameters_do_not_share_cached_plds() -> None:
@@ -53,7 +68,8 @@ def test_composed_processes_preserve_schedule_cache_identity() -> None:
     constant = acc.eps_delta(0.1) | _prefix_process(lambda _step: 1.0)
     ramp = acc.eps_delta(0.1) | _prefix_process(lambda step: 1.0 + 0.01 * step)
 
-    assert constant == ramp
+    assert constant != ramp  # right-hand prefixes have distinct run IDs
+    assert constant.right.process == ramp.right.process
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 

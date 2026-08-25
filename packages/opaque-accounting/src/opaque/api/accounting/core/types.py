@@ -39,6 +39,8 @@ from opaque.api.accounting.core.calibration import CalibrateResult
 from opaque.api.accounting.core.composition.types import (
     CachedProcess,
     Composed,
+    HorizonPrefix,
+    HorizonRun,
     PerStep,
     Repeated,
 )
@@ -71,6 +73,8 @@ __all__ = [
     "NonPrivate",
     # Composition
     "Composed",
+    "HorizonPrefix",
+    "HorizonRun",
     "PerStep",
     "Repeated",
     "CachedProcess",

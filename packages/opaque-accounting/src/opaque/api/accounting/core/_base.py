@@ -120,6 +120,10 @@ class DpProcess(ABC):
     - **Privacy metrics**: epsilon_at(), delta_at(), advantage(), beta_at(), risk_at()
     - **Composition**: ``a | b`` (heterogeneous), ``a * k`` (homogeneous)
 
+    ``PerStep`` is a source-compatible horizon-run handle rather than an
+    ordinary event: advance it through an ``Accountant``. Multiplication is
+    retained as shorthand for materializing one explicit horizon prefix.
+
     Example::
 
         import opaque.accounting as acc
@@ -460,8 +464,37 @@ class DpProcess(ABC):
         Applies identity elision, direct merge, and right-spine merge
         using structural equality (``==``).
         """
+        from opaque.api.accounting.core.composition._per_step import (
+            PerStep,
+            _horizon_run_ids,
+        )
         from opaque.api.accounting.core.composition.types import Composed, Repeated
         from opaque.api.accounting.core.mechanisms.types import Identity
+
+        # A PerStep is a deployed-horizon run handle, not an independently
+        # composable event.  Only Accountant.advance() may turn it into a
+        # HorizonPrefix.  Keeping this guard in the generic operator covers
+        # both ``step | x`` and ``x | step`` during the compatibility period
+        # in which PerStep remains a DpProcess subclass for old checkpoints.
+        if isinstance(self, PerStep) or isinstance(other, PerStep):
+            raise TypeError(
+                "PerStep is a horizon run handle, not an ordinary DpProcess. "
+                "Advance it through an Accountant or use step * K to obtain "
+                "an explicit HorizonPrefix."
+            )
+
+        # Re-composing a prefix from the same deployed run is neither an
+        # independent repeat nor a continuation.  The former needs a fresh
+        # run ID; the latter must replace K with K+1 through Accountant.
+        # Inspect the left tree only when the right operand actually carries a
+        # horizon ID. This keeps ordinary incremental composition O(1) while
+        # rejecting duplicate transcripts even when both operands are nested.
+        right_run_ids = _horizon_run_ids(other)
+        if right_run_ids and right_run_ids.intersection(_horizon_run_ids(self)):
+            raise ValueError(
+                "Cannot compose multiple prefixes from the same horizon run; "
+                "use Accountant.advance() to continue it."
+            )
 
         # Identity elision
         match (self, other):

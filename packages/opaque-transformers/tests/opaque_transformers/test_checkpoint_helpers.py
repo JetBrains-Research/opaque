@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -165,6 +166,7 @@ class TestDpRuntimeBundle:
             expected_steps_per_epoch=10,
             expected_batch_size=32,
             total_steps=30,
+            horizon_run_id="run-123",
         )
         loaded = ckpt.load_dp_runtime_state(path)
 
@@ -178,6 +180,7 @@ class TestDpRuntimeBundle:
         assert loaded.noise_multiplier == pytest.approx(1.1)
         assert loaded.expected_steps_per_epoch == 10
         assert loaded.total_steps == 30
+        assert loaded.horizon_run_id == "run-123"
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
@@ -230,6 +233,118 @@ class TestDpRuntimeBundle:
         torch.save(fake, path)
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
+
+    def test_version_four_loads_without_runtime_lineage(self, tmp_path):
+        path = str(tmp_path / "dp.pt")
+        _, noise = gaussian_noise(noise_multiplier=1.0, key=key(0))
+        ckpt.save_dp_runtime_state(
+            path,
+            clip_state=FixedClipState(),
+            noise_state=noise,
+            sampler_state=None,
+            sample_rate=0.1,
+            target_delta=1e-5,
+            noise_multiplier=1.0,
+            expected_steps_per_epoch=1,
+            expected_batch_size=32,
+            total_steps=1,
+            horizon_run_id="not-present-in-v4",
+        )
+        bundle = torch.load(path, map_location="cpu", weights_only=False)
+        bundle.version = 4
+        torch.save(bundle, path)
+
+        loaded = ckpt.load_dp_runtime_state(path)
+
+        assert loaded.version == 4
+        assert loaded.horizon_run_id is None
+
+
+class TestHorizonCheckpointLineage:
+    @staticmethod
+    def _run(noise_multiplier: float = 1.0):
+        import opaque.accounting as acc
+        import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.dpftrl.noise import identity_strategy
+
+        process = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(noise_multiplier, identity_strategy()),
+            sample_rate=0.01,
+            n_steps=8,
+        )
+        return acc.per_step(process)
+
+    @staticmethod
+    def _trainer(global_step: int):
+        from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+
+        trainer = object.__new__(DPTrainer)
+        trainer.state = SimpleNamespace(global_step=global_step)
+        return trainer
+
+    def test_restore_binds_fresh_handle_to_accountant_run(self):
+        from opaque.accounting import Accountant
+
+        saved = self._run()
+        ctx = SimpleNamespace(
+            accounting=Accountant().advance(saved, 3),
+            step_process=self._run(),
+        )
+        runtime = SimpleNamespace(horizon_run_id=saved.run_id)
+
+        self._trainer(3)._bind_restored_horizon_run(ctx, runtime)
+
+        assert ctx.step_process.run_id == saved.run_id
+        assert ctx.step_process.process == saved.process
+
+    def test_restore_rejects_mixed_accountant_and_runtime(self):
+        from opaque.accounting import Accountant
+
+        saved = self._run()
+        ctx = SimpleNamespace(
+            accounting=Accountant().advance(saved, 3),
+            step_process=self._run(),
+        )
+        runtime = SimpleNamespace(horizon_run_id="different-checkpoint")
+
+        with pytest.raises(ValueError, match="lineage mismatch"):
+            self._trainer(3)._bind_restored_horizon_run(ctx, runtime)
+
+    def test_restore_rejects_missing_accountant_prefix(self):
+        from opaque.accounting import Accountant
+
+        live = self._run()
+        ctx = SimpleNamespace(accounting=Accountant(), step_process=live)
+        runtime = SimpleNamespace(horizon_run_id=live.run_id)
+
+        with pytest.raises(ValueError, match="no active horizon prefix"):
+            self._trainer(3)._bind_restored_horizon_run(ctx, runtime)
+
+    def test_calibrated_resume_reuses_saved_noise(self):
+        from opaque.accounting import Accountant
+        from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+
+        saved = self._run(1.0)
+        prefix = Accountant().advance(saved, 3)
+        calls: list[float] = []
+
+        def mechanism(noise_multiplier: float):
+            calls.append(noise_multiplier)
+            return self._run(noise_multiplier)
+
+        result = DPTrainer._calibrate_noise(
+            object(),
+            SimpleNamespace(privacy_noise_multiplier=None),
+            mechanism,
+            8,
+            1e-5,
+            prefix_accountant=prefix,
+            saved_noise_multiplier=1.0,
+            global_step_already_done=3,
+        )
+
+        assert result == 1.0
+        assert calls == [1.0]
 
 
 class TestNoiseStreamContinuity:

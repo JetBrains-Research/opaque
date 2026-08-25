@@ -186,11 +186,11 @@ def build_step_mechanism_factory(
 ) -> Callable[[float], Any]:
     """Wrap ``nm → DpHorizonProcess`` with ``per_step`` for ``acc |= step``.
 
-    The wrapped per-step view materialises as the true K-step PLD of the
+    The returned deployment handle materialises as the true K-step PLD of the
     deployed N-step mechanism on its ``K``-prefix, so
-    ``Repeated(per_step(proc), K).pld()`` equals
-    ``proc.pld_at(K)``.  Lets the DP-FTRL training loop use the
-    same accountant composition idiom as DP-SGD.
+    ``(per_step(proc) * K).pld()`` equals ``proc.pld_at(K)``. The handle's
+    stable run identity lets the Accountant advance that prefix without
+    confusing an equal-configured independent deployment for a continuation.
     """
 
     def step(nm: float, _f: Callable[[float], Any] = raw_amplifier_factory) -> Any:
