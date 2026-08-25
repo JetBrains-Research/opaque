@@ -449,11 +449,104 @@ class TestCoinFlipFunction:
 
         first = auditing.coin_flip(dataset, num_canaries=20, key=root_key)
         second = auditing.coin_flip(dataset, num_canaries=20, key=root_key)
+        pooled = auditing.coin_flip(
+            dataset,
+            num_canaries=20,
+            key=root_key,
+            candidate_indices=range(50, 100),
+        )
 
         np.testing.assert_array_equal(first.canary_indices, expected_indices)
         np.testing.assert_array_equal(first._in_mask, expected_mask)
         np.testing.assert_array_equal(first.canary_indices, second.canary_indices)
         np.testing.assert_array_equal(first._in_mask, second._in_mask)
+        np.testing.assert_array_equal(pooled._in_mask, expected_mask)
+
+    def test_coin_flip_draws_from_candidate_pool(self):
+        dataset = list(range(100))
+        pool = range(80, 100)
+        cf = auditing.coin_flip(
+            dataset,
+            num_canaries=10,
+            key=key(42),
+            candidate_indices=pool,
+        )
+
+        assert set(cf.canary_indices) <= set(pool)
+        assert set(range(80)) <= set(cf.train_indices(len(dataset)))
+
+    def test_candidate_pool_order_is_irrelevant(self):
+        dataset = list(range(100))
+        pool = np.arange(80, 100)
+        ascending = auditing.coin_flip(
+            dataset,
+            num_canaries=10,
+            key=key(42),
+            candidate_indices=pool,
+        )
+        descending = auditing.coin_flip(
+            dataset,
+            num_canaries=10,
+            key=key(42),
+            candidate_indices=pool[::-1],
+        )
+
+        np.testing.assert_array_equal(
+            ascending.canary_indices, descending.canary_indices
+        )
+        np.testing.assert_array_equal(ascending._in_mask, descending._in_mask)
+
+    def test_pool_sized_to_num_canaries_designates_every_index(self):
+        dataset = list(range(100))
+        pool = np.arange(80, 100)
+        cf = auditing.coin_flip(
+            dataset,
+            num_canaries=len(pool),
+            key=key(42),
+            candidate_indices=pool,
+        )
+
+        assert set(cf.canary_indices) == set(pool)
+
+    def test_coin_flip_rejects_too_many_canaries_for_pool(self):
+        with pytest.raises(ValueError, match="exceeds candidate pool size"):
+            auditing.coin_flip(
+                list(range(10)),
+                num_canaries=3,
+                key=key(42),
+                candidate_indices=[0, 1],
+            )
+
+    @pytest.mark.parametrize(
+        ("candidate_indices", "message"),
+        [
+            ([0, 0], "unique"),
+            ([-1, 0], "range"),
+            ([0, 10], "range"),
+            ([0.0, 1.0], "integers"),
+            ([False, True], "integers"),
+            ([[0], [1]], "1-D"),
+        ],
+    )
+    def test_coin_flip_rejects_invalid_candidate_pool(self, candidate_indices, message):
+        with pytest.raises(ValueError, match=message):
+            auditing.coin_flip(
+                list(range(10)),
+                num_canaries=2,
+                key=key(42),
+                candidate_indices=candidate_indices,
+            )
+
+    def test_empty_candidate_pool_accepts_zero_canaries(self):
+        cf = auditing.coin_flip(
+            list(range(10)),
+            num_canaries=0,
+            key=key(42),
+            candidate_indices=[],
+        )
+
+        assert cf.num_canaries == 0
+        assert cf.train_indices(10) == list(range(10))
 
     def test_coin_flip_ignores_unrelated_global_numpy_draws(self):
         dataset = list(range(100))
