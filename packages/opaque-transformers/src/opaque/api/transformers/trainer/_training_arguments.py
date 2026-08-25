@@ -554,110 +554,7 @@ class TrainingArguments:
         if getattr(self, "_dp_post_init_done", False):
             return
 
-        # --- 1. Output directory --------------------------------------------
-        if self.output_dir is None:
-            self.output_dir = "trainer_output"
-            log.info("No output directory specified, defaulting to 'trainer_output'.")
-        if self.output_dir is not None:
-            self.output_dir = str(Path(self.output_dir).expanduser())
-        if self.logging_dir is None and self.output_dir is not None:
-            self.logging_dir = str(Path(self.output_dir) / "runs")
-        if self.logging_dir is not None:
-            self.logging_dir = str(Path(self.logging_dir).expanduser())
-
-        # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
-        # JSON object string, HF-style "key=value,..." string, or None.
-        # Normalize once here so downstream code only ever sees
-        # ``dict[str, Any] | None``.
-        for field_name in _DICT_FIELDS:
-            setattr(
-                self,
-                field_name,
-                _normalize_dict_field(getattr(self, field_name)),
-            )
-
-        # Privacy / clipping / sampling kwargs default to ``{}`` rather
-        # than ``None`` for the consumer's convenience (avoids ``or {}``
-        # at every read site).  ``optim_args`` / ``lr_scheduler_kwargs``
-        # / ``performance_kernels_config`` / ``gradient_checkpointing_kwargs``
-        # may legitimately be ``None`` (= unset, fall through to factory
-        # defaults) and stay as-is.
-        for _name in (
-            "clipping_kwargs",
-            "sampling_kwargs",
-            "noise_calibration_kwargs",
-            "privacy_noise_mechanism_kwargs",
-        ):
-            if getattr(self, _name) is None:
-                setattr(self, _name, {})
-        _nc = self.noise_calibration_kwargs
-        for _k, _default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
-            _nc.setdefault(_k, _default)
-
-        # --- 2. Strategy validation -----------------------------------------
-        # Plain-string strategies (no HF enum round-trip).
-        if self.eval_strategy not in _INTERVAL_STRATEGIES:
-            raise ValueError(
-                f"eval_strategy={self.eval_strategy!r}; "
-                f"expected one of {_INTERVAL_STRATEGIES}"
-            )
-        if self.logging_strategy not in _INTERVAL_STRATEGIES:
-            raise ValueError(
-                f"logging_strategy={self.logging_strategy!r}; "
-                f"expected one of {_INTERVAL_STRATEGIES}"
-            )
-        if self.save_strategy not in _SAVE_STRATEGIES:
-            raise ValueError(
-                f"save_strategy={self.save_strategy!r}; "
-                f"expected one of {_SAVE_STRATEGIES}"
-            )
-        for _ll_name, _ll_val in (
-            ("log_level", self.log_level),
-            ("log_level_replica", self.log_level_replica),
-        ):
-            if _ll_val not in _LOG_LEVELS:
-                raise ValueError(
-                    f"{_ll_name}={_ll_val!r}; expected one of {sorted(_LOG_LEVELS)}"
-                )
-        # Normalize string / SchedulerType forms to the enum; a
-        # user-supplied ``Schedule`` recipe is left as-is and consumed
-        # directly by ``build_lr_schedule``.
-        if isinstance(self.lr_scheduler, (str, SchedulerType)):
-            self.lr_scheduler = SchedulerType(self.lr_scheduler)
-        elif not callable(self.lr_scheduler):
-            raise TypeError(
-                f"lr_scheduler must be a str, SchedulerType, or "
-                f"Schedule callable; got "
-                f"{type(self.lr_scheduler).__name__}."
-            )
-
-        if isinstance(self.debug, str):
-            self.debug = [DebugOption(s) for s in self.debug.split()]
-        elif self.debug is None:
-            self.debug = []
-
-        if isinstance(self.include_num_input_tokens_seen, bool):
-            self.include_num_input_tokens_seen = (
-                "all" if self.include_num_input_tokens_seen else "no"
-            )
-        if (
-            self.include_num_input_tokens_seen
-            not in _INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES
-        ):
-            raise ValueError(
-                "include_num_input_tokens_seen must be one of "
-                f"{sorted(_INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES)} or a boolean; "
-                f"got {self.include_num_input_tokens_seen!r}."
-            )
-
-        if self.report_to == "all" or self.report_to == ["all"]:
-            from transformers.integrations import get_available_reporting_integrations
-
-            self.report_to = get_available_reporting_integrations()
-        elif self.report_to in (None, "none") or self.report_to == ["none"]:
-            self.report_to = []
-        elif not isinstance(self.report_to, list):
-            self.report_to = [self.report_to]
+        self._normalize_and_validate_common_fields()
 
         # --- 3. ``disable_tqdm`` default from log level (HF parity) ---------
         if self.disable_tqdm is None:
@@ -909,187 +806,7 @@ class TrainingArguments:
                 "--auto-find-microbatch-size, or disable --torch-compile."
             )
 
-        # --- 9. Optimizer name validation ----------------------------------
-        # Validation/alias normalization is centralized in ``_optim``.
-        _resolve_optimizer_name(self.optim)
-
-        # --- 11. clipping_norm (DP per-example clip, optional per-group dict) ---
-        self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
-
-        # --- 11b. DP mechanism / clipping / sampling surfaces ---------------
-        # At least one of NM / target_epsilon must be set; NM=0.0 is
-        # allowed as explicit non-private.
-        if (
-            self.privacy_noise_multiplier is None
-            and self.privacy_target_epsilon is None
-        ):
-            raise ValueError(
-                "Set either privacy_noise_multiplier (use 0.0 for non-private "
-                "training) or privacy_target_epsilon (to calibrate noise to a "
-                "budget); neither was provided."
-            )
-        # NM=0.0 means non-private; target_epsilon is meaningless on that path.
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier == 0.0
-            and self.privacy_target_epsilon is not None
-        ):
-            raise ValueError(
-                "privacy_noise_multiplier=0.0 is the non-private path; "
-                "privacy_target_epsilon is meaningless there.  Drop the target "
-                "or set a positive noise multiplier."
-            )
-        # Calibration target must be > 0.
-        if (
-            self.privacy_noise_multiplier is None
-            and self.privacy_target_epsilon is not None
-            and self.privacy_target_epsilon <= 0
-        ):
-            raise ValueError(
-                "privacy_target_epsilon must be > 0 when calibrating noise; "
-                f"got {self.privacy_target_epsilon!r}."
-            )
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier < 0
-        ):
-            raise ValueError(
-                "privacy_noise_multiplier must be >= 0; got "
-                f"{self.privacy_noise_multiplier!r}."
-            )
-        # Disabling clipping (clip bound = +inf, via clipping_norm=math.inf or
-        # a per-group dict with an inf bound) is only sound for a non-private
-        # run.  With noise — nm > 0, or nm calibrated (None) — infinite
-        # sensitivity yields an infinite realized noise stddev (nm * inf) and
-        # inf/NaN gradients, so require an explicit non-private baseline.
-        _clip_disabled = (
-            isinstance(self.clipping_norm, float) and math.isinf(self.clipping_norm)
-        ) or (
-            isinstance(self.clipping_norm, dict)
-            and any(
-                isinstance(v, float) and math.isinf(v)
-                for v in self.clipping_norm.values()
-            )
-        )
-        if _clip_disabled and self.privacy_noise_multiplier != 0.0:
-            raise ValueError(
-                "Disabling clipping (clipping_norm=math.inf) is only valid for "
-                "a non-private baseline (privacy_noise_multiplier=0.0); got "
-                f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
-                "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm."
-            )
-        if self.privacy_target_delta is not None and not (
-            0 < self.privacy_target_delta < 1
-        ):
-            raise ValueError(
-                "privacy_target_delta must lie in (0, 1); got "
-                f"{self.privacy_target_delta!r}."
-            )
-        if self.clipping_mode not in ("fixed", "adaptive", "auto"):
-            raise ValueError(
-                f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
-                f"got {self.clipping_mode!r}."
-            )
-        if self.privacy_noise_mechanism not in _MECHANISMS:
-            raise ValueError(
-                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                f"expected one of {sorted(_MECHANISMS)}."
-            )
-        # ``sampling_mode="auto"`` resolves to the canonical sampler for
-        # the chosen mechanism; explicit values are validated against the
-        # per-mechanism allow-list.  Downstream code only ever sees a
-        # resolved concrete mode.
-        if self.sampling_mode == "auto":
-            self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
-        elif self.sampling_mode not in _SAMPLING_MODES:
-            raise ValueError(
-                f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
-                f"of {sorted(_SAMPLING_MODES)}."
-            )
-        elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
-            raise ValueError(
-                f"sampling_mode={self.sampling_mode!r} is not valid for "
-                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
-                f"(omit sampling_mode or set 'auto' to pick automatically)."
-            )
-
-        if (
-            self.ignore_data_skip
-            and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
-        ):
-            raise ValueError(
-                f"ignore_data_skip=True requires sampling_mode in "
-                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
-                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
-                "poisson sampling, or start a fresh run."
-            )
-
-        if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
-            # MF privacy proofs require constant per-step record
-            # sensitivity; ``adaptive`` clipping drifts the threshold
-            # across steps and breaks the analysis.  ``fixed`` and
-            # ``auto`` (AUTO-S smooth scaling) both keep sensitivity
-            # constant by construction.  ``adaptive`` is auto-resolved
-            # to ``fixed`` with a warning so a user inheriting the
-            # default from a preset isn't blocked from running MF.
-            if self.clipping_mode == "adaptive":
-                log.warning(
-                    "clipping_mode='adaptive' is incompatible with "
-                    "privacy_noise_mechanism=%r (matrix-factorization "
-                    "requires constant per-step sensitivity); resolving "
-                    "to clipping_mode='fixed'.",
-                    self.privacy_noise_mechanism,
-                )
-                self.clipping_mode = "fixed"
-            # Auto-fill mechanism kwargs from the Mellum-shaped defaults
-            # so a one-line ``privacy_noise_mechanism='mf_band'`` works
-            # out of the box.  User-supplied keys win on collision.
-            defaults = _MECH_DEFAULTS[self.privacy_noise_mechanism]
-            for _k, _v in defaults.items():
-                self.privacy_noise_mechanism_kwargs.setdefault(_k, _v)
-
-        # Privacy-derived sampler parameters are owned by the strategy /
-        # amplifier; the trainer reads them off the built recipe at
-        # sampler-construction time.  Accepting them under
-        # ``sampling_kwargs`` would let the runtime sampler silently
-        # desync from the accountant.
-        _privacy_owned = {"bands", "sampling_prob"}
-        if isinstance(self.sampling_kwargs, dict):
-            _bad = _privacy_owned & self.sampling_kwargs.keys()
-            if _bad:
-                raise ValueError(
-                    f"sampling_kwargs may not carry privacy-derived keys "
-                    f"{sorted(_bad)}; these are owned by "
-                    f"privacy_noise_mechanism_kwargs (the strategy recipe) "
-                    f"and read off the built amplifier at runtime."
-                )
-            if self.sampling_mode == "k_out_of_t" and "total_participations" not in (
-                self.sampling_kwargs
-            ):
-                raise ValueError(
-                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                    "'total_participations' (each example participates in exactly "
-                    "that many optimizer steps, chosen uniformly over the run)."
-                )
-            if (
-                self.sampling_mode in ("random_allocation", "k_out_of_t")
-                and {
-                    "truncated_batch_size",
-                    "max_batch_size",
-                }
-                & self.sampling_kwargs.keys()
-            ):
-                raise ValueError(
-                    "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                    "supported with sampling_mode='poisson'."
-                )
-        elif self.sampling_mode == "k_out_of_t":
-            raise ValueError(
-                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                "'total_participations' (each example participates in exactly "
-                "that many optimizer steps, chosen uniformly over the run)."
-            )
+        self._validate_privacy_fields()
 
         # --- 12. metric_for_best_model must be eval-side -------------------
         if self.load_best_model_at_end and self.metric_for_best_model:
@@ -1144,6 +861,272 @@ class TrainingArguments:
 
         # Idempotency sentinel.
         self._dp_post_init_done = True
+
+    def _normalize_and_validate_common_fields(self) -> None:
+        """Normalize shared HF-shaped fields and validate their domains."""
+        if self.output_dir is None:
+            self.output_dir = "trainer_output"
+            log.info("No output directory specified, defaulting to 'trainer_output'.")
+        if self.output_dir is not None:
+            self.output_dir = str(Path(self.output_dir).expanduser())
+        if self.logging_dir is None and self.output_dir is not None:
+            self.logging_dir = str(Path(self.output_dir) / "runs")
+        if self.logging_dir is not None:
+            self.logging_dir = str(Path(self.logging_dir).expanduser())
+
+        # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
+        # JSON object string, HF-style "key=value,..." string, or None.
+        # Normalize once here so downstream code only ever sees
+        # ``dict[str, Any] | None``.
+        for field_name in _DICT_FIELDS:
+            setattr(
+                self,
+                field_name,
+                _normalize_dict_field(getattr(self, field_name)),
+            )
+
+        # Privacy / clipping / sampling kwargs default to ``{}`` rather
+        # than ``None`` for the consumer's convenience (avoids ``or {}``
+        # at every read site).  ``optim_args`` / ``lr_scheduler_kwargs``
+        # / ``performance_kernels_config`` / ``gradient_checkpointing_kwargs``
+        # may legitimately be ``None`` (= unset, fall through to factory
+        # defaults) and stay as-is.
+        for name in (
+            "clipping_kwargs",
+            "sampling_kwargs",
+            "noise_calibration_kwargs",
+            "privacy_noise_mechanism_kwargs",
+        ):
+            if getattr(self, name) is None:
+                setattr(self, name, {})
+        calibration = self.noise_calibration_kwargs
+        for key, default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
+            calibration.setdefault(key, default)
+
+        if self.eval_strategy not in _INTERVAL_STRATEGIES:
+            raise ValueError(
+                f"eval_strategy={self.eval_strategy!r}; "
+                f"expected one of {_INTERVAL_STRATEGIES}"
+            )
+        if self.logging_strategy not in _INTERVAL_STRATEGIES:
+            raise ValueError(
+                f"logging_strategy={self.logging_strategy!r}; "
+                f"expected one of {_INTERVAL_STRATEGIES}"
+            )
+        if self.save_strategy not in _SAVE_STRATEGIES:
+            raise ValueError(
+                f"save_strategy={self.save_strategy!r}; "
+                f"expected one of {_SAVE_STRATEGIES}"
+            )
+        for log_level_name, log_level_value in (
+            ("log_level", self.log_level),
+            ("log_level_replica", self.log_level_replica),
+        ):
+            if log_level_value not in _LOG_LEVELS:
+                raise ValueError(
+                    f"{log_level_name}={log_level_value!r}; "
+                    f"expected one of {sorted(_LOG_LEVELS)}"
+                )
+
+        # Normalize string / SchedulerType forms to the enum; a user-supplied
+        # Schedule recipe is left as-is and consumed by build_lr_schedule.
+        if isinstance(self.lr_scheduler, (str, SchedulerType)):
+            self.lr_scheduler = SchedulerType(self.lr_scheduler)
+        elif not callable(self.lr_scheduler):
+            raise TypeError(
+                f"lr_scheduler must be a str, SchedulerType, or "
+                f"Schedule callable; got "
+                f"{type(self.lr_scheduler).__name__}."
+            )
+
+        if isinstance(self.debug, str):
+            self.debug = [DebugOption(value) for value in self.debug.split()]
+        elif self.debug is None:
+            self.debug = []
+
+        if isinstance(self.include_num_input_tokens_seen, bool):
+            self.include_num_input_tokens_seen = (
+                "all" if self.include_num_input_tokens_seen else "no"
+            )
+        if (
+            self.include_num_input_tokens_seen
+            not in _INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES
+        ):
+            raise ValueError(
+                "include_num_input_tokens_seen must be one of "
+                f"{sorted(_INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES)} or a boolean; "
+                f"got {self.include_num_input_tokens_seen!r}."
+            )
+
+        if self.report_to == "all" or self.report_to == ["all"]:
+            from transformers.integrations import get_available_reporting_integrations
+
+            self.report_to = get_available_reporting_integrations()
+        elif self.report_to in (None, "none") or self.report_to == ["none"]:
+            self.report_to = []
+        elif not isinstance(self.report_to, list):
+            self.report_to = [self.report_to]
+
+    def _validate_privacy_fields(self) -> None:
+        """Normalize and validate optimizer, clipping, noise, and sampling fields."""
+        _resolve_optimizer_name(self.optim)
+        self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
+
+        # At least one of NM / target_epsilon must be set; NM=0.0 is allowed
+        # as an explicit non-private baseline.
+        if (
+            self.privacy_noise_multiplier is None
+            and self.privacy_target_epsilon is None
+        ):
+            raise ValueError(
+                "Set either privacy_noise_multiplier (use 0.0 for non-private "
+                "training) or privacy_target_epsilon (to calibrate noise to a "
+                "budget); neither was provided."
+            )
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_noise_multiplier == 0.0
+            and self.privacy_target_epsilon is not None
+        ):
+            raise ValueError(
+                "privacy_noise_multiplier=0.0 is the non-private path; "
+                "privacy_target_epsilon is meaningless there.  Drop the target "
+                "or set a positive noise multiplier."
+            )
+        if (
+            self.privacy_noise_multiplier is None
+            and self.privacy_target_epsilon is not None
+            and self.privacy_target_epsilon <= 0
+        ):
+            raise ValueError(
+                "privacy_target_epsilon must be > 0 when calibrating noise; "
+                f"got {self.privacy_target_epsilon!r}."
+            )
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_noise_multiplier < 0
+        ):
+            raise ValueError(
+                "privacy_noise_multiplier must be >= 0; got "
+                f"{self.privacy_noise_multiplier!r}."
+            )
+
+        # Infinite sensitivity is only meaningful for an explicitly
+        # non-private baseline.
+        clipping_disabled = (
+            isinstance(self.clipping_norm, float) and math.isinf(self.clipping_norm)
+        ) or (
+            isinstance(self.clipping_norm, dict)
+            and any(
+                isinstance(value, float) and math.isinf(value)
+                for value in self.clipping_norm.values()
+            )
+        )
+        if clipping_disabled and self.privacy_noise_multiplier != 0.0:
+            raise ValueError(
+                "Disabling clipping (clipping_norm=math.inf) is only valid for "
+                "a non-private baseline (privacy_noise_multiplier=0.0); got "
+                f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
+                "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm."
+            )
+        if self.privacy_target_delta is not None and not (
+            0 < self.privacy_target_delta < 1
+        ):
+            raise ValueError(
+                "privacy_target_delta must lie in (0, 1); got "
+                f"{self.privacy_target_delta!r}."
+            )
+        if self.clipping_mode not in ("fixed", "adaptive", "auto"):
+            raise ValueError(
+                f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
+                f"got {self.clipping_mode!r}."
+            )
+        if self.privacy_noise_mechanism not in _MECHANISMS:
+            raise ValueError(
+                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                f"expected one of {sorted(_MECHANISMS)}."
+            )
+
+        if self.sampling_mode == "auto":
+            self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
+        elif self.sampling_mode not in _SAMPLING_MODES:
+            raise ValueError(
+                f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
+                f"of {sorted(_SAMPLING_MODES)}."
+            )
+        elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
+            raise ValueError(
+                f"sampling_mode={self.sampling_mode!r} is not valid for "
+                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
+                f"(omit sampling_mode or set 'auto' to pick automatically)."
+            )
+
+        if (
+            self.ignore_data_skip
+            and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
+        ):
+            raise ValueError(
+                f"ignore_data_skip=True requires sampling_mode in "
+                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
+                "poisson sampling, or start a fresh run."
+            )
+
+        if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
+            # Matrix-factorization mechanisms require constant per-step
+            # sensitivity; adaptive clipping therefore resolves to fixed.
+            if self.clipping_mode == "adaptive":
+                log.warning(
+                    "clipping_mode='adaptive' is incompatible with "
+                    "privacy_noise_mechanism=%r (matrix-factorization "
+                    "requires constant per-step sensitivity); resolving "
+                    "to clipping_mode='fixed'.",
+                    self.privacy_noise_mechanism,
+                )
+                self.clipping_mode = "fixed"
+            defaults = _MECH_DEFAULTS[self.privacy_noise_mechanism]
+            for key, value in defaults.items():
+                self.privacy_noise_mechanism_kwargs.setdefault(key, value)
+
+        # Privacy-derived sampler parameters are owned by the strategy /
+        # amplifier and must not be duplicated under sampling_kwargs.
+        privacy_owned = {"bands", "sampling_prob"}
+        if isinstance(self.sampling_kwargs, dict):
+            invalid = privacy_owned & self.sampling_kwargs.keys()
+            if invalid:
+                raise ValueError(
+                    f"sampling_kwargs may not carry privacy-derived keys "
+                    f"{sorted(invalid)}; these are owned by "
+                    f"privacy_noise_mechanism_kwargs (the strategy recipe) "
+                    f"and read off the built amplifier at runtime."
+                )
+            if self.sampling_mode == "k_out_of_t" and "total_participations" not in (
+                self.sampling_kwargs
+            ):
+                raise ValueError(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'total_participations' (each example participates in exactly "
+                    "that many optimizer steps, chosen uniformly over the run)."
+                )
+            if (
+                self.sampling_mode in ("random_allocation", "k_out_of_t")
+                and {
+                    "truncated_batch_size",
+                    "max_batch_size",
+                }
+                & self.sampling_kwargs.keys()
+            ):
+                raise ValueError(
+                    "sampling_kwargs truncated_batch_size/max_batch_size is only "
+                    "supported with sampling_mode='poisson'."
+                )
+        elif self.sampling_mode == "k_out_of_t":
+            raise ValueError(
+                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                "'total_participations' (each example participates in exactly "
+                "that many optimizer steps, chosen uniformly over the run)."
+            )
 
     # =================================================================
     # Distributed property contract (replaces HF `distributed_state`-driven

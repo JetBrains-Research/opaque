@@ -107,6 +107,20 @@ def _compute_clipping_stats(
 ADAPTIVE_CLIPPING_STREAM_FOLD = "opaque.dpsgd.adaptive_clipping"
 
 
+def _reference_array(differentiated: Any) -> Any:
+    """First native leaf of the differentiated argument, for dtype/device.
+
+    The empty aux arrays are built ``like`` this leaf, so they land on the
+    same provider, device and real dtype as the gradients they stand in for.
+    """
+    leaves = tree_leaves(differentiated)
+    if not leaves:
+        raise ValueError(
+            "Adaptive clipping requires at least one native parameter array."
+        )
+    return leaves[0]
+
+
 def _normal_scalar(*, key: RngKey) -> float:
     """Draw a float32 scalar and materialize it at the state transition boundary.
 
@@ -391,14 +405,6 @@ def adaptive_clipped_grad(
             _batch_size=0.0,
         )
 
-    def _reference_array(args: tuple[Any, ...]) -> Any:
-        leaves = tree_leaves(args[argnums_tuple[0]])
-        if not leaves:
-            raise ValueError(
-                "Adaptive clipping requires at least one native parameter array."
-            )
-        return leaves[0]
-
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
         """Compute clipped gradients with adaptive threshold.
 
@@ -438,7 +444,7 @@ def adaptive_clipped_grad(
                     ),
                 )
             if return_aux:
-                reference = _reference_array(args)
+                reference = _reference_array(args[argnums_tuple[0]])
                 empty = ops.zeros((0,), dtype=ops.real_dtype(reference), like=reference)
                 adaptive_aux = AdaptiveClippedGradAux(
                     loss_values=empty,

@@ -311,7 +311,7 @@ class RuntimeCheckpoint:
     )
 
 
-def save_dp_runtime_state(
+def save_dp_runtime_state(  # noqa: PLR0913
     path: str,
     *,
     clip_state: Any,
