@@ -218,7 +218,7 @@ src = [
 #            (create_graph=, batch_size=, prediction_loss_only=, vmap info/…)
 #   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
 #   TRY003  — requires bespoke exception classes for every message; low fit
-#   PLR0913/PLR0915/PLR0917/PLR2004 — API arity & magic-number nags; style debt
+#   PLR2004 — magic-number comparisons; style debt
 #   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
 # Keep editor diagnostics aligned with the CI lint gate. Ruff still formats
@@ -252,6 +252,7 @@ select = [
   "TC",   # move typing-only imports under TYPE_CHECKING
   "PTH",  # prefer pathlib over os.path
   "INP",  # flag missing __init__.py (tests + PEP 420 façades ignored below)
+  "PLR0913", "PLR0915", "PLR0917",
   # Public API documentation. Keep the source-facing contract covered without
   # requiring prose for private implementation details or test helpers.
   "D100", "D101", "D103", "D104", "D417",
@@ -272,10 +273,27 @@ known-first-party = ["opaque"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.pylint]
+# These are implementation guardrails, not public API design constraints.
+# Fourteen admits supported HF-compatible trainer signatures; public API shape
+# remains a semantic review decision. Long trainer loops settle the statement
+# ceiling at 120 while still rejecting monolithic configuration/validation code.
+max-args = 14
+max-positional-args = 14
+max-statements = 120
+
 [tool.ruff.lint.per-file-ignores]
 # Optimizer / scheduler tests import after pytest.importorskip("torch"|"torchopt").
 "packages/opaque-optimizers/tests/**" = ["E402"]
 "packages/opaque-transformers/tests/opaque_transformers/test_scheduler_dispatch.py" = ["E402"]
+# Triton launch/autograd signatures mirror fixed tensor/stride/shape contracts;
+# grouping these arguments would obscure the kernel ABI rather than simplify it.
+"packages/opaque-patches/src/opaque/api/patches/kernels/fused_add_rms_norm.py" = ["PLR0913", "PLR0917"]
+"packages/opaque-patches/src/opaque/api/patches/kernels/fused_moe.py" = ["PLR0913", "PLR0917"]
+"packages/opaque-patches/src/opaque/api/patches/kernels/linear_cross_entropy.py" = ["PLR0913", "PLR0917"]
+"packages/opaque-patches/src/opaque/api/patches/kernels/lora.py" = ["PLR0913", "PLR0917"]
+"packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py" = ["PLR0913", "PLR0917"]
+"packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py" = ["PLR0913", "PLR0917"]
 # INP001: pytest trees intentionally omit __init__.py.
 "**/tests/**" = ["INP001", "D"]
 "tests/**" = ["INP001", "D"]
