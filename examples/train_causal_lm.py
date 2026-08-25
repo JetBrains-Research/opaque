@@ -2455,7 +2455,24 @@ def main():
         else:
             from opaque.optimizers import sgd
 
-            base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+            # momentum=args.sgd_momentum, explicitly. opaque.optimizers.sgd
+            # defaults momentum to 0.0 (_sgd.py:43), so omitting it gave every
+            # frozen arm PLAIN SGD while the rotating arm above got heavy-ball at
+            # args.sgd_momentum -- and W&B logged sgd_momentum=0.9 for both,
+            # because that is the argparse value, not what the optimizer received.
+            # Checking the run config could not detect this; only reading the two
+            # branches could.
+            #
+            # Consequence: every frozen-vs-rotating gap measured on the SGD path
+            # before 2026-08-25 carries a momentum confound worth about 2.7e-3 of
+            # the 8.9e-3 headline. The momentum-CLEAN comparison is rotation
+            # against XSE_RESET_IN_PLACE=1 (both xse_sgd, both heavy-ball, span
+            # pinned in the control), which gives 6.2e-3.
+            base_opt = sgd(
+                lr=lr_for_opt,
+                momentum=args.sgd_momentum,
+                weight_decay=args.weight_decay,
+            )
     elif args.optimizer == "adamw":
         # LoRA-XSe under AdamW. Until now _use_xse was only reachable from the
         # sgd branch above, so --lora-xse-p-e was silently ignored here and every
