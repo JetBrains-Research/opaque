@@ -21,13 +21,13 @@ def check_lower_triangular(M: torch.Tensor, name: str = "", **allclose_kwargs) -
 
 def check_is_matrix(M: torch.Tensor, name: str = "") -> None:
     """Check that M is a 2D tensor."""
-    if M.ndim != 2:
+    if M.ndim != 2:  # noqa: PLR2004 - matrix rank is self-evident here
         raise ValueError(f"Matrix {_pad(name)}has unexpected shape {M.shape}")
 
 
 def check_square(M: torch.Tensor, name: str = "") -> None:
     """Check that M is a square matrix."""
-    if M.ndim != 2 or M.shape[0] != M.shape[1]:
+    if M.ndim != 2 or M.shape[0] != M.shape[1]:  # noqa: PLR2004 - matrix rank
         raise ValueError(f"Matrix {_pad(name)}should be square, found shape {M.shape}")
 
 

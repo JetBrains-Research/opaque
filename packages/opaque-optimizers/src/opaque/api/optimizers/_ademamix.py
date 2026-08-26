@@ -242,7 +242,7 @@ def ademamix(
     Returns:
         A ``torchopt.base.GradientTransformation``.
     """
-    if len(betas) != 3:
+    if len(betas) != 3:  # noqa: PLR2004 - AdEMAMix exposes its documented beta triple
         raise ValueError(f"betas must contain exactly three values, got {betas}")
     b1, b2, b3 = betas
     for name, b in (("β₁", b1), ("β₂", b2), ("β₃", b3)):

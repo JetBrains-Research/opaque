@@ -1007,7 +1007,7 @@ class DPOTrainer(DPTrainer):
             k[len(prefix) :]: v for k, v in params.items() if k.startswith(prefix)
         }
         backbone = attrgetter(self._backbone_prefix)(self._model)
-        unbatched = input_ids.ndim < 2
+        unbatched = input_ids.ndim < 2  # noqa: PLR2004 - batchless token IDs are 1D
         if unbatched:
             input_ids = input_ids.unsqueeze(0)
             attention_mask = attention_mask.unsqueeze(0)

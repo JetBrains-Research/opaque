@@ -23,6 +23,13 @@ import triton.language as tl
 
 # Constants
 MAX_FUSED_SIZE: int = 65536
+_BLOCK_SIZE_FOR_32_WARPS = 32768
+_BLOCK_SIZE_FOR_16_WARPS = 8192
+_BLOCK_SIZE_FOR_8_WARPS = 2048
+_MAX_BATCH_SIZE_BIN = 1024
+_MIN_BATCH_SIZE_BIN = 128
+_MAX_PER_ROW_KERNEL_BLOCK_SIZE = 256
+_MIN_ROWS_FOR_BLOCK_KERNEL = 32768
 next_power_of_2 = triton.next_power_of_2
 
 
@@ -42,11 +49,11 @@ def calculate_settings(n: int) -> tuple[int, int]:
             f"the maximum CUDA blocksize = {MAX_FUSED_SIZE}."
         )
     num_warps: int = 4
-    if BLOCK_SIZE >= 32768:
+    if BLOCK_SIZE >= _BLOCK_SIZE_FOR_32_WARPS:
         num_warps = 32
-    elif BLOCK_SIZE >= 8192:
+    elif BLOCK_SIZE >= _BLOCK_SIZE_FOR_16_WARPS:
         num_warps = 16
-    elif BLOCK_SIZE >= 2048:
+    elif BLOCK_SIZE >= _BLOCK_SIZE_FOR_8_WARPS:
         num_warps = 8
     return BLOCK_SIZE, num_warps
 
@@ -129,10 +136,10 @@ def _build_flat_valids(
 
 def b_bin_fn(b: int) -> int:
     """Batch size binning for autotune key stability."""
-    if b >= 1024:
-        return 1024
-    elif b <= 128:
-        return 128
+    if b >= _MAX_BATCH_SIZE_BIN:
+        return _MAX_BATCH_SIZE_BIN
+    elif b <= _MIN_BATCH_SIZE_BIN:
+        return _MIN_BATCH_SIZE_BIN
     else:
         return 512
 

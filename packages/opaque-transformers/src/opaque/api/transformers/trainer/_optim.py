@@ -253,7 +253,7 @@ def validate_functional_optimizer_cls_and_kwargs(
 
     if (
         not isinstance(optimizer_cls_and_kwargs, tuple)
-        or len(optimizer_cls_and_kwargs) != 2
+        or len(optimizer_cls_and_kwargs) != 2  # noqa: PLR2004 - factory/kwargs pair
     ):
         raise TypeError(
             "optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs)."

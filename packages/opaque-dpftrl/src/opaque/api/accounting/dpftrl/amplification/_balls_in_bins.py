@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = MfGaussian
+_MIN_NUM_BINS = 2
 
 #: Strategy types whose Gram is needed at PLD time (the "correlated MF" set).
 _CorrelatedStrategies = (BltStrategy, BsrStrategy, BisrStrategy, LambdaCgdStrategy)
@@ -327,7 +328,7 @@ def balls_in_bins(
             "BsrStrategy, BisrStrategy, LambdaCgdStrategy, IdentityStrategy}, "
             f"got {type(inner.strategy).__name__}."
         )
-    if num_bins < 2:
+    if num_bins < _MIN_NUM_BINS:
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")

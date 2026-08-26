@@ -281,7 +281,7 @@ def _tensor_mf_noise(
     n_steps: int | None = None,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a 2D noising matrix C^{-1}."""
-    if noising.ndim != 2:
+    if noising.ndim != 2:  # noqa: PLR2004 - noising is explicitly a matrix
         raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
     horizon = (
         noising.shape[0] if n_steps is None else _require_positive_int_horizon(n_steps)

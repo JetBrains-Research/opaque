@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
 #: Mechanism types accepted by :func:`random_allocation`.
 _Inner = Gaussian | AdaClip | NonPrivate
+_MIN_NUM_BINS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +67,7 @@ class RandomAllocation(DpHorizonProcess):
     def __post_init__(self):
         # Validate here rather than only in the factory: deserialization
         # calls ``cls(**kwargs)`` directly, bypassing it.
-        if int(self.num_bins) < 2:
+        if int(self.num_bins) < _MIN_NUM_BINS:
             raise ValueError(
                 f"RandomAllocation: num_bins must be >= 2, got {self.num_bins}"
             )

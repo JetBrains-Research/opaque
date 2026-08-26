@@ -218,7 +218,6 @@ src = [
 #            (create_graph=, batch_size=, prediction_loss_only=, vmap info/…)
 #   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
 #   TRY003  — requires bespoke exception classes for every message; low fit
-#   PLR2004 — magic-number comparisons; style debt
 #   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
 # Keep editor diagnostics aligned with the CI lint gate. Ruff still formats
@@ -252,7 +251,7 @@ select = [
   "TC",   # move typing-only imports under TYPE_CHECKING
   "PTH",  # prefer pathlib over os.path
   "INP",  # flag missing __init__.py (tests + PEP 420 façades ignored below)
-  "PLR0913", "PLR0915", "PLR0917",
+  "PLR0913", "PLR0915", "PLR0917", "PLR2004",
   # Public API documentation. Keep the source-facing contract covered without
   # requiring prose for private implementation details or test helpers.
   "D100", "D101", "D103", "D104", "D417",
@@ -295,8 +294,8 @@ max-statements = 120
 "packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py" = ["PLR0913", "PLR0917"]
 "packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py" = ["PLR0913", "PLR0917"]
 # INP001: pytest trees intentionally omit __init__.py.
-"**/tests/**" = ["INP001", "D"]
-"tests/**" = ["INP001", "D"]
+"**/tests/**" = ["INP001", "D", "PLR2004"]
+"tests/**" = ["INP001", "D", "PLR2004"]
 # Internal implementation methods are deliberately not selected by the
 # public-surface rules above; test helpers remain outside this docstring scope.
 # PEP 420: `opaque/` has no __init__.py (multi-wheel namespace); façade

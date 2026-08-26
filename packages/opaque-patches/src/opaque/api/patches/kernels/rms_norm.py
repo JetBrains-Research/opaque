@@ -21,7 +21,17 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, follow_autocast, torch_gpu_device, triton_cast
+from ._utils import (
+    _MAX_PER_ROW_KERNEL_BLOCK_SIZE,
+    _MIN_ROWS_FOR_BLOCK_KERNEL,
+    calculate_settings,
+    follow_autocast,
+    torch_gpu_device,
+    triton_cast,
+)
+
+_WEIGHT_TRAINABLE_META_INDEX = 5
+_SAVED_TENSORS_WITH_WEIGHT = 3
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -306,7 +316,11 @@ def _rms_norm_forward_triton(
     # makes the per-row grid ``(n_rows,)`` launch one tiny program per row; the
     # block kernel runs one program per SM, each looping ``rows_per_program``
     # rows. Same math; ``row_mode`` forces the per-row path.
-    use_block = not (BLOCK_SIZE > 256 or n_rows < 4096 * 8 or row_mode)
+    use_block = not (
+        BLOCK_SIZE > _MAX_PER_ROW_KERNEL_BLOCK_SIZE
+        or n_rows < _MIN_ROWS_FOR_BLOCK_KERNEL
+        or row_mode
+    )
 
     with torch_gpu_device(X.device):
         if use_block:
@@ -489,7 +503,11 @@ class _RMSNormBackward(torch.autograd.Function):
 
         # Missing flag defaults to trainable: a spurious per-example dW only
         # costs memory; a spurious batch-sum dW leaks across examples.
-        w_trainable = bool(meta_i[5].item()) if meta_i.numel() > 5 else True
+        w_trainable = (
+            bool(meta_i[_WEIGHT_TRAINABLE_META_INDEX].item())
+            if meta_i.numel() > _WEIGHT_TRAINABLE_META_INDEX
+            else True
+        )
         dW_out = None
         if W_use is not None and w_trainable:
             # Per-example dW: the Triton call sums dW over the merged (B*T, H)
@@ -589,7 +607,7 @@ class Opaque_RMSNorm(torch.autograd.Function):
         dim = go.shape[-1]
         go2 = go.reshape(-1, dim)
         saved = ctx.saved_tensors
-        if len(saved) == 3:
+        if len(saved) == _SAVED_TENSORS_WITH_WEIGHT:
             X_s, W, RSTD = saved
             W_arg = W
         else:

@@ -96,7 +96,7 @@ def lion(
     Returns:
         A ``torchopt.base.GradientTransformation``.
     """
-    if len(betas) != 2:
+    if len(betas) != 2:  # noqa: PLR2004 - Lion exposes the documented beta pair
         raise ValueError(f"betas must contain exactly two values, got {betas}")
     b1, b2 = betas
     if not 0 <= b1 < 1:

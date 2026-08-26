@@ -32,6 +32,8 @@ from opaque.api.transformers.trainer import DPTrainer
 
 from ._sft_config import SFTConfig
 
+_IGNORE_INDEX = -100
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -491,7 +493,7 @@ class SFTTrainer(DPTrainer):
             k[len(prefix) :]: v for k, v in params.items() if k.startswith(prefix)
         }
         backbone = attrgetter(self._backbone_prefix)(self._model)
-        unbatched = input_ids.ndim < 2
+        unbatched = input_ids.ndim < 2  # noqa: PLR2004 - batchless token IDs are 1D
         if unbatched:
             input_ids = input_ids.unsqueeze(0)
             attention_mask = attention_mask.unsqueeze(0)
@@ -686,7 +688,7 @@ class SFTTrainer(DPTrainer):
         # ``mask`` is the FULL-length supervised mask; ``entropy_from_logits`` and
         # ``mean_token_accuracy`` both shift internally to next-token alignment
         # (logits[..., :-1, :] vs mask[..., 1:]), so we pass the full mask here.
-        mask = labels != -100
+        mask = labels != _IGNORE_INDEX
         return loss, {
             "entropy": entropy_from_logits(logits, mask),
             "mean_token_accuracy": mean_token_accuracy(logits, labels, mask),

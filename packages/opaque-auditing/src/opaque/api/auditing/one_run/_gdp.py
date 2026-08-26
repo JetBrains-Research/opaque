@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 
 _TOL_MU = 0.01
+_EXP_OVERFLOW_LOG_THRESHOLD = 700
+_EPSILON_SEARCH_TOLERANCE = 1e-12
+_SADDLEPOINT_SEARCH_TOLERANCE = 1e-10
 
 # Maximum number of ranks to compute exactly.  Higher ranks (sorted by |L|)
 # have lower error probability (more confident).  Truncated low-confidence
@@ -143,7 +146,9 @@ class GdpMethod:
         b = -mu / 2.0 - epsilon / mu
         term1 = scipy.stats.norm.cdf(a)
         log_term2 = epsilon + scipy.stats.norm.logcdf(b)
-        term2 = math.exp(log_term2) if log_term2 < 700 else math.inf
+        term2 = (
+            math.exp(log_term2) if log_term2 < _EXP_OVERFLOW_LOG_THRESHOLD else math.inf
+        )
         return float(max(0.0, term1 - term2))
 
     def beta_at(
@@ -208,7 +213,9 @@ def _gdp_to_eps_delta(mu: float, delta: float) -> float:
         b = -mu / 2.0 - eps / mu
         term1 = _norm_cdf(a)
         log_term2 = eps + _norm_logcdf(b)
-        term2 = math.exp(log_term2) if log_term2 < 700 else math.inf
+        term2 = (
+            math.exp(log_term2) if log_term2 < _EXP_OVERFLOW_LOG_THRESHOLD else math.inf
+        )
         return term1 - term2
 
     eps_lo = 0.0
@@ -225,7 +232,7 @@ def _gdp_to_eps_delta(mu: float, delta: float) -> float:
             eps_lo = eps_mid
         else:
             eps_hi = eps_mid
-        if eps_hi - eps_lo < 1e-12:
+        if eps_hi - eps_lo < _EPSILON_SEARCH_TOLERANCE:
             break
 
     return eps_lo
@@ -403,7 +410,7 @@ def _chernoff_lower_tail(v_k: np.ndarray, n_trunc: int, u: int) -> float:
                 lam_hi = lam_mid
             else:
                 lam_lo = lam_mid
-            if lam_hi - lam_lo < 1e-10:
+            if lam_hi - lam_lo < _SADDLEPOINT_SEARCH_TOLERANCE:
                 break
         lam_star = (lam_lo + lam_hi) / 2.0
 
