@@ -138,7 +138,7 @@ Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 
 | Amplification | Supported | Notes |
 |---------------|:---------:|-------|
-| `b_min_sep()` | Yes | Confidence-bounded MC PLD; samples derive from `mc_resolution=1e-6` and `mc_failure_probability=1e-6` |
+| `b_min_sep()` | Yes | Confidence-bounded MC PLD; samples derive from `mc_resolution=1e-4` and `mc_failure_probability=1e-6` |
 
 For large `n_steps × resolved_num_mc_samples`, the implementation keeps **one copy** of
 the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them

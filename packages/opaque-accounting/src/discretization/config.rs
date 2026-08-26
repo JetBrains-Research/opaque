@@ -85,7 +85,7 @@ pub struct DiscretizationConfig {
     /// Maximum unresolved Monte Carlo probability mass.
     ///
     /// This has the same units as DP delta. The confidence-bounded empirical
-    /// PLD moves at most this mass to +infinity. Default: 1e-6.
+    /// PLD moves at most this mass to +infinity. Default: 1e-4.
     pub mc_resolution: f64,
 
     /// Failure probability of the simultaneous Monte Carlo confidence band.
@@ -122,7 +122,7 @@ impl DiscretizationConfig {
             tail_mass_truncation: 1e-15,
             max_conv_grid: 32_768,
             seed: 42,
-            mc_resolution: 1e-6,
+            mc_resolution: 1e-4,
             mc_failure_probability: 1e-6,
         })
     }
@@ -228,7 +228,7 @@ impl Default for DiscretizationConfig {
             tail_mass_truncation: 1e-15,
             max_conv_grid: 32_768,
             seed: 42,
-            mc_resolution: 1e-6,
+            mc_resolution: 1e-4,
             mc_failure_probability: 1e-6,
         }
     }
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(config.discretization, 1e-4);
         assert_eq!(config.log_mass_truncation_bound, -50.0);
         assert_eq!(config.max_conv_grid, 32_768);
-        assert_eq!(config.mc_resolution, 1e-6);
+        assert_eq!(config.mc_resolution, 1e-4);
         assert_eq!(config.mc_failure_probability, 1e-6);
     }
 

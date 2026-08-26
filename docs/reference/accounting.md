@@ -155,16 +155,19 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
 | `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
 | `max_conv_grid`                | `32_768`     | Convolution grid cap for random-allocation PLD   |
-| `mc_resolution`                | `1e-6`       | Maximum unresolved MC mass, in delta units       |
+| `mc_resolution`                | `1e-4`       | Maximum unresolved MC mass, in delta units       |
 | `mc_failure_probability`       | `1e-6`       | Failure probability of the simultaneous MC bound |
 
-The Monte Carlo count is derived from exact Beta order-statistic bounds with a
-Bonferroni allocation over all ranks and both adjacency directions. At the two
-`1e-6` defaults this requires about 31.8 million samples per direction. Counts
-above 50 million emit an advisory runtime warning but are not capped. The
-construction follows the exact binomial bounds of
-[Clopper and Pearson (1934)](https://doi.org/10.1093/biomet/26.4.404);
-the rank and adjacency allocation makes the entire returned PLD simultaneous.
+The Monte Carlo count is derived from binary-KL Chernoff order-statistic bounds
+with a Bonferroni allocation over all ranks and both adjacency directions. At
+the default `mc_resolution=1e-4` and `mc_failure_probability=1e-6`, this
+requires 270,141 samples per direction. Counts above 50 million emit an
+advisory runtime warning but are not capped. The construction follows
+[Hoeffding (1963)](https://doi.org/10.1080/00401706.1963.10490085); the rank
+and adjacency allocation makes the entire returned PLD simultaneous.
+`epsilon_at(delta)` tightens the effective resolution to
+`min(mc_resolution, delta / 2)`, reserving at least half of the requested delta
+for finite privacy-loss mass.
 
 Discretization is unconditionally conservative: exact atoms, PMF coarsening,
 and histogram buckets are rounded upward. The API has no optimistic or

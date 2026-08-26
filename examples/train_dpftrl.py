@@ -703,7 +703,7 @@ def parse_args():
     dp_g.add_argument(
         "--mc-resolution",
         type=float,
-        default=1e-6,
+        default=1e-4,
         help="Maximum unresolved Monte Carlo mass for b_min_sep and BnB accounting.",
     )
     dp_g.add_argument(

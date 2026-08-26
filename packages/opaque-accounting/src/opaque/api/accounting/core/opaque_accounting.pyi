@@ -167,7 +167,7 @@ class DiscretizationConfig:
             Default: 42.
         max_conv_grid: Maximum convolution grid size for the
             random-allocation PLD transform. Default: 32,768.
-        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-6.
+        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-4.
         mc_failure_probability: Failure probability of the simultaneous Monte
             Carlo confidence band. Default: 1e-6.
 
@@ -185,7 +185,7 @@ class DiscretizationConfig:
         tail_mass_truncation: float = 1e-15,
         seed: int = 42,
         max_conv_grid: int = 32_768,
-        mc_resolution: float = 1e-6,
+        mc_resolution: float = 1e-4,
         mc_failure_probability: float = 1e-6,
     ) -> None: ...
     @property

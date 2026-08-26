@@ -175,9 +175,6 @@ class DpProcess(ABC):
             mc_resolution: Maximum unresolved Monte Carlo mass.
             mc_failure_probability: Failure probability of the simultaneous
                 Monte Carlo confidence band.
-            mc_resolution: Maximum unresolved Monte Carlo mass.
-            mc_failure_probability: Failure probability of the simultaneous
-                Monte Carlo confidence band.
         """
         ...
 

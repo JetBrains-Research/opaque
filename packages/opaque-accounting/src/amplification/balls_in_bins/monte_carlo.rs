@@ -36,7 +36,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
-use statrs::distribution::{Beta, ContinuousCDF};
 use std::collections::BTreeMap;
 
 use super::cyclic_cholesky::CyclicBandedCholesky;
@@ -102,12 +101,12 @@ fn sample_privacy_loss_remove(
 /// Sample one privacy loss value for the "add" direction.
 #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn sample_privacy_loss_add(
-    _gram: &[f64],
     chol: &CyclicBandedCholesky,
     b: usize,
     sigma: f64,
     inv_2sig2: f64,
     diag_terms: &[f64],
+    zero_mean: &[f64],
     z_buf: &mut Vec<f64>,
     u_buf: &mut Vec<f64>,
     rng: &mut impl Rng,
@@ -116,8 +115,7 @@ fn sample_privacy_loss_add(
     for v in z_buf.iter_mut() {
         *v = rng.sample::<f64, _>(StandardNormal);
     }
-    let zeros = vec![0.0; b];
-    chol.sample_gaussian(&zeros, sigma, z_buf, u_buf);
+    chol.sample_gaussian(zero_mean, sigma, z_buf, u_buf);
 
     // Y_add = -log(P(X)/Q(X))
     let mut max_val = f64::NEG_INFINITY;
@@ -229,16 +227,17 @@ pub fn bnb_mc_pld(
         .enumerate()
         .for_each(|(shard, samples)| {
             let mut rng = StdRng::seed_from_u64(shard_seed(seed, shard, true));
+            let zero_mean = vec![0.0; b];
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
             for sample in samples {
                 *sample = sample_privacy_loss_add(
-                    gram,
                     &chol,
                     b,
                     sigma,
                     inv_2sig2,
                     &diag_terms,
+                    &zero_mean,
                     &mut z_buf,
                     &mut u_buf,
                     &mut rng,
@@ -312,7 +311,7 @@ pub(crate) fn samples_to_pmf(
         )));
     }
 
-    samples.sort_unstable_by(f64::total_cmp);
+    samples.par_sort_unstable_by(f64::total_cmp);
     let n = samples.len();
     let min_sample = samples[0];
     let max_sample = samples[n - 1];
@@ -333,13 +332,18 @@ pub(crate) fn samples_to_pmf(
         config.discretization
     };
 
-    // For rank j, F(X_(j)) has a Beta(j, n-j+1) lower confidence
-    // bound. Bonferroni allocation over every rank and adjacency direction
-    // makes all bounds simultaneous without relying on the data-dependent set
-    // of occupied grid buckets.
-    let per_rank_failure = config.mc_failure_probability / (num_directions as f64 * n as f64);
-    let mut masses = BTreeMap::new();
-    let mut previous_cdf_bound = 0.0f64;
+    // For rank j and p < j/n, the binomial Chernoff bound gives
+    //
+    // P[F(X_(j)) < p] <= exp(-n * KL(j/n || p)).
+    //
+    // Setting the right side to failure/(directions*n) and union-bounding over
+    // every rank and adjacency direction yields a simultaneous lower CDF band.
+    // Its final-rank residual is exactly the expression used by
+    // `resolved_num_mc_samples`, but unlike exact Beta inversion it remains
+    // fast and numerically stable for multi-million-sample shapes.
+    let log_inverse_rank_failure =
+        (num_directions as f64 * n as f64 / config.mc_failure_probability).ln();
+    let mut endpoints = Vec::new();
     let mut start = 0usize;
     while start < n {
         let bucket = (samples[start] / effective_disc).ceil() as i64;
@@ -347,18 +351,24 @@ pub(crate) fn samples_to_pmf(
         while end < n && (samples[end] / effective_disc).ceil() as i64 == bucket {
             end += 1;
         }
-        let beta = Beta::new(end as f64, (n - end + 1) as f64)
-            .map_err(|err| PldError::NumericalError(format!("invalid Beta bound: {err}")))?;
-        let cdf_bound = beta
-            .inverse_cdf(per_rank_failure)
-            .max(previous_cdf_bound)
-            .clamp(0.0, 1.0);
+        endpoints.push((bucket, end));
+        start = end;
+    }
+
+    let cdf_bounds: Vec<f64> = endpoints
+        .par_iter()
+        .map(|(_, end)| kl_lower_cdf_bound(*end, n, log_inverse_rank_failure).clamp(0.0, 1.0))
+        .collect();
+
+    let mut masses = BTreeMap::new();
+    let mut previous_cdf_bound = 0.0f64;
+    for ((bucket, _), cdf_bound) in endpoints.into_iter().zip(cdf_bounds) {
+        let cdf_bound = cdf_bound.max(previous_cdf_bound);
         let mass = cdf_bound - previous_cdf_bound;
         if mass > 0.0 {
             masses.insert(bucket, mass);
         }
         previous_cdf_bound = cdf_bound;
-        start = end;
     }
 
     let infinity_mass = (1.0 - previous_cdf_bound).clamp(0.0, 1.0);
@@ -379,9 +389,40 @@ pub(crate) fn samples_to_pmf(
     Ok((pmf, infinity_mass))
 }
 
+/// Lower confidence bound on `F(X_(rank))` from binary KL inversion.
+///
+/// The returned value is kept on the conservative (lower) side of the root.
+fn kl_lower_cdf_bound(rank: usize, n: usize, log_inverse_failure: f64) -> f64 {
+    let q = rank as f64 / n as f64;
+    let target = log_inverse_failure / n as f64;
+    let mut lower = 0.0f64;
+    let mut upper = q;
+
+    for _ in 0..64 {
+        let midpoint = 0.5 * (lower + upper);
+        if binary_kl(q, midpoint) >= target {
+            lower = midpoint;
+        } else {
+            upper = midpoint;
+        }
+    }
+    lower
+}
+
+fn binary_kl(q: f64, p: f64) -> f64 {
+    if p <= 0.0 {
+        return f64::INFINITY;
+    }
+    if q >= 1.0 {
+        return -p.ln();
+    }
+    q * (q / p).ln() + (1.0 - q) * ((1.0 - q) / (1.0 - p)).ln()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use statrs::distribution::{Beta, ContinuousCDF};
 
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig {
@@ -443,6 +484,29 @@ mod tests {
             .with_monte_carlo_guarantee(config.mc_failure_probability, resolution)
             .epsilon_at(resolution)
             .is_infinite());
+    }
+
+    #[test]
+    fn test_kl_band_is_below_exact_order_statistic_bound() {
+        let n = 10_000usize;
+        let directions = 2usize;
+        let failure = 1e-6;
+        let per_rank_failure = failure / (directions * n) as f64;
+        let log_inverse_failure = (1.0 / per_rank_failure).ln();
+        let mut previous = 0.0;
+
+        for rank in [1usize, 10, 100, 1_000, 5_000, 9_999, 10_000] {
+            let kl = kl_lower_cdf_bound(rank, n, log_inverse_failure);
+            let exact = Beta::new(rank as f64, (n - rank + 1) as f64)
+                .unwrap()
+                .inverse_cdf(per_rank_failure);
+            assert!(
+                kl <= exact + 1e-12,
+                "rank={rank}: KL lower bound {kl} exceeded exact bound {exact}"
+            );
+            assert!(kl >= previous, "lower CDF band must be monotone");
+            previous = kl;
+        }
     }
 
     #[test]
