@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import math
 
+_MAX_SIGNIFICANCE = 0.5
+
 
 def validate_significance(significance: float) -> None:
-    if not 0 < significance < 0.5:
+    if not 0 < significance < _MAX_SIGNIFICANCE:
         raise ValueError(f"significance must be in (0, 0.5), got {significance}")
 
 

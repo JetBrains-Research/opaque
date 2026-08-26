@@ -27,7 +27,7 @@ def _probe_bf16(device_type: str) -> bool:
             if not torch.backends.mps.is_available():
                 return False
             probe = torch.ones(2, dtype=torch.bfloat16, device="mps")
-            return (probe + probe).sum().item() == 4.0
+            return (probe + probe).sum().item() == 4.0  # noqa: PLR2004 - bf16 probe
         if device_type == "cpu":
             return True
     except Exception:

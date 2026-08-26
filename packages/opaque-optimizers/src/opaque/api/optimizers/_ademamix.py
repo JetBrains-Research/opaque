@@ -31,7 +31,7 @@ def ademamix(
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
 ) -> tuple[Callable[..., tuple[Any, AdEMAMixState]], AdEMAMixState]:
-    if len(betas) != 3:
+    if len(betas) != 3:  # noqa: PLR2004 - AdEMAMix exposes its documented beta triple
         raise ValueError(f"betas must contain exactly three values, got {betas}")
     for _name, _beta in zip(("β₁", "β₂", "β₃"), betas, strict=True):
         if not 0 <= _beta < 1:

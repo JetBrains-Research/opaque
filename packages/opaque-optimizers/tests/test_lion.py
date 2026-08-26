@@ -81,7 +81,7 @@ class TestLion:
         torch.testing.assert_close(updates["w"], expected)
 
     def test_validation(self):
-        with pytest.raises(ValueError, match="betas must contain two values"):
+        with pytest.raises(ValueError, match="beta_1"):
             lion({"w": torch.ones(1)}, betas=(1.0, 0.99))
         with pytest.raises(ValueError, match="weight_decay must be non-negative"):
             lion({"w": torch.ones(1)}, weight_decay=-0.1)

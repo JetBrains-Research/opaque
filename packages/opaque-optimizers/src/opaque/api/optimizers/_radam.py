@@ -18,6 +18,9 @@ from opaque.api.optimizers.types import RAdamState
 from opaque.pytree import tree_map
 
 _LR = float | Callable[[int], float]
+# Below this rectification term the variance estimate is unreliable and
+# RAdam falls back to un-rectified SGD-with-momentum (Liu et al., 2020).
+_RHO_THRESHOLD: float = 5.0
 
 
 def _rho_t(b2: float, t: int) -> float:
@@ -29,7 +32,7 @@ def _rho_t(b2: float, t: int) -> float:
 def _rectification(b2: float, t: int) -> float | None:
     """Return the RAdam scale, or ``None`` during the SGD warmup phase."""
     rho = _rho_t(b2, t)
-    if rho <= 5.0:
+    if rho <= _RHO_THRESHOLD:
         return None
     rho_inf = 2.0 / (1.0 - b2) - 1.0
     return math.sqrt(
@@ -50,7 +53,7 @@ def radam(
 ) -> tuple[Callable[..., tuple[Any, RAdamState]], RAdamState]:
     if eps <= 0:
         raise ValueError(f"eps must be positive, got {eps}")
-    if len(betas) != 2:
+    if len(betas) != 2:  # noqa: PLR2004 - RAdam exposes the documented beta pair
         raise ValueError(f"betas must contain exactly two values, got {betas}")
     if not 0 <= betas[0] < 1:
         raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {betas[0]}")
@@ -103,7 +106,7 @@ def radam(
                 }
             else:
                 phi = b2 * float(state.phi) + (1 - b2) * float(effective) ** 2
-        if rho <= 5:
+        if rho <= _RHO_THRESHOLD:
             return tree_map(lambda m: ops.divide(m, bc1), mu), RAdamState(
                 mu, nu, phi, t
             )

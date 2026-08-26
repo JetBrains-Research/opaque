@@ -82,7 +82,7 @@ def vmap_create_causal_mask(
         return None
 
     # Detect batchless input (under vmap without with_batch_dim) vs batched
-    if input_embeds.ndim == 2:
+    if input_embeds.ndim == 2:  # noqa: PLR2004 - batchless embeddings are 2D
         # Under vmap without batch dim: (seq_len, hidden_dim)
         batch_size = 1
         seq_len = input_embeds.shape[0]

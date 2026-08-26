@@ -21,8 +21,13 @@ def lion(
     *,
     decoupled_weight_decay: bool = True,
 ) -> tuple[Callable[..., tuple[Any, LionState]], LionState]:
-    if len(betas) != 2 or not all(0 <= beta < 1 for beta in betas):
-        raise ValueError(f"betas must contain two values in [0, 1), got {betas}")
+    if len(betas) != 2:  # noqa: PLR2004 - Lion exposes the documented beta pair
+        raise ValueError(f"betas must contain exactly two values, got {betas}")
+    b1, b2 = betas
+    if not 0 <= b1 < 1:
+        raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+    if not 0 <= b2 < 1:
+        raise ValueError(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
     if weight_decay < 0:
         raise ValueError("weight_decay must be non-negative")
     b1, b2 = betas

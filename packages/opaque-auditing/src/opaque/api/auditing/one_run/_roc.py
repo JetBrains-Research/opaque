@@ -14,14 +14,18 @@ __all__ = ["get_tn_fn_counts", "pareto_frontier", "tpr_at_given_fpr"]
 
 def pareto_frontier(points: np.ndarray) -> np.ndarray:
     """Compute indices of Pareto frontier for a piecewise linear function."""
-    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] != 2:
+    if (
+        points.ndim != 2  # noqa: PLR2004 - planar ROC point geometry
+        or points.shape[0] < 2  # noqa: PLR2004 - a segment needs two points
+        or points.shape[1] != 2  # noqa: PLR2004 - ROC points have two coordinates
+    ):
         raise ValueError(f"Expected at least two 2D points, got shape {points.shape}")
     if not np.all(points[:-1, 0] <= points[1:, 0]):
         raise ValueError("Expected points to be sorted by x-coordinate")
 
     indices = np.arange(points.shape[0])
     while True:
-        if len(indices) <= 2:
+        if len(indices) <= 2:  # noqa: PLR2004 - a frontier segment has two endpoints
             break
         diff = np.diff(points[indices], axis=0)
         cross_product = diff[:-1, 1] * diff[1:, 0] - diff[1:, 1] * diff[:-1, 0]

@@ -97,7 +97,7 @@ def _resolve_bound(
     if bound is None:
         return None
     if isinstance(bound, (tuple, list)):
-        if len(bound) != 2:
+        if len(bound) != 2:  # noqa: PLR2004 - bound is the documented (low, high) pair
             raise ValueError(
                 f"bound must be a 2-tuple (low, high) when given a sequence, "
                 f"got length {len(bound)}"

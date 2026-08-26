@@ -33,6 +33,7 @@ __all__ = ["CanaryScores", "CoinFlip", "TrainSubset", "canary_scores", "coin_fli
 
 _CANARY_SELECTION_DOMAIN = "opaque.auditing.canary_selection"
 _COIN_FLIP_DOMAIN = "opaque.auditing.coin_flip"
+_INCLUSION_PROBABILITY = 0.5
 
 
 # ``eq=False``/``repr=False`` keep ``object`` semantics — the
@@ -375,7 +376,9 @@ def coin_flip(
     rng = np.random.default_rng(fold_in(key, _CANARY_SELECTION_DOMAIN).seed)
     canary_indices = rng.choice(population, size=num_canaries, replace=False)
     coin_rng = np.random.default_rng(fold_in(key, _COIN_FLIP_DOMAIN).seed)
-    in_mask = np.asarray(coin_rng.random(num_canaries) < 0.5, dtype=bool)
+    in_mask = np.asarray(
+        coin_rng.random(num_canaries) < _INCLUSION_PROBABILITY, dtype=bool
+    )
 
     return CoinFlip(
         num_canaries=num_canaries,

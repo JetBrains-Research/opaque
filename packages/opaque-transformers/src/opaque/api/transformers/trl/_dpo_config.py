@@ -30,6 +30,7 @@ from ._dpo_convert import _convert_trl_dpo_config
 # or precomputed. ``self._needs_reference`` is derived from ``loss_type`` against
 # this set (reference-free only when *every* head is in it).
 _REFERENCE_FREE_HEADS = frozenset({"chosen_nll", "simpo", "cpo", "orpo"})
+_MAX_ROBUST_LABEL_SMOOTHING = 0.5
 
 
 @dataclasses.dataclass
@@ -146,7 +147,10 @@ class DPOConfig(TrainingArguments):
         super().__post_init__()
 
         # TRL's own validations, not DP-driven rejections.
-        if "robust" in self.loss_type and not 0.0 <= self.label_smoothing < 0.5:
+        if (
+            "robust" in self.loss_type
+            and not 0.0 <= self.label_smoothing < _MAX_ROBUST_LABEL_SMOOTHING
+        ):
             raise ValueError(
                 "Robust DPO (loss_type='robust') requires label_smoothing in "
                 f"[0.0, 0.5); got {self.label_smoothing}."

@@ -34,6 +34,8 @@ import numpy as np
 from opaque.random.types import RngKey
 from opaque.sampling import Sampler
 
+_MIN_NUM_BINS = 2
+
 
 class BallsInBinsSampler(Sampler[list[int]]):
     """Balls-in-Bins sampler: random independent bin assignment, fixed across epochs.
@@ -80,7 +82,7 @@ class BallsInBinsSampler(Sampler[list[int]]):
 
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
-        if num_bins < 2:
+        if num_bins < _MIN_NUM_BINS:
             raise ValueError(f"num_bins must be >= 2, got {num_bins}")
         if n_steps is not None:
             if n_steps < 1:

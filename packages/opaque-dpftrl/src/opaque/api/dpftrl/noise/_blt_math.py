@@ -40,6 +40,10 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
 
 logger = logging.getLogger(__name__)
+_MIN_BUFFER_DECAY_GAP = 1e-9
+_NEAR_ZERO_OUTPUT_SCALE = 1e-8
+_MIN_FEASIBILITY_SLACK = 1e-3
+_MAX_OPTIMIZATION_BUFFERS = 15
 
 __all__ = [
     "BufferedToeplitz",
@@ -361,7 +365,7 @@ def inverse(blt: BufferedToeplitz, skip_checks: bool = False) -> BufferedToeplit
 
     if not skip_checks and len(blt.buf_decay) > 1:
         gap = min_buf_decay_gap(blt.buf_decay)
-        if gap < 1e-9:
+        if gap < _MIN_BUFFER_DECAY_GAP:
             raise ValueError(
                 "Input BLT has buf_decay values too close: "
                 f"gap={float(gap)}, buf_decay={blt.buf_decay}"
@@ -1268,7 +1272,8 @@ def get_parameterized_loss_and_gradient(
                 np.atleast_1d(min_buf_decay_gap(blt.buf_decay) - loss_fn.min_theta_gap)
             )
         return all(
-            np.all(np.isfinite(values)) and np.all(values >= 1e-3) for values in slack
+            np.all(np.isfinite(values)) and np.all(values >= _MIN_FEASIBILITY_SLACK)
+            for values in slack
         )
 
     def value_and_gradient(
@@ -1407,7 +1412,7 @@ def optimize_loss(
             f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}"
         )
 
-    if np.any(np.abs(blt.output_scale) < 1e-8):
+    if np.any(np.abs(blt.output_scale) < _NEAR_ZERO_OUTPUT_SCALE):
         logger.warning(
             "BLT has near-zero output_scale parameters, which "
             "means some buffers are ignored. Consider re-optimizing "
@@ -1481,7 +1486,7 @@ def optimize(
     Returns:
         An optimised BLT.
     """
-    if max_buffers > 15:
+    if max_buffers > _MAX_OPTIMIZATION_BUFFERS:
         raise ValueError("max_buffers > 15 will likely cause numerical issues.")
 
     k = sensitivity.minsep_true_max_participations(

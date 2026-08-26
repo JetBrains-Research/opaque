@@ -14,8 +14,8 @@ try:
 except Exception:  # transformers absent — patches no-op anyway
     _MAJOR = 0
 
-IS_TRANSFORMERS_V5 = _MAJOR >= 5
-IS_TRANSFORMERS_V4 = _MAJOR == 4
+IS_TRANSFORMERS_V5 = _MAJOR >= 5  # noqa: PLR2004 - Transformers v5 API boundary
+IS_TRANSFORMERS_V4 = _MAJOR == 4  # noqa: PLR2004 - Transformers v4 API boundary
 
 
 __all__ = ["IS_TRANSFORMERS_V4", "IS_TRANSFORMERS_V5"]

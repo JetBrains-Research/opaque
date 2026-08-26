@@ -47,6 +47,7 @@ def _native():
 
 
 _lr_key = materialize_schedule
+_COLUMN_NORM_TAIL_CUTOFF = 1e-30
 
 
 @lru_cache(maxsize=256)
@@ -94,7 +95,7 @@ def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
     remaining = n_steps - step
     lambda2 = lambda_ * lambda_
     lambda2r = lambda2**remaining
-    if lambda2r < 1e-30:
+    if lambda2r < _COLUMN_NORM_TAIL_CUTOFF:
         return math.sqrt(1.0 / (1.0 - lambda2))
     return math.sqrt((1.0 - lambda2r) / (1.0 - lambda2))
 

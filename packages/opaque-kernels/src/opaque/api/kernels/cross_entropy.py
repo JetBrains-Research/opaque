@@ -12,6 +12,7 @@ import triton
 import triton.language as tl
 
 from ._utils import (
+    _IGNORE_INDEX,
     MAX_FUSED_SIZE,
     calculate_settings,
     ensure_cuda_tensors,
@@ -62,7 +63,7 @@ def _cross_entropy_forward(
     c = tl.max(logits, 0)
     logsumexp = c + tl.log(tl.sum(tl.exp(logits - c), 0))
 
-    if label_idx != -100:
+    if label_idx != -100:  # noqa: PLR2004 - Triton JIT requires an inline constant
         x = tl.load(logits_ptr + label_idx).to(tl.float32)
         # Apply same transforms to the label logit
         if DO_LOGIT_SCALING:
@@ -131,7 +132,7 @@ def _chunked_cross_entropy_forward(
 
     # Chunk 0 stores the -x[label] part of the loss
     if chunk_idx == 0:
-        if label_idx != -100:
+        if label_idx != -100:  # noqa: PLR2004 - Triton JIT requires an inline constant
             x = tl.load(logits_ptr + label_idx).to(tl.float32)
             if DO_LOGIT_SCALING:
                 x = LOGIT_SCALE * x
@@ -179,7 +180,11 @@ def _cross_entropy_backward(
 
     label_idx = tl.load(labels_ptr).to(tl.int32)
 
-    dloss = tl.load(dlosses_ptr) if label_idx != -100 else 0.0
+    dloss = (
+        tl.load(dlosses_ptr)
+        if label_idx != -100  # noqa: PLR2004 - Triton JIT requires an inline constant
+        else 0.0
+    )
 
     x = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(tl.float32)
 
@@ -326,7 +331,7 @@ def _ce_forward_impl(
         logsumexp = torch.logsumexp(logsumexp, dim=1)
         # loss = -x[label] + logsumexp (chunk 0 stored -x, now add logsumexp)
         losses += logsumexp
-        losses.masked_fill_(labels_flat == -100, 0)
+        losses.masked_fill_(labels_flat == _IGNORE_INDEX, 0)
 
     if DO_LABEL_SMOOTHING:
         # Smoothed CE: (1-ls)*hard + ls*(lse - mean_z), matching
@@ -336,7 +341,7 @@ def _ce_forward_impl(
         mean_z = sum_logits / vocab_size
         smoothed = (1.0 - ls) * losses + ls * (logsumexp - mean_z)
         losses = torch.where(
-            labels_flat == -100,
+            labels_flat == _IGNORE_INDEX,
             torch.zeros_like(smoothed),
             smoothed,
         )

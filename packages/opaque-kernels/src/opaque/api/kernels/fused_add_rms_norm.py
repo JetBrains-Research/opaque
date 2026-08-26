@@ -16,7 +16,16 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, follow_autocast, torch_gpu_device, triton_cast
+from ._utils import (
+    _MAX_PER_ROW_KERNEL_BLOCK_SIZE,
+    _MIN_ROWS_FOR_BLOCK_KERNEL,
+    calculate_settings,
+    follow_autocast,
+    torch_gpu_device,
+    triton_cast,
+)
+
+_WEIGHT_TRAINABLE_META_INDEX = 4
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -217,7 +226,10 @@ def _fused_add_rms_norm_forward_triton(
     n_rows, n_cols = X.shape
     BLOCK_SIZE, num_warps = calculate_settings(n_cols)
 
-    if not (BLOCK_SIZE > 256 or n_rows < 4096 * 8):
+    if not (
+        BLOCK_SIZE > _MAX_PER_ROW_KERNEL_BLOCK_SIZE
+        or n_rows < _MIN_ROWS_FOR_BLOCK_KERNEL
+    ):
         raise RuntimeError(
             "Opaque fused add RMSNorm: block kernel path not yet ported; use "
             "shapes that satisfy BLOCK_SIZE > 256 or n_rows < 32768."
@@ -401,7 +413,11 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
 
         # Missing flag defaults to trainable: a spurious per-example dW only
         # costs memory; a spurious batch-sum dW leaks across examples.
-        w_trainable = bool(meta_i[4].item()) if meta_i.numel() > 4 else True
+        w_trainable = (
+            bool(meta_i[_WEIGHT_TRAINABLE_META_INDEX].item())
+            if meta_i.numel() > _WEIGHT_TRAINABLE_META_INDEX
+            else True
+        )
         dW_out = None
         if w_trainable:
             # Per-example dW: the Triton call sums dW over the merged (B*T, H)

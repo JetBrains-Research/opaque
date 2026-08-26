@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from ._streaming_matrix import StreamingMatrix
 
 
+_MIN_BANDWIDTH = 2
+
+
 def _native():
     from opaque.api.accounting.core import _native as _n
 
@@ -125,7 +128,7 @@ class BisrStrategy:
     inv_coefficients: tuple[float, ...] | None = field(default=None)
 
     def __post_init__(self) -> None:
-        if self.bandwidth < 2:
+        if self.bandwidth < _MIN_BANDWIDTH:
             raise ValueError(f"bandwidth must be >= 2, got {self.bandwidth}")
         if (
             self.inv_coefficients is not None

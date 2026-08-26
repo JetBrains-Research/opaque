@@ -125,6 +125,8 @@ def lazy_implementation(target: str) -> LazyImplementation:
     return LazyImplementation(target)
 
 
+# A primitive name is ``<namespace>.<op>`` at minimum.
+_MIN_QUALIFIED_NAME_PARTS = 2
 _PRIMITIVES: dict[str, Primitive] = {}
 _PRIMITIVES_LOCK = threading.RLock()
 
@@ -530,7 +532,9 @@ def _validate_primitive_name(name: str) -> None:
         raise InvalidPrimitiveRegistrationError(
             "A primitive name must be a non-empty qualified identity."
         )
-    if len(name.split(".")) < 2 or any(not part for part in name.split(".")):
+    if len(name.split(".")) < _MIN_QUALIFIED_NAME_PARTS or any(
+        not part for part in name.split(".")
+    ):
         raise InvalidPrimitiveRegistrationError(
             "A primitive name must contain at least two non-empty dot-separated parts."
         )

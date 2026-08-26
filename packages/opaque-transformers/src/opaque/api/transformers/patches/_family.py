@@ -73,7 +73,7 @@ def family_name(model: object) -> str | None:
             return str(kind)
     module = type(model).__module__
     parts = module.split(".")
-    if len(parts) >= 3 and parts[0] == "transformers" and parts[1] == "models":
+    if len(parts) >= 3 and parts[0] == "transformers" and parts[1] == "models":  # noqa: PLR2004 - HF module path layout
         return parts[2]
     return None
 

@@ -32,6 +32,8 @@ from ._toeplitz import (
     sensitivity_squared as _toeplitz_col_norm_sq,
 )
 
+_COEFFICIENT_TOLERANCE = 1e-12
+
 if TYPE_CHECKING:
     from ._streaming_matrix import StreamingMatrix
 
@@ -90,13 +92,13 @@ def _validate_bsr_hyperparams(bandwidth: int, alpha: float, beta: float) -> None
         )
     coefs = _bsr_band_coefficients_cached(bandwidth, alpha, beta)
     for i in range(1, len(coefs)):
-        if coefs[i] > coefs[i - 1] + 1e-12:
+        if coefs[i] > coefs[i - 1] + _COEFFICIENT_TOLERANCE:
             raise ValueError(
                 "BSR coefficients are not non-increasing for these hyperparameters; "
                 "this configuration is not supported by toeplitz_minsep_sensitivity. "
                 "Try different α, β, or bandwidth, or use band_mf_strategy."
             )
-        if coefs[i] < -1e-12:
+        if coefs[i] < -_COEFFICIENT_TOLERANCE:
             raise ValueError(
                 "BSR produced a negative coefficient; unsupported for this Rust path. "
                 "Use band_mf_strategy."

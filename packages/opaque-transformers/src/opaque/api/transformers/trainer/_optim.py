@@ -255,7 +255,7 @@ def validate_functional_optimizer_cls_and_kwargs(
 
     if (
         not isinstance(optimizer_cls_and_kwargs, tuple)
-        or len(optimizer_cls_and_kwargs) != 2
+        or len(optimizer_cls_and_kwargs) != 2  # noqa: PLR2004 - factory/kwargs pair
     ):
         raise TypeError(
             "optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs)."
@@ -288,7 +288,11 @@ def validate_functional_optimizer_cls_and_kwargs(
             "``factory(params, lr=lr_schedule, **kwargs)``. Original error: "
             f"{exc}"
         ) from exc
-    if not isinstance(result, tuple) or len(result) != 2 or not callable(result[0]):
+    if (
+        not isinstance(result, tuple)
+        or len(result) != 2  # noqa: PLR2004 - factories return (step, state)
+        or not callable(result[0])
+    ):
         raise RuntimeError(
             "optimizer_cls_and_kwargs factory must return ``(step, state)`` "
             "with a callable step; "

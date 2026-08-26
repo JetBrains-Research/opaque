@@ -296,7 +296,7 @@ def _validate_adam(
 ) -> None:
     if eps <= 0:
         raise ValueError(f"eps must be positive, got {eps}")
-    if len(betas) != 2:
+    if len(betas) != 2:  # noqa: PLR2004 - Adam exposes the documented beta pair
         raise ValueError(f"betas must contain exactly two values, got {betas}")
     b1, b2 = betas
     if not 0 <= b1 < 1:

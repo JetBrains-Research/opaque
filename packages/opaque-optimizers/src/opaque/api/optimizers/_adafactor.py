@@ -45,7 +45,7 @@ _UNDERFLOW_FLOOR = 1e-30
 
 def _initial_v(value: Any) -> tuple[Any, ...]:
     shape = ops.shape(value)
-    if len(shape) >= 2:
+    if len(shape) >= 2:  # noqa: PLR2004 - factoring requires matrix-shaped leaves
         return (
             ops.zeros(shape[:-1], dtype=ops.dtype(value), like=value),
             ops.zeros(shape[:-2] + shape[-1:], dtype=ops.dtype(value), like=value),
@@ -136,7 +136,7 @@ def adafactor(
                 phi = old_phi
             next_phi.append(phi)
 
-            if len(old_v) == 2:
+            if len(old_v) == 2:  # noqa: PLR2004 - factored state is (row, col)
                 row, col = old_v
                 new_row = ops.add(
                     ops.multiply(row, beta2),
