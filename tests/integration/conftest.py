@@ -17,6 +17,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REPO_ROOT_S = str(_REPO_ROOT)
 
@@ -40,3 +42,17 @@ def pytest_configure(config) -> None:  # noqa: ARG001
         os.environ["PYTHONPATH"] = (
             _REPO_ROOT_S if not cur else _REPO_ROOT_S + _SEP + cur
         )
+
+
+@pytest.fixture(autouse=True)
+def _fast_mc_accounting():
+    """Keep integration smoke tests below the production MC resolution cost."""
+    import opaque.accounting as acc
+    from opaque.accounting import discretization
+
+    original = discretization._default_config
+    acc.set_discretization(mc_resolution=5e-3, mc_failure_probability=1e-2)
+    try:
+        yield
+    finally:
+        discretization._default_config = original

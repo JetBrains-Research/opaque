@@ -114,8 +114,9 @@ class BMinSep(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         """K-step warm-start b-min-sep MC PLD using N-tuned coefficients.
 
@@ -123,9 +124,9 @@ class BMinSep(DpHorizonProcess):
         ``self.n_steps``) — within an atomic band the PLD plateaus.  The
         BandMF strategy coefficients and per-example sensitivity are
         evaluated at ``self.n_steps`` (the N-tuned deployed mechanism);
-        ``n_steps`` controls only the warm-start MC transcript length.
-        The Rust sampler is prefix-stable, but finite Monte Carlo PLDs are
-        point estimates and need not preserve epsilon monotonicity.
+        Every nonzero prefix uses the full-horizon confidence-bounded PLD. This
+        preserves monotonicity and boundedness while deliberately giving up
+        prefix tightness.
         """
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
@@ -141,15 +142,28 @@ class BMinSep(DpHorizonProcess):
         if n_steps <= 0 or n_steps > self.n_steps:
             raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
         rounded = min(-(-n_steps // bands) * bands, self.n_steps)
+        if rounded < self.n_steps:
+            return self.pld_at(
+                self.n_steps,
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+                max_conv_grid=max_conv_grid,
+                seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
+            )
 
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         )
+        config.warn_if_large_mc()
         native_cfg = config.to_native()
 
         coefs = s.coefficients(
@@ -166,13 +180,7 @@ class BMinSep(DpHorizonProcess):
         p = self.sampling_prob
 
         # Always look up the cached corpus at ``self.n_steps`` (the full
-        # horizon at which it was prepared).  For K < N the Rust side
-        # slices each sample to the first K columns, which — because
-        # within a single sample the per-step RNG state is deterministic
-        # in the columns up to it — is byte-identical to a freshly-prepared
-        # K-row transcript at the same per-sample seed. Finite-sample PLDs
-        # remain point estimates and need not preserve epsilon ordering.
-        #
+        # horizon at which it was prepared).
         # ``_with_transcript_handle`` holds the per-cache lock around
         # both the lookup and the Rust call so a concurrent
         # ``_clear_all_native_caches()`` (e.g. from ``calibrate()``'s
@@ -184,7 +192,7 @@ class BMinSep(DpHorizonProcess):
             tuple(coefs),
             self.n_steps,
             p,
-            config.num_mc_samples,
+            config.resolved_num_mc_samples,
             config.seed,
             lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
                 hid,
@@ -212,18 +220,20 @@ class BMinSep(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
-        """Return a point estimate, not an upper confidence bound."""
+        """Return the full-horizon confidence-bounded Monte Carlo PLD."""
         return self.pld_at(
             self.n_steps,
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         )
 
 

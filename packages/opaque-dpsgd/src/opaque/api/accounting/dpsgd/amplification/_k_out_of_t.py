@@ -70,8 +70,9 @@ class KOutOfT(DpHorizonProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         if n_steps < 1 or n_steps > self.n_steps:
             raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
@@ -82,8 +83,9 @@ class KOutOfT(DpHorizonProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         ).to_native()
         noise_multiplier = self._noise_multiplier()
         if noise_multiplier is None:
@@ -99,8 +101,9 @@ class KOutOfT(DpHorizonProcess):
                 log_x_mass_truncation_bound=log_x_mass_truncation_bound,
                 max_grid_size=max_grid_size,
                 max_conv_grid=max_conv_grid,
-                num_mc_samples=num_mc_samples,
                 seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
             )
         return _native.k_out_of_t_gaussian_prefix_pld(
             noise_multiplier,

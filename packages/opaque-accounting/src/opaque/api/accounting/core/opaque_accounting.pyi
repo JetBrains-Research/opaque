@@ -69,6 +69,18 @@ class Pld:
         smaller.
         """
 
+    @property
+    def mc_failure_probability(self) -> float:
+        """Failure probability of the Monte Carlo confidence event."""
+
+    @property
+    def mc_confidence(self) -> float:
+        """Confidence level of the Monte Carlo PLD bound."""
+
+    @property
+    def mc_resolution(self) -> float:
+        """Unresolved Monte Carlo probability mass in delta units."""
+
     def advantage(self) -> float:
         """Total-variation advantage.
 
@@ -151,12 +163,13 @@ class DiscretizationConfig:
             Default: 10,000,000.
         tail_mass_truncation: Total tail mass budget for Chernoff truncation
             during composition. Default: 1e-15.
-        num_mc_samples: Number of Monte Carlo samples for MC-based PLD
-            computations. Default: 100,000.
         seed: RNG seed for reproducible Monte Carlo PLD computation.
             Default: 42.
         max_conv_grid: Maximum convolution grid size for the
             random-allocation PLD transform. Default: 32,768.
+        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-5.
+        mc_failure_probability: Failure probability of the simultaneous Monte
+            Carlo confidence band. Default: 1e-6.
 
     Example::
 
@@ -170,9 +183,10 @@ class DiscretizationConfig:
         log_mass_truncation_bound: float = -50.0,
         max_grid_size: int = 10_000_000,
         tail_mass_truncation: float = 1e-15,
-        num_mc_samples: int = 100_000,
         seed: int = 42,
         max_conv_grid: int = 32_768,
+        mc_resolution: float = 1e-5,
+        mc_failure_probability: float = 1e-6,
     ) -> None: ...
     @property
     def discretization(self) -> float:
@@ -191,16 +205,24 @@ class DiscretizationConfig:
         """Total tail mass budget for composition truncation."""
 
     @property
-    def num_mc_samples(self) -> int:
-        """Number of Monte Carlo samples."""
-
-    @property
     def seed(self) -> int:
         """RNG seed for Monte Carlo."""
 
     @property
     def max_conv_grid(self) -> int:
         """Maximum convolution grid size for random-allocation PLD."""
+
+    @property
+    def mc_resolution(self) -> float:
+        """Maximum unresolved Monte Carlo mass."""
+
+    @property
+    def mc_failure_probability(self) -> float:
+        """Failure probability of the simultaneous Monte Carlo confidence band."""
+
+    @property
+    def resolved_num_mc_samples(self) -> int:
+        """Sample count required by the configured confidence settings."""
 
     def __repr__(self) -> str: ...
     def __eq__(self, other: object) -> bool: ...
@@ -479,7 +501,7 @@ def bnb_mc_pld(
         gram: Flattened row-major b×b Gram matrix.
         num_bins: Number of bins b.
         sigma: Noise multiplier.
-        config: PLD discretization configuration (includes num_mc_samples and seed).
+        config: PLD discretization and Monte Carlo confidence configuration.
 
     Returns:
         The privacy loss distribution (asymmetric).

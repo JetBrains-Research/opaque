@@ -61,6 +61,17 @@ pub struct PrivacyLossDistribution {
     ///
     /// If `None`, this is a symmetric mechanism and `pmf_remove` is used for both.
     pub(crate) pmf_add: Option<Pmf>,
+
+    /// Failure probability of the Monte Carlo confidence event.
+    ///
+    /// Zero for analytic PLDs.
+    estimation_failure_probability: f64,
+
+    /// Unresolved Monte Carlo mass represented by the confidence construction.
+    ///
+    /// Zero for analytic PLDs. This is tracked separately from numerical tail
+    /// truncation even though both contribute to the operational infinity mass.
+    mc_resolution: f64,
 }
 
 impl PrivacyLossDistribution {
@@ -93,6 +104,8 @@ impl PrivacyLossDistribution {
         Self {
             pmf_remove: pmf,
             pmf_add: None,
+            estimation_failure_probability: 0.0,
+            mc_resolution: 0.0,
         }
     }
 
@@ -132,7 +145,35 @@ impl PrivacyLossDistribution {
         Self {
             pmf_remove,
             pmf_add: Some(pmf_add),
+            estimation_failure_probability: 0.0,
+            mc_resolution: 0.0,
         }
+    }
+
+    /// Attach the statistical guarantee for a Monte Carlo PLD.
+    pub(crate) fn with_monte_carlo_guarantee(
+        mut self,
+        failure_probability: f64,
+        resolution: f64,
+    ) -> Self {
+        self.estimation_failure_probability = failure_probability;
+        self.mc_resolution = resolution;
+        self
+    }
+
+    /// Failure probability of the Monte Carlo confidence event.
+    pub fn estimation_failure_probability(&self) -> f64 {
+        self.estimation_failure_probability
+    }
+
+    /// Confidence level of the Monte Carlo PLD bound.
+    pub fn estimation_confidence(&self) -> f64 {
+        1.0 - self.estimation_failure_probability
+    }
+
+    /// Unresolved Monte Carlo mass before numerical composition truncation.
+    pub fn mc_resolution(&self) -> f64 {
+        self.mc_resolution
     }
 
     /// Check if this PLD is symmetric
@@ -182,6 +223,8 @@ impl PrivacyLossDistribution {
                 .pmf_add
                 .as_ref()
                 .map(|p| p.with_max_grid_size(max_grid_size)),
+            estimation_failure_probability: self.estimation_failure_probability,
+            mc_resolution: self.mc_resolution,
         }
     }
 
@@ -243,6 +286,9 @@ impl PrivacyLossDistribution {
     /// assert!(epsilon >= 0.0);
     /// ```
     pub fn epsilon_at(&self, delta: f64) -> f64 {
+        if self.estimation_failure_probability > 0.0 && self.infinity_mass() >= delta {
+            return f64::INFINITY;
+        }
         metrics::epsilon(self, delta)
     }
 
@@ -307,6 +353,9 @@ impl PrivacyLossDistribution {
     /// assert!(beta >= 0.0 && beta <= 1.0);
     /// ```
     pub fn beta_at(&self, target_alpha: f64) -> f64 {
+        if self.estimation_failure_probability > 0.0 {
+            return 0.0;
+        }
         metrics::beta(self, target_alpha).clamp(0.0, 1.0)
     }
 
@@ -352,6 +401,9 @@ impl PrivacyLossDistribution {
     /// assert!(risk >= 0.0 && risk <= 0.5);
     /// ```
     pub fn risk_at(&self, prior: f64) -> f64 {
+        if self.estimation_failure_probability > 0.0 {
+            return 0.0;
+        }
         let max_risk = prior.min(1.0 - prior);
         metrics::bayes_risk(self, prior).clamp(0.0, max_risk)
     }
@@ -423,6 +475,11 @@ impl PrivacyLossDistribution {
         Ok(Self {
             pmf_remove,
             pmf_add,
+            estimation_failure_probability: (self.estimation_failure_probability
+                + other.estimation_failure_probability)
+                .min(1.0),
+            mc_resolution: self.mc_resolution + other.mc_resolution
+                - self.mc_resolution * other.mc_resolution,
         })
     }
 
@@ -472,6 +529,14 @@ impl PrivacyLossDistribution {
         Ok(Self {
             pmf_remove,
             pmf_add,
+            // The same estimated PLD is reused, so self-composition does not
+            // spend the statistical confidence event repeatedly.
+            estimation_failure_probability: self.estimation_failure_probability,
+            mc_resolution: if self.mc_resolution == 0.0 {
+                0.0
+            } else {
+                -(count as f64 * (-self.mc_resolution).ln_1p()).exp_m1()
+            },
         })
     }
 
@@ -486,6 +551,8 @@ impl PrivacyLossDistribution {
                 .pmf_add
                 .as_ref()
                 .map(|p| p.with_max_grid_size(max_grid_size)),
+            estimation_failure_probability: self.estimation_failure_probability,
+            mc_resolution: self.mc_resolution,
         };
         let rhs = Self {
             pmf_remove: other.pmf_remove.with_max_grid_size(max_grid_size),
@@ -493,6 +560,8 @@ impl PrivacyLossDistribution {
                 .pmf_add
                 .as_ref()
                 .map(|p| p.with_max_grid_size(max_grid_size)),
+            estimation_failure_probability: other.estimation_failure_probability,
+            mc_resolution: other.mc_resolution,
         };
         lhs.compose(&rhs)
     }
@@ -523,6 +592,12 @@ impl PrivacyLossDistribution {
         Ok(Self {
             pmf_remove,
             pmf_add,
+            estimation_failure_probability: self.estimation_failure_probability,
+            mc_resolution: if self.mc_resolution == 0.0 {
+                0.0
+            } else {
+                -(count as f64 * (-self.mc_resolution).ln_1p()).exp_m1()
+            },
         })
     }
 }
@@ -829,6 +904,19 @@ mod tests {
         masses.insert(0, 1.0);
         let pmf = Pmf::from_sparse(1e-4, masses, 0.0, usize::MAX);
         PrivacyLossDistribution::new_symmetric(pmf)
+    }
+
+    #[test]
+    fn test_monte_carlo_metadata_composes_conservatively() {
+        let pld = make_identity_pld().with_monte_carlo_guarantee(0.01, 0.1);
+
+        let repeated = pld.self_compose(2).unwrap();
+        assert!((repeated.estimation_failure_probability() - 0.01).abs() < 1e-15);
+        assert!((repeated.mc_resolution() - 0.19).abs() < 1e-15);
+
+        let composed = pld.compose(&pld).unwrap();
+        assert!((composed.estimation_failure_probability() - 0.02).abs() < 1e-15);
+        assert!((composed.mc_resolution() - 0.19).abs() < 1e-15);
     }
 
     #[test]

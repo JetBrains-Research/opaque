@@ -32,16 +32,18 @@ class NonPrivate(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         max_grid_size: int | None = None,
         max_conv_grid: int | None = None,
-        num_mc_samples: int | None = None,
         seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
     ) -> Pld:
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             max_grid_size=max_grid_size,
             max_conv_grid=max_conv_grid,
-            num_mc_samples=num_mc_samples,
             seed=seed,
+            mc_resolution=mc_resolution,
+            mc_failure_probability=mc_failure_probability,
         )
         return _native.non_private_pld(config.to_native())
 

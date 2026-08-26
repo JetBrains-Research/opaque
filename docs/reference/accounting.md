@@ -108,6 +108,13 @@ size (16) or as an opaque merge barrier.
 | `beta_at(alpha)`     | Type-II error at given Type-I error alpha        |
 | `risk_at(prior)`     | Bayes risk under optimal adversary               |
 
+Monte Carlo-backed `Pld` objects expose `mc_failure_probability`,
+`mc_confidence`, and `mc_resolution`; analytic PLDs report zero failure and
+zero MC resolution. The confidence construction certifies hockey-stick metrics
+(`epsilon_at`, `delta_at`, and `advantage`). `beta_at` and `risk_at` fail
+closed to zero for Monte Carlo PLDs because separate directional CDF bounds do
+not by themselves certify a hypothesis-testing trade-off curve.
+
 **Composition operators:**
 
 | Operator     | Description                                  | Equivalent             |
@@ -146,9 +153,21 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `log_x_mass_truncation_bound`  | `-50`        | Tails below exp(bound) are truncated             |
 | `max_grid_size`                | `10_000_000` | Coarsen grid if it exceeds this many bins        |
 | `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
-| `num_mc_samples`               | `100_000`    | Samples for Monte Carlo PLD builders             |
 | `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
 | `max_conv_grid`                | `32_768`     | Convolution grid cap for random-allocation PLD   |
+| `mc_resolution`                | `1e-5`       | Maximum unresolved MC mass, in delta units       |
+| `mc_failure_probability`       | `1e-6`       | Failure probability of the simultaneous MC bound |
+
+The Monte Carlo count is derived from binary-KL Chernoff order-statistic bounds
+with a Bonferroni allocation over all ranks and both adjacency directions. At
+the default `mc_resolution=1e-5` and `mc_failure_probability=1e-6`, this
+requires 2,940,252 samples per direction. Counts above 50 million emit an
+advisory runtime warning but are not capped. The construction follows
+[Hoeffding (1963)](https://doi.org/10.1080/00401706.1963.10490085); the rank
+and adjacency allocation makes the entire returned PLD simultaneous.
+`epsilon_at(delta)` tightens the effective resolution to
+`min(mc_resolution, delta / 2)`, reserving at least half of the requested delta
+for finite privacy-loss mass.
 
 Discretization is unconditionally conservative: exact atoms, PMF coarsening,
 and histogram buckets are rounded upward. The API has no optimistic or
@@ -164,9 +183,10 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
 eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
 
-# Monte Carlo accountants (b_min_sep, balls_in_bins) take the same
-# query-time overrides; analytic PLDs accept and ignore them
-eps_mc = proc.epsilon_at(1e-5, num_mc_samples=500_000, seed=123)
+# Monte Carlo accountants derive enough samples for the requested resolution.
+pld = proc.pld(mc_resolution=1e-5, mc_failure_probability=1e-6, seed=123)
+eps_mc = pld.epsilon_at(2e-5)
+print(pld.mc_confidence, pld.mc_resolution)
 ```
 
 All `pld()`-family methods (`epsilon_at`, `delta_at`, `advantage`, `beta_at`,
@@ -454,16 +474,18 @@ Uses Monte Carlo PLD accounting. `inner` must be
 `mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
 are read from `inner.strategy`. `p0` is the per-example participation rate per
 iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
-Control the Monte Carlo budget per query
-(`proc.epsilon_at(delta, num_mc_samples=..., seed=...)`) or module-wide via
-`set_discretization`.
+Control the confidence construction per query with `mc_resolution`,
+`mc_failure_probability`, and `seed`, or module-wide via `set_discretization`.
+The sample count is derived automatically and exposed as
+`get_discretization().resolved_num_mc_samples`.
 
-!!! warning
+!!! note "Monte Carlo confidence"
     b-min-sep, and Balls-in-Bins with a **correlated** strategy, build their
-    PLDs by Monte Carlo. Those are point estimates without the RC-4 confidence
-    correction — conservative discretization does not make their reported ε
-    values upper confidence bounds. Balls-in-Bins with `identity_strategy()`
-    is exempt: it is computed by an exact transform.
+    PLDs from simultaneous one-sided order-statistic bounds over both adjacency
+    directions. Unresolved probability is placed at `+∞`, so
+    `epsilon_at(delta)` returns infinity when `delta` is at or below the
+    reported `pld.infinity_mass`. `pld.mc_failure_probability` is statistical
+    confidence metadata and is separate from mechanism delta.
 
 ### `balls_in_bins(inner, *, num_bins, n_steps) -> DpProcess`
 
@@ -496,14 +518,12 @@ proc = dpftrl_acc.balls_in_bins(
 
 Adapter that wraps a whole-horizon accountant so it composes step-by-step
 under `Accountant`'s `acct |= step` idiom. `per_step(proc) * K` materialises
-the process-aware K-prefix PLD via `proc.pld_at(K)`. For analytic PLDs, this
-is bounded above
-by `proc.epsilon_at(δ)` and monotone non-decreasing in K by post-processing
-on the deployed N-step mechanism. b-min-sep and correlated-strategy
-Balls-in-Bins remain Monte Carlo point estimates pending the RC-4 confidence
-correction, so this guarantee is not asserted for their reported ε values;
-identity Balls-in-Bins is analytic and does carry it. `K > proc.n_steps`
-raises.
+the process-aware K-prefix PLD via `proc.pld_at(K)`. Analytic mechanisms use a
+strategy-aware prefix bound. For b-min-sep and correlated-strategy
+Balls-in-Bins, every nonzero prefix conservatively charges the full-horizon
+confidence-bounded PLD. This preserves monotonicity and boundedness but gives
+up prefix tightness. Identity Balls-in-Bins retains its exact prefix path.
+`K > proc.n_steps` raises.
 
 - `proc` (DpHorizonProcess): The whole-process accountant
   (`dpftrl_acc.poisson(...)`, `b_min_sep(...)`, `balls_in_bins(...)`).
@@ -717,6 +737,11 @@ invalid values raise `ValueError` before the process is evaluated. If no safe
 endpoint reaches the requested relative tolerance, `calibrate()` raises
 `RuntimeError` instead of returning an under-noised parameter.
 
+When the process uses a Monte Carlo PLD, calibration divides the configured
+failure probability across the two endpoint probes and at most
+`max_iterations` interior probes. `result.mc_confidence` therefore covers the
+adaptive search as a whole rather than only its selected final parameter.
+
 Calibrating a second stage against the remaining budget (see
 [Seeding with a prior process](#seeding-with-a-prior-process)): pass the
 earlier run's executed process as `prefix`. Each probe evaluates
@@ -760,6 +785,8 @@ Returned by `calibrate()`.
 | `target`    | `float` | Target metric value                              |
 | `iterations`| `int`   | Number of binary search iterations               |
 | `converged` | `bool`  | Always `True` for a successfully returned result |
+| `mc_failure_probability` | `float` | Overall failure probability for adaptive MC probes |
+| `mc_confidence` | `float` | Confidence covering the complete calibration search |
 
 ### Budget Factories
 

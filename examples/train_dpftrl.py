@@ -701,10 +701,16 @@ def parse_args():
         "lambda_cgd, bisr, bsr, none (no Poisson sampling).",
     )
     dp_g.add_argument(
-        "--mc-samples",
-        type=int,
-        default=100_000,
-        help="Monte Carlo samples for MC-based privacy accounting (b_min_sep, BnB).",
+        "--mc-resolution",
+        type=float,
+        default=1e-5,
+        help="Maximum unresolved Monte Carlo mass for b_min_sep and BnB accounting.",
+    )
+    dp_g.add_argument(
+        "--mc-failure-probability",
+        type=float,
+        default=1e-6,
+        help="Failure probability of the simultaneous Monte Carlo confidence bound.",
     )
     dp_g.add_argument(
         "--max-buffers",
@@ -1597,7 +1603,11 @@ def main():
     # identical to the first-moment-only release at the same noise
     # multiplier.
 
-    acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
+    acc.set_discretization(
+        seed=args.seed,
+        mc_resolution=args.mc_resolution,
+        mc_failure_probability=args.mc_failure_probability,
+    )
 
     if args.mechanism == "band_mf" and strategy is not None:
 
@@ -2125,9 +2135,7 @@ def main():
                         gn_bound = clip_norm.values[gname]
                         wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                         gnorms = aux.group_norms[gname]
-                        wb_metrics[f"group/grad_norm/{gname}"] = (
-                            gnorms.mean().item()
-                        )
+                        wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
                         gn_clipped = float((gnorms > gn_bound).sum().item())
                         wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                             1.0, float(batch_size)
@@ -2174,7 +2182,6 @@ def main():
             if use_wandb:
                 wandb.log(metrics, step=global_step)
             print(eval_msg)
-
 
     # ===================================================================
     # Final summary
