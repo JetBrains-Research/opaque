@@ -51,4 +51,8 @@ updates:
     reviewers:
       - "evgri243"
     open-pull-requests-limit: 10
+    groups:
+      workspace-dependencies:
+        patterns:
+          - "*"
     versioning-strategy: "lockfile-only"
