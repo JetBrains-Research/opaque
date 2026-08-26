@@ -32,6 +32,8 @@ from opaque.api.alignment._compute_dtype import _compute_dtype
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
 from opaque.api.alignment.logprob._gather import selective_log_softmax
 
+_IGNORE_INDEX = -100
+
 if TYPE_CHECKING:
     import torch
 
@@ -70,7 +72,7 @@ def nll_loss(
     shifted_labels = labels[..., 1:]  # (..., T-1)
 
     # Mask: 1 where the label is a real token (not -100)
-    mask = (shifted_labels != -100).to(shifted_logits.dtype)  # (..., T-1)
+    mask = (shifted_labels != _IGNORE_INDEX).to(shifted_logits.dtype)  # (..., T-1)
 
     # Clamp -100 → 0 so gather does not receive an out-of-range index.
     # The mask zeros out the contribution of these positions.
@@ -81,7 +83,7 @@ def nll_loss(
 
     # Accumulate in >= fp32 with an exact token count so eager matches fused.
     acc_dtype = _compute_dtype(logp)
-    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)
+    n_valid = (shifted_labels != _IGNORE_INDEX).sum(-1).clamp(min=1)
     nll = (-logp * mask).to(acc_dtype).sum(-1) / n_valid.to(acc_dtype)  # (...)
     return nll
 
@@ -117,6 +119,6 @@ def fused_nll_loss(
     """
     if lce_available(hidden_states):
         ce_sum = linear_nll_sum(hidden_states, lm_head_weight, labels)
-        n_valid = (labels[..., 1:] != -100).sum(-1).clamp(min=1)
+        n_valid = (labels[..., 1:] != _IGNORE_INDEX).sum(-1).clamp(min=1)
         return ce_sum / n_valid
     return nll_loss(hidden_states @ lm_head_weight.transpose(-2, -1), labels)

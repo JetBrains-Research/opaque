@@ -46,6 +46,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sized
 
 
+_MIN_NUM_BINS = 2
+
+
 class RandomAllocationSampler(Sampler):
     """1-out-of-``num_bins`` random allocation, redrawn every epoch.
 
@@ -84,7 +87,7 @@ class RandomAllocationSampler(Sampler):
 
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
-        if num_bins < 2:
+        if num_bins < _MIN_NUM_BINS:
             raise ValueError(f"num_bins must be >= 2, got {num_bins}")
         if n_steps is not None and n_steps < 1:
             raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")

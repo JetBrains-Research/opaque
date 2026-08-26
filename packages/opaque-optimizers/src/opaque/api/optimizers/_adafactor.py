@@ -104,7 +104,7 @@ class AdafactorState:
 
 def _init_v_for_leaf(leaf: torch.Tensor) -> tuple:
     """Allocate row/col or scalar second-moment state for one leaf."""
-    if leaf.dim() >= 2:
+    if leaf.dim() >= 2:  # noqa: PLR2004 - factoring requires matrix-shaped leaves
         # Factored: one v_row per "row" axis (-2) and one v_col per
         # "col" axis (-1).  Higher-rank tensors collapse the leading
         # dims into rows: shape ``(*leading, rows, cols)`` → row state
@@ -227,7 +227,7 @@ def _scale_by_adafactor(
 
             new_phi_flat.append(new_phi)
 
-            if len(v_state) == 2:
+            if len(v_state) == 2:  # noqa: PLR2004 - factored state is (row, col)
                 v_row, v_col = v_state
                 # Factored update.
                 new_v_row = beta2_t * v_row + (1.0 - beta2_t) * g_sq.mean(dim=-1)

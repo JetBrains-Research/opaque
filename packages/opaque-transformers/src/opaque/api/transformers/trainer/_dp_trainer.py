@@ -106,6 +106,10 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
+_ARG_DRIFT_ABSOLUTE_TOLERANCE = 1e-12
+_ARG_DRIFT_RELATIVE_TOLERANCE = 1e-6
+_IGNORE_INDEX = -100
+_MIN_RANDOM_ALLOCATION_BINS = 2
 
 
 def _callback_matches(
@@ -160,7 +164,10 @@ def _drift_differs(saved: Any, current: Any) -> bool:
     drift on benign rounding); everything else compares with ``!=``.
     """
     if isinstance(saved, float) and isinstance(current, float):
-        return abs(saved - current) / max(abs(saved), 1e-12) > 1e-6
+        return (
+            abs(saved - current) / max(abs(saved), _ARG_DRIFT_ABSOLUTE_TOLERANCE)
+            > _ARG_DRIFT_RELATIVE_TOLERANCE
+        )
     return saved != current
 
 
@@ -2334,7 +2341,7 @@ class DPTrainer:
             )
             if labels_tensor is not None:
                 if (
-                    output_logits.ndim >= 2
+                    output_logits.ndim >= 2  # noqa: PLR2004 - shifted logits are sequence-shaped
                     and output_logits.shape[:-1] == labels_tensor.shape
                     and output_logits.shape[-2] > 1
                 ):
@@ -2346,7 +2353,7 @@ class DPTrainer:
                 loss = torch.nn.functional.cross_entropy(
                     smooth_logits.view(-1, smooth_logits.size(-1)),
                     smooth_labels.view(-1),
-                    ignore_index=-100,
+                    ignore_index=_IGNORE_INDEX,
                     label_smoothing=smoothing,
                 )
 
@@ -2749,7 +2756,7 @@ class DPTrainer:
                         # position 0 via the internal shift); the per-token-mean
                         # weighting denominator must match that count.
                         shifted = labels[..., 1:]
-                        token_mask = shifted != -100
+                        token_mask = shifted != _IGNORE_INDEX
                         if loss.ndim > 0:
                             # per-example: weight each by its real-token count
                             per_example_real = token_mask.sum(
@@ -4255,7 +4262,7 @@ class DPTrainer:
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
         if a.sampling_mode == "random_allocation":
-            if num_bins < 2:
+            if num_bins < _MIN_RANDOM_ALLOCATION_BINS:
                 raise ValueError(
                     f"random_allocation requires num_bins >= 2, but "
                     f"train_batch_size={expected_batch_size} >= "

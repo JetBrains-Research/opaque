@@ -42,6 +42,7 @@ import torch.nn.functional as F
 __all__ = ["f_divergence_logits", "f_divergence_remap"]
 
 FDivergence = Literal["reverse_kl", "forward_kl", "js_divergence", "alpha_divergence"]
+_ALPHA_DIVERGENCE_LIMIT_TOLERANCE = 1e-6
 
 
 def _cap_exp(x: torch.Tensor, cap: float | None = None) -> torch.Tensor:
@@ -117,7 +118,7 @@ def f_divergence_remap(
     if f_divergence_type == "js_divergence":
         return math.log(2.0) + F.logsigmoid(logratio)
     if f_divergence_type == "alpha_divergence":
-        if abs(alpha - 1.0) < 1e-6:
+        if abs(alpha - 1.0) < _ALPHA_DIVERGENCE_LIMIT_TOLERANCE:
             # Limit of (exp((alpha-1)*x) - 1)/(alpha-1) as alpha->1.
             return logratio
         return (_cap_exp((alpha - 1) * logratio) - 1) / (alpha - 1)

@@ -10,6 +10,8 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 
+_VERY_SMALL_NOISE_MULTIPLIER = 0.1
+
 
 @dataclass(frozen=True, slots=True)
 class Gaussian(DpProcess):
@@ -63,7 +65,7 @@ def gaussian(noise_multiplier: float) -> Gaussian:
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if 0 < noise_multiplier < 0.1:
+    if 0 < noise_multiplier < _VERY_SMALL_NOISE_MULTIPLIER:
         warnings.warn(
             f"noise_multiplier={noise_multiplier} is very small: epsilon bounds "
             f"may explode and discretization grids may grow unboundedly, "

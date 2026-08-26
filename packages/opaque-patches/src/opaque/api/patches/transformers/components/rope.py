@@ -39,7 +39,7 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
     cos_2d = cos.unsqueeze(unsqueeze_dim).squeeze()
     sin_2d = sin.unsqueeze(unsqueeze_dim).squeeze()
 
-    if cos_2d.dim() == 2:
+    if cos_2d.dim() == 2:  # noqa: PLR2004 - kernel accepts a 2D RoPE table
         return Opaque_RoPE_QK.apply(q, k, cos_2d, sin_2d, None)
 
     # Fallback to PyTorch for batched cos/sin (e.g., variable position_ids)

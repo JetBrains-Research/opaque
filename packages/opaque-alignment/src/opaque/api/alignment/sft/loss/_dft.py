@@ -45,6 +45,8 @@ from opaque.api.alignment.logprob._gather import selective_log_softmax
 
 __all__ = ["dft_loss", "fused_dft_loss"]
 
+_IGNORE_INDEX = -100
+
 
 def dft_loss(
     logits: torch.Tensor,
@@ -79,7 +81,7 @@ def dft_loss(
     shifted_labels = labels[..., 1:]  # (..., T-1)
 
     # Mask: 1 where the label is a real token (not -100)
-    mask = (shifted_labels != -100).to(shifted_logits.dtype)  # (..., T-1)
+    mask = (shifted_labels != _IGNORE_INDEX).to(shifted_logits.dtype)  # (..., T-1)
 
     # Clamp -100 → 0 so gather does not receive an out-of-range index.
     # The mask zeroes out the contribution of these positions afterwards.
@@ -102,7 +104,7 @@ def dft_loss(
 
     # Accumulate in >= fp32 with an exact token count so eager matches fused.
     acc_dtype = _compute_dtype(per_token)
-    n_valid = (shifted_labels != -100).sum(-1).clamp(min=1)
+    n_valid = (shifted_labels != _IGNORE_INDEX).sum(-1).clamp(min=1)
     loss = (per_token * mask).to(acc_dtype).sum(-1) / n_valid.to(acc_dtype)  # (...)
     return loss
 
@@ -140,6 +142,6 @@ def fused_dft_loss(
         ce_sum = linear_nll_sum(
             hidden_states, lm_head_weight, labels, use_token_scaling=True
         )
-        n_valid = (labels[..., 1:] != -100).sum(-1).clamp(min=1)
+        n_valid = (labels[..., 1:] != _IGNORE_INDEX).sum(-1).clamp(min=1)
         return ce_sum / n_valid
     return dft_loss(hidden_states @ lm_head_weight.transpose(-2, -1), labels)
