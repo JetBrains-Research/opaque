@@ -50,5 +50,5 @@ updates:
       - "python"
     reviewers:
       - "evgri243"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     versioning-strategy: "lockfile-only"
