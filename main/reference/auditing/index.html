@@ -4098,7 +4098,7 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 
 
 <h3 id="opaque.auditing.coin_flip" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">num_canaries</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">num_canaries</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">candidate_indices</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#opaque.auditing.coin_flip" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -4106,8 +4106,10 @@ estimate = auditing.one_run(scores, coin_flip=cf)
     <div class="doc doc-contents ">
 
         <p>Create a coin-flip partition for canary-based auditing.</p>
-<p>Randomly selects <code>num_canaries</code> examples from the dataset and flips
-a fair coin for each to decide inclusion/exclusion.</p>
+<p>Selects <code>num_canaries</code> examples uniformly without replacement and
+flips a fair coin for each. Selection uses the whole dataset unless
+<code>candidate_indices</code> supplies an eligible pool. Fix that pool before
+target training, independently of the target run's coins and outputs.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4169,6 +4171,24 @@ a fair coin for each to decide inclusion/exclusion.</p>
                 <em>required</em>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>candidate_indices</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional 1-D collection of unique, in-range
+integer indices eligible to become canaries. Passing exactly
+<code>num_canaries</code> indices designates them all.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -4194,6 +4214,29 @@ a fair coin for each to decide inclusion/exclusion.</p>
           </tr>
       </tbody>
     </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the candidate pool is invalid or too small.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
         <p>Example::</p>
 <div class="codehilite"><pre><span></span><code>cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 train_data = dataset.select(cf.train_indices(len(dataset)))
@@ -4202,32 +4245,7 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/_coin_flip.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-278">278</a></span>
-<span class="normal"><a href="#__codelineno-0-279">279</a></span>
-<span class="normal"><a href="#__codelineno-0-280">280</a></span>
-<span class="normal"><a href="#__codelineno-0-281">281</a></span>
-<span class="normal"><a href="#__codelineno-0-282">282</a></span>
-<span class="normal"><a href="#__codelineno-0-283">283</a></span>
-<span class="normal"><a href="#__codelineno-0-284">284</a></span>
-<span class="normal"><a href="#__codelineno-0-285">285</a></span>
-<span class="normal"><a href="#__codelineno-0-286">286</a></span>
-<span class="normal"><a href="#__codelineno-0-287">287</a></span>
-<span class="normal"><a href="#__codelineno-0-288">288</a></span>
-<span class="normal"><a href="#__codelineno-0-289">289</a></span>
-<span class="normal"><a href="#__codelineno-0-290">290</a></span>
-<span class="normal"><a href="#__codelineno-0-291">291</a></span>
-<span class="normal"><a href="#__codelineno-0-292">292</a></span>
-<span class="normal"><a href="#__codelineno-0-293">293</a></span>
-<span class="normal"><a href="#__codelineno-0-294">294</a></span>
-<span class="normal"><a href="#__codelineno-0-295">295</a></span>
-<span class="normal"><a href="#__codelineno-0-296">296</a></span>
-<span class="normal"><a href="#__codelineno-0-297">297</a></span>
-<span class="normal"><a href="#__codelineno-0-298">298</a></span>
-<span class="normal"><a href="#__codelineno-0-299">299</a></span>
-<span class="normal"><a href="#__codelineno-0-300">300</a></span>
-<span class="normal"><a href="#__codelineno-0-301">301</a></span>
-<span class="normal"><a href="#__codelineno-0-302">302</a></span>
-<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-303">303</a></span>
 <span class="normal"><a href="#__codelineno-0-304">304</a></span>
 <span class="normal"><a href="#__codelineno-0-305">305</a></span>
 <span class="normal"><a href="#__codelineno-0-306">306</a></span>
@@ -4243,48 +4261,111 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 <span class="normal"><a href="#__codelineno-0-316">316</a></span>
 <span class="normal"><a href="#__codelineno-0-317">317</a></span>
 <span class="normal"><a href="#__codelineno-0-318">318</a></span>
-<span class="normal"><a href="#__codelineno-0-319">319</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-278" name="__codelineno-0-278"></a><span class="k">def</span><span class="w"> </span><span class="nf">coin_flip</span><span class="p">(</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>    <span class="n">num_canaries</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span><span class="p">:</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a><span class="w">    </span><span class="sd">"""Create a coin-flip partition for canary-based auditing.</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>
-<a id="__codelineno-0-286" name="__codelineno-0-286"></a><span class="sd">    Randomly selects ``num_canaries`` examples from the dataset and flips</span>
-<a id="__codelineno-0-287" name="__codelineno-0-287"></a><span class="sd">    a fair coin for each to decide inclusion/exclusion.</span>
-<a id="__codelineno-0-288" name="__codelineno-0-288"></a>
-<a id="__codelineno-0-289" name="__codelineno-0-289"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-290" name="__codelineno-0-290"></a><span class="sd">        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).</span>
-<a id="__codelineno-0-291" name="__codelineno-0-291"></a><span class="sd">        num_canaries: Number of canary examples to designate.</span>
-<a id="__codelineno-0-292" name="__codelineno-0-292"></a><span class="sd">        key: RNG key for reproducible canary selection and coin flips.</span>
-<a id="__codelineno-0-293" name="__codelineno-0-293"></a>
-<a id="__codelineno-0-294" name="__codelineno-0-294"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-295" name="__codelineno-0-295"></a><span class="sd">        A :class:`CoinFlip` with the canary partition.</span>
-<a id="__codelineno-0-296" name="__codelineno-0-296"></a>
-<a id="__codelineno-0-297" name="__codelineno-0-297"></a><span class="sd">    Example::</span>
-<a id="__codelineno-0-298" name="__codelineno-0-298"></a>
-<a id="__codelineno-0-299" name="__codelineno-0-299"></a><span class="sd">        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a><span class="sd">        train_data = dataset.select(cf.train_indices(len(dataset)))</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">    """</span>
-<a id="__codelineno-0-302" name="__codelineno-0-302"></a>    <span class="n">dataset_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&gt;</span> <span class="n">dataset_size</span><span class="p">:</span>
-<a id="__codelineno-0-304" name="__codelineno-0-304"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a>            <span class="sa">f</span><span class="s2">"num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds dataset size (</span><span class="si">{</span><span class="n">dataset_size</span><span class="si">}</span><span class="s2">)"</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a>        <span class="p">)</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_CANARY_SELECTION_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a>    <span class="n">canary_indices</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">dataset_size</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a>    <span class="n">coin_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_COIN_FLIP_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a>    <span class="n">in_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">coin_rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">num_canaries</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a>    <span class="k">return</span> <span class="n">CoinFlip</span><span class="p">(</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a>        <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a>        <span class="n">canary_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">,</span>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a>        <span class="n">_in_mask</span><span class="o">=</span><span class="n">in_mask</span><span class="p">,</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a>        <span class="n">in_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="n">in_mask</span><span class="p">],</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a>        <span class="n">out_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="o">~</span><span class="n">in_mask</span><span class="p">],</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a>    <span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#__codelineno-0-335">335</a></span>
+<span class="normal"><a href="#__codelineno-0-336">336</a></span>
+<span class="normal"><a href="#__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#__codelineno-0-341">341</a></span>
+<span class="normal"><a href="#__codelineno-0-342">342</a></span>
+<span class="normal"><a href="#__codelineno-0-343">343</a></span>
+<span class="normal"><a href="#__codelineno-0-344">344</a></span>
+<span class="normal"><a href="#__codelineno-0-345">345</a></span>
+<span class="normal"><a href="#__codelineno-0-346">346</a></span>
+<span class="normal"><a href="#__codelineno-0-347">347</a></span>
+<span class="normal"><a href="#__codelineno-0-348">348</a></span>
+<span class="normal"><a href="#__codelineno-0-349">349</a></span>
+<span class="normal"><a href="#__codelineno-0-350">350</a></span>
+<span class="normal"><a href="#__codelineno-0-351">351</a></span>
+<span class="normal"><a href="#__codelineno-0-352">352</a></span>
+<span class="normal"><a href="#__codelineno-0-353">353</a></span>
+<span class="normal"><a href="#__codelineno-0-354">354</a></span>
+<span class="normal"><a href="#__codelineno-0-355">355</a></span>
+<span class="normal"><a href="#__codelineno-0-356">356</a></span>
+<span class="normal"><a href="#__codelineno-0-357">357</a></span>
+<span class="normal"><a href="#__codelineno-0-358">358</a></span>
+<span class="normal"><a href="#__codelineno-0-359">359</a></span>
+<span class="normal"><a href="#__codelineno-0-360">360</a></span>
+<span class="normal"><a href="#__codelineno-0-361">361</a></span>
+<span class="normal"><a href="#__codelineno-0-362">362</a></span>
+<span class="normal"><a href="#__codelineno-0-363">363</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-303" name="__codelineno-0-303"></a><span class="k">def</span><span class="w"> </span><span class="nf">coin_flip</span><span class="p">(</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>    <span class="n">num_canaries</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>    <span class="n">candidate_indices</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span><span class="p">:</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="w">    </span><span class="sd">"""Create a coin-flip partition for canary-based auditing.</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a><span class="sd">    Selects ``num_canaries`` examples uniformly without replacement and</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a><span class="sd">    flips a fair coin for each. Selection uses the whole dataset unless</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">    ``candidate_indices`` supplies an eligible pool. Fix that pool before</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a><span class="sd">    target training, independently of the target run's coins and outputs.</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a><span class="sd">        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a><span class="sd">        num_canaries: Number of canary examples to designate.</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a><span class="sd">        key: RNG key for reproducible canary selection and coin flips.</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a><span class="sd">        candidate_indices: Optional 1-D collection of unique, in-range</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a><span class="sd">            integer indices eligible to become canaries. Passing exactly</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a><span class="sd">            ``num_canaries`` indices designates them all.</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a><span class="sd">        A :class:`CoinFlip` with the canary partition.</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a><span class="sd">        ValueError: If the candidate pool is invalid or too small.</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a><span class="sd">        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a><span class="sd">        train_data = dataset.select(cf.train_indices(len(dataset)))</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a><span class="sd">    """</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>    <span class="n">dataset_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"num_canaries must be non-negative, got </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>    <span class="k">if</span> <span class="n">candidate_indices</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>        <span class="n">population</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">dataset_size</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">dataset_size</span>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"dataset size"</span>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a>        <span class="n">population</span> <span class="o">=</span> <span class="n">_candidate_pool</span><span class="p">(</span><span class="n">candidate_indices</span><span class="p">,</span> <span class="n">dataset_size</span><span class="p">)</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">population</span><span class="o">.</span><span class="n">size</span>
+<a id="__codelineno-0-346" name="__codelineno-0-346"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"candidate pool size"</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&gt;</span> <span class="n">pool_size</span><span class="p">:</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a>            <span class="sa">f</span><span class="s2">"num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds </span><span class="si">{</span><span class="n">pool_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">pool_size</span><span class="si">}</span><span class="s2">)"</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a>        <span class="p">)</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_CANARY_SELECTION_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a>    <span class="n">canary_indices</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">population</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-0-354" name="__codelineno-0-354"></a>    <span class="n">coin_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_COIN_FLIP_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a>    <span class="n">in_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">coin_rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">num_canaries</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>    <span class="k">return</span> <span class="n">CoinFlip</span><span class="p">(</span>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a>        <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a>        <span class="n">canary_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">,</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>        <span class="n">_in_mask</span><span class="o">=</span><span class="n">in_mask</span><span class="p">,</span>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a>        <span class="n">in_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="n">in_mask</span><span class="p">],</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a>        <span class="n">out_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="o">~</span><span class="n">in_mask</span><span class="p">],</span>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5393,10 +5474,12 @@ estimate = auditing.one_run(scores, coin_flip=cf)
 <h3 id="coin_flip">coin_flip<a class="headerlink" href="#coin_flip" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">num_canaries</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">candidate_indices</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span>
 </code></pre></div>
 <p>Create a coin-flip partition. Randomly selects <code>num_canaries</code> examples
-and flips a fair coin for each to decide inclusion/exclusion.</p>
+and flips a fair coin for each to decide inclusion/exclusion. Selection
+uses the whole dataset unless <code>candidate_indices</code> restricts it to a pool.</p>
 <table>
 <thead>
 <tr>
@@ -5425,19 +5508,38 @@ and flips a fair coin for each to decide inclusion/exclusion.</p>
 <td>required</td>
 <td>RNG key for reproducibility</td>
 </tr>
+<tr>
+<td><code>candidate_indices</code></td>
+<td>array-like | <code>None</code></td>
+<td><code>None</code></td>
+<td>Unique, in-range integer indices eligible to become canaries; order is ignored</td>
+</tr>
 </tbody>
 </table>
+<p><strong>Raises</strong> <code>ValueError</code> if the candidate pool is malformed or contains fewer
+than <code>num_canaries</code> indices.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">train_data</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)))</span>
 </code></pre></div>
+<p>To designate a precommitted block of constructed canaries:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">pool</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">audited_dataset</span><span class="p">))</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">audited_dataset</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">num_canaries</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pool</span><span class="p">),</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">candidate_indices</span><span class="o">=</span><span class="n">pool</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">)</span>
+</code></pre></div>
+<p>See <a href="../../user-guide/auditing/#stronger-canaries">Stronger canaries</a> for the
+statistical and accounting requirements.</p>
 <hr />
 <h3 id="loss_scores">loss_scores<a class="headerlink" href="#loss_scores" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">batch_argnums</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">,</span> <span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">batch_argnums</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">,</span> <span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
 </code></pre></div>
 <p>Compute per-example membership scores as negative loss. Higher score =
 lower loss = more likely a training member.</p>
@@ -5516,26 +5618,26 @@ canary. Higher = more likely member.</p>
 <p><strong>Raises</strong> <code>ValueError</code> if <code>batch_argnums</code> is malformed, <code>batch_size</code> is
 not positive, or <code>collate_fn</code> changes the batch row count; <code>TypeError</code> if
 <code>reference_scores</code> does not carry identifiers.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_collate</span><span class="p">(</span><span class="n">examples</span><span class="p">):</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">batch</span> <span class="o">=</span> <span class="n">data_collator</span><span class="p">(</span><span class="n">examples</span><span class="p">)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">"input_ids"</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">,</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">)</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">canary_collate</span><span class="p">(</span><span class="n">examples</span><span class="p">):</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">batch</span> <span class="o">=</span> <span class="n">data_collator</span><span class="p">(</span><span class="n">examples</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="s2">"input_ids"</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">canary_collate</span><span class="p">,</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h3 id="gradient_scores">gradient_scores<a class="headerlink" href="#gradient_scores" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">batch_argnums</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">,</span> <span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">batch_argnums</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">,</span> <span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
 </code></pre></div>
 <p>Compute per-example membership scores as negative squared gradient norm.
 Higher score = smaller gradient norm = more likely a training member.</p>
@@ -5610,26 +5712,26 @@ canary. Higher = more likely member.</p>
 <p><strong>Raises</strong> <code>ValueError</code> if <code>0 in batch_argnums</code>, <code>batch_size</code> is not
 positive, or <code>collate_fn</code> changes the batch row count; <code>TypeError</code> if
 <code>reference_scores</code> does not carry identifiers.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">initial_params</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="p">)</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref</span><span class="p">,</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">initial_params</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="p">)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">gradient_scores</span><span class="p">(</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">trained_params</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,),</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="p">)</span>
 </code></pre></div>
 <p>The scorer is also available from the attacks namespace:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.auditing.attacks</span><span class="w"> </span><span class="kn">import</span> <span class="n">gradient_scores</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.auditing.attacks</span><span class="w"> </span><span class="kn">import</span> <span class="n">gradient_scores</span>
 </code></pre></div>
 <hr />
 <h3 id="canary_scores">canary_scores<a class="headerlink" href="#canary_scores" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">canary_scores</span><span class="p">(</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">canary_indices</span><span class="p">,</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">canary_scores</span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">canary_indices</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CanaryScores</span>
 </code></pre></div>
 <p>Attest which canary each externally computed score belongs to. The
 built-in scorers already return <code>CanaryScores</code> in verified mode; use this
@@ -5661,12 +5763,12 @@ for scores produced by another pipeline. Identifiers may be in any order
 </table>
 <p><strong>Raises</strong> <code>ValueError</code> if either array is not 1-D, the identifiers are
 not integers, the lengths disagree, or an identifier repeats.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">canary_scores</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">canary_indices</span><span class="o">=</span><span class="n">ids</span><span class="p">)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">canary_scores</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">canary_indices</span><span class="o">=</span><span class="n">ids</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h3 id="one_run">one_run<a class="headerlink" href="#one_run" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OneRunEstimate</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">coin_flip</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OneRunEstimate</span>
 </code></pre></div>
 <p>Build a one-run privacy estimate from canary scores. Joins scores to the
 coin-flip partition by canary identifier, precomputes the empirical ROC,
@@ -5699,15 +5801,16 @@ instead of silently producing a meaningless estimate.</p>
 </table>
 <p><strong>Raises</strong> <code>TypeError</code> for bare arrays without identifiers; <code>ValueError</code>
 if identifiers are unexpected, duplicated, or missing.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
 </code></pre></div>
 <hr />
 <h2 id="coinflip">CoinFlip<a class="headerlink" href="#coinflip" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">CoinFlip</span><span class="p">(</span><span class="n">canary_indices</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
-</code></pre></div>
 <p>Coin-flip partitioning for canary-based privacy auditing. Each canary
 is independently included or excluded with probability 0.5.</p>
+<p>Create instances with <a href="#coin_flip"><code>coin_flip</code></a>. To control which records are
+eligible, pass <code>candidate_indices</code> to that factory rather than constructing the
+state carrier directly.</p>
 <table>
 <thead>
 <tr>
@@ -5948,6 +6051,10 @@ distinct from <code>OneRunEstimate.attack_beta_at</code> (empirical attack ROC).
 <tr>
 <td><code>auditing.coin_flip(dataset, ...)</code></td>
 <td>Coin-flip partition → <code>CoinFlip</code></td>
+</tr>
+<tr>
+<td><code>auditing.coin_flip(dataset, ..., candidate_indices=pool)</code></td>
+<td>Partition a precommitted canary pool</td>
 </tr>
 <tr>
 <td><code>auditing.loss_scores(loss_fn, ..., coin_flip=cf, dataset=ds)</code></td>

@@ -1484,6 +1484,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stronger-canaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stronger canaries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#interpreting-results" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3317,6 +3328,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stronger-canaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stronger canaries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#interpreting-results" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3380,7 +3402,9 @@ there is likely a bug in the implementation.</p>
 with the tight order-statistics tests from
 <a href="https://arxiv.org/abs/2509.08704">Xiang et al. (2025)</a>:</p>
 <ol>
-<li><strong>Designate canaries.</strong> Randomly select <code>m</code> examples as canaries.</li>
+<li><strong>Designate canaries.</strong> Select <code>m</code> examples as canaries. By default they
+   are uniformly sampled natural rows; a caller-supplied pool can contain
+   preselected or constructed examples.</li>
 <li><strong>Flip coins.</strong> For each canary, include or exclude it from training
    with probability 0.5.</li>
 <li><strong>Train once.</strong> Train on the resulting subset. Non-canary data is always
@@ -3592,14 +3616,66 @@ has an approximate ceiling <code>ε ≲ ln(m / -ln(α))</code>. This does not ap
 </tr>
 </tbody>
 </table>
+<h2 id="stronger-canaries">Stronger canaries<a class="headerlink" href="#stronger-canaries" title="Permanent link">&para;</a></h2>
+<p>The default <code>coin_flip</code> call partitions natural rows already present in the
+dataset. This is a valid one-run audit, not canary injection. Uniformly random
+natural rows often provide less membership signal than deliberately selected or
+constructed examples, although influential natural records can also be strong.</p>
+<p>Canary design is application-specific. Images with perturbed labels, unusual
+text sequences, and sparse gradient-space canaries are different objects with
+different model and scoring requirements. Construct or select them in your own
+pipeline, then pass their dataset indices as <code>candidate_indices</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">concatenate_datasets</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">base_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">audited</span> <span class="o">=</span> <span class="n">concatenate_datasets</span><span class="p">([</span><span class="n">dataset</span><span class="p">,</span> <span class="n">crafted_canaries</span><span class="p">])</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">pool</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="n">base_size</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">audited</span><span class="p">))</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">audited</span><span class="p">,</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">num_canaries</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">pool</span><span class="p">),</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">candidate_indices</span><span class="o">=</span><span class="n">pool</span><span class="p">,</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="p">)</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="n">train_data</span> <span class="o">=</span> <span class="n">audited</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">train_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">audited</span><span class="p">)))</span>
+</code></pre></div>
+<p>The pool must be one-dimensional, unique, integer-valued, and within
+<code>range(len(audited))</code>. Opaque samples <code>num_canaries</code> indices from it without
+replacement; passing a pool of exactly that size designates every supplied
+index. If the pool is larger, its unselected records remain ordinary always-in
+training data. Pool order does not affect a seeded partition.</p>
+<p>Fix the pool before target training, independently of that run's membership
+coins and outputs. Opaque still generates independent fair membership coins;
+do not construct <code>CoinFlip</code> directly to choose a favourable in/out mask. Use
+the same <code>audited</code> dataset for <code>coin_flip</code>, subset construction, and scoring so
+the stable canary indices continue to identify the same records.</p>
+<p>Strength depends on both detectability and diversity. Many similar synthetic
+canaries can interfere with one another, so increasing the count or making a
+record more unusual does not guarantee a tighter result. The original one-run
+paper evaluates relabelled and in-distribution input canaries as well as
+gradient-space canaries; more recent work also finds that influence-selected
+natural records can outperform random natural records.</p>
+<p>Finally, compare the audit only with accounting for the same training
+mechanism. Canary partitioning changes the records and cardinality seen by the
+sampler. If sampling probability, step horizon, minimum separation, bin count,
+or another privacy-relevant setting is derived from the realized partition,
+accounting for one fixed configuration may not cover its neighbouring runs.
+Do not reuse a theoretical bound computed for the unpartitioned dataset without
+checking that it covers the actual audited workload.</p>
 <h2 id="interpreting-results">Interpreting results<a class="headerlink" href="#interpreting-results" title="Permanent link">&para;</a></h2>
 <p>The audited epsilon should be <strong>below</strong> the theoretical epsilon:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>  ε (one-run):          1.50
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>  ε (one-run):          1.50
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  ε (theoretical):      3.00    ← expected: gap exists
 </code></pre></div>
-<p><strong>Gap is expected.</strong> The audit runs a suboptimal attack and is capped by
-<code>ln(m)</code>; the theoretical bound is a worst-case upper bound. A large gap is
-normal, especially in high-noise regimes.</p>
+<p><strong>Gap is expected.</strong> The audit runs a particular attack with finite statistical
+power; the theoretical bound is a worst-case upper bound. A large gap is normal,
+especially in high-noise regimes.</p>
+<p><strong>A low audited epsilon is not a privacy certificate.</strong> It can mean that the
+mechanism leaked little, that the scores or canaries did not expose the leakage,
+that canaries interfered with one another, or that the sample was too small to
+resolve it. Report the canary design and attack with the lower bound. If the
+result matters, compare multiple precommitted designs rather than interpreting
+a weak attack as evidence of privacy.</p>
 <p><strong>Audited &gt; theoretical is a red flag.</strong> Investigate:</p>
 <ul>
 <li>Gradient clipping applied incorrectly</li>
@@ -3611,6 +3687,7 @@ normal, especially in high-noise regimes.</p>
 <ul>
 <li>Xiang et al. (2025). <a href="https://arxiv.org/abs/2509.08704">Tight Privacy Audit in One Run</a>.</li>
 <li>Steinke, Nasr, Jagielski (2023). <a href="https://arxiv.org/abs/2305.08846">Privacy Auditing with One (1) Training Run</a>. NeurIPS 2023.</li>
+<li>Dagréou, Bellet (2026). <a href="https://arxiv.org/abs/2605.27292">Detectability in Diversity: Improved Canary Crafting for Privacy Auditing in One Run</a>.</li>
 <li>Carlini et al. (2022). <a href="https://arxiv.org/abs/2112.03570">Membership Inference Attacks From First Principles</a>.</li>
 </ul>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>

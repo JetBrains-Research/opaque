@@ -4141,7 +4141,8 @@ def loss_fn(params, x, y):
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="step-1-partition-canaries">Step 1 — Partition canaries<a class="anchor-link" href="#step-1-partition-canaries">¶</a></h2><p><code>coin_flip()</code> randomly selects canary examples and flips a fair
 coin for each: <em>in</em> (included in training) or <em>out</em> (held out).
-Non-canary examples are always included.</p>
+Here every random-labelled record is a constructed canary, so
+<code>candidate_indices</code> explicitly designates the complete pool.</p>
 </div>
 </div>
 </div>
@@ -4165,7 +4166,12 @@ Non-canary examples are always included.</p>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">num_canaries</span> <span class="o">=</span> <span class="n">n_samples</span>  <span class="c1"># audit every example</span>
-<span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span>
+    <span class="n">dataset</span><span class="p">,</span>
+    <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span>
+    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+    <span class="n">candidate_indices</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">n_samples</span><span class="p">),</span>
+<span class="p">)</span>
 <span class="n">train_data</span> <span class="o">=</span> <span class="n">cf</span><span class="o">.</span><span class="n">train_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Dataset:      </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
@@ -4175,7 +4181,12 @@ Non-canary examples are always included.</p>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Training set: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">num_canaries = n_samples  # audit every example
-cf = auditing.coin_flip(dataset, num_canaries=num_canaries, key=key(42))
+cf = auditing.coin_flip(
+    dataset,
+    num_canaries=num_canaries,
+    key=key(42),
+    candidate_indices=range(n_samples),
+)
 train_data = cf.train_subset(dataset)
 
 print(f"Dataset:      {n_samples} examples")
@@ -4588,7 +4599,8 @@ adversaries, including ones far more powerful than any single
 MIA. The audited epsilon is therefore a <em>lower bound</em> on the
 true privacy leakage — it tells you "at least this much leaks,"
 but the actual leakage could be anywhere between the audited and
-theoretical values. A stronger attack would narrow the gap.</p>
+theoretical values. A stronger canary design or attack may narrow
+the gap; a small lower bound is not a privacy certificate.</p>
 </div>
 </div>
 </div>
@@ -4599,8 +4611,9 @@ theoretical values. A stronger attack would narrow the gap.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="attack-metrics">Attack metrics<a class="anchor-link" href="#attack-metrics">¶</a></h2><p>AUC measures how well an adversary can distinguish in-members
-from out-members. Values near 0.5 mean the model leaks little.</p>
+<h2 id="attack-metrics">Attack metrics<a class="anchor-link" href="#attack-metrics">¶</a></h2><p>AUC measures how well this adversary can distinguish in-members
+from out-members. Values near 0.5 mean this attack found little
+signal, not that the model necessarily leaks little.</p>
 </div>
 </div>
 </div>
@@ -4730,7 +4743,7 @@ plt.show()</div>
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="summary">Summary<a class="anchor-link" href="#summary">¶</a></h2><p>The auditing workflow is three steps after preparing the data:</p>
 <ol>
-<li><strong>Partition</strong> — <code>auditing.coin_flip(dataset, num_canaries=..., key=...)</code></li>
+<li><strong>Partition</strong> — <code>auditing.coin_flip(..., candidate_indices=pool)</code></li>
 <li><strong>Train</strong> — on <code>cf.train_subset(dataset)</code> with normal DP-SGD or DP-FTRL</li>
 <li><strong>Score &amp; estimate</strong> — <code>auditing.loss_scores(...)</code> then
 <code>auditing.one_run(scores, coin_flip=cf)</code>, then query
