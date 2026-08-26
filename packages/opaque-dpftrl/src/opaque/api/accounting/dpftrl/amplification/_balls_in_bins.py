@@ -191,8 +191,10 @@ class BallsInBins(DpHorizonProcess):
         column is read at ``self.n_steps`` and the K-prefix gram is
         built via the closed-form Toeplitz gram on those coefficients,
         evaluated at participation context ``(K, num_bins, K_epochs)``.
-        Correlated-strategy Monte Carlo paths use the full-horizon confidence
-        bound for every nonzero prefix. Identity retains its exact prefix path.
+        Correlated strategies use a confidence-bounded Monte Carlo PLD for the
+        corresponding projection of the deployed matrix. Independent prefix
+        estimates need not be numerically monotone. Identity retains its exact
+        prefix path.
         """
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -213,18 +215,6 @@ class BallsInBins(DpHorizonProcess):
         native_cfg = config.to_native()
 
         s = self.inner.strategy
-
-        if not isinstance(s, IdentityStrategy) and rounded < self.n_steps:
-            return self.pld_at(
-                self.n_steps,
-                discretization=discretization,
-                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                max_grid_size=max_grid_size,
-                max_conv_grid=max_conv_grid,
-                seed=seed,
-                mc_resolution=mc_resolution,
-                mc_failure_probability=mc_failure_probability,
-            )
 
         # Identity (C = I) collapses onto random allocation, exactly.
         #
@@ -249,35 +239,7 @@ class BallsInBins(DpHorizonProcess):
                 native_cfg,
             )
 
-        if isinstance(s, BltStrategy):
-            # BLT is the only retuning inner: re-running L-BFGS at K
-            # would yield a different mechanism, breaking post-processing
-            # monotonicity.  Pin the N-tuned Toeplitz first column and
-            # evaluate its K-prefix gram instead.
-            coefs = s.coefficients(
-                n_steps=self.n_steps,
-                min_sep=self.min_sep,
-                max_participations=self.max_participations,
-            )
-            pinned = list(coefs[:rounded].tolist())
-            gram = tuple(
-                _native.toeplitz_gram_matrix(
-                    pinned,
-                    rounded,
-                    min_sep_K,
-                    max_participations_K,
-                    False,
-                )
-            )
-        else:
-            # BSR / BiSR / λ-CGD are recipe-driven: ``gram_matrix(n_steps=K)``
-            # is a closed-form K-row gram of the *same* mechanism (no
-            # re-tuning), so post-processing applies directly.
-            gram = s.gram_matrix(
-                n_steps=rounded,
-                min_sep=min_sep_K,
-                max_participations=max_participations_K,
-            )
+        gram = self._correlated_gram_at(rounded)
         config.warn_if_large_mc()
         return _native.bnb_mc_pld(
             list(gram),

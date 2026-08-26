@@ -6,11 +6,18 @@ import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.accounting.core import _native
+from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, _column_norm
 from opaque.dpftrl.noise import bisr_strategy, lambda_cgd_strategy
 
 _N_STEPS = 12
 _NUM_BINS = 3
+_MC_KW = {
+    "seed": 17,
+    "mc_resolution": 0.05,
+    "mc_failure_probability": 0.1,
+}
 
 
 def _lambda_noising_matrix(strategy) -> torch.Tensor:
@@ -82,3 +89,28 @@ def test_prefix_gram_matches_deployed_runtime(kind, normalized):
             process._correlated_gram_at(prefix_steps), dtype=torch.float64
         ).reshape(_NUM_BINS, _NUM_BINS)
         torch.testing.assert_close(actual, expected, rtol=1e-9, atol=1e-10)
+
+
+@pytest.mark.parametrize("kind", ["lambda_cgd", "bisr"])
+def test_public_prefix_pld_uses_deployed_runtime_gram(kind):
+    if kind == "lambda_cgd":
+        strategy = lambda_cgd_strategy(lambda_=0.9)
+    else:
+        strategy = bisr_strategy(bandwidth=4, momentum=0.8)
+
+    process = ftrl_acc.balls_in_bins(
+        ftrl_acc.mf_gaussian(1.0, strategy),
+        num_bins=_NUM_BINS,
+        n_steps=_N_STEPS,
+    )
+    prefix_steps = 2 * _NUM_BINS
+    config = get_discretization(**_MC_KW)
+    expected = _native.bnb_mc_pld(
+        list(process._correlated_gram_at(prefix_steps)),
+        _NUM_BINS,
+        1.0,
+        config.to_native(),
+    )
+    actual = process.pld_at(prefix_steps, **_MC_KW)
+
+    assert actual.epsilon_at(0.1) == pytest.approx(expected.epsilon_at(0.1))

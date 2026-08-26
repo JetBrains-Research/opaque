@@ -120,9 +120,12 @@ for batch in dataloader:
 ```
 
 For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-For Monte Carlo-backed b-min-sep and correlated Balls-in-Bins, every nonzero
-prefix charges the full-horizon confidence bound, preserving those invariants
-at the cost of prefix tightness. `K > proc.n_steps` raises.
+Monte Carlo-backed b-min-sep charges every nonzero prefix with the
+full-horizon confidence bound, preserving those invariants at the cost of
+prefix tightness. Correlated Balls-in-Bins projects the deployed N-step
+strategy onto the requested prefix and returns an individually
+confidence-bounded Monte Carlo PLD; independently computed prefix values need
+not be numerically monotone. `K > proc.n_steps` raises.
 
 ## 3. Clipping
 
