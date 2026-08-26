@@ -63,7 +63,7 @@ def _cross_entropy_forward(
     c = tl.max(logits, 0)
     logsumexp = c + tl.log(tl.sum(tl.exp(logits - c), 0))
 
-    if label_idx != _IGNORE_INDEX:
+    if label_idx != -100:  # noqa: PLR2004 - Triton JIT requires an inline constant
         x = tl.load(logits_ptr + label_idx).to(tl.float32)
         # Apply same transforms to the label logit
         if DO_LOGIT_SCALING:
@@ -132,7 +132,7 @@ def _chunked_cross_entropy_forward(
 
     # Chunk 0 stores the -x[label] part of the loss
     if chunk_idx == 0:
-        if label_idx != _IGNORE_INDEX:
+        if label_idx != -100:  # noqa: PLR2004 - Triton JIT requires an inline constant
             x = tl.load(logits_ptr + label_idx).to(tl.float32)
             if DO_LOGIT_SCALING:
                 x = LOGIT_SCALE * x
@@ -180,7 +180,11 @@ def _cross_entropy_backward(
 
     label_idx = tl.load(labels_ptr).to(tl.int32)
 
-    dloss = tl.load(dlosses_ptr) if label_idx != _IGNORE_INDEX else 0.0
+    dloss = (
+        tl.load(dlosses_ptr)
+        if label_idx != -100  # noqa: PLR2004 - Triton JIT requires an inline constant
+        else 0.0
+    )
 
     x = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(tl.float32)
 
