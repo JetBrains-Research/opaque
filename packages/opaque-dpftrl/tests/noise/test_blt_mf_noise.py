@@ -78,10 +78,14 @@ class TestBltPld:
             ftrl_acc.mf_gaussian(1.0, s),
             num_bins=25,
             n_steps=100,
-        ).epsilon_at(self.delta)
+        ).epsilon_at(
+            1e-2,
+            mc_resolution=5e-3,
+            mc_failure_probability=1e-2,
+        )
         assert eps > 0
 
-    def test_blt_bnb_prefix_matches_deployed_unnormalized_encoder(self, monkeypatch):
+    def test_blt_bnb_prefix_charges_full_deployed_encoder(self, monkeypatch):
         s = blt_strategy(max_buffers=2, momentum=0.913)
         proc = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_gaussian(1.0, s),
@@ -108,8 +112,8 @@ class TestBltPld:
             n_steps=proc.n_steps,
             min_sep=proc.min_sep,
             max_participations=proc.max_participations,
-        )[:10].tolist()
-        raw = actual_native.toeplitz_gram_matrix(coefs, 10, 5, 2, False)
-        normalized = actual_native.toeplitz_gram_matrix(coefs, 10, 5, 2, True)
+        ).tolist()
+        raw = actual_native.toeplitz_gram_matrix(coefs, 20, 5, 4, False)
+        normalized = actual_native.toeplitz_gram_matrix(coefs, 20, 5, 4, True)
         assert captured["gram"] == pytest.approx(raw)
         assert max(abs(a - b) for a, b in zip(raw, normalized, strict=True)) > 1e-3

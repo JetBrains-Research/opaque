@@ -60,5 +60,9 @@ class TestBsrPld:
             ftrl_acc.mf_gaussian(1.0, _bsr()),
             num_bins=25,
             n_steps=100,
-        ).epsilon_at(self.delta)
+        ).epsilon_at(
+            1e-2,
+            mc_resolution=5e-3,
+            mc_failure_probability=1e-2,
+        )
         assert eps > 0

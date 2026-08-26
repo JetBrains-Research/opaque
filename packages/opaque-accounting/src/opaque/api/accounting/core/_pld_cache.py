@@ -142,16 +142,18 @@ def _resolve_config(
     log_x_mass_truncation_bound: float | None,
     max_grid_size: int | None,
     max_conv_grid: int | None,
-    num_mc_samples: int | None,
     seed: int | None,
+    mc_resolution: float | None,
+    mc_failure_probability: float | None,
 ) -> DiscretizationConfig:
     return get_discretization(
         discretization=discretization,
         log_x_mass_truncation_bound=log_x_mass_truncation_bound,
         max_grid_size=max_grid_size,
         max_conv_grid=max_conv_grid,
-        num_mc_samples=num_mc_samples,
         seed=seed,
+        mc_resolution=mc_resolution,
+        mc_failure_probability=mc_failure_probability,
     )
 
 
@@ -169,16 +171,18 @@ def pld_cache(*, maxsize: int | None):
             log_x_mass_truncation_bound: float | None = None,
             max_grid_size: int | None = None,
             max_conv_grid: int | None = None,
-            num_mc_samples: int | None = None,
             seed: int | None = None,
+            mc_resolution: float | None = None,
+            mc_failure_probability: float | None = None,
         ) -> Pld:
             config = _resolve_config(
                 discretization=discretization,
                 log_x_mass_truncation_bound=log_x_mass_truncation_bound,
                 max_grid_size=max_grid_size,
                 max_conv_grid=max_conv_grid,
-                num_mc_samples=num_mc_samples,
                 seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
             )
             return cache.get_or_compute(
                 self,
@@ -208,8 +212,9 @@ def horizon_pld_cache(*, maxsize: int | None):
             log_x_mass_truncation_bound: float | None = None,
             max_grid_size: int | None = None,
             max_conv_grid: int | None = None,
-            num_mc_samples: int | None = None,
             seed: int | None = None,
+            mc_resolution: float | None = None,
+            mc_failure_probability: float | None = None,
         ) -> Pld:
             if n_steps <= 0 or n_steps > self.n_steps:
                 return method(
@@ -219,16 +224,18 @@ def horizon_pld_cache(*, maxsize: int | None):
                     log_x_mass_truncation_bound=log_x_mass_truncation_bound,
                     max_grid_size=max_grid_size,
                     max_conv_grid=max_conv_grid,
-                    num_mc_samples=num_mc_samples,
                     seed=seed,
+                    mc_resolution=mc_resolution,
+                    mc_failure_probability=mc_failure_probability,
                 )
             config = _resolve_config(
                 discretization=discretization,
                 log_x_mass_truncation_bound=log_x_mass_truncation_bound,
                 max_grid_size=max_grid_size,
                 max_conv_grid=max_conv_grid,
-                num_mc_samples=num_mc_samples,
                 seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
             )
             return cache.get_or_compute(
                 self,

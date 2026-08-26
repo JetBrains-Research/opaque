@@ -43,7 +43,12 @@ if TYPE_CHECKING:
 
 
 _DELTA = 1e-5
-_MC_KW = {"num_mc_samples": 4000, "seed": 17}
+_MC_DELTA = 1e-2
+_MC_KW = {
+    "seed": 17,
+    "mc_resolution": 5e-3,
+    "mc_failure_probability": 1e-2,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +301,12 @@ _AMPLIFICATIONS: dict[str, tuple[Callable[..., DpHorizonProcess], bool]] = {
 def _seed_mc():
     """Pin global MC discretization for MC-based amplifiers.
 
-    ``Repeated.pld()`` also accepts ``num_mc_samples`` / ``seed`` per call
-    (see :class:`TestQueryTimeMcParams`); pinning them globally keeps the
+    ``Repeated.pld()`` also accepts confidence settings per call (see
+    :class:`TestQueryTimeMcParams`); pinning them globally keeps the
     many ``epsilon_at`` call sites in these tests unchanged.  Set for the
     duration of the test.
     """
-    acc.set_discretization(num_mc_samples=_MC_KW["num_mc_samples"], seed=_MC_KW["seed"])
+    acc.set_discretization(**_MC_KW)
     yield
     acc.set_discretization()  # restore defaults
 
@@ -312,23 +317,25 @@ class TestPerStepCrossAmp:
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_repeated_at_full_horizon_matches_proc(self, amp: str):
-        factory, _ = _AMPLIFICATIONS[amp]
+        factory, is_mc = _AMPLIFICATIONS[amp]
         proc = factory()
         step = acc.per_step(proc)
+        delta = _MC_DELTA if is_mc else _DELTA
 
-        e_full_via_step = (step * proc.n_steps).epsilon_at(_DELTA)
-        e_full_direct = proc.epsilon_at(_DELTA)
+        e_full_via_step = (step * proc.n_steps).epsilon_at(delta)
+        e_full_direct = proc.epsilon_at(delta)
         assert math.isclose(e_full_via_step, e_full_direct, rel_tol=1e-9)
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_repeated_at_intermediate_matches_pld_at_horizon(self, amp: str):
-        factory, _ = _AMPLIFICATIONS[amp]
+        factory, is_mc = _AMPLIFICATIONS[amp]
         proc = factory()
         K = max(1, proc.n_steps // 2)
         step = acc.per_step(proc)
+        delta = _MC_DELTA if is_mc else _DELTA
 
-        e_repeated = (step * K).epsilon_at(_DELTA)
-        e_at_K = proc.pld_at(K).epsilon_at(_DELTA)
+        e_repeated = (step * K).epsilon_at(delta)
+        e_at_K = proc.pld_at(K).epsilon_at(delta)
         # Both paths route through the same pld_at(K) call
         # (PerStep.repeated_pld is exactly that), so deterministic
         # equivalence; MC paths use the same global seed.
@@ -355,22 +362,16 @@ class TestSerializationRegistryHardening:
 
 
 # ---------------------------------------------------------------------------
-# Query-time MC params (num_mc_samples / seed) propagate through the
+# Query-time MC confidence and seed propagate through the
 # composition algebra to MC leaves — issue #479.
 # ---------------------------------------------------------------------------
 
 
 class TestQueryTimeMcParams:
-    """``num_mc_samples`` / ``seed`` flow from any ``pld()``-family call
+    """Confidence settings and ``seed`` flow from any ``pld()``-family call
     through ``Repeated`` / ``CachedProcess`` / ``PerStep`` / ``Composed``
     down to the MC leaf's ``get_discretization`` — no global
     ``set_discretization`` mutation required.
-
-    Inequality assertions use the MC sample *budget* (500 vs 4000), whose
-    effect on ε is far larger than one discretization grid bucket.  Seed
-    changes are asserted for reproducibility only: ε is grid-quantized
-    and the native sampler seeds per-thread streams as ``seed + tid``, so
-    nearby seeds can produce bit-identical ε on any given machine.
     """
 
     def _mc_proc(self) -> DpHorizonProcess:
@@ -385,30 +386,25 @@ class TestQueryTimeMcParams:
         proc = self._mc_proc()
         chain = acc.per_step(proc) * 8
 
-        e_chain = chain.epsilon_at(_DELTA, **_MC_KW)
-        e_direct = proc.pld_at(8, **_MC_KW).epsilon_at(_DELTA)
+        e_chain = chain.epsilon_at(_MC_DELTA, **_MC_KW)
+        e_direct = proc.pld_at(8, **_MC_KW).epsilon_at(_MC_DELTA)
         assert e_chain == e_direct
 
-    def test_chain_honors_mc_budget(self):
+    def test_chain_honors_derived_resolution(self):
         proc = self._mc_proc()
         chain = acc.per_step(proc) * 8
 
-        e_small = chain.epsilon_at(_DELTA, num_mc_samples=500, seed=_MC_KW["seed"])
-        e_large = chain.epsilon_at(_DELTA, **_MC_KW)
-        assert e_small != e_large
-
-    def test_composed_broadcasts_to_mc_leaves(self):
-        proc = self._mc_proc()
-        composed = acc.eps_delta(0.5, 0.0) | acc.per_step(proc) * 4
-
-        e_small = composed.epsilon_at(_DELTA, num_mc_samples=500, seed=_MC_KW["seed"])
-        e_large = composed.epsilon_at(_DELTA, **_MC_KW)
-        assert e_small != e_large
+        pld = chain.pld(**_MC_KW)
+        assert 0.0 < pld.mc_resolution <= _MC_KW["mc_resolution"]
+        assert pld.mc_failure_probability == pytest.approx(
+            _MC_KW["mc_failure_probability"]
+        )
 
     def test_full_horizon_seed_reproducible(self):
         proc = self._mc_proc()
-        e_a = proc.pld(num_mc_samples=3000, seed=1).epsilon_at(_DELTA)
-        e_a_again = proc.pld(num_mc_samples=3000, seed=1).epsilon_at(_DELTA)
+        kw = {**_MC_KW, "seed": 1}
+        e_a = proc.pld(**kw).epsilon_at(_MC_DELTA)
+        e_a_again = proc.pld(**kw).epsilon_at(_MC_DELTA)
         assert e_a == e_a_again
 
     def test_per_call_matches_global_config(self):
@@ -419,10 +415,10 @@ class TestQueryTimeMcParams:
         # global config: the no-kwargs entry for an equal-valued process must
         # not have been populated under a different global config by an
         # earlier test (all files pin the same _MC_KW).
-        e_per_call = proc.epsilon_at(_DELTA, **_MC_KW)
+        e_per_call = proc.epsilon_at(_MC_DELTA, **_MC_KW)
         acc.set_discretization(**_MC_KW)
         try:
-            e_global = proc.epsilon_at(_DELTA)
+            e_global = proc.epsilon_at(_MC_DELTA)
         finally:
             acc.set_discretization()  # restore defaults
         assert e_per_call == e_global

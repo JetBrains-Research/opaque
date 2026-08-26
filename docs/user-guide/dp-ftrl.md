@@ -134,8 +134,9 @@ for batch in dataloader:
 ```
 
 For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-Monte Carlo PLDs are point estimates without that guarantee.
-`K > proc.n_steps` raises.
+For Monte Carlo-backed b-min-sep and correlated Balls-in-Bins, every nonzero
+prefix charges the full-horizon confidence bound, preserving those invariants
+at the cost of prefix tightness. `K > proc.n_steps` raises.
 
 ## 3. Clipping
 

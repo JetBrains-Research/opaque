@@ -229,7 +229,7 @@ class TestPldEquivalence:
 class TestBnbEquivalence:
     """BnB built around each strategy composes correctly."""
 
-    delta = 1e-5
+    delta = 1e-2
 
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(lambda_=0.9)

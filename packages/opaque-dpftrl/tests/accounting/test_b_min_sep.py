@@ -49,9 +49,20 @@ def test_b_min_sep_smoke_pld():
         n_steps=40,
         p0=0.02,
     )
-    eps = proc.pld(num_mc_samples=5000, seed=123).epsilon_at(1e-3)
+    pld = proc.pld(
+        seed=123,
+        mc_resolution=5e-3,
+        mc_failure_probability=1e-2,
+    )
+    eps = pld.epsilon_at(1e-2)
     assert eps > 0.0
     assert eps < 500.0
+    assert pld.mc_failure_probability == pytest.approx(1e-2)
+    assert pld.mc_confidence == pytest.approx(0.99)
+    assert 0.0 < pld.mc_resolution <= 5e-3
+    assert pld.epsilon_at(pld.infinity_mass) == float("inf")
+    assert pld.beta_at(0.1) == 0.0
+    assert pld.risk_at(0.5) == 0.0
 
 
 def test_transcript_cache_reuses_same_handle():
@@ -204,6 +215,64 @@ def test_b_min_sep_stricter_than_mf_only():
         strategy.sensitivity(n_steps=50, min_sep=50, max_participations=1),
         cfg.to_native(),
     )
-    eps_mf = pld_mf.epsilon_at(1e-3)
-    eps_bms = bms.pld(num_mc_samples=8000, seed=1).epsilon_at(1e-3)
+    eps_mf = pld_mf.epsilon_at(1e-2)
+    eps_bms = bms.pld(
+        seed=1,
+        mc_resolution=5e-3,
+        mc_failure_probability=1e-2,
+    ).epsilon_at(1e-2)
     assert eps_bms < eps_mf
+
+
+def test_calibration_reports_one_overall_mc_confidence_budget():
+    import opaque.accounting as acc
+
+    acc.set_discretization(
+        mc_resolution=5e-2,
+        mc_failure_probability=1e-2,
+        seed=3,
+    )
+    try:
+
+        def process(nm):
+            return ftrl_acc.b_min_sep(
+                ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=2)),
+                n_steps=8,
+                p0=0.02,
+            )
+
+        result = acc.calibrate(
+            acc.epsilon_budget(0.1, delta=0.1),
+            process,
+            0.5,
+            5.0,
+            tolerance=0.5,
+            max_iterations=8,
+        )
+    finally:
+        acc.set_discretization()
+
+    assert result.mc_failure_probability == pytest.approx(1e-2)
+    assert result.mc_confidence == pytest.approx(0.99)
+
+
+def test_composed_mc_pld_uses_one_overall_confidence_and_resolution_budget():
+    left = ftrl_acc.b_min_sep(
+        ftrl_acc.mf_gaussian(0.8, band_mf_strategy(bands=2)),
+        n_steps=8,
+        p0=0.02,
+    )
+    right = ftrl_acc.b_min_sep(
+        ftrl_acc.mf_gaussian(1.2, band_mf_strategy(bands=2)),
+        n_steps=8,
+        p0=0.02,
+    )
+
+    pld = (left | right).pld(
+        mc_resolution=0.1,
+        mc_failure_probability=0.02,
+        seed=5,
+    )
+
+    assert pld.mc_failure_probability <= 0.02 + 1e-12
+    assert pld.mc_resolution <= 0.1 + 1e-12

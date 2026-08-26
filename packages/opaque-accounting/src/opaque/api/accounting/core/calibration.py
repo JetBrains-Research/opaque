@@ -31,7 +31,7 @@ Example::
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 # Re-export budgets so ``from opaque.api.accounting.core.calibration import Budget``
@@ -51,6 +51,10 @@ from opaque.api.accounting.core._budgets import (
     risk_budget,
 )
 from opaque.api.accounting.core._native_cache import _clear_all_native_caches
+from opaque.api.accounting.core.discretization import (
+    _use_discretization,
+    get_discretization,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,6 +76,8 @@ class CalibrateResult:
         target: Target metric value.
         iterations: Number of binary search iterations.
         converged: Always ``True`` for results returned by :func:`calibrate`.
+        mc_failure_probability: Overall failure probability covering every
+            adaptive Monte Carlo probe. Zero for analytic calibration.
     """
 
     param: float
@@ -79,13 +85,24 @@ class CalibrateResult:
     target: float
     iterations: int
     converged: bool
+    mc_failure_probability: float = 0.0
+
+    @property
+    def mc_confidence(self) -> float:
+        """Confidence level covering all adaptive Monte Carlo probes."""
+        return 1.0 - self.mc_failure_probability
 
     def __repr__(self) -> str:
         status = "converged" if self.converged else "max iterations"
+        confidence = (
+            f", mc_confidence={self.mc_confidence:.6f}"
+            if self.mc_failure_probability > 0.0
+            else ""
+        )
         return (
             f"CalibrateResult(param={self.param:.6f}, "
             f"achieved={self.achieved:.6f}, target={self.target:.6f}, "
-            f"iterations={self.iterations}, {status})"
+            f"iterations={self.iterations}, {status}{confidence})"
         )
 
 
@@ -169,6 +186,8 @@ def calibrate(
         - target: Target metric value (for comparison)
         - iterations: Number of iterations performed
         - converged: always True for a successfully returned result
+        - mc_failure_probability: overall failure probability covering all
+          adaptive MC probes (zero for analytic calibration)
 
     Raises:
         ValueError: If tolerance is not finite and positive, or max_iterations is not positive
@@ -275,14 +294,35 @@ def calibrate(
             return cached_prefix | inner(param)
 
     try:
-        return _calibrate_impl(
-            budget,
-            process,
-            param_min,
-            param_max,
-            tolerance,
-            max_iterations,
+        overall_config = get_discretization()
+        probe_count = max_iterations + 2
+        probe_config = replace(
+            overall_config,
+            mc_failure_probability=(
+                overall_config.mc_failure_probability / probe_count
+            ),
         )
+        with _use_discretization(probe_config):
+            result = _calibrate_impl(
+                budget,
+                process,
+                param_min,
+                param_max,
+                tolerance,
+                max_iterations,
+            )
+            final_process = process(result.param)
+            pld_method = getattr(final_process, "pld", None)
+            final_kwargs = {}
+            if isinstance(budget, EpsilonBudget):
+                final_kwargs["mc_resolution"] = min(
+                    probe_config.mc_resolution,
+                    budget.delta / 2.0,
+                )
+            final_pld = pld_method(**final_kwargs) if callable(pld_method) else None
+            if final_pld is not None and final_pld.mc_failure_probability > 0.0:
+                result.mc_failure_probability = overall_config.mc_failure_probability
+            return result
     finally:
         _clear_all_native_caches()
 

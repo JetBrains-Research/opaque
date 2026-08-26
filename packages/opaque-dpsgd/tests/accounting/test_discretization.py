@@ -49,16 +49,18 @@ class TestSetGetDiscretization:
             log_x_mass_truncation_bound=-40.0,
             max_grid_size=500_000,
             tail_mass_truncation=1e-12,
-            num_mc_samples=10_000,
             seed=7,
+            mc_resolution=1e-3,
+            mc_failure_probability=1e-4,
         )
         cfg = get_discretization()
         assert cfg.discretization == pytest.approx(1e-3)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-40.0)
         assert cfg.max_grid_size == 500_000
         assert cfg.tail_mass_truncation == pytest.approx(1e-12)
-        assert cfg.num_mc_samples == 10_000
         assert cfg.seed == 7
+        assert cfg.mc_resolution == pytest.approx(1e-3)
+        assert cfg.mc_failure_probability == pytest.approx(1e-4)
 
     def test_overwrite(self):
         set_discretization(discretization=1e-3)
@@ -79,11 +81,11 @@ class TestDiscretizationAffectsResults:
         assert eps_fine != pytest.approx(eps_coarse, rel=1e-3)
 
     def test_mc_params_accepted_and_ignored_by_analytic_plds(self):
-        """Analytic mechanisms accept ``num_mc_samples`` / ``seed`` (so
-        composition can broadcast them to MC leaves) and ignore them."""
+        """Analytic mechanisms accept MC confidence settings and ignore them."""
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01) * 100
-        assert proc.epsilon_at(1e-5) == proc.epsilon_at(1e-5, num_mc_samples=50, seed=1)
-        assert proc.delta_at(2.0) == proc.delta_at(2.0, num_mc_samples=50, seed=1)
+        kw = {"seed": 1, "mc_resolution": 1e-3, "mc_failure_probability": 1e-4}
+        assert proc.epsilon_at(1e-5) == proc.epsilon_at(1e-5, **kw)
+        assert proc.delta_at(2.0) == proc.delta_at(2.0, **kw)
 
 
 class TestQueryTimeOverrides:
@@ -126,15 +128,15 @@ class TestQueryTimeOverrides:
         global_cfg = get_discretization()
         assert global_cfg.max_grid_size == 10_000_000
 
-    def test_num_mc_samples_override(self):
-        """Query-time num_mc_samples override works."""
-        set_discretization(num_mc_samples=100_000)
+    def test_mc_resolution_override(self):
+        """Query-time MC resolution override works."""
+        set_discretization(mc_resolution=1e-4)
 
-        cfg = get_discretization(num_mc_samples=5_000)
-        assert cfg.num_mc_samples == 5_000
+        cfg = get_discretization(mc_resolution=1e-3)
+        assert cfg.mc_resolution == pytest.approx(1e-3)
 
         global_cfg = get_discretization()
-        assert global_cfg.num_mc_samples == 100_000
+        assert global_cfg.mc_resolution == pytest.approx(1e-4)
 
     def test_seed_override(self):
         """Query-time seed override works."""
@@ -192,8 +194,9 @@ class TestDiscretizationBehavior:
             log_x_mass_truncation_bound=-40.0,
             max_grid_size=500_000,
             tail_mass_truncation=1e-12,
-            num_mc_samples=10_000,
             seed=7,
+            mc_resolution=1e-3,
+            mc_failure_probability=1e-4,
         )
 
         native = config.to_native()
@@ -201,15 +204,17 @@ class TestDiscretizationBehavior:
         assert native.log_mass_truncation_bound == pytest.approx(-40.0)
         assert native.max_grid_size == 500_000
         assert native.tail_mass_truncation == pytest.approx(1e-12)
-        assert native.num_mc_samples == 10_000
         assert native.seed == 7
+        assert native.mc_resolution == pytest.approx(1e-3)
+        assert native.mc_failure_probability == pytest.approx(1e-4)
         assert config == DiscretizationConfig(
             discretization=1e-3,
             log_x_mass_truncation_bound=-40.0,
             max_grid_size=500_000,
             tail_mass_truncation=1e-12,
-            num_mc_samples=10_000,
             seed=7,
+            mc_resolution=1e-3,
+            mc_failure_probability=1e-4,
         )
         assert hash(config) == hash(config)
 

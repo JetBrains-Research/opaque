@@ -78,8 +78,9 @@ pub fn drop_b_min_sep_transcript_handle(id: u64) {
 /// this slice is byte-identical to a freshly-prepared `n_steps`-row
 /// transcript using the same per-sample initial RNG state. The
 /// K-step transcripts are prefix projections of the cached N-step corpus.
-/// Their finite-sample PLDs are point estimates and need not preserve the
-/// exact epsilon ordering.
+/// Each resulting PLD is confidence-bounded, although independently converted
+/// prefix bounds need not be numerically monotone. The public horizon API uses
+/// the full-horizon bound for every nonzero Monte Carlo prefix.
 pub fn pld_from_transcript_handle(
     id: u64,
     strategy_coef: &[f64],
@@ -160,15 +161,16 @@ mod tests {
         let coef = vec![0.9_f64.sqrt(), 0.1_f64.sqrt(), 0.0];
         let n = 35;
         let p = 0.07;
-        let s = 3000usize;
         let sigma = 1.05;
         let mut cfg = DiscretizationConfig::default();
-        cfg.num_mc_samples = s;
         cfg.seed = 55;
+        cfg.mc_resolution = 5e-3;
+        cfg.mc_failure_probability = 1e-2;
+        let s = cfg.resolved_num_mc_samples(2).unwrap();
         let h = register_b_min_sep_transcripts(&coef, n, p, s, 55).unwrap();
         let p1 = pld_from_transcript_handle(h, &coef, n, p, sigma, &cfg).unwrap();
         let p2 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
-        let d = 1e-4;
+        let d = 1e-2;
         assert!((p1.epsilon_at(d) - p2.epsilon_at(d)).abs() < 0.06);
         drop_b_min_sep_transcript_handle(h);
         assert!(registry().lock().unwrap().get(&h).is_none());

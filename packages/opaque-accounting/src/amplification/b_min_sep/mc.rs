@@ -251,13 +251,12 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
     }
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
-    let disc = config.discretization;
     let coef = strategy_coef.to_vec();
     let n_threads = rayon::current_num_threads().max(1);
     let samples_per_thread = num_samples / n_threads;
     let remainder = num_samples - samples_per_thread * n_threads;
 
-    let remove_samples: Vec<f64> = (0..n_threads)
+    let mut remove_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
             let n_samp = if tid == 0 {
@@ -284,7 +283,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         })
         .collect();
 
-    let add_samples: Vec<f64> = (0..n_threads)
+    let mut add_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
             let n_samp = if tid == 0 {
@@ -312,10 +311,15 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
+    let (pmf_remove, remove_resolution) = samples_to_pmf(&mut remove_samples, config, 2)?;
+    let (pmf_add, add_resolution) = samples_to_pmf(&mut add_samples, config, 2)?;
 
-    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
+    Ok(
+        PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add).with_monte_carlo_guarantee(
+            config.mc_failure_probability,
+            remove_resolution.max(add_resolution),
+        ),
+    )
 }
 
 /// Monte Carlo PLD for BandMF + warm-start b-min-sep subsampling (single-example adjacent analysis).
@@ -324,7 +328,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
 /// * `n_steps` — number of iterations `n`.
 /// * `p` — per-iteration inclusion probability `p` in Algorithm 2 (not `p_0`).
 /// * `sigma` — raw noise multiplier σ (same units as [`crate::amplification::bnb_mc_pld`]).
-/// * `config` — discretization configuration (includes `num_mc_samples` and `seed`).
+/// * `config` — discretization and Monte Carlo confidence configuration.
 pub fn bandmf_b_min_sep_warm_mc_pld(
     strategy_coef: &[f64],
     n_steps: usize,
@@ -332,7 +336,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
     sigma: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    let num_samples = config.num_mc_samples;
+    let num_samples = config.resolved_num_mc_samples(2)?;
     let seed = config.seed;
 
     if strategy_coef.is_empty() {
@@ -355,21 +359,15 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
             sigma
         )));
     }
-    if num_samples == 0 {
-        return Err(PldError::InvalidParameter("num_samples must be > 0".into()));
-    }
-
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
-    let disc = config.discretization;
-
     let n_threads = rayon::current_num_threads().max(1);
     let samples_per_thread = num_samples / n_threads;
     let remainder = num_samples - samples_per_thread * n_threads;
 
     let coef = strategy_coef.to_vec();
 
-    let remove_samples: Vec<f64> = (0..n_threads)
+    let mut remove_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
             let n_samp = if tid == 0 {
@@ -395,7 +393,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
         })
         .collect();
 
-    let add_samples: Vec<f64> = (0..n_threads)
+    let mut add_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
             let n_samp = if tid == 0 {
@@ -415,10 +413,15 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
         })
         .collect();
 
-    let pmf_remove = samples_to_pmf(&remove_samples, disc, config.max_grid_size)?;
-    let pmf_add = samples_to_pmf(&add_samples, disc, config.max_grid_size)?;
+    let (pmf_remove, remove_resolution) = samples_to_pmf(&mut remove_samples, config, 2)?;
+    let (pmf_add, add_resolution) = samples_to_pmf(&mut add_samples, config, 2)?;
 
-    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
+    Ok(
+        PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add).with_monte_carlo_guarantee(
+            config.mc_failure_probability,
+            remove_resolution.max(add_resolution),
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -427,7 +430,11 @@ mod tests {
     use crate::discretization::DiscretizationConfig;
 
     fn default_config() -> DiscretizationConfig {
-        DiscretizationConfig::default()
+        DiscretizationConfig {
+            mc_resolution: 5e-3,
+            mc_failure_probability: 1e-2,
+            ..DiscretizationConfig::default()
+        }
     }
 
     #[test]
@@ -442,10 +449,9 @@ mod tests {
     #[test]
     fn mc_pld_smoke() {
         let coef = vec![0.7_f64.sqrt(), 0.3_f64.sqrt()];
-        let mut cfg = default_config();
-        cfg.num_mc_samples = 5000;
+        let cfg = default_config();
         let pld = bandmf_b_min_sep_warm_mc_pld(&coef, 50, 0.05, 1.0, &cfg).unwrap();
-        let eps = pld.epsilon_at(1e-3);
+        let eps = pld.epsilon_at(1e-2);
         assert!(eps > 0.0 && eps.is_finite());
     }
 
@@ -453,17 +459,16 @@ mod tests {
     fn transcripts_match_one_shot_epsilon() {
         let coef = vec![0.8_f64.sqrt(), 0.2_f64.sqrt(), 0.0];
         let mut cfg = default_config();
-        cfg.num_mc_samples = 4000;
         cfg.seed = 99;
         let sigma = 1.15;
         let n = 40;
         let p = 0.06;
-        let s = cfg.num_mc_samples;
+        let s = cfg.resolved_num_mc_samples(2).unwrap();
         let (rx, rz, ae) = bandmf_b_min_sep_prepare_transcripts(&coef, n, p, s, cfg.seed).unwrap();
         let pld_t =
             bandmf_b_min_sep_pld_from_transcripts(&rx, &rz, &ae, &coef, n, p, sigma, &cfg).unwrap();
         let pld_1 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
-        let d = 1e-4;
+        let d = 1e-2;
         let e1 = pld_1.epsilon_at(d);
         let e2 = pld_t.epsilon_at(d);
         assert!(

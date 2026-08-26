@@ -83,7 +83,79 @@ def test_discretization_config_stub_matches_native_surface():
     }
     docstring = ast.get_docstring(config)
 
-    assert {"tail_mass_truncation", "num_mc_samples", "seed"} <= members
+    assert {
+        "tail_mass_truncation",
+        "seed",
+        "mc_resolution",
+        "mc_failure_probability",
+        "resolved_num_mc_samples",
+    } <= members
     assert docstring is not None
-    for argument in ("tail_mass_truncation", "num_mc_samples", "seed"):
+    for argument in (
+        "tail_mass_truncation",
+        "seed",
+        "mc_resolution",
+        "mc_failure_probability",
+    ):
         assert f"{argument}:" in docstring
+
+
+def test_mc_sample_count_is_derived_without_manual_override():
+    import opaque.accounting as acc
+
+    config = acc.get_discretization(
+        mc_resolution=1e-2,
+        mc_failure_probability=1e-2,
+    )
+    assert config.resolved_num_mc_samples == 1236
+
+    with pytest.raises(TypeError, match="num_mc_samples"):
+        acc.get_discretization(num_mc_samples=100)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("mc_resolution", 0.0),
+        ("mc_resolution", 1.0),
+        ("mc_failure_probability", 0.0),
+        ("mc_failure_probability", 1.0),
+    ],
+)
+def test_invalid_mc_confidence_parameters_raise(name, value):
+    from opaque.api.accounting.core import _native
+
+    with pytest.raises(ValueError, match=name):
+        _native.DiscretizationConfig(**{name: value})
+
+
+def test_large_derived_mc_work_emits_advisory_warning(monkeypatch):
+    from opaque.api.accounting.core import discretization
+
+    config = discretization.get_discretization(
+        mc_resolution=1e-2,
+        mc_failure_probability=1e-2,
+    )
+    monkeypatch.setattr(discretization, "_MC_SAMPLE_WARNING_THRESHOLD", 1000)
+
+    with pytest.warns(RuntimeWarning, match="1,236 samples"):
+        config.warn_if_large_mc()
+
+
+def test_repeated_mc_process_preserves_overall_resolution():
+    import opaque.dpftrl.accounting as ftrl_acc
+    from opaque.dpftrl.noise import band_mf_strategy
+
+    step = ftrl_acc.b_min_sep(
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+        n_steps=8,
+        p0=0.02,
+    )
+    pld = (step * 2).pld(
+        mc_resolution=0.1,
+        mc_failure_probability=0.01,
+        seed=2,
+    )
+
+    assert pld.mc_resolution <= 0.1 + 1e-12
+    assert pld.mc_failure_probability == pytest.approx(0.01)

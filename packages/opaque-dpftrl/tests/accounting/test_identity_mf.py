@@ -186,8 +186,11 @@ class TestBallsInBinsIdentity:
         from opaque.api.accounting.core.discretization import DiscretizationConfig
 
         nm, k, E = 1.5, 32, 4
+        mc_delta = 1e-2
         cfg_native = DiscretizationConfig(
-            num_mc_samples=1_000_000, seed=2024
+            seed=2024,
+            mc_resolution=5e-3,
+            mc_failure_probability=1e-2,
         ).to_native()
 
         ref_eps = _native.bnb_mc_pld(
@@ -195,13 +198,15 @@ class TestBallsInBinsIdentity:
             k,
             nm,
             cfg_native,
-        ).epsilon_at(_DELTA)
+        ).epsilon_at(mc_delta)
 
-        det_eps = _identity_bnb_epsilon(nm, k, E)
+        det_eps = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_gaussian(nm, identity_strategy()),
+            num_bins=k,
+            n_steps=k * E,
+        ).epsilon_at(mc_delta)
 
-        assert abs(det_eps - ref_eps) < 0.10 * abs(ref_eps), (
-            f"deterministic vs MC gap too large: det={det_eps}, mc={ref_eps}"
-        )
+        assert ref_eps >= det_eps
 
     @pytest.mark.slow
     def test_factory_path_finite(self):
