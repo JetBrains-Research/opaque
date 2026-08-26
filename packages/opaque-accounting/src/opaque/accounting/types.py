@@ -18,7 +18,6 @@ from opaque.api.accounting.core.types import (
     HorizonRun,
     Identity,
     NonPrivate,
-    PerStep,
     Repeated,
     RiskBudget,
 )
@@ -41,7 +40,6 @@ __all__ = [
     "HorizonRun",
     "Identity",
     "NonPrivate",
-    "PerStep",
     "Repeated",
     "RiskBudget",
 ]

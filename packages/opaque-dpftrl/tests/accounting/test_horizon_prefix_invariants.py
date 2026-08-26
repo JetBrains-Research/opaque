@@ -13,8 +13,8 @@ construction:
 - For K = G · atomic_unit + r with r ∈ [0, atomic_unit):
   ``ε(G·M) ≤ ε(K) ≤ ε((G+1)·M)`` (sandwich; closed-form paths only).
 
-Implemented as ``(per_step(proc) * K).epsilon_at(δ)`` through the generic
-horizon adapter.
+Implemented as ``(horizon_run(proc) * K).epsilon_at(δ)`` through the generic
+HorizonRun adapter.
 """
 
 from __future__ import annotations
@@ -62,14 +62,14 @@ def _atomic_unit(proc: DpHorizonProcess) -> int:
 
 
 def _eps_at(proc: DpHorizonProcess, K: int, delta: float) -> float:
-    """K-step ε via ``per_step(proc) * K`` — the public API surface.
+    """K-step ε via ``horizon_run(proc) * K`` — the public API surface.
 
     MC kwargs could be passed per call; these tests pin them globally with the
     :func:`_seed_mc` fixture so every call site resolves the same config.
     """
     if K <= 0:
         return Identity().epsilon_at(delta)
-    step = acc.per_step(proc)
+    step = acc.horizon_run(proc)
     return (step * K).epsilon_at(delta)
 
 
@@ -105,7 +105,7 @@ class TestCyclicPoissonIdentity:
         assert _atomic_unit(self._proc()) == 1
 
     def test_zero_step_returns_identity_eps(self):
-        # per_step(proc) * 0 is not constructible; the empty accountant
+        # horizon_run(proc) * 0 is not constructible; the empty accountant
         # already pins ε=0 at K=0.
         assert _eps_at(self._proc(), 0, _DELTA) == 0.0
 
@@ -117,7 +117,7 @@ class TestCyclicPoissonIdentity:
 
     def test_overshoot_step_raises(self):
         proc = self._proc(100)
-        step = acc.per_step(proc)
+        step = acc.horizon_run(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * 10_000).epsilon_at(_DELTA)
 
@@ -359,10 +359,10 @@ def _pld_kwargs(amp: str) -> dict:
 
 
 def _eps_via_step(proc: DpHorizonProcess, K: int, delta: float) -> float:
-    """K-step ε via ``per_step(proc) * K`` — the public idiom."""
+    """K-step ε via ``horizon_run(proc) * K`` — the public idiom."""
     if K <= 0:
         return Identity().epsilon_at(delta)
-    step = acc.per_step(proc)
+    step = acc.horizon_run(proc)
     return (step * K).epsilon_at(delta)
 
 
@@ -424,7 +424,7 @@ def test_deterministic_epsilon_matches_committed_vector(amp: str, mech: str):
 
 @pytest.mark.parametrize(("amp", "mech"), _SUPPORTED_PAIRS, ids=_SUPPORTED_IDS)
 class TestKPrefixInvariants:
-    """For every supported (amp, inner) pair, ``per_step(proc) * K`` satisfies
+    """For every supported (amp, inner) pair, ``horizon_run(proc) * K`` satisfies
     the documented contract: endpoint identities, monotone non-decreasing,
     bounded by ε of the full process, sandwich at atomic-unit boundaries
     (closed-form paths only), and the result is a real :class:`DpProcess`
@@ -479,7 +479,7 @@ class TestKPrefixInvariants:
     @pytest.mark.usefixtures("_seed_mc")
     def test_overshoot_step_raises(self, amp: str, mech: str):
         proc = _build(amp, mech)
-        step = acc.per_step(proc)
+        step = acc.horizon_run(proc)
         with pytest.raises(ValueError, match="exceeds n_steps"):
             (step * (proc.n_steps + 10_000)).epsilon_at(_DELTA)
 
@@ -504,8 +504,8 @@ class TestKPrefixInvariants:
         delta = _MC_DELTA if _is_mc_proc(proc) else _DELTA
         # Two separately deployed, equal-configured horizon processes compose
         # independently. A single run would be advanced through Accountant.
-        combined = (acc.per_step(proc) * (proc.n_steps // 2)) | (
-            acc.per_step(proc) * proc.atomic_unit
+        combined = (acc.horizon_run(proc) * (proc.n_steps // 2)) | (
+            acc.horizon_run(proc) * proc.atomic_unit
         )
         assert math.isfinite(combined.epsilon_at(delta))
 
@@ -514,8 +514,8 @@ class TestKPrefixInvariants:
 @pytest.mark.usefixtures("_seed_mc")
 def test_balls_in_bins_identity_supports_composition():
     proc = _build("BallsInBins", "IdentityMf")
-    combined = (acc.per_step(proc) * (proc.n_steps // 2)) | (
-        acc.per_step(proc) * proc.atomic_unit
+    combined = (acc.horizon_run(proc) * (proc.n_steps // 2)) | (
+        acc.horizon_run(proc) * proc.atomic_unit
     )
     assert math.isfinite(combined.epsilon_at(_DELTA))
 
@@ -546,7 +546,7 @@ class TestRecipeDrivenGramRegen:
     def test_bsr(self):
         full = bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = acc.per_step(proc)
+        step = acc.horizon_run(proc)
         e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
         e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
         assert e_at == pytest.approx(e_full)
@@ -555,7 +555,7 @@ class TestRecipeDrivenGramRegen:
     def test_bisr(self):
         full = bisr_strategy(bandwidth=2)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = acc.per_step(proc)
+        step = acc.horizon_run(proc)
         e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
         e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
         assert e_at == pytest.approx(e_full)
@@ -564,7 +564,7 @@ class TestRecipeDrivenGramRegen:
     def test_lambda_cgd(self):
         full = lambda_cgd_strategy(lambda_=0.5)
         proc = _bnb(ftrl_acc.mf_gaussian(1.0, full), _REGEN_N_FULL)
-        step = acc.per_step(proc)
+        step = acc.horizon_run(proc)
         e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
         e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
         assert e_at == pytest.approx(e_full)

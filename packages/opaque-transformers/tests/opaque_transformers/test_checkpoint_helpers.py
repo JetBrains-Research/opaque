@@ -234,31 +234,6 @@ class TestDpRuntimeBundle:
         with pytest.raises(ValueError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
 
-    def test_version_four_loads_without_runtime_lineage(self, tmp_path):
-        path = str(tmp_path / "dp.pt")
-        _, noise = gaussian_noise(noise_multiplier=1.0, key=key(0))
-        ckpt.save_dp_runtime_state(
-            path,
-            clip_state=FixedClipState(),
-            noise_state=noise,
-            sampler_state=None,
-            sample_rate=0.1,
-            target_delta=1e-5,
-            noise_multiplier=1.0,
-            expected_steps_per_epoch=1,
-            expected_batch_size=32,
-            total_steps=1,
-            horizon_run_id="not-present-in-v4",
-        )
-        bundle = torch.load(path, map_location="cpu", weights_only=False)
-        bundle.version = 4
-        torch.save(bundle, path)
-
-        loaded = ckpt.load_dp_runtime_state(path)
-
-        assert loaded.version == 4
-        assert loaded.horizon_run_id is None
-
 
 class TestHorizonCheckpointLineage:
     @staticmethod
@@ -272,7 +247,7 @@ class TestHorizonCheckpointLineage:
             sample_rate=0.01,
             n_steps=8,
         )
-        return acc.per_step(process)
+        return acc.horizon_run(process)
 
     @staticmethod
     def _trainer(global_step: int):

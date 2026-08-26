@@ -294,9 +294,9 @@ def predict_stop_step(
 
     def eps(j: int) -> float:
         if j not in cache:
-            from opaque.api.accounting.core.composition._per_step import PerStep
+            from opaque.api.accounting.core.composition._horizon_run import HorizonRun
 
-            if isinstance(step_process, PerStep):
+            if isinstance(step_process, HorizonRun):
                 proc = (
                     Accountant(prefix=prefix_process).advance(step_process, j).process
                 )
@@ -4217,12 +4217,12 @@ class DPTrainer:
 
         DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
         amplification covers plain and truncated Poisson; random allocation
-        returns a horizon process adapted through generic ``per_step``.
+        returns a horizon process adapted through generic ``horizon_run``.
 
         DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
         amplifier factory (built in :meth:`_setup_training`) with
-        :func:`opaque.accounting.per_step` so each call returns a
-        per-step composable :class:`DpProcess` that materialises as the
+        :func:`opaque.accounting.horizon_run` so each call returns a
+        deployment handle that materialises as the
         true K-step PLD of the deployed N-step mechanism under
         ``acc |= step`` accumulation.
         """
@@ -4279,7 +4279,7 @@ class DPTrainer:
                 )
 
             def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=n_steps):
-                return acc.per_step(
+                return acc.horizon_run(
                     dpsgd_acc.random_allocation(
                         _u(nm),
                         num_bins=_nb,
@@ -4302,7 +4302,7 @@ class DPTrainer:
                 )
 
             def mechanism(nm, _u=_unamplified, _k=total_k, _ns=n_steps):
-                return acc.per_step(
+                return acc.horizon_run(
                     dpsgd_acc.k_out_of_t(
                         _u(nm),
                         total_participations=_k,
@@ -4356,8 +4356,8 @@ class DPTrainer:
             else None
         )
         if active_horizon is not None:
-            from opaque.api.accounting.core.composition._per_step import (
-                PerStep,
+            from opaque.api.accounting.core.composition._horizon_run import (
+                HorizonRun,
                 _same_horizon_process,
             )
 
@@ -4372,7 +4372,7 @@ class DPTrainer:
                     "multiplier. Restore a complete DP checkpoint."
                 )
             candidate = mechanism(noise_multiplier)
-            if not isinstance(candidate, PerStep):
+            if not isinstance(candidate, HorizonRun):
                 raise TypeError(
                     "Saved accountant has an active horizon prefix, but the "
                     "current mechanism factory is not horizon-aware."
@@ -5015,12 +5015,12 @@ class DPTrainer:
         # The runtime and accountant are separate checkpoint artefacts. Store
         # the deployment lineage in both so a mixed/stale pair cannot silently
         # continue a numerically equal but different correlated mechanism.
-        from opaque.api.accounting.core.composition._per_step import PerStep
+        from opaque.api.accounting.core.composition._horizon_run import HorizonRun
 
         active_horizon = ctx.accounting.active_horizon_prefix
         if active_horizon is not None:
             horizon_run_id: str | None = active_horizon.run_id
-        elif isinstance(ctx.step_process, PerStep):
+        elif isinstance(ctx.step_process, HorizonRun):
             # Covers a step-zero checkpoint before the first release.
             horizon_run_id = ctx.step_process.run_id
         else:
@@ -5297,8 +5297,8 @@ class DPTrainer:
         validates its numerical configuration, while the duplicated runtime
         ID detects mismatched checkpoint artefacts.
         """
-        from opaque.api.accounting.core.composition._per_step import (
-            PerStep,
+        from opaque.api.accounting.core.composition._horizon_run import (
+            HorizonRun,
             _same_horizon_process,
         )
 
@@ -5307,7 +5307,7 @@ class DPTrainer:
         live = ctx.step_process
 
         if active is None:
-            if isinstance(live, PerStep) and self.state.global_step > 0:
+            if isinstance(live, HorizonRun) and self.state.global_step > 0:
                 raise ValueError(
                     "Cannot resume horizon training: the checkpoint reports "
                     f"{self.state.global_step} completed steps, but its "
@@ -5315,17 +5315,17 @@ class DPTrainer:
                 )
             if saved_run_id is None:
                 return
-            if not isinstance(live, PerStep):
+            if not isinstance(live, HorizonRun):
                 raise ValueError(
                     "Checkpoint records a horizon run, but the current "
                     "mechanism is not horizon-aware."
                 )
             # Valid for a step-zero checkpoint whose accountant is still the
             # identity process.
-            ctx.step_process = PerStep(live.process, run_id=saved_run_id)
+            ctx.step_process = HorizonRun(live.process, run_id=saved_run_id)
             return
 
-        if not isinstance(live, PerStep):
+        if not isinstance(live, HorizonRun):
             raise ValueError(
                 "Saved accountant has an active horizon prefix, but the "
                 "current mechanism is not horizon-aware."
@@ -5336,15 +5336,12 @@ class DPTrainer:
                 "mechanism configuration. Resume with the original privacy "
                 "and matrix-factorization settings."
             )
-        if saved_run_id is not None and saved_run_id != active.run_id:
+        if saved_run_id != active.run_id:
             raise ValueError(
                 "DP checkpoint lineage mismatch: dp_state.pt and "
                 "accountant.json describe different horizon runs."
             )
 
-        # Version-4 checkpoints have no duplicated runtime ID. Their migrated
-        # accountant prefix supplies the authoritative legacy lineage after
-        # the mechanism-equality check above.
         ctx.step_process = active.run
 
     def _load_rng_state(self, ckpt_dir: str) -> None:

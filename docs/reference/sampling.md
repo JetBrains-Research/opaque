@@ -111,7 +111,7 @@ invalidate the accounting.
 Account with
 `dpsgd_acc.random_allocation(mechanism, num_bins=num_bins, n_steps=n_steps)`.
 The process computes exact prefix privacy for partial final epochs; use
-`acc.per_step(process)` in a step-wise loop.
+`acc.horizon_run(process)` in a step-wise loop.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 

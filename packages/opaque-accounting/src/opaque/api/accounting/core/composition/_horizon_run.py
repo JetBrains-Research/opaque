@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
 
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._horizon import DpHorizonProcess
@@ -117,19 +116,19 @@ class HorizonPrefix(DpProcess):
         )
         raise TypeError(
             "A HorizonPrefix is one deployed transcript and cannot be "
-            "self-composed. Create a fresh per_step(process) run for an "
+            "self-composed. Create a fresh horizon_run(process) for an "
             "independent deployment."
         )
 
     @property
-    def run(self) -> PerStep:
+    def run(self) -> HorizonRun:
         """Return a run handle bound to this prefix's deployment lineage."""
-        return PerStep(process=self.process, run_id=self.run_id)
+        return HorizonRun(process=self.process, run_id=self.run_id)
 
     def __mul__(self, count: int) -> DpProcess:
         raise TypeError(
             "A HorizonPrefix is one deployed transcript and cannot be repeated "
-            "implicitly. Create a fresh per_step(process) run for an independent "
+            "implicitly. Create a fresh horizon_run(process) for an independent "
             "deployment."
         )
 
@@ -138,11 +137,10 @@ class HorizonPrefix(DpProcess):
 
 
 @dataclass(frozen=True, slots=True)
-class PerStep(DpProcess):
+class HorizonRun(DpProcess):
     """Handle for advancing one deployed :class:`DpHorizonProcess`.
 
-    The class remains a ``DpProcess`` subclass for source and checkpoint
-    compatibility, but it is not an ordinary composable event. Use it with an
+    It is not an ordinary composable event. Use it with an
     :class:`~opaque.accounting.types.Accountant` or multiply it to obtain an
     explicit :class:`HorizonPrefix`.
     """
@@ -153,7 +151,8 @@ class PerStep(DpProcess):
     def __post_init__(self) -> None:
         if not isinstance(self.process, DpHorizonProcess):
             raise TypeError(
-                f"PerStep requires a DpHorizonProcess, got {type(self.process).__name__}."
+                "HorizonRun requires a DpHorizonProcess, got "
+                f"{type(self.process).__name__}."
             )
         if not isinstance(self.run_id, str):
             raise TypeError("run_id must be a string")
@@ -162,7 +161,7 @@ class PerStep(DpProcess):
 
     def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
-            "PerStep",
+            "HorizonRun",
             self.process._pld_cache_key(n_steps=1 if n_steps is None else n_steps),
         )
 
@@ -205,8 +204,7 @@ class PerStep(DpProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        # Compatibility for callers that invoked this method directly. New
-        # process trees contain HorizonPrefix rather than Repeated(PerStep).
+        # Process trees use HorizonPrefix rather than Repeated(HorizonRun).
         return self.prefix(count).pld(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -222,11 +220,6 @@ class PerStep(DpProcess):
 
     def __rmul__(self, count: int) -> HorizonPrefix:
         return self.__mul__(count)
-
-
-# Lifecycle-oriented name for new code; ``PerStep`` remains the compatibility
-# spelling used by the existing public factory and serialized checkpoints.
-HorizonRun = PerStep
 
 
 def _same_horizon_process(
@@ -271,8 +264,7 @@ def _split_horizon_frontier(
         if isinstance(node, HorizonPrefix):
             active = node
             break
-        if isinstance(node, PerStep):
-            # Programmatic compatibility for Accountant(prefix=step).
+        if isinstance(node, HorizonRun):
             active = node.prefix(1)
             break
         if isinstance(node, CachedProcess):
@@ -314,7 +306,7 @@ def _contains_horizon_run(process: DpProcess, run_id: str) -> bool:
     stack = [process]
     while stack:
         node = stack.pop()
-        if isinstance(node, (HorizonPrefix, PerStep)) and node.run_id == run_id:
+        if isinstance(node, (HorizonPrefix, HorizonRun)) and node.run_id == run_id:
             return True
         if isinstance(node, CachedProcess | Repeated):
             stack.append(node.inner)
@@ -333,7 +325,7 @@ def _horizon_run_ids(process: DpProcess) -> set[str]:
     stack = [process]
     while stack:
         node = stack.pop()
-        if isinstance(node, (HorizonPrefix, PerStep)):
+        if isinstance(node, (HorizonPrefix, HorizonRun)):
             found.add(node.run_id)
         if isinstance(node, CachedProcess | Repeated):
             stack.append(node.inner)
@@ -342,112 +334,13 @@ def _horizon_run_ids(process: DpProcess) -> set[str]:
     return found
 
 
-def _normalize_legacy_horizon_process(process: DpProcess) -> DpProcess:
-    """Upgrade legacy ``Repeated(PerStep, K)`` trees to explicit prefixes.
-
-    Old checkpoints carry no deployment ID. Loading their ``PerStep`` leaf
-    creates one fresh ID, which is retained for that homogeneous group. We do
-    not infer that separately serialized equal-config groups share lineage.
-    """
-    from opaque.api.accounting.core.composition._cached import CachedProcess
-    from opaque.api.accounting.core.composition._composed import Composed
-    from opaque.api.accounting.core.composition._repeated import Repeated
-
-    # Values are (rebuilt node, still-a-legacy-run-handle).  Keeping the marker
-    # through CachedProcess lets Repeated(CachedProcess(PerStep), K) migrate as
-    # one K-prefix without conflating an explicit Repeated(HorizonPrefix, K).
-    built: dict[int, tuple[DpProcess, bool]] = {}
-    stack: list[tuple[DpProcess, bool]] = [(process, False)]
-    while stack:
-        node, expanded = stack.pop()
-        if isinstance(node, Composed):
-            if not expanded:
-                stack.append((node, True))
-                stack.append((node.right, False))
-                stack.append((node.left, False))
-                continue
-            left, left_handle = built[id(node.left)]
-            right, right_handle = built[id(node.right)]
-            if left_handle:
-                assert isinstance(left, PerStep)
-                left = left.prefix(1)
-            if right_handle:
-                assert isinstance(right, PerStep)
-                right = right.prefix(1)
-            built[id(node)] = (Composed(left, right), False)
-            continue
-        if isinstance(node, Repeated):
-            if not expanded:
-                stack.append((node, True))
-                stack.append((node.inner, False))
-                continue
-            inner, legacy_handle = built[id(node.inner)]
-            if legacy_handle:
-                assert isinstance(inner, PerStep)
-                built[id(node)] = (inner.prefix(node.count), False)
-            else:
-                built[id(node)] = (Repeated(inner, node.count), False)
-            continue
-        if isinstance(node, CachedProcess):
-            if not expanded:
-                stack.append((node, True))
-                stack.append((node.inner, False))
-                continue
-            inner, legacy_handle = built[id(node.inner)]
-            built[id(node)] = (
-                inner if legacy_handle else CachedProcess(inner),
-                legacy_handle,
-            )
-            continue
-        built[id(node)] = (node, isinstance(node, PerStep))
-
-    normalized, legacy_handle = built[id(process)]
-    if legacy_handle:
-        assert isinstance(normalized, PerStep)
-        return normalized.prefix(1)
-    return normalized
-
-
-def _validate_legacy_horizon_state(state: dict[str, Any]) -> None:
-    """Reject legacy trees whose missing lineage makes recovery ambiguous.
-
-    A single old ``PerStep`` leaf (possibly below ``Repeated`` and cache
-    wrappers) unambiguously denotes one deployed run. Multiple equal-configured
-    leaves might instead be cache fragments of that run *or* separate
-    deployments. Structural equality cannot distinguish those histories, so a
-    loader must not guess at a privacy bound.
-    """
-    legacy_processes: list[dict[str, Any]] = []
-    stack: list[object] = [state]
-    while stack:
-        value = stack.pop()
-        if isinstance(value, dict):
-            if value.get("type") == "PerStep" and not value.get("run_id"):
-                process_state = value.get("process")
-                if not isinstance(process_state, dict):
-                    raise ValueError(
-                        "Legacy PerStep checkpoint is missing its process state."
-                    )
-                if any(process_state == prior for prior in legacy_processes):
-                    raise ValueError(
-                        "Legacy accountant contains multiple equal-configured "
-                        "horizon groups without deployment lineage. They may "
-                        "be fragments of one correlated run or independent "
-                        "runs, so the checkpoint cannot be resumed soundly."
-                    )
-                legacy_processes.append(process_state)
-            stack.extend(value.values())
-        elif isinstance(value, (list, tuple)):
-            stack.extend(value)
-
-
-def per_step(process: DpHorizonProcess) -> PerStep:
-    """Create a fresh run handle for step-wise horizon accounting."""
+def horizon_run(process: DpHorizonProcess) -> HorizonRun:
+    """Create a fresh deployment handle for horizon accounting."""
     if not isinstance(process, DpHorizonProcess):
         raise TypeError(
-            f"per_step() requires a DpHorizonProcess, got {type(process).__name__}."
+            f"horizon_run() requires a DpHorizonProcess, got {type(process).__name__}."
         )
-    return PerStep(process=process)
+    return HorizonRun(process=process)
 
 
-__all__ = ["HorizonPrefix", "HorizonRun", "PerStep", "per_step"]
+__all__ = ["HorizonPrefix", "HorizonRun", "horizon_run"]

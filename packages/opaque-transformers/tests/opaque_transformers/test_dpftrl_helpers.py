@@ -174,8 +174,8 @@ class TestBuildAmplifierFactory:
             )
 
 
-class TestPerStepWrapper:
-    def test_wraps_to_per_step(self):
+class TestHorizonRunWrapper:
+    def test_wraps_to_horizon_run(self):
         strategy = _dpftrl.build_strategy("mf_identity", {})
         amp = _dpftrl.build_amplifier_factory(
             sampling_mode="poisson",
@@ -187,9 +187,9 @@ class TestPerStepWrapper:
             truncated_batch_size=None,
         )
         step_factory = _dpftrl.build_step_mechanism_factory(amp)
-        from opaque.api.accounting.core.composition._per_step import PerStep
+        from opaque.api.accounting.core.composition._horizon_run import HorizonRun
 
-        assert isinstance(step_factory(1.0), PerStep)
+        assert isinstance(step_factory(1.0), HorizonRun)
 
 
 def _mf_band_context(bands: int, sample_rate: float, n_steps: int) -> _dpftrl.MFContext:

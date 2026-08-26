@@ -33,7 +33,7 @@ def test_prefixes_are_finite_and_full_matches_pld():
         total_participations=3,
         n_steps=10,
     )
-    step = acc.per_step(process)
+    step = acc.horizon_run(process)
     values = [(step * k).epsilon_at(_DELTA) for k in range(1, 11)]
     assert all(value > 0 for value in values)
     assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=1e-12, abs=0)

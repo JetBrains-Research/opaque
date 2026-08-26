@@ -126,7 +126,7 @@ not by themselves certify a hypothesis-testing trade-off curve.
 Ordinary composition is optimized at construction time: identical steps are
 collapsed via structural equality, nested repeats are flattened, and identity
 processes are elided. Correlated whole-horizon runs use the explicit
-`HorizonRun`/`HorizonPrefix` lifecycle described under `per_step`; configuration
+`HorizonRun`/`HorizonPrefix` lifecycle described under `horizon_run`; configuration
 equality alone never merges two deployments.
 
 ```python
@@ -284,7 +284,7 @@ Pairs with `opaque.dpsgd.sampling.RandomAllocationSampler`.
 
 The process covers the declared horizon and implements exact `pld_at(K)`
 prefix accounting, including partial final epochs. Use
-`acc.per_step(process)` for ordinary step-wise training loops.
+`acc.horizon_run(process)` for ordinary step-wise training loops.
 
 Computed by the exact PLD transform of Feldman & Shenfeld (2026) —
 deterministic, with no Monte Carlo sampling. It is strictly tighter than
@@ -515,19 +515,19 @@ proc = dpftrl_acc.balls_in_bins(
 )
 ```
 
-### `per_step(proc) -> HorizonRun` (`PerStep` compatibility name)
+### `horizon_run(proc) -> HorizonRun`
 
 Creates a fresh deployment handle for a whole-horizon process. Under an
 `Accountant`, `acct |= run` advances that deployment from prefix K to prefix
 K+1. `run * K` returns an explicit `HorizonPrefix` whose PLD is
 `proc.pld_at(K)`. The run's serialized `run_id` is lifecycle metadata: two
-equal-configured calls to `per_step(proc)` declare distinct deployments and
+equal-configured calls to `horizon_run(proc)` declare distinct deployments and
 the `Accountant` composes them separately. The caller must keep that declaration
 aligned with the mechanism's actual noise/state lifecycle.
 
 Do not compose a run handle directly with `|`, repeat a materialized prefix, or
 compose two prefixes from the same run. Use the `Accountant` to advance one run;
-call `per_step(proc)` again only when the actual mechanism starts a fresh
+call `horizon_run(proc)` again only when the actual mechanism starts a fresh
 independent deployment.
 
 After restoring an accountant directly, continue its active run with
@@ -549,8 +549,8 @@ proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(0.8, strategy),
     sample_rate=0.01, n_steps=15_624,
 )
-step = acc.per_step(proc)
-prefix = step * 1_000
+run = acc.horizon_run(proc)
+prefix = run * 1_000
 eps_K = prefix.epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
 ```
 
@@ -613,11 +613,8 @@ flat = state_dict(step)
 step2 = from_state_dict(acc.identity(), flat)
 ```
 
-Accountant checkpoints serialize horizon run IDs. A legacy checkpoint with one
-`Repeated(PerStep, K)` group is migrated to `HorizonPrefix(K)` on load. If an
-older tree contains multiple equal-configured groups without IDs, loading fails
-closed: the data cannot establish whether they were cache fragments of one
-correlated transcript or independent deployments.
+Accountant checkpoints serialize horizon run IDs so a restored accountant can
+continue the same correlated deployment.
 
 ---
 

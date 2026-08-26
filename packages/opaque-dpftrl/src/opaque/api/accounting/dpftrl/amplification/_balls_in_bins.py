@@ -107,7 +107,7 @@ class BallsInBins(DpHorizonProcess):
     @property
     def atomic_unit(self) -> int:
         # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
-        # analysis is defined at epoch boundaries.  ``per_step(self) * K``
+        # analysis is defined at epoch boundaries.  ``horizon_run(self) * K``
         # rounds K up to the next epoch.
         return self.num_bins
 

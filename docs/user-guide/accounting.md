@@ -172,7 +172,7 @@ process = dpsgd_acc.random_allocation(
 eps = process.epsilon_at(1e-5)
 ```
 
-Use `acc.per_step(process)` in a loop that composes privacy after each
+Use `acc.horizon_run(process)` in a loop that composes privacy after each
 optimizer step.
 
 ### `dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)`
@@ -483,12 +483,12 @@ eps = acct.epsilon_at(delta=1e-5)
 mutating the original. The `budget_exceeded` property checks whether the
 accumulated process exceeds the budget.
 
-### DP-FTRL: step-by-step accounting via `per_step`
+### DP-FTRL: step-by-step accounting via `horizon_run`
 
 DP-FTRL accountants are *whole-process* (`dpftrl_acc.poisson` / `b_min_sep` /
 `balls_in_bins` already cover all `n_steps` rounds), so feeding the bare
 process to `acct |= step` would over-count. Wrap the process with
-`acc.per_step(...)` to create a deployment handle whose `run * K`
+`acc.horizon_run(...)` to create a deployment handle whose `run * K`
 materialises the strategy-aware K-prefix PLD (rather
 than the K-fold composition of a single-step PLD, which would double-count
 the workload coefficients):
@@ -505,12 +505,12 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01,
     n_steps=15_624,
 )
-step = acc.per_step(proc)
+run = acc.horizon_run(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:
     # ... train ...
-    acct |= step
+    acct |= run
     if acct.budget_exceeded:
         break
 
@@ -518,7 +518,7 @@ eps = acct.epsilon_at(delta=1e-5)
 ```
 
 The accountant advances one deployed run by its serialized `run_id`; it does
-not infer correlation from equal parameters. A second `acc.per_step(proc)` call
+not infer correlation from equal parameters. A second `acc.horizon_run(proc)` call
 declares a fresh independent deployment, so the mechanism's actual noise/state
 lifecycle must agree. Keep using the original handle (or
 `acct.active_horizon_prefix.run` after restoring an accountant) to continue the

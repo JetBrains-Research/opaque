@@ -54,7 +54,7 @@ class RandomAllocation(DpHorizonProcess):
     """Redrawn 1-out-of-``num_bins`` allocation over ``n_steps`` releases.
 
     ``pld_at(K)`` is exact at every prefix, including a partial final epoch.
-    Use :func:`opaque.accounting.per_step` in step-wise training loops.
+    Use :func:`opaque.accounting.horizon_run` in step-wise training loops.
 
     The assignment is independently redrawn at every epoch boundary.
     """

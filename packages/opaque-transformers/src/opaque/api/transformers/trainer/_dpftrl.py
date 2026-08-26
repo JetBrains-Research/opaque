@@ -10,7 +10,7 @@ The MF amplifier returned by :func:`build_amplifier_factory` is the
 *raw* whole-process accountant (a :class:`DpHorizonProcess`); the trainer
 queries ``(n_steps, min_sep, max_participations)`` off it to build the
 matching :func:`opaque.dpftrl.noise.mf_gaussian_noise` and then wraps
-it with :func:`opaque.accounting.per_step` for the
+it with :func:`opaque.accounting.horizon_run` for the
 ``acc |= step`` composition idiom.  See
 :func:`build_step_mechanism_factory`.
 """
@@ -20,7 +20,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
-from opaque.accounting import per_step
+from opaque.accounting import horizon_run
 from opaque.dpftrl import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -184,17 +184,17 @@ def build_amplifier_factory(
 def build_step_mechanism_factory(
     raw_amplifier_factory: Callable[[float], Any],
 ) -> Callable[[float], Any]:
-    """Wrap ``nm → DpHorizonProcess`` with ``per_step`` for ``acc |= step``.
+    """Wrap ``nm → DpHorizonProcess`` with ``horizon_run`` for ``acc |= run``.
 
     The returned deployment handle materialises as the true K-step PLD of the
     deployed N-step mechanism on its ``K``-prefix, so
-    ``(per_step(proc) * K).pld()`` equals ``proc.pld_at(K)``. The handle's
+    ``(horizon_run(proc) * K).pld()`` equals ``proc.pld_at(K)``. The handle's
     stable run identity lets the Accountant advance that prefix without
     confusing an equal-configured independent deployment for a continuation.
     """
 
     def step(nm: float, _f: Callable[[float], Any] = raw_amplifier_factory) -> Any:
-        return per_step(_f(nm))
+        return horizon_run(_f(nm))
 
     return step
 

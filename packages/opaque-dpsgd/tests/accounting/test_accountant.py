@@ -527,7 +527,7 @@ class TestAccountantCached:
             num_bins=2,
             n_steps=4,
         )
-        step = acc.per_step(horizon)
+        step = acc.horizon_run(horizon)
         cached_step = acc.cached(step)
 
         assert cached_step is step
@@ -539,7 +539,7 @@ class TestAccountantCached:
             num_bins=2,
             n_steps=4,
         )
-        step = acc.cached(acc.per_step(horizon))
+        step = acc.cached(acc.horizon_run(horizon))
         accountant = Accountant() | step
 
         continued = acc.cached(accountant) | step

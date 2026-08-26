@@ -1,10 +1,6 @@
-"""Backward-compatibility shim — dpftrl composition namespace."""
+"""DP-FTRL-specific composition namespace.
 
-from opaque.api.accounting.core.composition._per_step import (
-    PerStep as PerStep,
-)
-from opaque.api.accounting.core.composition._per_step import (
-    per_step as per_step,
-)
+Whole-horizon lifecycle composition lives in :mod:`opaque.accounting`.
+"""
 
 __all__: list[str] = []

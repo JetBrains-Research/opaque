@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, overload
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 
-from ._per_step import PerStep
+from ._horizon_run import HorizonRun
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
@@ -109,14 +109,14 @@ class CachedProcess(DpProcess):
 @overload
 def cached(process: Accountant) -> Accountant: ...
 @overload
-def cached(process: PerStep) -> PerStep: ...
+def cached(process: HorizonRun) -> HorizonRun: ...
 @overload
 def cached(process: DpProcess) -> CachedProcess: ...
 
 
 def cached(
     process: DpProcess | Accountant,
-) -> CachedProcess | Accountant | PerStep:
+) -> CachedProcess | Accountant | HorizonRun:
     """Wrap a process so that its PLD is computed once and cached.
 
     Returns a :class:`CachedProcess` that computes the PLD lazily on
@@ -157,7 +157,7 @@ def cached(
         :class:`Accountant` with its inner process cached.
     """
     from opaque.api.accounting.core._accountant import Accountant
-    from opaque.api.accounting.core.composition._per_step import (
+    from opaque.api.accounting.core.composition._horizon_run import (
         _join_horizon_frontier,
         _split_horizon_frontier,
     )
@@ -180,7 +180,7 @@ def cached(
                 budget=process._budget,
                 prefix=_join_horizon_frontier(cached_closed, active),
             )
-        case PerStep():
+        case HorizonRun():
             # Horizon PLDs are already keyed by prefix length. There is no
             # materialized one-step value that can accelerate K -> K+1.
             return process

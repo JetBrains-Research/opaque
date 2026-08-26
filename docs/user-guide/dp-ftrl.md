@@ -95,11 +95,11 @@ Each amplification factory wraps a mechanism into a single
 strategy object** to `mf_gaussian_noise` and the accounting factory — that is
 how DP correctness is preserved.
 
-### Step-by-step ε reporting (`per_step`)
+### Step-by-step ε reporting (`horizon_run`)
 
 DP-FTRL processes are *whole-process*: feeding the bare process to
 `Accountant`'s `acct |= step` would over-count. Wrap with
-`acc.per_step(...)` to create one deployment handle whose `run * K`
+`acc.horizon_run(...)` to create one deployment handle whose `run * K`
 materialises the strategy-aware K-prefix PLD —
 the same loop idiom as DP-SGD, but with the correct K-step bound under MF
 correlations:
@@ -110,18 +110,18 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01,
     n_steps=1000,
 )
-step = acc.per_step(proc)
+run = acc.horizon_run(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:
     # ... train ...
-    acct |= step
+    acct |= run
     eps_so_far = acct.epsilon_at(delta=1e-5)
 ```
 
 Keep the same handle for that deployed mechanism. Its serialized run identity,
 not structural equality of strategy parameters, tells the accountant that K+1
-continues prefix K. Calling `per_step(proc)` again declares a fresh independent
+continues prefix K. Calling `horizon_run(proc)` again declares a fresh independent
 deployment and the mechanism's actual state must do the same. Cache and
 checkpoint boundaries preserve the active identity and leave its
 `HorizonPrefix` symbolic.

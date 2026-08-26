@@ -41,7 +41,6 @@ from opaque.api.accounting.core.composition.types import (
     Composed,
     HorizonPrefix,
     HorizonRun,
-    PerStep,
     Repeated,
 )
 from opaque.api.accounting.core.discretization import DiscretizationConfig
@@ -75,7 +74,6 @@ __all__ = [
     "Composed",
     "HorizonPrefix",
     "HorizonRun",
-    "PerStep",
     "Repeated",
     "CachedProcess",
 ]

@@ -2819,7 +2819,7 @@ class TestPredictStopStep:
             sample_rate=0.02,
             n_steps=30,
         )
-        run = accounting.per_step(process)
+        run = accounting.horizon_run(process)
         delta, horizon = 1e-5, 30
         eps = [run.prefix(k).epsilon_at(delta) for k in range(1, horizon + 1)]
         target = (eps[14] + eps[15]) / 2.0

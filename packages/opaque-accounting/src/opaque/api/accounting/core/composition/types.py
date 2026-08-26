@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from opaque.api.accounting.core.composition._cached import CachedProcess
 from opaque.api.accounting.core.composition._composed import Composed
-from opaque.api.accounting.core.composition._per_step import (
+from opaque.api.accounting.core.composition._horizon_run import (
     HorizonPrefix,
     HorizonRun,
-    PerStep,
 )
 from opaque.api.accounting.core.composition._repeated import Repeated
 
@@ -23,6 +22,5 @@ __all__ = [
     "Composed",
     "HorizonPrefix",
     "HorizonRun",
-    "PerStep",
     "Repeated",
 ]

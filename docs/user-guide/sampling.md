@@ -244,7 +244,7 @@ process = dpsgd_acc.random_allocation(
     num_bins=num_bins,
     n_steps=n_steps,
 )
-step = acc.per_step(process)
+run = acc.horizon_run(process)
 ```
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"

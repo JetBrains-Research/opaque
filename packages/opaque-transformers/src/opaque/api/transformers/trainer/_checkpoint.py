@@ -378,14 +378,9 @@ def load_dp_runtime_state(path: str) -> RuntimeCheckpoint:
             f"(got {type(bundle).__name__}); checkpoint may be from an older "
             "trainer version."
         )
-    if bundle.version not in {4, DP_STATE_BUNDLE_VERSION}:
+    if bundle.version != DP_STATE_BUNDLE_VERSION:
         raise ValueError(
             f"unsupported dp_state bundle version {bundle.version} "
-            f"(expected 4 or {DP_STATE_BUNDLE_VERSION})"
+            f"(expected {DP_STATE_BUNDLE_VERSION})"
         )
-    if bundle.version == 4:
-        # Version 4 predates explicit accountant/runtime lineage. Complete
-        # legacy checkpoints can still bind to the migrated accountant prefix
-        # after mechanism equality is validated by the trainer.
-        bundle.horizon_run_id = None
     return bundle

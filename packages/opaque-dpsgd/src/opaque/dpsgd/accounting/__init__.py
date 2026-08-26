@@ -21,7 +21,7 @@ Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 :class:`DpProcess`; compose externally with ``* num_steps`` for
 full-training privacy. Allocation factories return
 :class:`opaque.accounting.types.DpHorizonProcess` objects and expose prefix
-privacy via ``pld_at`` / :func:`opaque.accounting.per_step`.
+privacy via ``pld_at`` / :func:`opaque.accounting.horizon_run`.
 
 Cross-cutting primitives (composition, calibration) live at
 :mod:`opaque.accounting`. DP-FTRL helpers such as :func:`balls_in_bins`

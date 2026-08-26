@@ -120,8 +120,8 @@ class DpProcess(ABC):
     - **Privacy metrics**: epsilon_at(), delta_at(), advantage(), beta_at(), risk_at()
     - **Composition**: ``a | b`` (heterogeneous), ``a * k`` (homogeneous)
 
-    ``PerStep`` is a source-compatible horizon-run handle rather than an
-    ordinary event: advance it through an ``Accountant``. Multiplication is
+    ``HorizonRun`` is a horizon-run handle rather than an ordinary event:
+    advance it through an ``Accountant``. Multiplication is
     retained as shorthand for materializing one explicit horizon prefix.
 
     Example::
@@ -464,22 +464,21 @@ class DpProcess(ABC):
         Applies identity elision, direct merge, and right-spine merge
         using structural equality (``==``).
         """
-        from opaque.api.accounting.core.composition._per_step import (
-            PerStep,
+        from opaque.api.accounting.core.composition._horizon_run import (
+            HorizonRun,
             _horizon_run_ids,
         )
         from opaque.api.accounting.core.composition.types import Composed, Repeated
         from opaque.api.accounting.core.mechanisms.types import Identity
 
-        # A PerStep is a deployed-horizon run handle, not an independently
+        # A HorizonRun is a deployed-horizon run handle, not an independently
         # composable event.  Only Accountant.advance() may turn it into a
         # HorizonPrefix.  Keeping this guard in the generic operator covers
         # both ``step | x`` and ``x | step`` during the compatibility period
-        # in which PerStep remains a DpProcess subclass for old checkpoints.
-        if isinstance(self, PerStep) or isinstance(other, PerStep):
+        if isinstance(self, HorizonRun) or isinstance(other, HorizonRun):
             raise TypeError(
-                "PerStep is a horizon run handle, not an ordinary DpProcess. "
-                "Advance it through an Accountant or use step * K to obtain "
+                "HorizonRun is a deployment handle, not an ordinary DpProcess. "
+                "Advance it through an Accountant or use run * K to obtain "
                 "an explicit HorizonPrefix."
             )
 

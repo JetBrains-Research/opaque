@@ -7,7 +7,7 @@ import pytest
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.accounting import Accountant
-from opaque.accounting.types import PerStep
+from opaque.accounting.types import HorizonRun
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
 
 
@@ -18,7 +18,7 @@ def _prefix_process(schedule, *, momentum: float = 1.0):
         sample_rate=0.01,
         n_steps=16,
     )
-    return acc.per_step(process) * 8
+    return acc.horizon_run(process) * 8
 
 
 def test_distinct_materialized_schedules_do_not_share_cached_plds() -> None:
@@ -42,7 +42,7 @@ def test_equal_materialized_schedules_reuse_cached_plds() -> None:
 def test_run_continuation_compares_materialized_schedule() -> None:
     constant = _prefix_process(lambda _step: 1.0)
     ramp = _prefix_process(lambda step: 1.0 + 0.01 * step)
-    spoofed = PerStep(ramp.process, run_id=constant.run_id)
+    spoofed = HorizonRun(ramp.process, run_id=constant.run_id)
 
     with pytest.raises(ValueError, match="configuration changed"):
         Accountant(prefix=constant) | spoofed

@@ -152,7 +152,7 @@ For k-out-of-t, set `sampling_kwargs={"total_participations": k}` so each
 example participates in exactly `k` optimizer steps (uniform over the run).
 Identity MF explicitly accepts `sampling_mode="balls_in_bins"`. Horizon modes
 are adapted to the trainer's step-wise accountant through
-`opaque.accounting.per_step`.
+`opaque.accounting.horizon_run`.
 
 So the minimal DP-FTRL configuration is one field:
 
