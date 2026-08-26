@@ -568,11 +568,11 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 | `log_x_mass_truncation_bound` | -50.0 | Log tail mass cutoff. |
 | `max_grid_size` | 10,000,000 | Maximum grid bins before coarsening. |
 | `seed` | 42 | Monte Carlo RNG seed. |
-| `mc_resolution` | 1e-4 | Maximum unresolved MC mass, in delta units. |
+| `mc_resolution` | 1e-5 | Maximum unresolved MC mass, in delta units. |
 | `mc_failure_probability` | 1e-6 | Failure probability of the simultaneous MC bound. |
 
-The default `mc_resolution=1e-4` and `mc_failure_probability=1e-6` require
-270,141 samples per adjacency direction. Required counts above 50 million
+The default `mc_resolution=1e-5` and `mc_failure_probability=1e-6` require
+2,940,252 samples per adjacency direction. Required counts above 50 million
 produce an advisory warning but are not capped. An `epsilon_at(delta)` query
 uses `min(mc_resolution, delta / 2)`, so smaller requested deltas automatically
 increase the sample count.

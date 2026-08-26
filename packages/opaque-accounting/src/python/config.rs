@@ -9,7 +9,7 @@ use crate::discretization::DiscretizationConfig;
 /// Args:
 ///     discretization (float): Grid spacing (default 1e-4). Smaller = tighter.
 ///     log_mass_truncation_bound (float): Log tail mass (default -50).
-///     mc_resolution (float): Maximum unresolved MC mass (default 1e-4).
+///     mc_resolution (float): Maximum unresolved MC mass (default 1e-5).
 ///     mc_failure_probability (float): Failure probability of the simultaneous
 ///         MC confidence band (default 1e-6).
 ///
@@ -26,7 +26,7 @@ pub struct PyDiscretizationConfig {
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]
-    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, seed=42, max_conv_grid=32_768, mc_resolution=1e-4, mc_failure_probability=1e-6))]
+    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, max_grid_size=10_000_000, tail_mass_truncation=1e-15, seed=42, max_conv_grid=32_768, mc_resolution=1e-5, mc_failure_probability=1e-6))]
     fn new(
         discretization: f64,
         log_mass_truncation_bound: f64,

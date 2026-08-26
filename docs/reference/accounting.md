@@ -155,13 +155,13 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `tail_mass_truncation`         | `1e-15`      | Tail-mass budget during composition              |
 | `seed`                         | `42`         | RNG seed for Monte Carlo PLD builders            |
 | `max_conv_grid`                | `32_768`     | Convolution grid cap for random-allocation PLD   |
-| `mc_resolution`                | `1e-4`       | Maximum unresolved MC mass, in delta units       |
+| `mc_resolution`                | `1e-5`       | Maximum unresolved MC mass, in delta units       |
 | `mc_failure_probability`       | `1e-6`       | Failure probability of the simultaneous MC bound |
 
 The Monte Carlo count is derived from binary-KL Chernoff order-statistic bounds
 with a Bonferroni allocation over all ranks and both adjacency directions. At
-the default `mc_resolution=1e-4` and `mc_failure_probability=1e-6`, this
-requires 270,141 samples per direction. Counts above 50 million emit an
+the default `mc_resolution=1e-5` and `mc_failure_probability=1e-6`, this
+requires 2,940,252 samples per direction. Counts above 50 million emit an
 advisory runtime warning but are not capped. The construction follows
 [Hoeffding (1963)](https://doi.org/10.1080/00401706.1963.10490085); the rank
 and adjacency allocation makes the entire returned PLD simultaneous.

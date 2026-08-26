@@ -35,7 +35,7 @@ class DiscretizationConfig:
     tail_mass_truncation: float = 1e-15
     seed: int = 42
     max_conv_grid: int = 32_768
-    mc_resolution: float = 1e-4
+    mc_resolution: float = 1e-5
     mc_failure_probability: float = 1e-6
 
     def to_native(self) -> _native.DiscretizationConfig:
@@ -101,7 +101,7 @@ def set_discretization(
     tail_mass_truncation: float = 1e-15,
     seed: int = 42,
     max_conv_grid: int = 32_768,
-    mc_resolution: float = 1e-4,
+    mc_resolution: float = 1e-5,
     mc_failure_probability: float = 1e-6,
 ) -> None:
     """Set module-level default discretization parameters.
@@ -123,7 +123,7 @@ def set_discretization(
         seed: RNG seed for Monte Carlo reproducibility. Default: 42.
         max_conv_grid: Maximum convolution grid size before the native
             accountant uses its bounded-memory composition path.
-        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-4.
+        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-5.
         mc_failure_probability: Failure probability of the simultaneous Monte
             Carlo confidence band. Default: 1e-6.
 
