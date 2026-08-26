@@ -35,6 +35,10 @@ updates:
     reviewers:
       - "evgri243"
     open-pull-requests-limit: 5
+    groups:
+      accounting-dependencies:
+        patterns:
+          - "*"
 
   # Refresh the development workspace without changing library compatibility ranges.
   - package-ecosystem: "uv"
