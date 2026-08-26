@@ -1,7 +1,7 @@
 # opaque-auditing
 
 Empirical privacy auditing for Opaque: one-run estimator
-(Steinke et al. 2023), coin-flip canary injection, and
+(Steinke et al. 2023), coin-flip canary partitioning, and
 loss-based membership-inference attacks.
 
 ## Install
@@ -23,8 +23,12 @@ cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 estimate = auditing.one_run(scores, coin_flip=cf)
 ```
 
+By default, canaries are sampled from the dataset's natural rows. Pass
+`candidate_indices=` to restrict selection to a precommitted pool of constructed
+or selected records.
+
 ## Layout
 
 - `opaque.auditing.one_run` — one-run estimator (Steinke et al. 2023)
-- `opaque.auditing.coin_flip()` — coin-flip canary injection
+- `opaque.auditing.coin_flip()` — coin-flip canary partitioning
 - `opaque.auditing.loss_scores()` — loss-based membership inference via `vmap`

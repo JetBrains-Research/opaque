@@ -1506,6 +1506,7 @@ def main():
             f"  Canaries: {len(audit_cf.in_indices)} in, "
             f"{len(audit_cf.out_indices)} out (held out from training)"
         )
+        print("  Natural-row canaries: audit ε is a lower bound, not a certificate")
         print(f"  Training set: {len(train_dataset)} examples")
 
     global_train_size = len(train_dataset)

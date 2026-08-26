@@ -9,22 +9,43 @@
 ```python
 auditing.coin_flip(
     dataset, *, num_canaries, key,
+    candidate_indices=None,
 ) -> CoinFlip
 ```
 
 Create a coin-flip partition. Randomly selects `num_canaries` examples
-and flips a fair coin for each to decide inclusion/exclusion.
+and flips a fair coin for each to decide inclusion/exclusion. Selection
+uses the whole dataset unless `candidate_indices` restricts it to a pool.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `dataset` | any with `len()` | required | Full training dataset |
 | `num_canaries` | `int` | required | Number of canaries to designate |
 | `key` | `RngKey` | required | RNG key for reproducibility |
+| `candidate_indices` | array-like \| `None` | `None` | Unique, in-range integer indices eligible to become canaries; order is ignored |
+
+**Raises** `ValueError` if the candidate pool is malformed or contains fewer
+than `num_canaries` indices.
 
 ```python
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 train_data = dataset.select(cf.train_indices(len(dataset)))
 ```
+
+To designate a precommitted block of constructed canaries:
+
+```python
+pool = range(len(dataset), len(audited_dataset))
+cf = auditing.coin_flip(
+    audited_dataset,
+    num_canaries=len(pool),
+    key=key(42),
+    candidate_indices=pool,
+)
+```
+
+See [Stronger canaries](../user-guide/auditing.md#stronger-canaries) for the
+statistical and accounting requirements.
 
 ---
 
@@ -207,12 +228,12 @@ print(estimate.epsilon_at(delta=1e-5))
 
 ## CoinFlip
 
-```python
-class CoinFlip(canary_indices, *, key)
-```
-
 Coin-flip partitioning for canary-based privacy auditing. Each canary
 is independently included or excluded with probability 0.5.
+
+Create instances with [`coin_flip`](#coin_flip). To control which records are
+eligible, pass `candidate_indices` to that factory rather than constructing the
+state carrier directly.
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -460,6 +481,7 @@ Total-variation advantage at the inferred μ̂-GDP: TV(μ) = 2·Φ(μ̂/2) − 1
 | | |
 |---|---|
 | `auditing.coin_flip(dataset, ...)` | Coin-flip partition → `CoinFlip` |
+| `auditing.coin_flip(dataset, ..., candidate_indices=pool)` | Partition a precommitted canary pool |
 | `auditing.loss_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified membership scores → `CanaryScores` |
 | `auditing.gradient_scores(loss_fn, ..., coin_flip=cf, dataset=ds)` | Verified white-box scores → `CanaryScores` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy → `OneRunEstimate` |

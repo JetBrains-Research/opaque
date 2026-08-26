@@ -298,24 +298,58 @@ class CoinFlip:
         return canonical
 
 
+def _candidate_pool(candidate_indices: Any, dataset_size: int) -> np.ndarray:
+    """Validate and canonicalize eligible canary indices."""
+    pool = np.asarray(candidate_indices)
+    if pool.ndim != 1:
+        raise ValueError(f"candidate_indices must be 1-D, got shape {pool.shape}")
+    if pool.size == 0:
+        return np.empty(0, dtype=np.intp)
+    if not np.issubdtype(pool.dtype, np.integer):
+        raise ValueError(
+            f"candidate_indices must contain integers, got dtype {pool.dtype}"
+        )
+
+    unique = np.unique(pool)
+    if unique.size != pool.size:
+        raise ValueError("candidate_indices must be unique")
+
+    invalid = unique[(unique < 0) | (unique >= dataset_size)]
+    if invalid.size:
+        raise ValueError(
+            "candidate_indices must be within range(len(dataset)); "
+            f"got {invalid[:5].tolist()}"
+        )
+    return unique
+
+
 def coin_flip(
     dataset: Any,
     *,
     num_canaries: int,
     key: RngKey,
+    candidate_indices: Any | None = None,
 ) -> CoinFlip:
     """Create a coin-flip partition for canary-based auditing.
 
-    Randomly selects ``num_canaries`` examples from the dataset and flips
-    a fair coin for each to decide inclusion/exclusion.
+    Selects ``num_canaries`` examples uniformly without replacement and
+    flips a fair coin for each. Selection uses the whole dataset unless
+    ``candidate_indices`` supplies an eligible pool. Fix that pool before
+    target training, independently of the target run's coins and outputs.
 
     Args:
         dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).
         num_canaries: Number of canary examples to designate.
         key: RNG key for reproducible canary selection and coin flips.
+        candidate_indices: Optional 1-D collection of unique, in-range
+            integer indices eligible to become canaries. Passing exactly
+            ``num_canaries`` indices designates them all.
 
     Returns:
         A :class:`CoinFlip` with the canary partition.
+
+    Raises:
+        ValueError: If the candidate pool is invalid or too small.
 
     Example::
 
@@ -323,13 +357,23 @@ def coin_flip(
         train_data = dataset.select(cf.train_indices(len(dataset)))
     """
     dataset_size = len(dataset)
-    if num_canaries > dataset_size:
+    if num_canaries < 0:
+        raise ValueError(f"num_canaries must be non-negative, got {num_canaries}")
+    if candidate_indices is None:
+        population: int | np.ndarray = dataset_size
+        pool_size = dataset_size
+        pool_name = "dataset size"
+    else:
+        population = _candidate_pool(candidate_indices, dataset_size)
+        pool_size = population.size
+        pool_name = "candidate pool size"
+    if num_canaries > pool_size:
         raise ValueError(
-            f"num_canaries ({num_canaries}) exceeds dataset size ({dataset_size})"
+            f"num_canaries ({num_canaries}) exceeds {pool_name} ({pool_size})"
         )
 
     rng = np.random.default_rng(fold_in(key, _CANARY_SELECTION_DOMAIN).seed)
-    canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
+    canary_indices = rng.choice(population, size=num_canaries, replace=False)
     coin_rng = np.random.default_rng(fold_in(key, _COIN_FLIP_DOMAIN).seed)
     in_mask = np.asarray(coin_rng.random(num_canaries) < 0.5, dtype=bool)
 
