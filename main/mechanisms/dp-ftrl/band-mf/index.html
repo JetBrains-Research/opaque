@@ -3560,11 +3560,11 @@ for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
 <code>n_steps</code>, and <code>p0</code> to <code>opaque.accounting.b_min_sep(...)</code>.
 Training scripts can select it with <code>--band-mf-sampling b_min_sep</code> (see
 <code>examples/train_dpftrl.py</code>).</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>Monte Carlo PLDs are empirical point estimates. Their conservative grid
-bucketing does not replace the RC-4 confidence correction, so reported ε
-values are not upper confidence bounds.</p>
+<div class="admonition note">
+<p class="admonition-title">Monte Carlo confidence</p>
+<p>Monte Carlo PLDs use simultaneous one-sided order-statistic bounds. Their
+unresolved mass is reported through <code>Pld.mc_resolution</code> and placed at
+<code>+∞</code>; queries at or below that delta floor return infinite ε.</p>
 </div>
 <table>
 <thead>
@@ -3578,11 +3578,11 @@ values are not upper confidence bounds.</p>
 <tr>
 <td><code>b_min_sep()</code></td>
 <td style="text-align: center;">Yes</td>
-<td>MC PLD; default <code>num_mc_samples=100_000</code>, override per query via <code>epsilon_at(delta, num_mc_samples=..., seed=...)</code></td>
+<td>Confidence-bounded MC PLD; samples derive from <code>mc_resolution=1e-5</code> and <code>mc_failure_probability=1e-6</code></td>
 </tr>
 </tbody>
 </table>
-<p>For large <code>n_steps × num_mc_samples</code>, the implementation keeps <strong>one copy</strong> of
+<p>For large <code>n_steps × resolved_num_mc_samples</code>, the implementation keeps <strong>one copy</strong> of
 the MC random transcripts in <strong>Rust</strong> (compact <code>f64</code> arrays) and reuses them
 for every noise-multiplier probe during calibration (no Python list blow-up).
 Optional cap: set <code>OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES</code> (default ~4 GiB);
@@ -3602,7 +3602,7 @@ from the noise strategy. For end-to-end usage, <code>mf_gaussian_noise()</code> 
 </div>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>DP correctness</strong> is for the <strong>implemented</strong> banded Toeplitz matrix <span class="arithmatex">\(C\)</span> and the sampler you pair with accounting. For Monte Carlo amplifications, RC-4 confidence correction is still required before a reported ε is an upper confidence bound.</li>
+<li><strong>DP correctness</strong> is for the <strong>implemented</strong> banded Toeplitz matrix <span class="arithmatex">\(C\)</span> and the sampler you pair with accounting. Monte Carlo guarantees hold with the confidence reported on the returned PLD.</li>
 <li><strong><code>lr_schedule</code> (optional)</strong>: optimization applies the schedule on the training-step axis, matching <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span>. The strategy remains Toeplitz, while its objective weights each step's squared error by <span class="arithmatex">\(\eta_t^2\)</span>. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.</li>
 <li><strong>Momentum <span class="arithmatex">\(\beta=0\)</span></strong>: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).</li>
 </ul>

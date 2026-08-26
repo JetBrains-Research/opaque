@@ -4078,6 +4078,12 @@ size (16) or as an opaque merge barrier.</p>
 </tr>
 </tbody>
 </table>
+<p>Monte Carlo-backed <code>Pld</code> objects expose <code>mc_failure_probability</code>,
+<code>mc_confidence</code>, and <code>mc_resolution</code>; analytic PLDs report zero failure and
+zero MC resolution. The confidence construction certifies hockey-stick metrics
+(<code>epsilon_at</code>, <code>delta_at</code>, and <code>advantage</code>). <code>beta_at</code> and <code>risk_at</code> fail
+closed to zero for Monte Carlo PLDs because separate directional CDF bounds do
+not by themselves certify a hypothesis-testing trade-off curve.</p>
 <p><strong>Composition operators:</strong></p>
 <table>
 <thead>
@@ -4154,11 +4160,6 @@ when computing privacy metrics via <code>pld()</code>, not stored in process str
 <td>Tail-mass budget during composition</td>
 </tr>
 <tr>
-<td><code>num_mc_samples</code></td>
-<td><code>100_000</code></td>
-<td>Samples for Monte Carlo PLD builders</td>
-</tr>
-<tr>
 <td><code>seed</code></td>
 <td><code>42</code></td>
 <td>RNG seed for Monte Carlo PLD builders</td>
@@ -4168,8 +4169,28 @@ when computing privacy metrics via <code>pld()</code>, not stored in process str
 <td><code>32_768</code></td>
 <td>Convolution grid cap for random-allocation PLD</td>
 </tr>
+<tr>
+<td><code>mc_resolution</code></td>
+<td><code>1e-5</code></td>
+<td>Maximum unresolved MC mass, in delta units</td>
+</tr>
+<tr>
+<td><code>mc_failure_probability</code></td>
+<td><code>1e-6</code></td>
+<td>Failure probability of the simultaneous MC bound</td>
+</tr>
 </tbody>
 </table>
+<p>The Monte Carlo count is derived from binary-KL Chernoff order-statistic bounds
+with a Bonferroni allocation over all ranks and both adjacency directions. At
+the default <code>mc_resolution=1e-5</code> and <code>mc_failure_probability=1e-6</code>, this
+requires 2,940,252 samples per direction. Counts above 50 million emit an
+advisory runtime warning but are not capped. The construction follows
+<a href="https://doi.org/10.1080/00401706.1963.10490085">Hoeffding (1963)</a>; the rank
+and adjacency allocation makes the entire returned PLD simultaneous.
+<code>epsilon_at(delta)</code> tightens the effective resolution to
+<code>min(mc_resolution, delta / 2)</code>, reserving at least half of the requested delta
+for finite privacy-loss mass.</p>
 <p>Discretization is unconditionally conservative: exact atoms, PMF coarsening,
 and histogram buckets are rounded upward. The API has no optimistic or
 lower-bound mode.</p>
@@ -4181,9 +4202,10 @@ lower-bound mode.</p>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">eps_coarse</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">discretization</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>  <span class="c1"># faster, less accurate</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">eps_fine</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">discretization</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>    <span class="c1"># slower, more accurate</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># Monte Carlo accountants (b_min_sep, balls_in_bins) take the same</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># query-time overrides; analytic PLDs accept and ignore them</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">eps_mc</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">num_mc_samples</span><span class="o">=</span><span class="mi">500_000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">123</span><span class="p">)</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># Monte Carlo accountants derive enough samples for the requested resolution.</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">pld</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">pld</span><span class="p">(</span><span class="n">mc_resolution</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">mc_failure_probability</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">123</span><span class="p">)</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">eps_mc</span> <span class="o">=</span> <span class="n">pld</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">2e-5</span><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">pld</span><span class="o">.</span><span class="n">mc_confidence</span><span class="p">,</span> <span class="n">pld</span><span class="o">.</span><span class="n">mc_resolution</span><span class="p">)</span>
 </code></pre></div>
 <p>All <code>pld()</code>-family methods (<code>epsilon_at</code>, <code>delta_at</code>, <code>advantage</code>, <code>beta_at</code>,
 <code>risk_at</code>) accept every parameter in the table above except
@@ -4409,16 +4431,18 @@ Uses Monte Carlo PLD accounting. <code>inner</code> must be
 <code>mf_gaussian(nm, BandMfStrategy(...))</code> — strategy coefficients and band width
 are read from <code>inner.strategy</code>. <code>p0</code> is the per-example participation rate per
 iteration <code>E[|B|]/|D|</code> (match the training sampler’s target batch size).
-Control the Monte Carlo budget per query
-(<code>proc.epsilon_at(delta, num_mc_samples=..., seed=...)</code>) or module-wide via
-<code>set_discretization</code>.</p>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
+Control the confidence construction per query with <code>mc_resolution</code>,
+<code>mc_failure_probability</code>, and <code>seed</code>, or module-wide via <code>set_discretization</code>.
+The sample count is derived automatically and exposed as
+<code>get_discretization().resolved_num_mc_samples</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Monte Carlo confidence</p>
 <p>b-min-sep, and Balls-in-Bins with a <strong>correlated</strong> strategy, build their
-PLDs by Monte Carlo. Those are point estimates without the RC-4 confidence
-correction — conservative discretization does not make their reported ε
-values upper confidence bounds. Balls-in-Bins with <code>identity_strategy()</code>
-is exempt: it is computed by an exact transform.</p>
+PLDs from simultaneous one-sided order-statistic bounds over both adjacency
+directions. Unresolved probability is placed at <code>+∞</code>, so
+<code>epsilon_at(delta)</code> returns infinity when <code>delta</code> is at or below the
+reported <code>pld.infinity_mass</code>. <code>pld.mc_failure_probability</code> is statistical
+confidence metadata and is separate from mechanism delta.</p>
 </div>
 <h3 id="balls_in_binsinner-num_bins-n_steps-dpprocess"><code>balls_in_bins(inner, *, num_bins, n_steps) -&gt; DpProcess</code><a class="headerlink" href="#balls_in_binsinner-num_bins-n_steps-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Balls-in-Bins (random-partition) amplification. Returns the <strong>total</strong> privacy
@@ -4446,14 +4470,12 @@ transform — deterministic, no sampling. For correlated-noise strategies
 <h3 id="per_stepproc-perstep"><code>per_step(proc) -&gt; PerStep</code><a class="headerlink" href="#per_stepproc-perstep" title="Permanent link">&para;</a></h3>
 <p>Adapter that wraps a whole-horizon accountant so it composes step-by-step
 under <code>Accountant</code>'s <code>acct |= step</code> idiom. <code>per_step(proc) * K</code> materialises
-the process-aware K-prefix PLD via <code>proc.pld_at(K)</code>. For analytic PLDs, this
-is bounded above
-by <code>proc.epsilon_at(δ)</code> and monotone non-decreasing in K by post-processing
-on the deployed N-step mechanism. b-min-sep and correlated-strategy
-Balls-in-Bins remain Monte Carlo point estimates pending the RC-4 confidence
-correction, so this guarantee is not asserted for their reported ε values;
-identity Balls-in-Bins is analytic and does carry it. <code>K &gt; proc.n_steps</code>
-raises.</p>
+the process-aware K-prefix PLD via <code>proc.pld_at(K)</code>. Analytic mechanisms use a
+strategy-aware prefix bound. For b-min-sep and correlated-strategy
+Balls-in-Bins, every nonzero prefix conservatively charges the full-horizon
+confidence-bounded PLD. This preserves monotonicity and boundedness but gives
+up prefix tightness. Identity Balls-in-Bins retains its exact prefix path.
+<code>K &gt; proc.n_steps</code> raises.</p>
 <ul>
 <li><code>proc</code> (DpHorizonProcess): The whole-process accountant
   (<code>dpftrl_acc.poisson(...)</code>, <code>b_min_sep(...)</code>, <code>balls_in_bins(...)</code>).</li>
@@ -4652,6 +4674,10 @@ privacy-gain budgets return <code>achieved &gt;= target</code>. In both cases,
 invalid values raise <code>ValueError</code> before the process is evaluated. If no safe
 endpoint reaches the requested relative tolerance, <code>calibrate()</code> raises
 <code>RuntimeError</code> instead of returning an under-noised parameter.</p>
+<p>When the process uses a Monte Carlo PLD, calibration divides the configured
+failure probability across the two endpoint probes and at most
+<code>max_iterations</code> interior probes. <code>result.mc_confidence</code> therefore covers the
+adaptive search as a whole rather than only its selected final parameter.</p>
 <p>Calibrating a second stage against the remaining budget (see
 <a href="#seeding-with-a-prior-process">Seeding with a prior process</a>): pass the
 earlier run's executed process as <code>prefix</code>. Each probe evaluates
@@ -4713,6 +4739,16 @@ The prefix's PLD is computed once for the whole search.</p>
 <td><code>converged</code></td>
 <td><code>bool</code></td>
 <td>Always <code>True</code> for a successfully returned result</td>
+</tr>
+<tr>
+<td><code>mc_failure_probability</code></td>
+<td><code>float</code></td>
+<td>Overall failure probability for adaptive MC probes</td>
+</tr>
+<tr>
+<td><code>mc_confidence</code></td>
+<td><code>float</code></td>
+<td>Confidence covering the complete calibration search</td>
 </tr>
 </tbody>
 </table>
