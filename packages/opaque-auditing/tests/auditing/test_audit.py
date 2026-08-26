@@ -433,6 +433,10 @@ class TestCoinFlipFunction:
         with pytest.raises(ValueError, match="exceeds dataset size"):
             auditing.coin_flip(dataset, num_canaries=20, key=key(42))
 
+    def test_coin_flip_rejects_negative_num_canaries(self):
+        with pytest.raises(ValueError, match="must be non-negative"):
+            auditing.coin_flip(list(range(10)), num_canaries=-1, key=key(42))
+
     def test_coin_flip_uses_reproducible_domain_separated_keys(self):
         dataset = list(range(100))
         root_key = key(42)

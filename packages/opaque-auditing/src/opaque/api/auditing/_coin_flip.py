@@ -334,6 +334,8 @@ def coin_flip(
         train_data = dataset.select(cf.train_indices(len(dataset)))
     """
     dataset_size = len(dataset)
+    if num_canaries < 0:
+        raise ValueError(f"num_canaries must be non-negative, got {num_canaries}")
     if candidate_indices is None:
         population: int | np.ndarray = dataset_size
         pool_size = dataset_size
