@@ -51,13 +51,14 @@ README.md                # top-level description
 
 packages/
 ├── opaque-base/         # Pure-Python serialization registry
-├── opaque-engine/       # Torch substrate: pytree, clipping, scheduling, distributed support
-├── opaque-optimizers/   # Functional optimizer chain
+├── opaque-engine/       # Torch-free substrate: dispatched primitives, pytree, clipping, optimizers
+├── opaque-torch/        # PyTorch provider for the engine's primitives
+├── opaque-optimizers/   # Facade over the engine's optimizer factories
 ├── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
 ├── opaque-dpsgd/        # DP-SGD noise, adaptive clipping, and sampling
 ├── opaque-dpftrl/       # Correlated-noise DP-FTRL mechanisms and sampling
 ├── opaque-auditing/     # Empirical privacy auditing
-├── opaque-patches/      # PyTorch, Transformers, and Triton patches
+├── opaque-kernels/      # Fused Triton kernels with PyTorch fallbacks
 ├── opaque-transformers/ # Hugging Face trainer integration
 └── opaque-alignment/    # DP-safe SFT and DPO primitives
 
@@ -411,15 +412,16 @@ rm -rf dist
 uv build --wheel --out-dir dist
 
 # Build every sub-package wheel
-for pkg in opaque-base opaque-engine opaque-optimizers opaque-dpsgd opaque-dpftrl \
-                opaque-auditing opaque-patches opaque-transformers opaque-alignment; do
+for pkg in opaque-base opaque-engine opaque-torch opaque-optimizers opaque-dpsgd \
+                opaque-dpftrl opaque-auditing opaque-kernels opaque-transformers \
+                opaque-alignment; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done
 
 # Build the accounting native wheel
 (cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist)
 
-ls dist/   # expect 11 wheels, all at 0.2.0
+ls dist/   # expect 12 wheels, all at 0.2.0
 
 # Inspect a wheel's metadata
 unzip -p dist/opaque_engine-*.whl '*/METADATA' | grep '^Version:'

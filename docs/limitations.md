@@ -56,17 +56,18 @@ should work but is not extensively tested. First-class distributed backends are
 NCCL, Gloo, and MPI. Vendor/runtime-specific backends require external stacks
 and are not covered by default CI.
 
-## Kernel patching lives in `opaque.patches`
+## Kernels and Hugging Face patches have separate homes
 
-Kernel optimization and Hugging Face model patches are provided by
-`opaque.patches`. Triton kernels require CUDA; on CPU, MPS, or without
-Triton, compatible non-kernel patches remain available. Configure them with
+The fused Triton kernels are `opaque-kernels`; the Hugging Face model patches
+that wire them onto a model are `opaque.transformers.patches`. Triton kernels
+require CUDA; on CPU, MPS, or without Triton, the kernels fall back to PyTorch
+and the compatible non-kernel patches remain available. Configure them with
 the explicit flags described in [Model Patches — DPTrainer
 integration](user-guide/huggingface/model-patches.md#dptrainer-integration).
 
 Public standalone kernels (`opaque_swiglu`, `opaque_cross_entropy_loss`,
 `opaque_lora_w`, `opaque_lora_qkv`, `opaque_lora_mlp`) are importable
-from `opaque.patches.kernels`.
+from `opaque.kernels`.
 
 ## In-place operations under vmap
 

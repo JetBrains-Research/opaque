@@ -5,7 +5,7 @@ Contains pure-Python utilities (``MODEL_CONFIGS``, ``STANDARD_LORA_CONFIG``,
 ``gpu_memory_gate_reason``, ``load_model_with_lora``,
 ``run_dp_training_step``) used by tests under ``validation/`` and
 ``distributed/``.  Session-scoped fixtures live in the sibling ``conftest.py``,
-which calls ``opaque.patches.apply_runtime_patches(compat=True)`` so global HF
+which calls ``opaque.transformers.patches.apply_runtime_patches(compat=True)`` so global HF
 runtime compat shims are active for the whole test tree (DPTrainer also applies
 them on construction).
 """
@@ -346,8 +346,8 @@ def run_dp_training_step(
         the final clipping state.
     """
     from opaque.api.engine.clipping import clipped_grad
-    from opaque.functional import make_functional
     from opaque.pytree import tree_map
+    from opaque.torch.functional import make_functional
     from opaque.types import clipped
 
     device = next(model.parameters()).device

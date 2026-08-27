@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-engine"
 dynamic = ["version"]
-description = "Opaque torch substrate: pytree wrappers, clipping primitives, DDP plumbing, schedules, profiler, and noise-allocation math"
+description = "Backend-neutral primitives and algorithms for Opaque"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.14"
-keywords = ["differential-privacy", "pytorch", "privacy", "machine-learning"]
+keywords = ["differential-privacy", "privacy", "machine-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,7 +26,6 @@ classifiers = [
 dependencies = [
     "opaque-base>=0.0.0.dev0",
     "numpy>=1.22",
-    "torch>=2.9.0",
     "optree>=0.17.0",
 ]
 
@@ -35,21 +34,26 @@ dependencies = [
 # ``find_packages`` only discovers sub-packages (directories with
 # ``__init__``).
 py-modules = [
+    "opaque.autodiff",
+    "opaque.ops",
     "opaque.types",
-    "opaque.pytree",
+    "opaque.sampling",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = [
     "opaque.api.engine*",
+    "opaque.backend*",
     "opaque.random*",
     "opaque.distributed*",
+    "opaque.execution*",
+    "opaque.primitive*",
+    "opaque.pytree*",
     "opaque.functional*",
     "opaque.scheduling*",
     "opaque.profiling*",
     "opaque.precision*",
-    "opaque.device*",
 ]
 namespaces = true
 

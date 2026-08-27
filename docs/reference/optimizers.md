@@ -1,30 +1,24 @@
 # Optimizers
 
-Opaque ships its own functional optimizer library at
-`opaque.optimizers`: Opaque-built factories with
-DP-aware paths, plus a curated set of `torchopt` re-exports for the
-stateless primitives where vanilla behaviour is acceptable under DP
-noise. All factories return
-[TorchOpt](https://torchopt.readthedocs.io/) `GradientTransformation`s
+Opaque ships backend-neutral functional optimizers at `opaque.optimizers`.
+They use the active engine provider (Torch), keep state explicit,
 and route DP metadata from `NoisedPytree` or `SecondMomentNoiseOutput` updates.
 
 ---
 
 ## API shape
 
-Functional: no hidden mutable state, explicit
-`(updates, new_state) = optimizer.update(grads, state)` interface.
+Factories take the parameter pytree and return an explicit `(optimizer_step, state)`
+pair. `optimizer_step` returns signed updates and replacement state.
 
 ```python
-import torchopt
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 
-optimizer = adamw(lr=1e-3, weight_decay=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, state = adamw(params, lr=1e-3, weight_decay=0.01)
 
 # Explicit state in, state out
-updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-params = torchopt.apply_updates(params, updates)
+updates, state = optimizer_step(noisy_grads, state, params=params)
+params = apply_updates(params, updates)
 ```
 
 ---
@@ -73,11 +67,10 @@ per-leaf; see the docstrings.
 
 ### Not exposed
 
-- `torchopt.adamax` — the max-norm tracker `v_t = max(β v_{t-1}, |g_t + ξ|)`
+- Adamax — the max-norm tracker `v_t = max(β v_{t-1}, |g_t + ξ|)`
   permanently absorbs the half-normal noise mean (`σ·√(2/π)`); per-coordinate
   effective LR is floored by accumulated noise magnitude regardless of the
-  true gradient.  No clean DP-aware variant; for non-DP use,
-  `from torchopt import adamax` directly.
+  true gradient. No clean DP-aware variant is provided.
 
 ---
 
@@ -101,8 +94,10 @@ whatever noise-aware machinery it has when `noise_bias_correction=True`:
 | `schedule_free` | Forwarded transparently to the wrapped base |
 
 ```python
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
-updates, state = optimizer.update(noisy_grads, state, params=p)
+optimizer_step, state = adamw(
+    p, lr=1e-3, weight_decay=0.01, noise_bias_correction=True
+)
+updates, state = optimizer_step(noisy_grads, state, params=p)
 ```
 
 Raw pytree updates use standard optimizer math.
@@ -128,13 +123,12 @@ noise_fn, noise_state = mf_gaussian_noise(
   second_moment_strategy=second_strategy,
 )
 
-optimizer = adamw(lr=1e-3, weight_decay=0.01)
-opt_state = optimizer.init(params)
+optimizer_step, state = adamw(params, lr=1e-3, weight_decay=0.01)
 
 # Per-step:
 noisy_grads, noise_state = noise_fn(grads, noise_state)
-updates, opt_state = optimizer.update(
-  noisy_grads, opt_state, params=p,
+updates, state = optimizer_step(
+  noisy_grads, state, params=params,
 )
 ```
 
@@ -148,10 +142,9 @@ at any single `update()` call; passing both routes raises `ValueError`.
 ## Complete pattern (DP-SGD)
 
 ```python
-import torchopt
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.optimizers import adamw
+from opaque.optimizers import adamw, apply_updates
 from opaque.random import key
 
 # Gradient pipeline
@@ -162,39 +155,40 @@ grad_fn, clip_state = clipped_grad(
 noise_fn, noise_state = gaussian_noise(noise_multiplier=noise_multiplier, key=key(42))
 
 # Optimizer with DP-AdamW-BC active
-optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_bias_correction=True)
-opt_state = optimizer.init(params)
+optimizer_step, state = adamw(
+    params, lr=1e-3, weight_decay=0.01, noise_bias_correction=True
+)
 
-for step in range(num_steps):
+for _ in range(num_steps):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-    params = torchopt.apply_updates(params, updates)
+    updates, state = optimizer_step(noisy_grads, state, params=params)
+    params = apply_updates(params, updates)
 ```
 
 ---
 
 ## Schedule-free wrapper
 
-`schedule_free` wraps any base `GradientTransformation` (Opaque-built
-or TorchOpt) with Defazio's schedule-free averaging
+`schedule_free` wraps an Opaque optimizer factory with Defazio's schedule-free averaging
 ([arXiv:2405.15682](https://arxiv.org/abs/2405.15682)). Three weight
 sequences internally: `z` (raw iterate), `x` (Polyak-Ruppert average,
 the published params), `y = (1-β)z + βx` (forward-pass weights).
 
 ```python
-from opaque.optimizers import adamw, schedule_free
+from opaque.optimizers import adamw, apply_updates, schedule_free
 
-optimizer = schedule_free(adamw(lr=1e-3), beta=0.9, warmup_steps=100)
-opt_state = optimizer.init(params)
+optimizer_step, state = schedule_free(
+    params, adamw, lr=1e-3, beta=0.9, warmup_steps=100
+)
 
-for step in range(num_steps):
+for _ in range(num_steps):
     # Trainer treats params as y_t; wrapper internally maintains z, x.
-    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
-    params = torchopt.apply_updates(params, updates)
+    updates, state = optimizer_step(noisy_grads, state, params=params)
+    params = apply_updates(params, updates)
 
 # At save / eval time, read the published x_t directly off the state:
-eval_params = opt_state.x
+eval_params = state.x
 ```
 
 **DP-utility note**: under DP, `x_t = (1/n) Σ z_s` is a Polyak-Ruppert
@@ -217,15 +211,14 @@ object and never mutates the template.
 from opaque.optimizers import adamw
 from opaque.serialization import from_state_dict, state_dict
 
-opt = adamw(lr=1e-3, weight_decay=0.01)
-state = opt.init(params)
+_, state = adamw(params, lr=1e-3, weight_decay=0.01)
 # ... train ...
 
 # Save
 torch.save(state_dict(state), "opt.pt")
 
-# Restore — template must have the same shape (init from same params).
-template = opt.init(params)
+# Restore — template must have the same shape (created from the same params).
+_, template = adamw(params, lr=1e-3, weight_decay=0.01)
 state = from_state_dict(template, torch.load("opt.pt"))
 ```
 
@@ -240,7 +233,7 @@ releases load cleanly from older checkpoints.
 When using `torch.nn.parallel.DistributedDataParallel`, Opaque's
 functional gradient pipeline runs *inside* each rank. DDP handles the
 all-reduce of noisy gradients across ranks; the optimizer state stays
-synchronised because `optimizer.update` is a pure function and all
+synchronised because `step` is a pure function and all
 ranks receive identical noisy gradients after `sum_gradients` and noise
 addition with the same key on all ranks.
 
@@ -257,5 +250,3 @@ per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
   `adaptive_clipped_grad`, `auto_clipped_grad`, `PerGroup`.
 - [Schedules API](schedules.md) — LR schedules that pair with
   optimizer factories.
-- [TorchOpt Documentation](https://torchopt.readthedocs.io/) — for
-  re-exports and lower-level transforms.

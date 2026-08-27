@@ -1,3 +1,3 @@
 <component name="DependencyValidationManager">
-  <scope name="Opaque_DynamicFrameworkSources" pattern="file[opaque-patches]:src//*||file[opaque-transformers]:src/opaque/api/transformers/trainer//*||file[opaque-transformers]:src/opaque/api/transformers/trl//*||file[opaque-alignment]:src/opaque/api/alignment/data//*||file[opaque-alignment]:src/opaque/api/alignment/dpo/reference//*||file[opaque-alignment]:src/opaque/api/alignment/sft//*" />
+  <scope name="Opaque_DynamicFrameworkSources" pattern="file[opaque-kernels]:src//*||file[opaque-transformers]:src/opaque/api/transformers/patches//*||file[opaque-transformers]:src/opaque/api/transformers/trainer//*||file[opaque-transformers]:src/opaque/api/transformers/trl//*||file[opaque-alignment]:src/opaque/api/alignment/data//*||file[opaque-alignment]:src/opaque/api/alignment/dpo/reference//*||file[opaque-alignment]:src/opaque/api/alignment/sft//*||file[opaque-torch]:src/opaque/api/torch/backend//*" />
 </component>

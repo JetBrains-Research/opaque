@@ -36,15 +36,19 @@ import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import torch
-
-from opaque.api.engine.device import device_capabilities
+from opaque.api.engine import runtime
+from opaque.api.engine.backend import ensure_backend
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
     from contextlib import AbstractContextManager
+
+
+def _drop_none(entries: dict[str, Any]) -> dict[str, Any]:
+    """Omit unknown (``None``) metrics so numeric log consumers stay typed."""
+    return {key: value for key, value in entries.items() if value is not None}
 
 
 @dataclass(frozen=True)
@@ -69,24 +73,24 @@ class MemoryStats:
             ``recommended_max_memory`` on MPS).
     """
 
-    allocated_gb: float = 0.0
-    reserved_gb: float = 0.0
-    peak_gb: float = 0.0
-    free_gb: float = 0.0
-    total_gb: float = 0.0
+    allocated_gb: float | None = None
+    reserved_gb: float | None = None
+    peak_gb: float | None = None
+    free_gb: float | None = None
+    total_gb: float | None = None
     exact_peak: bool = False
     exact_reserved: bool = False
     known_free: bool = False
     known_total: bool = False
 
     @property
-    def utilization(self) -> float:
-        """Memory utilization as fraction (0.0-1.0)."""
-        if self.total_gb > 0:
+    def utilization(self) -> float | None:
+        """Memory utilization as a fraction, or ``None`` when unavailable."""
+        if self.total_gb is not None and self.total_gb > 0 and self.peak_gb is not None:
             return self.peak_gb / self.total_gb
-        return 0.0
+        return None
 
-    def to_dict(self, prefix: str = "memory/") -> dict[str, float | bool]:
+    def to_dict(self, prefix: str = "memory/") -> dict[str, float | bool | None]:
         """Convert to dict for logging.
 
         Args:
@@ -95,97 +99,77 @@ class MemoryStats:
         Returns:
             Dict with keys like "memory/allocated_gb", "memory/peak_gb", etc.
         """
-        return {
-            f"{prefix}allocated_gb": self.allocated_gb,
-            f"{prefix}reserved_gb": self.reserved_gb,
-            f"{prefix}peak_gb": self.peak_gb,
-            f"{prefix}free_gb": self.free_gb,
-            f"{prefix}total_gb": self.total_gb,
-            f"{prefix}utilization": self.utilization,
-            f"{prefix}peak_exact": self.exact_peak,
-            f"{prefix}reserved_exact": self.exact_reserved,
-            f"{prefix}free_known": self.known_free,
-            f"{prefix}total_known": self.known_total,
-        }
+        return _drop_none(
+            {
+                f"{prefix}allocated_gb": self.allocated_gb,
+                f"{prefix}reserved_gb": self.reserved_gb,
+                f"{prefix}peak_gb": self.peak_gb,
+                f"{prefix}free_gb": self.free_gb,
+                f"{prefix}total_gb": self.total_gb,
+                f"{prefix}utilization": self.utilization,
+                f"{prefix}peak_exact": self.exact_peak,
+                f"{prefix}reserved_exact": self.exact_reserved,
+                f"{prefix}free_known": self.known_free,
+                f"{prefix}total_known": self.known_total,
+            }
+        )
 
     def __str__(self) -> str:
+        def display(value: float | None) -> str:
+            return "unknown" if value is None else f"{value:.2f}GB"
+
+        utilization = self.utilization
+        used = "unknown" if utilization is None else f"{utilization:.1%}"
         return (
-            f"Memory: alloc={self.allocated_gb:.2f}GB, "
-            f"peak={self.peak_gb:.2f}GB, "
-            f"free={self.free_gb:.2f}GB "
-            f"({self.utilization:.1%} used)"
+            f"Memory: alloc={display(self.allocated_gb)}, "
+            f"peak={display(self.peak_gb)}, "
+            f"free={display(self.free_gb)} ({used} used)"
         )
 
 
-def get_memory_stats(device: torch.device | str) -> MemoryStats:
+def get_memory_stats(device: object) -> MemoryStats:
     """Get current GPU memory statistics.
 
     Args:
         device: PyTorch device (cuda, mps, or cpu)
 
     Returns:
-        MemoryStats with current memory usage. All zeros for CPU.
+        MemoryStats with current memory usage. Unavailable fields are ``None``.
 
     Example:
         >>> stats = get_memory_stats("cuda")
         >>> print(f"Peak memory: {stats.peak_gb:.2f} GB")
     """
-    if isinstance(device, str):
-        device = torch.device(device)
+    observed = runtime.memory_stats(device)
+    gib = float(1024**3)
 
-    if device.type == "cuda":
-        allocated = torch.cuda.memory_allocated(device) / (1024**3)
-        reserved = torch.cuda.memory_reserved(device) / (1024**3)
-        peak = torch.cuda.max_memory_allocated(device) / (1024**3)
-        total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
-        free = total - reserved
-        return MemoryStats(
-            allocated_gb=allocated,
-            reserved_gb=reserved,
-            peak_gb=peak,
-            free_gb=free,
-            total_gb=total,
-            exact_peak=True,
-            exact_reserved=True,
-            known_free=True,
-            known_total=True,
-        )
-    elif device.type == "mps":
-        # MPS exposes no allocated-peak counter, but the driver's reserved
-        # bytes are a monotonic high-water mark: the caching allocator grows
-        # them to meet peak demand and doesn't shrink on free (verified
-        # empirically).  So reserved doubles as an upper-bound 'peak' that
-        # *captures transients*, unlike the current allocation which misses any
-        # tensor freed before the read.  recommended_max_memory() is the
-        # working-set budget (total).  All three APIs ship in torch >= 2.9.
-        allocated = torch.mps.current_allocated_memory() / (1024**3)
-        reserved = torch.mps.driver_allocated_memory() / (1024**3)
-        total = torch.mps.recommended_max_memory() / (1024**3)
-        return MemoryStats(
-            allocated_gb=allocated,
-            reserved_gb=reserved,
-            # The driver reserved high-water is a precise, transient-capturing
-            # measurement (exact_peak=True) — it differs from CUDA's peak only
-            # in *quantity* (reserved high-water vs allocated peak), not in
-            # precision.  It equals reserved_gb and upper-bounds allocated peak.
-            peak_gb=reserved,
-            free_gb=max(total - reserved, 0.0),
-            total_gb=total,
-            exact_peak=True,
-            exact_reserved=True,
-            known_free=True,
-            known_total=True,
-        )
-    else:
-        return MemoryStats(
-            exact_peak=False,
-            exact_reserved=False,
-            known_free=False,
-            known_total=False,
-        )
+    def as_gb(value: int | None) -> float | None:
+        return None if value is None else value / gib
+
+    reserved_bytes = (
+        observed.active_bytes + observed.cached_bytes
+        if observed.active_bytes is not None and observed.cached_bytes is not None
+        else None
+    )
+    free_bytes = (
+        max(observed.capacity_bytes - reserved_bytes, 0)
+        if observed.capacity_bytes is not None and reserved_bytes is not None
+        else None
+    )
+    return MemoryStats(
+        allocated_gb=as_gb(observed.active_bytes),
+        reserved_gb=as_gb(reserved_bytes),
+        peak_gb=as_gb(observed.peak_active_bytes),
+        free_gb=as_gb(free_bytes),
+        total_gb=as_gb(observed.capacity_bytes),
+        exact_peak=observed.peak_active_bytes is not None,
+        exact_reserved=reserved_bytes is not None,
+        known_free=free_bytes is not None,
+        known_total=observed.capacity_bytes is not None,
+    )
 
 
-def reset_peak_memory(device: torch.device | str) -> None:
+def reset_peak_memory(device: object) -> None:
     """Reset the peak-memory high-water mark for accurate per-phase tracking.
 
     - **CUDA**: resets the exact peak-allocated counter (cheap).
@@ -206,18 +190,10 @@ def reset_peak_memory(device: torch.device | str) -> None:
         >>> stats = get_memory_stats(device)
         >>> print(f"Step peak: {stats.peak_gb:.2f} GB")
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
-    elif device.type == "mps":
-        # No peak counter to zero; drop cached blocks so the driver high-water
-        # re-baselines to the live working set (see get_memory_stats/MPS).
-        torch.mps.empty_cache()
+    runtime.reset_peak_memory(device)
 
 
-def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
+def print_memory(device: object, label: str = "") -> MemoryStats:
     """Print memory stats with optional label. Returns stats for further use.
 
     Args:
@@ -237,27 +213,18 @@ def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
     return stats
 
 
-def empty_cache(device: torch.device | str) -> None:
+def empty_cache(device: object) -> None:
     """Clear GPU cache to free reserved memory.
 
     Args:
         device: PyTorch device
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-    elif device.type == "mps":
-        torch.mps.empty_cache()
+    runtime.clear_memory_cache(device)
 
 
-def _sync_device(device: torch.device) -> None:
+def _sync_device(device: object) -> None:
     """Synchronize device for accurate timing."""
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    elif device.type == "mps" and torch.backends.mps.is_available():
-        torch.mps.synchronize()
+    runtime.synchronize(device)
 
 
 @dataclass(frozen=True)
@@ -281,13 +248,13 @@ class StepPerf:
 
     step_time_sec: float = 0.0
     samples_per_second: float = 0.0
-    memory_peak_gb: float = 0.0
-    memory_allocated_gb: float = 0.0
-    memory_reserved_gb: float = 0.0
+    memory_peak_gb: float | None = None
+    memory_allocated_gb: float | None = None
+    memory_reserved_gb: float | None = None
     batch_size: int = 0
     marks: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
         """Convert to flat dict for logging.
 
         Returns bare keys by default — caller adds the prefix to control
@@ -299,7 +266,7 @@ class StepPerf:
         Returns:
             Dict with performance metrics.
         """
-        d: dict[str, float] = {
+        d: dict[str, float | None] = {
             f"{prefix}step_time_sec": self.step_time_sec,
             f"{prefix}samples_per_second": self.samples_per_second,
             f"{prefix}memory_peak_gb": self.memory_peak_gb,
@@ -308,7 +275,7 @@ class StepPerf:
         }
         for name, elapsed in self.marks.items():
             d[f"{prefix}{name}_sec"] = elapsed
-        return d
+        return _drop_none(d)
 
 
 class _StepPerfBuilder:
@@ -318,7 +285,7 @@ class _StepPerfBuilder:
     immutable :class:`StepPerf` when the context exits.
     """
 
-    def __init__(self, device: torch.device, batch_size: int) -> None:
+    def __init__(self, device: Any, batch_size: int) -> None:
         self._device = device
         self._batch_size = batch_size
         self._marks: dict[str, float] = {}
@@ -373,7 +340,7 @@ class _StepPerfBuilder:
 
 @contextmanager
 def step_perf(
-    device: torch.device | str,
+    device: Any,
     *,
     batch_size: int = 0,
     track_memory: bool = True,
@@ -402,16 +369,28 @@ def step_perf(
         ...     sp.mark("update")
         >>> wandb.log(sp.perf.to_dict(prefix="train/"))
     """
-    if isinstance(device, str):
-        device = torch.device(device)
-
     builder = _StepPerfBuilder(device, batch_size)
 
+    # Fail with the documented error before probing capabilities. `device` is
+    # commonly a string here, and a string cannot identify a provider -- CPU
+    # and CUDA are not Torch-specific -- so an unselected context has to raise
+    # rather than guess. Ask first: a `supports()` probe answers a question
+    # about the *active* backend and has nothing to answer with none selected,
+    # which is how this entry point came to report a primitive-registration
+    # failure where `get_memory_stats` on the same context reports
+    # `BackendNotSelectedError`.
+    ensure_backend()
+
     # Reset the peak counter only on devices that expose a cheap one (CUDA).
-    # On MPS the reset is ``empty_cache`` (see reset_peak_memory), too costly to
-    # run every step — there peak_gb accumulates as the run's reserved
+    # On MPS the reset is ``empty_cache`` (see reset_peak_memory), too costly
+    # to run every step — there peak_gb accumulates as the run's reserved
     # high-water, and max_peak_memory_gb across steps gives the run peak.
-    if track_memory and device_capabilities(device).peak_memory_trackable:
+    if (
+        track_memory
+        and runtime.reset_peak_memory.supports()
+        and runtime.peak_memory_trackable.supports()
+        and runtime.peak_memory_trackable(device)
+    ):
         reset_peak_memory(device)
 
     _sync_device(device)
@@ -459,14 +438,14 @@ class PerfState:
         last_step: Most recent :class:`StepPerf` record.
     """
 
-    device: torch.device
+    device: Any
     num_steps: int = 0
     total_time: float = 0.0
     total_samples: int = 0
     num_steps_stable: int = 0
     total_time_stable: float = 0.0
     total_samples_stable: int = 0
-    max_peak_memory_gb: float = 0.0
+    max_peak_memory_gb: float | None = None
     last_step: StepPerf | None = None
 
     def add(self, perf: StepPerf) -> PerfState:
@@ -484,7 +463,12 @@ class PerfState:
         num_steps = self.num_steps + 1
         total_time = self.total_time + perf.step_time_sec
         total_samples = self.total_samples + perf.batch_size
-        max_peak = max(self.max_peak_memory_gb, perf.memory_peak_gb)
+        known_peaks = [
+            value
+            for value in (self.max_peak_memory_gb, perf.memory_peak_gb)
+            if value is not None
+        ]
+        max_peak = max(known_peaks) if known_peaks else None
 
         num_steps_stable = self.num_steps_stable
         total_time_stable = self.total_time_stable
@@ -534,7 +518,7 @@ class PerfState:
             return self.total_samples_stable / self.total_time_stable
         return self.avg_samples_per_second
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
         """Accumulated metrics as flat dict for logging.
 
         Args:
@@ -543,11 +527,38 @@ class PerfState:
         Returns:
             Dict with running averages and peak memory.
         """
-        return {
-            f"{prefix}avg_step_time_sec": self.avg_step_time_stable,
-            f"{prefix}avg_samples_per_second": self.avg_samples_per_second_stable,
-            f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
-        }
+        return _drop_none(
+            {
+                f"{prefix}avg_step_time_sec": self.avg_step_time_stable,
+                f"{prefix}avg_samples_per_second": self.avg_samples_per_second_stable,
+                f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
+            }
+        )
+
+
+def perf_state(device: Any) -> PerfState:
+    """Create an empty throughput accumulator for a run.
+
+    The counterpart of :func:`perf_tracker` for code that accumulates a
+    single stage by hand: thread the returned state through
+    :meth:`PerfState.add` after each step, the way every other Opaque
+    state object is threaded.
+
+    Args:
+        device: Device the run executes on, carried so
+            :func:`opaque.distributed.sync` can reduce the state across
+            ranks.
+
+    Returns:
+        A zeroed :class:`PerfState`.
+
+    Example:
+        >>> state = perf_state(device)
+        >>> with step_perf(device, batch_size=32) as perf:
+        ...     train_step(batch)
+        >>> state = state.add(perf.perf)
+    """
+    return PerfState(device=device)
 
 
 _STAGE_SHORTCUTS = frozenset({"train", "eval", "test"})
@@ -572,14 +583,14 @@ class PerfStage:
     def __init__(
         self,
         name: str,
-        device: torch.device,
+        device: Any,
         warmup_steps: int = 1,
     ) -> None:
         self.name = name
         self.num_steps: int = 0
         self.total_time: float = 0.0
         self.total_samples: int = 0
-        self.max_peak_memory_gb: float = 0.0
+        self.max_peak_memory_gb: float | None = None
         self.last: StepPerf | None = None
         self._device = device
         self._warmup_steps = warmup_steps
@@ -599,7 +610,12 @@ class PerfStage:
 
     def _absorb(self, perf: StepPerf) -> None:
         self.num_steps += 1
-        self.max_peak_memory_gb = max(self.max_peak_memory_gb, perf.memory_peak_gb)
+        known_peaks = [
+            value
+            for value in (self.max_peak_memory_gb, perf.memory_peak_gb)
+            if value is not None
+        ]
+        self.max_peak_memory_gb = max(known_peaks) if known_peaks else None
         self.last = perf
         if self.num_steps > self._warmup_steps:
             self.total_time += perf.step_time_sec
@@ -627,14 +643,16 @@ class PerfStage:
 
         return _ctx()
 
-    def to_dict(self, prefix: str = "") -> dict[str, float]:
-        return {
-            f"{prefix}num_steps": self.num_steps,
-            f"{prefix}total_time_sec": self.total_time,
-            f"{prefix}samples_per_second": self.samples_per_second,
-            f"{prefix}steps_per_second": self.steps_per_second,
-            f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
-        }
+    def to_dict(self, prefix: str = "") -> dict[str, float | None]:
+        return _drop_none(
+            {
+                f"{prefix}num_steps": self.num_steps,
+                f"{prefix}total_time_sec": self.total_time,
+                f"{prefix}samples_per_second": self.samples_per_second,
+                f"{prefix}steps_per_second": self.steps_per_second,
+                f"{prefix}max_peak_memory_gb": self.max_peak_memory_gb,
+            }
+        )
 
 
 class PerfTracker:
@@ -654,7 +672,7 @@ class PerfTracker:
         >>> wandb.log(tracker.train.last.to_dict("train/"))
     """
 
-    def __init__(self, device: torch.device, warmup_steps: int = 1) -> None:
+    def __init__(self, device: Any, warmup_steps: int = 1) -> None:
         object.__setattr__(self, "device", device)
         object.__setattr__(self, "_warmup_steps", warmup_steps)
         object.__setattr__(self, "_stages", {})
@@ -687,7 +705,7 @@ class PerfTracker:
 
 
 def perf_tracker(
-    device: torch.device | str,
+    device: Any,
     warmup_steps: int = 1,
 ) -> PerfTracker:
     """Create a multi-stage performance tracker.
@@ -706,8 +724,6 @@ def perf_tracker(
         ...     train_step(batch)
         >>> print(tracker.train.samples_per_second)
     """
-    if isinstance(device, str):
-        device = torch.device(device)
     return PerfTracker(device, warmup_steps)
 
 

@@ -11,16 +11,13 @@ Verifies the registry-based serialization pair behaves correctly:
 
 from __future__ import annotations
 
-import torch
-from torch.utils.data import TensorDataset
-
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 from opaque.serialization import from_state_dict, state_dict
 
 
 def _make_sampler(seed: int = 7, n_steps: int = 20) -> PoissonSampler:
-    dataset = TensorDataset(torch.arange(200).reshape(-1, 1))
+    dataset = list(range(200))
     return PoissonSampler(dataset, sample_rate=0.1, n_steps=n_steps, key=key(seed))
 
 
@@ -73,7 +70,7 @@ class TestPoissonStateDictRoundTrip:
         assert list(restored) == []
 
     def test_round_trip_preserves_truncated_batch_size(self):
-        dataset = TensorDataset(torch.arange(300).reshape(-1, 1))
+        dataset = list(range(300))
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.2,
@@ -123,7 +120,7 @@ class TestPoissonRejectsDatasetLengthMismatch:
 
     def test_mismatch_raises(self):
         sampler = PoissonSampler(
-            TensorDataset(torch.arange(200).reshape(-1, 1)),
+            list(range(200)),
             sample_rate=0.1,
             n_steps=5,
             key=key(7),
@@ -133,7 +130,7 @@ class TestPoissonRejectsDatasetLengthMismatch:
         # Template over a different-sized dataset — would silently
         # produce a different Poisson stream.
         template = PoissonSampler(
-            TensorDataset(torch.arange(150).reshape(-1, 1)),
+            list(range(150)),
             sample_rate=0.1,
             n_steps=5,
             key=key(0),

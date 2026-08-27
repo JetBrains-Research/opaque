@@ -6,8 +6,17 @@ This module provides explicit, immutable RNG state transitions inspired by JAX:
 - ``split(key, n)`` derives independent child keys
 - ``fold_in(key, data)`` domain-separates by deterministic metadata
 
-The engine is backend-agnostic and can be bridged to PyTorch via
-``generator_from_key`` when APIs require ``torch.Generator``.
+Integer and string folds occupy disjoint spaces, and that split is load-bearing:
+integers are the caller's (steps, ranks, indices, everything ``split`` returns)
+while a string tag roots a mechanism's own key space.  A mechanism that derives
+straight from ``fold_in(key, step)`` collides with every other mechanism handed
+the same key.  ``docs/reference/rng.md`` states the convention.
+
+Seeds are canonical unsigned 64-bit integers.  ``fold_in`` accepts only
+integers and strings; it preserves the existing derivation encoding for signed
+128-bit integers and supports larger integers without truncation.  Provider
+wheels may bridge keys to framework-native generator objects, but a key's
+derivation is independent of their global RNG state.
 """
 
 from __future__ import annotations
@@ -15,20 +24,27 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 
-import torch
-
-_MAX_TORCH_SEED = 2**63 - 1
+from opaque.api.engine.primitive import PrimitiveTier, primitive
 
 
 def _to_uint64(value: int) -> int:
     return value & ((1 << 64) - 1)
 
 
+def _int_to_bytes(value: int) -> bytes:
+    """Encode an integer while retaining the established 128-bit encoding."""
+    try:
+        return value.to_bytes(16, byteorder="little", signed=True)
+    except OverflowError:
+        num_bytes = max(17, (value.bit_length() + 8) // 8)
+        return value.to_bytes(num_bytes, byteorder="little", signed=True)
+
+
 def _stable_hash64(*parts: object) -> int:
     h = hashlib.blake2b(digest_size=8)
     for part in parts:
         if isinstance(part, int):
-            h.update(part.to_bytes(16, byteorder="little", signed=True))
+            h.update(_int_to_bytes(part))
         else:
             h.update(str(part).encode("utf-8"))
         h.update(b"|")
@@ -40,19 +56,22 @@ class RngKey:
     """Immutable RNG key.
 
     Attributes:
-        seed: Canonical seed value used as key material.
+        seed: Canonical unsigned 64-bit seed value used as key material.
         impl: Logical implementation identifier.
     """
 
     seed: int
     impl: str = "opaque_threefry_like"
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool):
+            raise TypeError(f"seed must be int, got {type(self.seed)}")
+        object.__setattr__(self, "seed", _to_uint64(self.seed))
+
 
 def key(seed: int) -> RngKey:
-    """Create a PRNG key from an integer seed."""
-    if not isinstance(seed, int) or isinstance(seed, bool):
-        raise TypeError(f"seed must be int, got {type(seed)}")
-    return RngKey(seed=_to_uint64(seed))
+    """Create a PRNG key from an integer seed normalized modulo ``2**64``."""
+    return RngKey(seed=seed)
 
 
 def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
@@ -127,10 +146,56 @@ def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
     return tuple(fold_in(rng_key, i) for i in range(num))
 
 
-def generator_from_key(rng_key: RngKey) -> torch.Generator:
-    """Create a deterministic ``torch.Generator`` from a key."""
-    seed = rng_key.seed % _MAX_TORCH_SEED
-    return torch.Generator().manual_seed(seed)
+@primitive(tier=PrimitiveTier.CORE)
+def normal(
+    rng_key: RngKey,
+    shape: tuple[int, ...] | list[int],
+    *,
+    dtype: object | None = None,
+    like: object | None = None,
+) -> object:
+    """Draw a standard normal sample determined solely by immutable ``rng_key``.
+
+    The key is input-only: repeated calls with the same key and arguments
+    return the same backend-native sample and do not mutate hidden generator
+    state.  ``like`` selects a backend's placement and default dtype.
+
+    That determinism is the whole contract, which makes deriving keys the
+    caller's obligation rather than a convenience:
+
+    - **Every distinct draw needs a distinct key.** Calling twice with the same
+      key replays the same values; it does not continue a stream.  Advance with
+      :func:`fold_in` (or :func:`split`) between draws.
+    - **Root your mechanism before you derive.** Fold a unique string tag in
+      once, then derive per-step and per-leaf keys beneath it, so a base key
+      shared with another mechanism still yields independent noise.  See
+      :func:`fold_in`.
+    - **One key, two shapes are not independent.** ``normal(k, (4,))`` and
+      ``normal(k, (8,))`` share a prefix rather than being separate samples.
+      Fold before changing shape.
+
+    ``dtype`` (or ``like``'s dtype) is the dtype of the returned sample, not a
+    licence to compute in it.  A provider draws at no less than ``float32``
+    internally and returns in the requested dtype, so the draw itself is not
+    coarsened — but arithmetic that follows it in a low-precision dtype is.
+    Mechanisms that add noise to a low-precision leaf upcast the whole
+    expression and downcast only the result; see
+    :doc:`/user-guide/precision`.
+
+    Args:
+        rng_key: Key determining the sample. Must differ for every draw.
+        shape: Shape of the sample; ``()`` draws a scalar.
+        dtype: Dtype of the returned sample. Defaults to ``like``'s dtype when
+            ``like`` is given, otherwise the provider's default float dtype.
+        like: Array whose device (and, absent ``dtype``, dtype) the sample
+            adopts.
+
+    Returns:
+        A backend-native array of shape ``shape`` holding standard normal
+        samples — mean 0, standard deviation 1. Scale and shift it yourself to
+        obtain other Gaussians.
+    """
+    raise NotImplementedError
 
 
-__all__ = ["RngKey", "fold_in", "generator_from_key", "key", "split"]
+__all__ = ["RngKey", "fold_in", "key", "normal", "split"]

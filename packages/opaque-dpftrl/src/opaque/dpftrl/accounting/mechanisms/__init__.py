@@ -5,5 +5,6 @@ mechanism for every MF strategy from :mod:`opaque.dpftrl.noise`.
 """
 
 from opaque.api.accounting.dpftrl.mechanisms import mf_gaussian
+from opaque.dpftrl.accounting.mechanisms import types
 
-__all__ = ["mf_gaussian"]
+__all__ = ["mf_gaussian", "types"]

@@ -1,6 +1,6 @@
 """``use_performance_kernels`` / ``performance_kernels_config`` integration.
 
-DPTrainer drives opaque-patches via two split umbrellas:
+DPTrainer drives the model patches via two split umbrellas:
 
 * ``use_compat_patches`` → ``compat`` (vmap-safety: ``eager_attention``,
   ``batchify``, vmap-safe masking / collator / checkpoint hooks).
@@ -17,8 +17,8 @@ it) opt out explicitly via ``performance_kernels_config={"kv_cache":
 False}``.
 
 ``performance_kernels_config`` is a flat ``dict[str, bool]`` forwarded
-as-is to ``opaque.patches.apply_model_patches`` kwargs — no key
-translation.  Supported keys mirror the opaque-patches surface:
+as-is to ``opaque.transformers.patches.apply_model_patches`` kwargs — no key
+translation.  Supported keys mirror the patch surface:
 ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
 ``fused_linear_cross_entropy``, ``kv_cache``, ``eager_attention``,
 ``batchify``.
@@ -29,11 +29,11 @@ from __future__ import annotations
 from typing import Any
 
 
-def apply_performance_kernels_via_opaque_patches(
+def apply_performance_kernels(
     model: Any,
     kernel_config: dict[str, Any] | None = None,
 ) -> None:
-    """Apply opaque-patches kernels with a flat opaque-shaped config.
+    """Apply the fused-kernel model patches with a flat opaque-shaped config.
 
     Mutates ``model`` in place.  When ``kernel_config`` is ``None`` every
     supported kernel for the model family is enabled (full performance
@@ -42,7 +42,7 @@ def apply_performance_kernels_via_opaque_patches(
     **DPTrainer** applies the same stack internally — callers rarely
     need this function directly.
     """
-    from opaque.patches import apply_model_patches
+    from opaque.transformers.patches import apply_model_patches
 
     apply_model_patches(
         model,
@@ -54,5 +54,5 @@ def apply_performance_kernels_via_opaque_patches(
 
 
 __all__ = [
-    "apply_performance_kernels_via_opaque_patches",
+    "apply_performance_kernels",
 ]

@@ -1,5 +1,6 @@
 """Tests for MF strategy factories and mf_gaussian_noise()."""
 
+import numpy as np
 import pytest
 import torch
 
@@ -286,7 +287,9 @@ class TestMfNoise:
         streaming = s.streaming_matrix(
             n_steps=n_steps, min_sep=1, max_participations=n_steps
         )
-        row_l2 = float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+        row_l2 = float(
+            np.sqrt(np.clip(streaming.row_norms_squared(n_steps), 0.0, None))[0]
+        )
         assert float(noised.noise_stddev) == pytest.approx(row_l2, rel=1e-9)
         assert "w" in noised.pytree
         assert noised.pytree["w"].shape == self.grad["w"].shape

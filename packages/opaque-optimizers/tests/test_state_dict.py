@@ -1,8 +1,8 @@
-"""Tests for :mod:`opaque.serialization` on optimizer chain state.
+"""Tests for :mod:`opaque.serialization` on optimizer state.
 
 Round-trip coverage for every optimizer + the schedule-free wrapper.
 The contract: after serialise → fresh init → deserialise, the next
-``update()`` call must produce *bit-identical* updates to the ones the
+``step()`` call must produce *bit-identical* updates to the ones the
 retained state would have produced.
 
 :func:`_assert_round_trip` enforces two properties for every test: the
@@ -13,21 +13,25 @@ depends on :func:`_grad_sequence` actually evolving state.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import pytest
 import torch
-
-torchopt = pytest.importorskip("torchopt")
 
 from opaque.optimizers import (
     adafactor,
     adagrad,
     adamw,
     ademamix,
+    apply_updates,
     lion,
     radam,
     rmsprop,
     schedule_free,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import (
     SecondMomentNoiseOutput,
@@ -93,7 +97,14 @@ def _rel_gap(a, b) -> float:
     return (num / den).item()
 
 
-def _round_trip(opt, params, seq, *, wrap=None):
+def _round_trip(
+    factory: Callable[..., tuple[Callable[..., tuple[Any, Any]], Any]],
+    params,
+    seq,
+    *,
+    wrap=None,
+    **factory_kwargs,
+):
     """Evolve state over ``seq[:-1]``, serialise, restore on a fresh init.
 
     Returns the next update from the evolved, restored, and freshly
@@ -101,16 +112,19 @@ def _round_trip(opt, params, seq, *, wrap=None):
     uses the third to confirm the comparison is informative.
     """
     wrap = wrap or (lambda g: g)
-    state = opt.init(params)
+    step, state = factory(params, **factory_kwargs)
     for step_grads in seq[:-1]:
-        _, state = opt.update(wrap(step_grads), state, params=params)
+        _, state = step(wrap(step_grads), state, params=params)
 
-    restored = from_state_dict(opt.init(params), state_dict(state))
+    # Fresh template — same shape, zeroed leaves.
+    _step2, template = factory(params, **factory_kwargs)
+    restored = from_state_dict(template, state_dict(state))
 
     final = wrap(seq[-1])
-    u_evolved, _ = opt.update(final, state, params=params)
-    u_restored, _ = opt.update(final, restored, params=params)
-    u_fresh, _ = opt.update(final, opt.init(params), params=params)
+    u_evolved, _ = step(final, state, params=params)
+    u_restored, _ = step(final, restored, params=params)
+    _step3, fresh = factory(params, **factory_kwargs)
+    u_fresh, _ = step(final, fresh, params=params)
     return u_evolved, u_restored, u_fresh
 
 
@@ -155,42 +169,58 @@ def _second_moment(sigma=0.1):
 class TestAdamW:
     def test_round_trip_vanilla(self, params, grad_seq):
         _assert_round_trip(
-            *_round_trip(adamw(lr=1e-3, weight_decay=0.01), params, grad_seq)
+            *_round_trip(adamw, params, grad_seq, lr=1e-3, weight_decay=0.01)
         )
 
     def test_round_trip_bc(self, params, grad_seq):
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_noised(0.5)))
+        _assert_round_trip(
+            *_round_trip(
+                adamw,
+                params,
+                grad_seq,
+                wrap=_noised(0.5),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
+        )
 
     def test_round_trip_second_moment(self, params, grad_seq):
-        opt = adamw(lr=1e-3)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_second_moment()))
+        _assert_round_trip(
+            *_round_trip(adamw, params, grad_seq, wrap=_second_moment(), lr=1e-3)
+        )
 
     def test_round_trip_l2_wd(self, params, grad_seq):
-        opt = adamw(lr=1e-3, weight_decay=0.5, decoupled_weight_decay=False)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq))
+        _assert_round_trip(
+            *_round_trip(
+                adamw,
+                params,
+                grad_seq,
+                lr=1e-3,
+                weight_decay=0.5,
+                decoupled_weight_decay=False,
+            )
+        )
 
     def test_round_trip_with_rms_clip(self, params, grad_seq):
-        opt = adamw(lr=1e-3, update_rms_clip=0.5)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq))
+        _assert_round_trip(
+            *_round_trip(adamw, params, grad_seq, lr=1e-3, update_rms_clip=0.5)
+        )
 
     def test_step_and_phi_preserved(self, params, grads):
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = adamw(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        # Adam state is at chain index 0 (decoupled WD).
-        assert restored[0].step == 7
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
     def test_per_group_phi_round_trip_nested(self):
         """Path-keyed φ survives state_dict when BC is enabled from init."""
@@ -218,30 +248,30 @@ class TestAdamW:
             },
             values={"g_a": 0.2, "g_b": 0.7},
         )
-        opt = adamw(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(nested_params)
-        assert isinstance(state[0].phi, dict)
-        assert set(state[0].phi) == {
+        step, state = adamw(nested_params, lr=1e-3, noise_bias_correction=True)
+        assert isinstance(state.phi, dict)
+        assert set(state.phi) == {
             ("layer1", "weight"),
             ("layer1", "bias"),
             ("layer2", "weight"),
         }
         for _ in range(3):
-            _, state = opt.update(
+            _, state = step(
                 noised(nested_grads, max_norm=1.0, noise_stddev=pg),
                 state,
                 params=nested_params,
             )
-        assert state[0].phi[("layer1", "weight")] != pytest.approx(0.0)
+        assert state.phi[("layer1", "weight")] != pytest.approx(0.0)
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(nested_params), sd)
-        assert restored[0].phi == state[0].phi
-        u_orig, _ = opt.update(
+        _s2, template = adamw(nested_params, lr=1e-3, noise_bias_correction=True)
+        restored = from_state_dict(template, sd)
+        assert restored.phi == state.phi
+        u_orig, _ = step(
             noised(nested_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=nested_params,
         )
-        u_rest, _ = opt.update(
+        u_rest, _ = step(
             noised(nested_grads, max_norm=1.0, noise_stddev=pg),
             restored,
             params=nested_params,
@@ -254,64 +284,72 @@ class TestAdamW:
         )
 
     def test_torch_save_load_round_trip(self, params, grad_seq, tmp_path):
-        opt = adamw(lr=1e-3, weight_decay=0.01)
-        state = opt.init(params)
+        step, state = adamw(params, lr=1e-3, weight_decay=0.01)
         for step_grads in grad_seq[:-1]:
-            _, state = opt.update(step_grads, state, params=params)
+            _, state = step(step_grads, state, params=params)
         sd = state_dict(state)
         path = tmp_path / "opt.pt"
         torch.save(sd, path)
         sd_loaded = torch.load(path, weights_only=False)
         assert set(sd_loaded.keys()) == set(sd.keys())
-        restored = from_state_dict(opt.init(params), sd_loaded)
+        _s2, template = adamw(params, lr=1e-3, weight_decay=0.01)
+        restored = from_state_dict(template, sd_loaded)
 
         final = grad_seq[-1]
-        u_orig, _ = opt.update(final, state, params=params)
-        u_rest, _ = opt.update(final, restored, params=params)
-        u_fresh, _ = opt.update(final, opt.init(params), params=params)
+        u_orig, _ = step(final, state, params=params)
+        u_rest, _ = step(final, restored, params=params)
+        _s3, fresh = adamw(params, lr=1e-3, weight_decay=0.01)
+        u_fresh, _ = step(final, fresh, params=params)
         _assert_round_trip(u_orig, u_rest, u_fresh)
 
 
 class TestLion:
     def test_round_trip(self, params, grad_seq):
         _assert_round_trip(
-            *_round_trip(lion(lr=1e-4, weight_decay=0.0), params, grad_seq)
+            *_round_trip(lion, params, grad_seq, lr=1e-4, weight_decay=0.0)
         )
 
     def test_step_preserved(self, params, grads):
-        opt = lion(lr=1e-4)
-        state = opt.init(params)
+        step, state = lion(params, lr=1e-4)
         for _ in range(4):
-            _, state = opt.update(grads, state, params=params)
+            _, state = step(grads, state, params=params)
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(params), sd)
-        assert restored[0].step == 4
+        _s2, template = lion(params, lr=1e-4)
+        restored = from_state_dict(template, sd)
+        assert restored.step == 4
 
 
 class TestAdEMAMix:
     def test_round_trip_vanilla(self, params, grad_seq):
-        _assert_round_trip(*_round_trip(ademamix(lr=1e-3), params, grad_seq))
+        _assert_round_trip(*_round_trip(ademamix, params, grad_seq, lr=1e-3))
 
     def test_round_trip_bc(self, params, grad_seq):
-        opt = ademamix(lr=1e-3, noise_bias_correction=True)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_noised(0.4)))
+        _assert_round_trip(
+            *_round_trip(
+                ademamix,
+                params,
+                grad_seq,
+                wrap=_noised(0.4),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
+        )
 
     def test_phi_preserved(self, params, grads):
-        opt = ademamix(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = ademamix(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.4),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = ademamix(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 7
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestAdafactor:
@@ -330,15 +368,15 @@ class TestAdafactor:
         return _grad_sequence(matrix_params, 4)
 
     def test_round_trip(self, matrix_params, matrix_grad_seq):
-        opt = adafactor(lr=1e-3, beta1=0.9)
-        _assert_round_trip(*_round_trip(opt, matrix_params, matrix_grad_seq))
+        _assert_round_trip(
+            *_round_trip(adafactor, matrix_params, matrix_grad_seq, lr=1e-3, beta1=0.9)
+        )
 
     def test_factored_v_serialised(self, matrix_params, matrix_grads):
         """v_row / v_col tensors round-trip; the optree treespec is
         skipped from the saved dict (re-derived from the template)."""
-        opt = adafactor(lr=1e-3)
-        state = opt.init(matrix_params)
-        _, state = opt.update(matrix_grads, state, params=matrix_params)
+        step, state = adafactor(matrix_params, lr=1e-3)
+        _, state = step(matrix_grads, state, params=matrix_params)
         sd = state_dict(state)
         # treespec is opaque; should not appear in the saved dict.
         assert not any("treespec" in k for k in sd)
@@ -356,24 +394,28 @@ class TestAdafactor:
             },
             values={"attn": 0.2, "mlp": 0.8},
         )
-        opt = adafactor(lr=1e-3, beta1=0.9, noise_bias_correction=True)
-        state = opt.init(matrix_params)
+        step, state = adafactor(
+            matrix_params, lr=1e-3, beta1=0.9, noise_bias_correction=True
+        )
         for _ in range(3):
-            _, state = opt.update(
+            _, state = step(
                 noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
                 state,
                 params=matrix_params,
             )
         sd = state_dict(state)
-        restored = from_state_dict(opt.init(matrix_params), sd)
-        assert restored[0].phi_flat == state[0].phi_flat
-        assert restored[0].paths == state[0].paths
-        u_orig, _ = opt.update(
+        _s2, template = adafactor(
+            matrix_params, lr=1e-3, beta1=0.9, noise_bias_correction=True
+        )
+        restored = from_state_dict(template, sd)
+        assert restored.phi_flat == state.phi_flat
+        assert restored.paths == state.paths
+        u_orig, _ = step(
             noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             state,
             params=matrix_params,
         )
-        u_rest, _ = opt.update(
+        u_rest, _ = step(
             noised(matrix_grads, max_norm=1.0, noise_stddev=pg),
             restored,
             params=matrix_params,
@@ -384,93 +426,113 @@ class TestAdafactor:
 
 class TestRAdam:
     def test_round_trip_vanilla(self, params, grad_seq):
-        _assert_round_trip(*_round_trip(radam(lr=1e-3), params, grad_seq))
+        _assert_round_trip(*_round_trip(radam, params, grad_seq, lr=1e-3))
 
     def test_round_trip_bc(self, params, grad_seq):
-        opt = radam(lr=1e-3, noise_bias_correction=True)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_noised(0.3)))
+        _assert_round_trip(
+            *_round_trip(
+                radam,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-3,
+                noise_bias_correction=True,
+            )
+        )
 
     def test_phi_preserved(self, params, grads):
-        opt = radam(lr=1e-3, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = radam(params, lr=1e-3, noise_bias_correction=True)
         for _ in range(7):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = radam(params, lr=1e-3, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        # RAdam default uses L2 WD (decoupled_weight_decay=False), so the
-        # chain is (wd, moment, clip, neg_lr) — moment state is at index 1.
-        assert restored[1].step == 7
-        assert isinstance(state[1].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[1].phi.values())
-        assert restored[1].phi == pytest.approx(state[1].phi)
+        assert restored.step == 7
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestRMSprop:
     def test_round_trip_vanilla(self, params, grad_seq):
-        _assert_round_trip(*_round_trip(rmsprop(lr=1e-2), params, grad_seq))
+        _assert_round_trip(*_round_trip(rmsprop, params, grad_seq, lr=1e-2))
 
     def test_round_trip_bc(self, params, grad_seq):
-        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_noised(0.3)))
+        _assert_round_trip(
+            *_round_trip(
+                rmsprop,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-2,
+                noise_bias_correction=True,
+            )
+        )
 
     def test_phi_preserved(self, params, grads):
-        opt = rmsprop(lr=1e-2, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = rmsprop(params, lr=1e-2, noise_bias_correction=True)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = rmsprop(params, lr=1e-2, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 5
-        assert isinstance(state[0].phi, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi.values())
-        assert restored[0].phi == pytest.approx(state[0].phi)
+        assert restored.step == 5
+        assert isinstance(state.phi, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi.values())
+        assert restored.phi == pytest.approx(state.phi)
 
 
 class TestAdagrad:
     def test_round_trip_vanilla(self, params, grad_seq):
-        _assert_round_trip(*_round_trip(adagrad(lr=1e-2), params, grad_seq))
+        _assert_round_trip(*_round_trip(adagrad, params, grad_seq, lr=1e-2))
 
     def test_round_trip_bc(self, params, grad_seq):
-        opt = adagrad(lr=1e-2, noise_bias_correction=True)
-        _assert_round_trip(*_round_trip(opt, params, grad_seq, wrap=_noised(0.3)))
+        _assert_round_trip(
+            *_round_trip(
+                adagrad,
+                params,
+                grad_seq,
+                wrap=_noised(0.3),
+                lr=1e-2,
+                noise_bias_correction=True,
+            )
+        )
 
     def test_phi_acc_preserved(self, params, grads):
-        opt = adagrad(lr=1e-2, noise_bias_correction=True)
-        state = opt.init(params)
+        step, state = adagrad(params, lr=1e-2, noise_bias_correction=True)
         for _ in range(5):
-            _, state = opt.update(
+            _, state = step(
                 noised(grads, max_norm=1.0, noise_stddev=0.3),
                 state,
                 params=params,
             )
         sd = state_dict(state)
-        template = opt.init(params)
+        _s2, template = adagrad(params, lr=1e-2, noise_bias_correction=True)
         restored = from_state_dict(template, sd)
-        assert restored[0].step == 5
-        assert isinstance(state[0].phi_acc, dict)
-        assert all(v != pytest.approx(0.0) for v in state[0].phi_acc.values())
-        assert restored[0].phi_acc == pytest.approx(state[0].phi_acc)
+        assert restored.step == 5
+        assert isinstance(state.phi_acc, dict)
+        assert all(v != pytest.approx(0.0) for v in state.phi_acc.values())
+        assert restored.phi_acc == pytest.approx(state.phi_acc)
 
 
 class TestScheduleFree:
     def test_round_trip_over_adamw(self, params, grad_seq):
-        opt = schedule_free(adamw(lr=1e-3))
-        state = opt.init(params)
+        step, state = schedule_free(params, adamw, lr=1e-3)
+        p = params
         for step_grads in grad_seq[:-1]:
-            delta, state = opt.update(step_grads, state, params=params)
-            params = torchopt.apply_updates(params, delta)
-
-        restored = from_state_dict(opt.init(params), state_dict(state))
+            delta, state = step(step_grads, state, params=p)
+            p = apply_updates(p, delta)
+        sd = state_dict(state)
+        _s2, template = schedule_free(p, adamw, lr=1e-3)
+        restored = from_state_dict(template, sd)
         # x and z must come back bit-for-bit, not merely close.
         for k in state.x:
             torch.testing.assert_close(restored.x[k], state.x[k], rtol=0, atol=0)
@@ -479,9 +541,10 @@ class TestScheduleFree:
         assert restored.beta == state.beta
 
         final = grad_seq[-1]
-        u_evolved, _ = opt.update(final, state, params=params)
-        u_restored, _ = opt.update(final, restored, params=params)
-        u_fresh, _ = opt.update(final, opt.init(params), params=params)
+        u_evolved, _ = step(final, state, params=p)
+        u_restored, _ = step(final, restored, params=p)
+        _s3, fresh = schedule_free(p, adamw, lr=1e-3)
+        u_fresh, _ = step(final, fresh, params=p)
         _assert_round_trip(u_evolved, u_restored, u_fresh)
 
 
@@ -489,22 +552,22 @@ class TestRobustness:
     def test_missing_path_keeps_template(self, params, grads):
         """Forward-compat: a saved dict missing a path keeps the
         template's value at that path."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Drop the step entry from the saved dict.
-        sd_partial = {k: v for k, v in sd.items() if not k.endswith(".step")}
-        template = opt.init(params)
+        sd_partial = {
+            k: v for k, v in sd.items() if k != "step" and not k.endswith(".step")
+        }
+        _s2, template = adamw(params, lr=1e-3)
         restored = from_state_dict(template, sd_partial)
         # ``step`` falls back to template's 0.
-        assert restored[0].step == 0
+        assert restored.step == 0
 
     def test_tensor_dtype_device_preserved(self, params, grads):
         """Saved tensors load back at the template's dtype/device."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Mutate the saved tensors to bf16 to simulate a saved
         # checkpoint at a different precision than the template.
@@ -512,21 +575,20 @@ class TestRobustness:
             k: (v.to(torch.bfloat16) if isinstance(v, torch.Tensor) else v)
             for k, v in sd.items()
         }
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3)
         restored = from_state_dict(template, sd_bf16)
         # Restored tensors should match the template's dtype.
-        assert restored[0].mu["weight"].dtype == template[0].mu["weight"].dtype
+        assert restored.mu["weight"].dtype == template.mu["weight"].dtype
 
     def test_wrong_type_raises(self, params, grads):
         """A path that should hold a tensor but holds a non-tensor in
         the dict raises ``TypeError`` rather than silently corrupting."""
-        opt = adamw(lr=1e-3)
-        state = opt.init(params)
-        _, state = opt.update(grads, state, params=params)
+        step, state = adamw(params, lr=1e-3)
+        _, state = step(grads, state, params=params)
         sd = state_dict(state)
         # Find a tensor key and replace its value with a string.
         tensor_key = next(k for k, v in sd.items() if isinstance(v, torch.Tensor))
         sd[tensor_key] = "not a tensor"
-        template = opt.init(params)
+        _s2, template = adamw(params, lr=1e-3)
         with pytest.raises(TypeError, match=r"torch.Tensor"):
             from_state_dict(template, sd)

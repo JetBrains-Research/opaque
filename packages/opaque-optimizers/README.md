@@ -1,9 +1,11 @@
 # opaque-optimizers
 
-Functional torchopt-based optimizers with a DP-aware update surface.
+Backend-neutral functional optimizers with a DP-aware update surface.
 
-The implementation lives at `opaque.api.optimizers.*`; the user-facing façade
-lives at `opaque.optimizers`. The wheel ships:
+The implementation lives at `opaque.api.optimizers.*`; the user-facing
+façade lives at `opaque.optimizers`. Factories accept parameter pytrees and
+return `(step, state)`; use `opaque.optimizers.apply_updates` for signed
+updates. The wheel ships:
 
 - `opaque.api.optimizers.{adamw,adam,sgd,radam,adafactor,adagrad,
   adadelta,rmsprop,lion,ademamix,schedule_free}` — optimizer factories.

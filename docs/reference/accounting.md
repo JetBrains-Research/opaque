@@ -471,7 +471,7 @@ proc = dpftrl_acc.poisson(
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
 Uses Monte Carlo PLD accounting. `inner` must be
-`mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
+`mf_gaussian(nm, band_mf_strategy(...))` — strategy coefficients and band width
 are read from `inner.strategy`. `p0` is the per-example participation rate per
 iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
 Control the confidence construction per query with `mc_resolution`,
@@ -505,8 +505,7 @@ transform — deterministic, no sampling. For correlated-noise strategies
 ```python
 # With DP-λCGD
 strategy = lambda_cgd_strategy(
-    lambda_=0.9, n_steps=total_steps,
-    min_sep=steps_per_epoch, max_participations=num_epochs,
+    lambda_=0.9,
 )
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),

@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import math
 from dataclasses import fields, is_dataclass
 from typing import TYPE_CHECKING, Any
 
-import torch
-import torch.distributed as dist
-
+from opaque.api.engine import ops, runtime
+from opaque.api.engine.backend import BackendNotSelectedError, ensure_backend
 from opaque.api.engine.pytree import (
     tree_flatten,
     tree_leaves,
@@ -30,10 +30,24 @@ from opaque.api.engine.pytree import (
     tree_unflatten,
 )
 
-from .collectives import all_reduce_, get_world_size, is_distributed
+from .collectives import is_distributed
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+
+
+def _ensure_backend_if_any(value: Any) -> None:
+    """Activate a backend for ``value`` when one is identifiable.
+
+    Distributed helpers are documented as safe outside a process group;
+    payloads with no backend-bearing arrays (or calls before any provider
+    activation) fall through to the single-process early-outs instead of
+    raising.
+    """
+    try:
+        ensure_backend(value)
+    except BackendNotSelectedError:
+        return
 
 
 def assert_scalar_equal(
@@ -42,33 +56,24 @@ def assert_scalar_equal(
     name: str,
     atol: float = 1e-8,
     rtol: float = 1e-5,
-    compute_dtype: torch.dtype | None = None,
-    device: torch.device | None = None,
 ) -> None:
     """Raise if ``value`` is not equal across ranks within tolerance.
 
-    Integer values are compared exactly through the integer reduction path.
-    Floating-point values use ``compute_dtype`` (float32 by default).
+    Values are gathered as Python objects rather than reduced through a
+    fixed-width tensor dtype, so integers compare exactly across the full
+    unsigned 64-bit range (RNG-key seeds routinely exceed ``2**63 - 1``)
+    and floats keep Python float64 precision.
     """
     if not is_distributed():
         return
 
-    min_value = reduce_scalar(
-        value, op="min", compute_dtype=compute_dtype, device=device
-    )
-    max_value = reduce_scalar(
-        value, op="max", compute_dtype=compute_dtype, device=device
-    )
+    values = runtime.distributed_all_gather_object(value)
+    min_value = min(values)
+    max_value = max(values)
     if isinstance(value, int) and not isinstance(value, bool):
         equal = min_value == max_value
     else:
-        dtype = compute_dtype or torch.float32
-        equal = torch.isclose(
-            torch.tensor(min_value, dtype=dtype),
-            torch.tensor(max_value, dtype=dtype),
-            atol=atol,
-            rtol=rtol,
-        )
+        equal = math.isclose(min_value, max_value, abs_tol=atol, rel_tol=rtol)
     if not equal:
         raise RuntimeError(
             f"{name} mismatch across ranks: min={min_value}, max={max_value}."
@@ -80,8 +85,7 @@ def assert_string_equal(value: str | None, *, name: str) -> None:
     if not is_distributed():
         return
 
-    values: list[str | None] = [None] * get_world_size()
-    dist.all_gather_object(values, value)
+    values = runtime.distributed_all_gather_object(value)
     if any(other != values[0] for other in values[1:]):
         raise RuntimeError(f"{name} mismatch across ranks.")
 
@@ -98,6 +102,7 @@ def assert_pytree_equal(
     Uses a cheap scalar (sum of elements) rather than transferring the whole
     tree. Useful for debugging divergence of params/grads.
     """
+    _ensure_backend_if_any(pytree)
     if not is_distributed():
         return
 
@@ -105,8 +110,12 @@ def assert_pytree_equal(
 
     def _accumulate(leaf: Any) -> Any:
         nonlocal total
-        if isinstance(leaf, torch.Tensor):
-            total += leaf.detach().double().sum().item()
+        if ops.is_array(leaf):
+            # Accumulate in the provider's widest accumulation dtype so
+            # cross-rank divergence below the leaf dtype's resolution is
+            # still fingerprinted (float64 on torch CPU/CUDA).
+            widened = ops.astype(ops.detach(leaf), ops.accumulator_dtype(leaf))
+            total += float(ops.scalar_item(ops.sum(widened)))
         return leaf
 
     tree_map(_accumulate, pytree)
@@ -115,117 +124,93 @@ def assert_pytree_equal(
         name=name,
         atol=atol,
         rtol=rtol,
-        compute_dtype=torch.float64,
     )
 
 
 def reduce_scalar(
     value: float | int,
     op: str = "mean",
-    device: torch.device | None = None,
-    *,
-    compute_dtype: torch.dtype | None = None,
 ) -> float | int:
-    """All-reduce a Python scalar.
+    """Return a Python scalar reduced across workers.
 
-    For NCCL backends, a CUDA device is required. If ``device`` is None a
-    sensible one is inferred (current CUDA device for NCCL, else CPU).
+    Safe to call outside a process group (and before any backend is
+    active): non-distributed contexts return ``value`` unchanged, except
+    that an integer ``mean`` is returned as a float so the result type
+    does not depend on whether a process group is live.
 
-    Integer values use an exact ``torch.int64`` collective. Floating-point
-    values use ``compute_dtype`` when supplied and float32 otherwise.
-    Integer means are computed from an exact integer sum and returned as a
-    Python float.
+    The reduction happens at full Python-scalar precision — a ``float`` is a
+    float64 on the wire and an ``int`` stays exact — so results do not depend
+    on a framework-global default dtype.  That matters here because the
+    scalars crossing this function are DP-relevant: clipping rates, batch
+    sizes and norms that feed a sensitivity bound.
+
+    Args:
+        value: A Python ``float`` or ``int``. ``bool`` is rejected.
+        op: ``sum``, ``mean``, ``max``, ``min``, or ``product``.
+
+    Returns:
+        The reduced scalar. ``int`` inputs return ``int`` except under
+        ``mean``, which always returns ``float``.
+
+    Raises:
+        TypeError: If ``value`` is not a float or int, or the provider
+            returns a non-scalar.
     """
     if isinstance(value, bool) or not isinstance(value, (float, int)):
         raise TypeError(f"value must be a float or int, got {type(value)}")
-    if compute_dtype is not None and not torch.is_floating_point(
-        torch.empty((), dtype=compute_dtype)
-    ):
-        raise TypeError(
-            f"compute_dtype must be a real floating-point dtype, got {compute_dtype!r}."
-        )
-    if isinstance(value, int) and compute_dtype is not None:
-        raise TypeError("compute_dtype is only supported for floating-point values.")
     if not is_distributed():
         if isinstance(value, int) and op == "mean":
             return float(value)
         return value
-
-    if device is None:
-        backend = (
-            dist.get_backend()
-            if dist.is_available() and dist.is_initialized()
-            else None
+    reduced = runtime.distributed_all_reduce(value, op=runtime.ReduceOp(op))
+    if isinstance(reduced, bool) or not isinstance(reduced, (float, int)):
+        raise TypeError(
+            "The provider returned a non-scalar result for scalar reduction: "
+            f"{type(reduced).__name__}."
         )
-        if backend == "nccl":
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    "Distributed backend is 'nccl' but CUDA is not available; "
-                    "provide an explicit `device` to `reduce_scalar` or initialize "
-                    "with a CUDA-capable process."
-                )
-            device = torch.device(f"cuda:{torch.cuda.current_device()}")
-        else:
-            device = torch.device("cpu")
-
-    is_integer = isinstance(value, int)
-    tensor = torch.tensor(
-        value,
-        dtype=torch.int64 if is_integer else compute_dtype or torch.float32,
-        device=device,
-    )
-    if is_integer and op == "mean":
-        all_reduce_(tensor, op="sum")
-        return tensor.item() / get_world_size()
-    all_reduce_(tensor, op=op)
-    return tensor.item()
-
-
-def _cpu_payload(value: Any) -> Any:
-    return tree_map(
-        lambda leaf: leaf.detach().cpu() if isinstance(leaf, torch.Tensor) else leaf,
-        value,
-    )
+    return reduced
 
 
 def _validate_gathered_tensor_column(
-    tensors: list[torch.Tensor],
+    tensors: list[Any],
     *,
     ranks: list[int],
     leaf_index: int,
     dim: int,
 ) -> int:
     reference = tensors[0]
-    if reference.ndim == 0:
+    reference_shape = ops.shape(reference)
+    if not reference_shape:
         raise ValueError(
             "Distributed tensor gathering cannot concatenate scalar tensor "
             f"leaf {leaf_index}; provide at least one dimension."
         )
-    normalized_dim = dim if dim >= 0 else reference.ndim + dim
-    if normalized_dim < 0 or normalized_dim >= reference.ndim:
+    normalized_dim = dim if dim >= 0 else len(reference_shape) + dim
+    if normalized_dim < 0 or normalized_dim >= len(reference_shape):
         raise ValueError(
             f"Gather dimension {dim} is out of range for tensor leaf {leaf_index} "
-            f"with {reference.ndim} dimensions."
+            f"with {len(reference_shape)} dimensions."
         )
 
     reference_rank = ranks[0]
     for rank, tensor in zip(ranks[1:], tensors[1:], strict=True):
-        if tensor.dtype != reference.dtype:
+        tensor_shape = ops.shape(tensor)
+        if ops.dtype(tensor) != ops.dtype(reference):
             raise TypeError(
                 "Distributed tensor gathering requires matching dtypes; "
-                f"leaf {leaf_index} has {reference.dtype} on rank "
+                f"leaf {leaf_index} has {ops.dtype(reference)} on rank "
                 f"{reference_rank} and "
-                f"{tensor.dtype} on rank {rank}."
+                f"{ops.dtype(tensor)} on rank {rank}."
             )
-        if tensor.ndim != reference.ndim:
+        if len(tensor_shape) != len(reference_shape):
             raise ValueError(
                 "Distributed tensor gathering requires matching tensor ranks; "
-                f"leaf {leaf_index} has {reference.ndim} dimensions on rank "
+                f"leaf {leaf_index} has {len(reference_shape)} dimensions on rank "
                 f"{reference_rank} "
-                f"and {tensor.ndim} on rank {rank}."
+                f"and {len(tensor_shape)} on rank {rank}."
             )
         for axis, (expected, actual) in enumerate(
-            zip(reference.shape, tensor.shape, strict=True)
+            zip(reference_shape, tensor_shape, strict=True)
         ):
             if axis != normalized_dim and actual != expected:
                 raise ValueError(
@@ -240,7 +225,6 @@ def _validate_gathered_tensor_column(
 def _merge_gathered_pytrees(
     values: list[Any],
     *,
-    device: torch.device,
     dim: int,
 ) -> Any:
     """Merge rank-ordered optional tensor pytrees after one object collective."""
@@ -263,9 +247,9 @@ def _merge_gathered_pytrees(
     if not leaf_lists[0]:
         return first
 
-    merged_leaves: list[torch.Tensor] = []
+    merged_leaves: list[Any] = []
     for leaf_index, column in enumerate(zip(*leaf_lists, strict=True)):
-        if not all(isinstance(leaf, torch.Tensor) for leaf in column):
+        if not all(ops.is_array(leaf) for leaf in column):
             raise TypeError(
                 "Distributed tensor gathering supports tensor leaves only; "
                 f"leaf {leaf_index} has types "
@@ -279,22 +263,20 @@ def _merge_gathered_pytrees(
             dim=dim,
         )
         merged_leaves.append(
-            torch.cat(
-                [tensor.to(device) for tensor in tensors],
-                dim=normalized_dim,
+            ops.concatenate(
+                tensors,
+                axis=normalized_dim,
             )
         )
     return tree_unflatten(treedef, merged_leaves)
 
 
-def gather_tensors(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
+def gather_tensors(tensor: Any, dim: int = 0) -> Any:
     """Gather compatible variable-size tensors and concatenate along ``dim``."""
+    _ensure_backend_if_any(tensor)
     if not is_distributed():
         return tensor
-
-    gathered: list[Any] = [None] * get_world_size()
-    dist.all_gather_object(gathered, tensor.detach().cpu())
-    return _merge_gathered_pytrees(gathered, device=tensor.device, dim=dim)
+    return runtime.distributed_all_gather(tensor, axis=dim)
 
 
 def gather_pytree(pytree: Any, dim: int = 0) -> Any:
@@ -304,14 +286,91 @@ def gather_pytree(pytree: Any, dim: int = 0) -> Any:
     tensor leaves. Rank-local ``None`` payloads contribute no rows while still
     participating in the collective.
     """
+    _ensure_backend_if_any(pytree)
     if not is_distributed():
         return pytree
 
     local_leaves = tree_leaves(pytree)
-    device = local_leaves[0].device if local_leaves else torch.device("cpu")
-    gathered: list[Any] = [None] * get_world_size()
-    dist.all_gather_object(gathered, _cpu_payload(pytree))
-    return _merge_gathered_pytrees(gathered, device=device, dim=dim)
+    local_schema = None
+    if pytree is not None:
+        leaf_schemas = []
+        for leaf in local_leaves:
+            if not ops.is_array(leaf):
+                leaf_schemas.append(type(leaf))
+                continue
+            shape = ops.shape(leaf)
+            if not shape:
+                if dim not in (0, -1):
+                    raise IndexError("dim is out of bounds for a scalar array")
+                leaf_schemas.append((ops.dtype(leaf), 1, ()))
+                continue
+            if not -len(shape) <= dim < len(shape):
+                raise IndexError(
+                    f"dim {dim} is out of bounds for an array with "
+                    f"{len(shape)} dimensions"
+                )
+            normalized_dim = dim % len(shape)
+            leaf_schemas.append(
+                (
+                    ops.dtype(leaf),
+                    len(shape),
+                    tuple(
+                        size
+                        for axis, size in enumerate(shape)
+                        if axis != normalized_dim
+                    ),
+                )
+            )
+        local_schema = (
+            tree_structure(pytree),
+            tuple(leaf_schemas),
+        )
+    schemas = runtime.distributed_all_gather_object(local_schema)
+    present_schemas = [schema for schema in schemas if schema is not None]
+    if not present_schemas:
+        return None
+    if any(schema != present_schemas[0] for schema in present_schemas[1:]):
+        raise TypeError(
+            "Distributed tensor gathering requires matching pytree structures "
+            "and compatible leaves across non-empty ranks."
+        )
+    if len(present_schemas) != len(schemas):
+        # Object collectives pickle payloads verbatim, and device arrays
+        # unpickle onto the *sender's* device. Stage leaves on the host
+        # before the gather and re-home the merged result locally.
+        staged = pytree
+        if pytree is not None:
+            staged = tree_map(
+                lambda leaf: (
+                    ops.transfer(ops.detach(leaf), "cpu")
+                    if ops.is_array(leaf)
+                    else leaf
+                ),
+                pytree,
+            )
+        gathered = runtime.distributed_all_gather_object(staged)
+        merged = _merge_gathered_pytrees(gathered, dim=dim)
+        if merged is None:
+            return None
+        reference = next((leaf for leaf in local_leaves if ops.is_array(leaf)), None)
+        device = getattr(reference, "device", None)
+        if device is None:
+            return merged
+        return tree_map(
+            lambda leaf: ops.transfer(leaf, device) if ops.is_array(leaf) else leaf,
+            merged,
+        )
+
+    treedef = tree_structure(pytree)
+    gathered_leaves = []
+    for leaf_index, leaf in enumerate(local_leaves):
+        if not ops.is_array(leaf):
+            raise TypeError(
+                "Distributed tensor gathering supports array leaves only; "
+                f"leaf {leaf_index} has type {type(leaf).__name__}."
+            )
+        gathered_leaves.append(runtime.distributed_all_gather(leaf, axis=dim))
+    return tree_unflatten(treedef, gathered_leaves)
 
 
 _VALID_FIELD_OPS = frozenset(
@@ -331,8 +390,8 @@ _VALID_FIELD_OPS = frozenset(
 def _validate_field_op(field_name: str, field_op: Any) -> None:
     """Reject an unusable ``field_ops`` entry before any collective is issued.
 
-    Callables are checked against the one supported signature,
-    ``fn(value, device)``.  Introspection deliberately does not follow
+    Callables are checked against the one supported signature, ``fn(value)``.
+    Introspection deliberately does not follow
     ``functools.wraps``, so the arity checked is the one that will actually be
     called; a callable that exposes no signature at all is left to the call.
     """
@@ -353,31 +412,28 @@ def _validate_field_op(field_name: str, field_op: Any) -> None:
     except (TypeError, ValueError):
         return
     try:
-        signature.bind(None, None)
+        signature.bind(None)
     except TypeError as error:
         raise ValueError(
-            f"field_ops[{field_name!r}] must be callable as fn(value, device), "
+            f"field_ops[{field_name!r}] must be callable as fn(value), "
             f"but its signature is {signature}: {error}."
         ) from error
 
 
 def sync_object(
     state: Any,
-    field_ops: Mapping[
-        str, str | Callable[[Any, torch.device | None], float | int | None]
-    ],
-    device: torch.device | None = None,
+    field_ops: Mapping[str, str | Callable[[Any], float | int | None]],
 ) -> Any:
     """All-reduce scalar fields of a dataclass, returning a new instance.
 
     ``field_ops`` maps field name to a reduction op string
     (``"sum" | "mean" | "max" | "min" | "product" | "assert_equal" |
     "assert_optional_equal" | "local"``) or to a callable
-    ``fn(value, device) -> float | int | None``.
+    ``fn(value) -> float | int | None``.
     Every dataclass field must be present in this mapping. ``"local"`` marks a
     field whose rank-local value is intentionally carried through unchanged.
 
-    **Callable semantics:** a callable must accept exactly ``fn(value, device)``
+    **Callable semantics:** a callable must accept exactly ``fn(value)``
     and is invoked once, on the raw field value (any type).  A real ``float`` or
     ``int`` return (not ``bool``) replaces the field in the returned dataclass;
     a ``None`` return makes the callable **assertion only** — no field update.
@@ -410,6 +466,7 @@ def sync_object(
     for field in dataclass_fields:
         _validate_field_op(field.name, field_ops[field.name])
 
+    _ensure_backend_if_any(state)
     if not is_distributed():
         return state
 
@@ -421,7 +478,7 @@ def sync_object(
         if field_op == "local":
             continue
         if callable(field_op):
-            result = field_op(value, device)
+            result = field_op(value)
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
             if isinstance(value, bool):
@@ -443,13 +500,12 @@ def sync_object(
                 name=f"{type(state).__name__}.{field_name}",
                 atol=0.0,
                 rtol=0.0,
-                compute_dtype=torch.float64 if isinstance(value, float) else None,
             )
             continue
         if field_op == "assert_optional_equal":
             is_present = int(value is not None)
-            present_min = reduce_scalar(is_present, op="min", device=device)
-            present_max = reduce_scalar(is_present, op="max", device=device)
+            present_min = reduce_scalar(is_present, op="min")
+            present_max = reduce_scalar(is_present, op="max")
             if present_min != present_max:
                 raise RuntimeError(
                     f"{type(state).__name__}.{field_name} presence mismatch across ranks."
@@ -466,7 +522,6 @@ def sync_object(
                 name=f"{type(state).__name__}.{field_name}",
                 atol=0.0,
                 rtol=0.0,
-                compute_dtype=torch.float64 if isinstance(value, float) else None,
             )
             continue
         if not isinstance(value, (float, int)) or isinstance(value, bool):
@@ -474,7 +529,7 @@ def sync_object(
                 f"field_ops[{field_name!r}]={field_op!r} requires a float or int, "
                 f"got {type(value).__name__}."
             )
-        synced = reduce_scalar(value, op=field_op, device=device)
+        synced = reduce_scalar(value, op=field_op)
         if isinstance(value, int):
             synced = int(synced)
         updates[field_name] = synced

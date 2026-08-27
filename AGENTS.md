@@ -11,7 +11,8 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 - **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
 
 Opaque provides composable primitives for differentially private model
-training in PyTorch. Built on `torch.func` (vmap, grad), every component
+training in PyTorch. A backend-neutral engine dispatches array work to
+the `opaque-torch` provider (built on `torch.func`), and every component
 uses explicit state — no hooks, no subclassing, no hidden mutation.
 
 ## Packages (post-split layout)
@@ -27,14 +28,16 @@ ships an `__init__.py`.
 | --- | --- | --- | --- |
 | `opaque` | — | umbrella pin for the default bundle | sub-wheels |
 | `opaque-base` | `opaque.api.base.serialization`; façade `opaque.serialization` | Pure-Python serialization registry + dispatcher (the seam for `state_dict` / `from_state_dict`); no torch / numpy / optree | stdlib only |
-| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling,precision}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling`, `opaque.precision` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, mixed-precision loss scaling, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
-| `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) | `opaque-engine`, torchopt |
+| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling,precision,backend,primitive,ops,autodiff,execution,runtime,sampling,optimizers}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.backend`, `opaque.ops`, `opaque.autodiff`, `opaque.execution`, `opaque.primitive`, `opaque.sampling`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling`, `opaque.precision`, `opaque.serialization` | Torch-free substrate: dispatched primitives + backend registry (context-local sticky selection), pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, backend-neutral optimizer rules, schedules + warmup, distributed helpers, profiler, mixed-precision loss scaling, structural state-dict for ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, numpy, optree |
+| `opaque-torch` | `opaque.api.torch.*`; façades `opaque.torch.{functional,random,distributed,device,checkpoint,transforms}` | PyTorch provider: Torch implementations of every engine primitive, `make_functional`, torch RNG bridges, in-place DDP collectives, vmap-safe checkpoint compat, device capabilities; hosts the torch-executing test suites | `opaque-engine`, torch |
+| `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Facade over the engine's backend-neutral optimizer factories (DP-aware AdamW-BC and friends); torchopt remains a dev-group parity oracle only | `opaque-engine` |
 | `opaque-accounting` | `opaque.api.accounting.core` (+ Rust ext); façade `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.api.accounting.core.opaque_accounting`, aliased as `_native`); torch-free | `opaque-base` |
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-dpftrl` | `opaque.api.dpftrl.*`, `opaque.api.accounting.dpftrl.*`; façade `opaque.dpftrl` | MF mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, Poisson + b-min-sep + balls-in-bins + sequential samplers, DP-FTRL-specific accounting factories | `opaque-engine`, `opaque-accounting` |
 | `opaque-auditing` | `opaque.api.auditing.*`; façade `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) | `opaque-engine`, `opaque-accounting` |
-| `opaque-patches` | `opaque.api.patches.*`; façade `opaque.patches` | Torch checkpoint patches + HF Transformers compat (vmap-safe attention, KV cache) + fused Triton kernels (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine` |
-| `opaque-transformers` | `opaque.api.transformers.*`; façade `opaque.transformers` | HF trainer + integration | `opaque-engine`, `opaque-patches`, transformers, peft |
+| `opaque-kernels` | `opaque.api.kernels`; façade `opaque.kernels` | Fused Triton kernels with PyTorch fallbacks (SwiGLU, GeGLU, RoPE, fused CE, LoRA) | `opaque-engine`, `opaque-torch` |
+| `opaque-transformers` | `opaque.api.transformers.*`; façades `opaque.transformers`, `opaque.transformers.patches` | HF trainer + integration, plus the HF Transformers and PEFT compatibility patches (vmap-safe attention, KV cache, LoRA fusion) | `opaque-engine`, `opaque-torch`, `opaque-kernels`, transformers, peft |
+| `opaque-alignment` | `opaque.api.alignment.*`; façade `opaque.alignment` | DP-safe preference learning (DPO, SFT); self-contained fused-preference kernel, so no `opaque-kernels` dependency | `opaque-engine`, `opaque-torch`, `opaque-base`, transformers, datasets, peft |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
 pulls only `opaque-engine`, `opaque-accounting`, and their transitive
@@ -112,11 +115,11 @@ Per-package tests:
 ```bash
 uv run pytest packages/opaque-base/tests/
 uv run pytest packages/opaque-engine/tests/
-uv run pytest packages/opaque-optimizers/tests/
+uv run pytest packages/opaque-torch/tests/     # Torch-executing suites, incl. optimizers
 uv run pytest packages/opaque-dpsgd/tests/
 uv run pytest packages/opaque-dpftrl/tests/
 uv run pytest packages/opaque-auditing/tests/
-uv run pytest packages/opaque-patches/tests/
+uv run pytest packages/opaque-kernels/tests/
 uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live under dpsgd/dpftrl
 ```
@@ -125,15 +128,17 @@ uv run pytest packages/opaque-accounting/tests/  # smoke; PLD factory tests live
 
 ```bash
 pip install opaque-base                  # serialization registry only (stdlib-only, torch-free)
-pip install opaque-engine                # torch substrate (types, pytree, clipping, distributed, ...)
-pip install opaque-optimizers            # torchopt-based functional optimizers
+pip install opaque-engine                # torch-free substrate (types, pytree, clipping, distributed, ...)
+pip install opaque-torch                 # PyTorch provider for the engine's primitives
+pip install opaque-optimizers            # backend-neutral functional optimizers
 pip install opaque-accounting            # PLD accounting (torch-free standalone)
 pip install opaque-dpsgd                 # DP-SGD mechanisms
 pip install opaque-dpsgd[optimizers]     # DP-SGD + opaque-optimizers
 pip install opaque-dpftrl                # MF (DP-FTRL) mechanisms
-pip install opaque-patches               # PyTorch checkpoint + HF compat patches
-pip install opaque-patches[transformers] # + HF Transformers + PEFT extras
-pip install opaque-transformers          # HF trainer integration
+pip install opaque-auditing              # empirical privacy auditing
+pip install opaque-kernels               # fused Triton kernels + PyTorch fallbacks
+pip install opaque-transformers          # HF trainer integration + HF/PEFT patches
+pip install opaque-alignment             # DP-safe preference learning (DPO, SFT)
 pip install "opaque[all]"                # everything
 ```
 
@@ -142,7 +147,7 @@ pip install "opaque[all]"                # everything
 The root `pyproject.toml` keeps three dev-facing dependency groups:
 
 - `dev` — pytest, pytest-cov, ruff, scipy (statistical tests).
-- `examples` — torchopt, datasets, wandb, and everything `examples/` scripts need.
+- `examples` — datasets, wandb, and everything `examples/` scripts need.
 - `docs` — mkdocs stack.
 
 Everything else lives in the relevant package's
@@ -150,35 +155,40 @@ Everything else lives in the relevant package's
 
 | Extra | Pulls in |
 | --- | --- |
-| `opaque-patches[transformers]` | `transformers`, `peft` |
-| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (torchopt-based functional optimizers) |
+| `opaque-dpsgd[optimizers]` | `opaque-optimizers` (backend-neutral functional optimizers) |
 | `opaque-dpftrl[optimizers]` | `opaque-optimizers` |
 | `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
 | `opaque[all]` | everything |
 
 ## Patching model (on-import)
 
-`opaque.patches` exposes explicit entry points. `opaque.transformers`
+Patches are applied explicitly, never on import. `opaque.transformers`
 does not patch Hugging Face globals at import time; `DPTrainer`
 applies runtime and model patches during construction, and non-trainer
-flows should call `opaque.patches.apply_runtime_patches()` once plus
-`opaque.patches.apply_model_patches(model)` for each model instance.
+flows should call `opaque.transformers.patches.apply_runtime_patches()` once
+plus `opaque.transformers.patches.apply_model_patches(model)` for each model
+instance. That first call forwards its flags to
+`opaque.torch.apply_runtime_patches()` before applying the Hugging Face layer —
+fixing Hugging Face requires fixing torch — so one call covers both.
 There is no top-level `opaque.patch_all()`.
 
-Patch submodules:
+Patch surfaces, by owner:
 
-- `opaque.patches.torch` — gradient-checkpointing for `torch.utils.checkpoint`.
-- `opaque.patches.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
-  fused CE, LoRA).
-- `opaque.patches.transformers` — HF Transformers model patches
-  (vmap-safe attention, KV cache, per-model component replacements).
-- `opaque.patches.peft` — PEFT/LoRA patches (vmap-safe linear, MLP, QKV).
+- `opaque.torch.apply_runtime_patches` / `opaque.torch.checkpoint` — the
+  Torch-core shims, including gradient-checkpointing for
+  `torch.utils.checkpoint`.
+- `opaque.transformers.patches` — the orchestrator entry points, plus
+  `.families` (HF model patches: vmap-safe attention, KV cache, per-model
+  component replacements, custom-family registry), `.peft` (vmap-safe linear,
+  MLP, QKV), `.runtime`, and `.types`.
+- `opaque.kernels` — fused Triton kernels (SwiGLU, GeGLU, RoPE,
+  fused CE, LoRA), with PyTorch fallbacks.
 - `opaque.transformers` — compatibility-only runtime (Poisson-collator
   compat, trainer integration).
 
 ## Key architectural notes
 
-### Kernel pattern (`opaque.performance.kernels`)
+### Kernel pattern (`opaque.kernels`)
 
 Triton kernels use a two-level `autograd.Function` for `vmap(grad())`
 support: `Opaque_Foo` main entry + `_FooBackward` with their own `vmap()`
@@ -216,6 +226,47 @@ clipping rule whose threshold drifts across steps, so it is the only one
 that violates the constant per-step sensitivity assumption MF privacy
 proofs require, and it correctly stays in `opaque.dpsgd.clipping`.
 
+A patch lives with the library it rebinds. Patches that rebind torch belong to
+`opaque-torch`; patches that rebind `transformers` or `peft` belong to
+`opaque-transformers`; the fused kernels a patch installs are `opaque-kernels`.
+Each layer applies its own and forwards down, so a caller makes one call:
+`opaque.transformers.patches.apply_runtime_patches` passes its flags to
+`opaque.torch.apply_runtime_patches` before applying the Hugging Face layer.
+Add a new patch to the wheel that owns the module it mutates, and give it an
+idempotency guard on the patched object rather than a module-level flag —
+callers apply the runtime patches more than once.
+
+### Backend selection
+
+Mechanism code does not select or interrogate a backend. Dispatch does:
+calling any primitive infers the provider from the arrays in its arguments
+and activates it. So `ensure_backend(...)` before an `opaque.ops` call is
+redundant, and `ensure_backend(...)` to obtain a backend to pass to
+`.supports(...)` is a capability probe that belongs in the primitive.
+
+An operation with a correct answer that needs no provider — an annotation
+nothing can record, a predicate about the active backend whose answer with
+none active is simply "no" — is declared `@primitive(neutral=True)`, and
+its own body is that answer. Callers then just call it. `supports()` and
+`resolve()` keep reporting registered implementations only, so neutrality
+never hides a
+real capability gap: leave it off wherever a missing implementation means
+the caller asked for something the backend cannot do, so the call raises
+`UnsupportedPrimitiveError` instead of returning a plausible substitute.
+
+`ensure_backend` stays appropriate at an entry point that must run under a
+provider yet takes no array to infer one from — a no-argument primitive
+such as `ops.float32()`, or a distributed query. Name the array type
+(`ensure_backend(torch.Tensor)`) rather than allocating a dummy array.
+
+Dispatch does not re-check the arguments of a call once a backend is
+selected. That is deliberate: the walk is proportional to the pytree and
+would run on every primitive to re-derive an answer fixed for the run, and
+`torch.compile` cannot trace it. A value from another provider therefore
+reaches that provider's implementation and fails there. Where a site must
+genuinely check values against each other, call `ensure_backend(a, b)`
+there — it names the offending backends.
+
 ### Test design
 
 Do not add tests whose only purpose is pinning prose in documentation,
@@ -239,7 +290,8 @@ Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
 unit/doc-test set; main and release additionally run the ignored library tests.
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
+`tests/_support/opaque_test_support.py`, which the root `conftest.py` puts on
+`sys.path` as the top-level module `opaque_test_support`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
@@ -265,8 +317,8 @@ CI lane marker expressions:
   `-m "cuda and not slow"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
-  Failures in the Minimum dependencies lane are currently advisory, while
-  setup and resolution failures remain blocking.
+  Every selected pytest failure blocks its lane, dependency boundaries
+  included, alongside setup and resolution failures.
 
 ### Supported HF model families
 
@@ -285,9 +337,9 @@ Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
 - CUDA/MPS tests auto-skip when the accelerator is unavailable (marker-
   driven). HuggingFace compat tests also skip via `pytest.importorskip()`
   when `transformers` / `peft` aren't installed.
-- CI guardrail: a single shell step in `.github/workflows/ci.yml`
-  enforces that no sub-package ships `src/opaque/__init__.py` (the
-  PEP 420 invariant).
+- PEP 420 guardrail: `tests/integration/backend/test_pep420_namespaces.py`
+  enforces that no sub-package ships an `__init__.py` at the shared
+  `opaque` / `opaque.api` / `opaque.api.accounting` namespace roots.
 
 ## Training examples
 

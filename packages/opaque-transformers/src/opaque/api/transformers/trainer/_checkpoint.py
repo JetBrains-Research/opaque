@@ -33,16 +33,24 @@ log = logging.getLogger(__name__)
 TRAINING_ARGS_NAME = "training_args.bin"
 DP_OPTIMIZER_NAME = "dp_optimizer.pt"
 DP_STATE_NAME = "dp_state.pt"
+DP_SAMPLER_STATE_NAME = "dp_sampler_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_STATE_BUNDLE_VERSION = 4  # namespaced mechanism RNG roots change noise streams
+# Version 5: backend-neutral engine split — keyed per-leaf RNG streams
+# (gaussian_noise / MF noise), factory-API optimizer states, streamed MF
+# inner state, and namespaced mechanism RNG roots. Versions 3 and 4 carry
+# pre-split streams and state layouts, so a resumed run would draw
+# different noise; failing loudly here beats doing that silently, and
+# there is deliberately no migration path during development.
+DP_STATE_BUNDLE_VERSION = 5
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
 __all__ = [
     "DP_ACCOUNTANT_NAME",
     "DP_OPTIMIZER_NAME",
+    "DP_SAMPLER_STATE_NAME",
     "DP_STATE_BUNDLE_VERSION",
     "DP_STATE_NAME",
     "PREFIX_CHECKPOINT_DIR",
@@ -58,6 +66,7 @@ __all__ = [
     "parse_checkpoint_step",
     "restore_rng_state",
     "rng_state_path",
+    "sampler_state_path",
     "rotate_checkpoints",
     "save_dp_runtime_state",
     "snapshot_rng_state",
@@ -69,6 +78,13 @@ def rng_state_path(ckpt_dir: str, *, rank: int = 0, world_size: int = 1) -> str:
     if world_size <= 1:
         return str(Path(ckpt_dir) / RNG_STATE_NAME)
     return str(Path(ckpt_dir) / f"rng_state_{int(rank)}.pth")
+
+
+def sampler_state_path(ckpt_dir: str, *, rank: int = 0, world_size: int = 1) -> str:
+    """Resolve the sampler-state path for ``rank`` in a distributed run."""
+    if world_size <= 1:
+        return str(Path(ckpt_dir) / DP_SAMPLER_STATE_NAME)
+    return str(Path(ckpt_dir) / f"dp_sampler_state_{int(rank)}.pt")
 
 
 # ---------------------------------------------------------------------------

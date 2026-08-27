@@ -371,7 +371,7 @@ sets any of these:
 | `accelerator_config` | Accelerate-driven config is not used. |
 | `neftune_noise_alpha` | NEFTune would interact with the privacy accountant. |
 | `max_grad_norm` (non-default) | Pre-step global norm clipping has no opaque analogue; use `clipping_norm` for per-example DP clipping instead. |
-| `optim="paged_adamw_*"`, `*_8bit`, `*_apex_fused` | Quantized / Apex-fused optimizers are not in opaque-engine's torchopt path. |
+| `optim="paged_adamw_*"`, `*_8bit`, `*_apex_fused` | Quantized / Apex-fused optimizers are not available on the backend-neutral path. |
 | `use_liger_kernel`, `liger_kernel_config` | Liger fused kernels are not on the DP-SGD path. |
 | TRL `packing=True`, `padding_free=True`, `eval_packing=True` | Sequence packing / unpadded forwards break the fixed per-example batch shape DP-SGD's vmap requires. |
 | TRL `shuffle_dataset=True` | Opaque's Poisson sampler controls ordering. |

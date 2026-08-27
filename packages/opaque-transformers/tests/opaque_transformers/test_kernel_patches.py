@@ -24,7 +24,7 @@ from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 from opaque.api.engine.clipping import clipped_grad  # noqa: E402
-from opaque.functional import make_functional  # noqa: E402
+from opaque.torch.functional import make_functional  # noqa: E402
 
 RTOL = 1e-4
 ATOL = 1e-4
@@ -206,7 +206,7 @@ class TestEndToEnd:
     @pytest.mark.slow
     def test_qwen2_lora_clipped_grad(self, device):
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
@@ -262,7 +262,7 @@ class TestConfiguration:
 
     def test_kernel_patched_flag(self):
         """is_kernel_patched() should return True after import opaque."""
-        from opaque.patches import is_runtime_patched
+        from opaque.transformers.patches import is_runtime_patched
 
         assert isinstance(is_runtime_patched(), bool)
 
@@ -277,7 +277,7 @@ class TestBatchifyForward:
 
     def test_batchify_1d_input_ids(self):
         """1D input_ids should be unsqueezed, output logits squeezed back."""
-        from opaque.api.patches.transformers.components.batchify import (
+        from opaque.api.transformers.patches.components.batchify import (
             _batchify_forward,
         )
 
@@ -305,7 +305,7 @@ class TestBatchifyForward:
 
     def test_batchify_2d_input_ids_is_noop(self):
         """2D input_ids (already batched) should pass through unchanged."""
-        from opaque.api.patches.transformers.components.batchify import (
+        from opaque.api.transformers.patches.components.batchify import (
             _batchify_forward,
         )
 
@@ -327,7 +327,7 @@ class TestBatchifyForward:
 
     def test_batchify_positional_input_ids(self):
         """input_ids passed positionally should also be batchified."""
-        from opaque.api.patches.transformers.components.batchify import (
+        from opaque.api.transformers.patches.components.batchify import (
             _batchify_forward,
         )
 
@@ -401,7 +401,7 @@ class TestCPUFallback:
 
     def test_cross_entropy_loss_cpu(self):
         """Patched CE loss should produce correct output on CPU."""
-        from opaque.api.patches.transformers.components.cross_entropy import (
+        from opaque.api.transformers.patches.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 
@@ -484,7 +484,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_matches_pytorch(self, device):
         """Patched ForCausalLMLoss should match F.cross_entropy reference."""
-        from opaque.api.patches.transformers.components.cross_entropy import (
+        from opaque.api.transformers.patches.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 
@@ -511,7 +511,7 @@ class TestCrossEntropyPatches:
 
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
-        from opaque.api.patches.transformers.components.cross_entropy import (
+        from opaque.api.transformers.patches.components.cross_entropy import (
             _opaque_causal_lm_loss,
         )
 
@@ -537,7 +537,7 @@ class TestCrossEntropyPatches:
             LlamaForCausalLM,
         )
 
-        from opaque.api.patches.transformers.components.cross_entropy import (
+        from opaque.api.transformers.patches.components.cross_entropy import (
             _opaque_causal_lm_loss,
             apply_causal_lm_loss_function_patch,
         )
@@ -663,7 +663,7 @@ class TestLoRAPatches:
         LoRA ``Linear`` modules (not the class). It only activates on
         CUDA + Triton, so the assertion is guarded accordingly."""
         pytest.importorskip("peft")
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         base = torch.nn.Linear(64, 64, bias=False).to(device)
         lora = _make_lora_linear(base, "default", rank=8, alpha=16, dropout=0.0).to(
@@ -790,7 +790,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_forward(self, device):
         """Fused LoRA MLP forward should match PyTorch matmul reference."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -826,7 +826,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_backward(self, device):
         """Fused LoRA MLP should produce correct gradients."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+        from opaque.api.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -910,7 +910,9 @@ class TestFusedLoRAMLP:
     @requires_hf_auth
     def test_patch_lora_model_manual(self, device):
         """patch_lora_model() should work for manually loaded PEFT models."""
-        from opaque.patches.peft import apply_peft_model_patches as patch_lora_model
+        from opaque.transformers.patches.peft import (
+            apply_peft_model_patches as patch_lora_model,
+        )
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
@@ -954,7 +956,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_forward(self, device):
         """Fused LoRA QKV forward should match PyTorch matmul reference."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -1005,7 +1007,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_backward(self, device):
         """Fused LoRA QKV should produce correct gradients."""
-        from opaque.api.patches.kernels.lora import Opaque_LoRA_QKV
+        from opaque.api.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -1153,7 +1155,9 @@ class TestFusedLoRAQKV:
     @requires_hf_auth
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
-        from opaque.patches.peft import apply_peft_model_patches as patch_lora_model
+        from opaque.transformers.patches.peft import (
+            apply_peft_model_patches as patch_lora_model,
+        )
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2

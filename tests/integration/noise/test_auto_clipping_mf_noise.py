@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 import torch
 
@@ -124,7 +125,7 @@ def _row_l2_at_zero(strategy, *, n_steps, min_sep=1, max_participations=None) ->
     streaming = strategy.streaming_matrix(
         n_steps=n_steps, min_sep=min_sep, max_participations=max_participations
     )
-    return float(streaming.row_norms_squared(n_steps).clamp_min(0.0).sqrt()[0])
+    return float(np.sqrt(np.clip(streaming.row_norms_squared(n_steps), 0.0, None))[0])
 
 
 _ALL_STRATEGY_NAMES = ("identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd")

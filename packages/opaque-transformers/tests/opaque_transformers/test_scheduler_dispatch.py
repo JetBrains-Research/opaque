@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 import torch
 
-torchopt = pytest.importorskip("torchopt", reason="torchopt required")
 transformers = pytest.importorskip(
     "transformers", reason="transformers required for HF cross-check"
 )

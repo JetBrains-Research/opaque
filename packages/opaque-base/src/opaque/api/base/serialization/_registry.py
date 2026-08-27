@@ -2,7 +2,9 @@
 
 Each opaque wheel registers handlers for the concrete types it owns:
 
-- ``opaque-engine`` registers ``torch.Tensor``, ``numpy.ndarray``.
+- ``opaque-engine`` registers ``numpy.ndarray`` and inert tree
+  structures; providers register their native array types when they
+  activate (``opaque-torch`` covers ``torch.Tensor``).
 - ``opaque-accounting`` registers ``Accountant`` and every
   ``DpProcess`` subclass via ``__init_subclass__``.
 - ``opaque-dpsgd`` / ``opaque-dpftrl`` register stack-specific state
@@ -81,8 +83,36 @@ def resolve_serializer(
     return None
 
 
+_FALLBACK_RESOLVERS: list[Any] = []
+
+
+def register_fallback_resolver(resolver: Any) -> None:
+    """Register a last-chance hook consulted for unrecognised leaf values.
+
+    A resolver receives the offending value and returns ``True`` when it
+    made progress (typically by importing a provider whose activation
+    registers native-type serializers), prompting one dispatch retry.
+    Engine/provider wheels install these so ``state_dict`` /
+    ``from_state_dict`` work on native arrays before any explicit backend
+    activation.
+    """
+    if not callable(resolver):
+        raise TypeError("resolver must be callable")
+    _FALLBACK_RESOLVERS.append(resolver)
+
+
+def run_fallback_resolvers(value: Any) -> bool:
+    """Invoke registered fallback resolvers; True when any made progress."""
+    progressed = False
+    for resolver in _FALLBACK_RESOLVERS:
+        if resolver(value):
+            progressed = True
+    return progressed
+
+
 __all__ = [
     "lookup_serializer",
+    "register_fallback_resolver",
     "register_serializer",
     "register_template_restored",
     "resolve_serializer",

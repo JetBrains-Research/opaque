@@ -763,7 +763,8 @@ def _to_device(trainer, batch):
 
 
 def _per_example_loss_inputs(trainer, batch):
-    from opaque.functional import make_functional
+    """Build the vmap inputs for ``compute_per_example_loss`` (the DP path)."""
+    from opaque.torch.functional import make_functional
 
     # The collator emits CPU tensors; move to the model device (the trainer's
     # _prepare_input does this in the real path — bypassed here).
@@ -1425,7 +1426,7 @@ def test_sft_fused_last_hidden_state_is_last_layer_only(tmp_path):
     # The fused path must obtain ONLY the last hidden state (T, H) — not the full
     # (L+1, T, H) stack that output_hidden_states would return. Assert the helper
     # returns one (T, H) tensor that equals the model's final hidden state.
-    from opaque.functional import make_functional
+    from opaque.torch.functional import make_functional
 
     torch.manual_seed(0)
     trainer = SFTTrainer(
@@ -1584,7 +1585,7 @@ def test_dpo_log_completion_metrics_keeps_static_eligibility(tmp_path):
 # ---- DPO: CPU fallback-equivalence -----------------------------------
 def _dpo_fused_logps(trainer, batch):
     """vmap the fused ``_fused_logp`` over a collated batch (chosen + rejected)."""
-    from opaque.functional import make_functional
+    from opaque.torch.functional import make_functional
 
     batch = _to_device(trainer, batch)
     fmodel, trainable, frozen = make_functional(trainer.model, partition_trainable=True)

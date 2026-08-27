@@ -78,3 +78,62 @@ jobs:
           assert math.isfinite(epsilon) and epsilon > 0
           print(f"opaque[all] cross-stack epsilon: {epsilon:.6f}")
           PY
+
+  # ARC-004: the backend-neutral engine wheels must install and execute a
+  # neutral scenario without any backend runtime present.
+  engine-backend-neutral:
+    name: opaque-engine without torch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Install engine wheels without any backend runtime
+        run: |
+          uv venv --python 3.11 .neutral-venv
+          uv pip install \
+            --python .neutral-venv/bin/python \
+            --find-links dist \
+            --only-binary :all: \
+            dist/opaque_base-*.whl dist/opaque_engine-*.whl
+
+      - name: Run backend-neutral scenario
+        run: |
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/.neutral-venv/bin/python" - <<'PY'
+          import importlib.util
+
+          assert importlib.util.find_spec("torch") is None, "torch leaked in"
+
+          import opaque.backend
+          import opaque.ops
+          import opaque.sampling  # noqa: F401
+          from opaque.backend import BackendNotSelectedError
+          from opaque.random import fold_in, key, split
+
+          # Keyed RNG derivation is host-side and fully backend-free.
+          base = key(42)
+          children = split(fold_in(base, "arc-004", 7), num=3)
+          assert len({child.seed for child in children}) == 3
+
+          # Dispatch fails closed without a provider, not with an ImportError.
+          try:
+              opaque.ops.square(1.0)
+          except BackendNotSelectedError:
+              print("opaque-engine neutral scenario: OK")
+          else:
+              raise AssertionError("dispatch without a backend must fail closed")
+          PY

@@ -22,7 +22,7 @@ class CosineSchedule:
 
     init_value: float
     end_value: float
-    transition_steps: int
+    transition_steps: float
     transition_begin: int = 0
     num_cycles: float = 0.5
 
@@ -36,15 +36,22 @@ class CosineSchedule:
 def cosine_schedule(
     init_value: float,
     end_value: float,
-    transition_steps: int,
+    transition_steps: float,
     transition_begin: int = 0,
     num_cycles: float = 0.5,
 ) -> CosineSchedule:
-    """Cosine annealing from ``init_value`` to ``end_value`` over ``transition_steps``."""
+    """Cosine annealing from ``init_value`` to ``end_value`` over ``transition_steps``.
+
+    ``transition_steps`` may be fractional: nested under
+    :func:`~opaque.scheduling.with_restarts`, the inner cosine has to span
+    the same real-valued ``transition_steps / num_cycles`` the restart
+    boundaries are placed at, or it bottoms out early on a non-divisible
+    pair and the cycle shapes drift.
+    """
     return CosineSchedule(
         init_value=float(init_value),
         end_value=float(end_value),
-        transition_steps=int(transition_steps),
+        transition_steps=float(transition_steps),
         transition_begin=int(transition_begin),
         num_cycles=float(num_cycles),
     )

@@ -1,248 +1,212 @@
-"""Shared chain composer for functional optimizers.
+"""Shared chain composer for backend-neutral optimizers.
 
-Builds a ``torchopt`` ``GradientTransformation`` chain on top of a
-moment-scaling primitive (``scale_by_adam`` for AdamW, ``sign-of-momentum``
-for Lion, …).  The composer decides where weight decay attaches (decoupled
-post-moment vs. L2 pre-moment), whether to clip the update by its RMS
-(StableAdamW), and applies the (negative) learning rate at the end.
+Builds a ``(step_fn, state)`` optimizer on top of a moment-scaling
+primitive (``_scale_by_adam`` for AdamW, ``_sgd_step`` for SGD).  The
+composer decides where weight decay attaches (decoupled post-moment vs.
+L2 pre-moment), whether to clip the update by its RMS (StableAdamW), and
+applies the (negative) learning rate at the end.
 
-The composer understands the public clipped/noised metadata wrappers and routes
-their DP metadata into the moment scaler when the scaler accepts it.
+The composer understands the public clipped/noised metadata wrappers and
+routes their DP metadata into the moment scaler when the scaler accepts
+it.
 """
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable
 from typing import Any
 
-try:
-    import torchopt
-    from torchopt.alias.utils import scale_by_neg_lr
-    from torchopt.base import GradientTransformation
-except ImportError as exc:
-    raise ImportError(
-        "torchopt is required for opaque.optimizers. "
-        "Install it with: pip install 'torchopt>=0.7.3'"
-    ) from exc
-
-import torch
-
+from opaque.api.engine import ops
 from opaque.pytree import tree_map
 from opaque.types import ClippedPytree, NoisedPytree, SecondMomentNoiseOutput
 
 _LR = float | Callable[[int], float]
+_MomentStep = Callable[
+    [Any, Any, Any, float | None, Any | None],
+    tuple[Any, Any],
+]
 
 
-def _rms_clip_transform(threshold: float) -> GradientTransformation:
-    """Per-update RMS clip used by StableAdamW.
+def apply_updates(params: Any, updates: Any) -> Any:
+    """Apply signed updates to a parameter pytree.
 
-    Computes ``rms = sqrt(mean(update**2))`` over the entire update pytree
-    (concatenated leaves) and divides the update by ``max(1, rms / threshold)``.
-    No state.
+    Pure helper: ``new_params = params + updates`` leafwise.
     """
-
-    def init_fn(params: Any) -> tuple:
-        del params
-        return ()
-
-    def update_fn(
-        updates: Any,
-        state: tuple,
-        *,
-        params: Any = None,
-        inplace: bool = False,
-    ) -> tuple[Any, tuple]:
-        return _clip_by_global_rms(updates, threshold), state
-
-    return GradientTransformation(init_fn, update_fn)
+    return tree_map(lambda p, u: ops.add(p, u), params, updates)
 
 
 def _clip_by_global_rms(updates: Any, threshold: float) -> Any:
     """Apply one parameter-count-weighted RMS scale to all tensor leaves."""
-    # Global RMS across all leaves (param-count-weighted mean of squares).
-    sq_sum: torch.Tensor | None = None
-    count = 0
-    for leaf in _iter_leaves(updates):
-        accumulator_dtype = (
-            torch.float32 if leaf.device.type == "mps" else torch.float64
-        )
-        leaf_sq_sum = leaf.detach().to(accumulator_dtype).pow(2).sum()
-        sq_sum = leaf_sq_sum if sq_sum is None else sq_sum + leaf_sq_sum
-        count += leaf.numel()
-    if sq_sum is None:
+    leaves = _tensor_leaves(updates)
+    if not leaves:
         return updates
-    rms = (sq_sum / count).sqrt()
-    scale = torch.clamp(rms / threshold, min=1.0)
-    return tree_map(lambda u: u / scale.to(dtype=u.dtype), updates)
+
+    total = None
+    count = 0
+    for leaf in leaves:
+        acc_dtype = ops.accumulator_dtype(leaf, kind="sum")
+        leaf_cast = ops.astype(leaf, acc_dtype)
+        sq = ops.square(leaf_cast)
+        leaf_sum = ops.sum(sq, dtype=acc_dtype)
+        total = leaf_sum if total is None else ops.add(total, leaf_sum)
+        count += _numel(leaf)
+
+    rms = ops.sqrt(ops.divide(total, count))
+    scale = ops.clamp(ops.divide(rms, threshold), lo=1.0)
+
+    return tree_map(
+        lambda u: ops.divide(u, ops.astype(scale, ops.dtype(u))),
+        updates,
+    )
 
 
-def _iter_leaves(tree: Any):
+def _tensor_leaves(tree: Any) -> list[Any]:
     """Yield tensor leaves of a (possibly nested) pytree."""
-    if isinstance(tree, torch.Tensor):
-        yield tree
-        return
+    if ops.is_array(tree):
+        return [tree]
     if isinstance(tree, dict):
+        leaves: list[Any] = []
         for v in tree.values():
-            yield from _iter_leaves(v)
-        return
+            leaves.extend(_tensor_leaves(v))
+        return leaves
     if isinstance(tree, (list, tuple)):
+        leaves = []
         for v in tree:
-            yield from _iter_leaves(v)
-        return
-    # Non-tensor leaves are silently ignored — same convention as
-    # ``opaque.pytree.tree_leaves``.
+            leaves.extend(_tensor_leaves(v))
+        return leaves
+    return []
+
+
+def _numel(leaf: Any) -> int:
+    shape = ops.shape(leaf)
+    total = 1
+    for dim in shape:
+        total *= dim
+    return total
+
+
+def _route_noisy_pytree(updates: Any) -> tuple[Any, dict[str, Any]]:
+    if isinstance(updates, NoisedPytree):
+        return updates.pytree, {"noise_stddev": updates.noise_stddev}
+    if isinstance(updates, ClippedPytree):
+        raise TypeError(
+            "optimizer step received ClippedPytree updates that have not "
+            "passed through a noise mechanism. Pass NoisedPytree outputs from "
+            "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+        )
+    return updates, {}
+
+
+def _unwrap_second_moment_value(value: Any, *, name: str) -> Any:
+    if isinstance(value, NoisedPytree):
+        return value.pytree
+    if isinstance(value, ClippedPytree):
+        raise TypeError(
+            f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
+            "passed through a noise mechanism."
+        )
+    return value
+
+
+def _route_second_moment_output(updates: Any) -> tuple[Any, dict[str, Any]]:
+    if not isinstance(updates, SecondMomentNoiseOutput):
+        return _route_noisy_pytree(updates)
+    grads, routed = _route_noisy_pytree(updates.noisy_grads)
+    return (
+        grads,
+        {
+            **routed,
+            "noisy_squared_grads": _unwrap_second_moment_value(
+                updates.noisy_squared_grads, name="noisy_squared_grads"
+            ),
+        },
+    )
 
 
 def make_optimizer_chain(
-    moment_scaler: GradientTransformation,
+    moment_step: _MomentStep,
+    moment_init_state: Any,
     lr: _LR,
     weight_decay: float,
     *,
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
-) -> GradientTransformation:
+    maximize: bool = False,
+) -> tuple[Callable[[Any, Any, Any], tuple[Any, Any]], Any]:
     """Compose a moment-scaling primitive into a full optimizer.
 
     Layout (decoupled / AdamW style)::
 
         moment_scaler -> [rms_clip] -> add_decayed_weights -> scale_by_neg_lr
 
-    Layout (L2 / Adam style)::
+    Layout (L2 / Adam / SGD style)::
 
-        add_decayed_weights -> moment_scaler -> [rms_clip] -> scale_by_neg_lr
-
-    The L2 form folds ``wd * params`` into the gradient *before* moment
-    scaling, so weight decay enters the EMAs.  The decoupled form leaves
-    moment scaling on raw gradients and applies weight decay to the
-    update post-moment-scaling but pre-LR-scaling — this is the standard
-    AdamW recipe (Loshchilov & Hutter).
+        [maximize sign flip] -> add_decayed_weights -> moment_scaler
+        -> [rms_clip] -> scale_by_neg_lr
 
     ``update_rms_clip`` (StableAdamW): when set, divides the update by
-    ``max(1, rms / threshold)`` after moment scaling and before WD/LR, where
-    ``rms`` is computed model-wide across all tensor leaves. The clip applies
-    only to the moment-scaled portion of the update, not to the weight-decay
-    term.
+    ``max(1, rms / threshold)`` after moment scaling and before WD/LR.
 
-    The returned ``GradientTransformation`` extracts DP metadata from
-    ``NoisedPytree`` / ``SecondMomentNoiseOutput`` updates and threads
-    it into the moment scaler internally — there is no public per-step
-    metadata kwarg.
+    The returned ``step_fn`` extracts DP metadata from ``NoisedPytree`` /
+    ``SecondMomentNoiseOutput`` updates and threads it into the moment
+    scaler internally — there is no public per-step metadata kwarg.
     """
-    moment_update_params = inspect.signature(moment_scaler.update).parameters
-    accepts_noise_stddev = "noise_stddev" in moment_update_params or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in moment_update_params.values()
-    )
-    accepts_second_moment = "noisy_squared_grads" in moment_update_params or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in moment_update_params.values()
-    )
 
-    def _route_noisy_pytree(updates: Any) -> tuple[Any, dict[str, Any]]:
-        if isinstance(updates, NoisedPytree):
-            if not accepts_noise_stddev:
-                return updates.pytree, {}
-            return updates.pytree, {"noise_stddev": updates.noise_stddev}
-        if isinstance(updates, ClippedPytree):
-            raise TypeError(
-                "optimizer.update() received ClippedPytree updates that have not "
-                "passed through a noise mechanism. Pass NoisedPytree outputs from "
-                "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+    def step_fn(
+        updates: Any,
+        state: Any,
+        *,
+        params: Any,
+    ) -> tuple[Any, Any]:
+        current_step = state.step
+        lr_value = lr(current_step) if callable(lr) else lr
+
+        raw, routed = _route_second_moment_output(updates)
+
+        if maximize:
+            raw = tree_map(lambda g: ops.multiply(g, -1.0), raw)
+
+        if decoupled_weight_decay:
+            scaled, new_state = moment_step(
+                raw,
+                state,
+                params,
+                routed.get("noise_stddev"),
+                routed.get("noisy_squared_grads"),
             )
-        return updates, {}
-
-    def _unwrap_second_moment_value(value: Any, *, name: str) -> Any:
-        if isinstance(value, NoisedPytree):
-            return value.pytree
-        if isinstance(value, ClippedPytree):
-            raise TypeError(
-                f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
-                "passed through a noise mechanism."
-            )
-        return value
-
-    def _route_second_moment_output(updates: Any) -> tuple[Any, dict[str, Any]]:
-        if not isinstance(updates, SecondMomentNoiseOutput):
-            return _route_noisy_pytree(updates)
-        if not accepts_second_moment:
-            return _route_noisy_pytree(updates.noisy_grads)
-        return (
-            _unwrap_second_moment_value(updates.noisy_grads, name="noisy_grads"),
-            {
-                "noisy_squared_grads": _unwrap_second_moment_value(
-                    updates.noisy_squared_grads, name="noisy_squared_grads"
+            if update_rms_clip is not None:
+                scaled = _clip_by_global_rms(scaled, update_rms_clip)
+            if weight_decay != 0.0:
+                scaled = tree_map(
+                    lambda u, p: ops.add(u, ops.multiply(p, weight_decay)),
+                    scaled,
+                    params,
                 )
-            },
-        )
-
-    wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
-    neg_lr = scale_by_neg_lr(lr)
-    clip = (
-        _rms_clip_transform(float(update_rms_clip))
-        if update_rms_clip is not None
-        else None
-    )
-
-    if decoupled_weight_decay:
-
-        def init_fn(params: Any) -> tuple:
-            return (
-                moment_scaler.init(params),
-                clip.init(params) if clip is not None else (),
-                wd.init(params),
-                neg_lr.init(params),
-            )
-
-        def update_fn(
-            updates: Any,
-            state: tuple,
-            *,
-            params: Any = None,
-            inplace: bool = False,
-        ) -> tuple[Any, tuple]:
-            s_mom, s_clip, s_wd, s_lr = state
-            updates, routed = _route_second_moment_output(updates)
-            updates, s_mom = moment_scaler.update(
-                updates, s_mom, params=params, inplace=inplace, **routed
-            )
-            if clip is not None:
-                updates, s_clip = clip.update(
-                    updates, s_clip, params=params, inplace=inplace
+        else:
+            if weight_decay != 0.0:
+                raw = tree_map(
+                    lambda g, p: ops.add(g, ops.multiply(p, weight_decay)),
+                    raw,
+                    params,
                 )
-            updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
-            updates, s_lr = neg_lr.update(updates, s_lr, inplace=inplace)
-            return updates, (s_mom, s_clip, s_wd, s_lr)
-
-    else:
-        # L2 form: wd is added to gradient before the moment scaler.
-        def init_fn(params: Any) -> tuple:
-            return (
-                wd.init(params),
-                moment_scaler.init(params),
-                clip.init(params) if clip is not None else (),
-                neg_lr.init(params),
+            scaled, new_state = moment_step(
+                raw,
+                state,
+                params,
+                routed.get("noise_stddev"),
+                routed.get("noisy_squared_grads"),
             )
+            if update_rms_clip is not None:
+                scaled = _clip_by_global_rms(scaled, update_rms_clip)
 
-        def update_fn(  # type: ignore[misc]
-            updates: Any,
-            state: tuple,
-            *,
-            params: Any = None,
-            inplace: bool = False,
-        ) -> tuple[Any, tuple]:
-            s_wd, s_mom, s_clip, s_lr = state
-            updates, routed = _route_second_moment_output(updates)
-            updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
-            updates, s_mom = moment_scaler.update(
-                updates, s_mom, params=params, inplace=inplace, **routed
-            )
-            if clip is not None:
-                updates, s_clip = clip.update(
-                    updates, s_clip, params=params, inplace=inplace
-                )
-            updates, s_lr = neg_lr.update(updates, s_lr, inplace=inplace)
-            return updates, (s_wd, s_mom, s_clip, s_lr)
+        # Multiply by -lr unconditionally: a schedule that yields 0.0
+        # (e.g. warmup step 0) must produce a zero update, not pass the
+        # un-negated moment-scaled direction through as a full ascent step.
+        scaled = tree_map(lambda u: ops.multiply(u, -lr_value), scaled)
 
-    return GradientTransformation(init_fn, update_fn)
+        return scaled, new_state
+
+    return step_fn, moment_init_state
 
 
-__all__ = ["make_optimizer_chain"]
+__all__ = ["apply_updates", "make_optimizer_chain"]

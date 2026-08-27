@@ -5,9 +5,11 @@ Adaptive thresholding is only available under :mod:`opaque.dpsgd.clipping`
 """
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad, per_group
+from opaque.dpftrl.clipping import types
 
 __all__ = [
     "auto_clipped_grad",
     "clipped_grad",
     "per_group",
+    "types",
 ]

@@ -133,6 +133,11 @@ profile:
     - inspection: PyRedeclarationInspection
       ignore:
         - "scope#$Opaque_FunctionalRuntimeSources"
+    - inspection: PyAbstractClassInspection
+      # Tests deliberately declare incomplete ABC subclasses to assert the
+      # instantiation TypeError contract.
+      ignore:
+        - "scope#$Opaque_PythonTests"
 # Qodana uses a starter-based bridge because its headless engine interprets
 # several project-profile inspections differently from PyCharm. The shared
 # category scopes describe stable analyzer limitations, not individual files.
@@ -157,14 +162,15 @@ exclude:
       - packages/opaque-jax/tests
       - packages/opaque-mlx/tests
       - packages/opaque-optimizers/tests
-      - packages/opaque-patches/tests
+      - packages/opaque-kernels/tests
       - packages/opaque-torch/tests
       - packages/opaque-transformers/tests
       - tests
       - packages/opaque-engine/src/opaque/api/engine/clipping
       - packages/opaque-engine/src/opaque/api/engine/functional
       - packages/opaque-engine/src/opaque/api/engine/random
-      - packages/opaque-patches/src/opaque/api/patches
+      - packages/opaque-kernels/src/opaque/api/kernels
+      - packages/opaque-transformers/src/opaque/api/transformers/patches
 
 # Resolve every workspace package so inspections, vulnerability checks, license
 # audit, and SBOM generation see the same dependency graph as CI.

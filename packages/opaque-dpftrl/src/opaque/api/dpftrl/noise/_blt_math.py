@@ -18,10 +18,11 @@ import dataclasses
 import functools
 import logging
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import torch
+
+from opaque.api.engine import ops
 
 from . import (
     _sensitivity as sensitivity,
@@ -32,14 +33,16 @@ from . import (
 from . import (
     _toeplitz as toeplitz,
 )
-from ._engine import _internal_compute_dtype
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from numpy.typing import ArrayLike, NDArray
+
 logger = logging.getLogger(__name__)
 _MIN_BUFFER_DECAY_GAP = 1e-9
 _NEAR_ZERO_OUTPUT_SCALE = 1e-8
+_MIN_FEASIBILITY_SLACK = 1e-3
 _MAX_OPTIMIZATION_BUFFERS = 15
 
 __all__ = [
@@ -57,7 +60,13 @@ __all__ = [
 # ── Internal builder ────────────────────────────────────────────────────
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
+class _StreamingBufferState:
+    zero: Any
+    buffers: tuple[Any, ...]
+
+
+@dataclasses.dataclass(frozen=True)
 class _StreamingMatrixBuilder:
     """Builder to convert a BLT to a StreamingMatrix.
 
@@ -74,33 +83,44 @@ class _StreamingMatrixBuilder:
         assert self.output_scale.dtype == self.buf_decay.dtype
         return self.output_scale.dtype
 
-    def _init(self, abstract_value: torch.Tensor) -> torch.Tensor:
+    def _init(self, abstract_value):
         num_buffers = self.buf_decay.shape[0]
-        dtype = _internal_compute_dtype(abstract_value.dtype)
-        zero = torch.zeros_like(abstract_value, dtype=dtype)
-        return zero.unsqueeze(0).expand(num_buffers, *zero.shape).clone()
+        if isinstance(abstract_value, np.ndarray):
+            dtype = (
+                np.dtype(np.float32)
+                if abstract_value.dtype == np.dtype(np.float16)
+                else abstract_value.dtype
+            )
+        else:
+            value_dtype = ops.dtype(abstract_value)
+            dtype = ops.float32() if ops.is_low_precision(value_dtype) else value_dtype
+        zero = streaming_matrix._zeros_like(abstract_value, dtype=dtype)
+        return _StreamingBufferState(zero, (zero,) * num_buffers)
 
-    def _read(self, state: torch.Tensor) -> torch.Tensor:
-        output_scale = torch.tensor(
-            self.output_scale,
-            dtype=state.dtype,
-            device=state.device,
-        )
-        return torch.tensordot(output_scale, state, dims=([0], [0]))
+    def _read(self, state: _StreamingBufferState):
+        result = state.zero
+        for scale, buffer in zip(self.output_scale, state.buffers, strict=True):
+            result = streaming_matrix._add(
+                result,
+                streaming_matrix._multiply(
+                    streaming_matrix._scalar_like(scale, buffer), buffer
+                ),
+            )
+        return result
 
-    def _update(
-        self, state: torch.Tensor, next_rhs_value: torch.Tensor
-    ) -> torch.Tensor:
-        buf_decay = torch.tensor(
-            self.buf_decay,
-            dtype=state.dtype,
-            device=state.device,
-        )
-        if len(buf_decay) == 0:
+    def _update(self, state: _StreamingBufferState, next_rhs_value):
+        if not state.buffers:
             return state
-        bufs = torch.diag(buf_decay) @ state.reshape(len(buf_decay), -1)
-        bufs = bufs.reshape(state.shape) + next_rhs_value
-        return bufs
+        buffers = tuple(
+            streaming_matrix._add(
+                streaming_matrix._multiply(
+                    streaming_matrix._scalar_like(decay, buffer), buffer
+                ),
+                next_rhs_value,
+            )
+            for decay, buffer in zip(self.buf_decay, state.buffers, strict=True)
+        )
+        return _StreamingBufferState(state.zero, buffers)
 
     def build(self) -> streaming_matrix.StreamingMatrix:
         """Returns a StreamingMatrix representing C.
@@ -153,8 +173,8 @@ class BufferedToeplitz:
         output_scale: Shape (nbuf,), output scaling factors.
     """
 
-    buf_decay: torch.Tensor
-    output_scale: torch.Tensor
+    buf_decay: NDArray[np.float64]
+    output_scale: NDArray[np.float64]
 
     def validate(self) -> None:
         """Validate basic properties of the BLT parameters."""
@@ -175,7 +195,7 @@ class BufferedToeplitz:
         cls,
         buf_decay,
         output_scale,
-        dtype=torch.float64,
+        dtype=np.float64,
     ) -> BufferedToeplitz:
         """Construct and canonicalize a BLT.
 
@@ -187,9 +207,10 @@ class BufferedToeplitz:
         Returns:
             A canonicalized BufferedToeplitz.
         """
+        del dtype
         blt = cls(
-            buf_decay=torch.as_tensor(buf_decay, dtype=dtype),
-            output_scale=torch.as_tensor(output_scale, dtype=dtype),
+            buf_decay=np.asarray(buf_decay, dtype=np.float64),
+            output_scale=np.asarray(output_scale, dtype=np.float64),
         )
         return canonicalize(blt)
 
@@ -233,8 +254,8 @@ class BufferedToeplitz:
         # Build C^{-1}, then invert to get C
         inv_blt = cls.build(buf_decay=buf_decay, output_scale=output_scale)
         blt = inverse(inv_blt)
-        buf_decay_t = blt.buf_decay.clone()
-        output_scale_t = blt.output_scale.clone()
+        buf_decay_t = blt.buf_decay.copy()
+        output_scale_t = blt.output_scale.copy()
 
         # Scale buf_decay if needed
         largest = buf_decay_t[0]
@@ -242,7 +263,7 @@ class BufferedToeplitz:
         buf_decay_t = buf_decay_t * scale
 
         if max_pillutla_score is not None:
-            score = float(torch.sum(output_scale_t / buf_decay_t))
+            score = float(np.sum(output_scale_t / buf_decay_t))
             score_scale = min(1.0, max_pillutla_score / score)
             output_scale_t = output_scale_t * score_scale
 
@@ -265,7 +286,7 @@ class BufferedToeplitz:
         Returns:
             sum(output_scale / buf_decay).
         """
-        return float(torch.sum(self.output_scale / self.buf_decay))
+        return float(np.sum(self.output_scale / self.buf_decay))
 
     def __repr__(self) -> str:
         return (
@@ -287,14 +308,14 @@ def canonicalize(blt: BufferedToeplitz) -> BufferedToeplitz:
         A new BufferedToeplitz with sorted buf_decay.
     """
     blt.validate()
-    idx = torch.argsort(blt.buf_decay, descending=True)
+    idx = np.argsort(blt.buf_decay)[::-1]
     return BufferedToeplitz(
         buf_decay=blt.buf_decay[idx],
         output_scale=blt.output_scale[idx],
     )
 
 
-def toeplitz_coefs(blt: BufferedToeplitz, n: int) -> torch.Tensor:
+def toeplitz_coefs(blt: BufferedToeplitz, n: int) -> NDArray[np.float64]:
     """Returns the Toeplitz coefficients for C.
 
     Args:
@@ -305,15 +326,15 @@ def toeplitz_coefs(blt: BufferedToeplitz, n: int) -> torch.Tensor:
         Tensor of n Toeplitz coefficients.
     """
     if blt._num_buffers == 0:
-        result = torch.zeros(n, dtype=blt.dtype)
+        result = np.zeros(n, dtype=np.float64)
         result[0] = 1.0
         return result
-    powers = torch.arange(n - 1, dtype=blt.dtype)
-    tmp = blt.buf_decay.unsqueeze(0) ** powers.unsqueeze(1) * blt.output_scale
-    return torch.cat([torch.ones(1, dtype=blt.dtype), tmp.sum(dim=1)])
+    powers = np.arange(n - 1, dtype=np.float64)
+    tmp = blt.buf_decay[np.newaxis, :] ** powers[:, np.newaxis] * blt.output_scale
+    return np.concatenate([np.ones(1, dtype=np.float64), tmp.sum(axis=1)])
 
 
-def materialize(blt: BufferedToeplitz, n: int) -> torch.Tensor:
+def materialize(blt: BufferedToeplitz, n: int) -> NDArray[np.float64]:
     """Convert to dense n x n matrix.
 
     Args:
@@ -351,23 +372,23 @@ def inverse(blt: BufferedToeplitz, skip_checks: bool = False) -> BufferedToeplit
             )
 
     nbuf = len(blt.buf_decay)
-    Theta = torch.diag(blt.buf_decay)
+    Theta = np.diag(blt.buf_decay)
     omega = blt.output_scale
-    alpha = torch.ones(nbuf, dtype=blt.dtype)
+    alpha = np.ones(nbuf, dtype=np.float64)
 
-    Theta2 = Theta - torch.outer(omega, alpha)
+    Theta2 = Theta - np.outer(omega, alpha)
     omega2 = -omega
 
     # Diagonalize Theta2
-    evals = torch.linalg.eigvals(Theta2).real
+    evals = np.linalg.eigvals(Theta2).real
 
     # Closed-form eigenvectors
-    evecs = omega.unsqueeze(1) / (evals.unsqueeze(0) - blt.buf_decay.unsqueeze(1))
-    einv = torch.linalg.inv(evecs)
+    evecs = omega[:, np.newaxis] / (evals[np.newaxis, :] - blt.buf_decay[:, np.newaxis])
+    einv = np.linalg.inv(evecs)
 
     if not skip_checks:
-        Theta2_diag = evecs @ torch.diag(evals) @ einv
-        if not torch.allclose(Theta2_diag, Theta2, atol=1e-7):
+        Theta2_diag = evecs @ np.diag(evals) @ einv
+        if not np.allclose(Theta2_diag, Theta2, atol=1e-7):
             raise RuntimeError(
                 f"Error computing inverse: Theta2 mismatch.\n"
                 f"blt={blt}\nevecs={evecs}\nevals={evals}"
@@ -385,8 +406,8 @@ def _streaming_matrix_builder(blt: BufferedToeplitz) -> _StreamingMatrixBuilder:
     """Create a _StreamingMatrixBuilder from a BLT."""
     dtype = np.float64
     return _StreamingMatrixBuilder(
-        output_scale=blt.output_scale.detach().numpy().astype(dtype),
-        buf_decay=blt.buf_decay.detach().numpy().astype(dtype),
+        output_scale=blt.output_scale.astype(dtype, copy=False),
+        buf_decay=blt.buf_decay.astype(dtype, copy=False),
     )
 
 
@@ -407,47 +428,19 @@ def inverse_as_streaming_matrix(
 ) -> streaming_matrix.StreamingMatrix:
     """Returns a StreamingMatrix representing C^{-1}.
 
-    The result carries a closed-form ``row_norms_squared``: C^{-1} is
-    lower-triangular Toeplitz, so its squared row norms are cumulative
-    sums of its squared first-column coefficients, recovered with a
-    single impulse pass through the same buffer recurrence the streaming
-    inverse runs — O(num_buffers * n) instead of the
-    O(num_buffers * n^2) generic probing, and numerically identical to
-    it. (An equivalent rational-transfer-function filter is not: its
-    monomial-basis polynomials are ill-conditioned for many
-    near-one decays.)
-
     Args:
         blt: The BLT.
 
     Returns:
         StreamingMatrix for C^{-1}.
     """
-
-    def _row_norms_squared(n: int) -> torch.Tensor:
-        if n == 0:
-            return torch.zeros(0, dtype=torch.float64, device="cpu")
-        buf_decay = blt.buf_decay.detach().cpu().to(torch.float64).numpy()
-        output_scale = blt.output_scale.detach().cpu().to(torch.float64).numpy()
-        inv_coefs = np.zeros(n)
-        inv_coefs[0] = 1.0
-        state = np.ones_like(buf_decay)
-        for t in range(1, n):
-            value = -output_scale.dot(state)
-            state = buf_decay * state + value
-            inv_coefs[t] = value
-        return torch.cumsum(torch.from_numpy(inv_coefs).square(), dim=0)
-
-    return dataclasses.replace(
-        _streaming_matrix_builder(blt).build_inverse(),
-        row_norms_squared_fn=_row_norms_squared,
-    )
+    return _streaming_matrix_builder(blt).build_inverse()
 
 
 # ── Helper functions (unchanged) ────────────────────────────────────────
 
 
-def min_buf_decay_gap(buf_decay: torch.Tensor) -> torch.Tensor:
+def min_buf_decay_gap(buf_decay: ArrayLike) -> np.float64:
     """Returns the minimum gap between buf_decay parameters.
 
     Args:
@@ -456,35 +449,37 @@ def min_buf_decay_gap(buf_decay: torch.Tensor) -> torch.Tensor:
     Returns:
         min_{i!=j} |theta[i] - theta[j]|
     """
-    theta = torch.as_tensor(buf_decay)
-    A = theta.unsqueeze(1) - theta.unsqueeze(0)
-    A = A + torch.diag(torch.full_like(theta, float("inf")))
-    return torch.min(torch.abs(A))
+    theta = np.asarray(buf_decay, dtype=np.float64)
+    A = theta[:, np.newaxis] - theta[np.newaxis, :]
+    np.fill_diagonal(A, np.inf)
+    return np.min(np.abs(A))
 
 
-def _gt_zero_penalty(x: torch.Tensor) -> torch.Tensor:
+def _gt_zero_penalty(x: ArrayLike) -> np.float64:
     """Penalize values to enforce x > 0."""
-    return -torch.log(x).sum()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.log(x).sum()
 
 
-def _lt_one_penalty(x: torch.Tensor) -> torch.Tensor:
+def _lt_one_penalty(x: ArrayLike) -> np.float64:
     """Penalize values to enforce x < 1."""
-    return -torch.log(1 - x).sum()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.log(1 - np.asarray(x)).sum()
 
 
-def _lt_penalty(x: torch.Tensor, upper_bound: float) -> torch.Tensor:
+def _lt_penalty(x: ArrayLike, upper_bound: float) -> np.float64:
     """Penalize values to enforce x < upper_bound."""
-    return -torch.log(upper_bound - x).sum()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.log(upper_bound - np.asarray(x)).sum()
 
 
-def _lt_zero_penalty(x: torch.Tensor) -> torch.Tensor:
+def _lt_zero_penalty(x: ArrayLike) -> np.float64:
     """Penalize values to enforce x < 0."""
-    return -torch.log(-x).sum()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.log(-np.asarray(x)).sum()
 
 
-def geometric_sum(
-    a: torch.Tensor, r: torch.Tensor, num: float = float("inf")
-) -> torch.Tensor:
+def geometric_sum(a: ArrayLike, r: ArrayLike, num: float = float("inf")):
     """Compute a + a*r + a*r^2 + ... + a*r^(num-1).
 
     Uses a quadratic Taylor approximation near r=1 for numerical stability.
@@ -503,20 +498,20 @@ def geometric_sum(
     if math.isinf(num):
         return a / (1 - r)
 
-    n_val = torch.as_tensor(num, dtype=torch.float64)
+    n_val = np.asarray(num, dtype=np.float64)
     n = num
 
     # Adaptive threshold: calibrated to minimise gradient error.
     # Constants from regression on numerical experiments (see JAX-Privacy).
     _SLOPE = 0.53018965
     _INTERCEPT = 3.33503185
-    pow_threshold = _INTERCEPT + _SLOPE * torch.log(n_val)
+    pow_threshold = _INTERCEPT + _SLOPE * np.log(n_val)
     threshold = 1 - 10 ** (-pow_threshold)
 
     use_direct = r < threshold
 
     # Direct computation (safe when r is not near 1)
-    safe_r = torch.where(use_direct, r, torch.zeros_like(r))
+    safe_r = np.where(use_direct, r, np.zeros_like(r))
     direct = a * (1 - safe_r**n) / (1 - safe_r)
 
     # Quadratic Taylor polynomial at r = 1 (from sympy)
@@ -524,13 +519,13 @@ def geometric_sum(
     x1 = r - 1
     series = (1 / 6) * a * n * (x0 * x1**2 * (n - 2) + 3 * x0 * x1 + 6)
 
-    return torch.where(use_direct, direct, series)
+    return np.where(use_direct, direct, series)
 
 
 # ── BLT error and sensitivity (already standalone) ──────────────────────
 
 
-def sensitivity_squared(blt: BufferedToeplitz, n: float) -> torch.Tensor:
+def sensitivity_squared(blt: BufferedToeplitz, n: float) -> np.float64:
     """Compute sensitivity^2 for a BLT strategy matrix C.
 
     See Lemma 5.3 of https://arxiv.org/abs/2404.16706.
@@ -543,22 +538,22 @@ def sensitivity_squared(blt: BufferedToeplitz, n: float) -> torch.Tensor:
         Maximum column norm squared of C.
     """
     if blt._num_buffers == 0:
-        return torch.tensor(1.0, dtype=torch.float64)
+        return np.float64(1.0)
 
-    if torch.any(blt.buf_decay > 1):
-        return torch.tensor(float("inf"), dtype=torch.float64)
+    if np.any(blt.buf_decay > 1):
+        return np.float64(np.inf)
 
     omega = blt.output_scale
     theta = blt.buf_decay
     num = n - 1
 
-    omega_pairs = omega.unsqueeze(0) * omega.unsqueeze(1)
-    theta_pairs = theta.unsqueeze(0) * theta.unsqueeze(1)
+    omega_pairs = omega[np.newaxis, :] * omega[:, np.newaxis]
+    theta_pairs = theta[np.newaxis, :] * theta[:, np.newaxis]
     geo_pairs = geometric_sum(omega_pairs, theta_pairs, num=num)
     return 1.0 + geo_pairs.sum()
 
 
-def max_error(inv_blt: BufferedToeplitz, n: float) -> torch.Tensor:
+def max_error(inv_blt: BufferedToeplitz, n: float) -> np.float64:
     """Max squared error for any iteration 0, ..., n-1.
 
     Args:
@@ -571,7 +566,7 @@ def max_error(inv_blt: BufferedToeplitz, n: float) -> torch.Tensor:
     return iteration_error(inv_blt, n - 1)
 
 
-def iteration_error(inv_blt: BufferedToeplitz, i: float) -> torch.Tensor:
+def iteration_error(inv_blt: BufferedToeplitz, i: float) -> np.float64:
     """Compute the squared error on iteration i.
 
     For BLT matrices, the max error through iteration i is achieved at
@@ -587,7 +582,7 @@ def iteration_error(inv_blt: BufferedToeplitz, i: float) -> torch.Tensor:
         Squared error at iteration i.
     """
     if inv_blt._num_buffers == 0:
-        return torch.tensor(float(i + 1), dtype=torch.float64)
+        return np.float64(i + 1)
 
     n = i + 1
     omega = inv_blt.output_scale
@@ -598,15 +593,15 @@ def iteration_error(inv_blt: BufferedToeplitz, i: float) -> torch.Tensor:
     s2 = robust_max_error_Gamma_jk(
         omega,
         theta,
-        omega.unsqueeze(1),
-        theta.unsqueeze(1),
+        omega[:, np.newaxis],
+        theta[:, np.newaxis],
         n,
     ).sum()
 
     return n * (1 + 2 * s1 + s2)
 
 
-def limit_max_error(inv_blt: BufferedToeplitz) -> torch.Tensor:
+def limit_max_error(inv_blt: BufferedToeplitz) -> np.float64:
     """Closed-form max squared error per iteration as n -> infinity.
 
     This is the limit of ``max_error(inv_blt, n) / n`` as n grows.
@@ -620,19 +615,19 @@ def limit_max_error(inv_blt: BufferedToeplitz) -> torch.Tensor:
         The asymptotic per-iteration max squared error.
     """
     if inv_blt._num_buffers == 0:
-        return torch.tensor(1.0, dtype=torch.float64)
+        return np.float64(1.0)
 
     omega = inv_blt.output_scale
     theta = inv_blt.buf_decay
 
-    omega_pairs = omega.unsqueeze(0) * omega.unsqueeze(1)
-    theta_complement_pairs = (1 - theta).unsqueeze(0) * (1 - theta).unsqueeze(1)
+    omega_pairs = omega[np.newaxis, :] * omega[:, np.newaxis]
+    theta_complement_pairs = (1 - theta)[np.newaxis, :] * (1 - theta)[:, np.newaxis]
     cross_term_sum = (omega_pairs / theta_complement_pairs).sum()
 
     return 1 + 2 * (omega / (1 - theta)).sum() + cross_term_sum
 
 
-def limit_max_loss(blt: BufferedToeplitz) -> torch.Tensor:
+def limit_max_loss(blt: BufferedToeplitz) -> np.float64:
     """Closed-form loss (error * sensitivity^2) as n -> infinity.
 
     Composes ``limit_max_error`` with ``sensitivity_squared(blt, inf)``.
@@ -651,7 +646,7 @@ def limit_max_loss(blt: BufferedToeplitz) -> torch.Tensor:
 def _max_error_Gamma_j(omega, theta, n):
     """Direct computation of Gamma_j for max error."""
     return (omega / (1.0 - theta)) * (
-        1 - geometric_sum(torch.ones_like(theta), theta, num=n) / n
+        1 - geometric_sum(np.ones_like(theta), theta, num=n) / n
     )
 
 
@@ -674,25 +669,25 @@ def robust_max_error_Gamma_j(omega, theta, n):
     Uses empirically-calibrated thresholds from JAX-Privacy to decide
     when to switch from the direct formula to a Taylor series.
     """
-    n_t = torch.as_tensor(n, dtype=torch.float64)
+    n_t = np.asarray(n, dtype=np.float64)
     _J_SLOPE = 0.43877484
     _J_INTERCEPT = 2.91215085
-    power = _J_INTERCEPT + _J_SLOPE * torch.log(n_t)
+    power = _J_INTERCEPT + _J_SLOPE * np.log(n_t)
     threshold = 1 - 10 ** (-power)
 
     use_direct = theta < threshold
-    safe_theta = torch.where(use_direct, theta, torch.zeros_like(theta))
+    safe_theta = np.where(use_direct, theta, np.zeros_like(theta))
     v0 = _max_error_Gamma_j(omega, safe_theta, n)
     v1 = _max_error_Gamma_j_series(omega, theta, n)
-    return torch.where(use_direct, v0, v1)
+    return np.where(use_direct, v0, v1)
 
 
 def _max_error_Gamma_jk(omega1, theta1, omega2, theta2, n):
     """Direct computation of cross term Gamma_jk for max error."""
     temp1 = omega1 * omega2 / ((1 - theta1) * (1 - theta2))
-    gs1 = geometric_sum(torch.ones_like(theta1), theta1, num=n)
-    gs2 = geometric_sum(torch.ones_like(theta2), theta2, num=n)
-    gs12 = geometric_sum(torch.ones_like(theta1), theta1 * theta2, num=n)
+    gs1 = geometric_sum(np.ones_like(theta1), theta1, num=n)
+    gs2 = geometric_sum(np.ones_like(theta2), theta2, num=n)
+    gs12 = geometric_sum(np.ones_like(theta1), theta1 * theta2, num=n)
     temp2 = (n - gs1 - gs2 + gs12) / n
     return temp1 * temp2
 
@@ -743,31 +738,31 @@ def robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, n):
 
     The series_j approximation requires theta1 >= theta2, so we sort.
     """
-    n_t = torch.as_tensor(n, dtype=torch.float64)
+    n_t = np.asarray(n, dtype=np.float64)
     # Ensure theta1 >= theta2 (required by series_j)
-    theta1, theta2 = torch.maximum(theta1, theta2), torch.minimum(theta1, theta2)
+    theta1, theta2 = np.maximum(theta1, theta2), np.minimum(theta1, theta2)
 
     _JK_SLOPE = 0.35321577
     _JK_INTERCEPT = 2.81518052
-    power = _JK_INTERCEPT + _JK_SLOPE * torch.log(n_t)
+    power = _JK_INTERCEPT + _JK_SLOPE * np.log(n_t)
     threshold = 1 - 10 ** (-power)
 
     v0_predicate = theta1 < threshold
     v1_predicate = theta2 < threshold
 
     # Avoid inf/nan in untaken branches
-    safe_theta1 = torch.where(v0_predicate, theta1, torch.zeros_like(theta1))
-    safe_theta2_v0 = torch.where(v0_predicate, theta2, torch.zeros_like(theta2))
+    safe_theta1 = np.where(v0_predicate, theta1, np.zeros_like(theta1))
+    safe_theta2_v0 = np.where(v0_predicate, theta2, np.zeros_like(theta2))
     v0 = _max_error_Gamma_jk(omega1, safe_theta1, omega2, safe_theta2_v0, n)
 
-    safe_theta2_v1 = torch.where(v1_predicate, theta2, torch.zeros_like(theta2))
+    safe_theta2_v1 = np.where(v1_predicate, theta2, np.zeros_like(theta2))
     v1 = _max_error_Gamma_jk_series_j(omega1, theta1, omega2, safe_theta2_v1, n)
     v2 = _max_error_Gamma_jk_series_jk(omega1, theta1, omega2, theta2, n)
 
-    return torch.where(
+    return np.where(
         v0_predicate,
         v0,
-        torch.where(v1_predicate, v1, v2),
+        np.where(v1_predicate, v1, v2),
     )
 
 
@@ -795,6 +790,9 @@ class LossFn:
     penalty_strength: float = 1e-8
     max_second_coef: float = 1.0
     min_theta_gap: float = 1e-12
+    error: str | None = None
+    workload_coef: NDArray[np.float64] | None = None
+    query_weights: NDArray[np.float64] | None = None
 
     @classmethod
     def build_closed_form_single_participation(cls, n: int, **kwargs) -> LossFn:
@@ -815,8 +813,8 @@ class LossFn:
         error: str = "max",
         min_sep: int = 1,
         max_participations: int | None = None,
-        workload_coef: torch.Tensor | None = None,
-        query_weights: torch.Tensor | None = None,
+        workload_coef: ArrayLike | None = None,
+        query_weights: ArrayLike | None = None,
         **kwargs,
     ) -> LossFn:
         """Construct LossFn for min-sep participation."""
@@ -860,12 +858,23 @@ class LossFn:
                 min_sep=min_sep,
                 max_participations=max_participations,
             ),
+            error=error,
+            workload_coef=(
+                None
+                if workload_coef is None
+                else np.asarray(workload_coef, dtype=np.float64)
+            ),
+            query_weights=(
+                None
+                if query_weights is None
+                else np.asarray(query_weights, dtype=np.float64)
+            ),
             **kwargs,
         )
 
     def compute_penalties(
         self, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
-    ) -> torch.Tensor:
+    ) -> np.float64:
         """Compute log-barrier penalties enforcing the BLT feasible set.
 
         Penalties enforce:
@@ -884,7 +893,7 @@ class LossFn:
         Returns:
             Scalar penalty value.
         """
-        penalty = torch.tensor(0.0, dtype=torch.float64)
+        penalty = np.float64(0.0)
 
         if blt._num_buffers == 0:
             return penalty
@@ -906,22 +915,22 @@ class LossFn:
         # buf_decay gap separation
         if blt._num_buffers > 1:
             gap = min_buf_decay_gap(blt.buf_decay)
-            penalty = penalty - torch.log(gap - self.min_theta_gap)
+            penalty = penalty - np.log(gap - self.min_theta_gap)
 
         # Second coefficient: sum(output_scale) <= max_second_coef
-        second_coef = torch.sum(blt.output_scale)
+        second_coef = np.sum(blt.output_scale)
         penalty = penalty + _lt_penalty(second_coef, self.max_second_coef)
 
         # Pillutla score < 1
-        pillutla = torch.sum(blt.output_scale / blt.buf_decay)
-        penalty = penalty + _lt_one_penalty(pillutla.unsqueeze(0))
+        pillutla = np.sum(blt.output_scale / blt.buf_decay)
+        penalty = penalty + _lt_one_penalty(np.atleast_1d(pillutla))
 
         return penalty
 
 
 def loss(
     loss_fn: LossFn, blt: BufferedToeplitz, skip_checks: bool = False
-) -> torch.Tensor:
+) -> np.float64:
     """Returns the loss (not including penalties).
 
     Args:
@@ -935,7 +944,7 @@ def loss(
     try:
         inv_blt = inverse(blt, skip_checks=skip_checks)
     except (RuntimeError, ValueError):
-        return torch.tensor(float("inf"), dtype=torch.float64)
+        return np.float64(np.inf)
     error = loss_fn.error_for_inv(inv_blt)
     sens_sq = loss_fn.sensitivity_squared_fn(blt)
     return error * sens_sq
@@ -943,7 +952,7 @@ def loss(
 
 def penalized_loss(
     loss_fn: LossFn, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
-) -> torch.Tensor:
+) -> np.float64:
     """Returns loss + penalty_strength * penalties.
 
     This is the objective function used during L-BFGS optimization.
@@ -960,11 +969,14 @@ def penalized_loss(
     sens_sq = loss_fn.sensitivity_squared_fn(blt)
     loss_val = error * sens_sq
     penalties = loss_fn.compute_penalties(blt, inv_blt)
-    return loss_val + loss_fn.penalty_strength * penalties
+    result = loss_val + loss_fn.penalty_strength * penalties
+    if not np.isfinite(result):
+        return np.float64(1e100)
+    return result
 
 
 def blt_pair_from_theta_pair(
-    theta: torch.Tensor, theta_hat: torch.Tensor
+    theta: ArrayLike, theta_hat: ArrayLike
 ) -> tuple[BufferedToeplitz, BufferedToeplitz]:
     """Compute BLTs (C, C_inv) from theta and theta_hat.
 
@@ -977,15 +989,14 @@ def blt_pair_from_theta_pair(
     Returns:
         Tuple (C_blt, C_inv_blt).
     """
-    theta = torch.as_tensor(theta, dtype=torch.float64)
-    theta_hat = torch.as_tensor(theta_hat, dtype=torch.float64)
+    theta = np.asarray(theta, dtype=np.float64)
+    theta_hat = np.asarray(theta_hat, dtype=np.float64)
 
     def get_omega(th, th_hat):
-        numerators = torch.prod(th.unsqueeze(1) - th_hat.unsqueeze(0), dim=1)
-        A = th.unsqueeze(1) - th.unsqueeze(0)
-        A = A + torch.diag(torch.ones_like(th))
-        A[range(len(th)), range(len(th))] = 1.0
-        denominators = torch.prod(A, dim=1)
+        numerators = np.prod(th[:, np.newaxis] - th_hat[np.newaxis, :], axis=1)
+        A = th[:, np.newaxis] - th[np.newaxis, :]
+        np.fill_diagonal(A, 1.0)
+        denominators = np.prod(A, axis=1)
         return numerators / denominators
 
     return (
@@ -1042,10 +1053,11 @@ class Parameterization:
         blt_and_inverse_from_params: Reconstructs (C, C^{-1}) from parameters.
     """
 
-    params_from_blt: Callable[[BufferedToeplitz], torch.Tensor]
+    params_from_blt: Callable[[BufferedToeplitz], NDArray[np.float64]]
     blt_and_inverse_from_params: Callable[
         ..., tuple[BufferedToeplitz, BufferedToeplitz]
     ]
+    supports_analytic_gradient: bool = False
 
     @classmethod
     def buf_decay_pair(cls) -> Parameterization:
@@ -1059,12 +1071,12 @@ class Parameterization:
             A Parameterization.
         """
 
-        def params_from_blt(blt: BufferedToeplitz) -> torch.Tensor:
+        def params_from_blt(blt: BufferedToeplitz) -> NDArray[np.float64]:
             inv_blt = inverse(blt)
-            return torch.cat([blt.buf_decay, inv_blt.buf_decay])
+            return np.concatenate([blt.buf_decay, inv_blt.buf_decay])
 
         def blt_and_inverse_from_params(
-            params: torch.Tensor,
+            params: ArrayLike,
         ) -> tuple[BufferedToeplitz, BufferedToeplitz]:
             half = len(params) // 2
             theta = params[:half]
@@ -1074,12 +1086,13 @@ class Parameterization:
         return cls(
             params_from_blt=params_from_blt,
             blt_and_inverse_from_params=blt_and_inverse_from_params,
+            supports_analytic_gradient=True,
         )
 
 
 def get_parameterized_loss(
     param: Parameterization, loss_fn: LossFn
-) -> Callable[[torch.Tensor], torch.Tensor]:
+) -> Callable[[NDArray[np.float64]], float]:
     """Returns a scalar loss function over the flat parameter vector.
 
     Args:
@@ -1089,9 +1102,242 @@ def get_parameterized_loss(
     Returns:
         A callable mapping flat parameters to scalar loss.
     """
-    return lambda params: penalized_loss(
-        loss_fn, *param.blt_and_inverse_from_params(params)
+
+    def parameterized_loss(params: NDArray[np.float64]) -> float:
+        # Numerical differentiation probes points near active constraints.
+        # Those points are intentionally converted to a large finite penalty.
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            return float(
+                penalized_loss(loss_fn, *param.blt_and_inverse_from_params(params))
+            )
+
+    return parameterized_loss
+
+
+def _rational_weights_and_jacobian(
+    theta: NDArray[np.float64], theta_hat: NDArray[np.float64]
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]
+]:
+    """Return BLT rational weights and their derivatives for a theta pair."""
+    nbuf = len(theta)
+    difference = theta[:, np.newaxis] - theta[np.newaxis, :]
+    np.fill_diagonal(difference, 1.0)
+    cross_difference = theta[:, np.newaxis] - theta_hat[np.newaxis, :]
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        omega = np.prod(cross_difference, axis=1) / np.prod(difference, axis=1)
+
+    d_theta = np.empty((nbuf, nbuf), dtype=np.float64)
+    for i in range(nbuf):
+        other = np.arange(nbuf) != i
+        d_theta[i] = 0.0
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            d_theta[i, other] = omega[i] / (theta[i] - theta[other])
+            d_theta[i, i] = omega[i] * (
+                np.sum(1.0 / cross_difference[i]) - np.sum(1.0 / difference[i, other])
+            )
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        d_theta_hat = -omega[:, np.newaxis] / cross_difference
+    return omega, d_theta, d_theta_hat, cross_difference
+
+
+def _blt_coefs_and_jacobian(
+    theta: NDArray[np.float64], theta_hat: NDArray[np.float64], n: int
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]
+]:
+    """Return C/C⁻¹ Toeplitz coefficients and exact derivatives by parameters."""
+    omega, d_omega_theta, d_omega_theta_hat, _ = _rational_weights_and_jacobian(
+        theta, theta_hat
     )
+    inv_omega, d_inv_omega_hat, d_inv_omega_theta, _ = _rational_weights_and_jacobian(
+        theta_hat, theta
+    )
+    nbuf = len(theta)
+    powers = np.arange(n - 1, dtype=np.float64)[:, np.newaxis]
+
+    def coefficients_and_jacobian(
+        decay: NDArray[np.float64],
+        weights: NDArray[np.float64],
+        d_weights_first: NDArray[np.float64],
+        d_weights_second: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        decay_powers = decay[np.newaxis, :] ** powers
+        coef = np.empty(n, dtype=np.float64)
+        coef[0] = 1.0
+        coef[1:] = (decay_powers * weights).sum(axis=1)
+        jac = np.zeros((n, 2 * nbuf), dtype=np.float64)
+        jac[1:, :nbuf] = decay_powers @ d_weights_first
+        jac[1:, nbuf:] = decay_powers @ d_weights_second
+        if n > 1:
+            decay_derivative = np.where(
+                powers == 0,
+                0.0,
+                powers * decay[np.newaxis, :] ** (powers - 1),
+            )
+            jac[1:, :nbuf] += decay_derivative * weights
+        return coef, jac
+
+    coefs, coefs_jac = coefficients_and_jacobian(
+        theta, omega, d_omega_theta, d_omega_theta_hat
+    )
+    inv_coefs, inv_coefs_jac_swapped = coefficients_and_jacobian(
+        theta_hat, inv_omega, d_inv_omega_hat, d_inv_omega_theta
+    )
+    inv_coefs_jac = np.concatenate(
+        [inv_coefs_jac_swapped[:, nbuf:], inv_coefs_jac_swapped[:, :nbuf]], axis=1
+    )
+    return coefs, coefs_jac, inv_coefs, inv_coefs_jac
+
+
+def _minsep_sensitivity_and_jacobian(
+    coefs: NDArray[np.float64], jacobian: NDArray[np.float64], loss_fn: LossFn
+) -> tuple[float, NDArray[np.float64]]:
+    """Differentiate the min-separation sensitivity's linear prefix transform."""
+    n = loss_fn.n
+    padding = (loss_fn.min_sep - n) % loss_fn.min_sep
+    full = np.pad(coefs, (0, padding))
+    full_jacobian = np.pad(jacobian, ((0, padding), (0, 0)))
+    vector = full.reshape(-1, loss_fn.min_sep).cumsum(axis=0).reshape(-1)
+    vector_jacobian = (
+        full_jacobian.reshape(-1, loss_fn.min_sep, jacobian.shape[1])
+        .cumsum(axis=0)
+        .reshape(-1, jacobian.shape[1])
+    )
+    active = loss_fn.min_sep * loss_fn.max_participations
+    if active < len(vector):
+        vector[active:] -= vector[: len(vector) - active]
+        vector_jacobian[active:] -= vector_jacobian[: len(vector) - active]
+    vector = vector[:n]
+    vector_jacobian = vector_jacobian[:n]
+    return float(vector @ vector), 2.0 * vector @ vector_jacobian
+
+
+def _error_and_jacobian(
+    noising_coefs: NDArray[np.float64],
+    jacobian: NDArray[np.float64],
+    loss_fn: LossFn,
+) -> tuple[float, NDArray[np.float64]]:
+    """Differentiate the host Toeplitz workload error for a BLT inverse."""
+    n = loss_fn.n
+    if loss_fn.workload_coef is None:
+        workload = np.ones(n, dtype=np.float64)
+    else:
+        workload = toeplitz.pad_coefs_to_n(loss_fn.workload_coef, n)
+    noising = noising_coefs[:n]
+    b_coef = np.convolve(workload, noising)[:n]
+    b_jacobian = np.stack(
+        [np.convolve(workload, jacobian[:, i])[:n] for i in range(jacobian.shape[1])],
+        axis=1,
+    )
+    per_query = np.cumsum(b_coef**2)
+    per_query_jacobian = np.cumsum(2.0 * b_coef[:, np.newaxis] * b_jacobian, axis=0)
+    if loss_fn.query_weights is not None:
+        weights_squared = np.square(loss_fn.query_weights)
+        per_query *= weights_squared
+        per_query_jacobian *= weights_squared[:, np.newaxis]
+    if loss_fn.error == "mean":
+        return float(per_query.mean()), per_query_jacobian.mean(axis=0)
+    index = int(np.argmax(per_query))
+    return float(per_query[index]), per_query_jacobian[index]
+
+
+def get_parameterized_loss_and_gradient(
+    param: Parameterization, loss_fn: LossFn
+) -> Callable[[NDArray[np.float64]], tuple[float, NDArray[np.float64]]] | None:
+    """Build an exact host-side BLT loss/Jacobian callable when supported.
+
+    The min-separation objective is differentiated through the rational BLT
+    parameterization and all Toeplitz operations.  The small feasibility
+    barrier is intentionally differentiated separately with a centred host
+    difference because it is only active close to a constraint boundary.
+    """
+    if not param.supports_analytic_gradient or loss_fn.error not in {"max", "mean"}:
+        return None
+
+    def barrier_is_inactive(blt: BufferedToeplitz, inv_blt: BufferedToeplitz) -> bool:
+        """Whether every log-barrier argument is safely away from zero."""
+        slack = [
+            blt.buf_decay,
+            1.0 - blt.buf_decay,
+            blt.output_scale,
+            inv_blt.buf_decay,
+            1.0 - inv_blt.buf_decay,
+            -inv_blt.output_scale,
+            np.atleast_1d(loss_fn.max_second_coef - np.sum(blt.output_scale)),
+            np.atleast_1d(1.0 - np.sum(blt.output_scale / blt.buf_decay)),
+        ]
+        if blt._num_buffers > 1:
+            slack.append(
+                np.atleast_1d(min_buf_decay_gap(blt.buf_decay) - loss_fn.min_theta_gap)
+            )
+        return all(
+            np.all(np.isfinite(values)) and np.all(values >= _MIN_FEASIBILITY_SLACK)
+            for values in slack
+        )
+
+    def value_and_gradient(
+        params: NDArray[np.float64],
+    ) -> tuple[float, NDArray[np.float64]]:
+        params = np.asarray(params, dtype=np.float64)
+        half = len(params) // 2
+        theta, theta_hat = params[:half], params[half:]
+        try:
+            with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                coefs, coefs_jac, inv_coefs, inv_coefs_jac = _blt_coefs_and_jacobian(
+                    theta, theta_hat, loss_fn.n
+                )
+                error, error_jac = _error_and_jacobian(
+                    inv_coefs, inv_coefs_jac, loss_fn
+                )
+                sensitivity_squared, sensitivity_jac = _minsep_sensitivity_and_jacobian(
+                    coefs, coefs_jac, loss_fn
+                )
+                blt, inv_blt = param.blt_and_inverse_from_params(params)
+                penalty = float(loss_fn.compute_penalties(blt, inv_blt))
+                value = error * sensitivity_squared + loss_fn.penalty_strength * penalty
+                gradient = error_jac * sensitivity_squared + error * sensitivity_jac
+        except (FloatingPointError, ValueError, ZeroDivisionError):
+            return 1e100, np.zeros_like(params)
+
+        if not np.isfinite(value) or not np.all(np.isfinite(gradient)):
+            return 1e100, np.zeros_like(params)
+
+        # The feasibility barrier has a deliberately tiny multiplier.  Avoid
+        # its expensive centred derivative while every constraint is safely
+        # inactive; near a boundary retain the exact existing correction.
+        if barrier_is_inactive(blt, inv_blt):
+            return float(value), np.asarray(gradient, dtype=np.float64)
+
+        for index in range(len(params)):
+            step = min(
+                1e-6 * (1.0 + abs(params[index])),
+                0.25 * min(params[index], 1.0 - params[index]),
+            )
+            if step <= 0:
+                continue
+            plus = params.copy()
+            minus = params.copy()
+            plus[index] += step
+            minus[index] -= step
+            try:
+                with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                    plus_penalty = loss_fn.compute_penalties(
+                        *param.blt_and_inverse_from_params(plus)
+                    )
+                    minus_penalty = loss_fn.compute_penalties(
+                        *param.blt_and_inverse_from_params(minus)
+                    )
+                gradient[index] += (
+                    loss_fn.penalty_strength
+                    * (plus_penalty - minus_penalty)
+                    / (2.0 * step)
+                )
+            except (FloatingPointError, ValueError, ZeroDivisionError):
+                pass
+        return float(value), np.asarray(gradient, dtype=np.float64)
+
+    return value_and_gradient
 
 
 def optimize_loss(
@@ -1101,7 +1347,7 @@ def optimize_loss(
     parameterization: Parameterization | None = None,
     max_optimizer_steps: int = 600,
     **kwargs,
-) -> tuple[BufferedToeplitz, torch.Tensor]:
+) -> tuple[BufferedToeplitz, np.float64]:
     """Optimise a BLT for a fixed number of buffers using L-BFGS.
 
     This is the main workhorse: it initialises a BLT, converts it to an
@@ -1138,17 +1384,22 @@ def optimize_loss(
     params = parameterization.params_from_blt(blt)
 
     loss_fn_to_optimize = get_parameterized_loss(parameterization, loss_fn)
+    loss_and_grad_fn = get_parameterized_loss_and_gradient(parameterization, loss_fn)
 
     # For buf_decay_pair parameterization, all parameters are buf_decay
     # values (theta and theta_hat) which must be in (0, 1).
     if "bounds" not in kwargs:
         eps = 1e-9
         kwargs["bounds"] = [(eps, 1.0 - eps)] * len(params)
+    kwargs.setdefault(
+        "restart_stalled_analytic_optimization", loss_and_grad_fn is not None
+    )
 
     params = _lbfgs_optimize(
-        loss_fn_to_optimize,
+        loss_and_grad_fn if loss_and_grad_fn is not None else loss_fn_to_optimize,
         params,
         max_optimizer_steps=max_optimizer_steps,
+        grad=loss_and_grad_fn is not None,
         **kwargs,
     )
 
@@ -1156,12 +1407,12 @@ def optimize_loss(
     blt = canonicalize(blt)
 
     loss_val = loss(loss_fn, blt)
-    if not torch.isfinite(loss_val):
+    if not np.isfinite(loss_val):
         raise RuntimeError(
             f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}"
         )
 
-    if torch.any(torch.abs(blt.output_scale) < _NEAR_ZERO_OUTPUT_SCALE):
+    if np.any(np.abs(blt.output_scale) < _NEAR_ZERO_OUTPUT_SCALE):
         logger.warning(
             "BLT has near-zero output_scale parameters, which "
             "means some buffers are ignored. Consider re-optimizing "
@@ -1202,8 +1453,8 @@ def optimize(
     min_buffers: int = 0,
     max_buffers: int = 10,
     rtol: float = 1.01,
-    workload_coef: torch.Tensor | None = None,
-    query_weights: torch.Tensor | None = None,
+    workload_coef: ArrayLike | None = None,
+    query_weights: ArrayLike | None = None,
     **kwargs,
 ) -> BufferedToeplitz:
     """Compute an optimised BLT with dynamically-chosen num_buffers.

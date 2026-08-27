@@ -57,12 +57,11 @@ import time
 
 import torch
 import torch.distributed as dist
-import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
-from opaque.patches import apply_model_patches, apply_runtime_patches
-from opaque.device import sdpa_autocast_under_vmap_broken
+from opaque.transformers.patches import apply_model_patches, apply_runtime_patches
+from opaque.torch.device import sdpa_autocast_under_vmap_broken
 
 apply_runtime_patches()
 
@@ -81,17 +80,23 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
-from opaque.distributed.gradients import sum_gradients_
-from opaque.dpsgd.noise import gaussian_noise
+from opaque.distributed.gradients import sum_gradients
+from opaque.dpsgd.noise import gaussian_noise, noise_stddev
 from opaque.profiling import (
     perf_tracker,
     print_memory,
     reset_peak_memory,
 )
 from opaque.random import fold_in, key, split
-from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler, RandomAllocationSampler
+from opaque.dpsgd.sampling import (
+    KOutOfTSampler,
+    PoissonSampler,
+    RandomAllocationSampler,
+)
 from opaque.distributed import local_shard
-from opaque.functional import make_functional, empty_collate
+from opaque.functional import empty_collate
+from opaque.optimizers import apply_updates
+from opaque.torch.functional import make_functional
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -100,7 +105,6 @@ from opaque.scheduling import (
 )
 from opaque.scheduling.types import Schedule
 from opaque.types import (
-    ClippedPytree,
     PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
@@ -142,15 +146,6 @@ def _compile_grad_fn(grad_fn, *, backend, mode):
 def _effective(value):
     """Extract scalar from float or PerGroup for logging/printing."""
     return value.effective if isinstance(value, PerGroup) else value
-
-
-def _noise_stddev(max_norm, noise_multiplier, *, per_group=True):
-    """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if per_group and isinstance(max_norm, PerGroup):
-        return ClippedPytree(pytree={}, max_norm=max_norm).noise_stddev_for(
-            noise_multiplier=noise_multiplier
-        )
-    return noise_multiplier * max_norm
 
 
 def _step_clip_norm(grads_tuple):
@@ -496,9 +491,7 @@ def parse_args():
             "adagrad",
         ],
         help=(
-            "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
-            "primitives (no DP-aware paths); the others are Opaque-built "
-            "(see opaque.optimizers).  Pair with "
+            "Backend-neutral Opaque optimizer. Pair with "
             "``--noise-bias-correction`` to enable DP-aware bias "
             "correction where applicable."
         ),
@@ -1348,6 +1341,7 @@ def main():
         model,
         disable_autograd_tracking=True,
         partition_trainable=True,
+        hf_batch_adaptation=True,
     )
     param_names = list(trainable_params.keys())
     elapsed = time.time() - start_time
@@ -1586,9 +1580,7 @@ def main():
 
         def mechanism(nm, _u=_unamplified, _k=_k, _ns=total_steps):
             return acc.per_step(
-                dpsgd_acc.k_out_of_t(
-                    _u(nm), total_participations=_k, n_steps=_ns
-                )
+                dpsgd_acc.k_out_of_t(_u(nm), total_participations=_k, n_steps=_ns)
             )
 
     elif truncated_batch_size is not None:
@@ -1671,8 +1663,8 @@ def main():
 
     # Build LR schedule using opaque.scheduling primitives.  Each curve
     # returns a ``Callable[[int], float]`` and ``with_warmup`` composes a
-    # 0→1 linear ramp during the warmup window; torchopt's
-    # ``scale_by_neg_lr`` accepts either a callable or a scalar.  We
+    # 0→1 linear ramp during the warmup window; optimizer factories accept
+    # either a callable or a scalar. We
     # share ``total_steps`` with the privacy calibration above so the
     # schedule and accounting agree on the run length.  ``--max-steps``
     # (when set) only truncates training — the schedule is laid out over
@@ -1733,7 +1725,8 @@ def main():
     if args.optimizer == "adam":
         from opaque.optimizers import adam
 
-        base_opt = adam(
+        opt_step, opt_state = adam(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1741,11 +1734,14 @@ def main():
     elif args.optimizer == "sgd":
         from opaque.optimizers import sgd
 
-        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+        opt_step, opt_state = sgd(
+            trainable_params, lr=lr_for_opt, weight_decay=args.weight_decay
+        )
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
-        base_opt = adamw(
+        opt_step, opt_state = adamw(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1753,7 +1749,8 @@ def main():
     elif args.optimizer == "ademamix":
         from opaque.optimizers import ademamix
 
-        base_opt = ademamix(
+        opt_step, opt_state = ademamix(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1761,14 +1758,16 @@ def main():
     elif args.optimizer == "lion":
         from opaque.optimizers import lion
 
-        base_opt = lion(
+        opt_step, opt_state = lion(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
         )
     elif args.optimizer == "adafactor":
         from opaque.optimizers import adafactor
 
-        base_opt = adafactor(
+        opt_step, opt_state = adafactor(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1776,7 +1775,8 @@ def main():
     elif args.optimizer == "rmsprop":
         from opaque.optimizers import rmsprop
 
-        base_opt = rmsprop(
+        opt_step, opt_state = rmsprop(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1784,7 +1784,8 @@ def main():
     elif args.optimizer == "adagrad":
         from opaque.optimizers import adagrad
 
-        base_opt = adagrad(
+        opt_step, opt_state = adagrad(
+            trainable_params,
             lr=lr_for_opt,
             weight_decay=args.weight_decay,
             noise_bias_correction=args.noise_bias_correction,
@@ -1792,7 +1793,6 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
 
     # Noise functions consume ClippedPytree metadata directly and return
@@ -1832,7 +1832,9 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = _noise_stddev(initial_bound, noise_multiplier)
+    initial_noise_std = noise_stddev(
+        initial_bound, noise_multiplier=noise_multiplier
+    )
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log(
@@ -1899,20 +1901,20 @@ def main():
                     )
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    sum_gradients_(grads_tuple)
+                    grads_tuple = sum_gradients(grads_tuple)
                 sp.mark("clip")
 
                 step_clip_norm = _step_clip_norm(grads_tuple)
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
-                noise_stddev = _step_noise_stddev(noisy_grads)
+                step_noise_std = _step_noise_stddev(noisy_grads)
                 if is_ddp:
                     noise_state = sync(noise_state)
                 sp.mark("noise")
 
-                updates, opt_state = base_opt.update(
+                updates, opt_state = opt_step(
                     noisy_grads, opt_state, params=trainable_params
                 )
-                trainable_params = torchopt.apply_updates(trainable_params, updates)
+                trainable_params = apply_updates(trainable_params, updates)
                 sp.mark("optimizer")
 
             # Empty batch (rare but possible with Poisson): skip metrics.
@@ -1947,7 +1949,7 @@ def main():
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
-                        "train/noise_std": _effective(noise_stddev),
+                        "train/noise_std": _effective(step_noise_std),
                         "train/lr": current_lr,
                         **tracker.train.last.to_dict(prefix="train/"),
                     }
@@ -1966,9 +1968,9 @@ def main():
                             wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
                                 1.0, float(batch_size)
                             )
-                            if isinstance(noise_stddev, PerGroup):
+                            if isinstance(step_noise_std, PerGroup):
                                 wb_metrics[f"group/noise_std/{gname}"] = (
-                                    noise_stddev.values[gname]
+                                    step_noise_std.values[gname]
                                 )
                     wandb.log(wb_metrics, step=global_step)
 
@@ -1979,8 +1981,9 @@ def main():
                     f"Loss: {avg_loss:.4f} | "
                     f"Clip: norm={_effective(step_clip_norm):.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
-                    f"Noise: σ={_effective(noise_stddev):.4f} | "
-                    f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
+                    f"Noise: σ={_effective(step_noise_std):.4f} | "
+                    f"Time: {last.step_time_sec:.2f}s | Mem: "
+                    f"{f'{last.memory_peak_gb:.1f}GB' if last.memory_peak_gb is not None else 'n/a'}"
                 )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
@@ -2111,7 +2114,8 @@ def main():
     print("\nPerformance:")
     print(f"  Throughput: {synced.train.samples_per_second:.1f} samples/s")
     print(f"  Steps/s: {synced.train.steps_per_second:.2f}")
-    print(f"  Peak memory: {synced.train.max_peak_memory_gb:.2f} GB")
+    peak_gb = synced.train.max_peak_memory_gb
+    print(f"  Peak memory: {f'{peak_gb:.2f} GB' if peak_gb is not None else 'n/a'}")
 
     if use_wandb:
         wandb.finish()

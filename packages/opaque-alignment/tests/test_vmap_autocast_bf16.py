@@ -22,7 +22,7 @@ For each:
    with no crash. PyTorch 2.10 has a known ``aten::layer_norm`` fast-path that
    misbehaves under ``vmap + autocast`` (see project memory
    ``project_vmap_autocast_layernorm.md``); these fused kernels go through the
-   opaque-patches Triton path and must not regress to the broken fused-aten
+   opaque-kernels Triton path and must not regress to the broken fused-aten
    path under the autocast context.
 2. The autocast'd result matches the eager bf16 reference within bf16
    tolerance (bf16 matmul is coarse — atol=1e-2).

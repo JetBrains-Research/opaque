@@ -1,7 +1,7 @@
 """Gradient / pytree reduction helpers for distributed DP training.
 
-Provides ``reduce_pytree(_)`` for generic per-leaf all-reduce and
-``sum_gradients(_)`` as a thin alias scoped to clipped gradients.
+Provides ``reduce_pytree`` for generic per-leaf all-reduce and
+``sum_gradients`` as a thin alias scoped to clipped gradients.
 
 ``ClippedPytree`` and ``NoisedPytree`` support the linear reductions whose DP
 metadata semantics are determined: ``sum`` and ``mean``.  Summing disjoint local
@@ -20,9 +20,7 @@ import math
 from dataclasses import replace
 from typing import Any, TypeGuard
 
-import torch
-import torch.distributed as dist
-
+from opaque.api.engine import ops, runtime
 from opaque.api.engine.pytree import tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
@@ -33,7 +31,7 @@ from opaque.api.engine.types import (
 )
 
 from ._state import assert_scalar_equal
-from .collectives import all_reduce_, get_world_size, is_distributed
+from .collectives import get_world_size, is_distributed
 
 
 def _is_noised(pytree: Any) -> TypeGuard[NoisedPytree]:
@@ -46,8 +44,7 @@ _WRAPPER_REDUCTION_OPS = {"sum", "mean"}
 def _assert_object_equal(value: Any, *, name: str) -> None:
     if not is_distributed():
         return
-    gathered = [None] * get_world_size()
-    dist.all_gather_object(gathered, value)
+    gathered = runtime.distributed_all_gather_object(value)
     mismatched = [idx for idx, other in enumerate(gathered) if other != value]
     if mismatched:
         raise RuntimeError(
@@ -55,7 +52,16 @@ def _assert_object_equal(value: Any, *, name: str) -> None:
         )
 
 
-def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
+def assert_public_metadata_equal(value: Any, *, name: str) -> None:
+    """Raise unless a wrapper's public metadata is identical on every rank.
+
+    Shared with the Torch provider's in-place reductions
+    (``opaque.torch.distributed.reduce_pytree_``) rather than reimplemented
+    there: the two paths must agree on what "same bound on every rank" means,
+    and a :class:`~opaque.types.PerGroup` bound stores a ``MappingProxyType``
+    that no duck-typed ``isinstance(..., dict)`` fallback matches and no
+    object-gather can pickle.
+    """
     if not is_distributed():
         return
     metadata_kind = (
@@ -135,64 +141,6 @@ def _reduced_metadata(pytree: ClippedPytree, op: str, world_size: int) -> Clippe
     raise AssertionError(f"Unsupported wrapper reduction op: {op}")
 
 
-def _in_place_wrapper_metadata_changes(pytree: ClippedPytree, op: str) -> bool:
-    world_size = _metadata_world_size()
-    if world_size == 1:
-        return False
-    if op == "mean":
-        return True
-    return _is_noised(pytree) and pytree.noise_stddev is not None
-
-
-def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
-    """All-reduce tensor leaves in place.
-
-    In-place wrapper reductions are accepted only when the wrapper metadata
-    stays unchanged.  Use :func:`reduce_pytree` for reductions such as noised
-    ``sum`` or clipped/noised ``mean`` that need updated metadata.
-    """
-    if isinstance(pytree, SecondMomentClippingOutput):
-        reduce_pytree_(pytree.grads, op=op)
-        reduce_pytree_(pytree.squared_grads, op=op)
-        return
-
-    if isinstance(pytree, SecondMomentNoiseOutput):
-        reduce_pytree_(pytree.noisy_grads, op=op)
-        reduce_pytree_(pytree.noisy_squared_grads, op=op)
-        return
-
-    if isinstance(pytree, ClippedPytree):
-        _assert_wrapper_reduction_supported(pytree, op)
-        if _in_place_wrapper_metadata_changes(pytree, op):
-            raise TypeError(
-                f"In-place {type(pytree).__name__} reduction would change metadata; "
-                "use reduce_pytree() instead."
-            )
-        _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
-        if _is_noised(pytree):
-            _assert_public_metadata_equal(
-                pytree.noise_stddev,
-                name="NoisedPytree.noise_stddev",
-            )
-        reduce_pytree_(pytree.pytree, op=op)
-        return
-
-    if not is_distributed():
-        return
-
-    def _reduce(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
-            all_reduce_(leaf, op=op)
-            return leaf
-        raise TypeError(
-            f"reduce_pytree_ expects tensor leaves after wrapper dispatch; "
-            f"got {type(leaf).__name__}. Unwrap paired/custom containers "
-            f"explicitly or register a reduction branch."
-        )
-
-    tree_map(_reduce, pytree)
-
-
 def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
     """Return a pytree with each tensor leaf reduced; input unchanged.
 
@@ -214,33 +162,25 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
 
     if isinstance(pytree, ClippedPytree):
         _assert_wrapper_reduction_supported(pytree, op)
-        _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
+        assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
         if _is_noised(pytree):
-            _assert_public_metadata_equal(
+            assert_public_metadata_equal(
                 pytree.noise_stddev,
                 name="NoisedPytree.noise_stddev",
             )
-        reduced = pytree.clone()
-        reduce_pytree_(reduced.pytree, op=op)
+        reduced = replace(pytree, pytree=reduce_pytree(pytree.pytree, op=op))
         return _reduced_metadata(reduced, op, _metadata_world_size())
 
-    def _clone(leaf: Any) -> Any:
-        if isinstance(leaf, torch.Tensor):
-            return leaf.clone()
+    def _reduce(leaf: Any) -> Any:
+        if ops.is_array(leaf):
+            return runtime.distributed_all_reduce(leaf, runtime.ReduceOp(op))
         raise TypeError(
             f"reduce_pytree expects tensor leaves after wrapper dispatch; "
             f"got {type(leaf).__name__}. Unwrap paired/custom containers "
             f"explicitly or register a reduction branch."
         )
 
-    reduced = tree_map(_clone, pytree)
-    reduce_pytree_(reduced, op=op)
-    return reduced
-
-
-def sum_gradients_(gradients: Any) -> None:
-    """DP-specific alias for ``reduce_pytree_(op="sum")``."""
-    reduce_pytree_(gradients, op="sum")
+    return tree_map(_reduce, pytree)
 
 
 def sum_gradients(gradients: Any) -> Any:
@@ -250,7 +190,5 @@ def sum_gradients(gradients: Any) -> Any:
 
 __all__ = [
     "reduce_pytree",
-    "reduce_pytree_",
     "sum_gradients",
-    "sum_gradients_",
 ]

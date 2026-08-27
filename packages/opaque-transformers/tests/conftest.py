@@ -29,7 +29,7 @@ from opaque_test_support import fast_mc_accounting
 # Apply global runtime compat patches (same env semantics as
 # DPTrainer.__init__) so test collection matches the trainer's runtime.
 try:
-    from opaque.patches import apply_runtime_patches
+    from opaque.transformers.patches import apply_runtime_patches
 
     apply_runtime_patches(compat=True)
 except ImportError:

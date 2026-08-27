@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import torch
-
+from opaque.api.engine import ops
 from opaque.api.engine.pytree import (
     ParamPath,
     param_path_display,
@@ -20,11 +19,11 @@ from opaque.api.engine.types import PerGroup as _PerGroup
 
 
 def _tensor_paths(params: Any) -> list[ParamPath]:
-    """Leaf :data:`~opaque.pytree.ParamPath`s for tensor leaves in ``params``."""
+    """Leaf :data:`~opaque.pytree.types.ParamPath`s for tensor leaves in ``params``."""
     paths, leaves, _ = tree_flatten_with_paths(params)
     out: list[ParamPath] = []
     for path, leaf in zip(paths, leaves, strict=True):
-        if isinstance(leaf, torch.Tensor):
+        if ops.is_array(leaf):
             out.append(path)
         elif leaf is None:
             continue
@@ -49,7 +48,7 @@ def per_group(
     """Construct PerGroup from parameter leaf paths and substring patterns.
 
     Each pattern is a substring matched against the dotted display form of
-    each leaf :data:`~opaque.pytree.ParamPath` (see
+    each leaf :data:`~opaque.pytree.types.ParamPath` (see
     :func:`~opaque.pytree.param_path_display`).  Leaves whose display path
     contains the substring are assigned to that group.  Every leaf must
     match exactly one pattern (error on 0 or 2+).

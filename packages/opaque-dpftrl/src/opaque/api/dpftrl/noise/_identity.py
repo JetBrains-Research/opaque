@@ -7,11 +7,14 @@ with independent noise at each step.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import torch
-
+from opaque.api.dpftrl.noise._plan import MfExecutionPlan, identity_execution_plan
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix, identity
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 @register_strategy
@@ -24,11 +27,11 @@ class IdentityStrategy:
     a dedicated native primitive that exploits ``G = num_epochs · I_b``).
     """
 
-    def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
-        # First column of the n × n identity matrix.
-        c = torch.zeros(n_steps, dtype=torch.float64)
-        c[0] = 1.0
-        return c
+    def execution_plan(self, *, n_steps: int, **_) -> MfExecutionPlan:
+        return identity_execution_plan(n_steps)
+
+    def coefficients(self, *, n_steps: int, **_) -> np.ndarray:
+        return self.execution_plan(n_steps=n_steps).coefficients()
 
     def gram_matrix(self, **_) -> tuple[float, ...]:
         # The BnB Identity path never materialises the gram: it is exactly

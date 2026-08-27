@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from opaque.api.auditing._coin_flip import CanaryScores
+from opaque.ops import detach, is_array, stack
+from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -91,13 +94,59 @@ def _collated_length(collated: Any) -> int | None:
     return int(shape[0])
 
 
+def _detach_tree(tree: Any) -> Any:
+    """Detach every native-array leaf so scoring records no gradients."""
+    return tree_map(lambda leaf: detach(leaf) if is_array(leaf) else leaf, tree)
+
+
+def _default_collate(examples: list[Any]) -> Any:
+    """Stack a list of examples into one batch on the active provider.
+
+    Native arrays are stacked along a new leading axis; mappings and
+    sequences are recursed with their container type preserved. Anything
+    else needs an explicit ``collate_fn`` — guessing a representation for
+    arbitrary leaves would silently change what the loss function sees.
+    """
+    first = examples[0]
+    if is_array(first):
+        return stack(examples, axis=0)
+    if isinstance(first, Mapping):
+        columns = {
+            key: _default_collate([example[key] for example in examples])
+            for key in first
+        }
+        if type(first) is dict:
+            return columns
+        try:
+            return type(first)(columns)
+        except TypeError:
+            # A mapping whose constructor does not accept a mapping. Returning
+            # the plain dict keeps the audit running; the leaves are the part
+            # the loss function reads.
+            return columns
+    if isinstance(first, (tuple, list)):
+        columns = [
+            _default_collate(list(column)) for column in zip(*examples, strict=True)
+        ]
+        if hasattr(first, "_fields"):
+            # A namedtuple binds its fields positionally, so the sequence
+            # spelling below would hand the whole column list to the first
+            # field and raise on the rest.
+            return type(first)(*columns)
+        return type(first)(columns)
+    raise TypeError(
+        f"default collation cannot batch {type(first).__name__} examples; "
+        "pass collate_fn= to control how examples become a batch"
+    )
+
+
 def _canary_loader(
     dataset: Any,
     coin_flip: CoinFlip,
     batch_size: int,
     collate_fn: Callable | None,
 ) -> Any:
-    """Build the internal DataLoader for verified canary scoring.
+    """Build the internal batch iterator for verified canary scoring.
 
     Each batch arrives as ``(positions, collated_examples)``: the canary
     positions ride alongside the examples through collation, so the
@@ -108,9 +157,7 @@ def _canary_loader(
     reordering within a batch cannot be detected and is a caller
     obligation.
     """
-    import torch.utils.data as tud
-
-    example_collate = tud.default_collate if collate_fn is None else collate_fn
+    example_collate = _default_collate if collate_fn is None else collate_fn
 
     def indexed_collate(batch: list[tuple[int, Any]]) -> tuple[list[int], Any]:
         positions = [position for position, _ in batch]
@@ -126,12 +173,19 @@ def _canary_loader(
             )
         return positions, collated
 
-    return tud.DataLoader(
-        _IndexedCanaries(dataset, coin_flip.canary_indices),
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=indexed_collate,
-    )
+    indexed = _IndexedCanaries(dataset, coin_flip.canary_indices)
+
+    def batches():
+        buffer: list[tuple[int, Any]] = []
+        for position in range(len(indexed)):
+            buffer.append(indexed[position])
+            if len(buffer) == batch_size:
+                yield indexed_collate(buffer)
+                buffer = []
+        if buffer:
+            yield indexed_collate(buffer)
+
+    return batches()
 
 
 def _scoring_loader(

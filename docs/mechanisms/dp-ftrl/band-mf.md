@@ -167,6 +167,10 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 ### Noise injection
 
+The gradient template contains native Torch arrays. BandMF
+coefficients are computed as NumPy host data, while the eager noise function
+keeps its outputs and correlation state native to the activated provider.
+
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
 from opaque.random import key

@@ -2,12 +2,16 @@
 
 Small root over the trainer implementation package: the core
 :class:`~opaque.transformers.trainer.DPTrainer` primitives are re-exported here,
-and the TRL-style trainers live under :mod:`opaque.transformers.trl`.
+the TRL-style trainers live under :mod:`opaque.transformers.trl`, and the
+Hugging Face and PEFT compatibility patches under
+:mod:`opaque.transformers.patches`.
 
 Importing this module does **not** mutate Hugging Face globals — ``DPTrainer``
 applies the runtime + per-model patches during construction. Scripts that use
 HF primitives without ``DPTrainer`` should call
-:func:`opaque.patches.apply_runtime_patches` once for the global runtime shims.
+:func:`opaque.transformers.patches.apply_runtime_patches` once for the global
+runtime shims; it forwards to the Torch provider's own runtime patches first, so
+that one call covers both layers.
 """
 
 from __future__ import annotations

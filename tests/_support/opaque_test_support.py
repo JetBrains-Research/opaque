@@ -191,7 +191,7 @@ def prepare_lora_model(
         ),
     )
     if apply_patches:
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         apply_model_patches(
             model,
@@ -216,12 +216,12 @@ def run_clipped_grad_test(
 ) -> tuple[Any, Any]:
     """Run the real clipped-gradient path and return its gradients and state."""
     from opaque.api.engine.clipping import clipped_grad
-    from opaque.functional import make_functional
+    from opaque.torch.functional import make_functional
 
     if device is None:
         device = next(model.parameters()).device
     if apply_patches:
-        from opaque.patches import apply_model_patches
+        from opaque.transformers.patches import apply_model_patches
 
         apply_model_patches(model, compat=True, performance=False)
 

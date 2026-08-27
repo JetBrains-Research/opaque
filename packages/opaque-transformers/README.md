@@ -10,23 +10,23 @@ Install the root package as described in the [repository installation guide](htt
 Use its `transformers` extra for trainer integration or `trl` for TRL config
 conversion.
 
-Depends on `opaque-engine`, `opaque-patches`, `opaque-dpsgd`, `opaque-dpftrl`,
+Depends on `opaque-engine`, `opaque-kernels`, `opaque-dpsgd`, `opaque-dpftrl`,
 `opaque-accounting`, `opaque-optimizers`, `opaque-alignment`, plus
 `transformers>=5.0`, `peft>=0.13`, and `datasets>=2.0`.
 
-For Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy), install
-`opaque-patches[transformers]` — kernels are a dependency of `opaque-patches`
-and gate on CUDA + Triton at runtime.
+The Triton fused kernels (RoPE, RMSNorm, activation, cross-entropy) ship in
+`opaque-kernels`, already a dependency of this package, and gate on CUDA +
+Triton at runtime.
 
 ## Quick start
 
 Runtime compat patches (vmap-safe masking, collator / checkpoint hooks) are
 applied when you construct :class:`opaque.transformers.trainer.DPTrainer`, or
-when you call :func:`opaque.patches.apply_runtime_patches` explicitly (e.g. in
+when you call :func:`opaque.transformers.patches.apply_runtime_patches` explicitly (e.g. in
 a notebook that uses HF primitives without the trainer).
 
 ```python
-from opaque.patches import apply_runtime_patches, is_runtime_patched
+from opaque.transformers.patches import apply_runtime_patches, is_runtime_patched
 from opaque.transformers import DPTrainer
 
 apply_runtime_patches(compat=True)  # global runtime shims — idempotent
@@ -46,5 +46,5 @@ assert is_runtime_patched()
 - **`opaque.transformers`** / **`opaque.transformers.trainer`** — thin
   re-export façades (same pattern as `opaque-engine`: `opaque.api.*` for
   implementation, `opaque.*` for stable imports).
-- **`opaque.patches.transformers`** — vmap-safe runtime patches and optional
-  Triton kernel hooks (see `opaque.patches`).
+- **`opaque.transformers.patches.families`** — vmap-safe runtime patches and optional
+  Triton kernel hooks (see `opaque.transformers.patches`).

@@ -1,120 +1,67 @@
-"""Universal Adam / AdamW factory.
-
-Single entry point for the Adam family.  Handles four orthogonal
-behaviors selected at factory time and by the update value type:
-
-1. **L2 vs decoupled weight decay** — constructor flag
-   ``decoupled_weight_decay``.  ``True`` is AdamW (Loshchilov &
-   Hutter, `Decoupled Weight Decay Regularization
-   <https://arxiv.org/abs/1711.05101>`_); ``False`` is the original Adam
-   (Kingma & Ba, `Adam: A Method for Stochastic Optimization
-   <https://arxiv.org/abs/1412.6980>`_) with L2 regularisation folded
-   into the gradient.
-
-2. **StableAdamW RMS clip** — constructor knob ``update_rms_clip``.
-   ``None`` disables the clip; a positive float divides the moment-scaled
-   update by ``max(1, rms / threshold)``.  See Wortsman et al.,
-   `Stable and low-precision training for large-scale vision-language
-   models <https://arxiv.org/abs/2304.13013>`_ (2023).
-
-3. **DP noise-variance bias correction** — pass ``NoisedPytree`` updates
-    from a DP noise mechanism with ``noise_bias_correction=True``.  The
-    wrapper carries the realized per-step σ; the second moment is then
-    corrected by a β₂-EMA of the noise variance.  Chooi et al.,
-    "DP-AdamW", arXiv:2511.07843.
-
-4. **Private second-moment stream** — pass ``SecondMomentNoiseOutput``
-    to ``update()`` to bypass squaring the noised gradient and use a
-    privately-estimated ``g²`` instead.  Kalinin, Upadhyay, Lampert,
-    "Continual Release Moment Estimation with Differential Privacy",
-    arXiv:2502.06597.
-
-Modes (3) and (4) target the same source of bias — that ``E[(g+noise)²]``
-is not ``E[g²]`` — by different means.  They are alternatives, not stack
-on top of each other; pick one per training run.  They are also mutually
-exclusive per step by construction, because a single ``update()`` value
-is either ``NoisedPytree`` or ``SecondMomentNoiseOutput``.
-
-The optimizer follows torchopt's ``GradientTransformation`` protocol::
-
-    opt = adamw(lr=1e-3, weight_decay=0.01)
-    state = opt.init(params)
-
-    # Vanilla AdamW:
-    updates, state = opt.update(grads, state, params=p)
-
-    # DP-AdamW-BC (σ travels with the noised gradients):
-    updates, state = opt.update(noisy_grads, state, params=p)
-
-    # DP-AdamW with a private second-moment stream:
-    updates, state = opt.update(second_moment_output, state, params=p)
-"""
+"""Backend-neutral Adam / AdamW factory."""
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import torch
-
-try:
-    from torchopt.base import GradientTransformation
-except ImportError as exc:
-    raise ImportError(
-        "torchopt is required for opaque.optimizers. "
-        "Install it with: pip install 'torchopt>=0.7.3'"
-    ) from exc
-
-from opaque.api.optimizers._bias_correction import (
-    init_per_group_phi,
-    is_per_group,
-    resolve_noise_variance,
-    update_phi_ema,
-)
+from opaque.api.engine import ops
+from opaque.api.engine.pytree import ParamPath, tree_flatten_with_paths, tree_unflatten
 from opaque.api.optimizers._chain import make_optimizer_chain
+from opaque.api.optimizers.types import AdamState
 from opaque.pytree import tree_map
-
-if TYPE_CHECKING:
-    from opaque.pytree import ParamPath
-    from opaque.types import PerGroup, TensorPytree
+from opaque.types import PerGroup
 
 _LR = float | Callable[[int], float]
 
 
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
+def _init_per_group_phi(params: Any) -> dict[ParamPath, float]:
+    paths, _leaves, _treedef = tree_flatten_with_paths(params)
+    del _leaves, _treedef
+    return dict.fromkeys(paths, 0.0)
 
 
-@dataclasses.dataclass(frozen=True)
-class AdamState:
-    """Immutable state for Adam-family moment scaling.
-
-    Carries the noise-variance EMA ``phi`` regardless of whether DP
-    bias correction is actively in use — this keeps the state shape
-    constant across calls so checkpoints don't depend on call history.
-    With ``noise_bias_correction=True``, ``phi`` is a path-keyed dict
-    from init (stable for ``state_dict`` / ``from_state_dict``).
-
-    Attributes:
-        mu: First-moment EMA (pytree matching params).
-        nu: Second-moment EMA (pytree matching params).
-        phi: Noise-variance EMA (scalar, or ``dict[ParamPath, float]``
-            when BC is enabled).  Stays at zero unless ``NoisedPytree``
-            updates supply realized σ metadata.
-        step: Number of completed updates.
-    """
-
-    mu: TensorPytree
-    nu: TensorPytree
-    phi: float | dict[ParamPath, float]
-    step: int
+def _resolve_noise_variance(
+    noise_stddev: float | PerGroup,
+    path: ParamPath | None = None,
+) -> float:
+    if isinstance(noise_stddev, PerGroup):
+        if path is None:
+            raise ValueError(
+                "resolve_noise_variance requires `path` for PerGroup noise_stddev"
+            )
+        return float(noise_stddev.for_path(path)) ** 2
+    return float(noise_stddev) ** 2
 
 
-# ---------------------------------------------------------------------------
-# Moment scaler — handles vanilla / BC / external second-moment branches
-# ---------------------------------------------------------------------------
+def _is_per_group(noise_stddev: float | PerGroup) -> bool:
+    return isinstance(noise_stddev, PerGroup)
+
+
+def _map_leaves_with_path(
+    fn: Callable[..., Any],
+    tree: Any,
+    *others: Any,
+) -> Any:
+    """Apply ``fn(path, leaf, *other_leaves)`` and rebuild ``tree``'s structure."""
+    paths, leaves, treedef = tree_flatten_with_paths(tree)
+    other_flat = [tree_flatten_with_paths(t) for t in others]
+    for i, (other_paths, other_leaves, _) in enumerate(other_flat):
+        if other_paths != paths:
+            raise ValueError(
+                f"pytree ParamPath mismatch for argument {i}: "
+                f"primary paths {paths!r}, got {other_paths!r}."
+            )
+        if len(other_leaves) != len(leaves):
+            raise ValueError(
+                f"pytree leaf count mismatch: primary has {len(leaves)}, "
+                f"argument {i} has {len(other_leaves)}"
+            )
+    out_leaves = []
+    for j, path in enumerate(paths):
+        args = [leaves[j], *[flat[1][j] for flat in other_flat]]
+        out_leaves.append(fn(path, *args))
+    return tree_unflatten(treedef, out_leaves)
 
 
 def _scale_by_adam(
@@ -123,152 +70,144 @@ def _scale_by_adam(
     eps: float,
     noise_bias_correction: bool,
     bc_floor: float,
-) -> GradientTransformation:
-    """Adam moment scaling with optional DP bias correction or private second moments.
+) -> Callable[..., tuple[Any, AdamState]]:
+    """Adam moment scaling with optional DP bias correction or private second moments."""
 
-    This is an **internal** moment primitive: :func:`make_optimizer_chain` calls
-    ``update()`` and injects DP routing only from ``NoisedPytree`` /
-    ``SecondMomentNoiseOutput`` wrappers on ``updates`` — not from public
-    per-step kwargs on the returned optimizer.
-
-    Branches (selected by injected ``noise_stddev`` / ``noisy_squared_grads``):
-
-    - Injected privatised second moment: v-update consumes that stream;
-      no φ-EMA (post-processed stream).  Injected ``noise_stddev`` ignored.
-    - Injected non-zero ``noise_stddev``: square the (possibly noised) gradient
-      and apply BC::
-
-          v̂_corrected = max(v̂ − φ̂, floor)
-
-    - Neither: vanilla Adam.
-    """
-
-    def init_fn(params: Any) -> AdamState:
-        mu = tree_map(torch.zeros_like, params)
-        nu = tree_map(torch.zeros_like, params)
-        phi: float | dict = init_per_group_phi(params) if noise_bias_correction else 0.0
-        return AdamState(mu=mu, nu=nu, phi=phi, step=0)
-
-    def update_fn(
+    def step(
         updates: Any,
         state: AdamState,
-        *,
-        params: Any = None,
-        inplace: bool = False,
+        params: Any,
         noise_stddev: float | PerGroup | None = None,
-        noisy_squared_grads: Any = None,
+        noisy_squared_grads: Any | None = None,
     ) -> tuple[Any, AdamState]:
-        if noisy_squared_grads is not None and noise_stddev is not None:
-            raise ValueError(
-                "adamw.update() received both noisy_squared_grads and "
-                "noise_stddev (DP-BC); these select mutually exclusive v-update "
-                "branches.  Pass exactly one (or neither, for vanilla AdamW)."
-            )
+        del params
+        # Second-moment stream takes precedence; a NoisedPytree on the
+        # first stream may still carry noise_stddev, but it is ignored
+        # when a private second-moment stream is supplied.
 
         t = state.step + 1
+        bc1 = 1.0 - b1**t
+        bc2 = 1.0 - b2**t
 
-        # First moment is the same in all branches.
-        new_mu = tree_map(lambda m, g: b1 * m + (1 - b1) * g, state.mu, updates)
+        new_mu = tree_map(
+            lambda m, g: ops.add(ops.multiply(m, b1), ops.multiply(g, 1.0 - b1)),
+            state.mu,
+            updates,
+        )
 
-        # ---- v-update ----------------------------------------------------
         if noisy_squared_grads is not None:
-            # External second-moment branch: g² stream replaces (g·g).  No φ-EMA
-            # correction (post-processing already gave us an unbiased v).
             new_nu = tree_map(
-                lambda v, g2: b2 * v + (1 - b2) * g2,
+                lambda v, g2: ops.add(ops.multiply(v, b2), ops.multiply(g2, 1.0 - b2)),
                 state.nu,
                 noisy_squared_grads,
             )
-            new_phi = state.phi  # unchanged
-            bc1 = 1 - b1**t
-            bc2 = 1 - b2**t
+            new_phi = state.phi
 
-            def _compute_sm(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                m_hat = m / bc1
-                v_hat = v / bc2
-                # Noisy g² can be negative when second-stream noise dominates the
-                # signal (g² ≪ σ_second).  Falling back to the squared first moment
-                # keeps the update magnitude ≈ 1 (sign-gradient-like) for those
-                # elements instead of collapsing the denominator to bc_floor → ∞ update.
-                v_eff = torch.where(v_hat > 0, v_hat, m_hat * m_hat).clamp(min=bc_floor)
-                return m_hat / (v_eff.sqrt() + eps)
+            def _compute_sm(m: Any, v: Any) -> Any:
+                m_hat = ops.divide(m, bc1)
+                v_hat = ops.divide(v, bc2)
+                v_eff = ops.where(
+                    ops.greater(v_hat, 0.0),
+                    v_hat,
+                    ops.square(m_hat),
+                )
+                v_eff = ops.clamp(v_eff, lo=bc_floor)
+                return ops.divide(m_hat, ops.add(ops.sqrt(v_eff), eps))
 
             result = tree_map(_compute_sm, new_mu, new_nu)
             return result, AdamState(mu=new_mu, nu=new_nu, phi=new_phi, step=t)
 
-        # Standard / BC branch: square the (possibly noised) gradient.
-        new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
+        new_nu = tree_map(
+            lambda v, g: ops.add(
+                ops.multiply(v, b2),
+                ops.multiply(ops.square(g), 1.0 - b2),
+            ),
+            state.nu,
+            updates,
+        )
 
-        bc1 = 1 - b1**t
-        bc2 = 1 - b2**t
         effective_stddev = noise_stddev if noise_stddev is not None else 0.0
         if not noise_bias_correction:
-            result = tree_map(
-                lambda m, v: (m / bc1) / ((v / bc2).sqrt() + eps),
-                new_mu,
-                new_nu,
-            )
+
+            def _vanilla(m: Any, v: Any) -> Any:
+                return ops.divide(
+                    ops.divide(m, bc1),
+                    ops.add(ops.sqrt(ops.divide(v, bc2)), eps),
+                )
+
+            result = tree_map(_vanilla, new_mu, new_nu)
             return result, AdamState(mu=new_mu, nu=new_nu, phi=state.phi, step=t)
 
-        per_group = is_per_group(effective_stddev) or isinstance(state.phi, dict)
+        per_group = _is_per_group(effective_stddev) or isinstance(state.phi, dict)
 
         if per_group:
-            # Per-leaf path: walk moments by optree ParamPath so nested
-            # param pytrees match :class:`PerGroup.groups` keys.
-            from opaque.api.optimizers._bias_correction import map_leaves_with_path
-
             new_phi: dict = {}
 
-            def _bc_leaf(path, mu_node, nu_node):
-                nv = resolve_noise_variance(effective_stddev, path)
+            def _bc_leaf(path: ParamPath, mu_node: Any, nu_node: Any) -> Any:
+                nv = _resolve_noise_variance(effective_stddev, path)
                 old_phi_k = (
-                    state.phi.get(path, 0.0)
+                    state.phi.get(path, 0.0)  # type: ignore[union-attr]
                     if isinstance(state.phi, dict)
                     else state.phi
                 )
-                new_phi_k = b2 * old_phi_k + (1 - b2) * nv
+                new_phi_k = b2 * old_phi_k + (1.0 - b2) * nv
                 new_phi[path] = new_phi_k
-                m_hat = mu_node / bc1
-                phi_hat = new_phi_k / bc2
-                v_raw = nu_node / bc2
-                if phi_hat > 0:
-                    corrected = v_raw - phi_hat
-                    v_hat = torch.where(corrected > 0, corrected, v_raw)
-                else:
-                    v_hat = v_raw
-                return m_hat / (v_hat.sqrt() + eps)
+                m_hat = ops.divide(mu_node, bc1)
+                phi_hat = ops.divide(ops.scalar(new_phi_k, like=nu_node), bc2)
+                v_raw = ops.divide(nu_node, bc2)
+                v_hat = ops.where(
+                    ops.greater(phi_hat, 0.0),
+                    ops.where(
+                        ops.greater(ops.subtract(v_raw, phi_hat), 0.0),
+                        ops.subtract(v_raw, phi_hat),
+                        v_raw,
+                    ),
+                    v_raw,
+                )
+                return ops.divide(m_hat, ops.add(ops.sqrt(v_hat), eps))
 
-            result = map_leaves_with_path(_bc_leaf, new_mu, new_nu)
+            result = _map_leaves_with_path(_bc_leaf, new_mu, new_nu)
         else:
             scalar_var = float(effective_stddev) ** 2
-            new_phi = update_phi_ema(state.phi, scalar_var, b2)
-            phi_hat = new_phi / bc2
+            if isinstance(state.phi, dict):
+                raise TypeError(
+                    "phi is per-group dict but noise_stddev is scalar; "
+                    "either both must be per-group or both must be scalar."
+                )
+            new_phi_value = b2 * state.phi + (1.0 - b2) * scalar_var
+            phi_hat = new_phi_value / bc2
 
-            if phi_hat > 0:
+            if phi_hat > 0.0:
 
-                def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    v_hat = v / bc2
-                    corrected = v_hat - phi_hat
-                    denom = torch.where(corrected > 0, corrected, v_hat).sqrt() + eps
-                    return (m / bc1) / denom
+                def _bc_scalar(m: Any, v: Any) -> Any:
+                    v_hat = ops.divide(v, bc2)
+                    corrected = ops.subtract(v_hat, phi_hat)
+                    denom = ops.add(
+                        ops.sqrt(
+                            ops.where(ops.greater(corrected, 0.0), corrected, v_hat)
+                        ),
+                        eps,
+                    )
+                    return ops.divide(ops.divide(m, bc1), denom)
+
             else:
 
-                def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                    return (m / bc1) / ((v / bc2).sqrt() + eps)
+                def _bc_scalar(m: Any, v: Any) -> Any:
+                    return ops.divide(
+                        ops.divide(m, bc1),
+                        ops.add(ops.sqrt(ops.divide(v, bc2)), eps),
+                    )
 
-            result = tree_map(_compute, new_mu, new_nu)
+            result = tree_map(_bc_scalar, new_mu, new_nu)
+            new_phi = new_phi_value
 
         return result, AdamState(mu=new_mu, nu=new_nu, phi=new_phi, step=t)
 
-    return GradientTransformation(init_fn, update_fn)
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+    return step
 
 
 def adam(
+    params: Any,
     lr: _LR = 1e-3,
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
@@ -276,14 +215,10 @@ def adam(
     *,
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
-) -> GradientTransformation:
-    """Create an Adam optimizer with Opaque's wrapper-aware update API.
-
-    This is the original Adam/L2 weight-decay variant of :func:`adamw`.
-    ``NoisedPytree`` and ``SecondMomentNoiseOutput`` updates are routed the
-    same way as AdamW, so callers do not need an optimizer-specific branch.
-    """
+) -> tuple[Callable[..., tuple[Any, AdamState]], AdamState]:
+    """Create an Adam optimizer (L2 weight decay) with Opaque's wrapper-aware API."""
     return adamw(
+        params=params,
         lr=lr,
         betas=betas,
         eps=eps,
@@ -295,6 +230,7 @@ def adam(
 
 
 def adamw(
+    params: Any,
     lr: _LR = 1e-3,
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
@@ -303,54 +239,48 @@ def adamw(
     decoupled_weight_decay: bool = True,
     update_rms_clip: float | None = None,
     noise_bias_correction: bool = False,
-) -> GradientTransformation:
+) -> tuple[Callable[..., tuple[Any, AdamState]], AdamState]:
     """Universal Adam / AdamW factory.
 
     Args:
-        lr: Learning rate, scalar or ``step → float`` callable schedule.
+        params: Parameter pytree used to initialise optimizer state.
+        lr: Learning rate, scalar or ``step -> float`` callable schedule.
         betas: ``(β₁, β₂)`` coefficients for first / second moment EMAs.
         eps: Denominator stability constant.
         weight_decay: Weight-decay coefficient (decoupled by default).
-        decoupled_weight_decay: ``True`` selects AdamW (decoupled WD,
-            modern default).  ``False`` selects the original Adam, where
-            ``weight_decay * params`` is added to the gradient before
-            moment scaling — i.e. L2 regularisation enters the EMAs.
+        decoupled_weight_decay: ``True`` selects AdamW (decoupled WD).
+            ``False`` selects the original Adam, where ``weight_decay * params``
+            is folded into the gradient before moment scaling.
         update_rms_clip: When not ``None``, divides the moment-scaled
-            update by ``max(1, rms / threshold)`` (StableAdamW).  ``rms``
-            is the global root-mean-square over all tensor leaves.
+            update by ``max(1, rms / threshold)`` (StableAdamW).
         noise_bias_correction: If ``True``, subtract a β₂-EMA of the
             realized noise variance from the second moment when
-            ``NoisedPytree`` updates are passed (DP-AdamW-BC, Chooi et al.).
-            Defaults to ``False``; see ``docs/user-guide/optimizers.md``
-            for when to flip it on.  Has no effect on steps where the
-            update is a ``SecondMomentNoiseOutput``, since the privatised
-            ``g²`` stream is an alternative answer to the same v-update
-            bias.
+            ``NoisedPytree`` updates are passed (DP-AdamW-BC).
 
     Returns:
-        A ``torchopt.base.GradientTransformation``.
-
-    DP usage notes:
-
-        - Call ``update(updates, state, ...)`` with ``updates`` as ``NoisedPytree``
-          (first-moment noise metadata) or ``SecondMomentNoiseOutput`` (paired
-          streams). Do not pass ``noise_stddev=`` / ``noisy_squared_grads=`` —
-          those are internal to the composer chain only.
-        - ``NoisedPytree``: realized σ feeds bias correction when enabled.
-        - ``SecondMomentNoiseOutput``: privatised ``g²`` stream substitutes the
-          usual v-update; mutually exclusive per step with the BC-from-σ path.
+        ``(step_fn, AdamState)``.
     """
-    _validate(eps, betas, weight_decay, update_rms_clip)
-    bc_floor = eps * eps  # see module docstring on the rationale.
-    moment = _scale_by_adam(
+    _validate_adam(eps, betas, weight_decay, update_rms_clip)
+
+    mu = tree_map(lambda p: ops.zeros_like(p), params)
+    nu = tree_map(lambda p: ops.zeros_like(p), params)
+    phi: float | dict[ParamPath, float] = (
+        _init_per_group_phi(params) if noise_bias_correction else 0.0
+    )
+    init_state = AdamState(mu=mu, nu=nu, phi=phi, step=0)
+
+    bc_floor = eps * eps
+    moment_step = _scale_by_adam(
         b1=betas[0],
         b2=betas[1],
         eps=eps,
         noise_bias_correction=noise_bias_correction,
         bc_floor=bc_floor,
     )
+
     return make_optimizer_chain(
-        moment,
+        moment_step=moment_step,
+        moment_init_state=init_state,
         lr=lr,
         weight_decay=weight_decay,
         decoupled_weight_decay=decoupled_weight_decay,
@@ -358,7 +288,7 @@ def adamw(
     )
 
 
-def _validate(
+def _validate_adam(
     eps: float,
     betas: tuple[float, float],
     weight_decay: float,
@@ -381,4 +311,4 @@ def _validate(
         )
 
 
-__all__ = ["AdamState", "adam", "adamw"]
+__all__ = ["adam", "adamw"]

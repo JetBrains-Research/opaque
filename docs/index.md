@@ -3,8 +3,9 @@
 **Functional DP-SGD and DP-FTRL for PyTorch.**
 
 Opaque provides composable primitives for differentially private
-model training in PyTorch. Built on `torch.func`, every component
-uses explicit state — no hooks, no subclassing, no hidden mutation.
+model training. Backend-dispatched primitives preserve provider-native arrays,
+dtypes, and devices, while every component uses explicit state — no hooks, no
+subclassing, no hidden mutation.
 
 Opaque ships two complementary training pipelines:
 

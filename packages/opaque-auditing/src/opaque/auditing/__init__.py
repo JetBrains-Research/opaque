@@ -43,6 +43,7 @@ from opaque.api.auditing import (
     loss_scores,
     one_run,
 )
+from opaque.auditing import types
 
 try:
     __version__ = _pkg_version("opaque-auditing")
@@ -56,4 +57,5 @@ __all__ = [
     "gradient_scores",
     "loss_scores",
     "one_run",
+    "types",
 ]

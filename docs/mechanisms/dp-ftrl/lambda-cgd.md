@@ -28,15 +28,12 @@ from opaque.dpftrl.noise import lambda_cgd_strategy
 import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
-# 1. Create strategy — computes sensitivity and Gram matrix internally
+# 1. Create a provider-independent strategy recipe
 strategy = lambda_cgd_strategy(
     lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
 )
 
-# 2. Build accounting mechanism via strategy.as_mechanism
+# 2. Build accounting from the same strategy recipe
 training = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
@@ -50,11 +47,12 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `lambda_` | Correlation coefficient in \([0, 1)\). \(\lambda = 0\) is DP-SGD. |
-| `n_steps` | Total training steps |
-| `min_sep` | Steps per epoch (= bins per epoch) |
-| `max_participations` | Number of epochs |
 | `normalized` | Column-normalize C (default True, gives sensitivity=1 for k=1) |
 | `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
+
+Pass `n_steps`, `min_sep`, and `max_participations` to
+`mf_gaussian_noise` and the matching accounting amplifier. Strategy queries use
+that participation context to derive sensitivity and Gram data.
 
 ### Accounting parameters
 
@@ -81,6 +79,11 @@ expression in terms of λ, min_sep, and max_participations.
 - Broader MF context: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
 
 ## Noise generation
+
+λ-CGD coefficients are NumPy host data, while eager noise sampling and outputs
+remain native Torch arrays. Replaying the previous keyed sample is
+deterministic within the active provider; it is not a cross-provider bitstream
+guarantee.
 
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy

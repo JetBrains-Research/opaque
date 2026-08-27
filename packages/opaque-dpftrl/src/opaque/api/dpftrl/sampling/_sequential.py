@@ -12,10 +12,10 @@ should be pre-shuffled once before constructing the sampler.
 from collections.abc import Iterator, Mapping, Sized
 from typing import Any
 
-from torch.utils.data import Sampler
+from opaque.sampling import Sampler
 
 
-class SequentialBatchSampler(Sampler):
+class SequentialBatchSampler(Sampler[list[int]]):
     """Deterministic fixed-size sequential batching.
 
     Yields contiguous, non-overlapping chunks of ``batch_size`` indices

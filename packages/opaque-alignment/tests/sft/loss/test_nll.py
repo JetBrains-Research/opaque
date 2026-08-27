@@ -25,7 +25,7 @@ hidden states + the ``lm_head`` weight instead of logits, driven by
 - **CPU** (float64): asserts the per-example contract, shapes, and
   ``vmap(grad)`` composability against the eager reference ``nll_loss``.
 - **GPU** (bf16, ``[patches]``): the same parity, exercising the fused
-  opaque-patches linear-CE kernel path (NLL plain).
+  opaque-kernels linear-CE kernel path (NLL plain).
 
 Imports target concrete implementation paths because the public façade
 ``__init__.py`` is wired in the separate ε.W unit.
@@ -292,7 +292,7 @@ def test_fused_nll_vmap_grad_matches_eager_cpu() -> None:
 def test_fused_nll_lce_path_matches_eager_gpu() -> None:
     """The fused kernel path (CUDA + bf16) matches the eager reference.
 
-    Exercises the opaque-patches linear-CE kernel (NLL plain); bf16 matmul is
+    Exercises the opaque-kernels linear-CE kernel (NLL plain); bf16 matmul is
     coarse, so tolerances are loose.
     """
     hidden, weight, labels = _make_inputs(seed=3, dtype=torch.bfloat16, device="cuda")

@@ -127,7 +127,7 @@ band = dpftrl_acc.poisson(
     n_steps=1000,
 )
 
-# DP-λCGD: strategy.as_mechanism populates the accounting
+# DP-λCGD: the amplifier queries the same strategy recipe
 lcgd_s = lambda_cgd_strategy(lambda_=0.9)
 lcgd = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, lcgd_s),

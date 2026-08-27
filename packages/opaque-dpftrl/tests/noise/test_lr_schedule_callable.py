@@ -9,8 +9,8 @@ serialised through :func:`opaque.serialization.state_dict` because a
 callable has no portable representation.
 """
 
+import numpy as np
 import pytest
-import torch
 
 from opaque.api.dpftrl.noise._band_mf import _band_mf_coefficients_cached
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
@@ -24,7 +24,7 @@ class TestBandMfLrScheduleCallable:
     def test_constant_callable_matches_no_schedule(self):
         s_none = band_mf_strategy(bands=4)
         s_const = band_mf_strategy(bands=4, lr_schedule=lambda _t: 1.0)
-        torch.testing.assert_close(
+        np.testing.assert_allclose(
             s_const.coefficients(n_steps=_PART["n_steps"]),
             s_none.coefficients(n_steps=_PART["n_steps"]),
         )
@@ -34,7 +34,7 @@ class TestBandMfLrScheduleCallable:
         s_ramp = band_mf_strategy(bands=4, lr_schedule=lambda t: 1.0 + 0.01 * t)
         coefs_const = s_const.coefficients(n_steps=_PART["n_steps"])
         coefs_ramp = s_ramp.coefficients(n_steps=_PART["n_steps"])
-        assert not torch.allclose(coefs_const, coefs_ramp)
+        assert not np.allclose(coefs_const, coefs_ramp)
 
     def test_cache_hits_on_functionally_equal_callables(self):
         _band_mf_coefficients_cached.cache_clear()
@@ -69,7 +69,7 @@ class TestBltLrScheduleCallable:
     def test_constant_callable_matches_no_schedule(self):
         s_none = blt_strategy(max_buffers=3)
         s_const = blt_strategy(max_buffers=3, lr_schedule=lambda _t: 1.0)
-        torch.testing.assert_close(
+        np.testing.assert_allclose(
             s_const.coefficients(**_PART), s_none.coefficients(**_PART)
         )
 

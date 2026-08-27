@@ -20,6 +20,9 @@ Strategy and noise-state dataclasses (``BandMfStrategy``, ``BltStrategy``,
 ``LambdaCgdStrategy``, ``MfStrategy``, ``MFNoiseState``,
 ``SecondMomentMFNoiseState``) live in :mod:`opaque.dpftrl.noise.types`.
 The cross-cutting ``SecondMomentNoiseOutput`` lives in :mod:`opaque.types`.
+The participation samplers — ``BMinSepSampler``, ``CyclicPoissonSampler``,
+``BallsInBinsSampler``, ``SequentialBatchSampler`` — are reached through
+:mod:`opaque.dpftrl.sampling`, which owns all four.
 
 The :mod:`opaque.dpftrl.accounting` subpackage (DP-FTRL-specific privacy
 accounting factories, requires ``opaque-accounting``) is **lazy-imported**:
@@ -44,12 +47,6 @@ from opaque.dpftrl.noise import (
     identity_strategy,
     lambda_cgd_strategy,
     mf_gaussian_noise,
-)
-from opaque.dpftrl.sampling import (
-    BallsInBinsSampler,
-    BMinSepSampler,
-    CyclicPoissonSampler,
-    SequentialBatchSampler,
 )
 
 if TYPE_CHECKING:
@@ -99,9 +96,4 @@ __all__ = [
     "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
-    # Samplers
-    "BallsInBinsSampler",
-    "BMinSepSampler",
-    "CyclicPoissonSampler",
-    "SequentialBatchSampler",
 ]

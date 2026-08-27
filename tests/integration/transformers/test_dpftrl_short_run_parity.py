@@ -20,8 +20,8 @@ from transformers import AutoModelForCausalLM, LlamaConfig  # noqa: E402
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import sum_gradients
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy, mf_gaussian_noise
-from opaque.functional import make_functional
-from opaque.patches import apply_model_patches
+from opaque.torch.functional import make_functional
+from opaque.transformers.patches import apply_model_patches
 from opaque.random import key
 
 pytestmark = [pytest.mark.slow, pytest.mark.cuda]

@@ -23,18 +23,39 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from torch.utils.data import Subset
 
 from opaque.random import fold_in
 
 if TYPE_CHECKING:
     from opaque.random.types import RngKey
 
-__all__ = ["CanaryScores", "CoinFlip", "canary_scores", "coin_flip"]
+__all__ = ["CanaryScores", "CoinFlip", "TrainSubset", "canary_scores", "coin_flip"]
 
 _CANARY_SELECTION_DOMAIN = "opaque.auditing.canary_selection"
 _COIN_FLIP_DOMAIN = "opaque.auditing.coin_flip"
 _INCLUSION_PROBABILITY = 0.5
+
+
+# ``eq=False``/``repr=False`` keep ``object`` semantics — the
+# ``torch.utils.data.Subset`` surface this mirrors defines neither.
+@dataclasses.dataclass(slots=True, eq=False, repr=False)
+class TrainSubset:
+    """Index-remapped view over a map-style dataset.
+
+    Exposes ``dataset`` and ``indices`` attributes, ``len()``, and integer
+    indexing that resolves through the index list — the same surface as
+    ``torch.utils.data.Subset``, so it drops into any provider's data
+    pipeline that accepts a sized, indexable dataset.
+    """
+
+    dataset: Any
+    indices: list[int]
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, position: int) -> Any:
+        return self.dataset[self.indices[position]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -177,8 +198,8 @@ class CoinFlip:
         excluded = set(self.out_indices.tolist())
         return [i for i in range(dataset_size) if i not in excluded]
 
-    def train_subset(self, dataset: Any) -> Subset:
-        """Return a ``Subset`` containing all training examples.
+    def train_subset(self, dataset: Any) -> TrainSubset:
+        """Return a :class:`TrainSubset` containing all training examples.
 
         Includes all non-canary examples plus included canaries (coin = heads).
         Excludes held-out canaries (coin = tails).
@@ -187,9 +208,11 @@ class CoinFlip:
             dataset: The full dataset.
 
         Returns:
-            ``torch.utils.data.Subset`` over training indices.
+            :class:`TrainSubset` over training indices — a sized, indexable
+            view accepted anywhere a map-style dataset is (including
+            ``torch.utils.data.DataLoader``).
         """
-        return Subset(dataset, self.train_indices(len(dataset)))
+        return TrainSubset(dataset, self.train_indices(len(dataset)))
 
     def split_scores(self, scores: CanaryScores) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.
