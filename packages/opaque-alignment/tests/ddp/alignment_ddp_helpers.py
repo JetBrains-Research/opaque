@@ -19,9 +19,9 @@ from opaque_test_support import (
     spawn as _spawn,
 )
 
-_spawn_gloo = _spawn
-
 from opaque.exceptions import OperationError
+
+_spawn_gloo = _spawn
 
 # Short timeout: a mismatched collective sequence must fail promptly rather than
 # hang the CI job.
