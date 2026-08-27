@@ -11,6 +11,7 @@ from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.amplification._poisson import Poisson, poisson
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,11 +27,11 @@ class ParallelPoisson(DpProcess):
             or not isinstance(self.num_workers, int)
             or self.num_workers < 1
         ):
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"num_workers must be a positive integer, got {self.num_workers}"
             )
         if self.inner.truncated_batch_size is not None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "ParallelPoisson does not support truncated Poisson inner mechanisms."
             )
 
@@ -88,7 +89,7 @@ class ParallelPoisson(DpProcess):
                     native_cfg,
                 )
             case _:
-                raise TypeError(
+                InputTypeError.raise_(
                     "ParallelPoisson requires a Poisson inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )

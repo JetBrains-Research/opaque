@@ -88,8 +88,8 @@ acc.register_budget_serializer(
 ```
 
 The serializer must return JSON-compatible state and the deserializer must
-rebuild the budget from that state. Checkpointing an unregistered budget raises
-`TypeError`; restoring an unknown budget checkpoint type raises `ValueError`.
+rebuild the budget from that state. Checkpointing an unregistered budget or
+restoring an unknown budget checkpoint type raises `CheckpointError`.
 
 ### `DpProcess`
 
@@ -731,9 +731,9 @@ decreasing privacy-loss budgets return `achieved <= target`, while increasing
 privacy-gain budgets return `achieved >= target`. In both cases,
 `math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)` is true.
 `tolerance` must be finite and positive, and `max_iterations` must be positive;
-invalid values raise `ValueError` before the process is evaluated. If no safe
-endpoint reaches the requested relative tolerance, `calibrate()` raises
-`RuntimeError` instead of returning an under-noised parameter.
+invalid values raise `CalibrationError` before the process is evaluated. If no
+safe endpoint reaches the requested relative tolerance, `calibrate()` raises
+`CalibrationError` instead of returning an under-noised parameter.
 
 When the process uses a Monte Carlo PLD, calibration divides the configured
 failure probability across the two endpoint probes and at most

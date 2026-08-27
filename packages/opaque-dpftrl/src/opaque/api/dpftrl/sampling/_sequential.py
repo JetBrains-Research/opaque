@@ -14,6 +14,8 @@ from typing import Any
 
 from torch.utils.data import Sampler
 
+from opaque.exceptions import ConfigurationError
+
 
 class SequentialBatchSampler(Sampler):
     """Deterministic fixed-size sequential batching.
@@ -55,9 +57,9 @@ class SequentialBatchSampler(Sampler):
         super().__init__()
 
         if len(data_source) == 0:
-            raise ValueError("data_source must not be empty")
+            ConfigurationError.raise_("data_source must not be empty")
         if batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+            ConfigurationError.raise_(f"batch_size must be >= 1, got {batch_size}")
 
         self.data_source: Sized = data_source
         self._num_samples = len(data_source)
@@ -66,14 +68,16 @@ class SequentialBatchSampler(Sampler):
 
         if n_steps is not None:
             if n_steps < 1:
-                raise ValueError(f"n_steps must be >= 1 or None, got {n_steps}")
+                ConfigurationError.raise_(
+                    f"n_steps must be >= 1 or None, got {n_steps}"
+                )
             if self._num_batches == 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"batch_size ({batch_size}) exceeds dataset size "
                     f"({self._num_samples}); no complete batch to cycle."
                 )
             if n_steps % self._num_batches != 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"n_steps ({n_steps}) must be a positive multiple of the "
                     f"per-pass batch count ({self._num_batches}); a partial "
                     "final pass would make participation counts non-uniform."
@@ -150,7 +154,7 @@ def _from_state_dict_sequential(
     saved_n = int(sd["num_samples"])
     template_n = len(template.data_source)
     if saved_n != template_n:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"SequentialBatchSampler.from_state_dict: template dataset "
             f"length {template_n} does not match snapshot "
             f"num_samples={saved_n}.  Restoring with a differently-sized "

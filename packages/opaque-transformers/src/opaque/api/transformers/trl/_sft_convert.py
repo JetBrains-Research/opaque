@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
+from opaque.exceptions import InputTypeError
 
 from ._convert import (
     _convert_trl_config,
@@ -99,7 +100,7 @@ def _convert_trl_sft_config(
     """Translate a ``trl.SFTConfig`` instance into opaque ``SFTConfig`` kwargs."""
     trl = _import_trl()
     if not isinstance(trl_cfg, trl.SFTConfig):
-        raise TypeError(
+        InputTypeError.raise_(
             f"Expected ``trl.SFTConfig`` instance, got {type(trl_cfg).__name__}."
         )
 

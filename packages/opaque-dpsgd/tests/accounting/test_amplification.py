@@ -16,6 +16,7 @@ from opaque.dpsgd.accounting.amplification.types import (
     Poisson,
 )
 from opaque.dpsgd.accounting.mechanisms.types import Gaussian
+from opaque.exceptions import ConfigurationError
 
 # ── Amplification dataclass tests ────────────────────────────────────
 
@@ -51,7 +52,9 @@ class TestPoissonDataclass:
 
     @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
-        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\)"
+        ):
             Poisson(Gaussian(0.8), sample_rate)
 
 
@@ -100,7 +103,9 @@ class TestParallelPoissonDataclass:
 
     @pytest.mark.parametrize("num_workers", [0, -1, 1.5, True])
     def test_rejects_invalid_num_workers(self, num_workers):
-        with pytest.raises(ValueError, match="num_workers must be a positive integer"):
+        with pytest.raises(
+            ConfigurationError, match="num_workers must be a positive integer"
+        ):
             ParallelPoisson(Poisson(Gaussian(0.8), 0.01), num_workers)  # type: ignore[arg-type]
 
     def test_rejects_truncated_poisson_inner(self):
@@ -132,7 +137,9 @@ class TestPoissonConstructor:
 
     @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
-        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\)"
+        ):
             dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate)
 
     def test_accepts_adaclip(self):
@@ -192,9 +199,13 @@ class TestPoissonTruncatedConstructor:
         assert eps > 0
 
     def test_requires_both_truncation_args(self):
-        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+        with pytest.raises(
+            ConfigurationError, match="truncated_batch_size and dataset_size"
+        ):
             dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01, truncated_batch_size=128)
-        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+        with pytest.raises(
+            ConfigurationError, match="truncated_batch_size and dataset_size"
+        ):
             dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01, dataset_size=10_000)
 
 
@@ -214,14 +225,18 @@ class TestParallelPoissonConstructor:
 
     @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
-        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\)"
+        ):
             dpsgd_acc.parallel_poisson(
                 dpsgd_acc.gaussian(0.8), sample_rate=sample_rate, num_workers=4
             )
 
     @pytest.mark.parametrize("num_workers", [0, -1, 1.5, True])
     def test_rejects_invalid_num_workers(self, num_workers):
-        with pytest.raises(ValueError, match="num_workers must be a positive integer"):
+        with pytest.raises(
+            ConfigurationError, match="num_workers must be a positive integer"
+        ):
             dpsgd_acc.parallel_poisson(
                 dpsgd_acc.gaussian(0.8), sample_rate=0.01, num_workers=num_workers
             )

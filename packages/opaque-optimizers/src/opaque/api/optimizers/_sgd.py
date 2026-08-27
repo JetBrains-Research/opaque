@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from opaque.exceptions import InputTypeError
+
 try:
     import torchopt
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -23,7 +25,7 @@ def _unwrap_update_value(updates: Any) -> Any:
     if isinstance(updates, NoisedPytree):
         return updates.pytree
     if isinstance(updates, ClippedPytree):
-        raise TypeError(
+        InputTypeError.raise_(
             "optimizer.update() received ClippedPytree updates that have not "
             "passed through a noise mechanism. Pass NoisedPytree outputs from "
             "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."

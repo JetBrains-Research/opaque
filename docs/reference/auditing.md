@@ -24,7 +24,7 @@ uses the whole dataset unless `candidate_indices` restricts it to a pool.
 | `key` | `RngKey` | required | RNG key for reproducibility |
 | `candidate_indices` | array-like \| `None` | `None` | Unique, in-range integer indices eligible to become canaries; order is ignored |
 
-**Raises** `ValueError` if the candidate pool is malformed or contains fewer
+**Raises** `ConfigurationError` if the candidate pool is malformed or contains fewer
 than `num_canaries` indices.
 
 ```python
@@ -89,8 +89,8 @@ with [`canary_scores`](#canary_scores) instead.
 **Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
 canary. Higher = more likely member.
 
-**Raises** `ValueError` if `batch_argnums` is malformed, `batch_size` is
-not positive, or `collate_fn` changes the batch row count; `TypeError` if
+**Raises** `ConfigurationError` if `batch_argnums` is malformed, `batch_size` is
+not positive, or `collate_fn` changes the batch row count; `InputTypeError` if
 `reference_scores` does not carry identifiers.
 
 ```python
@@ -145,8 +145,8 @@ loader, with the same pairing guarantees and `collate_fn` obligation as
 **Returns** [`CanaryScores`](#canaryscores) of shape `(n,)`, one score per
 canary. Higher = more likely member.
 
-**Raises** `ValueError` if `0 in batch_argnums`, `batch_size` is not
-positive, or `collate_fn` changes the batch row count; `TypeError` if
+**Raises** `ConfigurationError` if `0 in batch_argnums`, `batch_size` is not
+positive, or `collate_fn` changes the batch row count; `InputTypeError` if
 `reference_scores` does not carry identifiers.
 
 ```python
@@ -189,7 +189,7 @@ for scores produced by another pipeline. Identifiers may be in any order
 | `scores` | array-like | required | Membership scores, shape `(n,)`, float |
 | `canary_indices` | array-like | required | Dataset index behind each score, same order as `scores` |
 
-**Raises** `ValueError` if either array is not 1-D, the identifiers are
+**Raises** `ConfigurationError` if either array is not 1-D, the identifiers are
 not integers, the lengths disagree, or an identifier repeats.
 
 ```python
@@ -216,7 +216,7 @@ instead of silently producing a meaningless estimate.
 | `scores` | [`CanaryScores`](#canaryscores) | required | Per-canary membership scores with identifiers, from verified scoring or explicit attestation |
 | `coin_flip` | `CoinFlip` | required | The coin-flip partition |
 
-**Raises** `TypeError` for bare arrays without identifiers; `ValueError`
+**Raises** `InputTypeError` for bare arrays without identifiers; `ConfigurationError`
 if identifiers are unexpected, duplicated, or missing.
 
 ```python
@@ -259,8 +259,8 @@ cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
 
 Split per-canary scores into `(in_scores, out_scores)`, joining
 [`CanaryScores`](#canaryscores) to the partition by identifier. Bare
-arrays raise `TypeError`; identifiers that do not join one-to-one onto
-`canary_indices` raise `ValueError`.
+arrays raise `InputTypeError`; identifiers that do not join one-to-one onto
+`canary_indices` raise `ConfigurationError`.
 
 ---
 

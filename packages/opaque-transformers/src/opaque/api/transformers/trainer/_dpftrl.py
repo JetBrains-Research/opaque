@@ -17,6 +17,8 @@ it with :func:`opaque.accounting.per_step` for the
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError
+
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
@@ -173,7 +175,7 @@ def build_amplifier_factory(
             return _ftrl_balls_in_bins(mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns)
 
     else:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
             f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'."
         )
@@ -234,12 +236,12 @@ def build_sampler(
         k_raw = sk.get("k")
         allocation = sk.get("allocation")
         if k_raw is None or allocation is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "sampling_mode='k_out_of_t' requires sampling_kwargs with "
                 "'k' and 'allocation'."
             )
         if allocation not in ("block", "total"):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "sampling_kwargs['allocation'] must be 'block' or 'total', got "
                 f"{allocation!r}."
             )
@@ -252,7 +254,7 @@ def build_sampler(
         )
     if sampling_mode == "b_min_sep":
         if mf is None or noise_multiplier is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "sampling_mode='b_min_sep' requires a built MFContext and a "
                 "calibrated noise_multiplier; got mf=None or "
                 "noise_multiplier=None."
@@ -274,7 +276,7 @@ def build_sampler(
         )
     if sampling_mode == "cyclic_poisson":
         if mf is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "sampling_mode='cyclic_poisson' requires a built MFContext; "
                 "got mf=None."
             )
@@ -287,7 +289,7 @@ def build_sampler(
         )
     if sampling_mode == "sequential":
         return SequentialBatchSampler(dataset, batch_size=expected_batch_size)
-    raise ValueError(f"Unknown sampling_mode {sampling_mode!r}")
+    ConfigurationError.raise_(f"Unknown sampling_mode {sampling_mode!r}")
 
 
 __all__ = [

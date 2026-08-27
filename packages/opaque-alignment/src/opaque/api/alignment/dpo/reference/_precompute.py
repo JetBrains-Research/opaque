@@ -78,6 +78,7 @@ from opaque.distributed import (
     local_shard,
     wait_for_everyone,
 )
+from opaque.exceptions import ConfigurationError, InputTypeError, OperationError
 from opaque.serialization import from_state_dict, state_dict
 
 if TYPE_CHECKING:
@@ -100,13 +101,13 @@ def _canonical_identity_value(value: Any, path: str = "cache_identity") -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise ValueError(f"{path} contains a non-finite float")
+            ConfigurationError.raise_(f"{path} contains a non-finite float")
         return value
     if isinstance(value, Mapping):
         normalized: dict[str, Any] = {}
         for key, item in value.items():
             if not isinstance(key, str):
-                raise TypeError(
+                InputTypeError.raise_(
                     f"{path} mapping keys must be strings, got {type(key)!r}"
                 )
             normalized[key] = _canonical_identity_value(item, f"{path}.{key}")
@@ -116,7 +117,7 @@ def _canonical_identity_value(value: Any, path: str = "cache_identity") -> Any:
             _canonical_identity_value(item, f"{path}[{index}]")
             for index, item in enumerate(value)
         ]
-    raise TypeError(
+    InputTypeError.raise_(
         f"{path} contains unsupported value {type(value)!r}; use only JSON-like "
         "scalars, string-keyed mappings, and sequences"
     )
@@ -134,7 +135,7 @@ def _cache_fingerprint(
     """
     dataset_id = _dataset_fingerprint(dataset)
     if dataset_id is None:
-        raise ValueError(
+        ConfigurationError.raise_(
             "dataset must expose a deterministic `_fingerprint` for reference caching"
         )
     payload = {
@@ -217,7 +218,7 @@ def _secure_cache_path(path: str) -> None:
         if cache_file.exists():
             cache_file.chmod(0o600)
     except PermissionError as error:
-        raise PermissionError(
+        raise PermissionError(  # noqa: TRY003 - preserve standard Python error contract
             f"cannot secure reference-logprob cache directory {cache_dir}; "
             "pass a private writable cache_dir or set use_cache=False"
         ) from error
@@ -251,7 +252,7 @@ def _resolve_sharding(shard: bool | None) -> bool:
     if shard is None:
         return is_distributed()
     if shard and not is_distributed():
-        raise RuntimeError(
+        OperationError.raise_(
             "shard=True requires an initialised process group; call "
             "torch.distributed.init_process_group first, or pass shard=None "
             "to shard only when one is live."
@@ -325,7 +326,7 @@ def _gather_columns(
     for name in columns:
         rows = int(gathered[name].shape[0])
         if rows != expected_rows:
-            raise RuntimeError(
+            OperationError.raise_(
                 f"reference column {name!r} yielded {rows} values for a dataset "
                 f"of {expected_rows} examples; either `ref` did not return one "
                 "value per row, or the ranks disagree on the dataset"
@@ -411,7 +412,7 @@ def compute_ref_logprobs_for_dataset(
         dataset_id = _dataset_fingerprint(dataset)
         assert_string_equal(dataset_id, name="reference precompute dataset fingerprint")
         if dataset_id is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "dataset must expose a deterministic `_fingerprint` for "
                 "distributed reference precomputation"
             )

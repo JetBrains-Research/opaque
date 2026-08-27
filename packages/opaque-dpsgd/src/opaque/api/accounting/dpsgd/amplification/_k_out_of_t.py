@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -46,11 +48,13 @@ class KOutOfT(DpHorizonProcess):
 
     def __post_init__(self) -> None:
         if self.n_steps < 1:
-            raise ValueError(f"t must be >= 1, got {self.n_steps}")
+            ConfigurationError.raise_(f"t must be >= 1, got {self.n_steps}")
         if not 1 <= self.k <= self.n_steps:
-            raise ValueError(f"k must be in [1, t={self.n_steps}], got {self.k}")
+            ConfigurationError.raise_(
+                f"k must be in [1, t={self.n_steps}], got {self.k}"
+            )
         if self.allocation not in ("block", "total"):
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"allocation must be 'block' or 'total', got {self.allocation!r}"
             )
 
@@ -77,7 +81,7 @@ class KOutOfT(DpHorizonProcess):
             case AdaClip(inner=Gaussian()) as ac:
                 return ac.effective_noise_multiplier
             case _:
-                raise TypeError(
+                InputTypeError.raise_(
                     "KOutOfT requires Gaussian, AdaClip(Gaussian), or NonPrivate"
                 )
 
@@ -95,7 +99,9 @@ class KOutOfT(DpHorizonProcess):
         mc_failure_probability: float | None = None,
     ) -> Pld:
         if n_steps < 1 or n_steps > self.n_steps:
-            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+            ConfigurationError.raise_(
+                f"n_steps ({n_steps}) must be in [1, {self.n_steps}]"
+            )
         from opaque.api.accounting.core.discretization import get_discretization
 
         config = get_discretization(
@@ -180,12 +186,14 @@ def k_out_of_t(
     prefixes with ``k > 1`` return the full-horizon bound.
     """
     if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
-        raise TypeError(
+        InputTypeError.raise_(
             "k_out_of_t() requires Gaussian, AdaClip, or NonPrivate inner, got "
             f"{type(inner).__name__}."
         )
     if allocation not in ("block", "total"):
-        raise ValueError(f"allocation must be 'block' or 'total', got {allocation!r}")
+        ConfigurationError.raise_(
+            f"allocation must be 'block' or 'total', got {allocation!r}"
+        )
     return KOutOfT(
         inner=inner,
         k=int(k),

@@ -22,6 +22,8 @@ import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 from scipy.signal import lfilter as scipy_lfilter
 
+from opaque.exceptions import ConfigurationError
+
 from . import (
     _checks as checks,
 )
@@ -230,7 +232,7 @@ def inverse_as_streaming_matrix(
         identity = np.zeros_like(product)
         identity[0] = 1.0
         if not np.allclose(product, identity, atol=1e-8):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "inverse_coefficients is not the Toeplitz inverse of coef: "
                 "max |toeplitz(coef) @ toeplitz(inverse_coefficients) - I| = "
                 f"{np.abs(product - identity).max():.3e}"
@@ -399,7 +401,7 @@ def multiply(
         Coefficients of the product matrix.
     """
     if not skip_checks and n is None and len(lhs_coef) != len(rhs_coef):
-        raise ValueError(
+        ConfigurationError.raise_(
             "If n is not specified, lhs_coef and rhs_coef must have "
             f"the same length, found {len(lhs_coef)} and {len(rhs_coef)}."
         )
@@ -462,19 +464,19 @@ def minsep_sensitivity_squared(
 
     if not skip_checks:
         if not torch.all(coef >= 0):
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"coef must be non-negative, found min={coef.min().item()}"
             )
         if len(coef) > 1:
             incr = coef[1:] - coef[:-1]
             max_incr = incr.max()
             if max_incr > 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"coef must be non-increasing, found increase "
                     f"{max_incr.item()} at index {incr.argmax().item()}"
                 )
         if min_sep <= 0:
-            raise ValueError("min_sep must be positive")
+            ConfigurationError.raise_("min_sep must be positive")
 
     k = sensitivity.minsep_true_max_participations(
         n=n, min_sep=min_sep, max_participations=max_participations
@@ -541,7 +543,7 @@ def per_query_error(
         query_weights, dtype=error.dtype, device=error.device
     )
     if query_weights.ndim != 1 or query_weights.shape[0] != n:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"query_weights must have shape ({n},), got {tuple(query_weights.shape)}"
         )
     return error * query_weights.square()
@@ -680,7 +682,7 @@ def optimize(
     if strategy_coef is None:
         strategy_coef = optimal_max_error_strategy_coefs(bands)
     if strategy_coef.shape[0] != bands:
-        raise ValueError(f"{strategy_coef.shape=} != {bands=}")
+        ConfigurationError.raise_(f"{strategy_coef.shape=} != {bands=}")
 
     params = _lbfgs_optimize(
         partial_loss,

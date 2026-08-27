@@ -31,6 +31,7 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -140,7 +141,7 @@ def mf_gaussian(
     """
     nm = float(noise_multiplier)
     if nm < 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
     return MfGaussian(

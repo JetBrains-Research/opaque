@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import math
 
+from opaque.exceptions import ConfigurationError
+
 _MAX_SIGNIFICANCE = 0.5
 
 
 def validate_significance(significance: float) -> None:
     if not 0 < significance < _MAX_SIGNIFICANCE:
-        raise ValueError(f"significance must be in (0, 0.5), got {significance}")
+        ConfigurationError.raise_(
+            f"significance must be in (0, 0.5), got {significance}"
+        )
 
 
 def validate_delta(delta: float) -> None:
     if not 0 <= delta <= 1:
-        raise ValueError(f"delta must be in [0, 1], got {delta}")
+        ConfigurationError.raise_(f"delta must be in [0, 1], got {delta}")
 
 
 def search_ceiling(m: int, delta: float, significance: float) -> float:

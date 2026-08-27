@@ -24,10 +24,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -97,14 +99,16 @@ def lion(
         A ``torchopt.base.GradientTransformation``.
     """
     if len(betas) != 2:  # noqa: PLR2004 - Lion exposes the documented beta pair
-        raise ValueError(f"betas must contain exactly two values, got {betas}")
+        ConfigurationError.raise_(f"betas must contain exactly two values, got {betas}")
     b1, b2 = betas
     if not 0 <= b1 < 1:
-        raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+        ConfigurationError.raise_(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
     if not 0 <= b2 < 1:
-        raise ValueError(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
+        ConfigurationError.raise_(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
     if weight_decay < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+        ConfigurationError.raise_(
+            f"weight_decay must be non-negative, got {weight_decay}"
+        )
     return make_optimizer_chain(
         _scale_by_lion(b1, b2),
         lr=lr,

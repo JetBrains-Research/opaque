@@ -13,6 +13,8 @@ import dataclasses
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
@@ -30,7 +32,7 @@ def _normalize_dp_overrides(
     noise_mult = overrides.get("privacy_noise_multiplier")
     target_eps = overrides.get("privacy_target_epsilon")
     if noise_mult is None and target_eps is None:
-        raise ValueError(
+        ConfigurationError.raise_(
             "Converting to an opaque config requires a DP knob: pass either "
             "``privacy_noise_multiplier=<float>`` (fixed-noise mode) or "
             "``privacy_target_epsilon=<float>`` (calibrated-noise mode) as a "
@@ -93,7 +95,7 @@ def _get_dataclass_field_values(
 ) -> dict[str, Any]:
     """Return a name→value dict for every field of a dataclass instance."""
     if not dataclasses.is_dataclass(obj):
-        raise TypeError(
+        InputTypeError.raise_(
             f"Expected a dataclass instance, got {type(obj).__name__}. "
             "The HF/TRL converters accept dataclass instances only."
         )
@@ -182,7 +184,7 @@ def _apply_manifest(
         )
 
     if errors:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Converting {source_label} to opaque failed:\n" + "\n".join(errors)
         )
 

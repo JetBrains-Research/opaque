@@ -21,6 +21,8 @@ from opaque_test_support import (
 
 _spawn_gloo = _spawn
 
+from opaque.exceptions import OperationError
+
 # Short timeout: a mismatched collective sequence must fail promptly rather than
 # hang the CI job.
 _PG_TIMEOUT = timedelta(seconds=120)
@@ -211,7 +213,9 @@ def _assert_dataset_size_mismatch(rank: int, world_size: int) -> None:
 def _assert_dataset_fingerprint_mismatch(rank: int, world_size: int) -> None:
     from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
 
-    with pytest.raises(RuntimeError, match="dataset fingerprint mismatch across ranks"):
+    with pytest.raises(
+        OperationError, match="dataset fingerprint mismatch across ranks"
+    ):
         compute_ref_logprobs_for_dataset(
             _make_dataset(4, start=rank * 10),
             _CountingRef(),

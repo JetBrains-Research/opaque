@@ -53,10 +53,12 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -118,9 +120,11 @@ def schedule_free(
         published weights for saving / evaluation.
     """
     if not 0.0 <= beta <= 1.0:
-        raise ValueError(f"beta must satisfy 0 <= beta <= 1, got {beta}")
+        ConfigurationError.raise_(f"beta must satisfy 0 <= beta <= 1, got {beta}")
     if warmup_steps < 0:
-        raise ValueError(f"warmup_steps must be non-negative, got {warmup_steps}")
+        ConfigurationError.raise_(
+            f"warmup_steps must be non-negative, got {warmup_steps}"
+        )
 
     def init_fn(params: Any) -> ScheduleFreeState:
         # ``params`` represents y₀; we initialise z = x = y₀ so the
@@ -144,7 +148,7 @@ def schedule_free(
     ) -> tuple[Any, ScheduleFreeState]:
         # ``updates`` is the gradient ∇L(y_t); ``params`` is y_t.
         if params is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "schedule_free requires `params` (interpreted as y_t) "
                 "to be passed at update time."
             )

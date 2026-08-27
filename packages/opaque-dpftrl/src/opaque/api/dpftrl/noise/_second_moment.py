@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
+from opaque.exceptions import InputTypeError
 from opaque.random import fold_in as rng_fold_in
 from opaque.types import (
     NoisedPytree,
@@ -112,7 +113,7 @@ def make_second_moment_mf_noise(
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
         if not isinstance(clipped_input, SecondMomentClippingOutput):
-            raise TypeError(
+            InputTypeError.raise_(
                 "mf_gaussian_noise was constructed with `second_moment_strategy` "
                 "and expects SecondMomentClippingOutput inputs (paired-stream).  "
                 "Build the paired form upstream via "

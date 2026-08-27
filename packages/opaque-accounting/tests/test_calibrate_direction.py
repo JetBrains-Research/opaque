@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import pytest
 
 import opaque.accounting as acc
+from opaque.exceptions import CalibrationError
 
 DELTA = 1e-5
 
@@ -114,7 +115,7 @@ def test_inf_on_unsafe_endpoint_accepted():
 
 
 def test_flat_parameterization_rejected():
-    with pytest.raises(ValueError, match="flat"):
+    with pytest.raises(CalibrationError, match="flat"):
         acc.calibrate(
             acc.epsilon_budget(3.0, delta=DELTA),
             lambda _p: acc.eps_delta(0.05, 1e-9) * 10,
@@ -126,7 +127,7 @@ def test_flat_parameterization_rejected():
 def test_both_endpoints_safe_rejected():
     # V-shaped epsilon with BOTH endpoints privacy-safe: caught at the
     # bracket check before any bisection.
-    with pytest.raises(ValueError, match="not bracketed"):
+    with pytest.raises(CalibrationError, match="not bracketed"):
         acc.calibrate(
             acc.epsilon_budget(4.0, delta=DELTA),
             lambda x: acc.eps_delta(0.4 + abs(x - 1.0) * 3.0, 1e-9),
@@ -140,7 +141,7 @@ def test_non_monotone_interior_probe_rejected():
     # V-shaped epsilon straddling the target (param_min unsafe, param_max
     # safe): the first interior probe dips below the endpoint value
     # envelope and must raise "not monotone" instead of mis-calibrating.
-    with pytest.raises(ValueError, match="not monotone"):
+    with pytest.raises(CalibrationError, match="not monotone"):
         acc.calibrate(
             acc.epsilon_budget(2.0, delta=DELTA),
             lambda x: acc.eps_delta(0.4 + abs(x - 1.0) * 3.0, 1e-9),

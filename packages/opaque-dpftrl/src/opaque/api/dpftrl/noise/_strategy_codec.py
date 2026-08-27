@@ -27,6 +27,8 @@ from typing import Any
 
 import torch
 
+from opaque.exceptions import CheckpointError
+
 #: Strategy-class registry, keyed by class name.  Populated by
 #: :func:`register_strategy` at import time of each strategy module.
 _STRATEGY_REGISTRY: dict[str, type] = {}
@@ -50,7 +52,7 @@ def _resolve_factory(cls_name: str):
     factory_name = _factory_name_for(cls_name)
     factory = getattr(_noise, factory_name, None)
     if factory is None:
-        raise ValueError(
+        CheckpointError.raise_(
             f"No factory function {factory_name!r} found for strategy {cls_name!r}"
         )
     _STRATEGY_FACTORIES[cls_name] = factory
@@ -62,7 +64,7 @@ def _factory_name_for(cls_name: str) -> str:
     base = cls_name
     base = base.removesuffix("Strategy")
     if not base:
-        raise ValueError(f"unexpected strategy class name: {cls_name!r}")
+        CheckpointError.raise_(f"unexpected strategy class name: {cls_name!r}")
     out_chars: list[str] = []
     for i, ch in enumerate(base):
         if ch.isupper():
@@ -114,7 +116,7 @@ def _to_wire(value: Any) -> Any:
             for f in _fields(value):
                 payload[f.name] = _to_wire(getattr(value, f.name))
             return payload
-        raise TypeError(
+        CheckpointError.raise_(
             "Cannot serialize a callable strategy field "
             f"(type={type(value).__name__}).  Pass an opaque.scheduling "
             "recipe (e.g. cosine_schedule(...)) instead of a raw "
@@ -135,7 +137,7 @@ def _from_wire(value: Any) -> Any:
         cls_name = value[_RECIPE_TAG]
         cls = _resolve_recipe_class(cls_name)
         if cls is None:
-            raise ValueError(
+            CheckpointError.raise_(
                 f"Unknown recipe class {cls_name!r} on strategy field "
                 "(was the schedule defined in opaque.scheduling?)"
             )
@@ -163,7 +165,7 @@ def deserialize_strategy(sd: dict[str, Any]) -> Any:
     t = sd.pop("type")
     cls = _STRATEGY_REGISTRY.get(t)
     if cls is None:
-        raise ValueError(
+        CheckpointError.raise_(
             f"Unknown strategy type: {t!r} (registered: {sorted(_STRATEGY_REGISTRY)!r})"
         )
     factory = _resolve_factory(t)

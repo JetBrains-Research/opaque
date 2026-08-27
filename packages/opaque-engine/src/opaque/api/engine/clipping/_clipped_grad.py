@@ -21,6 +21,7 @@ from opaque.api.engine.functional._transform_stack import (
     under_differentiating_transform,
 )
 from opaque.api.engine.types import PerGroup, clipped
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,18 +62,18 @@ class ClippedGradAux:
 def _validate_static_args(argnums, batch_argnums, normalize_by):
     """Validates the argnums and batch_argnums inputs are compatible."""
     if normalize_by <= 0.0:
-        raise ValueError(f"normalize_by must be > 0, got {normalize_by}.")
+        ConfigurationError.raise_(f"normalize_by must be > 0, got {normalize_by}.")
     argnums = normalize_to_tuple(argnums)
     batch_argnums = normalize_to_tuple(batch_argnums)
     if not batch_argnums:
-        raise ValueError("Batch argnums must not be empty.")
+        ConfigurationError.raise_("Batch argnums must not be empty.")
     if min(argnums + batch_argnums) < 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"argnums={argnums} and batch_argnums={batch_argnums} must be >= 0."
         )
     shared_argnums = set(argnums) & set(batch_argnums)
     if shared_argnums:
-        raise ValueError(
+        ConfigurationError.raise_(
             "Cannot compute clipped gradients for argnums that have a batch axis. "
             f"{argnums=} and {batch_argnums=} with overlap {list(shared_argnums)}."
         )
@@ -202,7 +203,9 @@ def clipped_grad(
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
     if return_aux and return_stats:
-        raise ValueError("return_stats cannot be combined with return_aux=True")
+        ConfigurationError.raise_(
+            "return_stats cannot be combined with return_aux=True"
+        )
 
     argnums_tuple = normalize_to_tuple(argnums)
     batch_argnums_tuple = normalize_to_tuple(batch_argnums)

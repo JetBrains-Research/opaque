@@ -27,6 +27,7 @@ from opaque.api.engine.pytree import (
     tree_structure,
     tree_unflatten,
 )
+from opaque.exceptions import InputTypeError, OperationError
 
 from ._auto import AutoClipState
 from ._clipped_fun import ClippedFunAux, FixedClipState
@@ -56,7 +57,7 @@ def sync_clip_state(
     if not is_distributed():
         return state
     if not isinstance(state, _MARKER_CLIP_STATES):
-        raise TypeError(
+        InputTypeError.raise_(
             "Expected a marker clip state "
             f"({' or '.join(t.__name__ for t in _MARKER_CLIP_STATES)}), "
             f"got {type(state).__name__}"
@@ -110,7 +111,7 @@ def _split_aux_fields(
             details.append(f"unexpected fields: {unexpected}")
         if missing:
             details.append(f"missing fields: {missing}")
-        raise TypeError(
+        InputTypeError.raise_(
             f"{type(aux).__name__} does not match the {schema_type.__name__} "
             f"synchronization schema ({'; '.join(details)})."
         )
@@ -166,7 +167,7 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     for payload in present[1:]:
         other = tree_structure(payload)
         if other != treedef:
-            raise TypeError(
+            InputTypeError.raise_(
                 "Distributed aux gather requires matching pytree structures "
                 f"across non-empty ranks; got {treedef} vs {other}"
             )
@@ -180,7 +181,7 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     for i in range(len(leaf_lists[0])):
         column = [leaves[i] for leaves in leaf_lists]
         if not all(isinstance(leaf, torch.Tensor) for leaf in column):
-            raise TypeError(
+            InputTypeError.raise_(
                 "Distributed aux gathering supports tensor leaves only; got "
                 f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
                 "preserved structurally and does not need to be a leaf."
@@ -225,7 +226,7 @@ def _sync_clipping_rate(
     min_presence = reduce_scalar(local_presence, op="min")
     max_presence = reduce_scalar(local_presence, op="max")
     if min_presence != max_presence:
-        raise RuntimeError(
+        OperationError.raise_(
             "Clipped auxiliary clipping_rate presence mismatch across ranks."
         )
     if not local_presence:
@@ -288,7 +289,7 @@ def sync_aux(
         return sync_clipped_grad_aux(aux)
     if isinstance(aux, ClippedFunAux):
         return sync_clipped_fun_aux(aux)
-    raise TypeError(f"Unsupported aux type for sync_aux: {type(aux)}")
+    InputTypeError.raise_(f"Unsupported aux type for sync_aux: {type(aux)}")
 
 
 register_sync_type(FixedClipState, sync_clip_state)

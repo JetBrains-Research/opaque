@@ -15,6 +15,7 @@ from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 #: Mechanism types accepted by :func:`poisson`.
 _Inner = Gaussian | AdaClip | NonPrivate
@@ -37,7 +38,9 @@ class Poisson(DpProcess):
     def __post_init__(self):
         sample_rate = float(self.sample_rate)
         if not 0 < sample_rate < 1:
-            raise ValueError(f"sample_rate must be in (0, 1), got {self.sample_rate}")
+            ConfigurationError.raise_(
+                f"sample_rate must be in (0, 1), got {self.sample_rate}"
+            )
         object.__setattr__(self, "sample_rate", sample_rate)
 
         # Validate truncation pairing here (not only in the factory) so direct
@@ -45,18 +48,18 @@ class Poisson(DpProcess):
         # ``(truncated_batch_size, dataset_size)`` into
         # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
         if (self.truncated_batch_size is None) != (self.dataset_size is None):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "Poisson: truncated_batch_size and dataset_size must be set "
                 "together (both None for plain Poisson, both set for truncated)."
             )
         if self.truncated_batch_size is not None:
             if int(self.truncated_batch_size) < 1:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "Poisson: truncated_batch_size must be >= 1, got "
                     f"{self.truncated_batch_size}"
                 )
             if int(self.dataset_size) < 1:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"Poisson: dataset_size must be >= 1, got {self.dataset_size}"
                 )
 
@@ -117,7 +120,7 @@ class Poisson(DpProcess):
                     native_cfg,
                 )
             case _:
-                raise TypeError(
+                InputTypeError.raise_(
                     "Poisson requires a Gaussian, AdaClip(Gaussian), or "
                     "NonPrivate inner mechanism, got "
                     f"{type(self.inner).__name__}."
@@ -171,7 +174,7 @@ def poisson(
         case Gaussian() | AdaClip() | NonPrivate():
             pass
         case _:
-            raise TypeError(
+            InputTypeError.raise_(
                 "poisson() requires a Gaussian, AdaClip, or NonPrivate inner "
                 f"mechanism, got {type(inner).__name__}. "
                 "Example: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), rate)"

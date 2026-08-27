@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from torch.utils.data import Subset
 
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.random import fold_in
 
 if TYPE_CHECKING:
@@ -68,19 +69,19 @@ class CanaryScores:
         scores = np.array(self.scores, dtype=float)
         indices = np.array(self.canary_indices)
         if scores.ndim != 1:
-            raise ValueError(f"scores must be 1-D, got shape {scores.shape}")
+            ConfigurationError.raise_(f"scores must be 1-D, got shape {scores.shape}")
         if indices.ndim != 1 or not np.issubdtype(indices.dtype, np.integer):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "canary_indices must be a 1-D integer array, got "
                 f"shape {indices.shape}, dtype {indices.dtype}"
             )
         if scores.shape != indices.shape:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"scores and canary_indices must have equal length, got "
                 f"{scores.shape[0]} scores for {indices.shape[0]} indices"
             )
         if np.unique(indices).size != indices.size:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "canary_indices must be unique; duplicate identifiers make "
                 "the score join ambiguous"
             )
@@ -214,7 +215,7 @@ class CoinFlip:
                 this partition's canaries.
         """
         if not isinstance(scores, CanaryScores):
-            raise TypeError(
+            InputTypeError.raise_(
                 f"split_scores() requires CanaryScores, got "
                 f"{type(scores).__name__}. Bare score arrays cannot prove "
                 "score-to-membership pairing (a shuffled scoring loader "
@@ -233,13 +234,13 @@ class CoinFlip:
         have = scores.canary_indices
 
         if np.unique(want).size != want.size:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "canary_indices of this partition contain duplicates; "
                 "the score join is ambiguous"
             )
         if want.size == 0:
             if have.size:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"got {have.size} scores for a partition with no canaries"
                 )
             return np.empty(0, dtype=float)
@@ -251,7 +252,7 @@ class CoinFlip:
         matched = sorted_want[pos] == have
         if not np.all(matched):
             unexpected = have[~matched]
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"{unexpected.size} score identifier(s) are not canaries of "
                 f"this partition (e.g. {unexpected[:5].tolist()}); the "
                 "scores were computed for different examples or a different "
@@ -263,7 +264,7 @@ class CoinFlip:
         duplicated = want[filled > 1]
         missing = want[filled == 0]
         if duplicated.size or missing.size:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"score identifiers do not cover the partition's canaries "
                 f"one-to-one: {duplicated.size} duplicated "
                 f"(e.g. {duplicated[:5].tolist()}), {missing.size} missing "
@@ -280,21 +281,23 @@ def _candidate_pool(candidate_indices: Any, dataset_size: int) -> np.ndarray:
     """Validate and canonicalize eligible canary indices."""
     pool = np.asarray(candidate_indices)
     if pool.ndim != 1:
-        raise ValueError(f"candidate_indices must be 1-D, got shape {pool.shape}")
+        ConfigurationError.raise_(
+            f"candidate_indices must be 1-D, got shape {pool.shape}"
+        )
     if pool.size == 0:
         return np.empty(0, dtype=np.intp)
     if not np.issubdtype(pool.dtype, np.integer):
-        raise ValueError(
+        ConfigurationError.raise_(
             f"candidate_indices must contain integers, got dtype {pool.dtype}"
         )
 
     unique = np.unique(pool)
     if unique.size != pool.size:
-        raise ValueError("candidate_indices must be unique")
+        ConfigurationError.raise_("candidate_indices must be unique")
 
     invalid = unique[(unique < 0) | (unique >= dataset_size)]
     if invalid.size:
-        raise ValueError(
+        ConfigurationError.raise_(
             "candidate_indices must be within range(len(dataset)); "
             f"got {invalid[:5].tolist()}"
         )
@@ -336,7 +339,9 @@ def coin_flip(
     """
     dataset_size = len(dataset)
     if num_canaries < 0:
-        raise ValueError(f"num_canaries must be non-negative, got {num_canaries}")
+        ConfigurationError.raise_(
+            f"num_canaries must be non-negative, got {num_canaries}"
+        )
     if candidate_indices is None:
         population: int | np.ndarray = dataset_size
         pool_size = dataset_size
@@ -346,7 +351,7 @@ def coin_flip(
         pool_size = population.size
         pool_name = "candidate pool size"
     if num_canaries > pool_size:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"num_canaries ({num_canaries}) exceeds {pool_name} ({pool_size})"
         )
 

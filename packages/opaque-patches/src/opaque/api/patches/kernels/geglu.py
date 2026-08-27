@@ -17,6 +17,8 @@ import torch
 import triton
 import triton.language as tl
 
+from opaque.exceptions import ConfigurationError
+
 from ._utils import (
     INT32_SAFETY_BUFFER,
     ensure_cuda_tensors,
@@ -172,7 +174,7 @@ class _GeGLUExactBackward(torch.autograd.Function):
 
         if not (grad_h_bdim == gate_bdim == up_bdim):
             # Mismatched batch dims would silently pair elements across examples.
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"GeGLU backward vmap requires matching batch dims, got {in_dims}"
             )
 
@@ -261,7 +263,7 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
         """
         gate_bdim, up_bdim = in_dims
         if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
+            ConfigurationError.raise_("Both gate and up should be batched at dim 0")
 
         batched_shape = gate.shape
         gate_flat = gate.reshape(-1)
@@ -435,7 +437,7 @@ class _GeGLUApproxBackward(torch.autograd.Function):
 
         if not (grad_h_bdim == gate_bdim == up_bdim):
             # Mismatched batch dims would silently pair elements across examples.
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"GeGLU backward vmap requires matching batch dims, got {in_dims}"
             )
 
@@ -524,7 +526,7 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
         """
         gate_bdim, up_bdim = in_dims
         if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
+            ConfigurationError.raise_("Both gate and up should be batched at dim 0")
 
         batched_shape = gate.shape
         gate_flat = gate.reshape(-1)

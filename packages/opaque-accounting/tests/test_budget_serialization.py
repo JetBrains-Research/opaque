@@ -7,6 +7,7 @@ import json
 import pytest
 
 import opaque.accounting as acc
+from opaque.exceptions import CheckpointError
 from opaque.serialization import from_state_dict, state_dict
 
 
@@ -59,7 +60,7 @@ def test_builtin_budget_round_trips(budget: object) -> None:
 
 
 def test_unregistered_budget_reports_registration_requirement() -> None:
-    with pytest.raises(TypeError, match="register_budget_serializer"):
+    with pytest.raises(CheckpointError, match="register_budget_serializer"):
         state_dict(acc.Accountant(budget=_UnregisteredBudget(2.5)))
 
 
@@ -67,5 +68,5 @@ def test_unknown_budget_checkpoint_type_reports_registration_requirement() -> No
     serialized = state_dict(acc.Accountant())
     serialized["budget"] = {"type": "example.UnregisteredBudget"}
 
-    with pytest.raises(ValueError, match="no budget serializer is registered"):
+    with pytest.raises(CheckpointError, match="no budget serializer is registered"):
         from_state_dict(acc.Accountant(), serialized)

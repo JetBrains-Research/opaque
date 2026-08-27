@@ -21,6 +21,8 @@ import torch
 import triton
 import triton.language as tl
 
+from opaque.exceptions import OperationError
+
 # Constants
 MAX_FUSED_SIZE: int = 65536
 _IGNORE_INDEX = -100
@@ -45,7 +47,7 @@ def calculate_settings(n: int) -> tuple[int, int]:
     """
     BLOCK_SIZE: int = next_power_of_2(n)
     if BLOCK_SIZE > MAX_FUSED_SIZE:
-        raise RuntimeError(
+        OperationError.raise_(
             f"Cannot launch Triton kernel since n = {n} exceeds "
             f"the maximum CUDA blocksize = {MAX_FUSED_SIZE}."
         )
@@ -184,7 +186,7 @@ def ensure_cuda_tensors(*tensors: torch.Tensor, fn_name: str) -> None:
         if not torch.is_tensor(tensor):
             continue
         if tensor.device.type != "cuda":
-            raise RuntimeError(
+            OperationError.raise_(
                 f"{fn_name} requires CUDA tensors (Triton kernel backend); "
                 f"got device={tensor.device.type}. "
                 "Use non-kernel PyTorch path on MPS/CPU."

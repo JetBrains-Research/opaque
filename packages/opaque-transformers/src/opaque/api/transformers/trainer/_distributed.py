@@ -22,6 +22,7 @@ import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
 from opaque.distributed.collectives import barrier as _opaque_barrier
+from opaque.exceptions import ConfigurationError
 from transformers.utils import logging as _hf_logging
 
 __all__ = [
@@ -148,7 +149,7 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
     configured_backend = str(configured).lower()
     if not ddp.is_distributed:
         if configured_backend in _BACKEND_ENV_DEPENDENT_HINTS:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"ddp_backend={configured_backend!r} requires a distributed process "
                 f"group initialized with vendor runtime "
                 f"({_BACKEND_ENV_DEPENDENT_HINTS[configured_backend]}), but no "
@@ -157,7 +158,7 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
         return
     live_backend = (ddp.backend or "").lower()
     if live_backend and configured_backend != live_backend:
-        raise ValueError(
+        ConfigurationError.raise_(
             "Configured ddp_backend does not match initialized process group: "
             f"ddp_backend={configured_backend!r}, live_backend={live_backend!r}."
         )

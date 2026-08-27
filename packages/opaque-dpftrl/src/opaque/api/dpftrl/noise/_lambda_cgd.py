@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.exceptions import ConfigurationError
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
@@ -96,7 +97,7 @@ def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
     zero out the released noise under ``normalized=True``.
     """
     if step < 0 or step >= n_steps:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"column-norm step {step} is outside the calibrated horizon [0, {n_steps})."
         )
     if lambda_ == 0.0:
@@ -120,7 +121,7 @@ class LambdaCgdStrategy:
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
-            raise ValueError(f"lambda_ must be in [0, 1), got {self.lambda_}")
+            ConfigurationError.raise_(f"lambda_ must be in [0, 1), got {self.lambda_}")
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         # [1, λ, λ², ..., λ^{n_steps-1}].

@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     import torch
 
@@ -49,11 +51,11 @@ def mpo_combine(
         broadcast of the selected loss tensors.
 
     Raises:
-        KeyError: If *weights* names a key that is absent from *losses*.
+        ConfigurationError: If *weights* names a key that is absent from *losses*.
     """
     missing = weights.keys() - losses.keys()
     if missing:
-        raise KeyError(
+        ConfigurationError.raise_(
             f"weights keys {sorted(missing)} are not present in losses "
             f"(available: {sorted(losses)})"
         )
@@ -63,5 +65,5 @@ def mpo_combine(
         term = weight * losses[name]
         out = term if out is None else out + term
     if out is None:
-        raise KeyError("weights must select at least one loss term")
+        ConfigurationError.raise_("weights must select at least one loss term")
     return out

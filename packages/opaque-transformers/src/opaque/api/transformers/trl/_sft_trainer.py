@@ -29,6 +29,7 @@ from opaque.alignment.metric import entropy_from_logits, mean_token_accuracy
 from opaque.alignment.sft.collator import language_modeling_collator
 from opaque.alignment.sft.loss import dft_loss, fused_dft_loss, nll_loss
 from opaque.api.transformers.trainer import DPTrainer
+from opaque.exceptions import ConfigurationError
 
 from ._sft_config import SFTConfig
 
@@ -183,7 +184,7 @@ class SFTTrainer(DPTrainer):
         # loss and ``chunked_nll`` is logits-free, so neither can route a custom
         # loss.
         if args.loss_type in ("dft", "chunked_nll") and compute_loss_func is not None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"loss_type={args.loss_type!r} computes its own loss; pass "
                 "loss_type='nll' to use a custom compute_loss_func."
             )
@@ -324,7 +325,7 @@ class SFTTrainer(DPTrainer):
 
             name = getattr(model.config, "_name_or_path", None)
             if not name:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "processing_class is None and the model config has no "
                     "_name_or_path to load a tokenizer from; pass processing_class."
                 )
@@ -617,7 +618,7 @@ class SFTTrainer(DPTrainer):
         # a missing key would otherwise surface as an opaque vmap error.
         missing = [k for k in batch_keys if inputs.get(k) is None]
         if missing:
-            raise KeyError(
+            ConfigurationError.raise_(
                 "DFT eval expects the eval batch to carry the train-discovered "
                 f"keys {list(batch_keys)!r}, but {missing!r} are absent (or "
                 "None); align the eval collator/dataset with the training one."

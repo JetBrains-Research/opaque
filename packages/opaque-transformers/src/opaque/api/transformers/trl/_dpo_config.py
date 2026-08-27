@@ -23,6 +23,7 @@ from typing import Any
 import torch
 
 from opaque.api.transformers.trainer._training_arguments import TrainingArguments
+from opaque.exceptions import ConfigurationError
 
 from ._dpo_convert import _convert_trl_dpo_config
 
@@ -151,26 +152,26 @@ class DPOConfig(TrainingArguments):
             "robust" in self.loss_type
             and not 0.0 <= self.label_smoothing < _MAX_ROBUST_LABEL_SMOOTHING
         ):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "Robust DPO (loss_type='robust') requires label_smoothing in "
                 f"[0.0, 0.5); got {self.label_smoothing}."
             )
         if "exo_pair" in self.loss_type and self.label_smoothing <= 0.0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "EXO (loss_type='exo_pair') requires label_smoothing > 0; got "
                 f"{self.label_smoothing}."
             )
         if self.loss_weights is not None and len(self.loss_weights) != len(
             self.loss_type
         ):
-            raise ValueError(
+            ConfigurationError.raise_(
                 "loss_weights must have the same length as loss_type: "
                 f"{len(self.loss_weights)} != {len(self.loss_type)}."
             )
         # MPO terms are keyed by loss name; duplicates would silently collapse
         # and change the objective. Fail fast.
         if len(set(self.loss_type)) != len(self.loss_type):
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"loss_type contains duplicates: {self.loss_type}. Each loss "
                 "variant may appear at most once in an MPO combination."
             )
@@ -179,7 +180,7 @@ class DPOConfig(TrainingArguments):
             lt in _REFERENCE_FREE_HEADS for lt in self.loss_type
         ):
             names = ", ".join(self.loss_type)
-            raise ValueError(
+            ConfigurationError.raise_(
                 "TR-DPO (sync_ref_model) requires a reference-using loss_type; "
                 f"{names} are reference-free."
             )

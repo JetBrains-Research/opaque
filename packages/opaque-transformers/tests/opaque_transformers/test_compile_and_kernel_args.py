@@ -14,6 +14,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ----------------------------------------------------------------------------
@@ -84,7 +85,9 @@ def test_torch_compile_invalid_mode_rejected_at_args(tmp_path):
 
 
 def test_torch_compile_with_auto_find_microbatch_size_rejected(tmp_path):
-    with pytest.raises(ValueError, match=r"torch_compile.*auto_find_microbatch_size"):
+    with pytest.raises(
+        ConfigurationError, match=r"torch_compile.*auto_find_microbatch_size"
+    ):
         _args(tmp_path, torch_compile=True, auto_find_microbatch_size=True)
 
 

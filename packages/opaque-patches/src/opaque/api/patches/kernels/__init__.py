@@ -12,6 +12,8 @@ import them from concrete submodules only when patch internals need them.
 import torch
 import torch.nn.functional as F
 
+from opaque.exceptions import ConfigurationError
+
 _IGNORE_INDEX = -100
 
 try:
@@ -318,7 +320,7 @@ except ModuleNotFoundError as import_error:
         elif activation in (ACTIVATION_GEGLU_APPROX, "geglu_approx"):
             hidden = opaque_geglu_approx(gate, up)
         else:
-            raise ValueError(f"Unknown activation: {activation}")
+            ConfigurationError.raise_(f"Unknown activation: {activation}")
 
         return hidden @ Wd.transpose(-1, -2) + (hidden @ Ad @ Bd) * Sd
 
@@ -366,7 +368,7 @@ except ModuleNotFoundError as import_error:
             inv = torch.rsqrt(ms + eps_t)
             normed = x2 * inv
         else:
-            raise ValueError(casting_mode)
+            ConfigurationError.raise_(casting_mode)
         out = normed * (weight + offset)
         return out.view(orig)
 

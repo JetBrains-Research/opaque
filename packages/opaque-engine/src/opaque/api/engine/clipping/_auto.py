@@ -37,6 +37,7 @@ from opaque.api.engine.clipping._clipped_fun import ClippedFunAux, clipped_fun
 from opaque.api.engine.clipping._clipped_grad import ClippedGradAux, clipped_grad
 from opaque.api.engine.clipping._pytree import auto_scale_pytree
 from opaque.api.engine.types import ClipState, PerGroup
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -96,13 +97,13 @@ def _validate_auto_params(R: float | PerGroup, gamma: float) -> None:
     if isinstance(R, PerGroup):
         for gname, val in R.values.items():
             if val <= 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"R must be positive for all groups, got {val} for group '{gname}'"
                 )
     elif R <= 0:
-        raise ValueError(f"R must be positive, got {R}")
+        ConfigurationError.raise_(f"R must be positive, got {R}")
     if gamma <= 0:
-        raise ValueError(f"gamma must be positive, got {gamma}")
+        ConfigurationError.raise_(f"gamma must be positive, got {gamma}")
 
 
 def auto_clipped_fun(

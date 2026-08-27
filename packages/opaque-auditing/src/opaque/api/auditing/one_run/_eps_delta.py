@@ -29,6 +29,7 @@ from opaque.api.auditing.one_run._stats import (
     validate_delta,
     validate_significance,
 )
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from opaque.api.auditing.one_run._estimate import OneRunEstimate
@@ -107,7 +108,7 @@ class EpsDeltaMethod:
         """
         validate_significance(significance)
         if epsilon < 0:
-            raise ValueError(f"epsilon must be >= 0, got {epsilon}")
+            ConfigurationError.raise_(f"epsilon must be >= 0, got {epsilon}")
         r, u = self._estimate._best_r_u(threshold)
 
         if _p_value(r, u, epsilon, 0.0) >= significance:

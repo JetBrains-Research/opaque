@@ -23,6 +23,7 @@ from opaque.api.auditing.attacks._helpers import (
     _scoring_loader,
     _validate_batch_argnums,
 )
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -124,7 +125,7 @@ def gradient_scores(
     _validate_batch_argnums(batch_argnums, len(args))
 
     if 0 in batch_argnums:
-        raise ValueError(
+        ConfigurationError.raise_(
             "gradient_scores differentiates w.r.t. the first argument "
             "(position 0), which must not be in batch_argnums. "
             f"Got batch_argnums={batch_argnums}."

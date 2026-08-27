@@ -21,6 +21,8 @@ import torch
 import triton
 import triton.language as tl
 
+from opaque.exceptions import ConfigurationError, OperationError
+
 from ._utils import (
     _MAX_PER_ROW_KERNEL_BLOCK_SIZE,
     _MIN_ROWS_FOR_BLOCK_KERNEL,
@@ -61,10 +63,10 @@ _TORCH_TO_TRITON_DTYPES = {
 def _casting_mode_int(casting_mode: str | int) -> int:
     if isinstance(casting_mode, int):
         if casting_mode not in _STR_TO_CASTING.values():
-            raise ValueError(f"Invalid casting_mode int: {casting_mode}")
+            ConfigurationError.raise_(f"Invalid casting_mode int: {casting_mode}")
         return casting_mode
     if casting_mode not in _STR_TO_CASTING:
-        raise ValueError(f"Invalid casting_mode: {casting_mode}")
+        ConfigurationError.raise_(f"Invalid casting_mode: {casting_mode}")
     return _STR_TO_CASTING[casting_mode]
 
 
@@ -390,7 +392,7 @@ def _rms_norm_backward_triton(
     n_rows, n_cols = dY.shape
 
     if n_cols > BLOCK_SIZE:
-        raise RuntimeError(
+        OperationError.raise_(
             f"RMSNorm hidden dim {n_cols} exceeds fused block limit {BLOCK_SIZE}."
         )
 
@@ -487,11 +489,11 @@ class _RMSNormBackward(torch.autograd.Function):
         del info
         dy_b, x_b, w_b, r_b, m_b, o_b = in_dims
         if m_b is not None or o_b is not None:
-            raise ValueError("meta_i and offset_tensor must not be vmapped")
+            ConfigurationError.raise_("meta_i and offset_tensor must not be vmapped")
         if w_b is not None:
-            raise ValueError("W must not be vmapped")
+            ConfigurationError.raise_("W must not be vmapped")
         if dy_b != 0 or x_b != 0 or r_b != 0:
-            raise ValueError("dY, X, RSTD must be vmapped at dim 0")
+            ConfigurationError.raise_("dY, X, RSTD must be vmapped at dim 0")
         H = X.shape[-1]
         head = dY.shape[:-1]
         B = dY.shape[0]
@@ -627,9 +629,9 @@ class Opaque_RMSNorm(torch.autograd.Function):
         del info
         x_b, w_b = in_dims[0], in_dims[1]
         if w_b is not None:
-            raise ValueError("Opaque_RMSNorm vmap: weight must not be batched")
+            ConfigurationError.raise_("Opaque_RMSNorm vmap: weight must not be batched")
         if x_b != 0:
-            raise ValueError("Opaque_RMSNorm vmap: X must be vmapped at dim 0")
+            ConfigurationError.raise_("Opaque_RMSNorm vmap: X must be vmapped at dim 0")
         cm = _casting_mode_int(casting_mode)
         shape = X.shape
         H = shape[-1]
@@ -657,7 +659,7 @@ def opaque_rms_norm(
 ) -> torch.Tensor:
     """Public API: fused RMSNorm (CUDA only when Triton path is used)."""
     if not x.is_cuda:
-        raise RuntimeError("opaque_rms_norm Triton path requires CUDA")
+        OperationError.raise_("opaque_rms_norm Triton path requires CUDA")
     x, weight = follow_autocast(x, weight)
     return Opaque_RMSNorm.apply(
         x,

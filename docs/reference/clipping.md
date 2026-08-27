@@ -70,7 +70,7 @@ object. It auto-dispatches to the right function based on type:
 
 Dispatch resolves by exact type and then by `__mro__`, so any subclass of a
 registered clipping state or aux type reaches its base handler; an unregistered
-type raises `TypeError` rather than passing through unsynchronized.
+type raises `InputTypeError` rather than passing through unsynchronized.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)
 

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 from torch.utils.data import Subset
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from collections.abc import Sized
 
@@ -38,11 +40,11 @@ def _local_shard_bounds(
 ) -> tuple[int, int]:
     """Return ``[start, end)`` index bounds for ``rank``."""
     if dataset_size < 0:
-        raise ValueError(f"dataset_size must be >= 0, got {dataset_size}")
+        ConfigurationError.raise_(f"dataset_size must be >= 0, got {dataset_size}")
     if world_size < 1:
-        raise ValueError(f"world_size must be >= 1, got {world_size}")
+        ConfigurationError.raise_(f"world_size must be >= 1, got {world_size}")
     if not 0 <= rank < world_size:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"rank must be in [0, world_size), got rank={rank}, world_size={world_size}"
         )
 

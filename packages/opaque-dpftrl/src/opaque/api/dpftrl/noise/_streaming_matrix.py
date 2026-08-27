@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 import optree as _ot
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -288,7 +290,9 @@ def momentum_sgd_matrix(
         lr_sched = learning_rates.to(torch.float64)
 
     if lr_sched.min() <= 0.0:
-        raise ValueError(f"Learning rates must be positive. Found {learning_rates}")
+        ConfigurationError.raise_(
+            f"Learning rates must be positive. Found {learning_rates}"
+        )
 
     def init_multiply(abstract_value):
         dtype = torch.promote_types(abstract_value.dtype, lr_sched.dtype)

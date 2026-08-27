@@ -23,6 +23,7 @@ from opaque.api.auditing.one_run._stats import (
     validate_delta,
     validate_significance,
 )
+from opaque.exceptions import ConfigurationError, OperationError
 
 if TYPE_CHECKING:
     from opaque.api.auditing.one_run._estimate import OneRunEstimate
@@ -82,7 +83,7 @@ class GdpMethod:
                 break
             mu_hi *= 2.0
         else:
-            raise RuntimeError(
+            OperationError.raise_(
                 f"cannot invert μ-GDP p-value for (m={m}, r={r}, u={u}) at "
                 f"significance={significance}: p-value stays below it for "
                 f"every μ up to {mu_hi:g}. With r > {_MAX_EXACT_RANKS} "
@@ -119,7 +120,9 @@ class GdpMethod:
             ValueError: If ``delta <= 0``.
         """
         if delta <= 0:
-            raise ValueError(f"μ-GDP f-DP auditing requires delta > 0, got {delta}")
+            ConfigurationError.raise_(
+                f"μ-GDP f-DP auditing requires delta > 0, got {delta}"
+            )
         validate_delta(delta)
         return _gdp_to_eps_delta(
             self._mu_at(significance, threshold),
@@ -138,7 +141,7 @@ class GdpMethod:
         Closed form: δ(ε; μ) = Φ(μ/2 − ε/μ) − e^ε · Φ(−μ/2 − ε/μ).
         """
         if epsilon < 0:
-            raise ValueError(f"epsilon must be >= 0, got {epsilon}")
+            ConfigurationError.raise_(f"epsilon must be >= 0, got {epsilon}")
         mu = self._mu_at(significance, threshold)
         if mu == 0.0:
             return 0.0
@@ -165,7 +168,7 @@ class GdpMethod:
         :meth:`OneRunEstimate.beta_at` which is the empirical attack ROC.
         """
         if not 0.0 <= alpha <= 1.0:
-            raise ValueError(f"alpha must be in [0, 1], got {alpha}")
+            ConfigurationError.raise_(f"alpha must be in [0, 1], got {alpha}")
         mu = self._mu_at(significance, threshold)
         return float(scipy.stats.norm.cdf(scipy.stats.norm.ppf(1.0 - alpha) - mu))
 
@@ -196,9 +199,9 @@ def _gdp_to_eps_delta(mu: float, delta: float) -> float:
     and binary-searches for the ε at which δ(ε) = *delta*.
     """
     if mu < 0.0:
-        raise ValueError(f"mu must be >= 0, got {mu}")
+        ConfigurationError.raise_(f"mu must be >= 0, got {mu}")
     if not (0.0 < delta <= 1.0):
-        raise ValueError(f"delta must be in (0, 1], got {delta}")
+        ConfigurationError.raise_(f"delta must be in (0, 1], got {delta}")
     if mu == 0.0:
         return 0.0
     if delta >= 1.0:
@@ -276,7 +279,7 @@ def _gdp_base_pair_grid(mu: float, num_points: int) -> _BaseGrid:
     - |L(z)| = |μ²/2 − μ·z|
     """
     if mu <= 0.0:
-        raise ValueError("mu must be > 0 for grid construction")
+        ConfigurationError.raise_("mu must be > 0 for grid construction")
 
     z_lo = -6.0
     z_hi = mu + 6.0

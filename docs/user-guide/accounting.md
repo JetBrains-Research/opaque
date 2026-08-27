@@ -427,10 +427,10 @@ at or below the target. For privacy-gain budgets (beta and risk), it is at or
 above the target. Every successfully returned result has `converged=True`.
 
 The `tolerance` argument must be finite and positive, and `max_iterations`
-must be positive. Invalid values raise `ValueError` before the process is
+must be positive. Invalid values raise `CalibrationError` before the process is
 evaluated. If the search cannot find a safe endpoint satisfying
 `math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)`, it raises
-`RuntimeError` instead of returning an under-noised parameter.
+`CalibrationError` instead of returning an under-noised parameter.
 
 ### Budget types
 
@@ -450,7 +450,7 @@ automatically. Parameters whose increase improves privacy (noise multiplier)
 and parameters whose increase spends privacy (sample rate, step count) are
 both supported, for every budget kind. The metric produced by
 `process(param)` must be monotone over `[param_min, param_max]`; flat or
-detectably non-monotone parameterizations raise `ValueError`.
+detectably non-monotone parameterizations raise `CalibrationError`.
 
 ## Accountant
 

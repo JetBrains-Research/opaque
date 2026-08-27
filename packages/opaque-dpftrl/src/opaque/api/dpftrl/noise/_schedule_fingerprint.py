@@ -5,6 +5,8 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import InputTypeError
+
 if TYPE_CHECKING:
     from opaque.api.engine.scheduling.types import Schedule
 
@@ -23,7 +25,7 @@ def strategy_cache_key(
 ) -> tuple[type[Any], tuple[object, ...]]:
     """Return every strategy recipe input that affects an ``n_steps`` query."""
     if not dataclasses.is_dataclass(strategy):
-        raise TypeError(
+        InputTypeError.raise_(
             "strategy_cache_key() requires a dataclass strategy, got "
             f"{type(strategy).__name__}."
         )

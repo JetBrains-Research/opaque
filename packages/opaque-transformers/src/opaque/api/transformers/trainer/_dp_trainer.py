@@ -21,6 +21,8 @@ eval (vmap when ``include_for_metrics=['loss']``) route through.
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 import contextlib
 import dataclasses
 import functools
@@ -502,7 +504,7 @@ class DPTrainer:
         self._train_dataset = train_dataset
         self._eval_dataset = eval_dataset
         if args.eval_strategy != "no" and eval_dataset is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"You have set `args.eval_strategy` to {args.eval_strategy} but "
                 "didn't pass an `eval_dataset` to `DPTrainer`. Either set "
                 "`eval_strategy='no'` or pass an eval_dataset."
@@ -519,7 +521,7 @@ class DPTrainer:
         self._device = self.args.device
         _SUPPORTED_DEVICE_TYPES = {"cpu", "cuda", "mps"}
         if self._device.type not in _SUPPORTED_DEVICE_TYPES:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"DPTrainer only supports cpu, cuda, and mps devices; "
                 f"got device={self._device!r}. "
                 f"Other backends (xpu, npu, mlu, musa, hpu, ...) are not supported."
@@ -954,7 +956,7 @@ class DPTrainer:
     ) -> TrainOutput:
         """Inner dispatch."""
         if self._train_dataset is None:
-            raise ValueError("DPTrainer.train() requires a train_dataset.")
+            ConfigurationError.raise_("DPTrainer.train() requires a train_dataset.")
 
         # ``microbatch_size`` controls the vmap chunk and defaults to
         # ``per_device_train_batch_size`` (one chunk per rank).
@@ -1353,10 +1355,10 @@ class DPTrainer:
         )
 
         if self._train_dataset is None:
-            raise ValueError("DPTrainer.train() requires a train_dataset.")
+            ConfigurationError.raise_("DPTrainer.train() requires a train_dataset.")
         dataset_size = self._effective_train_dataset_size()
         if dataset_size <= 0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "DPTrainer requires a non-empty train_dataset: DP-SGD needs "
                 "at least one example to build the per-example loss surface "
                 "and calibrate Poisson sampling."
@@ -1377,7 +1379,7 @@ class DPTrainer:
         # vs accounted q" drift.
         sample_rate = expected_batch_size / dataset_size
         if sample_rate > 1.0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "DPTrainer requires expected_batch_size <= len(train_dataset) "
                 "for Poisson sampling; got expected_batch_size="
                 f"{expected_batch_size} and len(train_dataset)={dataset_size}."
@@ -2015,7 +2017,7 @@ class DPTrainer:
         try:
             batch_args = tuple(inputs[k] for k in ctx.batch_keys)
         except KeyError as missing:
-            raise TypeError(
+            raise InputTypeError(
                 f"data_collator output is missing required key {missing!s}; "
                 f"expected keys {list(ctx.batch_keys)!r} (discovered at "
                 f"_setup_training time from a dry run on one example)."
@@ -2576,7 +2578,7 @@ class DPTrainer:
             return loss, None, None
 
         if not isinstance(output, Mapping):
-            raise TypeError(
+            InputTypeError.raise_(
                 "DPTrainer requires model.forward to return a dict-like "
                 "ModelOutput (or Mapping). "
                 f"Got {type(output).__name__}; wrap forward to return a dict."
@@ -2945,7 +2947,7 @@ class DPTrainer:
         """
         dataset = eval_dataset if eval_dataset is not None else self._eval_dataset
         if dataset is None:
-            raise ValueError("DPTrainer.evaluate() requires an eval_dataset.")
+            ConfigurationError.raise_("DPTrainer.evaluate() requires an eval_dataset.")
 
         # Multi-dataset eval: recurse per split with a namespaced prefix and
         # merge (mirrors transformers.Trainer.evaluate).
@@ -3028,7 +3030,7 @@ class DPTrainer:
             return
         output_dir = self._effective_output_dir()
         if output_dir is None:
-            raise ValueError("save_metrics requires args.output_dir to be set")
+            ConfigurationError.raise_("save_metrics requires args.output_dir to be set")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         path = Path(output_dir) / f"{split}_results.json"
         with path.open("w") as f:
@@ -3050,7 +3052,7 @@ class DPTrainer:
             return
         output_dir = self._effective_output_dir()
         if output_dir is None:
-            raise ValueError("save_state requires args.output_dir to be set")
+            ConfigurationError.raise_("save_state requires args.output_dir to be set")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         self._save_trainer_state(output_dir)
 
@@ -3393,7 +3395,7 @@ class DPTrainer:
 
         columns = [k for k in signature_columns if k in dataset.column_names]
         if not columns:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "No columns in the dataset match the model's forward method signature: "
                 f"({', '.join(signature_columns)}). The following columns have "
                 f"been ignored: [{', '.join(ignored_columns)}]. Please check the "
@@ -3562,7 +3564,9 @@ class DPTrainer:
         operates only on tensors.
         """
         if len(self._train_dataset) == 0:
-            raise ValueError("Cannot discover batch keys: train_dataset is empty.")
+            ConfigurationError.raise_(
+                "Cannot discover batch keys: train_dataset is empty."
+            )
         prepared_dataset, prepared_collator = self._prepare_dataset_and_collator(
             self._train_dataset,
             description="training",
@@ -3570,12 +3574,12 @@ class DPTrainer:
         )
         sample = prepared_collator([prepared_dataset[0]])
         if not isinstance(sample, Mapping):
-            raise TypeError(
+            InputTypeError.raise_(
                 f"data_collator must return a mapping; got {type(sample).__name__}."
             )
         keys = tuple(k for k, v in sample.items() if isinstance(v, Tensor))
         if not keys:
-            raise TypeError(
+            InputTypeError.raise_(
                 "data_collator produced no tensor outputs on a one-example dry "
                 f"run; got keys={list(sample.keys())!r}.  The DP path requires "
                 "at least one batched tensor."
@@ -3761,7 +3765,7 @@ class DPTrainer:
             # different batch counts issue a different number of collectives →
             # hang.  Reject it under DDP rather than deadlock.
             if not self.args.eval_do_concat_batches:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "eval_do_concat_batches=False is not supported under "
                     "distributed evaluation (world_size>1): the per-batch list "
                     "gather issues a data-dependent number of collectives and "
@@ -4264,12 +4268,12 @@ class DPTrainer:
             k_raw = sk.get("k")
             allocation = sk.get("allocation")
             if k_raw is None or allocation is None:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "sampling_mode='k_out_of_t' requires sampling_kwargs with "
                     "'k' and 'allocation'."
                 )
             if allocation not in ("block", "total"):
-                raise ValueError(
+                ConfigurationError.raise_(
                     "sampling_kwargs['allocation'] must be 'block' or 'total', "
                     f"got {allocation!r}."
                 )
@@ -4429,7 +4433,7 @@ class DPTrainer:
             return n
         trimmed = (n // world_size) * world_size
         if trimmed < 1:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"Train dataset has {n} example(s), fewer than "
                 f"world_size={world_size}; every rank requires at least one "
                 "example after sharding."
@@ -4709,7 +4713,9 @@ class DPTrainer:
         a = self.args
         target = output_dir or self._effective_output_dir()
         if target is None:
-            raise ValueError("save_model requires output_dir (arg or args.output_dir)")
+            ConfigurationError.raise_(
+                "save_model requires output_dir (arg or args.output_dir)"
+            )
         if self._ctx is not None:
             self._restore_params(self._ctx.trainable_params)
         if _distributed.should_save(a, self._ddp):
@@ -4756,7 +4762,7 @@ class DPTrainer:
         """
         target = output_dir or self._effective_output_dir()
         if target is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "save_accountant requires output_dir (arg or args.output_dir)"
             )
         accountant = self._ctx.accounting if self._ctx is not None else self._accountant
@@ -4804,7 +4810,9 @@ class DPTrainer:
         a = self.args
         output_dir = self._effective_output_dir()
         if output_dir is None:
-            raise ValueError("Saving checkpoints requires args.output_dir to be set")
+            ConfigurationError.raise_(
+                "Saving checkpoints requires args.output_dir to be set"
+            )
         ckpt_dir = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
         # Atomic publish: write everything into a sibling ``*.tmp`` staging
         # directory, then ``os.replace`` it onto the final ``checkpoint-N``
@@ -5078,7 +5086,7 @@ class DPTrainer:
         if value is True:
             output_dir = self._effective_output_dir()
             if output_dir is None:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "resume_from_checkpoint=True requires args.output_dir to be set"
                 )
             found = ckpt.get_last_checkpoint(output_dir)
@@ -5093,7 +5101,7 @@ class DPTrainer:
         if isinstance(value, os.PathLike):
             value = os.fspath(value)
         if not isinstance(value, str):
-            raise TypeError(
+            InputTypeError.raise_(
                 "resume_from_checkpoint must be str | bool | PathLike | None, "
                 f"got {type(value).__name__}"
             )
@@ -5315,7 +5323,7 @@ class DPTrainer:
                 continue
             if disposition == "dp_relevant":
                 if saved_mechanism != "gaussian":
-                    raise ValueError(
+                    ConfigurationError.raise_(
                         f"DP-FTRL resume forbids drift on {f.name!r}: "
                         f"saved={saved!r}, current={current!r}. The "
                         "matrix-factorization strategy is computed for the "

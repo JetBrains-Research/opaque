@@ -17,6 +17,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   explicit state trees (optimizers, accounting, clip/noise state, …);
   template-driven restore; optional `register_serializer` for custom types
 
+- **[Exceptions](exceptions.md)** — Stable semantic categories for configuration,
+  calibration, privacy-budget, checkpoint, type, and operation failures
+
 - **[Random Number Generation](rng.md)** — Immutable RNG keys for deterministic DP
   - `RngKey` — Immutable key type
   - `key()`, `random_key()` — Create keys

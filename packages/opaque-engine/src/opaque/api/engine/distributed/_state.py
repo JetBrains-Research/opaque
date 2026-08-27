@@ -29,6 +29,7 @@ from opaque.api.engine.pytree import (
     tree_structure,
     tree_unflatten,
 )
+from opaque.exceptions import ConfigurationError, InputTypeError, OperationError
 
 from .collectives import all_reduce_, get_world_size, is_distributed
 
@@ -70,7 +71,7 @@ def assert_scalar_equal(
             rtol=rtol,
         )
     if not equal:
-        raise RuntimeError(
+        OperationError.raise_(
             f"{name} mismatch across ranks: min={min_value}, max={max_value}."
         )
 
@@ -83,7 +84,7 @@ def assert_string_equal(value: str | None, *, name: str) -> None:
     values: list[str | None] = [None] * get_world_size()
     dist.all_gather_object(values, value)
     if any(other != values[0] for other in values[1:]):
-        raise RuntimeError(f"{name} mismatch across ranks.")
+        OperationError.raise_(f"{name} mismatch across ranks.")
 
 
 def assert_pytree_equal(
@@ -137,15 +138,17 @@ def reduce_scalar(
     Python float.
     """
     if isinstance(value, bool) or not isinstance(value, (float, int)):
-        raise TypeError(f"value must be a float or int, got {type(value)}")
+        InputTypeError.raise_(f"value must be a float or int, got {type(value)}")
     if compute_dtype is not None and not torch.is_floating_point(
         torch.empty((), dtype=compute_dtype)
     ):
-        raise TypeError(
+        InputTypeError.raise_(
             f"compute_dtype must be a real floating-point dtype, got {compute_dtype!r}."
         )
     if isinstance(value, int) and compute_dtype is not None:
-        raise TypeError("compute_dtype is only supported for floating-point values.")
+        InputTypeError.raise_(
+            "compute_dtype is only supported for floating-point values."
+        )
     if not is_distributed():
         if isinstance(value, int) and op == "mean":
             return float(value)
@@ -159,7 +162,7 @@ def reduce_scalar(
         )
         if backend == "nccl":
             if not torch.cuda.is_available():
-                raise RuntimeError(
+                OperationError.raise_(
                     "Distributed backend is 'nccl' but CUDA is not available; "
                     "provide an explicit `device` to `reduce_scalar` or initialize "
                     "with a CUDA-capable process."
@@ -197,13 +200,13 @@ def _validate_gathered_tensor_column(
 ) -> int:
     reference = tensors[0]
     if reference.ndim == 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             "Distributed tensor gathering cannot concatenate scalar tensor "
             f"leaf {leaf_index}; provide at least one dimension."
         )
     normalized_dim = dim if dim >= 0 else reference.ndim + dim
     if normalized_dim < 0 or normalized_dim >= reference.ndim:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Gather dimension {dim} is out of range for tensor leaf {leaf_index} "
             f"with {reference.ndim} dimensions."
         )
@@ -211,14 +214,14 @@ def _validate_gathered_tensor_column(
     reference_rank = ranks[0]
     for rank, tensor in zip(ranks[1:], tensors[1:], strict=True):
         if tensor.dtype != reference.dtype:
-            raise TypeError(
+            InputTypeError.raise_(
                 "Distributed tensor gathering requires matching dtypes; "
                 f"leaf {leaf_index} has {reference.dtype} on rank "
                 f"{reference_rank} and "
                 f"{tensor.dtype} on rank {rank}."
             )
         if tensor.ndim != reference.ndim:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "Distributed tensor gathering requires matching tensor ranks; "
                 f"leaf {leaf_index} has {reference.ndim} dimensions on rank "
                 f"{reference_rank} "
@@ -228,7 +231,7 @@ def _validate_gathered_tensor_column(
             zip(reference.shape, tensor.shape, strict=True)
         ):
             if axis != normalized_dim and actual != expected:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "Distributed tensor gathering requires matching "
                     "non-concatenated dimensions; "
                     f"leaf {leaf_index}, axis {axis} has size {expected} on "
@@ -253,7 +256,7 @@ def _merge_gathered_pytrees(
     for rank, payload in present[1:]:
         other = tree_structure(payload)
         if other != treedef:
-            raise TypeError(
+            InputTypeError.raise_(
                 "Distributed tensor gathering requires matching pytree "
                 "structures across non-empty ranks; "
                 f"rank {first_rank} has {treedef} and rank {rank} has {other}."
@@ -266,7 +269,7 @@ def _merge_gathered_pytrees(
     merged_leaves: list[torch.Tensor] = []
     for leaf_index, column in enumerate(zip(*leaf_lists, strict=True)):
         if not all(isinstance(leaf, torch.Tensor) for leaf in column):
-            raise TypeError(
+            InputTypeError.raise_(
                 "Distributed tensor gathering supports tensor leaves only; "
                 f"leaf {leaf_index} has types "
                 f"{[type(leaf).__name__ for leaf in column]}."
@@ -338,13 +341,13 @@ def _validate_field_op(field_name: str, field_op: Any) -> None:
     """
     if isinstance(field_op, str):
         if field_op not in _VALID_FIELD_OPS:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"field_ops[{field_name!r}] has unsupported operation {field_op!r}. "
                 f"Expected one of {sorted(_VALID_FIELD_OPS)} or a callable."
             )
         return
     if not callable(field_op):
-        raise ValueError(
+        ConfigurationError.raise_(
             f"field_ops[{field_name!r}] must be an operation name or a callable, "
             f"got {type(field_op).__name__}."
         )
@@ -355,10 +358,11 @@ def _validate_field_op(field_name: str, field_op: Any) -> None:
     try:
         signature.bind(None, None)
     except TypeError as error:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"field_ops[{field_name!r}] must be callable as fn(value, device), "
-            f"but its signature is {signature}: {error}."
-        ) from error
+            f"but its signature is {signature}: {error}.",
+            cause=error,
+        )
 
 
 def sync_object(
@@ -390,7 +394,7 @@ def sync_object(
     prevents rank-local values from changing the collective schedule.
     """
     if not is_dataclass(state):
-        raise TypeError(f"state must be a dataclass, got {type(state)}")
+        InputTypeError.raise_(f"state must be a dataclass, got {type(state)}")
 
     dataclass_fields = fields(state)
     state_fields = {field.name for field in dataclass_fields}
@@ -403,7 +407,7 @@ def sync_object(
             details.append(f"unknown fields: {sorted(unknown_fields)}")
         if missing_fields:
             details.append(f"missing fields: {sorted(missing_fields)}")
-        raise ValueError(
+        ConfigurationError.raise_(
             "field_ops must define every dataclass field; " + "; ".join(details) + "."
         )
 
@@ -425,7 +429,7 @@ def sync_object(
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
             if isinstance(value, bool):
-                raise TypeError(
+                InputTypeError.raise_(
                     f"Callable field_ops[{field_name!r}] cannot update a bool field; "
                     "use 'local' or return None for assertion-only behavior."
                 )
@@ -434,7 +438,7 @@ def sync_object(
             continue
         if field_op == "assert_equal":
             if not isinstance(value, (float, int)) or isinstance(value, bool):
-                raise TypeError(
+                InputTypeError.raise_(
                     f"field_ops[{field_name!r}]='assert_equal' requires a float or int, "
                     f"got {type(value).__name__}."
                 )
@@ -451,13 +455,13 @@ def sync_object(
             present_min = reduce_scalar(is_present, op="min", device=device)
             present_max = reduce_scalar(is_present, op="max", device=device)
             if present_min != present_max:
-                raise RuntimeError(
+                OperationError.raise_(
                     f"{type(state).__name__}.{field_name} presence mismatch across ranks."
                 )
             if not is_present:
                 continue
             if not isinstance(value, (float, int)) or isinstance(value, bool):
-                raise TypeError(
+                InputTypeError.raise_(
                     f"field_ops[{field_name!r}]='assert_optional_equal' requires "
                     f"a float, int, or None, got {type(value).__name__}."
                 )
@@ -470,7 +474,7 @@ def sync_object(
             )
             continue
         if not isinstance(value, (float, int)) or isinstance(value, bool):
-            raise TypeError(
+            InputTypeError.raise_(
                 f"field_ops[{field_name!r}]={field_op!r} requires a float or int, "
                 f"got {type(value).__name__}."
             )
@@ -558,7 +562,7 @@ def sync(*states: Any) -> Any:
             sync_fn = _resolve_sync_fn(state_type)
         if sync_fn is not None:
             return sync_fn(single)
-        raise TypeError(
+        InputTypeError.raise_(
             f"No sync function registered for {state_type.__name__}. "
             f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
         )

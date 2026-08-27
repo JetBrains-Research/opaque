@@ -1,5 +1,7 @@
 """Tests for BandMfStrategy factory and accounting equivalence."""
 
+from opaque.exceptions import ConfigurationError
+
 import math
 
 import pytest

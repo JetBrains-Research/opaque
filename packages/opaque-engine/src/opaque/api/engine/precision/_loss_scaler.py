@@ -58,6 +58,7 @@ from opaque.api.engine.types import (
     NoisedPytree,
     SecondMomentClippingOutput,
 )
+from opaque.exceptions import ConfigurationError
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
@@ -156,13 +157,19 @@ def loss_scaler(
         the ``state`` is threaded through training-step calls.
     """
     if not math.isfinite(init_scale) or init_scale <= 0.0:
-        raise ValueError(f"init_scale must be finite and > 0, got {init_scale}")
+        ConfigurationError.raise_(
+            f"init_scale must be finite and > 0, got {init_scale}"
+        )
     if not math.isfinite(growth_factor) or growth_factor <= 1.0:
-        raise ValueError(f"growth_factor must be finite and > 1.0, got {growth_factor}")
+        ConfigurationError.raise_(
+            f"growth_factor must be finite and > 1.0, got {growth_factor}"
+        )
     if not (0.0 < backoff_factor < 1.0):
-        raise ValueError(f"backoff_factor must be in (0, 1), got {backoff_factor}")
+        ConfigurationError.raise_(
+            f"backoff_factor must be in (0, 1), got {backoff_factor}"
+        )
     if growth_interval <= 0:
-        raise ValueError(f"growth_interval must be > 0, got {growth_interval}")
+        ConfigurationError.raise_(f"growth_interval must be > 0, got {growth_interval}")
 
     def scale_loss(loss: torch.Tensor, state: LossScalerState) -> torch.Tensor:
         if not enabled:

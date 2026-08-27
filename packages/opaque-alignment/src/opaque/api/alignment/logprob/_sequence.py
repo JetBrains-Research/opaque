@@ -22,6 +22,7 @@ import torch
 
 from opaque.api.alignment._compute_dtype import _compute_dtype
 from opaque.api.alignment._fused_lce import lce_available, linear_nll_sum
+from opaque.exceptions import ConfigurationError
 
 from ._gather import selective_log_softmax
 
@@ -80,7 +81,7 @@ def sequence_logp(
     weight = target_weight
     if ld_alpha is not None:
         if shared_prefix_len is None:
-            raise ValueError("ld_alpha (LD-DPO) requires shared_prefix_len")
+            ConfigurationError.raise_("ld_alpha (LD-DPO) requires shared_prefix_len")
         completion_pos = target_mask.to(torch.bool).cumsum(dim=-1)
         prefix_len = shared_prefix_len
         if isinstance(prefix_len, torch.Tensor):

@@ -5,6 +5,7 @@ from collections.abc import Callable
 import torch
 
 from opaque.api.engine.pytree import tree_map
+from opaque.exceptions import ConfigurationError
 
 
 def normalize_to_tuple(value: int | tuple[int, ...]) -> tuple[int, ...]:
@@ -63,11 +64,11 @@ def batch_size_from_args(args: tuple, batch_argnums: tuple[int, ...]) -> int:
 
     tensor = _first_tensor(first_batch_arg)
     if tensor is None:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Could not determine batch size: no tensor in batch arg at index {batch_argnums[0]}"
         )
     if tensor.ndim < 1:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Expected batch tensor with ndim >= 1, got 0-d tensor in batch arg at index {batch_argnums[0]}"
         )
     return tensor.shape[0]

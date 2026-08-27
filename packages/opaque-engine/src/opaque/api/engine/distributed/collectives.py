@@ -11,6 +11,8 @@ from __future__ import annotations
 import torch
 import torch.distributed as dist
 
+from opaque.exceptions import ConfigurationError, OperationError
+
 
 def is_distributed() -> bool:
     """Return True if ``torch.distributed`` is available and initialized."""
@@ -43,7 +45,7 @@ def _resolve_op(op: str):
             }
         )
     if op not in _OP_MAP:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Invalid reduction operation: {op}. Must be one of: {list(_OP_MAP.keys())}"
         )
     return _OP_MAP[op]
@@ -58,7 +60,7 @@ def all_reduce_(tensor: torch.Tensor, op: str = "sum") -> None:
     """
     reduce_op = _resolve_op(op)
     if not is_distributed():
-        raise RuntimeError(
+        OperationError.raise_(
             "torch.distributed is not initialized. "
             "Call torch.distributed.init_process_group() first."
         )

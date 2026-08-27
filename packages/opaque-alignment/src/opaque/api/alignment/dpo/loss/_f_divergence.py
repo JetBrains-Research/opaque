@@ -39,6 +39,8 @@ from typing import Literal
 import torch
 import torch.nn.functional as F
 
+from opaque.exceptions import ConfigurationError
+
 __all__ = ["f_divergence_logits", "f_divergence_remap"]
 
 FDivergence = Literal["reverse_kl", "forward_kl", "js_divergence", "alpha_divergence"]
@@ -122,7 +124,7 @@ def f_divergence_remap(
             # Limit of (exp((alpha-1)*x) - 1)/(alpha-1) as alpha->1.
             return logratio
         return (_cap_exp((alpha - 1) * logratio) - 1) / (alpha - 1)
-    raise ValueError(
+    ConfigurationError.raise_(
         f"Unknown f_divergence_type {f_divergence_type!r}; expected one of "
         '"reverse_kl", "forward_kl", "js_divergence", "alpha_divergence".'
     )

@@ -14,6 +14,7 @@ from opaque.api.engine.distributed._state import (
     reduce_scalar,
     register_sync_type,
 )
+from opaque.exceptions import OperationError
 
 from ._memory import (
     PerfState,
@@ -30,7 +31,7 @@ def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | N
     min_presence = reduce_scalar(local_presence, op="min", device=device)
     max_presence = reduce_scalar(local_presence, op="max", device=device)
     if min_presence != max_presence:
-        raise RuntimeError("StepPerf presence mismatch across ranks.")
+        OperationError.raise_("StepPerf presence mismatch across ranks.")
     if not local_presence:
         return None
 
@@ -56,7 +57,7 @@ def _synchronized_stage_names(tracker: PerfTracker) -> tuple[str, ...]:
     dist.all_gather_object(gathered, local_names)
     mismatched = [rank for rank, names in enumerate(gathered) if names != local_names]
     if mismatched:
-        raise RuntimeError(
+        OperationError.raise_(
             "PerfTracker stage schema mismatch across ranks: "
             f"mismatched ranks={mismatched}."
         )

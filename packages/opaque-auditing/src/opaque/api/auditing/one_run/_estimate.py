@@ -23,6 +23,7 @@ import scipy.stats
 from opaque.api.auditing.one_run._eps_delta import EpsDeltaMethod
 from opaque.api.auditing.one_run._gdp import GdpMethod
 from opaque.api.auditing.one_run._roc import get_tn_fn_counts, tpr_at_given_fpr
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from opaque.api.auditing._coin_flip import CanaryScores, CoinFlip
@@ -79,10 +80,10 @@ def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
     in_scores, out_scores = coin_flip.split_scores(scores)
 
     if in_scores.size == 0 or out_scores.size == 0:
-        raise ValueError("Both in_scores and out_scores must be non-empty")
+        ConfigurationError.raise_("Both in_scores and out_scores must be non-empty")
 
     if not np.all(np.isfinite(in_scores)) or not np.all(np.isfinite(out_scores)):
-        raise ValueError("scores must contain only finite values")
+        ConfigurationError.raise_("scores must contain only finite values")
 
     thresholds, tn_counts, fn_counts = get_tn_fn_counts(in_scores, out_scores)
 
@@ -174,7 +175,9 @@ class OneRunEstimate:
     def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
         """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
         if grid_size < _MIN_GRID_SIZE:
-            raise ValueError(f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}")
+            ConfigurationError.raise_(
+                f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}"
+            )
         return GdpMethod(_estimate=self, grid_size=grid_size)
 
     # ------------------------------------------------------------------
@@ -286,9 +289,9 @@ class OneRunEstimate:
             return point
 
         if not 0 < confidence < 1:
-            raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+            ConfigurationError.raise_(f"confidence must be in (0, 1), got {confidence}")
         if key is None:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "attack_auc(confidence=...) requires an explicit RNG key for "
                 "bootstrap resampling"
             )

@@ -58,7 +58,7 @@ DPTrainer(
 | `compute_loss_func` | `Callable[[outputs, labels], Tensor] \| None` | Per-example loss override; **called under vmap** with one example's `outputs` and `labels`. Not HF's `(outputs, labels, num_items_in_batch) -> scalar` signature. |
 | `compute_metrics` | `Callable[[EvalPrediction], dict] \| None` | Standard HF callback over concatenated predictions / label_ids / inputs / losses. |
 | `callbacks` | `list[TrainerCallback] \| None` | User callbacks; `DefaultFlowCallback` is auto-prepended. |
-| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.**  Passing non-`None` raises `RuntimeError`: DPTrainer owns the functional torchopt optimizer. |
+| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.** Passing non-`None` raises `ConfigurationError`: DPTrainer owns the functional torchopt optimizer. |
 | `optimizer_cls_and_kwargs` | `tuple[Callable, dict] \| None` | DPTrainer-specific.  Override the default torchopt factory.  Validated against the functional contract at construction. |
 | `preprocess_logits_for_metrics` | `Callable \| None` | Vmap-batched.  Lets `compute_metrics` consume a reduced representation of logits. |
 
@@ -343,7 +343,7 @@ NPU, XLA) are rejected with a redirect message.
 - `torch_compile_mode` checked against the allowed set.
 - `report_to="all"` expands via HF's `get_available_reporting_integrations()`.
 
-Errors raise `ValueError` at construction.
+Configuration errors raise `ConfigurationError` at construction.
 
 Dict-shaped fields (`clipping_kwargs`, `sampling_kwargs`,
 `noise_calibration_kwargs`, `privacy_noise_mechanism_kwargs`,

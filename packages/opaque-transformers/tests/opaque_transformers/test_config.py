@@ -22,6 +22,7 @@ import pytest
 from transformers.debug_utils import DebugOption
 
 from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import TrainingArguments
 
 
@@ -145,7 +146,9 @@ class TestStrategyCoercion:
         assert getattr(args, field) == expected
 
     def test_unknown_strategy_raises(self):
-        with pytest.raises(ValueError, match=r"eval_strategy=.*expected one of"):
+        with pytest.raises(
+            ConfigurationError, match=r"eval_strategy=.*expected one of"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, eval_strategy="completely-bogus"
             )
@@ -168,7 +171,9 @@ class TestDataLoaderArguments:
         assert args.dataloader_multiprocessing_context == context
 
     def test_multiprocessing_context_rejects_unknown_method(self):
-        with pytest.raises(ValueError, match="dataloader_multiprocessing_context"):
+        with pytest.raises(
+            ConfigurationError, match="dataloader_multiprocessing_context"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 dataloader_num_workers=1,
@@ -184,7 +189,9 @@ class TestDataLoaderArguments:
             )
 
     def test_out_of_order_loading_is_rejected(self):
-        with pytest.raises(ValueError, match="dataloader_in_order must be True"):
+        with pytest.raises(
+            ConfigurationError, match="dataloader_in_order must be True"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 dataloader_in_order=False,

@@ -46,6 +46,7 @@ from opaque.api.engine.noise_allocation import (
     per_group_noise_stddev,
     resolve_paired_clipped,
 )
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
@@ -95,23 +96,23 @@ def _validate_noise_stddev(noise_stddev: float | PerGroup) -> None:
     if isinstance(noise_stddev, PerGroup):
         for gname, value in noise_stddev.values.items():
             if value < 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     "noise standard deviation must be non-negative for all groups, "
                     f"got {value} for group '{gname}'"
                 )
     else:
         if noise_stddev < 0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"noise standard deviation must be non-negative, got {noise_stddev}"
             )
 
 
 def _resolve_noise_multiplier(noise_multiplier: float | None) -> float:
     if noise_multiplier is None:
-        raise ValueError("gaussian_noise() requires noise_multiplier.")
+        ConfigurationError.raise_("gaussian_noise() requires noise_multiplier.")
     multiplier = float(noise_multiplier)
     if multiplier < 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
     return multiplier
@@ -131,7 +132,7 @@ def _resolve_bound(
         return None
     if isinstance(bound, (tuple, list)):
         if len(bound) != 2:  # noqa: PLR2004 - bound is the documented (low, high) pair
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"bound must be a 2-tuple (low, high) when given a sequence, "
                 f"got length {len(bound)}"
             )
@@ -139,14 +140,14 @@ def _resolve_bound(
     else:
         b = float(bound)
         if b <= 0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"scalar bound must be positive (interpreted as [-B, B]), got {b}"
             )
         low, high = -b, b
     if not low < high:
-        raise ValueError(f"bound must satisfy low < high, got ({low}, {high})")
+        ConfigurationError.raise_(f"bound must satisfy low < high, got ({low}, {high})")
     if not (low <= 0.0 <= high):
-        raise ValueError(
+        ConfigurationError.raise_(
             "bound must straddle zero (low <= 0 <= high) so the support "
             f"contains the unbiased mechanism centre, got ({low}, {high})"
         )
@@ -234,7 +235,7 @@ def gaussian_noise(
     resolved_bound = _resolve_bound(bound)
 
     if not isinstance(key, RngKey):
-        raise TypeError(f"key must be RngKey, got {type(key)}")
+        InputTypeError.raise_(f"key must be RngKey, got {type(key)}")
 
     state = GaussianNoiseState(
         _step_counter=0,
@@ -299,7 +300,7 @@ def gaussian_noise(
             noised_leaves = []
             for path, tensor in zip(paths, leaves, strict=True):
                 if not isinstance(tensor, torch.Tensor):
-                    raise TypeError(
+                    InputTypeError.raise_(
                         "gaussian_noise with PerGroup stddev expects tensor "
                         f"leaves; got {type(tensor).__name__} at path {path!r}."
                     )
@@ -392,13 +393,13 @@ def gaussian_noise(
         )
 
         if isinstance(grads, NoisedPytree):
-            raise TypeError(
+            InputTypeError.raise_(
                 "gaussian_noise expects ClippedPytree inputs, not NoisedPytree "
                 "values that have already passed through a noise mechanism."
             )
 
         if not isinstance(grads, ClippedPytree):
-            raise TypeError(
+            InputTypeError.raise_(
                 "gaussian_noise expects ClippedPytree inputs. Wrap manual "
                 "values with opaque.types.clipped(...)."
             )

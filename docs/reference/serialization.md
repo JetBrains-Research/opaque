@@ -16,7 +16,7 @@ serialized by the nearest base-class handler rather than dropped.
 preserves the subclass and its `requires_grad` flag on restore, so it does
 not rely on the `__mro__` fallback.) A leaf that is neither registered nor a
 generic container (dataclass / NamedTuple / tuple / list / mapping) nor a
-primitive raises `TypeError` on both save and restore instead of being
+primitive raises `InputTypeError` on both save and restore instead of being
 silently skipped.
 Genuinely inert leaves that the template reproduces (vendor structure handles
 such as `optree.PyTreeSpec`) are declared with
@@ -38,7 +38,7 @@ Domain pages with examples: [Optimizers](optimizers.md), [Accounting](accounting
 `torch.Tensor`, `torch.nn.Parameter` and `numpy.ndarray` leaves resolve three
 attributes against the template, each under its own rule:
 
-- **Shape** — must match the template exactly; a mismatch raises `ValueError`
+- **Shape** — must match the template exactly; a mismatch raises `CheckpointError`
   for every array leaf kind. Broadcast-compatible shapes (a length-1 buffer
   against a length-*d* slot) are what make the check load-bearing: they would
   otherwise restore without an error and keep training against state the

@@ -35,6 +35,7 @@ from opaque.api.base.serialization import (
     register_serializer,
     register_template_restored,
 )
+from opaque.exceptions import CheckpointError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -47,7 +48,7 @@ def _check_shape(saved: tuple[int, ...], expected: tuple[int, ...]) -> None:
     shape read identically.
     """
     if saved != expected:
-        raise ValueError(
+        CheckpointError.raise_(
             f"state_dict value has shape {tuple(saved)}; template expects "
             f"{tuple(expected)}. Restore is template-driven: rebuild the "
             "template from the configuration the checkpoint was written with."
@@ -63,7 +64,7 @@ def _tensor_load(template: torch.Tensor, sd: Mapping[str, Any]) -> torch.Tensor:
     if saved is None:
         return template
     if not isinstance(saved, torch.Tensor):
-        raise TypeError(
+        CheckpointError.raise_(
             f"state_dict value expected a torch.Tensor, got {type(saved).__name__}"
         )
     _check_shape(saved.shape, template.shape)

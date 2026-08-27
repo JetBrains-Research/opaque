@@ -16,6 +16,7 @@ from opaque.api.accounting.core.calibration import (
     EpsilonBudget,
     RiskBudget,
 )
+from opaque.exceptions import CalibrationError, PrivacyBudgetError
 
 
 @dataclass(frozen=True)
@@ -93,13 +94,13 @@ class TestEpsilonBudget:
         assert math.isfinite(val)
 
     def test_rejects_negative_epsilon(self):
-        with pytest.raises(ValueError, match="epsilon"):
+        with pytest.raises(PrivacyBudgetError, match="epsilon"):
             cal.epsilon_budget(-1.0, delta=1e-5)
 
     def test_rejects_delta_out_of_range(self):
-        with pytest.raises(ValueError, match="delta"):
+        with pytest.raises(PrivacyBudgetError, match="delta"):
             cal.epsilon_budget(3.0, delta=0.0)
-        with pytest.raises(ValueError, match="delta"):
+        with pytest.raises(PrivacyBudgetError, match="delta"):
             cal.epsilon_budget(3.0, delta=1.0)
 
 
@@ -113,9 +114,9 @@ class TestDeltaBudget:
         assert cal.delta_budget(1e-5, epsilon=3.0).decreasing is True
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError, match="delta"):
+        with pytest.raises(PrivacyBudgetError, match="delta"):
             cal.delta_budget(0.0, epsilon=3.0)
-        with pytest.raises(ValueError, match="epsilon"):
+        with pytest.raises(PrivacyBudgetError, match="epsilon"):
             cal.delta_budget(1e-5, epsilon=-1.0)
 
 
@@ -129,9 +130,9 @@ class TestAdvantageBudget:
         assert cal.advantage_budget(0.1).decreasing is True
 
     def test_rejects_out_of_range(self):
-        with pytest.raises(ValueError, match="advantage"):
+        with pytest.raises(PrivacyBudgetError, match="advantage"):
             cal.advantage_budget(0.0)
-        with pytest.raises(ValueError, match="advantage"):
+        with pytest.raises(PrivacyBudgetError, match="advantage"):
             cal.advantage_budget(1.0)
 
 
@@ -146,9 +147,9 @@ class TestBetaBudget:
         assert cal.beta_budget(0.05, alpha=0.01).decreasing is False
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError, match="beta"):
+        with pytest.raises(PrivacyBudgetError, match="beta"):
             cal.beta_budget(0.0, alpha=0.01)
-        with pytest.raises(ValueError, match="alpha"):
+        with pytest.raises(PrivacyBudgetError, match="alpha"):
             cal.beta_budget(0.5, alpha=0.0)
 
 
@@ -163,9 +164,9 @@ class TestRiskBudget:
         assert cal.risk_budget(0.1, prior=0.5).decreasing is False
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError, match="risk"):
+        with pytest.raises(PrivacyBudgetError, match="risk"):
             cal.risk_budget(0.0, prior=0.5)
-        with pytest.raises(ValueError, match="prior"):
+        with pytest.raises(PrivacyBudgetError, match="prior"):
             cal.risk_budget(0.1, prior=0.0)
 
 
@@ -177,12 +178,12 @@ class TestCalibrateErrors:
         return dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.01) * 1000
 
     def test_param_min_ge_max(self):
-        with pytest.raises(ValueError, match="param_min"):
+        with pytest.raises(CalibrationError, match="param_min"):
             cal.calibrate(cal.epsilon_budget(3.0, delta=1e-5), self._process, 0.8, 0.5)
 
     def test_budget_outside_bracket(self):
         """Target not achievable within bounds → ValueError."""
-        with pytest.raises(ValueError, match="unreachable"):
+        with pytest.raises(CalibrationError, match="unreachable"):
             cal.calibrate(
                 cal.epsilon_budget(0.001, delta=1e-5), self._process, 0.5, 0.6
             )
@@ -195,7 +196,7 @@ class TestCalibrateErrors:
             calls.append(param)
             return _MetricProcess(param)
 
-        with pytest.raises(ValueError, match="tolerance"):
+        with pytest.raises(CalibrationError, match="tolerance"):
             cal.calibrate(
                 _MetricBudget(1.0, decreasing=False),
                 process,
@@ -216,7 +217,7 @@ class TestCalibrateErrors:
             calls.append(param)
             return _MetricProcess(param)
 
-        with pytest.raises(ValueError, match="max_iterations"):
+        with pytest.raises(CalibrationError, match="max_iterations"):
             cal.calibrate(
                 _MetricBudget(1.0, decreasing=False),
                 process,
@@ -290,7 +291,7 @@ class TestCalibrateSafeEndpoint:
             calls.append(param)
             return _MetricProcess(2.0 if param < 1.0 else 0.5)
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(CalibrationError) as exc_info:
             cal.calibrate(
                 _MetricBudget(1.0, decreasing=True, name="step metric"),
                 process,
@@ -377,7 +378,7 @@ class TestCalibratePrefix:
         # Low-noise, high-sampling prefix that blows past ε=0.5 in few steps
         # so the bracket can't be established — cheap to compose.
         prefix = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.3), 0.1) * 100
-        with pytest.raises(ValueError, match="unreachable"):
+        with pytest.raises(CalibrationError, match="unreachable"):
             cal.calibrate(
                 cal.epsilon_budget(0.5, delta=1e-5),
                 self._stage,

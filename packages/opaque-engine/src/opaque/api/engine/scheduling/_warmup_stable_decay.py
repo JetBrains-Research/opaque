@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from opaque.api.engine.scheduling._decay import resolve_decay
 from opaque.api.engine.scheduling._ramp import resolve_ramp
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -70,17 +71,17 @@ def warmup_stable_decay(
     See :class:`WarmupStableDecay` for the source and phase details.
     """
     if num_warmup_steps <= 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"warmup_stable_decay requires num_warmup_steps > 0; "
             f"got {num_warmup_steps}."
         )
     if num_stable_steps < 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"warmup_stable_decay requires num_stable_steps >= 0; "
             f"got {num_stable_steps}."
         )
     if num_decay_steps <= 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"warmup_stable_decay requires num_decay_steps > 0; got {num_decay_steps}."
         )
     # Validate named ramps/decays at construction.

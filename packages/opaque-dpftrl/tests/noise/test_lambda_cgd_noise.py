@@ -7,6 +7,7 @@ import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.api.dpftrl.noise._toeplitz import materialize_lower_triangular
 from opaque.dpftrl.noise import mf_gaussian_noise
+from opaque.exceptions import CheckpointError
 from opaque.random import key
 from opaque.serialization import state_dict
 from opaque.types import NoisedPytree, clipped
@@ -231,7 +232,7 @@ class TestLambdaCgdStrategy:
 
     def test_callable_schedule_is_not_serializable(self):
         strategy = lambda_cgd_strategy(lambda_=0.4, lr_schedule=lambda _step: 1.0)
-        with pytest.raises(TypeError, match="callable strategy field"):
+        with pytest.raises(CheckpointError, match="callable strategy field"):
             state_dict(strategy)
 
     def test_normalized_single_participation_sensitivity_one(self):

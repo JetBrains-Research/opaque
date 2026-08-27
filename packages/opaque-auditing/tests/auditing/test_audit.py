@@ -6,6 +6,7 @@ import pytest
 import opaque.auditing as auditing
 from opaque.auditing import one_run
 from opaque.auditing.types import CanaryScores, CoinFlip, OneRunEstimate
+from opaque.exceptions import ConfigurationError
 from opaque.random import fold_in, key
 from opaque.random.types import RngKey
 
@@ -95,7 +96,9 @@ class TestConstruction:
         scores = in_scores if partition == "in" else out_scores
         scores[1] = invalid_score
 
-        with pytest.raises(ValueError, match="scores must contain only finite values"):
+        with pytest.raises(
+            ConfigurationError, match="scores must contain only finite values"
+        ):
             _make_estimate(in_scores, out_scores)
 
 

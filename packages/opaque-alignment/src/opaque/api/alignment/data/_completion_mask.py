@@ -19,6 +19,8 @@ this function checks the template up front and raises a :class:`ValueError`.
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError
+
 __all__ = ["apply_chat_template_with_mask"]
 
 from typing import TYPE_CHECKING, Any
@@ -82,7 +84,7 @@ def apply_chat_template_with_mask(
     if active_template is None:
         active_template = getattr(tokenizer, "chat_template", None)
     if not active_template or "{% generation %}" not in active_template:
-        raise ValueError(
+        ConfigurationError.raise_(
             "apply_chat_template_with_mask: the active chat template does not "
             "carry the '{% generation %}' / '{% endgeneration %}' markers that "
             "return_assistant_tokens_mask=True relies on, so no "
@@ -101,7 +103,7 @@ def apply_chat_template_with_mask(
 
     assistant_masks = encoded.get("assistant_masks")
     if not assistant_masks:
-        raise ValueError(
+        ConfigurationError.raise_(
             "apply_chat_template_with_mask: the tokenizer returned no "
             "assistant-token mask.  This means the chat template does not "
             "carry the '{% generation %}' / '{% endgeneration %}' markers that "

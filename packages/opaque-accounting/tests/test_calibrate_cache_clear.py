@@ -10,6 +10,7 @@ from opaque.api.accounting.core._native_cache import (
 )
 from opaque.api.accounting.core.calibration import calibrate, epsilon_budget
 from opaque.api.accounting.core.mechanisms import eps_delta
+from opaque.exceptions import CalibrationError
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +96,7 @@ def test_calibrate_finally_clears_on_non_convergence() -> None:
         epsilon = 4.0 if nm < 1.0 else 2.0
         return eps_delta(epsilon, 1e-5)
 
-    with pytest.raises(RuntimeError, match="did not converge"):
+    with pytest.raises(CalibrationError, match="did not converge"):
         calibrate(budget, process, 0.5, 3.0, max_iterations=4)
 
     assert len(cache) == 0

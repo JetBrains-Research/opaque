@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError
 from opaque.scheduling import (
     constant_schedule,
     cosine_schedule,
@@ -85,7 +86,7 @@ def _validate_kwargs(name: str, kwargs: dict[str, Any]) -> None:
     allowed = _ALLOWED_KWARGS[name]
     extra = set(kwargs) - allowed
     if extra:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"lr_scheduler_kwargs contains unsupported keys for "
             f"lr_scheduler={name!r}: {sorted(extra)}. "
             f"Allowed: {sorted(allowed) or '<none>'}."
@@ -115,13 +116,13 @@ def build_lr_schedule(
     # via ``SchedulerType(x)``), but instances of the enum aren't.
     if not isinstance(raw, (str, SchedulerType)) and callable(raw):
         if args.warmup_steps:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "warmup_steps is incompatible with a user-supplied "
                 "lr_scheduler Schedule; compose with_warmup(schedule, ...) "
                 "into the recipe yourself."
             )
         if args.lr_scheduler_kwargs:
-            raise ValueError(
+            ConfigurationError.raise_(
                 "lr_scheduler_kwargs is incompatible with a user-"
                 "supplied lr_scheduler Schedule; configure the "
                 "recipe via its constructor instead."
@@ -146,7 +147,7 @@ def build_lr_schedule(
             f"Currently supported: {sorted(_ALLOWED_KWARGS)}."
         )
     if name not in _ALLOWED_KWARGS:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Unknown lr_scheduler={name!r}. Supported: {sorted(_ALLOWED_KWARGS)}."
         )
 
@@ -181,7 +182,7 @@ def build_lr_schedule(
     elif name == "polynomial":
         lr_end = float(kwargs.get("lr_end", 1e-7))
         if lr_end >= base_lr:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"lr_end ({lr_end}) must be smaller than initial lr ({base_lr})"
             )
         decay = polynomial_schedule(
@@ -253,7 +254,7 @@ def build_lr_schedule(
         )
         warmup_init = float(kwargs.get("warmup_lr_rate") or 0.0)
     else:  # pragma: no cover — guarded above.
-        raise AssertionError(name)
+        ConfigurationError.raise_(f"Unsupported warmup scheduler configuration: {name}")
 
     if W == 0:
         return decay
@@ -266,12 +267,12 @@ def _resolve_min_lr(base_lr: float, kwargs: dict[str, Any]) -> float:
     min_lr = kwargs.get("min_lr")
     min_lr_rate = kwargs.get("min_lr_rate")
     if min_lr is not None and min_lr_rate is not None:
-        raise ValueError("Set only one of min_lr or min_lr_rate.")
+        ConfigurationError.raise_("Set only one of min_lr or min_lr_rate.")
     if min_lr is not None:
         return float(min_lr)
     if min_lr_rate is not None:
         return float(min_lr_rate) * base_lr
-    raise ValueError(
+    ConfigurationError.raise_(
         "lr_scheduler_kwargs must include exactly one of {'min_lr': ...} "
         "or {'min_lr_rate': ...}."
     )
@@ -303,19 +304,19 @@ def _build_wsd(
     """
     warmup_type = kwargs.get("warmup_type", "linear")
     if warmup_type not in _WSD_RAMP_TYPES:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"warmup_stable_decay warmup_type must be one of "
             f"{sorted(_WSD_RAMP_TYPES)}; got {warmup_type!r}."
         )
     decay_type = kwargs.get("decay_type", "cosine")
     if decay_type not in _WSD_DECAY_TYPES:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"warmup_stable_decay decay_type must be one of "
             f"{sorted(_WSD_DECAY_TYPES)}; got {decay_type!r}."
         )
 
     if "num_decay_steps" not in kwargs:
-        raise ValueError(
+        ConfigurationError.raise_(
             "warmup_stable_decay requires lr_scheduler_kwargs={'num_decay_steps': ...}."
         )
     D = int(kwargs["num_decay_steps"])

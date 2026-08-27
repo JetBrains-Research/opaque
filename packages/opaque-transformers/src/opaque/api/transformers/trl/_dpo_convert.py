@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.transformers.trainer._convert import _normalize_dp_overrides
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 from ._convert import (
     _convert_trl_config,
@@ -101,7 +102,7 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
     mapped = [_TRL_TO_OPAQUE_LOSS_TYPE.get(v, v) for v in values]
     unsupported = [v for v in mapped if v not in _OPAQUE_DPO_LOSS_TYPES]
     if unsupported:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"trl_dpo_config.loss_type contains unsupported heads: "
             f"{sorted(set(unsupported))}. Opaque implements: "
             f"{sorted(_OPAQUE_DPO_LOSS_TYPES)}. The Adversarial Optimal "
@@ -147,7 +148,7 @@ def _convert_trl_dpo_config(
     """Translate a ``trl.DPOConfig`` instance into opaque ``DPOConfig`` kwargs."""
     trl = _import_trl()
     if not isinstance(trl_cfg, trl.DPOConfig):
-        raise TypeError(
+        InputTypeError.raise_(
             f"Expected ``trl.DPOConfig`` instance, got {type(trl_cfg).__name__}."
         )
 

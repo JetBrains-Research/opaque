@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
@@ -119,7 +120,7 @@ def _iid_normal_noise(
         out_leaves: list[Any] = []
         for path, tensor in zip(paths, leaves, strict=True):
             if not isinstance(tensor, torch.Tensor):
-                raise TypeError(
+                InputTypeError.raise_(
                     "PerGroup MF noise expects tensor leaves; "
                     f"got {type(tensor).__name__} at path {path!r}."
                 )
@@ -194,7 +195,7 @@ def _check_mf_horizon(step: int, n_steps: int) -> None:
     / dense engines).  Fail closed rather than silently continuing.
     """
     if step >= n_steps:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"MF noise step {step} is outside the calibrated horizon "
             f"[0, {n_steps}). Rebuild the noise mechanism with a larger "
             f"n_steps, or stop calling noise_fn after {n_steps} iterations."
@@ -208,9 +209,9 @@ def _require_positive_int_horizon(n_steps: object) -> int:
     shrink the horizon).  Returns the validated value for callers to latch.
     """
     if isinstance(n_steps, bool) or not isinstance(n_steps, int):
-        raise TypeError(f"n_steps must be an int, got {type(n_steps).__name__}")
+        InputTypeError.raise_(f"n_steps must be an int, got {type(n_steps).__name__}")
     if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        ConfigurationError.raise_(f"n_steps must be >= 1, got {n_steps}")
     return n_steps
 
 
@@ -269,7 +270,7 @@ def _matrix_factorization_noise(
             n_steps=n_steps,
         )
     else:
-        raise TypeError(f"Unsupported noising type: {type(noising)}")
+        InputTypeError.raise_(f"Unsupported noising type: {type(noising)}")
 
 
 def _tensor_mf_noise(
@@ -282,12 +283,12 @@ def _tensor_mf_noise(
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a 2D noising matrix C^{-1}."""
     if noising.ndim != 2:  # noqa: PLR2004 - noising is explicitly a matrix
-        raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
+        ConfigurationError.raise_(f"Expected 2D matrix, found shape {noising.shape}")
     horizon = (
         noising.shape[0] if n_steps is None else _require_positive_int_horizon(n_steps)
     )
     if horizon > noising.shape[0]:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"n_steps ({horizon}) exceeds noising matrix rows ({noising.shape[0]})."
         )
 
@@ -328,7 +329,7 @@ def _tensor_mf_noise(
             noisy_leaves = []
             for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
                 if not isinstance(v, torch.Tensor):
-                    raise TypeError(
+                    InputTypeError.raise_(
                         "PerGroup dense MF noise expects tensor leaves; "
                         f"got {type(v).__name__} at path {path!r}."
                     )
@@ -340,7 +341,7 @@ def _tensor_mf_noise(
             noisy_leaves = []
             for leaf_index, (path, v) in enumerate(zip(paths, leaves, strict=True)):
                 if not isinstance(v, torch.Tensor):
-                    raise TypeError(
+                    InputTypeError.raise_(
                         "Dense MF noise expects tensor leaves; "
                         f"got {type(v).__name__} at path {path!r}."
                     )
@@ -426,7 +427,7 @@ def _streaming_mf_noise(
 def _resolve_noise_multiplier(noise_multiplier: float) -> float:
     multiplier = float(noise_multiplier)
     if multiplier < 0:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"noise_multiplier must be non-negative, got {noise_multiplier}"
         )
     return multiplier
@@ -437,12 +438,12 @@ def _expect_clipped(value: Any, *, op: str):
     from opaque.types import ClippedPytree, NoisedPytree
 
     if isinstance(value, NoisedPytree):
-        raise TypeError(
+        InputTypeError.raise_(
             f"{op} expects ClippedPytree inputs, not NoisedPytree values that "
             "have already passed through a noise mechanism."
         )
     if not isinstance(value, ClippedPytree):
-        raise TypeError(
+        InputTypeError.raise_(
             f"{op} expects ClippedPytree inputs. Wrap manual values with "
             "opaque.types.clipped(...)."
         )
@@ -471,17 +472,17 @@ def _validate_constant_max_norm(
     if isinstance(max_norm, PerGroup):
         for group_name, value in max_norm.values.items():
             if value < 0:
-                raise ValueError(
+                ConfigurationError.raise_(
                     f"ClippedPytree max_norm must be non-negative for all groups, "
                     f"got {value} for group '{group_name}'."
                 )
     else:
         if float(max_norm) < 0:
-            raise ValueError(
+            ConfigurationError.raise_(
                 f"ClippedPytree max_norm must be non-negative, got {grads.max_norm}"
             )
     if first_max_norm is not None and max_norm != first_max_norm:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"{op} saw a varying ClippedPytree.max_norm across calls "
             f"(first={first_max_norm}, now={max_norm}). MF privacy proofs "
             "assume a constant per-step sensitivity; this is satisfied by "

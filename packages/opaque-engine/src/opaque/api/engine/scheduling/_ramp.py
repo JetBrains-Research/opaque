@@ -17,6 +17,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -45,7 +47,7 @@ def resolve_ramp(
     if callable(ramp):
         return ramp
     if ramp not in NAMED_RAMPS:
-        raise ValueError(
+        ConfigurationError.raise_(
             f"Unknown {field}={ramp!r}; expected one of {sorted(NAMED_RAMPS)} "
             f"or a callable."
         )
