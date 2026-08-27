@@ -824,9 +824,12 @@ def test_sft_dp_purity_per_example_independence(tmp_path):
 @pytest.mark.parametrize(
     ("loss_type", "loss_kwargs"),
     [
+        ("sigmoid", {}),
         ("sigmoid", {"f_divergence_type": "forward_kl"}),
         ("sigmoid", {"ld_alpha": 0.5}),
         ("sigmoid", {"use_weighting": True}),
+        ("ipo", {}),
+        ("simpo", {}),
         ("bco_pair", {}),
     ],
 )
