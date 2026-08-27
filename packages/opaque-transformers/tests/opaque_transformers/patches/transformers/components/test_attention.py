@@ -12,6 +12,7 @@ Known incompatibilities (not tested):
 
 import pytest
 import torch
+from opaque_test_support import prepare_lora_model, run_clipped_grad_test
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.transformers.patches.components.attention import (
@@ -19,8 +20,6 @@ from opaque.api.transformers.patches.components.attention import (
     vmap_sdpa_attention_forward_gemma2,
 )
 from opaque.torch.functional import make_functional
-
-from ..._helpers import prepare_lora_model, run_clipped_grad_test
 
 
 class _Gemma2Attention(torch.nn.Module):
@@ -76,15 +75,15 @@ class TestAttentionImplementations:
     def test_eager_attention(self, qwen2_config, qwen2_tokenizer, device):
         """Test eager attention (explicitly patched). Works on CPU and CUDA."""
         qwen2_config._attn_implementation = "eager"
-        model = prepare_lora_model(qwen2_config).to(device)
-        grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
+        model = prepare_lora_model(qwen2_config, apply_patches=True).to(device)
+        grads, _ = run_clipped_grad_test(model, qwen2_tokenizer, apply_patches=False)
         assert len(grads.pytree) > 0
 
     def test_sdpa_attention(self, qwen2_config, qwen2_tokenizer, device):
         """Test SDPA attention (default, uses patched repeat_kv). Works on CPU and CUDA."""
         qwen2_config._attn_implementation = "sdpa"
-        model = prepare_lora_model(qwen2_config).to(device)
-        grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
+        model = prepare_lora_model(qwen2_config, apply_patches=True).to(device)
+        grads, _ = run_clipped_grad_test(model, qwen2_tokenizer, apply_patches=False)
         assert len(grads.pytree) > 0
 
 
@@ -93,7 +92,7 @@ class TestAttentionWithMicrobatching:
 
     def _run_with_microbatch(self, config, tokenizer, device, microbatch_size=2):
         """Helper to run clipped_grad with microbatching."""
-        model = prepare_lora_model(config).to(device)
+        model = prepare_lora_model(config, apply_patches=True).to(device)
 
         texts = ["Hello world test", "Another example", "Third sample", "Fourth one"]
         inputs = tokenizer(
@@ -166,13 +165,15 @@ class TestAttentionNumericalParity:
 
         # Run with eager
         qwen2_config._attn_implementation = "eager"
-        model_eager = prepare_lora_model(qwen2_config).to(device)
-        grads_eager, _ = run_clipped_grad_test(model_eager, qwen2_tokenizer)
+        model_eager = prepare_lora_model(qwen2_config, apply_patches=True).to(device)
+        grads_eager, _ = run_clipped_grad_test(
+            model_eager, qwen2_tokenizer, apply_patches=False
+        )
 
         # Run with SDPA (fresh model with same weights — state is copied below)
         torch.manual_seed(0)
         qwen2_config._attn_implementation = "sdpa"
-        model_sdpa = prepare_lora_model(qwen2_config).to(device)
+        model_sdpa = prepare_lora_model(qwen2_config, apply_patches=True).to(device)
 
         # Copy weights from eager model to SDPA model for fair comparison
         sdpa_state = model_sdpa.state_dict()
@@ -186,7 +187,9 @@ class TestAttentionNumericalParity:
         # deterministic reference path eager does (rather than a flash /
         # efficient kernel with different FP rounding).
         with sdpa_kernel(SDPBackend.MATH):
-            grads_sdpa, _ = run_clipped_grad_test(model_sdpa, qwen2_tokenizer)
+            grads_sdpa, _ = run_clipped_grad_test(
+                model_sdpa, qwen2_tokenizer, apply_patches=False
+            )
 
         # Compare gradients - allow for numerical differences between backends.
         # Eager uses manual Q@K matmul; SDPA uses fused CUDA kernels (flash/efficient).

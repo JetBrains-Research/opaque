@@ -1,7 +1,6 @@
 """Conftest for Transformers / DPTrainer integration tests.
 
-Re-exports fixtures from _helpers (which also provides ``prepare_lora_model``
-and ``run_clipped_grad_test`` as plain functions that tests import directly).
+Re-exports shared Qwen2 fixtures used by compatibility tests.
 
 Applies the opaque-kernels runtime patches once at collection time so the
 vmap-safety patches are in effect for the whole test session. Patching is
@@ -9,8 +8,7 @@ opt-in in production; tests opt in via this conftest.
 """
 
 import pytest
-
-from ._helpers import qwen2_config, qwen2_tokenizer  # noqa: F401
+from opaque_test_support import qwen2_config, qwen2_tokenizer  # noqa: F401
 
 
 @pytest.fixture(scope="session", autouse=True)

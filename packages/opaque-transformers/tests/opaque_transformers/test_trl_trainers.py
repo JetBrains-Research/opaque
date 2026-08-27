@@ -762,8 +762,8 @@ def _to_device(trainer, batch):
     }
 
 
-def _per_example_losses(trainer, batch):
-    """vmap ``compute_per_example_loss`` over a collated batch (the DP path)."""
+def _per_example_loss_inputs(trainer, batch):
+    """Build the vmap inputs for ``compute_per_example_loss`` (the DP path)."""
     from opaque.torch.functional import make_functional
 
     # The collator emits CPU tensors; move to the model device (the trainer's
@@ -778,8 +778,26 @@ def _per_example_losses(trainer, batch):
             fmodel, merged, dict(zip(keys, batch_args, strict=False))
         )
 
+    return fn, trainable, [batch[k] for k in keys], keys
+
+
+def _per_example_losses_and_gradients(trainer, batch):
+    """Return vmapped DPO losses and parameter gradients for every pair."""
+    fn, trainable, batch_args, keys = _per_example_loss_inputs(trainer, batch)
     vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(keys))
-    return vmapped(trainable, *[batch[k] for k in keys]), keys
+    vmapped_grad = torch.vmap(torch.func.grad(fn), in_dims=(None,) + (0,) * len(keys))
+    return (
+        vmapped(trainable, *batch_args),
+        vmapped_grad(trainable, *batch_args),
+        keys,
+    )
+
+
+def _per_example_losses(trainer, batch):
+    """vmap ``compute_per_example_loss`` over a collated batch (the DP path)."""
+    fn, trainable, batch_args, keys = _per_example_loss_inputs(trainer, batch)
+    vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(keys))
+    return vmapped(trainable, *batch_args), keys
 
 
 def test_sft_dp_purity_per_example_independence(tmp_path):
@@ -804,26 +822,42 @@ def test_sft_dp_purity_per_example_independence(tmp_path):
     assert torch.allclose(losses0[1:], losses1[1:])
 
 
-def test_dpo_dp_purity_per_example_independence(tmp_path):
+@pytest.mark.parametrize(
+    ("loss_type", "loss_kwargs"),
+    [
+        ("sigmoid", {}),
+        ("sigmoid", {"f_divergence_type": "forward_kl"}),
+        ("sigmoid", {"ld_alpha": 0.5}),
+        ("sigmoid", {"use_weighting": True}),
+        ("ipo", {}),
+        ("simpo", {}),
+        ("bco_pair", {}),
+    ],
+)
+def test_dpo_dp_purity_per_example_independence(tmp_path, loss_type, loss_kwargs):
     torch.manual_seed(0)
     trainer = DPOTrainer(
         model=_tiny_model(),
         ref_model=_tiny_model(),
-        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        args=_args(
+            DPOConfig, tmp_path, max_length=8, loss_type=loss_type, **loss_kwargs
+        ),
         train_dataset=_pref_dataset(),
         processing_class=_stub_tokenizer(),
     )
     trainer.model.eval()
     rows = [trainer.train_dataset[i] for i in range(4)]
     batch = trainer.data_collator(rows)
-    losses0, _ = _per_example_losses(trainer, batch)
+    losses0, gradients0, _ = _per_example_losses_and_gradients(trainer, batch)
 
     batch2 = {k: v.clone() for k, v in batch.items()}
     batch2["chosen_input_ids"][0, 3] = (batch2["chosen_input_ids"][0, 3] + 1) % 64
-    losses1, _ = _per_example_losses(trainer, batch2)
+    losses1, gradients1, _ = _per_example_losses_and_gradients(trainer, batch2)
 
     assert not torch.allclose(losses0[0], losses1[0])
     assert torch.allclose(losses0[1:], losses1[1:])
+    for name in gradients0:
+        assert torch.allclose(gradients0[name][1:], gradients1[name][1:]), name
 
 
 # ----------------------------------------------------------------------

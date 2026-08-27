@@ -24,6 +24,20 @@ The mechanism is still the caller's choice: swap the `opaque.dpsgd` noise
 and sampling imports for `opaque.dpftrl` to run
 [DP-FTRL](../user-guide/dp-ftrl.md); the loss closure is unchanged.
 
+## Privacy model for preference pairs
+
+The protected record is the complete `(prompt, chosen, rejected)` pair. Its
+two completions produce one joint gradient, clipped after the whole pairwise
+objective is differentiated. With fixed bound `C`, this gives gradient-sum
+sensitivity `C` under Opaque's add-or-remove adjacency (`2C` under
+replace-one); user-level privacy requires grouping and clipping all of a
+user's pairs.
+
+Per-pair reference scores, f-divergence/WPO transforms, and LD-DPO
+shared-prefix lengths do not change that bound because they remain within the
+clipped pair contribution. New objectives must not use a raw current- or
+cross-batch statistic unless it is public or separately DP.
+
 Implemented preference heads in this guide follow the primary papers for
 [DPO](https://arxiv.org/abs/2305.18290), [IPO](https://arxiv.org/abs/2310.12036),
 [DiscoPOP](https://arxiv.org/abs/2406.08414), [SimPO](https://arxiv.org/abs/2405.14734),

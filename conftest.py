@@ -4,14 +4,29 @@ Pytest discovers conftest.py by walking up from each test file, so every
 package in the workspace inherits these fixtures automatically.
 """
 
+import importlib
 import os
+import sys
+from pathlib import Path
 
 import pytest
+import torch
 
-try:  # torch-less environments run only the backend-neutral test roots
-    import torch
-except ModuleNotFoundError:
-    torch = None
+_TEST_SUPPORT = str(Path(__file__).resolve().parent / "tests" / "_support")
+if _TEST_SUPPORT not in sys.path:
+    sys.path.insert(0, _TEST_SUPPORT)
+_previous_pythonpath = os.environ.get("PYTHONPATH")
+os.environ["PYTHONPATH"] = _TEST_SUPPORT + (
+    os.pathsep + _previous_pythonpath if _previous_pythonpath else ""
+)
+
+_test_support = importlib.import_module("opaque_test_support")
+get_default_device = _test_support.get_default_device
+get_default_gpu_device = _test_support.get_default_gpu_device
+_set_random_seed = _test_support.set_random_seed
+
+__all__ = ["get_default_device", "get_default_gpu_device"]
+
 
 # ---------------------------------------------------------------------------
 # Auto-skip logic for marker-based gating
@@ -20,61 +35,11 @@ except ModuleNotFoundError:
 
 def pytest_runtest_setup(item):
     """Auto-skip tests based on the three orthogonal markers (cuda/mps/slow)."""
-    if "cuda" in item.keywords and (torch is None or not torch.cuda.is_available()):
+    if "cuda" in item.keywords and not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    if "mps" in item.keywords and (
-        torch is None or not torch.backends.mps.is_available()
-    ):
+    if "mps" in item.keywords and not torch.backends.mps.is_available():
         pytest.skip("MPS not available")
-
-
-# ---------------------------------------------------------------------------
-# Device helpers
-# ---------------------------------------------------------------------------
-
-
-def get_default_device():
-    """Get the default device for testing (CUDA > MPS > CPU)."""
-    if torch is None:
-        pytest.skip("torch not installed")
-    requested = os.environ.get("OPAQUE_TEST_DEVICE", "").strip().lower()
-    if requested:
-        if requested == "cpu":
-            return torch.device("cpu")
-        if requested == "cuda":
-            if torch.cuda.is_available():
-                return torch.device("cuda")
-            raise RuntimeError(
-                "OPAQUE_TEST_DEVICE=cuda requested but CUDA is unavailable"
-            )
-        if requested == "mps":
-            if torch.backends.mps.is_available():
-                return torch.device("mps")
-            raise RuntimeError(
-                "OPAQUE_TEST_DEVICE=mps requested but MPS is unavailable"
-            )
-        raise RuntimeError(
-            f"Invalid OPAQUE_TEST_DEVICE={requested!r}. Expected one of: cpu, cuda, mps"
-        )
-
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
-
-
-def get_default_gpu_device():
-    """Get the default GPU device (CUDA > MPS), or None."""
-    if torch is None:
-        return None
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +57,7 @@ def _activate_torch_backend(request):
         "tests/contracts/",
         "tests/integration/backend/",
     )
-    if torch is None or any(root in path for root in neutral_test_roots):
+    if any(root in path for root in neutral_test_roots):
         yield
         return
 
@@ -116,8 +81,6 @@ def device():
 @pytest.fixture(params=["cpu", "cuda", "mps"])
 def all_devices(request):
     """Parametrize tests over all available devices."""
-    if torch is None:
-        pytest.skip("torch not installed")
     if request.param == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA not available")
     if request.param == "mps" and not torch.backends.mps.is_available():
@@ -128,24 +91,12 @@ def all_devices(request):
 @pytest.fixture
 def set_random_seed():
     """Fixture to set random seed for reproducibility."""
-
-    def _set_seed(seed: int = 42):
-        if torch is None:
-            pytest.skip("torch not installed")
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if torch.backends.mps.is_available():
-            torch.mps.manual_seed(seed)
-
-    return _set_seed
+    return _set_random_seed
 
 
 @pytest.fixture
 def simple_pytree():
     """Provide a simple PyTree for testing."""
-    if torch is None:
-        pytest.skip("torch not installed")
     return {
         "weight": torch.tensor([3.0, 4.0]),
         "bias": torch.tensor([0.0, 12.0]),
@@ -155,8 +106,6 @@ def simple_pytree():
 @pytest.fixture
 def nested_pytree():
     """Provide a nested PyTree for testing."""
-    if torch is None:
-        pytest.skip("torch not installed")
     return {
         "layer1": {
             "weight": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),

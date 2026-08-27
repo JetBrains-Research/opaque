@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import json
-import os
-import socket
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 import torch
-import torch.distributed as dist
-import torch.multiprocessing as mp
 
 pytest.importorskip("transformers")
 pytest.importorskip("peft")
 
+from opaque_test_support import cleanup_process_group, setup_nccl, spawn
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoModelForCausalLM, LlamaConfig  # noqa: E402
 
@@ -160,30 +157,10 @@ def _run_single(strategy_name: str) -> dict[str, float]:
     }
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _setup_ddp(rank: int, world_size: int, port: int) -> None:
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    torch.cuda.set_device(rank)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-
-
-def _cleanup_ddp() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
 def _worker_ddp_short(
     rank: int, world_size: int, port: int, strategy_name: str, out_path: str
 ) -> None:
-    _setup_ddp(rank, world_size, port)
+    setup_nccl(rank, world_size, port)
     try:
         device = torch.device(f"cuda:{rank}")
         model = _build_synthetic_lora_model().to(device)
@@ -265,7 +242,7 @@ def _worker_ddp_short(
             }
             Path(out_path).write_text(json.dumps(payload))
     finally:
-        _cleanup_ddp()
+        cleanup_process_group()
 
 
 def _run(world_size: int, strategy_name: str) -> dict[str, float]:
@@ -273,15 +250,9 @@ def _run(world_size: int, strategy_name: str) -> dict[str, float]:
         pytest.skip(f"Requires >= {world_size} CUDA devices")
     if world_size == 1:
         return _run_single(strategy_name)
-    port = _find_free_port()
     with tempfile.TemporaryDirectory() as tmp:
         out = str(Path(tmp) / "metrics.json")
-        mp.spawn(
-            _worker_ddp_short,
-            args=(world_size, port, strategy_name, out),
-            nprocs=world_size,
-            join=True,
-        )
+        spawn(world_size, _worker_ddp_short, strategy_name, out)
         return json.loads(Path(out).read_text())
 
 

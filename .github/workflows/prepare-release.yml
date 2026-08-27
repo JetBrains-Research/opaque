@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_tests:
+        description: Skip release source tests; build and artifact validation still run.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -30,6 +35,7 @@ jobs:
     uses: JetBrains-Research/opaque/.github/workflows/prepare-release-implementation.yml@main
     with:
       dry_run: ${{ inputs.dry_run }}
+      skip_tests: ${{ inputs.skip_tests }}
       source_ref: ${{ github.ref }}
       source_sha: ${{ github.sha }}
       version: ${{ inputs.version }}

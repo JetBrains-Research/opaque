@@ -2,42 +2,22 @@
 
 from __future__ import annotations
 
-import os
-import socket
 from dataclasses import replace
 
 import pytest
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
+from opaque_test_support import (
+    cleanup_process_group as _cleanup_gloo,
+)
+from opaque_test_support import (
+    setup_gloo as _setup_gloo,
+)
+from opaque_test_support import (
+    spawn as _spawn,
+)
 
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _setup_gloo(rank: int, world_size: int, port: int) -> None:
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
-
-
-def _cleanup_gloo() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def _spawn_gloo(world_size: int, fn, *args) -> None:
-    mp.spawn(
-        fn,
-        args=(world_size, _find_free_port(), *args),
-        nprocs=world_size,
-        join=True,
-    )
+_spawn_gloo = _spawn
 
 
 def _worker_optimizer_state_audit_gloo(rank: int, world_size: int, port: int) -> None:

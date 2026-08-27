@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_tests:
+        description: Skip release source tests; build and artifact validation still run.
+        required: false
+        default: false
+        type: boolean
       source_sha:
         description: Immutable selected branch SHA from the dispatching workflow.
         required: true
@@ -228,15 +233,22 @@ jobs:
     permissions:
       actions: read
     outputs:
-      reuse-tests: ${{ steps.status.outputs.reuse-tests }}
+      test-validation: ${{ steps.status.outputs.test-validation }}
     steps:
       - name: Resolve matching main CI run
         id: status
         env:
           GH_TOKEN: ${{ github.token }}
+          SKIP_TESTS: ${{ inputs.skip_tests }}
           TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
         run: |
           set -euo pipefail
+          if [[ "$SKIP_TESTS" == "true" ]]; then
+            echo "::notice::Release source tests skipped by workflow input."
+            echo "test-validation=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           deadline=$((SECONDS + 2 * 60 * 60))
 
           while true; do
@@ -248,7 +260,7 @@ jobs:
 
             if [[ -z "$run" || "$run" == "null" ]]; then
               echo "::notice::No CI (main) run matches $TARGET_SHA; release tests will run."
-              echo "reuse-tests=false" >> "$GITHUB_OUTPUT"
+              echo "test-validation=run" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 
@@ -259,7 +271,7 @@ jobs:
             if [[ "$status" == "completed" ]]; then
               if [[ "$conclusion" == "success" ]]; then
                 echo "CI (main) run $run_id succeeded for $TARGET_SHA; reusing its test coverage."
-                echo "reuse-tests=true" >> "$GITHUB_OUTPUT"
+                echo "test-validation=reused" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
 
@@ -279,7 +291,7 @@ jobs:
   python-tests-linux-amd64:
     name: Release Linux amd64
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -294,7 +306,7 @@ jobs:
   python-tests-distributed:
     name: Release Linux amd64 (distributed)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -310,7 +322,7 @@ jobs:
   python-tests-minimum:
     name: Release Linux amd64 (minimum dependencies)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -328,7 +340,7 @@ jobs:
   python-tests-latest:
     name: Release Linux amd64 (latest dependencies)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -346,7 +358,7 @@ jobs:
   python-tests-macos-arm64:
     name: Release macOS arm64 (locked)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -362,7 +374,7 @@ jobs:
   python-tests-linux-arm64:
     name: Release Linux arm64 (locked)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -378,7 +390,7 @@ jobs:
   python-tests-cuda:
     name: Release CUDA (locked)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -395,7 +407,7 @@ jobs:
   python-tests-cuda-minimum:
     name: Release CUDA (minimum dependencies)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -414,7 +426,7 @@ jobs:
   python-tests-cuda-latest:
     name: Release CUDA (latest dependencies)
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/python-tests.yml@main
@@ -433,7 +445,7 @@ jobs:
   release-rust-tests:
     name: Release Rust tests
     needs: [plan, main-ci-status]
-    if: needs.main-ci-status.outputs.reuse-tests != 'true'
+    if: needs.main-ci-status.outputs.test-validation == 'run'
     permissions:
       contents: read
     uses: JetBrains-Research/opaque/.github/workflows/rust-tests.yml@main
@@ -484,7 +496,7 @@ jobs:
         env:
           MAIN_CI_RESULT: ${{ needs.main-ci-status.result }}
           RESULTS: ${{ toJSON(needs) }}
-          REUSE_TESTS: ${{ needs.main-ci-status.outputs.reuse-tests }}
+          TEST_VALIDATION: ${{ needs.main-ci-status.outputs.test-validation }}
         shell: bash
         run: |
           if [[ "$MAIN_CI_RESULT" != "success" ]]; then
@@ -492,9 +504,19 @@ jobs:
             exit 1
           fi
 
-          if [[ "$REUSE_TESTS" == "true" ]]; then
+          if [[ "$TEST_VALIDATION" == "skipped" ]]; then
+            echo "Release source tests were skipped by workflow input."
+            exit 0
+          fi
+
+          if [[ "$TEST_VALIDATION" == "reused" ]]; then
             echo "Reusing successful CI (main) test coverage."
             exit 0
+          fi
+
+          if [[ "$TEST_VALIDATION" != "run" ]]; then
+            echo "::error::Unexpected release test validation mode: $TEST_VALIDATION"
+            exit 1
           fi
 
           failures="$(

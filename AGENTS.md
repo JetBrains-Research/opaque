@@ -290,7 +290,8 @@ Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
 unit/doc-test set; main and release additionally run the ignored library tests.
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
+`tests/_support/opaque_test_support.py`, which the root `conftest.py` puts on
+`sys.path` as the top-level module `opaque_test_support`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 

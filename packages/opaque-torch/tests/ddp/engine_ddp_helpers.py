@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 import os
-import socket
 from dataclasses import dataclass
 
 import pytest
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
+from opaque_test_support import (
+    cleanup_process_group as _cleanup_ddp,
+)
+from opaque_test_support import (
+    setup_gloo as _base_setup_gloo,
+)
+from opaque_test_support import (
+    setup_nccl as _base_setup_nccl,
+)
+from opaque_test_support import (
+    spawn as _spawn,
+)
+
+_spawn_gloo = _spawn
 
 
 @dataclass(frozen=True)
@@ -33,38 +45,16 @@ class _DuckTypedPerGroup:
     values: dict[str, float]
 
 
-def _is_ddp_available() -> bool:
-    return dist.is_available() and torch.cuda.is_available()
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 def _setup_ddp(rank: int, world_size: int, port: int) -> None:
+    """Shared NCCL setup, plus the backend a spawned child must select itself.
+
+    ``mp.spawn`` children never run pytest, so the autouse fixture that
+    activates Torch for the parent does not reach them.
+    """
     from opaque.api.engine.backend import ensure_backend
 
-    if not _is_ddp_available():
-        raise RuntimeError("DDP requires CUDA and torch.distributed support")
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    torch.cuda.set_device(rank)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    _base_setup_nccl(rank, world_size, port)
     ensure_backend(torch.empty(0, device=f"cuda:{rank}"))
-
-
-def _cleanup_ddp() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def _spawn(world_size: int, fn, *args) -> None:
-    port = _find_free_port()
-    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
 
 
 def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
@@ -207,14 +197,10 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
 
 
 def _setup_gloo(rank: int, world_size: int, port: int) -> None:
-    """CPU process-group init for empty-batch collective-parity tests."""
+    """Shared CPU/Gloo setup, plus the backend the spawned child must select."""
     from opaque.api.engine.backend import ensure_backend
 
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    _base_setup_gloo(rank, world_size, port)
     ensure_backend(torch.empty(0))
 
 
@@ -413,11 +399,6 @@ def _worker_second_moment_clipping_parity_gloo(
             )
     finally:
         _cleanup_ddp()
-
-
-def _spawn_gloo(world_size: int, fn, *args) -> None:
-    port = _find_free_port()
-    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
 
 
 def _worker_core_collectives_gloo(rank: int, world_size: int, port: int) -> None:

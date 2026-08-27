@@ -6,6 +6,7 @@ Tests LoRA, IA3, Prefix Tuning, P-Tuning, and Prompt Tuning.
 """
 
 import pytest
+from opaque_test_support import prepare_lora_model, run_clipped_grad_test
 from peft import (
     IA3Config,
     PrefixTuningConfig,
@@ -16,8 +17,6 @@ from peft import (
 from transformers import AutoModelForCausalLM
 
 from opaque.pytree import tree_leaves
-
-from ._helpers import prepare_lora_model, run_clipped_grad_test
 
 
 @pytest.mark.slow
