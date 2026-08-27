@@ -4,10 +4,28 @@ Pytest discovers conftest.py by walking up from each test file, so every
 package in the workspace inherits these fixtures automatically.
 """
 
+import importlib
 import os
+import sys
+from pathlib import Path
 
 import pytest
 import torch
+
+_TEST_SUPPORT = str(Path(__file__).resolve().parent / "tests" / "_support")
+if _TEST_SUPPORT not in sys.path:
+    sys.path.insert(0, _TEST_SUPPORT)
+_previous_pythonpath = os.environ.get("PYTHONPATH")
+os.environ["PYTHONPATH"] = _TEST_SUPPORT + (
+    os.pathsep + _previous_pythonpath if _previous_pythonpath else ""
+)
+
+_test_support = importlib.import_module("opaque_test_support")
+get_default_device = _test_support.get_default_device
+get_default_gpu_device = _test_support.get_default_gpu_device
+_set_random_seed = _test_support.set_random_seed
+
+__all__ = ["get_default_device", "get_default_gpu_device"]
 
 
 # ---------------------------------------------------------------------------
@@ -22,50 +40,6 @@ def pytest_runtest_setup(item):
 
     if "mps" in item.keywords and not torch.backends.mps.is_available():
         pytest.skip("MPS not available")
-
-
-# ---------------------------------------------------------------------------
-# Device helpers
-# ---------------------------------------------------------------------------
-
-
-def get_default_device():
-    """Get the default device for testing (CUDA > MPS > CPU)."""
-    requested = os.environ.get("OPAQUE_TEST_DEVICE", "").strip().lower()
-    if requested:
-        if requested == "cpu":
-            return torch.device("cpu")
-        if requested == "cuda":
-            if torch.cuda.is_available():
-                return torch.device("cuda")
-            raise RuntimeError(
-                "OPAQUE_TEST_DEVICE=cuda requested but CUDA is unavailable"
-            )
-        if requested == "mps":
-            if torch.backends.mps.is_available():
-                return torch.device("mps")
-            raise RuntimeError(
-                "OPAQUE_TEST_DEVICE=mps requested but MPS is unavailable"
-            )
-        raise RuntimeError(
-            f"Invalid OPAQUE_TEST_DEVICE={requested!r}. Expected one of: cpu, cuda, mps"
-        )
-
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
-
-
-def get_default_gpu_device():
-    """Get the default GPU device (CUDA > MPS), or None."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -92,15 +66,7 @@ def all_devices(request):
 @pytest.fixture
 def set_random_seed():
     """Fixture to set random seed for reproducibility."""
-
-    def _set_seed(seed: int = 42):
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if torch.backends.mps.is_available():
-            torch.mps.manual_seed(seed)
-
-    return _set_seed
+    return _set_random_seed
 
 
 @pytest.fixture
