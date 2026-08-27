@@ -15,11 +15,10 @@ matches the BCO paper's formula:
 
     loss = −log σ(β · chosen_lr − δ) − log σ(−(β · rejected_lr − δ))
 
-where δ is the reward baseline. ``delta`` must be public, separately released
-through an accounted DP mechanism, or derived solely from prior DP outputs.
-Detaching a raw current- or cross-batch statistic changes autodiff, not its
-privacy sensitivity. When ``delta=0.0`` (the default) this is identical to
-TRL's ``bco_pair``. This is a pure loss.
+where δ is the reward baseline. A nonzero ``delta`` must be public, separately
+DP, or derived from prior DP outputs; detaching a raw cross-batch statistic is
+not sufficient. When ``delta=0.0`` (the default) this is identical to TRL's
+``bco_pair``. This is a pure loss.
 """
 
 from __future__ import annotations
@@ -41,9 +40,8 @@ def bco_loss(
 
     The reward baseline ``delta`` corresponds to TRL's running-mean reward
     estimate. The default ``0.0`` gives the zero-baseline variant. A nonzero
-    value must be public, separately DP, or derived solely from prior DP
-    outputs; detaching a statistic from raw current or cross-batch data is not
-    sufficient.
+    value must be public, separately DP, or derived from prior DP outputs;
+    detaching a raw cross-batch statistic is not sufficient.
 
     Args:
         chosen_logratio: Per-example scalar ``log π(y_w|x) − log π_ref(y_w|x)``.

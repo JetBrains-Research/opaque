@@ -243,11 +243,9 @@ reward; CPO's sigmoid uses the summed policy log-probs.
 ### BCO baseline
 
 `DPOTrainer` uses BCO's zero baseline (`delta=0.0`); it does not implement
-TRL's cross-batch running reward mean. Direct callers of `bco_loss` may pass
-`delta` only when it is public, separately released with accounted DP, or
-derived solely from prior DP outputs. Detaching a statistic computed from the
-current or previous raw batches prevents an autograd path but does not make
-the statistic compatible with the per-pair sensitivity argument.
+TRL's cross-batch running reward mean. A manual nonzero `delta` must be
+public, separately DP, or derived from prior DP outputs; detaching a raw
+current- or cross-batch statistic is not sufficient.
 
 ### MPO and `loss_weights`
 
