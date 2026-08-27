@@ -5,9 +5,10 @@ hooks) at module load so they match what
 :class:`~opaque.transformers.trainer.DPTrainer` applies during ``__init__``.
 Guards: missing sub-packages must not break collection.
 
-Shared LoRA/DP-SGD helpers and ``MODEL_CONFIGS`` live in
-``opaque-transformers/tests/_shared.py`` — tests import them directly from that
-module. Session-scoped fixture wrappers are re-exported here for convenience.
+Shared model fixtures and compatibility helpers live in
+``tests/_support/opaque_test_support.py`` and
+``opaque-transformers/tests/_hf_shared.py``. Session-scoped fixture wrappers
+are re-exported here for convenience.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import pytest
 sys.path.append(str(Path(__file__).parent))
 
 from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG
+from opaque_test_support import fast_mc_accounting
 
 # Apply global runtime compat patches (same env semantics as
 # DPTrainer.__init__) so test collection matches the trainer's runtime.
@@ -49,12 +51,5 @@ def standard_lora_config():
 @pytest.fixture(autouse=True)
 def _fast_mc_accounting():
     """Keep trainer smoke tests below the production MC resolution cost."""
-    import opaque.accounting as acc
-    from opaque.accounting import discretization
-
-    original = discretization._default_config
-    acc.set_discretization(mc_resolution=5e-3, mc_failure_probability=1e-2)
-    try:
+    with fast_mc_accounting():
         yield
-    finally:
-        discretization._default_config = original

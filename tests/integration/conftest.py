@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from opaque_test_support import fast_mc_accounting
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REPO_ROOT_S = str(_REPO_ROOT)
@@ -32,7 +33,7 @@ if _REPO_ROOT_S not in _parts:
     os.environ["PYTHONPATH"] = _REPO_ROOT_S if not _cur else _REPO_ROOT_S + _SEP + _cur
 
 
-def pytest_configure(config) -> None:  # noqa: ARG001
+def pytest_configure(config) -> None:
     """Keep repo root on ``sys.path`` / ``PYTHONPATH`` if something strips them."""
     if _REPO_ROOT_S not in sys.path:
         sys.path.insert(0, _REPO_ROOT_S)
@@ -47,12 +48,5 @@ def pytest_configure(config) -> None:  # noqa: ARG001
 @pytest.fixture(autouse=True)
 def _fast_mc_accounting():
     """Keep integration smoke tests below the production MC resolution cost."""
-    import opaque.accounting as acc
-    from opaque.accounting import discretization
-
-    original = discretization._default_config
-    acc.set_discretization(mc_resolution=5e-3, mc_failure_probability=1e-2)
-    try:
+    with fast_mc_accounting():
         yield
-    finally:
-        discretization._default_config = original

@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn.functional as F
+from opaque_test_support import requires_hf_auth
 from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoConfig,
@@ -13,8 +14,6 @@ from transformers import (
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches, apply_runtime_patches
-
-from .._helpers import requires_hf_auth
 
 apply_runtime_patches()
 pytestmark = pytest.mark.skipif(
