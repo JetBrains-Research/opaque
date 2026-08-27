@@ -2065,6 +2065,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bco-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BCO baseline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mpo-and-loss_weights" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3324,6 +3335,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bco-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BCO baseline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mpo-and-loss_weights" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3799,6 +3821,11 @@ configured head is reference-using. Their flat parameters live on <code>DPOConfi
 preference / odds-ratio term plus a per-token-mean chosen NLL); they are not
 single exported heads. SimPO and ORPO use the length-normalized per-token
 reward; CPO's sigmoid uses the summed policy log-probs.</p>
+<h3 id="bco-baseline">BCO baseline<a class="headerlink" href="#bco-baseline" title="Permanent link">&para;</a></h3>
+<p><code>DPOTrainer</code> uses BCO's zero baseline (<code>delta=0.0</code>); it does not implement
+TRL's cross-batch running reward mean. A manual nonzero <code>delta</code> must be
+public, separately DP, or derived from prior DP outputs; detaching a raw
+current- or cross-batch statistic is not sufficient.</p>
 <h3 id="mpo-and-loss_weights">MPO and <code>loss_weights</code><a class="headerlink" href="#mpo-and-loss_weights" title="Permanent link">&para;</a></h3>
 <p>Passing <code>loss_type</code> as a list combines the heads into one per-example loss
 (MPO — Mix of Preference Objectives — via <code>mpo_combine</code>). <code>loss_weights</code> (a

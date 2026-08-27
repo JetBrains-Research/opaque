@@ -7671,8 +7671,9 @@ independently of each other.  Mathematically:</p>
 
         <p>BCO pairwise loss.</p>
 <p>The reward baseline <code>delta</code> corresponds to TRL's running-mean reward
-estimate.  Callers using a cross-batch <code>delta</code> must <code>.detach()</code> it
-before passing it in; the default <code>0.0</code> gives the zero-baseline variant.</p>
+estimate. The default <code>0.0</code> gives the zero-baseline variant. A nonzero
+value must be public, separately DP, or derived from prior DP outputs;
+detaching a raw cross-batch statistic is not sufficient.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -7743,7 +7744,7 @@ before passing it in; the default <code>0.0</code> gives the zero-baseline varia
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Reward baseline (detached scalar). Default <code>0.0</code>.</p>
+                <p>Public or DP-safe reward baseline. Default <code>0.0</code>.</p>
               </div>
             </td>
             <td>
@@ -7779,8 +7780,7 @@ before passing it in; the default <code>0.0</code> gives the zero-baseline varia
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_bco.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-31">31</a></span>
-<span class="normal"><a href="#__codelineno-0-32">32</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-32">32</a></span>
 <span class="normal"><a href="#__codelineno-0-33">33</a></span>
 <span class="normal"><a href="#__codelineno-0-34">34</a></span>
 <span class="normal"><a href="#__codelineno-0-35">35</a></span>
@@ -7803,31 +7803,34 @@ before passing it in; the default <code>0.0</code> gives the zero-baseline varia
 <span class="normal"><a href="#__codelineno-0-52">52</a></span>
 <span class="normal"><a href="#__codelineno-0-53">53</a></span>
 <span class="normal"><a href="#__codelineno-0-54">54</a></span>
-<span class="normal"><a href="#__codelineno-0-55">55</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="k">def</span><span class="w"> </span><span class="nf">bco_loss</span><span class="p">(</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a>    <span class="n">chosen_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33"></a>    <span class="n">rejected_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">delta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">    </span><span class="sd">"""BCO pairwise loss.</span>
-<a id="__codelineno-0-39" name="__codelineno-0-39"></a>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    The reward baseline ``delta`` corresponds to TRL's running-mean reward</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">    estimate.  Callers using a cross-batch ``delta`` must ``.detach()`` it</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">    before passing it in; the default ``0.0`` gives the zero-baseline variant.</span>
-<a id="__codelineno-0-43" name="__codelineno-0-43"></a>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">        chosen_logratio: Per-example scalar ``log π(y_w|x) − log π_ref(y_w|x)``.</span>
-<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">        rejected_logratio: Per-example scalar ``log π(y_l|x) − log π_ref(y_l|x)``.</span>
-<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">        beta: KL-regularisation temperature (DPO-style).</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">        delta: Reward baseline (detached scalar). Default ``0.0``.</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    """</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a>    <span class="k">return</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">delta</span><span class="p">)</span> <span class="o">-</span> <span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a>        <span class="o">-</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">rejected_logratio</span> <span class="o">-</span> <span class="n">delta</span><span class="p">)</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a>    <span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#__codelineno-0-57">57</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="k">def</span><span class="w"> </span><span class="nf">bco_loss</span><span class="p">(</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33"></a>    <span class="n">chosen_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34"></a>    <span class="n">rejected_logratio</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="n">delta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="w">    </span><span class="sd">"""BCO pairwise loss.</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a>
+<a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">    The reward baseline ``delta`` corresponds to TRL's running-mean reward</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">    estimate. The default ``0.0`` gives the zero-baseline variant. A nonzero</span>
+<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">    value must be public, separately DP, or derived from prior DP outputs;</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">    detaching a raw cross-batch statistic is not sufficient.</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45"></a>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">        chosen_logratio: Per-example scalar ``log π(y_w|x) − log π_ref(y_w|x)``.</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">        rejected_logratio: Per-example scalar ``log π(y_l|x) − log π_ref(y_l|x)``.</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">        beta: KL-regularisation temperature (DPO-style).</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        delta: Public or DP-safe reward baseline. Default ``0.0``.</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        Per-example scalar loss tensor with the same shape as the inputs.</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">    """</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a>    <span class="k">return</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">delta</span><span class="p">)</span> <span class="o">-</span> <span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a>        <span class="o">-</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">rejected_logratio</span> <span class="o">-</span> <span class="n">delta</span><span class="p">)</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

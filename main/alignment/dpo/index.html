@@ -1964,6 +1964,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#privacy-model-for-preference-pairs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy model for preference pairs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1-reference-log-probabilities" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3168,6 +3179,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#privacy-model-for-preference-pairs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy model for preference pairs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1-reference-log-probabilities" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3331,6 +3353,17 @@ two things change relative to <a href="../sft/">SFT</a>:</p>
 <p>The mechanism is still the caller's choice: swap the <code>opaque.dpsgd</code> noise
 and sampling imports for <code>opaque.dpftrl</code> to run
 <a href="../../user-guide/dp-ftrl/">DP-FTRL</a>; the loss closure is unchanged.</p>
+<h2 id="privacy-model-for-preference-pairs">Privacy model for preference pairs<a class="headerlink" href="#privacy-model-for-preference-pairs" title="Permanent link">&para;</a></h2>
+<p>The protected record is the complete <code>(prompt, chosen, rejected)</code> pair. Its
+two completions produce one joint gradient, clipped after the whole pairwise
+objective is differentiated. With fixed bound <code>C</code>, this gives gradient-sum
+sensitivity <code>C</code> under Opaque's add-or-remove adjacency (<code>2C</code> under
+replace-one); user-level privacy requires grouping and clipping all of a
+user's pairs.</p>
+<p>Per-pair reference scores, f-divergence/WPO transforms, and LD-DPO
+shared-prefix lengths do not change that bound because they remain within the
+clipped pair contribution. New objectives must not use a raw current- or
+cross-batch statistic unless it is public or separately DP.</p>
 <p>Implemented preference heads in this guide follow the primary papers for
 <a href="https://arxiv.org/abs/2305.18290">DPO</a>, <a href="https://arxiv.org/abs/2310.12036">IPO</a>,
 <a href="https://arxiv.org/abs/2406.08414">DiscoPOP</a>, <a href="https://arxiv.org/abs/2405.14734">SimPO</a>,
