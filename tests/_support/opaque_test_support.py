@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
 """Reusable test-only fixtures and helpers.
 
 This module is deliberately outside published packages. It contains generic
@@ -10,6 +12,7 @@ from __future__ import annotations
 import os
 import socket
 from contextlib import contextmanager
+from dataclasses import asdict, replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -254,7 +257,12 @@ def fast_mc_accounting():
     from opaque.accounting import discretization
 
     original = discretization._default_config
-    acc.set_discretization(mc_resolution=5e-3, mc_failure_probability=1e-2)
+    fast_config = replace(
+        acc.get_discretization(),
+        mc_resolution=5e-3,
+        mc_failure_probability=1e-2,
+    )
+    acc.set_discretization(**asdict(fast_config))
     try:
         yield
     finally:
