@@ -9,15 +9,17 @@ Implements the BCO-pair variant from:
 The BCO loss frames DPO as a binary classification problem with an optional
 reward baseline ``delta``. TRL computes ``delta`` as a running cross-batch
 mean reward and applies it externally (outside ``bco_pair``). In
-``opaque-alignment`` the baseline is exposed as an **optional detached scalar
-keyword argument** (default ``0.0``) so the function stays strictly
-per-example and matches the BCO paper's formula:
+``opaque-alignment`` the baseline is exposed as an optional scalar keyword
+argument (default ``0.0``) so the function stays strictly per-example and
+matches the BCO paper's formula:
 
     loss = −log σ(β · chosen_lr − δ) − log σ(−(β · rejected_lr − δ))
 
-where δ is the reward baseline (caller responsibility: detach + broadcast).
-When ``delta=0.0`` (the default) this is identical to TRL's ``bco_pair``.
-This is a pure loss.
+where δ is the reward baseline. ``delta`` must be public, separately released
+through an accounted DP mechanism, or derived solely from prior DP outputs.
+Detaching a raw current- or cross-batch statistic changes autodiff, not its
+privacy sensitivity. When ``delta=0.0`` (the default) this is identical to
+TRL's ``bco_pair``. This is a pure loss.
 """
 
 from __future__ import annotations
@@ -38,14 +40,16 @@ def bco_loss(
     """BCO pairwise loss.
 
     The reward baseline ``delta`` corresponds to TRL's running-mean reward
-    estimate.  Callers using a cross-batch ``delta`` must ``.detach()`` it
-    before passing it in; the default ``0.0`` gives the zero-baseline variant.
+    estimate. The default ``0.0`` gives the zero-baseline variant. A nonzero
+    value must be public, separately DP, or derived solely from prior DP
+    outputs; detaching a statistic from raw current or cross-batch data is not
+    sufficient.
 
     Args:
         chosen_logratio: Per-example scalar ``log π(y_w|x) − log π_ref(y_w|x)``.
         rejected_logratio: Per-example scalar ``log π(y_l|x) − log π_ref(y_l|x)``.
         beta: KL-regularisation temperature (DPO-style).
-        delta: Reward baseline (detached scalar). Default ``0.0``.
+        delta: Public or DP-safe reward baseline. Default ``0.0``.
 
     Returns:
         Per-example scalar loss tensor with the same shape as the inputs.

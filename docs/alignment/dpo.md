@@ -24,6 +24,40 @@ The mechanism is still the caller's choice: swap the `opaque.dpsgd` noise
 and sampling imports for `opaque.dpftrl` to run
 [DP-FTRL](../user-guide/dp-ftrl.md); the loss closure is unchanged.
 
+## Privacy model for preference pairs
+
+The protected record in this guide is the complete `(prompt, chosen,
+rejected)` preference pair. The pair's two completions are deliberately
+coupled inside one scalar loss and produce one gradient which is clipped
+*after* the entire pairwise objective is differentiated. Consequently, with
+a fixed clipping bound `C`, the gradient sum has sensitivity `C` under
+Opaque's add-or-remove adjacency (or `2C` under replace-one adjacency); see
+[DP concepts](../user-guide/dp-concepts.md#step-2-clipping). Protecting a
+user who contributes multiple pairs instead requires user-level grouping and
+clipping rather than treating their pairs as independent records.
+
+Reference log-probabilities are computed separately for each pair and remain
+inputs to that pair's loss. Precomputing them outside `vmap` does not create a
+cross-pair gradient or a separate DP release. The resulting cache contains
+private per-pair values and must stay access-controlled; account separately
+for any private data used to train or release the reference model itself.
+TR-DPO's EMA reference is derived from prior noisy model updates, so it is
+valid adaptive post-processing when no raw cross-record statistic is added to
+its state.
+
+The f-divergence remaps, WPO weights, and LD-DPO shared-prefix lengths are
+also evaluated within one pair. A nonlinear remap can have a large or
+unbounded pre-clipping derivative, but does not require a larger clipping
+bound for privacy: clipping the complete parameter gradient bounds the
+released contribution. It can still affect numerical stability and utility.
+The same local-loss conclusion applies when using DP-FTRL, but that mechanism
+also requires its selected sampler, horizon, and matrix-strategy assumptions
+to match the run.
+
+When adding a new alignment objective, do not introduce a current-batch or
+raw cross-batch statistic into the per-pair loss unless that statistic is
+public or is released through a separately accounted DP mechanism.
+
 Implemented preference heads in this guide follow the primary papers for
 [DPO](https://arxiv.org/abs/2305.18290), [IPO](https://arxiv.org/abs/2310.12036),
 [DiscoPOP](https://arxiv.org/abs/2406.08414), [SimPO](https://arxiv.org/abs/2405.14734),
