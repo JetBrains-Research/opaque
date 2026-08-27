@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Never
+from typing import NoReturn
 
 
 class OpaqueError(Exception):
@@ -15,7 +15,7 @@ class OpaqueError(Exception):
         *,
         cause: BaseException | None = None,
         suppress_context: bool = False,
-    ) -> Never:
+    ) -> NoReturn:
         """Raise this category with a diagnostic message."""
         if suppress_context:
             raise cls(message) from None
