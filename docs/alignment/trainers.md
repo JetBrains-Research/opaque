@@ -240,6 +240,13 @@ preference / odds-ratio term plus a per-token-mean chosen NLL); they are not
 single exported heads. SimPO and ORPO use the length-normalized per-token
 reward; CPO's sigmoid uses the summed policy log-probs.
 
+### BCO baseline
+
+`DPOTrainer` uses BCO's zero baseline (`delta=0.0`); it does not implement
+TRL's cross-batch running reward mean. A manual nonzero `delta` must be
+public, separately DP, or derived from prior DP outputs; detaching a raw
+current- or cross-batch statistic is not sufficient.
+
 ### MPO and `loss_weights`
 
 Passing `loss_type` as a list combines the heads into one per-example loss
