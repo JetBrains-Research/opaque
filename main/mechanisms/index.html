@@ -3277,7 +3277,7 @@ mechanisms support all amplification types:</p>
 <th>Mechanism</th>
 <th style="text-align: center;"><code>dpsgd_acc.poisson</code></th>
 <th style="text-align: center;"><code>dpsgd_acc.poisson</code> (truncated)</th>
-<th style="text-align: center;"><code>dpsgd_acc.random_allocation</code></th>
+<th style="text-align: center;"><code>dpsgd_acc.k_out_of_t</code></th>
 <th style="text-align: center;"><code>dpftrl_acc.poisson</code></th>
 <th style="text-align: center;"><code>dpftrl_acc.balls_in_bins</code></th>
 </tr>
@@ -3348,11 +3348,9 @@ mechanisms support all amplification types:</p>
   <code>truncated_batch_size</code> and <code>dataset_size</code>; caps batches (weaker
   privacy than plain Poisson at the same <span class="arithmatex">\(q\)</span> unless noise is
   recalibrated).</li>
-<li><strong><code>opaque.dpsgd.accounting.random_allocation</code></strong>: DP-SGD
-  1-out-of-<code>num_bins</code> random allocation, redrawn every epoch. Returns a
-  whole-horizon process with exact prefix accounting.</li>
-<li><strong><code>opaque.dpsgd.accounting.k_out_of_t</code></strong>: global balanced allocation where
-  each record participates in exactly k uniform steps of the horizon.</li>
+<li><strong><code>opaque.dpsgd.accounting.k_out_of_t</code></strong>: DP-SGD block or total k-out-of-t
+  allocation. Block accounting is exact; total allocation uses the block
+  reduction as a conservative upper bound.</li>
 <li><strong><code>opaque.dpftrl.accounting.poisson</code></strong>: DP-FTRL whole-process Poisson
   amplification (<code>BandMf</code> / <code>IdentityMf</code> inner, <code>n_steps</code> required).
   For <code>BandMf</code> this is the cyclic-participation analysis
@@ -3360,7 +3358,7 @@ mechanisms support all amplification types:</p>
 <li><strong><code>opaque.dpftrl.accounting.balls_in_bins</code></strong>: Random-partition
   amplification with the assignment <strong>fixed across epochs</strong>. Used with
   BLT, DP-λCGD, BISR, BSR, and identity MF. Not interchangeable with
-  <code>dpsgd_acc.random_allocation</code>, which redraws each epoch — the two
+  <code>dpsgd_acc.k_out_of_t(..., allocation="block")</code>, which draws each block independently — the two
   schemes have different samplers and different accountants.</li>
 <li><strong>internal</strong>: BLT handles multi-participation patterns (min-sep)
   within its own sensitivity computation — no external amplification

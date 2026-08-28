@@ -1092,21 +1092,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_accrandom_allocationinner-num_bins-n_steps" class="md-nav__link">
+  <a href="#dpsgd_acck_out_of_tinner-k-t-allocation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpsgd_acc.random_allocation(inner, *, num_bins, n_steps)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dpsgd_acck_out_of_tinner-total_participations-n_steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)
+        dpsgd_acc.k_out_of_t(inner, *, k, t, allocation)
       
     </span>
   </a>
@@ -3507,21 +3496,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_accrandom_allocationinner-num_bins-n_steps" class="md-nav__link">
+  <a href="#dpsgd_acck_out_of_tinner-k-t-allocation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpsgd_acc.random_allocation(inner, *, num_bins, n_steps)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dpsgd_acck_out_of_tinner-total_participations-n_steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)
+        dpsgd_acc.k_out_of_t(inner, *, k, t, allocation)
       
     </span>
   </a>
@@ -3817,7 +3795,7 @@ factories live next to its runtime:</p>
 </tr>
 <tr>
 <td><code>opaque.dpsgd.accounting</code></td>
-<td>DP-SGD factories — <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson</code>, <code>random_allocation</code>.</td>
+<td>DP-SGD factories — <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson</code>, <code>k_out_of_t</code>.</td>
 <td><code>opaque-dpsgd</code></td>
 </tr>
 <tr>
@@ -3943,30 +3921,25 @@ inner Gaussian mechanism and sample rate directly.</p>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="dpsgd_accrandom_allocationinner-num_bins-n_steps"><code>dpsgd_acc.random_allocation(inner, *, num_bins, n_steps)</code><a class="headerlink" href="#dpsgd_accrandom_allocationinner-num_bins-n_steps" title="Permanent link">&para;</a></h3>
-<p>1-out-of-<code>num_bins</code> random allocation, the scheme
-<code>opaque.dpsgd.sampling.RandomAllocationSampler</code> implements: each epoch,
-every example lands in exactly one of <code>num_bins</code> batches, redrawn each
-epoch. Amplifies strictly more than <code>poisson()</code> at the matched rate
-<code>1 / num_bins</code>, and is computed by an exact PLD transform rather than
-Monte Carlo.</p>
-<p>This returns a whole-horizon process with exact prefix accounting, including
-partial final epochs:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">num_bins</span> <span class="o">=</span> <span class="n">dataset_size</span> <span class="o">//</span> <span class="n">batch_size</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">num_bins</span><span class="p">,</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<h3 id="dpsgd_acck_out_of_tinner-k-t-allocation"><code>dpsgd_acc.k_out_of_t(inner, *, k, t, allocation)</code><a class="headerlink" href="#dpsgd_acck_out_of_tinner-k-t-allocation" title="Permanent link">&para;</a></h3>
+<p>With <code>allocation="block"</code>, each example lands in exactly one batch in each of
+<code>k</code> contiguous, nearly equal blocks. It amplifies strictly more than
+<code>poisson()</code> at the matched average rate <code>k / t</code>, and is computed by an exact
+PLD transform rather than Monte Carlo.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">k_out_of_t</span><span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">k</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">t</span><span class="o">=</span><span class="n">num_epochs</span> <span class="o">*</span> <span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">allocation</span><span class="o">=</span><span class="s2">"block"</span><span class="p">,</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>Use <code>acc.per_step(process)</code> in a loop that composes privacy after each
-optimizer step.</p>
-<h3 id="dpsgd_acck_out_of_tinner-total_participations-n_steps"><code>dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)</code><a class="headerlink" href="#dpsgd_acck_out_of_tinner-total_participations-n_steps" title="Permanent link">&para;</a></h3>
-<p>Global balanced allocation: every record participates in exactly <code>k</code> uniform
-steps of the declared <code>t</code>-step horizon. <code>pld_at(K)</code> accounts the
-hypergeometric prefix mixture; the full <code>k&gt;1</code> PLD uses the conservative
-Feldman–Shenfeld block reduction.</p>
+<p>The returned whole-horizon process provides exact prefix accounting; use
+<code>acc.per_step(process)</code> in a step-wise loop.</p>
+<p>With <code>allocation="total"</code>, each example chooses a uniform <code>k</code>-subset of the
+whole horizon. The factory currently reports the block reduction as a valid
+conservative upper bound. For <code>k &gt; 1</code>, prefix accounting before the final step
+returns the full-horizon bound.</p>
 <h3 id="dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size"><code>dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)</code><a class="headerlink" href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size" title="Permanent link">&para;</a></h3>
 <p>Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using <code>adaptive_clipped_grad</code>.</p>
@@ -4091,8 +4064,9 @@ compose further externally.</p>
 case is exact (its Gram is <code>num_epochs · I</code>, so the dominating pair collapses
 onto random allocation at <code>σ / √num_epochs</code>); the correlated cases go through
 Monte Carlo.</p>
-<p>The DP-SGD analogue is <code>dpsgd_acc.random_allocation</code>, which redraws the bin
-assignment every epoch. Do not mix the two: this accountant is for the
+<p>The DP-SGD analogue is
+<code>dpsgd_acc.k_out_of_t(..., allocation="block")</code>, which draws an independent
+partition in every block. Do not mix the two: this accountant is for the
 fixed-assignment sampler <code>opaque.dpftrl.sampling.BallsInBinsSampler</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span><span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
@@ -4378,7 +4352,7 @@ adjacency directions. The sample count is derived from <code>mc_resolution</code
 <code>mc_failure_probability</code>. Remaining uncertainty is placed at <code>+∞</code>, and the returned PLD
 exposes <code>mc_confidence</code> and <code>mc_resolution</code>. Statistical confidence is
 separate from DP delta. Balls-in-Bins with <code>identity_strategy()</code>, and
-<code>random_allocation</code>, use deterministic transforms. Monte Carlo PLDs certify
+<code>k_out_of_t</code>, use deterministic transforms. Monte Carlo PLDs certify
 ε/δ and advantage; β and Bayes risk fail closed to zero.</p>
 </div>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>

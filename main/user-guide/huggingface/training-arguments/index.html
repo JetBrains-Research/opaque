@@ -3495,11 +3495,11 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 <tbody>
 <tr>
 <td><code>sampling_mode</code></td>
-<td><code>"auto"</code> (default) pairs the sampler with <code>privacy_noise_mechanism</code>; explicit values <code>{"poisson", "random_allocation", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}</code> are validated against the mechanism's allow-list.</td>
+<td><code>"auto"</code> (default) pairs the sampler with <code>privacy_noise_mechanism</code>; explicit values <code>{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}</code> are validated against the mechanism's allow-list.</td>
 </tr>
 <tr>
 <td><code>sampling_kwargs</code></td>
-<td>Forwarded to the sampler. <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code> and is unavailable for random allocation.</td>
+<td>Forwarded to the sampler. <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code> and is unavailable for k-out-of-t allocation.</td>
 </tr>
 <tr>
 <td><code>clipping_mode</code></td>
@@ -3570,9 +3570,11 @@ the strategy kwargs:</p>
 </tbody>
 </table>
 <p><code>"auto"</code> remains Poisson for Gaussian and identity MF. Gaussian explicitly
-accepts <code>sampling_mode="random_allocation"</code> and <code>sampling_mode="k_out_of_t"</code>.
-For k-out-of-t, set <code>sampling_kwargs={"total_participations": k}</code> so each
-example participates in exactly <code>k</code> optimizer steps (uniform over the run).
+accepts <code>sampling_mode="k_out_of_t"</code>. For exact block accounting, set
+<code>sampling_kwargs={"k": k, "allocation": "block"}</code> so each example participates
+once in each of <code>k</code> nearly equal blocks. With <code>"allocation": "total"</code>, each
+example chooses a uniform <code>k</code>-subset of the horizon and <code>DPTrainer</code> uses the
+conservative block bound.
 Identity MF explicitly accepts <code>sampling_mode="balls_in_bins"</code>. Horizon modes
 are adapted to the trainer's step-wise accountant through
 <code>opaque.accounting.per_step</code>.</p>

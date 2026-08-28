@@ -2847,21 +2847,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" class="md-nav__link">
+  <a href="#k_out_of_tinner-k-t-allocation-dphorizonprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess
+        k_out_of_t(inner, *, k, t, allocation) -&gt; DpHorizonProcess
       
     </span>
   </a>
@@ -3595,21 +3584,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" class="md-nav__link">
+  <a href="#k_out_of_tinner-k-t-allocation-dphorizonprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess
+        k_out_of_t(inner, *, k, t, allocation) -&gt; DpHorizonProcess
       
     </span>
   </a>
@@ -3989,7 +3967,7 @@ published at the moment.</p>
 </tr>
 <tr>
 <td><code>opaque.dpsgd.accounting</code></td>
-<td>DP-SGD mechanisms: <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson</code>, <code>random_allocation</code></td>
+<td>DP-SGD mechanisms: <code>gaussian</code>, <code>adaclip</code>, <code>poisson</code> (plain or truncated via <code>truncated_batch_size</code> / <code>dataset_size</code>), <code>parallel_poisson</code>, <code>k_out_of_t</code></td>
 <td><code>from opaque.dpsgd import accounting as dpsgd_acc</code></td>
 </tr>
 <tr>
@@ -4276,31 +4254,31 @@ Like <code>poisson()</code> (plain or truncated), this is a full wrapper.</p>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="random_allocationinner-num_bins-n_steps-dphorizonprocess"><code>random_allocation(inner, *, num_bins, n_steps) -&gt; DpHorizonProcess</code><a class="headerlink" href="#random_allocationinner-num_bins-n_steps-dphorizonprocess" title="Permanent link">&para;</a></h3>
-<p>1-out-of-<code>num_bins</code> random allocation: each epoch, every example lands in
-exactly one of <code>num_bins</code> batches, with the assignment redrawn each epoch.
-Pairs with <code>opaque.dpsgd.sampling.RandomAllocationSampler</code>.</p>
-<p>The process covers the declared horizon and implements exact <code>pld_at(K)</code>
-prefix accounting, including partial final epochs. Use
-<code>acc.per_step(process)</code> for ordinary step-wise training loops.</p>
-<p>Computed by the exact PLD transform of Feldman &amp; Shenfeld (2026) —
-deterministic, with no Monte Carlo sampling. It is strictly tighter than
-<code>poisson()</code> at the matched rate <code>1 / num_bins</code>.</p>
+<h3 id="k_out_of_tinner-k-t-allocation-dphorizonprocess"><code>k_out_of_t(inner, *, k, t, allocation) -&gt; DpHorizonProcess</code><a class="headerlink" href="#k_out_of_tinner-k-t-allocation-dphorizonprocess" title="Permanent link">&para;</a></h3>
+<p>With <code>allocation="block"</code>, every record participates in exactly one batch in
+each of <code>k</code> contiguous, nearly equal blocks. Block sizes differ by at most one.</p>
+<p>This mode pairs with
+<code>opaque.dpsgd.sampling.KOutOfTSampler(..., allocation="block")</code> and
+provides exact <code>pld_at(K)</code> prefix accounting. It is computed by the exact PLD
+transform of Feldman &amp; Shenfeld (2026), with no Monte Carlo sampling.</p>
 <ul>
 <li><code>inner</code> (Gaussian | AdaClip | NonPrivate): Base mechanism</li>
-<li><code>num_bins</code> (int): Bins per epoch (≥ 2), matching the sampler's <code>num_bins</code></li>
-<li><code>n_steps</code> (int): Total optimizer-step horizon</li>
+<li><code>k</code> (int): Number of blocks / participations per record</li>
+<li><code>t</code> (int): Total optimizer-step horizon</li>
+<li><code>allocation</code> (<code>"block"</code> or <code>"total"</code>): Required allocation mode</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">num_bins</span> <span class="o">=</span> <span class="n">dataset_size</span> <span class="o">//</span> <span class="n">batch_size</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">random_allocation</span><span class="p">(</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">num_bins</span><span class="o">=</span><span class="n">num_bins</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="p">)</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">k_out_of_t</span><span class="p">(</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">k</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">t</span><span class="o">=</span><span class="n">num_epochs</span> <span class="o">*</span> <span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">allocation</span><span class="o">=</span><span class="s2">"block"</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="k_out_of_tinner-total_participations-n_steps-dphorizonprocess"><code>k_out_of_t(inner, *, total_participations, n_steps) -&gt; DpHorizonProcess</code><a class="headerlink" href="#k_out_of_tinner-total_participations-n_steps-dphorizonprocess" title="Permanent link">&para;</a></h3>
-<p>Global balanced allocation: every record participates in exactly k uniformly
-chosen steps. Prefix accounting uses the hypergeometric participation-count
-mixture with conservative component PLDs.</p>
+<p>With <code>allocation="total"</code>, every record chooses a uniform <code>k</code>-subset of the
+complete horizon. The accountant currently uses the block reduction as a
+conservative upper bound. For <code>k &gt; 1</code>, partial-horizon queries return the
+full-horizon bound.</p>
 <h3 id="adaclipinner-fraction_noise_std-expected_batch_size-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an <code>AdaClip</code> process composable with <code>poisson()</code>
