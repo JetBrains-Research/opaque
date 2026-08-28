@@ -1,5 +1,5 @@
 """DP-SGD amplification — Poisson (optionally truncated), ParallelPoisson,
-RandomAllocation."""
+and KOutOfT."""
 
 import math
 from collections.abc import Callable
@@ -11,9 +11,9 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpsgd.accounting.amplification.types import (
+    KOutOfT,
     ParallelPoisson,
     Poisson,
-    RandomAllocation,
 )
 from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 
@@ -249,104 +249,103 @@ class TestParallelPoissonAutoTruncation:
         assert eps_loose >= eps_tight - 1e-10
 
 
-# ── Random allocation (per-epoch atom) ───────────────────────────────
+# ── Block and total k-out-of-t ────────────────────────────────────────
 
 
-class TestRandomAllocationDataclass:
-    """RandomAllocation frozen dataclass."""
+class TestKOutOfTDataclass:
+    """KOutOfT frozen dataclass."""
 
     def test_fields(self):
         g = Gaussian(0.8)
-        r = RandomAllocation(g, 16, 64)
+        r = KOutOfT(g, 4, 64, "block")
         assert r.inner is g
-        assert r.num_bins == 16
+        assert r.k == 4
+        assert r.t == 64
         assert r.n_steps == 64
 
     def test_frozen(self):
-        r = RandomAllocation(Gaussian(0.8), 16, 64)
+        r = KOutOfT(Gaussian(0.8), 4, 64, "block")
         with pytest.raises(FrozenInstanceError):
-            r.num_bins = 32  # type: ignore[misc]
+            r.k = 2  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(RandomAllocation(Gaussian(0.8), 16, 64), DpProcess)
+        assert isinstance(KOutOfT(Gaussian(0.8), 4, 64, "block"), DpProcess)
 
     def test_equality(self):
-        assert RandomAllocation(Gaussian(0.8), 16, 64) == RandomAllocation(
-            Gaussian(0.8), 16, 64
+        assert KOutOfT(Gaussian(0.8), 4, 64, "block") == KOutOfT(
+            Gaussian(0.8), 4, 64, "block"
         )
-        assert RandomAllocation(Gaussian(0.8), 16, 64) != RandomAllocation(
-            Gaussian(0.8), 32, 64
+        assert KOutOfT(Gaussian(0.8), 4, 64, "block") != KOutOfT(
+            Gaussian(0.8), 4, 64, "total"
         )
 
-    def test_steps_per_epoch_is_num_bins(self):
-        """The conversion factor users need to turn steps into epochs."""
-        assert RandomAllocation(Gaussian(0.8), 16, 64).steps_per_epoch == 16
+    def test_block_sizes_cover_uneven_horizon(self):
+        assert KOutOfT(Gaussian(0.8), 3, 10, "block").block_sizes == (3, 3, 4)
 
     def test_validates_on_direct_construction(self):
         """Deserialization calls ``cls(**kwargs)``, bypassing the factory, so
         the bound has to live in ``__post_init__``."""
-        with pytest.raises(ValueError, match="num_bins"):
-            RandomAllocation(Gaussian(0.8), 1, 64)
+        with pytest.raises(ValueError, match="allocation"):
+            KOutOfT(Gaussian(0.8), 3, 64, "bad")  # type: ignore[arg-type]
 
     @pytest.mark.slow
     def test_pld_returns_valid(self):
-        eps = RandomAllocation(Gaussian(1.0), 8, 32).pld().epsilon_at(1e-8)
+        eps = KOutOfT(Gaussian(1.0), 4, 32, "block").pld().epsilon_at(1e-8)
         assert math.isfinite(eps)
         assert eps > 0
 
 
-class TestRandomAllocationConstructor:
-    """dpsgd_acc.random_allocation() takes a declared horizon."""
+class TestKOutOfTConstructor:
+    """dpsgd_acc.k_out_of_t() takes a declared allocation type."""
 
-    def test_returns_random_allocation(self):
-        r = dpsgd_acc.random_allocation(
-            dpsgd_acc.gaussian(0.8), num_bins=16, n_steps=64
-        )
-        assert isinstance(r, RandomAllocation)
-        assert r.num_bins == 16
+    def test_returns_k_out_of_t(self):
+        r = dpsgd_acc.k_out_of_t(dpsgd_acc.gaussian(0.8), k=4, t=64, allocation="block")
+        assert isinstance(r, KOutOfT)
+        assert r.k == 4
 
-    def test_num_bins_is_keyword_only(self):
+    def test_k_and_t_are_keyword_only(self):
         with pytest.raises(TypeError):
-            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), 16, 64)  # type: ignore[misc]
+            dpsgd_acc.k_out_of_t(dpsgd_acc.gaussian(0.8), 4, 64)  # type: ignore[misc]
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian"):
-            dpsgd_acc.random_allocation("bad", num_bins=16, n_steps=64)  # type: ignore[arg-type]
+            dpsgd_acc.k_out_of_t("bad", k=4, t=64, allocation="block")  # type: ignore[arg-type]
 
-    def test_rejects_num_bins_below_two(self):
-        with pytest.raises(ValueError, match="num_bins"):
-            dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.8), num_bins=1, n_steps=64)
+    def test_accepts_total_allocation_with_conservative_accounting(self):
+        r = dpsgd_acc.k_out_of_t(dpsgd_acc.gaussian(0.8), k=4, t=64, allocation="total")
+        assert r.allocation == "total"
 
     @pytest.mark.slow
     def test_accepts_adaclip(self):
-        r = dpsgd_acc.random_allocation(
+        r = dpsgd_acc.k_out_of_t(
             dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.0), expected_batch_size=256),
-            num_bins=8,
-            n_steps=32,
+            k=4,
+            t=32,
+            allocation="block",
         )
         eps = r.epsilon_at(1e-8)
         assert math.isfinite(eps)
         assert eps > 0
 
     def test_nonprivate_inner_is_infinite(self):
-        r = dpsgd_acc.random_allocation(acc.nonprivate(), num_bins=8, n_steps=32)
+        r = dpsgd_acc.k_out_of_t(acc.nonprivate(), k=4, t=32, allocation="block")
         assert math.isinf(r.epsilon_at(1e-8))
 
     def test_zero_noise_gaussian_is_infinite(self):
         """``Gaussian(0)`` short-circuits before reaching the native primitive,
         which requires ``σ > 0``."""
-        r = dpsgd_acc.random_allocation(dpsgd_acc.gaussian(0.0), num_bins=8, n_steps=32)
+        r = dpsgd_acc.k_out_of_t(dpsgd_acc.gaussian(0.0), k=4, t=32, allocation="block")
         assert math.isinf(r.epsilon_at(1e-8))
 
 
-class TestRandomAllocationTightness:
+class TestKOutOfTTightness:
     """The reason the process exists: it beats Poisson at the matched rate."""
 
     @pytest.mark.slow
     def test_below_poisson_at_matched_rate(self):
         b, sigma, delta = 16, 1.0, 1e-8
-        ra = dpsgd_acc.random_allocation(
-            dpsgd_acc.gaussian(sigma), num_bins=b, n_steps=b
+        ra = dpsgd_acc.k_out_of_t(
+            dpsgd_acc.gaussian(sigma), k=1, t=b, allocation="block"
         )
         po = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), 1.0 / b)
         assert ra.epsilon_at(delta) < (po * b).epsilon_at(delta)
@@ -356,8 +355,8 @@ class TestRandomAllocationTightness:
         """More bins to hide among, less privacy loss per epoch."""
         sigma, delta = 1.0, 1e-8
         eps = [
-            dpsgd_acc.random_allocation(
-                dpsgd_acc.gaussian(sigma), num_bins=b, n_steps=b
+            dpsgd_acc.k_out_of_t(
+                dpsgd_acc.gaussian(sigma), k=1, t=b, allocation="block"
             ).epsilon_at(delta)
             for b in (4, 8, 16)
         ]
@@ -365,10 +364,11 @@ class TestRandomAllocationTightness:
 
     @pytest.mark.slow
     def test_prefix_is_monotone_and_one_step_matches_poisson(self):
-        process = dpsgd_acc.random_allocation(
+        process = dpsgd_acc.k_out_of_t(
             dpsgd_acc.gaussian(1.0),
-            num_bins=8,
-            n_steps=12,
+            k=2,
+            t=16,
+            allocation="block",
         )
         # These representative prefixes cover the first step, an interior
         # horizon, and the declared horizon without repeatedly rebuilding
@@ -446,22 +446,23 @@ class TestDeterministicAmplificationVectors:
                 id="parallel-poisson-adaclip",
             ),
             pytest.param(
-                "random_allocation(gaussian(1.0), bins=8, n_steps=16)",
-                lambda: dpsgd_acc.random_allocation(
+                "k_out_of_t(gaussian(1.0), k=2, t=16, block)",
+                lambda: dpsgd_acc.k_out_of_t(
                     dpsgd_acc.gaussian(1.0),
-                    num_bins=8,
-                    n_steps=16,
+                    k=2,
+                    t=16,
+                    allocation="block",
                 ),
                 1e-8,
-                4.687320195749143,
-                id="random-allocation-gaussian",
+                4.687320185091083,
+                id="k-out-of-t-gaussian",
             ),
             pytest.param(
-                "random_allocation(adaclip(gaussian(1.1)), bins=8, n_steps=16)",
-                lambda: dpsgd_acc.random_allocation(_adaclip(), num_bins=8, n_steps=16),
+                "k_out_of_t(adaclip(gaussian(1.1)), k=2, t=16, block)",
+                lambda: dpsgd_acc.k_out_of_t(_adaclip(), k=2, t=16, allocation="block"),
                 1e-8,
-                3.965060097641603,
-                id="random-allocation-adaclip",
+                3.9650600884447935,
+                id="k-out-of-t-adaclip",
             ),
         ],
     )
@@ -483,11 +484,12 @@ class TestDeterministicAmplificationVectors:
         )
 
 
-def test_random_allocation_short_prefix_matches_poisson():
-    process = dpsgd_acc.random_allocation(
+def test_k_out_of_t_short_prefix_matches_poisson():
+    process = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
-        num_bins=2,
-        n_steps=2,
+        k=1,
+        t=2,
+        allocation="block",
     )
     poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.5)
 

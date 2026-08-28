@@ -39,12 +39,9 @@ USAGE:
     --audit --audit-canaries 1000 \\
     --no-wandb
 
-  # Redrawn random allocation (1-out-of-b per epoch, horizon accounting)
-  python examples/train_dpsgd.py --preset smoke --sampler random_allocation
-
-  # Global k-out-of-t (each example in K steps over the run)
-  python examples/train_dpsgd.py --preset smoke --sampler k_out_of_t \\
-      --total-participations 2
+  # Block k-out-of-t allocation
+  python examples/train_dpsgd.py --preset smoke --num-epochs 2 --sampler k_out_of_t \\
+      --k 2 --allocation block
 """
 
 import argparse
@@ -89,7 +86,7 @@ from opaque.profiling import (
     reset_peak_memory,
 )
 from opaque.random import fold_in, key, split
-from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler, RandomAllocationSampler
+from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler
 from opaque.distributed import local_shard
 from opaque.functional import make_functional, empty_collate
 from opaque.scheduling import (
@@ -660,25 +657,34 @@ def parse_args():
         help="Optional cap on per-step batch size (truncated Poisson). "
         "When set, the sampler caps each Poisson draw at this size and the "
         "accountant switches to the matching truncated Poisson-Gaussian PLD. "
-        "Standard plain Poisson when omitted.  Incompatible with "
-        "``--sampler random_allocation`` or ``k_out_of_t``.",
+        "Standard plain Poisson when omitted. Incompatible with "
+        "``--sampler k_out_of_t``.",
     )
     dp_group.add_argument(
         "--sampler",
         type=str,
-        choices=["poisson", "random_allocation", "k_out_of_t"],
+        choices=["poisson", "k_out_of_t"],
         default="poisson",
         help="Training participation pattern.  ``poisson`` (default) is "
-        "independent per-step subsampling.  ``random_allocation`` redraws "
-        "1-out-of-b bins each epoch; ``k_out_of_t`` gives each example exactly "
-        "K steps over the run (set ``--total-participations``).",
+        "independent per-step subsampling. ``k_out_of_t`` allocates every "
+        "example to K of T steps (set ``--k`` and ``--allocation``).",
     )
     dp_group.add_argument(
-        "--total-participations",
+        "--k",
         type=int,
         default=None,
         metavar="K",
         help="Required for ``--sampler k_out_of_t``: participations per example.",
+    )
+    dp_group.add_argument(
+        "--allocation",
+        choices=["block", "total"],
+        default=None,
+        help=(
+            "Required for ``--sampler k_out_of_t``. ``block`` assigns every "
+            "example once in each of K nearly equal blocks; ``total`` chooses "
+            "K steps uniformly from the complete horizon."
+        ),
     )
     dp_group.add_argument(
         "--noise-mechanism",
@@ -969,6 +975,16 @@ def parse_args():
                 parsed[pattern] = float(value)
         args.per_group_clipping = parsed
         args.per_group_clipping_fallback = fallback_value
+
+    if args.sampler == "k_out_of_t":
+        if args.k is None:
+            parser.error("--sampler k_out_of_t requires --k K")
+        if args.allocation is None:
+            parser.error("--sampler k_out_of_t requires --allocation")
+    elif args.k is not None:
+        parser.error("--k is only used with --sampler k_out_of_t")
+    elif args.allocation is not None:
+        parser.error("--allocation is only used with --sampler k_out_of_t")
 
     return args
 
@@ -1273,8 +1289,7 @@ def main():
 
     expected_steps_per_epoch = math.ceil(global_train_size / args.batch_size)
     total_steps = args.num_epochs * expected_steps_per_epoch
-    num_bins = max(2, expected_steps_per_epoch)
-    _allocation_samplers = frozenset({"random_allocation", "k_out_of_t"})
+    _allocation_samplers = frozenset({"k_out_of_t"})
     use_horizon_sampler = args.sampler in _allocation_samplers
     if use_horizon_sampler:
         if total_steps < 1:
@@ -1295,15 +1310,10 @@ def main():
                 "this manual-loop script; use examples/train_dpsgd_trainer.py."
             )
         if args.sampler == "k_out_of_t":
-            if args.total_participations is None:
-                raise ValueError(
-                    "--total-participations K is required for --sampler k_out_of_t"
-                )
-            if not 1 <= args.total_participations <= total_steps:
-                raise ValueError(
-                    f"total_participations must be in [1, {total_steps}], "
-                    f"got {args.total_participations}"
-                )
+            if args.k is None or args.allocation is None:
+                raise ValueError("--sampler k_out_of_t requires --k K and --allocation")
+            if not 1 <= args.k <= total_steps:
+                raise ValueError(f"k must be in [1, {total_steps}], got {args.k}")
 
     print("\nSampling setup:" if use_horizon_sampler else "\nPoisson sampling setup:")
     if use_parallel_poisson and not use_horizon_sampler:
@@ -1311,10 +1321,11 @@ def main():
     print(f"  Sampler: {args.sampler}")
     if use_horizon_sampler:
         print(f"  Horizon steps: {total_steps}")
-        if args.sampler == "random_allocation":
-            print(f"  num_bins (per epoch): {num_bins}")
-        else:
-            print(f"  total_participations: {args.total_participations}")
+        print(f"  allocation: {args.allocation}")
+        print(f"  k: {args.k}")
+        if args.allocation == "block":
+            floor = total_steps // args.k
+            print(f"  block sizes: {floor} or {floor + 1}")
     elif truncated_batch_size is not None:
         print(f"  Truncated batch size (cap): {truncated_batch_size}")
     if not use_horizon_sampler:
@@ -1574,21 +1585,18 @@ def main():
     # first-moment-only release.
 
     _unamplified = mechanism
-    if args.sampler == "random_allocation":
+    if args.sampler == "k_out_of_t":
+        _k = int(args.k)
 
-        def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=total_steps):
+        def mechanism(
+            nm,
+            _u=_unamplified,
+            _k=_k,
+            _ns=total_steps,
+            _allocation=args.allocation,
+        ):
             return acc.per_step(
-                dpsgd_acc.random_allocation(_u(nm), num_bins=_nb, n_steps=_ns)
-            )
-
-    elif args.sampler == "k_out_of_t":
-        _k = int(args.total_participations)
-
-        def mechanism(nm, _u=_unamplified, _k=_k, _ns=total_steps):
-            return acc.per_step(
-                dpsgd_acc.k_out_of_t(
-                    _u(nm), total_participations=_k, n_steps=_ns
-                )
+                dpsgd_acc.k_out_of_t(_u(nm), k=_k, t=_ns, allocation=_allocation)
             )
 
     elif truncated_batch_size is not None:
@@ -1849,20 +1857,13 @@ def main():
         if use_horizon_sampler:
             print("\nHorizon allocation stream")
             print("-" * 80)
-            if args.sampler == "random_allocation":
-                epoch_sampler = RandomAllocationSampler(
-                    train_dataset,
-                    num_bins=num_bins,
-                    n_steps=total_steps,
-                    key=key(args.seed),
-                )
-            else:
-                epoch_sampler = KOutOfTSampler(
-                    train_dataset,
-                    total_participations=int(args.total_participations),
-                    n_steps=total_steps,
-                    key=key(args.seed),
-                )
+            epoch_sampler = KOutOfTSampler(
+                train_dataset,
+                k=int(args.k),
+                t=total_steps,
+                allocation=args.allocation,
+                key=key(args.seed),
+            )
         else:
             print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
             print("-" * 80)

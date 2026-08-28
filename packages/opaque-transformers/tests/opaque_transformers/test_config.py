@@ -433,27 +433,28 @@ class TestClippingAndSamplingSurfaces:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="sequential")
 
-    def test_gaussian_accepts_random_allocation(self):
-        args = TrainingArguments(
-            privacy_noise_multiplier=1.0,
-            sampling_mode="random_allocation",
-        )
-        assert args.sampling_mode == "random_allocation"
-
     def test_gaussian_accepts_k_out_of_t(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
             sampling_mode="k_out_of_t",
-            sampling_kwargs={"total_participations": 2},
+            sampling_kwargs={"k": 2, "allocation": "block"},
         )
         assert args.sampling_mode == "k_out_of_t"
 
-    def test_k_out_of_t_requires_total_participations(self):
-        with pytest.raises(ValueError, match="total_participations"):
+    def test_k_out_of_t_requires_k_and_allocation(self):
+        with pytest.raises(ValueError, match="k"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 sampling_mode="k_out_of_t",
             )
+
+    def test_k_out_of_t_accepts_total_allocation(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_mode="k_out_of_t",
+            sampling_kwargs={"k": 2, "allocation": "total"},
+        )
+        assert args.sampling_kwargs["allocation"] == "total"
 
     def test_k_out_of_t_rejects_truncated_poisson_kwargs(self):
         with pytest.raises(ValueError, match="truncated_batch_size"):
@@ -461,7 +462,8 @@ class TestClippingAndSamplingSurfaces:
                 privacy_noise_multiplier=1.0,
                 sampling_mode="k_out_of_t",
                 sampling_kwargs={
-                    "total_participations": 2,
+                    "k": 2,
+                    "allocation": "block",
                     "truncated_batch_size": 4,
                 },
             )

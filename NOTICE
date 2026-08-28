@@ -113,8 +113,8 @@ structure adapted from the ICML 2026 reference implementation for
 distributed under the Apache License, Version 2.0, and then reworked for
 Opaque's DP-SGD accounting and sampler APIs:
 
-  packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py
-  packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py
+  packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_k_out_of_t.py
+  packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_k_out_of_t.py
 
 
 ------------------------------------------------------------------------

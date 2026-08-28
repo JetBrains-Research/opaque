@@ -109,7 +109,6 @@ log = logging.getLogger(__name__)
 _ARG_DRIFT_ABSOLUTE_TOLERANCE = 1e-12
 _ARG_DRIFT_RELATIVE_TOLERANCE = 1e-6
 _IGNORE_INDEX = -100
-_MIN_RANDOM_ALLOCATION_BINS = 2
 
 
 def _callback_matches(
@@ -4208,7 +4207,7 @@ class DPTrainer:
         """Build the privacy accounting mechanism chain.
 
         DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
-        amplification covers plain and truncated Poisson; random allocation
+        amplification covers plain and truncated Poisson; k-out-of-t
         returns a horizon process adapted through generic ``per_step``.
 
         DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
@@ -4261,44 +4260,33 @@ class DPTrainer:
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if a.sampling_mode == "random_allocation":
-            if num_bins < _MIN_RANDOM_ALLOCATION_BINS:
-                raise ValueError(
-                    f"random_allocation requires num_bins >= 2, but "
-                    f"train_batch_size={expected_batch_size} >= "
-                    f"dataset_size={dataset_size} collapses the epoch to a single "
-                    "bin. Reduce train_batch_size or use a different sampling_mode."
-                )
-
-            def mechanism(nm, _u=_unamplified, _nb=num_bins, _ns=n_steps):
-                return acc.per_step(
-                    dpsgd_acc.random_allocation(
-                        _u(nm),
-                        num_bins=_nb,
-                        n_steps=_ns,
-                    )
-                )
-
-        elif a.sampling_mode == "k_out_of_t":
-            k_raw = sk.get("total_participations")
-            if k_raw is None:
+        if a.sampling_mode == "k_out_of_t":
+            k_raw = sk.get("k")
+            allocation = sk.get("allocation")
+            if k_raw is None or allocation is None:
                 raise ValueError(
                     "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                    "'total_participations'."
+                    "'k' and 'allocation'."
                 )
-            total_k = int(k_raw)
-            if not 1 <= total_k <= n_steps:
+            if allocation not in ("block", "total"):
                 raise ValueError(
-                    "total_participations must be in "
-                    f"[1, n_steps={n_steps}], got {total_k}."
+                    "sampling_kwargs['allocation'] must be 'block' or 'total', "
+                    f"got {allocation!r}."
                 )
 
-            def mechanism(nm, _u=_unamplified, _k=total_k, _ns=n_steps):
+            def mechanism(
+                nm,
+                _u=_unamplified,
+                _k=int(k_raw),
+                _t=n_steps,
+                _allocation=allocation,
+            ):
                 return acc.per_step(
                     dpsgd_acc.k_out_of_t(
                         _u(nm),
-                        total_participations=_k,
-                        n_steps=_ns,
+                        k=_k,
+                        t=_t,
+                        allocation=_allocation,
                     )
                 )
 

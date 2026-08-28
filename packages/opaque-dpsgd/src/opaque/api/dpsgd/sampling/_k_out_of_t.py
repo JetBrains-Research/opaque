@@ -1,79 +1,144 @@
-"""Global k-out-of-t random-allocation sampler."""
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Block allocation structure adapted in part from the ICML 2026 reference
+# implementation for "Efficient privacy loss accounting for subsampling and
+# random allocation" (Apache-2.0), then reworked for Opaque's k-out-of-t API.
+# See ../../../../../NOTICE in this package for the full attribution.
+"""K-out-of-t allocation sampler."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from torch.utils.data import Sampler
 
+from opaque.random import fold_in
 from opaque.random.types import RngKey
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sized
 
 
-class KOutOfTSampler(Sampler):
-    """Each example chooses exactly ``k`` of ``t`` steps uniformly.
+_Allocation = Literal["block", "total"]
+_STREAM_FOLD = "opaque.dpsgd.k_out_of_t"
 
-    The streaming implementation uses O(dataset-size) state: at each step, a
-    record with ``r`` remaining participations and ``u`` remaining steps is
-    selected with probability ``r / u``.
+
+class KOutOfTSampler(Sampler):
+    """Allocate every example to ``k`` of ``t`` training steps.
+
+    ``allocation="block"`` partitions the horizon into ``k`` contiguous,
+    nearly equal blocks. Every example is assigned to one batch in each block,
+    independently redrawing the assignment at block boundaries.
+
+    ``allocation="total"`` chooses exactly ``k`` distinct steps uniformly from
+    the complete ``t``-step horizon for every example. Its current accountant
+    uses the block scheme as a conservative upper bound.
     """
 
     def __init__(
         self,
         data_source: Sized,
         *,
-        total_participations: int,
-        n_steps: int,
+        k: int,
+        t: int,
+        allocation: _Allocation,
         key: RngKey,
     ):
         super().__init__()
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
-        if n_steps < 1:
-            raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-        if not 1 <= total_participations <= n_steps:
+        if t < 1:
+            raise ValueError(f"t must be >= 1, got {t}")
+        if not 1 <= k <= t:
+            raise ValueError(f"k must be in [1, t={t}], got {k}")
+        if allocation not in ("block", "total"):
             raise ValueError(
-                "total_participations must be in "
-                f"[1, n_steps={n_steps}], got {total_participations}"
+                f"allocation must be 'block' or 'total', got {allocation!r}"
             )
+
         self.data_source: Sized = data_source
-        self.total_participations = int(total_participations)
-        self.n_steps = int(n_steps)
+        self.k = int(k)
+        self.t = int(t)
+        self.allocation = allocation
         self._num_samples = len(data_source)
         self._key = key
         self._consumed = 0
 
     @property
+    def _stream_key(self) -> RngKey:
+        return fold_in(self._key, _STREAM_FOLD, self.allocation)
+
+    @property
     def consumed(self) -> int:
+        """Number of batches yielded so far (resume cursor)."""
         return self._consumed
 
     @property
     def expected_batch_size(self) -> float:
-        return self._num_samples * self.total_participations / self.n_steps
+        """Horizon-average expected number of examples per batch."""
+        return self._num_samples * self.k / self.t
 
-    def _batches(self) -> Iterator[list[int]]:
-        rng = np.random.default_rng(self._key.seed)
-        remaining = np.full(
-            self._num_samples, self.total_participations, dtype=np.int64
-        )
-        for step in range(self.n_steps):
-            probabilities = remaining / (self.n_steps - step)
+    @property
+    def block_sizes(self) -> tuple[int, ...] | None:
+        """Contiguous block sizes, or ``None`` for total allocation."""
+        if self.allocation == "total":
+            return None
+        floor = self.t // self.k
+        num_ceil = self.t - floor * self.k
+        return (floor,) * (self.k - num_ceil) + (floor + 1,) * num_ceil
+
+    def _block_bins(self, block: int, size: int) -> list[list[int]]:
+        """Return the independently drawn partition for one allocation block."""
+        rng = np.random.default_rng(fold_in(self._stream_key, block).seed)
+        assignment = rng.integers(0, size, size=self._num_samples)
+        bins: list[list[int]] = [[] for _ in range(size)]
+        for idx, bin_index in enumerate(assignment):
+            bins[bin_index].append(idx)
+        return bins
+
+    def _total_batches(self) -> Iterator[list[int]]:
+        """Yield the uniform global ``k``-out-of-``t`` allocation."""
+        rng = np.random.default_rng(self._stream_key.seed)
+        remaining = np.full(self._num_samples, self.k, dtype=np.int64)
+        for step in range(self.t):
+            probabilities = remaining / (self.t - step)
             mask = rng.random(self._num_samples) < probabilities
-            yield np.flatnonzero(mask).astype(int).tolist()
+            yield np.flatnonzero(mask).tolist()
             remaining -= mask
 
     def __iter__(self) -> Iterator[list[int]]:
-        for step, batch in enumerate(self._batches()):
+        if self.allocation == "block":
+            floor = self.t // self.k
+            num_ceil = self.t - floor * self.k
+            num_floor = self.k - num_ceil
+            floor_span = num_floor * floor
+            bins: list[list[int]] | None = None
+            current_block: int | None = None
+            for step in range(self._consumed, self.t):
+                if step < floor_span:
+                    block, slot = divmod(step, floor)
+                    size = floor
+                else:
+                    block_offset, slot = divmod(step - floor_span, floor + 1)
+                    block = num_floor + block_offset
+                    size = floor + 1
+                if bins is None or block != current_block:
+                    bins = self._block_bins(block, size)
+                    current_block = block
+                self._consumed = step + 1
+                yield bins[slot]
+            return
+
+        for step, batch in enumerate(self._total_batches()):
             if step < self._consumed:
                 continue
             self._consumed = step + 1
             yield batch
 
     def __len__(self) -> int:
-        return self.n_steps - self._consumed
+        return self.t - self._consumed
 
 
 def _state_dict_k_out_of_t(sampler: KOutOfTSampler) -> dict[str, Any]:
@@ -82,8 +147,9 @@ def _state_dict_k_out_of_t(sampler: KOutOfTSampler) -> dict[str, Any]:
         "key_impl": str(sampler._key.impl),
         "consumed": sampler.consumed,
         "num_samples": sampler._num_samples,
-        "total_participations": sampler.total_participations,
-        "n_steps": sampler.n_steps,
+        "k": sampler.k,
+        "t": sampler.t,
+        "allocation": sampler.allocation,
     }
 
 
@@ -99,8 +165,9 @@ def _from_state_dict_k_out_of_t(
         )
     restored = KOutOfTSampler(
         template.data_source,
-        total_participations=int(state["total_participations"]),
-        n_steps=int(state["n_steps"]),
+        k=int(state["k"]),
+        t=int(state["t"]),
+        allocation=state["allocation"],
         key=RngKey(seed=int(state["key_seed"]), impl=str(state["key_impl"])),
     )
     restored._consumed = int(state["consumed"])

@@ -193,20 +193,20 @@ class TestDpFtrlSamplerDispatch:
 
 class TestDpTrainerAllocationModes:
     @pytest.mark.parametrize(
-        ("mechanism", "sampling_mode", "max_steps"),
+        ("mechanism", "sampling_mode", "max_steps", "allocation"),
         [
-            ("gaussian", "random_allocation", 18),
-            ("gaussian", "k_out_of_t", 10),
-            ("mf_identity", "balls_in_bins", 16),
+            ("gaussian", "k_out_of_t", 18, "block"),
+            ("gaussian", "k_out_of_t", 10, "total"),
+            ("mf_identity", "balls_in_bins", 16, None),
         ],
     )
     @pytest.mark.slow
     def test_trains_complete_schedule(
-        self, tmp_path, mechanism, sampling_mode, max_steps
+        self, tmp_path, mechanism, sampling_mode, max_steps, allocation
     ):
         kwargs = {}
         if sampling_mode == "k_out_of_t":
-            kwargs["sampling_kwargs"] = {"total_participations": 2}
+            kwargs["sampling_kwargs"] = {"k": 2, "allocation": allocation}
         args = _args(
             output_dir=str(tmp_path / f"{mechanism}-{sampling_mode}"),
             mechanism=mechanism,

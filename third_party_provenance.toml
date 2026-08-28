@@ -84,8 +84,8 @@ license = "Apache-2.0"
 disposition = "adapted"
 requires_notice = true
 files = [
-  "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py",
-  "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py",
+  "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_k_out_of_t.py",
+  "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_k_out_of_t.py",
 ]
 
 [[upstreams]]

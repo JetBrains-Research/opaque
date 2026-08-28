@@ -203,49 +203,50 @@ sampler = BMinSepSampler(
 )
 ```
 
-## Random allocation (DP-SGD)
+## K-out-of-t allocation (DP-SGD)
 
-### `RandomAllocationSampler`
+### `KOutOfTSampler`
 
-Each epoch, every example independently picks one of `num_bins` bins, and
-the epoch yields those `num_bins` bins as batches — so an epoch's batches
-partition the dataset exactly. The assignment is **redrawn every epoch**.
-
-This amplifies strictly more than Poisson at the matched rate
-`1 / num_bins`: an example appears exactly once per epoch instead of a
-Binomial number of times, so the worst case the accountant must cover is
-smaller.
+`KOutOfTSampler` requires an explicit allocation type. With
+`allocation="block"`, the `t`-step horizon is divided into `k` contiguous,
+nearly equal blocks. Every example is assigned to exactly one batch in each
+block, independently across blocks.
 
 ```python
-from opaque.dpsgd.sampling import RandomAllocationSampler
+from opaque.dpsgd.sampling import KOutOfTSampler
 from opaque.random import key
 
-num_bins = dataset_size // batch_size
-sampler = RandomAllocationSampler(
+sampler = KOutOfTSampler(
     dataset,
-    num_bins=num_bins,
-    n_steps=num_epochs * num_bins,
+    k=num_epochs,
+    t=num_epochs * steps_per_epoch,
+    allocation="block",
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
-Bin sizes are Binomial, so **some batches are empty**. They are emitted
-rather than skipped: compacting them away would make each record's real
-participation separation `len(nonempty)` instead of `num_bins`, which the
-accounting assumes. Empty batches are handled downstream by the engine's
-collate path.
+Block sizes differ by at most one when `t` is not divisible by `k`. Batch sizes
+are Binomial, so **some batches are empty**. They are emitted rather than
+skipped: compacting them away changes the accounted participation schedule.
 
-Privacy accounting uses a whole-horizon process with exact prefix bounds:
+`dpsgd_acc.k_out_of_t(..., allocation="block")` provides an exact
+whole-horizon process and exact prefix bounds:
 
 ```python
-process = dpsgd_acc.random_allocation(
+process = dpsgd_acc.k_out_of_t(
     dpsgd_acc.gaussian(noise_multiplier),
-    num_bins=num_bins,
-    n_steps=n_steps,
+    k=num_epochs,
+    t=num_epochs * steps_per_epoch,
+    allocation="block",
 )
 step = acc.per_step(process)
 ```
+
+With `allocation="total"`, every example instead chooses exactly `k` distinct
+steps uniformly from the whole `t`-step horizon. The same accounting factory
+uses the block reduction as a valid conservative upper bound. For `k > 1`, an
+intermediate prefix conservatively carries the full-horizon cost.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 
@@ -254,15 +255,9 @@ step = acc.per_step(process)
     separation between an example's participations. Redrawing per epoch is
     valid only because DP-SGD noise is uncorrelated across steps — and there
     it is strictly better. Pair each sampler only with its own accountant:
-    `RandomAllocationSampler` with `dpsgd_acc.random_allocation`,
+    `KOutOfTSampler(..., allocation="block")` with
+    `dpsgd_acc.k_out_of_t(..., allocation="block")`,
     `BallsInBinsSampler` with `dpftrl_acc.balls_in_bins`.
-
-### Global k-out-of-t allocation
-
-`KOutOfTSampler` chooses exactly k distinct steps from a declared t-step
-horizon independently for every record. It uses O(dataset-size) streaming
-state and pairs with `dpsgd_acc.k_out_of_t`. This is different from redrawing
-one bin per epoch.
 
 ## Balls-in-Bins sampling
 
@@ -483,7 +478,7 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSampler` + `truncated_batch_size` | Bounded above | Weaker than plain Poisson (same `sample_rate`) | Production, stable batch sizes / memory |
-| `RandomAllocationSampler` (`opaque.dpsgd`) | Variable (Binomial) | Stronger than Poisson at rate `1/num_bins` | DP-SGD, whole-epoch passes |
+| `KOutOfTSampler` (`opaque.dpsgd`, block) | Variable (Binomial) | Stronger than Poisson at rate `k/t` | DP-SGD, fixed-block passes |
 | `CyclicPoissonSampler` (`opaque.dpftrl`) | Variable | `dpftrl_acc.poisson` | DP-FTRL; identity MF → `bands=1`; BandMF → `bands` = strategy |
 | `BallsInBinsSampler` | Variable (Binomial) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |

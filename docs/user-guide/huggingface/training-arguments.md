@@ -121,8 +121,8 @@ noise would yield infinite noise and `NaN` gradients.
 
 | Field | Use |
 |---|---|
-| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "random_allocation", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
-| `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for random allocation. |
+| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
+| `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for k-out-of-t allocation. |
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
@@ -147,9 +147,11 @@ the strategy kwargs:
 | `mf_identity` | `poisson` | `{}` |
 
 `"auto"` remains Poisson for Gaussian and identity MF. Gaussian explicitly
-accepts `sampling_mode="random_allocation"` and `sampling_mode="k_out_of_t"`.
-For k-out-of-t, set `sampling_kwargs={"total_participations": k}` so each
-example participates in exactly `k` optimizer steps (uniform over the run).
+accepts `sampling_mode="k_out_of_t"`. For exact block accounting, set
+`sampling_kwargs={"k": k, "allocation": "block"}` so each example participates
+once in each of `k` nearly equal blocks. With `"allocation": "total"`, each
+example chooses a uniform `k`-subset of the horizon and `DPTrainer` uses the
+conservative block bound.
 Identity MF explicitly accepts `sampling_mode="balls_in_bins"`. Horizon modes
 are adapted to the trainer's step-wise accountant through
 `opaque.accounting.per_step`.
