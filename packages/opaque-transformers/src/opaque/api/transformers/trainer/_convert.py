@@ -13,6 +13,8 @@ import dataclasses
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
@@ -30,11 +32,13 @@ def _normalize_dp_overrides(
     noise_mult = overrides.get("privacy_noise_multiplier")
     target_eps = overrides.get("privacy_target_epsilon")
     if noise_mult is None and target_eps is None:
-        raise ValueError(
-            "Converting to an opaque config requires a DP knob: pass either "
-            "``privacy_noise_multiplier=<float>`` (fixed-noise mode) or "
-            "``privacy_target_epsilon=<float>`` (calibrated-noise mode) as a "
-            "keyword argument to the converter."
+        raise ConfigurationError(
+            *(
+                "Converting to an opaque config requires a DP knob: pass either "
+                "``privacy_noise_multiplier=<float>`` (fixed-noise mode) or "
+                "``privacy_target_epsilon=<float>`` (calibrated-noise mode) as a "
+                "keyword argument to the converter.",
+            )
         )
     # Pass through every override verbatim — opaque's TrainingArguments
     # __post_init__ does the cross-field validation.
@@ -93,9 +97,11 @@ def _get_dataclass_field_values(
 ) -> dict[str, Any]:
     """Return a name→value dict for every field of a dataclass instance."""
     if not dataclasses.is_dataclass(obj):
-        raise TypeError(
-            f"Expected a dataclass instance, got {type(obj).__name__}. "
-            "The HF/TRL converters accept dataclass instances only."
+        raise InputTypeError(
+            *(
+                f"Expected a dataclass instance, got {type(obj).__name__}. "
+                "The HF/TRL converters accept dataclass instances only.",
+            )
         )
     return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
 
@@ -182,8 +188,8 @@ def _apply_manifest(
         )
 
     if errors:
-        raise ValueError(
-            f"Converting {source_label} to opaque failed:\n" + "\n".join(errors)
+        raise ConfigurationError(
+            *(f"Converting {source_label} to opaque failed:\n" + "\n".join(errors),)
         )
 
     # Run all transforms — they see the full source dict.

@@ -16,12 +16,14 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from opaque.exceptions import InputTypeError
+
 try:
     import torchopt
     from torchopt.alias.utils import scale_by_neg_lr
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -143,10 +145,12 @@ def make_optimizer_chain(
                 return updates.pytree, {}
             return updates.pytree, {"noise_stddev": updates.noise_stddev}
         if isinstance(updates, ClippedPytree):
-            raise TypeError(
-                "optimizer.update() received ClippedPytree updates that have not "
-                "passed through a noise mechanism. Pass NoisedPytree outputs from "
-                "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+            raise InputTypeError(
+                *(
+                    "optimizer.update() received ClippedPytree updates that have not "
+                    "passed through a noise mechanism. Pass NoisedPytree outputs from "
+                    "a DP mechanism, or unwrap `.pytree` explicitly for non-private use.",
+                )
             )
         return updates, {}
 
@@ -154,9 +158,11 @@ def make_optimizer_chain(
         if isinstance(value, NoisedPytree):
             return value.pytree
         if isinstance(value, ClippedPytree):
-            raise TypeError(
-                f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
-                "passed through a noise mechanism."
+            raise InputTypeError(
+                *(
+                    f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
+                    "passed through a noise mechanism.",
+                )
             )
         return value
 

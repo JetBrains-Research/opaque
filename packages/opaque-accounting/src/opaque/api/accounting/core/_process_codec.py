@@ -20,6 +20,7 @@ from dataclasses import fields
 from typing import Any
 
 from opaque.api.accounting.core._base import DpProcess
+from opaque.exceptions import CheckpointError
 
 _PRIMITIVE_TYPES = (int, float, bool, str, type(None))
 
@@ -108,7 +109,9 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
         node, expanded = stack.pop()
         t = node.get("type")
         if t is None:
-            raise ValueError("missing required field 'type' for serialized DpProcess")
+            raise CheckpointError(
+                *("missing required field 'type' for serialized DpProcess",)
+            )
         child_fields = _WRAPPER_CHILD_FIELDS.get(t)
         if child_fields is None:
             # Non-wrapper node.  A class with a CUSTOM registered serializer
@@ -129,9 +132,11 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
                 if child is None and k not in node:
                     continue  # missing: handled by the defaults pass below
                 if not isinstance(child, dict):
-                    raise ValueError(
-                        f"field {k!r} of {t} must be a serialized DpProcess "
-                        f"dict, got {type(child).__name__}"
+                    raise CheckpointError(
+                        *(
+                            f"field {k!r} of {t} must be a serialized DpProcess "
+                            f"dict, got {type(child).__name__}",
+                        )
                     )
                 stack.append((child, False))
             continue
@@ -140,7 +145,9 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
         field_names = {f.name for f in fields(dataclass_cls)}
         extra = set(node) - {"type", *field_names}
         if extra:
-            raise ValueError(f"unexpected keys for {cls.__name__}: {sorted(extra)!r}")
+            raise CheckpointError(
+                *(f"unexpected keys for {cls.__name__}: {sorted(extra)!r}",)
+            )
         kwargs: dict[str, Any] = {}
         for f in fields(dataclass_cls):
             if f.name in node:
@@ -156,8 +163,8 @@ def _load_dp_process(sd: dict[str, Any]) -> Any:
             elif f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
                 kwargs[f.name] = f.default_factory()
             else:
-                raise ValueError(
-                    f"missing required field {f.name!r} for {cls.__name__}"
+                raise CheckpointError(
+                    *(f"missing required field {f.name!r} for {cls.__name__}",)
                 )
         built[id(node)] = dataclass_cls(**kwargs)
     return built[id(sd)]
@@ -172,9 +179,9 @@ def _load_leaf(sd: dict[str, Any]) -> Any:
     t = sd.pop("type")
     cls = _PROCESS_REGISTRY.get(t)
     if cls is None:
-        raise ValueError(f"Unknown DpProcess type: {t}")
+        raise CheckpointError(*(f"Unknown DpProcess type: {t}",))
     if not dataclasses.is_dataclass(cls):
-        raise ValueError(f"DpProcess type {t!r} is not a dataclass")
+        raise CheckpointError(*(f"DpProcess type {t!r} is not a dataclass",))
 
     dataclass_cls: Any = cls
     kwargs: dict[str, Any] = {}
@@ -184,9 +191,11 @@ def _load_leaf(sd: dict[str, Any]) -> Any:
             if isinstance(raw, dict) and "type" in raw:
                 inner_cls = _PROCESS_REGISTRY.get(raw["type"])
                 if inner_cls is None:
-                    raise ValueError(
-                        f"Unknown nested DpProcess type {raw['type']!r} "
-                        f"in field {f.name!r} of {cls.__name__}"
+                    raise CheckpointError(
+                        *(
+                            f"Unknown nested DpProcess type {raw['type']!r} "
+                            f"in field {f.name!r} of {cls.__name__}",
+                        )
                     )
                 template = inner_cls.__new__(inner_cls)
                 kwargs[f.name] = opaque_from_state_dict(template, raw)
@@ -197,10 +206,12 @@ def _load_leaf(sd: dict[str, Any]) -> Any:
         elif f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
             kwargs[f.name] = f.default_factory()
         else:
-            raise ValueError(f"missing required field {f.name!r} for {cls.__name__}")
+            raise CheckpointError(
+                *(f"missing required field {f.name!r} for {cls.__name__}",)
+            )
 
     if sd:
-        raise ValueError(f"unexpected keys for {cls.__name__}: {sorted(sd)!r}")
+        raise CheckpointError(*(f"unexpected keys for {cls.__name__}: {sorted(sd)!r}",))
 
     return dataclass_cls(**kwargs)
 

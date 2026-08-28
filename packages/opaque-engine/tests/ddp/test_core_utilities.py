@@ -30,6 +30,7 @@ from opaque.distributed.gradients import (  # noqa: F401
     reduce_pytree_,
     sum_gradients_,
 )
+from opaque.exceptions import ConfigurationError
 from opaque.types import (
     ClippedPytree,
     NoisedPytree,
@@ -183,7 +184,9 @@ class TestSyncObjectSchema:
             )
 
     def test_rejects_callable_with_unsupported_signature(self):
-        with pytest.raises(ValueError, match=r"callable as fn\(value, device\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"callable as fn\(value, device\)"
+        ):
             sync_object(self._BooleanState(enabled=True), {"enabled": lambda _value: 1})
 
     def test_rejects_field_op_that_is_neither_name_nor_callable(self):
@@ -196,7 +199,9 @@ class TestSyncObjectSchema:
         monkeypatch.setattr(state_module, "is_distributed", lambda: True)
         reduced: list[int] = []
 
-        with pytest.raises(ValueError, match=r"callable as fn\(value, device\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"callable as fn\(value, device\)"
+        ):
             sync_object(
                 self._State(count=1, label="local"),
                 {

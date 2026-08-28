@@ -31,6 +31,7 @@ from opaque.api.engine.types import (
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
+from opaque.exceptions import ConfigurationError, InputTypeError, OperationError
 
 from ._state import assert_scalar_equal
 from .collectives import all_reduce_, get_world_size, is_distributed
@@ -50,8 +51,8 @@ def _assert_object_equal(value: Any, *, name: str) -> None:
     dist.all_gather_object(gathered, value)
     mismatched = [idx for idx, other in enumerate(gathered) if other != value]
     if mismatched:
-        raise RuntimeError(
-            f"{name} mismatch across ranks: mismatched ranks={mismatched}."
+        raise OperationError(
+            *(f"{name} mismatch across ranks: mismatched ranks={mismatched}.",)
         )
 
 
@@ -94,10 +95,12 @@ def _assert_public_metadata_equal(value: Any, *, name: str) -> None:
 
 def _assert_wrapper_reduction_supported(pytree: ClippedPytree, op: str) -> None:
     if op not in _WRAPPER_REDUCTION_OPS:
-        raise TypeError(
-            f"{type(pytree).__name__} distributed reduction only supports "
-            "op='sum' or op='mean'. "
-            "Use `.pytree` and reconstruct with an explicit max_norm for other reductions."
+        raise InputTypeError(
+            *(
+                f"{type(pytree).__name__} distributed reduction only supports "
+                "op='sum' or op='mean'. "
+                "Use `.pytree` and reconstruct with an explicit max_norm for other reductions.",
+            )
         )
 
 
@@ -132,7 +135,7 @@ def _reduced_metadata(pytree: ClippedPytree, op: str, world_size: int) -> Clippe
             return replace(pytree, max_norm=max_norm, noise_stddev=noise_stddev)
         return replace(pytree, max_norm=max_norm)
 
-    raise AssertionError(f"Unsupported wrapper reduction op: {op}")
+    raise ConfigurationError(*(f"Unsupported wrapper reduction op: {op}",))
 
 
 def _in_place_wrapper_metadata_changes(pytree: ClippedPytree, op: str) -> bool:
@@ -164,9 +167,11 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
     if isinstance(pytree, ClippedPytree):
         _assert_wrapper_reduction_supported(pytree, op)
         if _in_place_wrapper_metadata_changes(pytree, op):
-            raise TypeError(
-                f"In-place {type(pytree).__name__} reduction would change metadata; "
-                "use reduce_pytree() instead."
+            raise InputTypeError(
+                *(
+                    f"In-place {type(pytree).__name__} reduction would change metadata; "
+                    "use reduce_pytree() instead.",
+                )
             )
         _assert_public_metadata_equal(pytree.max_norm, name="ClippedPytree.max_norm")
         if _is_noised(pytree):
@@ -184,10 +189,12 @@ def reduce_pytree_(pytree: Any, op: str = "sum") -> None:
         if isinstance(leaf, torch.Tensor):
             all_reduce_(leaf, op=op)
             return leaf
-        raise TypeError(
-            f"reduce_pytree_ expects tensor leaves after wrapper dispatch; "
-            f"got {type(leaf).__name__}. Unwrap paired/custom containers "
-            f"explicitly or register a reduction branch."
+        raise InputTypeError(
+            *(
+                f"reduce_pytree_ expects tensor leaves after wrapper dispatch; "
+                f"got {type(leaf).__name__}. Unwrap paired/custom containers "
+                f"explicitly or register a reduction branch.",
+            )
         )
 
     tree_map(_reduce, pytree)
@@ -227,10 +234,12 @@ def reduce_pytree(pytree: Any, op: str = "sum") -> Any:
     def _clone(leaf: Any) -> Any:
         if isinstance(leaf, torch.Tensor):
             return leaf.clone()
-        raise TypeError(
-            f"reduce_pytree expects tensor leaves after wrapper dispatch; "
-            f"got {type(leaf).__name__}. Unwrap paired/custom containers "
-            f"explicitly or register a reduction branch."
+        raise InputTypeError(
+            *(
+                f"reduce_pytree expects tensor leaves after wrapper dispatch; "
+                f"got {type(leaf).__name__}. Unwrap paired/custom containers "
+                f"explicitly or register a reduction branch.",
+            )
         )
 
     reduced = tree_map(_clone, pytree)

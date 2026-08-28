@@ -12,6 +12,7 @@ from opaque.api.dpftrl.noise._toeplitz import (
     materialize_lower_triangular,
 )
 from opaque.dpftrl.noise import mf_gaussian_noise
+from opaque.exceptions import CheckpointError
 from opaque.random import key
 from opaque.serialization import state_dict
 from opaque.types import clipped
@@ -78,7 +79,7 @@ class TestBisrStrategy:
 
     def test_callable_schedule_is_not_serializable(self):
         strategy = bisr_strategy(bandwidth=3, lr_schedule=lambda _step: 1.0)
-        with pytest.raises(TypeError, match="callable strategy field"):
+        with pytest.raises(CheckpointError, match="callable strategy field"):
             state_dict(strategy)
 
     def test_streaming_matrix_present(self):

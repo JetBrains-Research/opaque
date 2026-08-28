@@ -19,6 +19,8 @@ newly-added token id is seen.
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 __all__ = ["clone_chat_template", "get_training_chat_template"]
 
 import logging
@@ -96,20 +98,24 @@ def clone_chat_template(
     else:
         # Duck-type check: must look like a tokenizer.
         if not hasattr(source_tokenizer_or_path, "chat_template"):
-            raise TypeError(
-                "source_tokenizer_or_path must be a string path or a "
-                "PreTrainedTokenizerBase instance; "
-                f"got {type(source_tokenizer_or_path)!r}"
+            raise InputTypeError(
+                *(
+                    "source_tokenizer_or_path must be a string path or a "
+                    "PreTrainedTokenizerBase instance; "
+                    f"got {type(source_tokenizer_or_path)!r}",
+                )
             )
         source_tokenizer = source_tokenizer_or_path
 
     # Copy chat template.
     chat_template = getattr(source_tokenizer, "chat_template", None)
     if chat_template is None:
-        raise ValueError(
-            "The source tokenizer does not have a chat_template set "
-            "(chat_template is None).  Set it before calling "
-            "clone_chat_template."
+        raise ConfigurationError(
+            *(
+                "The source tokenizer does not have a chat_template set "
+                "(chat_template is None).  Set it before calling "
+                "clone_chat_template.",
+            )
         )
     tokenizer.chat_template = chat_template
 
@@ -204,10 +210,12 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
     """
     template: str | None = getattr(tokenizer, "chat_template", None)
     if not template:
-        raise ValueError(
-            "tokenizer.chat_template is not set.  Assign a Jinja2 template "
-            "string to tokenizer.chat_template before calling "
-            "get_training_chat_template."
+        raise ConfigurationError(
+            *(
+                "tokenizer.chat_template is not set.  Assign a Jinja2 template "
+                "string to tokenizer.chat_template before calling "
+                "get_training_chat_template.",
+            )
         )
 
     # Idempotency: already has the marker.
@@ -253,11 +261,13 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
     ):
         return template_out
 
-    raise ValueError(
-        "get_training_chat_template: could not identify and validate an "
-        "assistant-only render path in the tokenizer's chat template. "
-        "Provide a template with explicit '{% generation %}' / "
-        "'{% endgeneration %}' markers."
+    raise ConfigurationError(
+        *(
+            "get_training_chat_template: could not identify and validate an "
+            "assistant-only render path in the tokenizer's chat template. "
+            "Provide a template with explicit '{% generation %}' / "
+            "'{% endgeneration %}' markers.",
+        )
     )
 
 

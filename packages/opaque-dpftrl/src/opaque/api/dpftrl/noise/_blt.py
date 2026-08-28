@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.exceptions import ConfigurationError
 
 from ._band_mf import _momentum_workload_coef
 from ._blt_math import (
@@ -72,7 +73,7 @@ def _blt_optimize_cached(
 ) -> BufferedToeplitz:
     """Run BLT L-BFGS for the given recipe + amplification context."""
     if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
     lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
     workload_coef = _momentum_workload_coef(momentum, n_steps)
     return _blt_optimize(
@@ -216,7 +217,7 @@ def blt_strategy(
         A :class:`BltStrategy` recipe.
     """
     if max_buffers < 1:
-        raise ValueError(f"max_buffers must be >= 1, got {max_buffers}")
+        raise ConfigurationError(*(f"max_buffers must be >= 1, got {max_buffers}",))
     return BltStrategy(
         max_buffers=max_buffers,
         momentum=momentum,

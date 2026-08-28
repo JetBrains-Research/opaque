@@ -18,6 +18,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -45,8 +47,10 @@ def resolve_decay(
     if callable(decay):
         return decay
     if decay not in NAMED_DECAYS:
-        raise ValueError(
-            f"Unknown {field}={decay!r}; expected one of "
-            f"{sorted(NAMED_DECAYS)} or a callable."
+        raise ConfigurationError(
+            *(
+                f"Unknown {field}={decay!r}; expected one of "
+                f"{sorted(NAMED_DECAYS)} or a callable.",
+            )
         )
     return NAMED_DECAYS[decay]

@@ -1,5 +1,7 @@
 """Tests for MF strategy factories and mf_gaussian_noise()."""
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 import pytest
 import torch
 

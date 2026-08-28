@@ -84,6 +84,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from opaque.api.engine.device import device_capabilities
+from opaque.exceptions import ConfigurationError, InputTypeError
 from transformers.debug_utils import DebugOption
 from transformers.trainer_utils import SchedulerType
 from transformers.training_args import ParallelMode
@@ -561,23 +562,29 @@ class TrainingArguments:
                 )
                 self.eval_steps = self.logging_steps
             else:
-                raise ValueError(
-                    f"eval_strategy {self.eval_strategy!r} requires either a "
-                    "non-zero `eval_steps` or a non-zero `logging_steps`."
+                raise ConfigurationError(
+                    *(
+                        f"eval_strategy {self.eval_strategy!r} requires either a "
+                        "non-zero `eval_steps` or a non-zero `logging_steps`.",
+                    )
                 )
 
         if self.logging_strategy == "steps" and self.logging_steps == 0:
-            raise ValueError(
-                f"logging strategy {self.logging_strategy} requires "
-                "non-zero --logging_steps"
+            raise ConfigurationError(
+                *(
+                    f"logging strategy {self.logging_strategy} requires "
+                    "non-zero --logging_steps",
+                )
             )
 
         # Coerce >1 step fields to ``int`` (HF parity).
         if self.logging_strategy == "steps" and self.logging_steps > 1:
             if self.logging_steps != int(self.logging_steps):
-                raise ValueError(
-                    f"--logging_steps must be an integer if bigger than 1: "
-                    f"{self.logging_steps}"
+                raise ConfigurationError(
+                    *(
+                        f"--logging_steps must be an integer if bigger than 1: "
+                        f"{self.logging_steps}",
+                    )
                 )
             self.logging_steps = int(self.logging_steps)
         if (
@@ -586,26 +593,32 @@ class TrainingArguments:
             and self.eval_steps > 1
         ):
             if self.eval_steps != int(self.eval_steps):
-                raise ValueError(
-                    f"--eval_steps must be an integer if bigger than 1: "
-                    f"{self.eval_steps}"
+                raise ConfigurationError(
+                    *(
+                        f"--eval_steps must be an integer if bigger than 1: "
+                        f"{self.eval_steps}",
+                    )
                 )
             self.eval_steps = int(self.eval_steps)
         if self.save_strategy == "steps" and self.save_steps > 1:
             if self.save_steps != int(self.save_steps):
-                raise ValueError(
-                    f"--save_steps must be an integer if bigger than 1: "
-                    f"{self.save_steps}"
+                raise ConfigurationError(
+                    *(
+                        f"--save_steps must be an integer if bigger than 1: "
+                        f"{self.save_steps}",
+                    )
                 )
             self.save_steps = int(self.save_steps)
 
         if self.load_best_model_at_end and self.save_strategy != "best":
             if self.eval_strategy != self.save_strategy:
-                raise ValueError(
-                    "--load_best_model_at_end requires the save and eval "
-                    f"strategy to match, but found\n  Evaluation strategy: "
-                    f"{self.eval_strategy}\n  Save strategy: "
-                    f"{self.save_strategy}"
+                raise ConfigurationError(
+                    *(
+                        "--load_best_model_at_end requires the save and eval "
+                        f"strategy to match, but found\n  Evaluation strategy: "
+                        f"{self.eval_strategy}\n  Save strategy: "
+                        f"{self.save_strategy}",
+                    )
                 )
             if (
                 self.eval_strategy == "steps"
@@ -615,27 +628,33 @@ class TrainingArguments:
             ):
                 if self.eval_steps < 1 or self.save_steps < 1:
                     if not (self.eval_steps < 1 and self.save_steps < 1):
-                        raise ValueError(
-                            "--load_best_model_at_end requires the saving steps to be a multiple "
-                            "of the evaluation steps, which cannot be guaranteed when mixing "
-                            f"ratio and absolute steps for save_steps={self.save_steps} and "
-                            f"eval_steps={self.eval_steps}."
+                        raise ConfigurationError(
+                            *(
+                                "--load_best_model_at_end requires the saving steps to be a multiple "
+                                "of the evaluation steps, which cannot be guaranteed when mixing "
+                                f"ratio and absolute steps for save_steps={self.save_steps} and "
+                                f"eval_steps={self.eval_steps}.",
+                            )
                         )
                     large_multiplier = 1_000_000
                     if (self.save_steps * large_multiplier) % (
                         self.eval_steps * large_multiplier
                     ) != 0:
-                        raise ValueError(
-                            "--load_best_model_at_end requires the saving steps to be a multiple "
-                            f"of the evaluation steps, but found save_steps={self.save_steps}, "
-                            f"which is not a multiple of eval_steps={self.eval_steps}."
+                        raise ConfigurationError(
+                            *(
+                                "--load_best_model_at_end requires the saving steps to be a multiple "
+                                f"of the evaluation steps, but found save_steps={self.save_steps}, "
+                                f"which is not a multiple of eval_steps={self.eval_steps}.",
+                            )
                         )
                 else:
-                    raise ValueError(
-                        "--load_best_model_at_end requires the saving steps to "
-                        "be a round multiple of the evaluation steps, but found "
-                        f"save_steps={self.save_steps}, which is not a round "
-                        f"multiple of eval_steps={self.eval_steps}."
+                    raise ConfigurationError(
+                        *(
+                            "--load_best_model_at_end requires the saving steps to "
+                            "be a round multiple of the evaluation steps, but found "
+                            f"save_steps={self.save_steps}, which is not a round "
+                            f"multiple of eval_steps={self.eval_steps}.",
+                        )
                     )
 
         # --- 5. Default population ------------------------------------------
@@ -649,16 +668,18 @@ class TrainingArguments:
         # ``save_strategy='best'`` requires eval to be configured so we
         # can actually pick a best checkpoint.
         if self.save_strategy == "best" and self.eval_strategy == "no":
-            raise ValueError("save_strategy='best' requires eval_strategy != 'no'")
+            raise ConfigurationError(
+                *("save_strategy='best' requires eval_strategy != 'no'",)
+            )
         # ``load_best_model_at_end`` requires both eval and save to be on.
         if self.load_best_model_at_end:
             if self.eval_strategy == "no":
-                raise ValueError(
-                    "load_best_model_at_end=True requires eval_strategy != 'no'"
+                raise ConfigurationError(
+                    *("load_best_model_at_end=True requires eval_strategy != 'no'",)
                 )
             if self.save_strategy == "no":
-                raise ValueError(
-                    "load_best_model_at_end=True requires save_strategy != 'no'"
+                raise ConfigurationError(
+                    *("load_best_model_at_end=True requires save_strategy != 'no'",)
                 )
         # ``save_steps`` must be positive when save_strategy != 'no'.
         if (
@@ -666,7 +687,9 @@ class TrainingArguments:
             and self.save_steps is not None
             and self.save_steps <= 0
         ):
-            raise ValueError(f"save_steps must be > 0, got {self.save_steps}")
+            raise ConfigurationError(
+                *(f"save_steps must be > 0, got {self.save_steps}",)
+            )
 
         # --- 6. Warmup / dataloader sanity ----------------------------------
         if self.warmup_steps is None:
@@ -674,21 +697,27 @@ class TrainingArguments:
         if isinstance(self.warmup_steps, bool) or not isinstance(
             self.warmup_steps, (int, float)
         ):
-            raise ValueError(
-                "warmup_steps must be a number: a step count when >= 1, or a "
-                f"fraction of the total training steps when in (0, 1). Got "
-                f"{self.warmup_steps!r}."
+            raise ConfigurationError(
+                *(
+                    "warmup_steps must be a number: a step count when >= 1, or a "
+                    f"fraction of the total training steps when in (0, 1). Got "
+                    f"{self.warmup_steps!r}.",
+                )
             )
         if self.warmup_steps < 0:
-            raise ValueError(f"warmup_steps must be >= 0, got {self.warmup_steps}")
+            raise ConfigurationError(
+                *(f"warmup_steps must be >= 0, got {self.warmup_steps}",)
+            )
 
         if self.torch_empty_cache_steps is not None and not (
             isinstance(self.torch_empty_cache_steps, int)
             and self.torch_empty_cache_steps > 0
         ):
-            raise ValueError(
-                "torch_empty_cache_steps must be an integer bigger than 0, "
-                f"got {self.torch_empty_cache_steps!r}."
+            raise ConfigurationError(
+                *(
+                    "torch_empty_cache_steps must be an integer bigger than 0, "
+                    f"got {self.torch_empty_cache_steps!r}.",
+                )
             )
 
         if self.use_cpu:
@@ -698,28 +727,36 @@ class TrainingArguments:
             self.dataloader_num_workers == 0
             and self.dataloader_prefetch_factor is not None
         ):
-            raise ValueError(
-                "--dataloader_prefetch_factor can only be set when data is "
-                "loaded in a different process, i.e. when "
-                "--dataloader_num_workers > 1."
+            raise ConfigurationError(
+                *(
+                    "--dataloader_prefetch_factor can only be set when data is "
+                    "loaded in a different process, i.e. when "
+                    "--dataloader_num_workers > 1.",
+                )
             )
         if self.dataloader_multiprocessing_context is not None:
             available_contexts = multiprocessing.get_all_start_methods()
             if self.dataloader_multiprocessing_context not in available_contexts:
-                raise ValueError(
-                    "dataloader_multiprocessing_context must be None or one of "
-                    f"{available_contexts}; got "
-                    f"{self.dataloader_multiprocessing_context!r}."
+                raise ConfigurationError(
+                    *(
+                        "dataloader_multiprocessing_context must be None or one of "
+                        f"{available_contexts}; got "
+                        f"{self.dataloader_multiprocessing_context!r}.",
+                    )
                 )
             if self.dataloader_num_workers == 0:
-                raise ValueError(
-                    "dataloader_multiprocessing_context requires "
-                    "dataloader_num_workers > 0."
+                raise ConfigurationError(
+                    *(
+                        "dataloader_multiprocessing_context requires "
+                        "dataloader_num_workers > 0.",
+                    )
                 )
         if self.dataloader_in_order is not True:
-            raise ValueError(
-                "dataloader_in_order must be True: Opaque requires DataLoader "
-                "delivery to preserve sampler order."
+            raise ConfigurationError(
+                *(
+                    "dataloader_in_order must be True: Opaque requires DataLoader "
+                    "delivery to preserve sampler order.",
+                )
             )
 
         # --- 7. Mixed precision sanity --------------------------------------
@@ -743,10 +780,12 @@ class TrainingArguments:
                 and not is_torch_xla_available()
                 and not mps_bf16_ok
             ):
-                raise ValueError(
-                    "Your setup doesn't support bf16. Set use_cpu=True for CPU "
-                    "bf16, use an Ampere+ CUDA GPU, or run on Apple Silicon "
-                    "(MPS) with a PyTorch build that supports bf16 on Metal."
+                raise ConfigurationError(
+                    *(
+                        "Your setup doesn't support bf16. Set use_cpu=True for CPU "
+                        "bf16, use an Ampere+ CUDA GPU, or run on Apple Silicon "
+                        "(MPS) with a PyTorch build that supports bf16 on Metal.",
+                    )
                 )
 
         # --- 8. torch_compile_mode whitelist --------------------------------
@@ -756,11 +795,13 @@ class TrainingArguments:
             "max-autotune",
             "max-autotune-no-cudagraphs",
         ):
-            raise ValueError(
-                f"torch_compile_mode={self.torch_compile_mode!r} is not a "
-                "valid torch.compile mode.  Expected one of: 'default', "
-                "'reduce-overhead', 'max-autotune', "
-                "'max-autotune-no-cudagraphs'."
+            raise ConfigurationError(
+                *(
+                    f"torch_compile_mode={self.torch_compile_mode!r} is not a "
+                    "valid torch.compile mode.  Expected one of: 'default', "
+                    "'reduce-overhead', 'max-autotune', "
+                    "'max-autotune-no-cudagraphs'.",
+                )
             )
 
         # Default eval batch to the per-device train batch when caller
@@ -774,26 +815,30 @@ class TrainingArguments:
         # ``per_device_train_batch_size // microbatch_size`` vmap chunks.
         if self.microbatch_size is not None:
             if self.microbatch_size < 1:
-                raise ValueError(
-                    f"microbatch_size must be >= 1; got {self.microbatch_size}."
+                raise ConfigurationError(
+                    *(f"microbatch_size must be >= 1; got {self.microbatch_size}.",)
                 )
             if self.microbatch_size > self.per_device_train_batch_size:
-                raise ValueError(
-                    f"microbatch_size ({self.microbatch_size}) cannot exceed "
-                    f"per_device_train_batch_size "
-                    f"({self.per_device_train_batch_size})."
+                raise ConfigurationError(
+                    *(
+                        f"microbatch_size ({self.microbatch_size}) cannot exceed "
+                        f"per_device_train_batch_size "
+                        f"({self.per_device_train_batch_size}).",
+                    )
                 )
 
         # torch.compile cannot retrace the vmap+grad closure that
         # auto_find_microbatch_size rebuilds on OOM (PyTorch #128711).
         if self.torch_compile and self.auto_find_microbatch_size:
-            raise ValueError(
-                "torch_compile=True is incompatible with "
-                "auto_find_microbatch_size=True due to torch._dynamo "
-                "functorch tracing limitations (PyTorch issue #128711). "
-                "Pass an explicit microbatch_size (e.g. "
-                "--microbatch-size 4) and disable "
-                "--auto-find-microbatch-size, or disable --torch-compile."
+            raise ConfigurationError(
+                *(
+                    "torch_compile=True is incompatible with "
+                    "auto_find_microbatch_size=True due to torch._dynamo "
+                    "functorch tracing limitations (PyTorch issue #128711). "
+                    "Pass an explicit microbatch_size (e.g. "
+                    "--microbatch-size 4) and disable "
+                    "--auto-find-microbatch-size, or disable --torch-compile.",
+                )
             )
 
         self._validate_privacy_fields()
@@ -802,13 +847,15 @@ class TrainingArguments:
         if self.load_best_model_at_end and self.metric_for_best_model:
             m = self.metric_for_best_model
             if m.startswith("train_"):
-                raise ValueError(
-                    f"metric_for_best_model={m!r} resolves to a training-set "
-                    f"metric.  Best-model selection on training metrics is "
-                    f"a privacy leak vector under DP-SGD: which checkpoint "
-                    f"survives rotation reveals which examples the model "
-                    f"memorised most.  Use an eval-side metric (default: "
-                    f'"loss" → "eval_loss").'
+                raise ConfigurationError(
+                    *(
+                        f"metric_for_best_model={m!r} resolves to a training-set "
+                        f"metric.  Best-model selection on training metrics is "
+                        f"a privacy leak vector under DP-SGD: which checkpoint "
+                        f"survives rotation reveals which examples the model "
+                        f"memorised most.  Use an eval-side metric (default: "
+                        f'"loss" → "eval_loss").',
+                    )
                 )
 
         # --- 13. Distributed (DDP) defaults & validation -------------------
@@ -821,9 +868,11 @@ class TrainingArguments:
             self.ddp_backend is not None
             and self.ddp_backend not in _DDP_BACKEND_CHOICES
         ):
-            raise ValueError(
-                f"ddp_backend={self.ddp_backend!r} is unsupported. "
-                f"Expected one of {_DDP_BACKEND_CHOICES} or None."
+            raise ConfigurationError(
+                *(
+                    f"ddp_backend={self.ddp_backend!r} is unsupported. "
+                    f"Expected one of {_DDP_BACKEND_CHOICES} or None.",
+                )
             )
         if (
             self.ddp_backend is not None
@@ -844,9 +893,11 @@ class TrainingArguments:
             k for k in self.include_for_metrics if k not in _allowed_include_for_metrics
         ]
         if _bad:
-            raise ValueError(
-                f"include_for_metrics entries must be a subset of "
-                f"{sorted(_allowed_include_for_metrics)}; got unknown keys: {_bad}"
+            raise ConfigurationError(
+                *(
+                    f"include_for_metrics entries must be a subset of "
+                    f"{sorted(_allowed_include_for_metrics)}; got unknown keys: {_bad}",
+                )
             )
 
         # Idempotency sentinel.
@@ -894,28 +945,36 @@ class TrainingArguments:
             calibration.setdefault(key, default)
 
         if self.eval_strategy not in _INTERVAL_STRATEGIES:
-            raise ValueError(
-                f"eval_strategy={self.eval_strategy!r}; "
-                f"expected one of {_INTERVAL_STRATEGIES}"
+            raise ConfigurationError(
+                *(
+                    f"eval_strategy={self.eval_strategy!r}; "
+                    f"expected one of {_INTERVAL_STRATEGIES}",
+                )
             )
         if self.logging_strategy not in _INTERVAL_STRATEGIES:
-            raise ValueError(
-                f"logging_strategy={self.logging_strategy!r}; "
-                f"expected one of {_INTERVAL_STRATEGIES}"
+            raise ConfigurationError(
+                *(
+                    f"logging_strategy={self.logging_strategy!r}; "
+                    f"expected one of {_INTERVAL_STRATEGIES}",
+                )
             )
         if self.save_strategy not in _SAVE_STRATEGIES:
-            raise ValueError(
-                f"save_strategy={self.save_strategy!r}; "
-                f"expected one of {_SAVE_STRATEGIES}"
+            raise ConfigurationError(
+                *(
+                    f"save_strategy={self.save_strategy!r}; "
+                    f"expected one of {_SAVE_STRATEGIES}",
+                )
             )
         for log_level_name, log_level_value in (
             ("log_level", self.log_level),
             ("log_level_replica", self.log_level_replica),
         ):
             if log_level_value not in _LOG_LEVELS:
-                raise ValueError(
-                    f"{log_level_name}={log_level_value!r}; "
-                    f"expected one of {sorted(_LOG_LEVELS)}"
+                raise ConfigurationError(
+                    *(
+                        f"{log_level_name}={log_level_value!r}; "
+                        f"expected one of {sorted(_LOG_LEVELS)}",
+                    )
                 )
 
         # Normalize string / SchedulerType forms to the enum; a user-supplied
@@ -923,10 +982,12 @@ class TrainingArguments:
         if isinstance(self.lr_scheduler, (str, SchedulerType)):
             self.lr_scheduler = SchedulerType(self.lr_scheduler)
         elif not callable(self.lr_scheduler):
-            raise TypeError(
-                f"lr_scheduler must be a str, SchedulerType, or "
-                f"Schedule callable; got "
-                f"{type(self.lr_scheduler).__name__}."
+            raise InputTypeError(
+                *(
+                    f"lr_scheduler must be a str, SchedulerType, or "
+                    f"Schedule callable; got "
+                    f"{type(self.lr_scheduler).__name__}.",
+                )
             )
 
         if isinstance(self.debug, str):
@@ -942,10 +1003,12 @@ class TrainingArguments:
             self.include_num_input_tokens_seen
             not in _INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES
         ):
-            raise ValueError(
-                "include_num_input_tokens_seen must be one of "
-                f"{sorted(_INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES)} or a boolean; "
-                f"got {self.include_num_input_tokens_seen!r}."
+            raise ConfigurationError(
+                *(
+                    "include_num_input_tokens_seen must be one of "
+                    f"{sorted(_INCLUDE_NUM_INPUT_TOKENS_SEEN_VALUES)} or a boolean; "
+                    f"got {self.include_num_input_tokens_seen!r}.",
+                )
             )
 
         if self.report_to == "all" or self.report_to == ["all"]:
@@ -968,37 +1031,45 @@ class TrainingArguments:
             self.privacy_noise_multiplier is None
             and self.privacy_target_epsilon is None
         ):
-            raise ValueError(
-                "Set either privacy_noise_multiplier (use 0.0 for non-private "
-                "training) or privacy_target_epsilon (to calibrate noise to a "
-                "budget); neither was provided."
+            raise ConfigurationError(
+                *(
+                    "Set either privacy_noise_multiplier (use 0.0 for non-private "
+                    "training) or privacy_target_epsilon (to calibrate noise to a "
+                    "budget); neither was provided.",
+                )
             )
         if (
             self.privacy_noise_multiplier is not None
             and self.privacy_noise_multiplier == 0.0
             and self.privacy_target_epsilon is not None
         ):
-            raise ValueError(
-                "privacy_noise_multiplier=0.0 is the non-private path; "
-                "privacy_target_epsilon is meaningless there.  Drop the target "
-                "or set a positive noise multiplier."
+            raise ConfigurationError(
+                *(
+                    "privacy_noise_multiplier=0.0 is the non-private path; "
+                    "privacy_target_epsilon is meaningless there.  Drop the target "
+                    "or set a positive noise multiplier.",
+                )
             )
         if (
             self.privacy_noise_multiplier is None
             and self.privacy_target_epsilon is not None
             and self.privacy_target_epsilon <= 0
         ):
-            raise ValueError(
-                "privacy_target_epsilon must be > 0 when calibrating noise; "
-                f"got {self.privacy_target_epsilon!r}."
+            raise ConfigurationError(
+                *(
+                    "privacy_target_epsilon must be > 0 when calibrating noise; "
+                    f"got {self.privacy_target_epsilon!r}.",
+                )
             )
         if (
             self.privacy_noise_multiplier is not None
             and self.privacy_noise_multiplier < 0
         ):
-            raise ValueError(
-                "privacy_noise_multiplier must be >= 0; got "
-                f"{self.privacy_noise_multiplier!r}."
+            raise ConfigurationError(
+                *(
+                    "privacy_noise_multiplier must be >= 0; got "
+                    f"{self.privacy_noise_multiplier!r}.",
+                )
             )
 
         # Infinite sensitivity is only meaningful for an explicitly
@@ -1013,54 +1084,68 @@ class TrainingArguments:
             )
         )
         if clipping_disabled and self.privacy_noise_multiplier != 0.0:
-            raise ValueError(
-                "Disabling clipping (clipping_norm=math.inf) is only valid for "
-                "a non-private baseline (privacy_noise_multiplier=0.0); got "
-                f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
-                "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm."
+            raise ConfigurationError(
+                *(
+                    "Disabling clipping (clipping_norm=math.inf) is only valid for "
+                    "a non-private baseline (privacy_noise_multiplier=0.0); got "
+                    f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
+                    "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm.",
+                )
             )
         if self.privacy_target_delta is not None and not (
             0 < self.privacy_target_delta < 1
         ):
-            raise ValueError(
-                "privacy_target_delta must lie in (0, 1); got "
-                f"{self.privacy_target_delta!r}."
+            raise ConfigurationError(
+                *(
+                    "privacy_target_delta must lie in (0, 1); got "
+                    f"{self.privacy_target_delta!r}.",
+                )
             )
         if self.clipping_mode not in ("fixed", "adaptive", "auto"):
-            raise ValueError(
-                f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
-                f"got {self.clipping_mode!r}."
+            raise ConfigurationError(
+                *(
+                    f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
+                    f"got {self.clipping_mode!r}.",
+                )
             )
         if self.privacy_noise_mechanism not in _MECHANISMS:
-            raise ValueError(
-                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                f"expected one of {sorted(_MECHANISMS)}."
+            raise ConfigurationError(
+                *(
+                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                    f"expected one of {sorted(_MECHANISMS)}.",
+                )
             )
 
         if self.sampling_mode == "auto":
             self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
         elif self.sampling_mode not in _SAMPLING_MODES:
-            raise ValueError(
-                f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
-                f"of {sorted(_SAMPLING_MODES)}."
+            raise ConfigurationError(
+                *(
+                    f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
+                    f"of {sorted(_SAMPLING_MODES)}.",
+                )
             )
         elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
-            raise ValueError(
-                f"sampling_mode={self.sampling_mode!r} is not valid for "
-                f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
-                f"(omit sampling_mode or set 'auto' to pick automatically)."
+            raise ConfigurationError(
+                *(
+                    f"sampling_mode={self.sampling_mode!r} is not valid for "
+                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
+                    f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
+                    f"(omit sampling_mode or set 'auto' to pick automatically).",
+                )
             )
 
         if (
             self.ignore_data_skip
             and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
         ):
-            raise ValueError(
-                f"ignore_data_skip=True requires sampling_mode in "
-                f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
-                f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
-                "poisson sampling, or start a fresh run."
+            raise ConfigurationError(
+                *(
+                    f"ignore_data_skip=True requires sampling_mode in "
+                    f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                    f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
+                    "poisson sampling, or start a fresh run.",
+                )
             )
 
         if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
@@ -1085,24 +1170,30 @@ class TrainingArguments:
         if isinstance(self.sampling_kwargs, dict):
             invalid = privacy_owned & self.sampling_kwargs.keys()
             if invalid:
-                raise ValueError(
-                    f"sampling_kwargs may not carry privacy-derived keys "
-                    f"{sorted(invalid)}; these are owned by "
-                    f"privacy_noise_mechanism_kwargs (the strategy recipe) "
-                    f"and read off the built amplifier at runtime."
+                raise ConfigurationError(
+                    *(
+                        f"sampling_kwargs may not carry privacy-derived keys "
+                        f"{sorted(invalid)}; these are owned by "
+                        f"privacy_noise_mechanism_kwargs (the strategy recipe) "
+                        f"and read off the built amplifier at runtime.",
+                    )
                 )
             if self.sampling_mode == "k_out_of_t":
                 missing = {"k", "allocation"} - self.sampling_kwargs.keys()
                 if missing:
-                    raise ValueError(
-                        "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                        f"{sorted(missing)}."
+                    raise ConfigurationError(
+                        *(
+                            "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                            f"{sorted(missing)}.",
+                        )
                     )
                 allocation = self.sampling_kwargs["allocation"]
                 if allocation not in ("block", "total"):
-                    raise ValueError(
-                        "sampling_kwargs['allocation'] must be 'block' or "
-                        f"'total', got {allocation!r}."
+                    raise ConfigurationError(
+                        *(
+                            "sampling_kwargs['allocation'] must be 'block' or "
+                            f"'total', got {allocation!r}.",
+                        )
                     )
             if (
                 self.sampling_mode == "k_out_of_t"
@@ -1112,14 +1203,18 @@ class TrainingArguments:
                 }
                 & self.sampling_kwargs.keys()
             ):
-                raise ValueError(
-                    "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                    "supported with sampling_mode='poisson'."
+                raise ConfigurationError(
+                    *(
+                        "sampling_kwargs truncated_batch_size/max_batch_size is only "
+                        "supported with sampling_mode='poisson'.",
+                    )
                 )
         elif self.sampling_mode == "k_out_of_t":
-            raise ValueError(
-                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                "'k' and 'allocation'."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'k' and 'allocation'.",
+                )
             )
 
     # =================================================================
@@ -1449,8 +1544,8 @@ def _parse_dict_string(value: str) -> dict[str, Any]:
     if stripped.startswith("{"):
         loaded = json.loads(stripped)
         if not isinstance(loaded, Mapping):
-            raise ValueError(
-                f"expected a JSON object (dict); got {type(loaded).__name__}"
+            raise ConfigurationError(
+                *(f"expected a JSON object (dict); got {type(loaded).__name__}",)
             )
         return _to_native(loaded)
     out: dict[str, Any] = {}
@@ -1458,11 +1553,11 @@ def _parse_dict_string(value: str) -> dict[str, Any]:
         if not entry.strip():
             continue
         if "=" not in entry:
-            raise ValueError(f"entry {entry!r} is not in 'key=value' form")
+            raise ConfigurationError(*(f"entry {entry!r} is not in 'key=value' form",))
         key, _, val = entry.partition("=")
         key = key.strip()
         if not key:
-            raise ValueError(f"entry {entry!r} has an empty key")
+            raise ConfigurationError(*(f"entry {entry!r} has an empty key",))
         out[key] = _coerce_scalar(val)
     return out
 
@@ -1482,9 +1577,11 @@ def _normalize_dict_field(value: Any) -> dict[str, Any] | None:
         return _parse_dict_string(value)
     if isinstance(value, Mapping):
         return _to_native(value)
-    raise TypeError(
-        f"dict field must be Mapping, str (JSON or 'key=value' form), or None; "
-        f"got {type(value).__name__}"
+    raise InputTypeError(
+        *(
+            f"dict field must be Mapping, str (JSON or 'key=value' form), or None; "
+            f"got {type(value).__name__}",
+        )
     )
 
 
@@ -1497,12 +1594,14 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
     way to express "no clipping".
     """
     if value is None:
-        raise ValueError(
-            "clipping_norm must be a positive number (use math.inf to disable "
-            "clipping for a non-private run); got None."
+        raise ConfigurationError(
+            *(
+                "clipping_norm must be a positive number (use math.inf to disable "
+                "clipping for a non-private run); got None.",
+            )
         )
     if isinstance(value, bool):
-        raise TypeError("clipping_norm must not be a boolean")
+        raise InputTypeError(*("clipping_norm must not be a boolean",))
     if isinstance(value, str):
         stripped = value.strip()
         if stripped.startswith("{"):
@@ -1510,41 +1609,55 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
         try:
             value = float(stripped)
         except ValueError as exc:
-            raise ValueError(
-                "clipping_norm must be a positive number or a JSON object with "
-                f"a 'fallback' key; got {value!r}"
+            raise ConfigurationError(
+                *(
+                    "clipping_norm must be a positive number or a JSON object with "
+                    f"a 'fallback' key; got {value!r}",
+                )
             ) from exc
     if isinstance(value, (int, float)):
         out = float(value)
         if out <= 0.0:
-            raise ValueError(
-                "clipping_norm must be strictly positive for DP-SGD clipping; "
-                f"got {out!r}."
+            raise ConfigurationError(
+                *(
+                    "clipping_norm must be strictly positive for DP-SGD clipping; "
+                    f"got {out!r}.",
+                )
             )
         return out
     if isinstance(value, Mapping):
         coerced: dict[str, float] = {}
         for k, v in _to_native(value).items():
             if not isinstance(k, str):
-                raise TypeError(
-                    "clipping_norm dict keys must be str (pattern or 'fallback'); "
-                    f"got {type(k).__name__}"
+                raise InputTypeError(
+                    *(
+                        "clipping_norm dict keys must be str (pattern or 'fallback'); "
+                        f"got {type(k).__name__}",
+                    )
                 )
             if isinstance(v, bool):
-                raise TypeError(f"clipping_norm[{k!r}] must be numeric, not bool")
+                raise InputTypeError(
+                    *(f"clipping_norm[{k!r}] must be numeric, not bool",)
+                )
             fv = float(v)
             if fv <= 0.0:
-                raise ValueError(f"clipping_norm[{k!r}] must be > 0; got {v!r}")
+                raise ConfigurationError(
+                    *(f"clipping_norm[{k!r}] must be > 0; got {v!r}",)
+                )
             coerced[k] = fv
         if "fallback" not in coerced:
-            raise ValueError(
-                "clipping_norm dict must include a 'fallback' key with the "
-                "default per-example clip bound"
+            raise ConfigurationError(
+                *(
+                    "clipping_norm dict must include a 'fallback' key with the "
+                    "default per-example clip bound",
+                )
             )
         if len(coerced) == 1:
             return coerced["fallback"]
         return coerced
-    raise TypeError(
-        "clipping_norm must be float, int, Mapping[str, float], or str; "
-        f"got {type(value).__name__}"
+    raise InputTypeError(
+        *(
+            "clipping_norm must be float, int, Mapping[str, float], or str; "
+            f"got {type(value).__name__}",
+        )
     )

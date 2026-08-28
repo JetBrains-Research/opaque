@@ -26,6 +26,7 @@ import torch
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 
+from opaque.exceptions import CheckpointError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     trainer2 = DPTrainer(
         model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
     )
-    with pytest.raises(RuntimeError, match="weights-only export"):
+    with pytest.raises(CheckpointError, match="weights-only export"):
         trainer2.train(resume_from_checkpoint=ckpt_dir)
 
 

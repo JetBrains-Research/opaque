@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.exceptions import ConfigurationError
 
 from ._schedule_fingerprint import materialize_schedule
 from ._toeplitz import inverse_as_streaming_matrix
@@ -162,14 +163,18 @@ class BisrStrategy:
 
     def __post_init__(self) -> None:
         if self.bandwidth < _MIN_BANDWIDTH:
-            raise ValueError(f"bandwidth must be >= 2, got {self.bandwidth}")
+            raise ConfigurationError(
+                *(f"bandwidth must be >= 2, got {self.bandwidth}",)
+            )
         if (
             self.inv_coefficients is not None
             and len(self.inv_coefficients) != self.bandwidth
         ):
-            raise ValueError(
-                f"inv_coefficients length ({len(self.inv_coefficients)}) must "
-                f"equal bandwidth ({self.bandwidth})"
+            raise ConfigurationError(
+                *(
+                    f"inv_coefficients length ({len(self.inv_coefficients)}) must "
+                    f"equal bandwidth ({self.bandwidth})",
+                )
             )
 
     def _inv_coefs(self) -> tuple[float, ...]:

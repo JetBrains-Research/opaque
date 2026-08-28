@@ -17,6 +17,7 @@ import torch
 from torch.func import grad, vmap
 
 from opaque.api.alignment.dpo.loss._mpo import mpo_combine
+from opaque.exceptions import ConfigurationError
 
 # ---------------------------------------------------------------------------
 # mpo_combine — weighted blend (TRL loss_type=list)
@@ -56,9 +57,9 @@ def test_mpo_combine_broadcasts() -> None:
 
 
 def test_mpo_combine_missing_key_raises() -> None:
-    """A weight key absent from losses raises KeyError."""
+    """A weight key absent from losses raises ConfigurationError."""
     t1 = torch.tensor([1.0, 2.0])
-    with pytest.raises(KeyError):
+    with pytest.raises(ConfigurationError):
         mpo_combine({"sigmoid": t1}, {"sigmoid": 1.0, "sft": 0.5})
 
 

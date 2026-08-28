@@ -1,5 +1,7 @@
 """Tests for MF mechanism types — LambdaCgd, Bisr, and BnB amplification."""
 
+from opaque.exceptions import InputTypeError
+
 import math
 from dataclasses import FrozenInstanceError
 

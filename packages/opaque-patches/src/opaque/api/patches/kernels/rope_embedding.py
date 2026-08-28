@@ -27,6 +27,8 @@ import torch
 import triton
 import triton.language as tl
 
+from opaque.exceptions import ConfigurationError
+
 from ._utils import (
     calculate_settings,
     ensure_cuda_tensors,
@@ -240,7 +242,9 @@ class _RoPEBackward(torch.autograd.Function):
         assert sin_bdim is None
         if grad_Q_bdim != 0:
             # A non-leading batch dim would rotate rows with the wrong positions.
-            raise ValueError(f"grad_Q should be batched at dim 0, got {grad_Q_bdim}")
+            raise ConfigurationError(
+                *(f"grad_Q should be batched at dim 0, got {grad_Q_bdim}",)
+            )
 
         head_dim = grad_Q.shape[-1]
         n_heads = grad_Q.shape[-2]
@@ -353,9 +357,9 @@ class Opaque_RoPE(torch.autograd.Function):
         Q_bdim, cos_bdim, sin_bdim = in_dims
 
         if Q_bdim != 0:
-            raise ValueError(f"Q should be batched at dim 0, got {Q_bdim}")
+            raise ConfigurationError(*(f"Q should be batched at dim 0, got {Q_bdim}",))
         if cos_bdim is not None or sin_bdim is not None:
-            raise ValueError("cos and sin should not be batched")
+            raise ConfigurationError(*("cos and sin should not be batched",))
 
         cos_sq = cos.squeeze()
         sin_sq = sin.squeeze()
@@ -455,8 +459,8 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         assert sl_bdim is None
         if gQ_bdim != 0 or gK_bdim != 0:
             # A non-leading batch dim would rotate rows with the wrong positions.
-            raise ValueError(
-                f"grad_Q/grad_K should be batched at dim 0, got {gQ_bdim}/{gK_bdim}"
+            raise ConfigurationError(
+                *(f"grad_Q/grad_K should be batched at dim 0, got {gQ_bdim}/{gK_bdim}",)
             )
 
         head_dim = grad_Q.shape[-1]
@@ -612,11 +616,11 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         Q_bdim, K_bdim, cos_bdim, sin_bdim, rope_bdim = in_dims
 
         if Q_bdim != 0 or K_bdim != 0:
-            raise ValueError("Q and K should be batched at dim 0")
+            raise ConfigurationError(*("Q and K should be batched at dim 0",))
         if cos_bdim is not None or sin_bdim is not None:
-            raise ValueError("cos and sin should not be batched")
+            raise ConfigurationError(*("cos and sin should not be batched",))
         if rope_bdim is not None:
-            raise ValueError("rope_indices should not be batched")
+            raise ConfigurationError(*("rope_indices should not be batched",))
 
         cos_sq = cos.squeeze()
         sin_sq = sin.squeeze()
@@ -735,9 +739,9 @@ class Opaque_SlowRoPE(torch.autograd.Function):
         Q_bdim, cos_bdim, sin_bdim, pos_bdim = in_dims
 
         if Q_bdim != 0:
-            raise ValueError(f"Q should be batched at dim 0, got {Q_bdim}")
+            raise ConfigurationError(*(f"Q should be batched at dim 0, got {Q_bdim}",))
         if cos_bdim is not None or sin_bdim is not None:
-            raise ValueError("cos and sin should not be batched")
+            raise ConfigurationError(*("cos and sin should not be batched",))
         if pos_bdim is not None:
             # Align the vmap batch of position_ids with Q's.
             position_ids = position_ids.movedim(pos_bdim, 0)

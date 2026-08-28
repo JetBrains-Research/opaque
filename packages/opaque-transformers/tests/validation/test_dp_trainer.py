@@ -20,6 +20,7 @@ from transformers import TrainerCallback as _HFTrainerCallback
 
 from opaque.api.transformers.trainer import _dpftrl
 from opaque.api.transformers.trainer._state import DPTrainerState
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.random import fold_in, key, split
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
@@ -165,7 +166,9 @@ class TestPrivacyBudgetValidation:
     """
 
     def test_neither_set_raises(self):
-        with pytest.raises(ValueError, match="Set either privacy_noise_multiplier"):
+        with pytest.raises(
+            ConfigurationError, match="Set either privacy_noise_multiplier"
+        ):
             TrainingArguments(use_cpu=True)
 
     def test_nm_only_is_ok(self):
@@ -1715,7 +1718,7 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(CheckpointError):
             trainer.train(resume_from_checkpoint=str(tmp_path / "no-such-ckpt"))
 
     def test_resume_true_starts_fresh_when_no_checkpoints(
@@ -1766,7 +1769,7 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        with pytest.raises(RuntimeError, match="weights-only export"):
+        with pytest.raises(CheckpointError, match="weights-only export"):
             trainer2.train(resume_from_checkpoint=str(ckpt_dir))
 
     def test_fresh_run_from_weights_only_checkpoint_via_model_arg(
@@ -1871,7 +1874,7 @@ class TestDPTrainerCheckpointing:
             train_dataset=tiny_lm_dataset,
             eval_dataset=tiny_lm_dataset,
         )
-        with pytest.raises(RuntimeError, match="weights-only export"):
+        with pytest.raises(CheckpointError, match="weights-only export"):
             trainer2.train(resume_from_checkpoint=ckpt_dir)
 
     def test_ignore_data_skip_uses_new_poisson_stream(

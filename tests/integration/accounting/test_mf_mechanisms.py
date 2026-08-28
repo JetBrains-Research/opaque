@@ -7,6 +7,8 @@ amplification dispatch via the strategy's polymorphic methods, and
 composition with other DpProcess nodes.
 """
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 import math
 from dataclasses import FrozenInstanceError
 

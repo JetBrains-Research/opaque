@@ -35,6 +35,8 @@ import triton
 import triton.language as tl
 from triton import Config
 
+from opaque.exceptions import ConfigurationError
+
 from ._utils import (
     _build_flat_valids,
     b_bin_fn,
@@ -1026,9 +1028,13 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim, uts_bdim) = in_dims
 
         if h_bdim != 0:
-            raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
+            raise ConfigurationError(
+                *(f"hidden_states should be batched at dim 0, got {h_bdim}",)
+            )
         if lab_bdim != 0:
-            raise ValueError(f"labels should be batched at dim 0, got {lab_bdim}")
+            raise ConfigurationError(
+                *(f"labels should be batched at dim 0, got {lab_bdim}",)
+            )
         assert w_bdim is None, "weight should not be batched"
         assert ii_bdim is None, "ignore_index should not be batched"
         assert sc_bdim is None, "logit_softcapping should not be batched"

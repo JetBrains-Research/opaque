@@ -55,6 +55,7 @@ from opaque.api.accounting.core.discretization import (
     _use_discretization,
     get_discretization,
 )
+from opaque.exceptions import CalibrationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -131,7 +132,7 @@ def calibrate(
     or step count increases them, and both directions are supported.  The
     metric must be monotone in the parameter over ``[param_min,
     param_max]``; flat or detectably non-monotone parameterizations raise
-    ``ValueError``.
+    :class:`~opaque.exceptions.CalibrationError`.
 
     Successful results are one-sided and privacy-safe.  A decreasing
     privacy-loss metric satisfies ``achieved <= target``; an increasing
@@ -146,7 +147,8 @@ def calibrate(
         budget: Calibration budget (created with epsilon_budget(), delta_budget(), etc.)
             - Must have: budget.value (float), budget.evaluate(process) → float
             - Common budgets: epsilon_budget(3.0, 1e-5), delta_budget(1e-5, 3.0), advantage_budget(0.1)
-            - Budgets validate themselves: epsilon_budget(-1.0) raises ValueError
+            - Budgets validate themselves: epsilon_budget(-1.0) raises
+              PrivacyBudgetError
 
         process: Callable taking a float parameter and returning a DpProcess.
             Must be deterministic (same input → same process).
@@ -173,7 +175,7 @@ def calibrate(
         max_iterations: Positive maximum number of binary search iterations
             - Each iteration halves the search space
             - 100 iterations gives ~1e-30 precision (rarely needed)
-            - Exhaustion raises RuntimeError
+            - Exhaustion raises CalibrationError
 
         prefix: Optional already-executed process; each probe evaluates
             ``prefix | process(param)``, so the budget is the total across
@@ -190,16 +192,19 @@ def calibrate(
           adaptive MC probes (zero for analytic calibration)
 
     Raises:
-        ValueError: If tolerance is not finite and positive, or max_iterations is not positive
-        ValueError: If param_min >= param_max
-        ValueError: If bounds don't bracket the target (neither or both endpoints privacy-safe)
-        ValueError: If budget evaluation returns NaN at the bounds, or infinity
+        CalibrationError: If tolerance is not finite and positive, or
+            max_iterations is not positive.
+        CalibrationError: If param_min >= param_max.
+        CalibrationError: If bounds don't bracket the target (neither or both
+            endpoints privacy-safe).
+        CalibrationError: If budget evaluation returns NaN at the bounds, or infinity
             on the privacy-safe endpoint (infinity on the unsafe endpoint is
-            accepted — the target is below it by definition)
-        ValueError: If the metric is flat across the bounds, or an interior
+            accepted — the target is below it by definition).
+        CalibrationError: If the metric is flat across the bounds, or an interior
             probe escapes the endpoint value envelope (non-monotone
-            parameterization)
-        RuntimeError: If no privacy-safe endpoint converges within max_iterations
+            parameterization).
+        CalibrationError: If no privacy-safe endpoint converges within
+            max_iterations.
         Exception: If process() or budget.evaluate() raises an exception
 
     Native LRU caches registered via :mod:`opaque.api.accounting.core._native_cache`
@@ -277,11 +282,11 @@ def calibrate(
 
     **Troubleshooting:**
 
-    - *ValueError: bounds don't bracket budget*
+    - *CalibrationError: bounds don't bracket budget*
       → Try expanding param_min/param_max range
-    - *ValueError: budget evaluation returned infinity*
+    - *CalibrationError: budget evaluation returned infinity*
       → Privacy budget may be unreachable with your mechanism; try higher param_min or lower budget value
-    - *RuntimeError: calibration did not converge*
+    - *CalibrationError: calibration did not converge*
       → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
     if prefix is not None:
@@ -336,11 +341,13 @@ def _calibrate_impl(
     max_iterations: int,
 ) -> CalibrateResult:
     if not math.isfinite(tolerance) or tolerance <= 0:
-        raise ValueError(f"tolerance must be finite and > 0, got {tolerance}")
+        raise CalibrationError(*(f"tolerance must be finite and > 0, got {tolerance}",))
     if max_iterations <= 0:
-        raise ValueError(f"max_iterations must be > 0, got {max_iterations}")
+        raise CalibrationError(*(f"max_iterations must be > 0, got {max_iterations}",))
     if param_min >= param_max:
-        raise ValueError(f"param_min ({param_min}) must be < param_max ({param_max})")
+        raise CalibrationError(
+            *(f"param_min ({param_min}) must be < param_max ({param_max})",)
+        )
 
     # Check bounds bracket the budget
     proc_min = process(param_min)
@@ -350,18 +357,22 @@ def _calibrate_impl(
 
     # Validate bounds don't return nan
     if math.isnan(val_min) or math.isnan(val_max):
-        raise ValueError(
-            f"Budget evaluation returned NaN at bounds: "
-            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
-            f"This usually indicates an issue with the process() function."
+        raise CalibrationError(
+            *(
+                f"Budget evaluation returned NaN at bounds: "
+                f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+                f"This usually indicates an issue with the process() function.",
+            )
         )
 
     if math.isinf(val_min) and math.isinf(val_max):
-        raise ValueError(
-            f"Budget evaluation returned infinity at both bounds: "
-            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
-            f"This typically means the privacy target is unreachable with these parameter bounds. "
-            f"Try expanding the search range or checking that process() produces valid DpProcess objects."
+        raise CalibrationError(
+            *(
+                f"Budget evaluation returned infinity at both bounds: "
+                f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+                f"This typically means the privacy target is unreachable with these parameter bounds. "
+                f"Try expanding the search range or checking that process() produces valid DpProcess objects.",
+            )
         )
 
     # Metric-kind: privacy-loss metrics (epsilon/delta/advantage) are safe
@@ -379,11 +390,13 @@ def _calibrate_impl(
         return achieved >= budget.value
 
     if val_min == val_max:
-        raise ValueError(
-            f"Metric {budget.name} is flat over param range "
-            f"[{param_min}, {param_max}] (value {val_min} at both ends); "
-            f"cannot infer a monotone search direction. Check that the "
-            f"parameter actually affects the process."
+        raise CalibrationError(
+            *(
+                f"Metric {budget.name} is flat over param range "
+                f"[{param_min}, {param_max}] (value {val_min} at both ends); "
+                f"cannot infer a monotone search direction. Check that the "
+                f"parameter actually affects the process.",
+            )
         )
     safe_at_max = (val_max < val_min) if safe_when_below else (val_max > val_min)
 
@@ -397,24 +410,30 @@ def _calibrate_impl(
     # inf on the unsafe endpoint is fine (the target is < inf); inf on the
     # safe endpoint means the target is unreachable within the bracket.
     if math.isinf(safe_value):
-        raise ValueError(
-            f"Budget evaluation returned infinity on the privacy-safe endpoint: "
-            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
-            f"The privacy target is unreachable with these parameter bounds."
+        raise CalibrationError(
+            *(
+                f"Budget evaluation returned infinity on the privacy-safe endpoint: "
+                f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+                f"The privacy target is unreachable with these parameter bounds.",
+            )
         )
     if not is_safe(safe_value):
-        raise ValueError(
-            f"Budget {budget.name}={budget.value:.6f} not bracketed: neither "
-            f"endpoint of [{param_min}, {param_max}] is privacy-safe "
-            f"(values {val_min:.6f}, {val_max:.6f}). "
-            f"The target may be unreachable with these bounds."
+        raise CalibrationError(
+            *(
+                f"Budget {budget.name}={budget.value:.6f} not bracketed: neither "
+                f"endpoint of [{param_min}, {param_max}] is privacy-safe "
+                f"(values {val_min:.6f}, {val_max:.6f}). "
+                f"The target may be unreachable with these bounds.",
+            )
         )
     if not math.isinf(unsafe_value) and is_safe(unsafe_value):
-        raise ValueError(
-            f"Budget {budget.name}={budget.value:.6f} not bracketed: both "
-            f"endpoints of [{param_min}, {param_max}] are privacy-safe "
-            f"(values {val_min:.6f}, {val_max:.6f}). If the metric is not "
-            f"monotone in the parameter, calibration is unsupported."
+        raise CalibrationError(
+            *(
+                f"Budget {budget.name}={budget.value:.6f} not bracketed: both "
+                f"endpoints of [{param_min}, {param_max}] are privacy-safe "
+                f"(values {val_min:.6f}, {val_max:.6f}). If the metric is not "
+                f"monotone in the parameter, calibration is unsupported.",
+            )
         )
 
     # Monotonicity envelope: any interior probe of a monotone metric stays
@@ -449,20 +468,24 @@ def _calibrate_impl(
         current = budget.evaluate(proc)
 
         if math.isnan(current):
-            raise ValueError(
-                f"Budget evaluation returned NaN at param={mid} "
-                f"(iteration {iterations}). Check that process() "
-                f"produces valid DpProcess objects for all parameter values."
+            raise CalibrationError(
+                *(
+                    f"Budget evaluation returned NaN at param={mid} "
+                    f"(iteration {iterations}). Check that process() "
+                    f"produces valid DpProcess objects for all parameter values.",
+                )
             )
 
         # A monotone metric stays inside the endpoint value envelope.
         if not math.isinf(current) and not (
             env_lo - env_pad <= current <= env_hi + env_pad
         ):
-            raise ValueError(
-                f"Metric {budget.name} is not monotone in the calibrated "
-                f"parameter: value {current:.6f} at param={mid} lies outside "
-                f"the bracket value range [{env_lo:.6f}, {env_hi:.6f}]."
+            raise CalibrationError(
+                *(
+                    f"Metric {budget.name} is not monotone in the calibrated "
+                    f"parameter: value {current:.6f} at param={mid} lies outside "
+                    f"the bracket value range [{env_lo:.6f}, {env_hi:.6f}].",
+                )
             )
 
         if is_safe(current):
@@ -486,12 +509,14 @@ def _calibrate_impl(
                 converged=True,
             )
 
-    raise RuntimeError(
-        f"Calibration for {budget.name} did not converge: "
-        f"target={budget.value}, relative tolerance={tolerance}, "
-        f"iterations={iterations}, "
-        f"final bracket=(unsafe={unsafe_param}, safe={safe_param}), "
-        f"last safe achieved={safe_value} at param={safe_param}."
+    raise CalibrationError(
+        *(
+            f"Calibration for {budget.name} did not converge: "
+            f"target={budget.value}, relative tolerance={tolerance}, "
+            f"iterations={iterations}, "
+            f"final bracket=(unsafe={unsafe_param}, safe={safe_param}), "
+            f"last safe achieved={safe_value} at param={safe_param}.",
+        )
     )
 
 

@@ -49,10 +49,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -138,10 +140,12 @@ def _scale_by_adadelta(
         state = AdadeltaState(v_g=v_g, v_dx=v_dx, phi_g=phi_g, phi_dx=phi_dx, step=0)
         # Validate state consistency: BC enabled but state has None phi fields.
         if noise_bias_correction and state.phi_dx is None:
-            raise ValueError(
-                "Attempted to initialize Adadelta with noise_bias_correction=True "
-                "but state.phi_dx is None. This indicates a configuration mismatch "
-                "or a corrupted checkpoint. Re-initialize state or disable BC."
+            raise ConfigurationError(
+                *(
+                    "Attempted to initialize Adadelta with noise_bias_correction=True "
+                    "but state.phi_dx is None. This indicates a configuration mismatch "
+                    "or a corrupted checkpoint. Re-initialize state or disable BC.",
+                )
             )
         return state
 
@@ -155,9 +159,11 @@ def _scale_by_adadelta(
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, AdadeltaState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
-            raise ValueError(
-                "adadelta.update() received both noisy_squared_grads and "
-                "noise_stddev (DP-BC); pass exactly one (or neither)."
+            raise ConfigurationError(
+                *(
+                    "adadelta.update() received both noisy_squared_grads and "
+                    "noise_stddev (DP-BC); pass exactly one (or neither).",
+                )
             )
 
         t = state.step + 1
@@ -364,14 +370,16 @@ def adadelta(
           without it.  Use the ``NoisedPytree`` path for full BC.
     """
     if eps <= 0:
-        raise ValueError(f"eps must be positive, got {eps}")
+        raise ConfigurationError(*(f"eps must be positive, got {eps}",))
     if not 0 <= rho < 1:
-        raise ValueError(f"rho must satisfy 0 <= rho < 1, got {rho}")
+        raise ConfigurationError(*(f"rho must satisfy 0 <= rho < 1, got {rho}",))
     if weight_decay < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
+        )
     if update_rms_clip is not None and update_rms_clip <= 0:
-        raise ValueError(
-            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
 
     bc_floor = eps * eps

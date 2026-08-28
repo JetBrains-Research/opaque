@@ -28,6 +28,8 @@ import logging
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 from ._convert import (
     _apply_manifest,
     _get_dataclass_field_values,
@@ -237,11 +239,13 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     optim_str = str(optim_str).lower()
 
     if optim_str in _HF_PAGED_OPTIMS:
-        raise ValueError(
-            f"hf_training_arguments.optim={optim_value!r}: Quantized / "
-            f"Apex-fused optimizers are not in opaque-engine's torchopt "
-            f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
-            f"fused CUDA kernel)."
+        raise ConfigurationError(
+            *(
+                f"hf_training_arguments.optim={optim_value!r}: Quantized / "
+                f"Apex-fused optimizers are not in opaque-engine's torchopt "
+                f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
+                f"fused CUDA kernel).",
+            )
         )
     if optim_str in {"adamw_torch", "adamw_hf"}:
         return {"optim": "adamw"}
@@ -453,16 +457,18 @@ def _convert_hf_training_arguments(
     try:
         from transformers import TrainingArguments as HFTrainingArguments
     except ImportError as e:
-        raise ImportError(
+        raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
             "_convert_hf_training_arguments requires the ``transformers`` "
             "package. Install it with ``pip install transformers``."
         ) from e
 
     if not isinstance(hf_args, HFTrainingArguments):
-        raise TypeError(
-            f"Expected ``transformers.TrainingArguments`` instance, got "
-            f"{type(hf_args).__name__}. To convert a dict, build a "
-            "``TrainingArguments(**your_dict)`` first."
+        raise InputTypeError(
+            *(
+                f"Expected ``transformers.TrainingArguments`` instance, got "
+                f"{type(hf_args).__name__}. To convert a dict, build a "
+                "``TrainingArguments(**your_dict)`` first.",
+            )
         )
 
     source_values = _get_dataclass_field_values(hf_args)

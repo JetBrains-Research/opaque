@@ -18,6 +18,7 @@ import torch
 
 torchopt = pytest.importorskip("torchopt")
 
+from opaque.exceptions import CheckpointError
 from opaque.optimizers import (
     adafactor,
     adagrad,
@@ -519,7 +520,7 @@ class TestRobustness:
 
     def test_wrong_type_raises(self, params, grads):
         """A path that should hold a tensor but holds a non-tensor in
-        the dict raises ``TypeError`` rather than silently corrupting."""
+        the dict raises ``CheckpointError`` rather than silently corrupting."""
         opt = adamw(lr=1e-3)
         state = opt.init(params)
         _, state = opt.update(grads, state, params=params)
@@ -528,5 +529,5 @@ class TestRobustness:
         tensor_key = next(k for k, v in sd.items() if isinstance(v, torch.Tensor))
         sd[tensor_key] = "not a tensor"
         template = opt.init(params)
-        with pytest.raises(TypeError, match=r"torch.Tensor"):
+        with pytest.raises(CheckpointError, match=r"torch.Tensor"):
             from_state_dict(template, sd)

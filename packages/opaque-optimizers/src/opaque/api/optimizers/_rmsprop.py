@@ -38,10 +38,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -102,9 +104,11 @@ def _scale_by_rmsprop(
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, RMSpropState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
-            raise ValueError(
-                "rmsprop.update() received both noisy_squared_grads and "
-                "noise_stddev (DP-BC); pass exactly one (or neither)."
+            raise ConfigurationError(
+                *(
+                    "rmsprop.update() received both noisy_squared_grads and "
+                    "noise_stddev (DP-BC); pass exactly one (or neither).",
+                )
             )
 
         t = state.step + 1
@@ -219,14 +223,16 @@ def rmsprop(
         A ``torchopt.base.GradientTransformation``.
     """
     if eps <= 0:
-        raise ValueError(f"eps must be positive, got {eps}")
+        raise ConfigurationError(*(f"eps must be positive, got {eps}",))
     if not 0 <= alpha < 1:
-        raise ValueError(f"alpha must satisfy 0 <= alpha < 1, got {alpha}")
+        raise ConfigurationError(*(f"alpha must satisfy 0 <= alpha < 1, got {alpha}",))
     if weight_decay < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
+        )
     if update_rms_clip is not None and update_rms_clip <= 0:
-        raise ValueError(
-            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
     bc_floor = eps * eps
     moment = _scale_by_rmsprop(

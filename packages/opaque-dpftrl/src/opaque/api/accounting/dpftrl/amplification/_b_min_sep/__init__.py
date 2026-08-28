@@ -25,6 +25,7 @@ from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 from ._transcript_cache import with_handle as _with_transcript_handle
 
@@ -43,15 +44,17 @@ def participation_p_from_per_example_rate(p0: float, bands: int) -> float:
     degenerates to ``p_0`` (plain Poisson, no min-sep constraint).
     """
     if not 0.0 < p0 < 1.0:
-        raise ValueError(f"per-example rate p_0 must be in (0, 1), got {p0}")
+        raise ConfigurationError(
+            *(f"per-example rate p_0 must be in (0, 1), got {p0}",)
+        )
     if bands < 1:
-        raise ValueError(f"bands must be >= 1, got {bands}")
+        raise ConfigurationError(*(f"bands must be >= 1, got {bands}",))
     if bands == 1:
         return p0
     denom = 1.0 - p0 * (bands - 1)
     if denom <= 0:
-        raise ValueError(
-            f"infeasible p_0={p0} for bands={bands}: need p_0 < 1/(bands-1)"
+        raise ConfigurationError(
+            *(f"infeasible p_0={p0} for bands={bands}: need p_0 < 1/(bands-1)",)
         )
     return p0 / denom
 
@@ -130,17 +133,23 @@ class BMinSep(DpHorizonProcess):
         """
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
-            raise TypeError(
-                "b_min_sep requires inner.strategy to be BandMfStrategy, got "
-                f"{type(s).__name__}."
+            raise InputTypeError(
+                *(
+                    "b_min_sep requires inner.strategy to be BandMfStrategy, got "
+                    f"{type(s).__name__}.",
+                )
             )
         bands = s.bands
         if bands < 1:
-            raise ValueError(
-                "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
+            raise ConfigurationError(
+                *(
+                    "BandMfStrategy inner must have non-empty coefficients (bands >= 1).",
+                )
             )
         if n_steps <= 0 or n_steps > self.n_steps:
-            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+            raise ConfigurationError(
+                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
+            )
         rounded = min(-(-n_steps // bands) * bands, self.n_steps)
         if rounded < self.n_steps:
             return self.pld_at(
@@ -258,20 +267,22 @@ def b_min_sep(
         A :class:`BMinSep` process (asymmetric PLD from Monte Carlo).
     """
     if not isinstance(inner, MfGaussian):
-        raise TypeError(
-            f"b_min_sep() requires an MfGaussian inner, got {type(inner).__name__}."
+        raise InputTypeError(
+            *(f"b_min_sep() requires an MfGaussian inner, got {type(inner).__name__}.",)
         )
     if not isinstance(inner.strategy, BandMfStrategy):
-        raise TypeError(
-            "b_min_sep() requires inner.strategy to be BandMfStrategy, got "
-            f"{type(inner.strategy).__name__}."
+        raise InputTypeError(
+            *(
+                "b_min_sep() requires inner.strategy to be BandMfStrategy, got "
+                f"{type(inner.strategy).__name__}.",
+            )
         )
     if inner.strategy.bands < 1:
-        raise ValueError(
-            "BandMfStrategy inner must have non-empty coefficients (bands >= 1)."
+        raise ConfigurationError(
+            *("BandMfStrategy inner must have non-empty coefficients (bands >= 1).",)
         )
     if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
 
     return BMinSep(
         inner=inner,

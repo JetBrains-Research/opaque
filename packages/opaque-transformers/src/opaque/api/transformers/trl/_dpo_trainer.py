@@ -70,6 +70,7 @@ from opaque.api.transformers.trainer._distributed import resolve_ddp_state
 
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
 
@@ -117,14 +118,14 @@ def _json_value(value: Any, *, path: str = "value") -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise ValueError(f"{path} must not contain non-finite floats")
+            raise ConfigurationError(*(f"{path} must not contain non-finite floats",))
         return value
     if isinstance(value, Mapping):
         normalized = {}
         for key, item in value.items():
             if not isinstance(key, str):
-                raise TypeError(
-                    f"{path} mapping keys must be strings, got {type(key)!r}"
+                raise InputTypeError(
+                    *(f"{path} mapping keys must be strings, got {type(key)!r}",)
                 )
             normalized[key] = _json_value(item, path=f"{path}.{key}")
         return normalized
@@ -145,7 +146,9 @@ def _json_value(value: Any, *, path: str = "value") -> Any:
                 allow_nan=False,
             ),
         )
-    raise TypeError(f"{path} contains unsupported value of type {type(value)!r}")
+    raise InputTypeError(
+        *(f"{path} contains unsupported value of type {type(value)!r}",)
+    )
 
 
 def _tensor_state_digest(model: Any, *, exclude_adapter: bool = False) -> str:
@@ -155,9 +158,9 @@ def _tensor_state_digest(model: Any, *, exclude_adapter: bool = False) -> str:
         if exclude_adapter and _is_adapter_state_name(name):
             continue
         if not isinstance(tensor, torch.Tensor):
-            raise TypeError(f"model state entry {name!r} is not a tensor")
+            raise InputTypeError(*(f"model state entry {name!r} is not a tensor",))
         if tensor.is_meta:
-            raise ValueError(f"cannot fingerprint meta tensor {name!r}")
+            raise ConfigurationError(*(f"cannot fingerprint meta tensor {name!r}",))
         value = tensor.detach().cpu().contiguous()
         hasher.update(name.encode("utf-8"))
         hasher.update(str(value.dtype).encode("ascii"))
@@ -198,9 +201,11 @@ def _model_cache_identity(model: Any, *, adapter_mode: str) -> dict[str, Any]:
     if is_peft and adapter_mode != "disabled":
         get_model_status = getattr(model, "get_model_status", None)
         if not callable(get_model_status):
-            raise ValueError(
-                "cannot fingerprint the effective PEFT reference state: "
-                "model does not expose get_model_status()"
+            raise ConfigurationError(
+                *(
+                    "cannot fingerprint the effective PEFT reference state: "
+                    "model does not expose get_model_status()",
+                )
             )
         adapter_status = get_model_status()
         identity["adapter_runtime"] = {
@@ -308,9 +313,11 @@ class DPOTrainer(DPTrainer):
                 model, **self._model_init_kwargs
             )
         if model is ref_model and ref_model is not None:
-            raise ValueError(
-                "`model` and `ref_model` must be different objects (the reference "
-                "is a frozen copy of the policy)."
+            raise ConfigurationError(
+                *(
+                    "`model` and `ref_model` must be different objects (the reference "
+                    "is a frozen copy of the policy).",
+                )
             )
 
         # ---- capture loss configuration onto self -------------------------
@@ -387,9 +394,11 @@ class DPOTrainer(DPTrainer):
             self._fused_logp_eligible and self._lm_head_param_name is not None
         )
         if self._sync_ref_model and self._is_peft:
-            raise ValueError(
-                "sync_ref_model (TR-DPO) requires full fine-tuning, not PEFT "
-                "(the EMA reference tracks the full policy)."
+            raise ConfigurationError(
+                *(
+                    "sync_ref_model (TR-DPO) requires full fine-tuning, not PEFT "
+                    "(the EMA reference tracks the full policy).",
+                )
             )
 
         # ---- reference resolvability (before tokenize/precompute) ---------
@@ -407,11 +416,13 @@ class DPOTrainer(DPTrainer):
             and not self._is_peft
             and not name_or_path
         ):
-            raise ValueError(
-                "No reference available for a reference-using loss_type: pass "
-                "ref_model=, use a PEFT policy, use a reference-free loss_type "
-                "(simpo/cpo/orpo), or load the policy from a path so a reference "
-                "copy can be auto-loaded."
+            raise ConfigurationError(
+                *(
+                    "No reference available for a reference-using loss_type: pass "
+                    "ref_model=, use a PEFT policy, use a reference-free loss_type "
+                    "(simpo/cpo/orpo), or load the policy from a path so a reference "
+                    "copy can be auto-loaded.",
+                )
             )
 
         # ---- collator (reused for precompute and training) ---------------
@@ -491,9 +502,11 @@ class DPOTrainer(DPTrainer):
 
             name = getattr(model.config, "_name_or_path", None)
             if not name:
-                raise ValueError(
-                    "processing_class is None and the model config has no "
-                    "_name_or_path; pass processing_class."
+                raise ConfigurationError(
+                    *(
+                        "processing_class is None and the model config has no "
+                        "_name_or_path; pass processing_class.",
+                    )
                 )
             processing_class = AutoTokenizer.from_pretrained(
                 name,

@@ -47,10 +47,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -167,11 +169,13 @@ def _scale_by_radam(
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, RAdamState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
-            raise ValueError(
-                "radam.update() received both noisy_squared_grads and "
-                "noise_stddev; these select mutually exclusive v-update "
-                "branches.  Pass exactly one (or neither, for vanilla "
-                "RAdam)."
+            raise ConfigurationError(
+                *(
+                    "radam.update() received both noisy_squared_grads and "
+                    "noise_stddev; these select mutually exclusive v-update "
+                    "branches.  Pass exactly one (or neither, for vanilla "
+                    "RAdam).",
+                )
             )
 
         t = state.step + 1
@@ -365,19 +369,23 @@ def _validate(
     update_rms_clip: float | None,
 ) -> None:
     if eps <= 0:
-        raise ValueError(f"eps must be positive, got {eps}")
+        raise ConfigurationError(*(f"eps must be positive, got {eps}",))
     if len(betas) != 2:  # noqa: PLR2004 - RAdam exposes the documented beta pair
-        raise ValueError(f"betas must contain exactly two values, got {betas}")
+        raise ConfigurationError(
+            *(f"betas must contain exactly two values, got {betas}",)
+        )
     b1, b2 = betas
     if not 0 <= b1 < 1:
-        raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+        raise ConfigurationError(*(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}",))
     if not 0 <= b2 < 1:
-        raise ValueError(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
+        raise ConfigurationError(*(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}",))
     if weight_decay < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
+        )
     if update_rms_clip is not None and update_rms_clip <= 0:
-        raise ValueError(
-            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
 
 

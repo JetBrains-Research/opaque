@@ -43,6 +43,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.engine.pytree import ParamPath, tree_flatten_with_paths
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.types import PerGroup
 
 if TYPE_CHECKING:
@@ -67,14 +68,18 @@ def map_leaves_with_path(
     other_flat = [tree_flatten_with_paths(t) for t in others]
     for i, (other_paths, other_leaves, _) in enumerate(other_flat):
         if other_paths != paths:
-            raise ValueError(
-                f"pytree ParamPath mismatch for argument {i}: "
-                f"primary paths {paths!r}, got {other_paths!r}."
+            raise ConfigurationError(
+                *(
+                    f"pytree ParamPath mismatch for argument {i}: "
+                    f"primary paths {paths!r}, got {other_paths!r}.",
+                )
             )
         if len(other_leaves) != len(leaves):
-            raise ValueError(
-                f"pytree leaf count mismatch: primary has {len(leaves)}, "
-                f"argument {i} has {len(other_leaves)}"
+            raise ConfigurationError(
+                *(
+                    f"pytree leaf count mismatch: primary has {len(leaves)}, "
+                    f"argument {i} has {len(other_leaves)}",
+                )
             )
     out_leaves = []
     for j, path in enumerate(paths):
@@ -111,8 +116,8 @@ def resolve_noise_variance(
     """
     if isinstance(noise_stddev, PerGroup):
         if path is None:
-            raise ValueError(
-                "resolve_noise_variance requires `path` for PerGroup noise_stddev"
+            raise ConfigurationError(
+                *("resolve_noise_variance requires `path` for PerGroup noise_stddev",)
             )
         return float(noise_stddev.for_path(path)) ** 2
     return float(noise_stddev) ** 2
@@ -137,9 +142,11 @@ def update_phi_ema(
     """
     if isinstance(phi, dict):
         if not isinstance(new_variance, dict):
-            raise TypeError(
-                "phi is per-group dict but new_variance is scalar; "
-                "either both must be per-group or both must be scalar."
+            raise InputTypeError(
+                *(
+                    "phi is per-group dict but new_variance is scalar; "
+                    "either both must be per-group or both must be scalar.",
+                )
             )
         return {k: b2 * phi[k] + (1 - b2) * new_variance[k] for k in phi}
     return b2 * phi + (1 - b2) * float(new_variance)

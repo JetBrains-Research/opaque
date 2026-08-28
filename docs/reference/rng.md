@@ -118,7 +118,7 @@ k = key(42)
 
 **Returns:** RngKey
 
-**Raises:** TypeError if seed is not an integer
+**Raises:** `InputTypeError` if seed is not an integer
 
 ---
 
@@ -158,7 +158,7 @@ keys = split(k, num=10)
 
 **Returns:** Tuple of `num` independent RngKeys
 
-**Raises:** ValueError if `num < 1`
+**Raises:** `ConfigurationError` if `num < 1`
 
 **Golden Rule:** Never reuse keys. Always split to create independent randomness.
 
@@ -196,9 +196,9 @@ key_v2 = fold_in(base_key, "v2")
 **Returns:** New RngKey derived from `rng_key` and all folded values
 
 **Raises:**
-- TypeError if `rng_key` is not an `RngKey`, or any value is not int or str
+- `InputTypeError` if `rng_key` is not an `RngKey`, or any value is not int or str
   (`bool` is rejected even though it subclasses `int`)
-- ValueError if no data values are provided
+- `ConfigurationError` if no data values are provided
 
 Integers and strings occupy disjoint hash paths: `fold_in(k, 1)` is never
 the same key as `fold_in(k, "1")`. That split is load-bearing.

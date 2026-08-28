@@ -30,6 +30,7 @@ from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import Pld
@@ -77,10 +78,12 @@ class CyclicPoisson(DpHorizonProcess):
             case IdentityStrategy():
                 return 1
             case _:
-                raise TypeError(
-                    "CyclicPoisson.atomic_unit: inner.strategy must be "
-                    "BandMfStrategy or IdentityStrategy, got "
-                    f"{type(self.inner.strategy).__name__}."
+                raise InputTypeError(
+                    *(
+                        "CyclicPoisson.atomic_unit: inner.strategy must be "
+                        "BandMfStrategy or IdentityStrategy, got "
+                        f"{type(self.inner.strategy).__name__}.",
+                    )
                 )
 
     @property
@@ -106,26 +109,34 @@ class CyclicPoisson(DpHorizonProcess):
         # ``(truncated_batch_size, dataset_size)`` into
         # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
         if (self.truncated_batch_size is None) != (self.dataset_size is None):
-            raise ValueError(
-                "CyclicPoisson: truncated_batch_size and dataset_size must be set "
-                "together (both None for plain Poisson, both set for truncated)."
+            raise ConfigurationError(
+                *(
+                    "CyclicPoisson: truncated_batch_size and dataset_size must be set "
+                    "together (both None for plain Poisson, both set for truncated).",
+                )
             )
         if self.truncated_batch_size is not None:
             if int(self.truncated_batch_size) < 1:
-                raise ValueError(
-                    "CyclicPoisson: truncated_batch_size must be >= 1, got "
-                    f"{self.truncated_batch_size}"
+                raise ConfigurationError(
+                    *(
+                        "CyclicPoisson: truncated_batch_size must be >= 1, got "
+                        f"{self.truncated_batch_size}",
+                    )
                 )
             if int(self.dataset_size) < 1:
-                raise ValueError(
-                    f"CyclicPoisson: dataset_size must be >= 1, got {self.dataset_size}"
+                raise ConfigurationError(
+                    *(
+                        f"CyclicPoisson: dataset_size must be >= 1, got {self.dataset_size}",
+                    )
                 )
             if not isinstance(self.inner.strategy, IdentityStrategy):
-                raise ValueError(
-                    "CyclicPoisson: truncated Poisson is only supported for "
-                    "IdentityStrategy inner (BandMfStrategy per-group truncation "
-                    "is not implemented). Use plain Poisson "
-                    "(truncated_batch_size=None) with BandMfStrategy."
+                raise ConfigurationError(
+                    *(
+                        "CyclicPoisson: truncated Poisson is only supported for "
+                        "IdentityStrategy inner (BandMfStrategy per-group truncation "
+                        "is not implemented). Use plain Poisson "
+                        "(truncated_batch_size=None) with BandMfStrategy.",
+                    )
                 )
 
     def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
@@ -164,7 +175,9 @@ class CyclicPoisson(DpHorizonProcess):
         on the K-prefix of the N-step output).
         """
         if n_steps <= 0 or n_steps > self.n_steps:
-            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+            raise ConfigurationError(
+                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
+            )
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -190,9 +203,11 @@ class CyclicPoisson(DpHorizonProcess):
             effective_nm = float(self.inner.noise_multiplier)
             num_groups = int(n_steps)
         else:
-            raise TypeError(
-                "Poisson requires a BandMfStrategy or IdentityStrategy "
-                f"inner.strategy, got {type(s).__name__}."
+            raise InputTypeError(
+                *(
+                    "Poisson requires a BandMfStrategy or IdentityStrategy "
+                    f"inner.strategy, got {type(s).__name__}.",
+                )
             )
 
         if effective_nm == 0:
@@ -294,18 +309,22 @@ def poisson(
         eps = proc.epsilon_at(1e-5)
     """
     if not isinstance(inner, MfGaussian):
-        raise TypeError(
-            f"poisson() requires an MfGaussian inner, got {type(inner).__name__}."
+        raise InputTypeError(
+            *(f"poisson() requires an MfGaussian inner, got {type(inner).__name__}.",)
         )
     if not isinstance(inner.strategy, (BandMfStrategy, IdentityStrategy)):
-        raise TypeError(
-            "poisson() requires inner.strategy to be BandMfStrategy or "
-            f"IdentityStrategy, got {type(inner.strategy).__name__}."
+        raise InputTypeError(
+            *(
+                "poisson() requires inner.strategy to be BandMfStrategy or "
+                f"IdentityStrategy, got {type(inner.strategy).__name__}.",
+            )
         )
     if not 0 < sample_rate <= 1:
-        raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
+        raise ConfigurationError(
+            *(f"sample_rate must be in (0, 1], got {sample_rate}",)
+        )
     if int(n_steps) < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
     return CyclicPoisson(
         inner=inner,
         sample_rate=float(sample_rate),

@@ -37,6 +37,7 @@ from opaque.api.dpftrl.sampling._partitions import (
     _equal_split_partition,
     _independent_partition,
 )
+from opaque.exceptions import ConfigurationError
 from opaque.random.types import RngKey
 
 
@@ -94,16 +95,18 @@ class CyclicPoissonSampler(Sampler):
         super().__init__()
 
         if len(data_source) == 0:
-            raise ValueError("data_source must not be empty")
+            raise ConfigurationError(*("data_source must not be empty",))
         if not 0 < sample_rate <= 1:
-            raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
+            raise ConfigurationError(
+                *(f"sample_rate must be in (0, 1], got {sample_rate}",)
+            )
         if bands < 1:
-            raise ValueError(f"bands must be >= 1, got {bands}")
+            raise ConfigurationError(*(f"bands must be >= 1, got {bands}",))
         if n_steps < 1:
-            raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+            raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
         if truncated_batch_size is not None and truncated_batch_size < 1:
-            raise ValueError(
-                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
+            raise ConfigurationError(
+                *(f"truncated_batch_size must be >= 1, got {truncated_batch_size}",)
             )
 
         self.num_examples = len(data_source)
@@ -115,7 +118,9 @@ class CyclicPoissonSampler(Sampler):
         elif partition_type == PartitionType.EQUAL_SPLIT:
             partition_fn = _equal_split_partition
         else:
-            raise ValueError(f"Unsupported partition_type: {partition_type}")
+            raise ConfigurationError(
+                *(f"Unsupported partition_type: {partition_type}",)
+            )
 
         dtype = np.min_scalar_type(-self.num_examples)
         self.partition = partition_fn(self.num_examples, bands, self.generator, dtype)
@@ -229,11 +234,13 @@ def _from_state_dict_cyclic_poisson(
     saved_n = int(sd["num_examples"])
     template_n = len(template.data_source)
     if saved_n != template_n:
-        raise ValueError(
-            f"CyclicPoissonSampler.from_state_dict: template dataset length "
-            f"{template_n} does not match snapshot num_examples={saved_n}.  "
-            "Restoring with a differently-sized dataset would silently "
-            "produce a different partition."
+        raise ConfigurationError(
+            *(
+                f"CyclicPoissonSampler.from_state_dict: template dataset length "
+                f"{template_n} does not match snapshot num_examples={saved_n}.  "
+                "Restoring with a differently-sized dataset would silently "
+                "produce a different partition.",
+            )
         )
     sampler = CyclicPoissonSampler(
         template.data_source,

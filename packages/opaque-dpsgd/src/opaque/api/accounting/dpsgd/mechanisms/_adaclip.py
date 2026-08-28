@@ -15,6 +15,7 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 #: Mechanism types accepted as AdaClip inner.
 _Inner = Gaussian | NonPrivate
@@ -140,20 +141,22 @@ def adaclip(
         case Gaussian() | NonPrivate():
             pass
         case _:
-            raise TypeError(
-                f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
-                f"got {type(inner).__name__}."
+            raise InputTypeError(
+                *(
+                    f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
+                    f"got {type(inner).__name__}.",
+                )
             )
     if fraction_noise_std <= 0:
-        raise ValueError(
-            f"fraction_noise_std must be positive, got {fraction_noise_std}"
+        raise ConfigurationError(
+            *(f"fraction_noise_std must be positive, got {fraction_noise_std}",)
         )
     if expected_batch_size <= 0:
-        raise ValueError(
-            f"expected_batch_size must be positive, got {expected_batch_size}"
+        raise ConfigurationError(
+            *(f"expected_batch_size must be positive, got {expected_batch_size}",)
         )
     if num_groups < 1:
-        raise ValueError(f"num_groups must be >= 1, got {num_groups}")
+        raise ConfigurationError(*(f"num_groups must be >= 1, got {num_groups}",))
 
     return AdaClip(
         inner=inner,

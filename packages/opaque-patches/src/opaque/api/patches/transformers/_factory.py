@@ -59,6 +59,7 @@ from opaque.api.patches.transformers.components.swiglu import (
     _make_phi3_mlp_forward,
     _make_swiglu_mlp_forward,
 )
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from opaque.api.patches.transformers.types import (
@@ -159,9 +160,11 @@ def _resolve(
         return spec
     if spec in registry:
         return registry[spec]
-    raise ValueError(
-        f"Unknown kind {spec!r}; registered: {sorted(registry)}.  "
-        "Pass a callable directly, or use ``register_*_kind`` to add a custom name."
+    raise ConfigurationError(
+        *(
+            f"Unknown kind {spec!r}; registered: {sorted(registry)}.  "
+            "Pass a callable directly, or use ``register_*_kind`` to add a custom name.",
+        )
     )
 
 

@@ -5,6 +5,7 @@ import torch
 
 from opaque.api.dpftrl.sampling._partitions import PartitionType
 from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 
 
@@ -310,10 +311,14 @@ class TestCyclicPoissonSamplerEdgeCases:
 
     def test_invalid_sampling_prob_raises(self):
         """Invalid sampling_prob raises ValueError."""
-        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\]"):
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
+        ):
             CyclicPoissonSampler(range(10), sample_rate=0.0, key=key(0))
 
-        with pytest.raises(ValueError, match=r"sample_rate must be in \(0, 1\]"):
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
+        ):
             CyclicPoissonSampler(range(10), sample_rate=1.5, key=key(0))
 
     def test_invalid_bands_raises(self):

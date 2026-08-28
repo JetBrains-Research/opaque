@@ -39,6 +39,8 @@ gate falls open and the asserts run for real).
 
 from __future__ import annotations
 
+from opaque.exceptions import ConfigurationError
+
 import math
 
 import pytest

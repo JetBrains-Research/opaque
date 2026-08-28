@@ -13,6 +13,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
@@ -54,5 +55,5 @@ def test_restore_params_succeeds_when_module_requires_grad_neutralized(tmp_path)
 def test_restore_params_rejects_foreign_keys(tmp_path):
     trainer = _trainer(tmp_path)
     bad = {"not_a_real_param": torch.zeros(1)}
-    with pytest.raises(RuntimeError, match="not present in the model"):
+    with pytest.raises(ConfigurationError, match="not present in the model"):
         trainer._restore_params(bad)
