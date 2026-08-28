@@ -1,0 +1,148 @@
+{
+  "statuses": [
+    {
+      "issue": 442,
+      "title": "OPQ-188 - MC random-allocation accounting not implemented for DP-SGD Gaussian prefix",
+      "status": "fixed-verified",
+      "fix_commits": ["b7aa6351", "694723bb", "b8f44fe9", "489c4489"],
+      "note": "Prefix accounting is now implemented deterministically (not MC): RandomAllocation.pld_at (packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py:110-161) composes full epochs of random_allocation_gaussian_pld and calls random_allocation_gaussian_prefix_pld for the partial epoch; the Rust primitive (packages/opaque-accounting/src/amplification/random_allocation.rs:194-251) is a convolution-based Feldman-Shenfeld transform with Rounding::Up at every output step. Verified numerically: prefix epsilon monotone over k=1..640 (b=64, nm=1.0, delta=1e-6: 0.573 -> 2.554), one-epoch RA (1.1322) < Poisson^b (1.2727), prefix(1) matches single-step Poisson at q=1/b (test_random_allocation_short_prefix_matches_poisson). Cross-validation against the paper authors' reference implementation exists (tests/accounting/test_cross_validation_allocation.py, one-sided ours<=theirs, slow lane) plus committed regression vectors (tests/accounting/test_amplification.py:396-476). Runtime sampler (RandomAllocationSampler) redraws per epoch and yields the first n%b bins of a partial epoch, matching the prefix model. k>1 prefix conservatism is tracked by open #441/#693 and is documented in KOutOfT (snap-to-horizon)."
+    },
+    {
+      "issue": 415,
+      "title": "Correct adaptive clipping distributed-use documentation",
+      "status": "fixed-verified",
+      "fix_commits": ["6d6f5a39", "3b4266ab"],
+      "note": "docs/user-guide/clipping.md:251-270 and distributed.md now state adaptive_clipped_grad is local-only, does not auto-detect DDP, and requires sync(clip_state) after every step; the docstring example (packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_adaptive.py:250-290) uses the public sync() + sum_gradients + local_shard + per-rank sampler keys. Verified the documented behavior against the actual handler sync_adaptive_clip_state (packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_distributed.py:54-136): it aggregates counts/batch sizes and recomputes the same next threshold on every rank with the domain-separated key at step-1, so the docs now describe real behavior. Residual: the docs' correctness for the per-group branch is undermined by the new order-corruption finding F1 (empty-batch rank), which is a code defect, not a docs defect."
+    },
+    {
+      "issue": 354,
+      "title": "Tighten Poisson sampler statistical regression tests",
+      "status": "fixed-verified",
+      "fix_commits": ["0ac7b008"],
+      "note": "tests/sampling/test_poisson.py now uses exact scipy binomial confidence bands with a 1e-9 total false-failure budget, asserts the band half-width is tight enough to be meaningful (max_rel_width) before asserting containment, adds a per-record inclusion test with Bonferroni-split alpha (catches a sampler that never draws one record, which the pooled test cannot see), a distribution-derived variance band, and an exhaustiveness test for sample_rate=1.0 across seeds. Ran the suite: all pass (334 tests in sampling/clipping/noise). Non-vacuous: assertions are unconditional."
+    },
+    {
+      "issue": 351,
+      "title": "Avoid materializing discarded per-example gradients in adaptive clipping",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["453d9720", "18f67eac"],
+      "note": "The materialization defect is fixed: return_aux=False adaptive clipping now requests return_stats from clipped_grad (packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_adaptive.py:450-459); under microbatching the engine streams aggregate ClippingStats via _microbatch_accumulate_stats_only (packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_fun.py:353-469) instead of concatenating per-example aux; _force_grad_norms no longer exists in source; regression tests monkeypatch _microbatch_accumulate and assert it is never called with return_aux (tests/clipping/test_adaptive.py:509-546, test_adaptive_per_group.py:412-443); stats/aux count parity verified (same > threshold comparison, same rate denominator). CAVEAT (reported as finding F1): the stats path stores per-group _num_clipped in leaf-traversal group order while the empty-batch path stores it in PerGroup.values construction order, and the DDP sync reduces those dicts positionally -- confirmed cross-rank count permutation and threshold divergence in a live 2-rank Gloo repro."
+    },
+    {
+      "issue": 336,
+      "title": "Normalize Poisson and parallel-Poisson validation and cross-checks",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["45f41836"],
+      "note": "Validation moved into Poisson.__post_init__ (sample_rate strictly in (0,1), truncation pairing; packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_poisson.py:37-61) and ParallelPoisson.__post_init__ (positive-int num_workers incl. bool rejection, truncated-inner rejection; _parallel_poisson.py), so direct construction and deserialization are covered; parallel_poisson() now routes through the poisson() factory. Cross-checks upgraded: TestParallelPoissonCrossValidation asserts workers=1 == poisson and strict monotone growth in workers, plus pinned reference epsilons; Rust golden vectors vs Google dp_accounting remain (parallel_poisson.rs:448). Caveats: (1) sample_rate=1.0 is now rejected by the accountant while PoissonSampler still explicitly supports and tests it (fail-closed but a runtime/accounting asymmetry; sampler-accountant binding is open #356) -- also a small behavior break for anyone who priced full-batch runs via poisson(g, 1.0); (2) the same validate-in-__post_init__ pattern was NOT applied to AdaClip, which still accepts num_groups=0 / negative sigma_b inputs on direct construction or deserialization and then under-charges (finding F2)."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Per-group adaptive clip sync permutes group counts across ranks; thresholds silently diverge",
+      "file": "packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_distributed.py",
+      "line": "64-66",
+      "category": "distributed-privacy-correctness",
+      "severity": "high",
+      "claim": "sync_adaptive_clip_state reduces per-group clipped counts positionally by iterating state._num_clipped.items() ('for gname, local_count in state._num_clipped.items(): global_num_clipped[gname] = reduce_scalar(local_count, op=\"sum\")'), but the dict's key order is code-path-dependent: the non-empty stats path (return_aux=False default) stores counts in leaf-traversal group order (engine _compute_clipping_stats builds counts by iterating group_norms_dict, packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_fun.py:500-503, whose order is group first-occurrence along optree paths, _pytree.py:268-283), while the empty-batch path stores dict.fromkeys(initial_clipping_norm.values, 0.0) in PerGroup.values construction order (_adaptive.py:357-360) and the return_aux path uses sorted() order (_adaptive.py:527). When one rank draws an empty batch (routine under Poisson/DDP and guaranteed under RandomAllocationSampler) and PerGroup.values order differs from leaf order (arbitrary user pattern order via per_group()), the positionally-matched all_reduce sums counts of DIFFERENT groups and each rank assigns the sums to differently-ordered keys, so global counts are permuted on the empty rank and the recomputed per-group thresholds diverge across ranks with no error. This is the closed issue #368's defect class (sync derived from rank-local values, not a schema) surviving in the dpsgd sibling path.",
+      "failure_scenario": "Reproduced live (2-rank Gloo, torch.multiprocessing): PerGroup(groups={'a_weight':'W','b_bias':'B'}, values={'B':1000.0,'W':1.0}), return_aux=False, rank 0 non-empty batch (4 examples, all W clipped), rank 1 empty batch. After sync: rank 0 global counts {'W':4,'B':0} (correct), rank 1 {'B':4,'W':0} (permuted); next thresholds W=1.1008 on rank 0 vs W=0.9013 on rank 1. From then on ranks clip records at different thresholds and scale noise to different max_norms while summing gradients into one model: silent training corruption, and the noise std applied on the low-threshold rank is below the sensitivity actually enforced on the other rank, so the released iterates are under-noised relative to the accounted mechanism.",
+      "evidence": [
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_distributed.py:64-66 positional reduce_scalar over state._num_clipped.items()",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_adaptive.py:357-360 (_empty_num_clipped -> PerGroup.values order), :493 and :523 (stats path stores engine dict), :527 (aux path sorted order)",
+        "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_fun.py:500-503 counts dict in group_norms order; _pytree.py:268-283 first-occurrence leaf order",
+        "single-process demonstration: same config yields _num_clipped key order ['W','B'] on a non-empty step and ['B','W'] on an empty step",
+        "two-rank Gloo repro output: GLOBAL COUNTS DIVERGED {'W':4.0,'B':0.0} vs {'B':4.0,'W':0.0}; NEXT THRESHOLDS DIVERGED W 1.1008208990097046 vs 0.9012759327888489",
+        "existing DDP tests (tests/ddp/dpsgd_ddp_helpers.py:358-470) use hand-built states with identical literal dict order or return_aux=True on all ranks, so the divergence is untested"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Canonicalize the per-group count dict order at every construction site in _adaptive.py (e.g. always build over sorted(current_pg.values.keys()), including _empty_num_clipped and the stats path), and/or make sync_adaptive_clip_state iterate sorted(state._num_clipped) so the collective schedule is derived from the schema rather than rank-local dict order; add a 2-rank Gloo test with one empty rank and PerGroup.values constructed in non-sorted, non-leaf order.",
+      "confidence": "high"
+    },
+    {
+      "title": "AdaClip accounting accepts invalid parameters on direct construction; num_groups=0 silently prices adaptive clipping as free",
+      "file": "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/mechanisms/_adaclip.py",
+      "line": "23-55",
+      "category": "accounting-validation",
+      "severity": "medium",
+      "claim": "The #336/#516 remediation pattern (validate in __post_init__ 'so direct construction and deserialization can't pass invalid state to the native call') was applied to Poisson, ParallelPoisson, RandomAllocation and KOutOfT but not to the sibling AdaClip dataclass, which has no __post_init__. Direct construction (or a hand-edited/corrupted serialized process, cf. closed #342 which made every Budget serializable) accepts num_groups=0, negative fraction_noise_std, and negative expected_batch_size. num_groups=0 makes adaclip_sensitivity return z-tilde = z (the K/(4*sigma_b^2) term vanishes), so effective_noise_multiplier equals the bare Gaussian's and the quantile-query privacy cost is charged as zero; negative sigma_b inputs enter squared and are silently accepted.",
+      "failure_scenario": "Reproduced: AdaClip(inner=Gaussian(1.1), fraction_noise_std=0.05, expected_batch_size=250.0, num_groups=0) yields z_eff=1.1 and poisson(...).pld().epsilon_at(1e-5)=0.14229 vs the correctly-charged 0.14276 -- the accountant reports an epsilon that omits the adaptive-clipping release entirely, with no warning. fraction_noise_std=-0.05 and expected_batch_size=-250.0 are likewise accepted (sign lost in the square). A state dict restored with a zeroed num_groups therefore silently under-reports epsilon while the runtime keeps releasing noisy quantile statistics.",
+      "evidence": [
+        "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/mechanisms/_adaclip.py:23-37 frozen dataclass with no __post_init__; :49-55 effective_noise_multiplier calls _native.adaclip_sensitivity(nm, sigma_b, num_groups) unguarded; :139-156 validation lives only in the adaclip() factory",
+        "contrast: Poisson.__post_init__ (_poisson.py:37-61), ParallelPoisson.__post_init__ (_parallel_poisson.py:23-36), RandomAllocation.__post_init__ (_random_allocation.py:67-77), KOutOfT.__post_init__ (_k_out_of_t.py:40-47) all validate for exactly this reason",
+        "repro output: 'fns=0.05 ebs=250.0 k=0: z_eff=1.1, eps=0.14229070057507137 <-- ACCEPTED' vs valid config eps=0.14276055192086845; negative fns/ebs also ACCEPTED with unchanged z_eff"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Add AdaClip.__post_init__ mirroring the factory checks (fraction_noise_std > 0, expected_batch_size > 0, num_groups >= 1 and integral), matching the pattern already applied to the other dpsgd accounting dataclasses; consider the same for Gaussian (negative noise_multiplier currently only fails later inside the native call).",
+      "confidence": "high"
+    },
+    {
+      "title": "Sampler RNG streams are exempt from the #728 namespaced-root convention and can collide byte-identically",
+      "file": "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py",
+      "line": "125",
+      "category": "rng-domain-separation",
+      "severity": "low",
+      "claim": "Commit 6f6d132a (#728) namespaced every noise-mechanism and auditing RNG stream under a unique string root (GAUSSIAN_STREAM_FOLD, ADAPTIVE_CLIPPING_STREAM_FOLD, auditing tags), and docs/reference/rng.md:208-212 states the convention exists because 'fold_in(key, step) is what every mechanism writes first'. The dpsgd samplers were left out: PoissonSampler seeds numpy directly from key.seed (_poisson.py:108), KOutOfTSampler from self._key.seed (_k_out_of_t.py:58), and RandomAllocationSampler derives each epoch's assignment from the bare integer fold fold_in(self._key, epoch) (_random_allocation.py:125). The documented per-rank Poisson derivation fold_in(key, rank) (docstring _poisson.py:42-49) is byte-identical key material to RandomAllocationSampler's epoch derivation for rank==epoch, and both consume it through the same numpy PCG64 family, so two samplers handed one base key draw correlated (identical) inclusion randomness. Sampler randomness IS the amplification randomness, so a collision correlates subsampling across components with nothing to signal it.",
+      "failure_scenario": "A user who follows the RNG guide's mechanism-root guarantee ('a caller who hands the same base key to two mechanisms still gets independent noise') and reuses one base key for a PoissonSampler sharded per rank (fold_in(K, rank)) and a RandomAllocationSampler (internally fold_in(K, epoch)) gets rank r's Poisson stream seeded identically to RA epoch r's assignment: the two subsampling processes are deterministically coupled, violating the independence the amplification analyses assume. No current shipped example hits this, so today's epsilon values are unaffected; the exposure is the same forward-looking class the audit flagged as OPQ-128 and the team fixed for auditing in #374/#728.",
+      "evidence": [
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_random_allocation.py:125 'rng = np.random.default_rng(fold_in(self._key, epoch).seed)' -- bare integer fold, no string root",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py:108 'self.generator = np.random.default_rng(key.seed)' and docstring :42-49 recommending fold_in(key, rank)",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_k_out_of_t.py:58 'rng = np.random.default_rng(self._key.seed)'",
+        "git show 6f6d132a --stat: noise/auditing modules namespaced, no sampler file touched; docs/reference/rng.md:215-222 tag table lists no sampler tags"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Root each sampler's derivations under a namespaced string (e.g. fold_in(key, 'opaque.dpsgd.poisson_sampler'), fold_in(key, 'opaque.dpsgd.random_allocation', epoch)) with a serialization-compatible migration note, and add the tags to the rng.md table; alternatively document explicitly that sampler keys are unrooted and must be split from mechanism keys.",
+      "confidence": "medium"
+    },
+    {
+      "title": "clipping.md accounting snippets call dpsgd_acc without ever importing it",
+      "file": "docs/user-guide/clipping.md",
+      "line": "236-247",
+      "category": "docs",
+      "severity": "low",
+      "claim": "Both accounting code blocks on the clipping user-guide page (the AdaClip accounting example at :236-249 and the AUTO-S accounting example at :558-568) import 'opaque.accounting as acc' (unused) and then call dpsgd_acc.poisson / dpsgd_acc.gaussian / dpsgd_acc.adaclip; 'dpsgd_acc' is never imported or defined anywhere on the page (grep for 'as dpsgd_acc' and 'dpsgd.accounting' returns nothing in the file). A pasted snippet dies with NameError. Closed issue #416 ('Execute documentation examples and validate public factory signatures') evidently did not cover this page's fenced blocks.",
+      "failure_scenario": "A user copies the documented AdaClip accounting pattern to price their adaptive-clipping run and gets NameError: name 'dpsgd_acc' is not defined; the plausible quick fix of substituting the imported 'acc' fails again (acc.poisson does not exist on the cross-cutting facade), sending users away from the correct dpsgd accounting factory at exactly the safety-relevant step (pricing the quantile release).",
+      "evidence": [
+        "docs/user-guide/clipping.md:236 'import opaque.accounting as acc' followed by :239-241 dpsgd_acc.poisson/adaclip/gaussian",
+        "docs/user-guide/clipping.md:559 same import, :566 'step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)'",
+        "grep -n 'as dpsgd_acc|dpsgd.accounting' docs/user-guide/clipping.md -> no matches"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Replace the unused 'import opaque.accounting as acc' with 'import opaque.dpsgd.accounting as dpsgd_acc' in both blocks (the convention every other page uses), and extend the docs-snippet execution check to fenced blocks in user-guide pages.",
+      "confidence": "high"
+    },
+    {
+      "title": "rng.md example calls gaussian_noise positionally though the factory is keyword-only",
+      "file": "docs/reference/rng.md",
+      "line": "309",
+      "category": "docs",
+      "severity": "low",
+      "claim": "docs/reference/rng.md:309 shows 'noise_fn, state = gaussian_noise(1.1, key=noise_key)', but the factory signature is def gaussian_noise(*, noise_multiplier, key, bound=None, compute_dtype=...) (packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:156-165) -- every parameter is keyword-only, so the documented call raises TypeError. This is the exact class closed issue #416 claimed to eliminate ('validate public factory signatures' in docs).",
+      "failure_scenario": "A user following the RNG reference's canonical training-loop pattern gets 'TypeError: gaussian_noise() takes 0 positional arguments but 1 was given' on the first step.",
+      "evidence": [
+        "docs/reference/rng.md:309 'noise_fn, state = gaussian_noise(1.1, key=noise_key)'",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:156-161 'def gaussian_noise(*, noise_multiplier: float, key: RngKey, ...)'"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Change the snippet to gaussian_noise(noise_multiplier=1.1, key=noise_key); include reference-page fenced blocks in the doc-example validation.",
+      "confidence": "high"
+    },
+    {
+      "title": "Accounting now rejects sample_rate=1.0 that the runtime PoissonSampler still supports and tests",
+      "file": "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_poisson.py",
+      "line": "38-41",
+      "category": "runtime-accounting-asymmetry",
+      "severity": "low",
+      "claim": "The #336 fix (45f41836) tightened the accounting bound from (0,1] to strictly (0,1): Poisson.__post_init__ raises for sample_rate=1.0, and dpsgd docs now say 'strictly between zero and one'. The runtime PoissonSampler still validates '0 < sample_rate <= 1' (_poisson.py:89-90) and 0ac7b008 even added test_sample_rate_one_yields_every_record pinning q=1.0 as a supported exhaustive mode. A full-batch (q=1) run therefore has a supported sampler but no constructible matching accountant, and previously-valid code (or a previously-serialized Poisson process with sample_rate=1.0) now raises ValueError on load. Fail-closed and mathematically harmless (at q=1 the correct accountant is gaussian(nm)*steps), but it is the residual of exactly the normalization #336 set out to do, and the loud break is undocumented.",
+      "failure_scenario": "A user pricing a full-batch noisy-GD run the same way the docs price DP-SGD -- dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate=1.0) -- gets 'ValueError: sample_rate must be in (0, 1)' with no pointer to the gaussian() equivalent; a checkpointed accountant serialized before v0.5 with sample_rate=1.0 fails to deserialize.",
+      "evidence": [
+        "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_poisson.py:38-41 'if not 0 < sample_rate < 1: raise ValueError'",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py:89-90 'if not 0 < sample_rate <= 1: raise ValueError(... (0, 1] ...)' and docstring :53 'sample_rate ... in (0, 1]'",
+        "tests/sampling/test_poisson.py test_sample_rate_one_yields_every_record (added by 0ac7b008) pins q=1.0 runtime support",
+        "git show 45f41836: factory bound changed from '0 < float(sample_rate) <= 1' to strict"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either accept sample_rate=1.0 in the accountant (delegating to the unamplified Gaussian PLD) or reject it in the sampler too, and say in both error messages that q=1 should be priced as gaussian(nm) directly; the general sampler-accountant contract is open #356.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Reviewed all 55 delta commits touching packages/opaque-dpsgd between 79c916e3 and 4b13d82 (git log --oneline 79c916e3..4b13d82 -- packages/opaque-dpsgd), reading in full the dpsgd-relevant ones: 45f41836 (#516 Poisson validation), 0ac7b008 (#649 sampler statistics), 453d9720 (#510 adaptive stats streaming), 18f67eac (#681 return_stats/all_finite plumbing), 6d6f5a39+3b4266ab (#450/#488 adaptive distributed docs), b7aa6351 (#307 random-allocation PLD + Rust transform), 694723bb (#459 horizon core + prefix), b8f44fe9 (#460 k-out-of-t sampler+accounting), 489c4489 (#468 conv grid cap), c90f67d3 (#314 allocation slots), 6f6d132a (#728 RNG stream roots), e15a4d36 (#551 schema-driven sync) and 5303203e (#717 Gloo gaps) on the dpsgd side, plus 8109c169 (PerGroup by ParamPath) and 37d3ac3f (#598) at their dpsgd touchpoints; accounting-core commits (88a25769, a5277a3f, 493a9f4a, 819ef0d9) were checked only for their dpsgd-facing surface. Verified current-tree code end to end for: Poisson/parallel-Poisson validation and PLD dispatch, PoissonSampler + state-dict replay, RandomAllocationSampler/KOutOfTSampler and their accountants (incl. the Rust prefix transform's rounding direction), adaptive clipping stats/aux/empty paths and the AdaptiveClipState DDP sync, Gaussian noise incl. bounded mode (runtime unchanged: bound= still accepted, noise_stddev still reports the nominal nm*max_norm; now documented 'experimental; the standard accountant does not cover it' -- matches open #344, no delta made it worse), and the engine sync(aux) fixed-collective-schedule rewrite (per-field all_gather_object + presence-checked reduce_scalar pairs -- OPQ-001 class resolved on that path). Specific-attention items: #336/#354 verified above; the sync(aux) fix verified in opaque-engine/clipping/_distributed.py; adaptive-clipping-vs-accounting binding (#345) confirmed unchanged (rate still divided by realized batch, sigma_b still charged at expected batch -- tracked open, not worse); random-allocation PLD (PR #307) numerically sanity-checked (monotone prefixes, RA < Poisson at matched rate, k=1 prefix == single Poisson step) and cross-validated by the shipped one-sided reference tests. Test executions: 334 sampling/clipping/noise tests, 372 accounting/functional/rng tests, and 5 CPU/Gloo distributed dpsgd tests all pass on the current tree; two custom repros (AdaClip validation gap; 2-rank per-group sync order corruption) demonstrate the two epsilon-relevant findings. Not covered: opaque-transformers trainer wiring of dpsgd factories (other agents' areas), deep review of accounting-core PLD cache/MC bounding, and CUDA-only paths."
+}

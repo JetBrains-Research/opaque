@@ -1,0 +1,49 @@
+# OPEN issues (tracked outstanding) snapshot 2026-08-27 morning - do NOT report duplicates as new findings
+700	Tighten partial-epoch BallsInBins prefixes for BSR	
+699	Tighten partial-band prefixes for CyclicPoisson with BandMF	
+698	Tighten partial-epoch BallsInBins prefixes for BLT	
+697	Tighten partial-band BMinSep prefixes and certify Monte Carlo error	
+696	Validate and tighten BallsInBins prefixes for normalized BISR	
+695	Derive partial-epoch PLD bounds for BallsInBins with identity noise	
+694	Validate and tighten BallsInBins prefixes for normalized lambda-CGD	
+693	Derive a prefix PLD for K-out-of-T with multiple participations	
+688	Validate horizon-sensitive prefix accounting and gate pessimistic early stopping	
+685	Fix cached-accountant continuation for horizon processes	
+683	Stabilize horizon-prefix accounting and correlated-process continuation	
+666	Add Monte Carlo privacy-regression vectors after conservative accounting	accounting|ci
+595	Enforce the non-negativity precondition BLT min-sep sensitivity depends on	bug|high|dpftrl|epsilon|privacy
+538	Restructure tests to reuse common components	
+475	investigate DP correctness of DPO trainer and alignment loss methods	alignment|transformers
+447	OPQ-193 - Poisson subsampling as a pointwise PLD map for non-Gaussian bases	low|accounting|epsilon
+443	OPQ-189 - Optional Cadence/GPU feature-validation for horizon allocation trainer modes	low|dpsgd|transformers
+441	OPQ-187 - k-out-of-t Gaussian prefix PLD may be conservative beyond hypergeometric strategy	medium|accounting|dpsgd|epsilon
+436	Define a small public exception taxonomy	low|api
+434	Classify and constrain intentional lazy imports	low|api
+429	Exercise supported Torch and Transformers compatibility branches	low|patches|transformers|ci
+427	Reserve every published Opaque distribution name	medium|packaging|security
+417	Add a reproducible benchmark harness for every published number	low|docs|ci|performance
+407	Implement proper JME second moments for DP-SGD	medium|dpsgd|optimizers|numerical
+383	Gate or account every statistic that leaves private training	high|alignment|transformers|epsilon|privacy
+376	Calibrate one-run auditing under the null	medium|auditing|epsilon|privacy
+359	Define BandMF participation sensitivity and price second moments consistently	high|accounting|dpftrl|epsilon|privacy
+356	Emit and require a sampler-accounting contract	high|dpsgd|dpftrl|transformers|epsilon
+353	Validate Toeplitz Gram construction against absolute coefficients	medium|accounting|dpftrl|epsilon
+348	Add mechanism-to-accountant conformance tests	low|accounting|dpsgd
+344	Deploy a Gaussian mechanism that matches the accountant	high|dpsgd|epsilon|privacy|numerical
+345	Bind AdaClip released statistic to the parameters the accountant charges	high|accounting|dpsgd|transformers|epsilon|privacy
+346	Replace unchecked clipped sensitivity assertions with a safe API	low|engine|dpsgd|epsilon|api
+330	Establish patched-versus-upstream numerical parity	high|patches|numerical
+329	Make privacy accounting fail closed and independently verifiable	high|accounting|epsilon|privacy
+325	Harden packaging, supply chain, and compatibility CI	medium|ci|packaging|security
+324	Make documentation and published claims mechanically verifiable	medium|docs
+326	Bind deployed mechanisms to the accountant that prices them	high|engine|accounting|dpsgd|epsilon|privacy
+327	Rebuild empirical auditing around calibrated statistical guarantees	high|auditing|epsilon|privacy
+323	Align trainer and alignment behavior with their public contracts	high|alignment|transformers|numerical|api
+322	Define and enforce the private release boundary	high|alignment|transformers|epsilon|privacy
+321	Correct and validate DP-aware optimizer behavior	high|optimizers|numerical
+320	Bind runtime sampling to amplification accounting	high|dpsgd|dpftrl|epsilon|privacy
+319	Restore DP-FTRL mechanism and strategy invariants	high|accounting|dpftrl|epsilon|numerical
+58	FSDP2: Implement noise injection with sharded parameters	blocked
+57	FSDP2: Implement gradient clipping with sharded parameters	blocked
+56	FSDP2: Design doc - clipping and noise with sharded params	blocked
+55	FSDP2: Research vmap + FSDP2 interaction	blocked

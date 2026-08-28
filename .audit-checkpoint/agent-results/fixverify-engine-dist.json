@@ -1,0 +1,118 @@
+{
+  "statuses": [
+    {
+      "issue": 368,
+      "title": "Derive distributed synchronization from schemas, not rank-local values",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["782d59c2", "e15a4d36"],
+      "note": "Core fix verified: aux sync is now schema-driven. packages/opaque-engine/src/opaque/api/engine/clipping/_distributed.py:71-90 declares fixed field schemas per aux type ('Do not infer this from a subclass's dataclass fields'); _gather_aux_fields (:192-210) issues exactly one all_gather_object per schema tensor field; _sync_clipping_rate (:213-240) 'Always issues the same two reduce_scalar collectives' for presence then two more only when presence is uniform; sync_object (_state.py:364-486) validates the whole field_ops schema before any collective and executes in dataclass declaration order. clipped_grad's empty-batch short-circuit (_clipped_grad.py:216-256) returns zero grads + a schema-complete aux so the trainer's sum_gradients_/sync(aux) collectives (_dp_trainer.py:2099-2104) run unchanged. Verified live: 2-rank gloo tests test_sync_aux_empty_batch.py (rank 0 empty vs rank 1 non-empty + follow-up token collective) pass. CAVEAT (reported as finding): under per-group clipping the presence check itself fires — non-empty per-group aux carries clipping_rate=None (_clipped_fun.py:852-856) while the empty-batch path hardcodes 0.0 (_clipped_grad.py:238, _adaptive.py:423), so one empty Poisson rank + one non-empty rank raises RuntimeError 'clipping_rate presence mismatch' on every rank (reproduced live on 2-rank gloo). The shipped test _worker_sync_aux_empty_vs_per_group hand-builds a float 0.5 on the non-empty rank and so misses the real aux shape."
+    },
+    {
+      "issue": 367,
+      "title": "Reduce paired private-second-moment gradients across ranks",
+      "status": "fixed-verified",
+      "fix_commits": ["444acc33", "940f6693", "5303203e"],
+      "note": "Pre-remediation gradients.py (79c916e3) had zero SecondMoment references. Commit 444acc33 added explicit recursion branches: reduce_pytree_/reduce_pytree now recurse into both child wrappers of SecondMomentClippingOutput and SecondMomentNoiseOutput (gradients.py:154-162, 203-213), and non-tensor leaves after wrapper dispatch now raise TypeError instead of being silently skipped (:183-193, 227-234). Each child is a ClippedPytree so metadata assertions and _reduced_metadata run per stream. 5303203e additionally registered the missing sync handler for SecondMomentMFNoiseState (dpftrl/noise/_distributed.py:123-145), which inherits NoiseState not MFNoiseState and therefore missed the MRO walk; both paired streams are validated in fixed order. Verified live: packages/opaque-engine/tests/ddp/test_second_moment_reduce.py (includes single-vs-two-rank parity against a real clipped_grad(second_moment=True) reference) and the dpftrl gloo suite (test_private_second_moment_noise_state_syncs_across_ranks) all pass on 2 ranks."
+    },
+    {
+      "issue": 365,
+      "title": "Preserve integer and float64 exactness in scalar reductions",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["7abedebd", "5303203e"],
+      "note": "Verified: reduce_scalar (_state.py:122-181) routes int values through an exact torch.int64 collective (bool rejected), supports compute_dtype for float64, and computes integer means from an exact integer sum; assert_scalar_equal (:39-75) compares ints with == (no isclose rtol) and sync_object's assert_equal/assert_optional_equal paths pass atol=0/rtol=0 with float64 for floats (:441-447, :464-470). Seeds — uint64 identity material that can set the top bit — are now compared as strings (dpsgd/noise/_distributed.py:25-35; dpftrl/noise/_distributed.py:95-104), and MF max_norm fingerprints are signed-int64 SHA-256 prefixes never coerced through float (dpftrl/noise/_distributed.py:37-71) with legacy-unsigned normalization (:30-34). Live 2-rank test _worker_scalar_exactness_gloo (2**24+rank int, 1+rank*2**-30 float64) passes. CAVEAT (reported as finding): the optimizer-state audit computes tensor stats in float64 but still marshals them through the default float32 collective with rtol=1e-5 (optimizers/distributed.py:98-103 never passes compute_dtype), so sub-1e-5 cross-rank drift passes the drift audit."
+    },
+    {
+      "issue": 363,
+      "title": "Do not retry collectives after callback TypeError",
+      "status": "fixed-verified",
+      "fix_commits": ["955c9b3a"],
+      "note": "The retry ('except TypeError: result = field_op(value)') is gone: sync_object now invokes a field callable exactly once as fn(value, device) (_state.py:423-424) and exceptions propagate unchanged, 'so a callable that issues collectives issues them exactly once' — a callable that all-reduces then raises can no longer issue a second, schedule-desynchronizing collective via the retry. _validate_field_op (:331-361) rejects wrong-arity callables (signature.bind(None, None)) and bad op strings before any collective begins. Verified live: the 2-rank gloo regression in engine_ddp_helpers.py (_reduce_then_fail asserts reductions == [world_size] after the TypeError) passes; grep confirms no other except-TypeError-retry pattern near collectives survives in packages/*/src (remaining handlers are local len()-probes in _eval.py/_dp_trainer.py with no collectives)."
+    },
+    {
+      "issue": 369,
+      "title": "Gather uneven distributed evaluation shards safely",
+      "status": "fixed-verified",
+      "fix_commits": ["cd2f7250"],
+      "note": "Verified end to end. gather_pytree is now one symmetric all_gather_object per call in which a rank-local None payload still participates (_state.py:300-314), and _merge_gathered_pytrees validates treedefs, dtypes, dims and non-concat shape agreement after the collective so every rank raises consistently instead of desyncing (:191-287). _PredictionAccumulator.finalize issues exactly four unconditional gathers (predictions/labels/inputs/losses) even when a shard produced no payload (_eval.py, 'All ranks enter the same four collectives'), replacing the old 'if X is not None: gather' data-dependent schedule; per-example eval telemetry goes through one optional-dict gather_pytree (_dp_trainer.py:2839-2858). The old len(eval_dataset) >= world_size hard requirement was removed (empty shards now supported); eval_do_concat_batches=False is still correctly rejected under DDP (_dp_trainer.py:3761-3770). Verified live: test_gloo_eval_gather_supports_empty_rank_shard and test_gloo_eval_gather_matches_reference_for_uneven_shards pass on 2 ranks. Note the trainer no longer uses gather_for_metrics; that helper remains public with an accurate identical-shape contract (collectives.py:105-124) though its docstring example ('reference-logprob shards') is stale."
+    },
+    {
+      "issue": 366,
+      "title": "Add a blocking two-rank CPU distributed correctness lane",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["239e364d", "095992d6", "938a8a56", "5303203e"],
+      "note": "The lane exists and is blocking: pr.yml:76-85 and ci.yml:41-50 run python-tests.yml with pytest-marker 'distributed and not cuda' on ubuntu-latest, and the branch-protection gate job 'Python tests' (pr.yml:188-226) requires python-tests-distributed to succeed (only python-tests-cuda* may be skipped). The selected tests are real 2-rank (and one 3-rank) gloo mp.spawn tests across engine/dpsgd/dpftrl/optimizers/alignment/transformers, and they would catch the original desync: _worker_sync_aux_empty_batch reproduces rank-0-empty vs rank-1-non-empty followed by a token all_reduce proving lockstep. I executed the full 'distributed and not cuda' selection locally: 67 tests, all pass (engine 49, dpsgd/dpftrl/optimizers 10, transformers 6, alignment+cpu_gloo 2). CAVEATS (reported as findings): (1) the lane sets allow-empty-test-selection:true, and run_python_test_package.sh:40-43 converts pytest exit 5 into success per package — if the distributed selection ever collapses to zero collected tests the lane goes green silently; (2) the lane's per-group empty-batch scenario is tested with a hand-built aux whose clipping_rate is a float, so it does not catch the real per-group presence crash (see finding on #368)."
+    },
+    {
+      "issue": 328,
+      "title": "Make distributed DP correctness blocking and schema-driven",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["782d59c2", "444acc33", "cd2f7250", "7abedebd", "e15a4d36", "938a8a56", "5303203e", "955c9b3a"],
+      "note": "Umbrella of #366/#368: both halves substantially landed and verified (blocking Gloo lane wired into the PR gate; sync schedules derived from declared schemas with pre-collective validation; live 2-rank runs green). Shares the two caveats reported under #366 and #368: the per-group clipping_rate presence divergence between empty and non-empty aux crashes training on partially-empty Poisson rounds, and the lane's allow-empty-test-selection makes an accidentally-empty distributed selection pass silently."
+    },
+    {
+      "issue": 364,
+      "title": "Shard reference-logprob precomputation across ranks",
+      "status": "fixed-verified",
+      "fix_commits": ["0c50b8cc"],
+      "note": "Verified in packages/opaque-alignment/src/opaque/api/alignment/dpo/reference/_precompute.py: each rank runs the reference forward over its own contiguous local_shard slice (:288-292), results are gathered back into dataset order through one rank-ordered gather_pytree object collective (:308-333) with an empty shard contributing None, and every column is validated against expected_rows so a ref that does not return one value per row fails loud. Cross-rank preconditions are collective-schedule-safe: dataset size (assert_scalar_equal) and fingerprint (assert_string_equal) checked up front (:408-417); the cache-hit decision is min-reduced unconditionally so no rank can skip the forward+gather while others enter it (:262-270, :427-437); only rank 0 writes the cache and all ranks barrier before returning (:453-460). Consumed by the DPO trainer at _dpo_trainer.py:675/725 on every rank. Verified live: the 3-rank gloo test test_precompute_preserves_cross_rank_contract passes."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Per-group clipping crashes DDP training on any partially-empty Poisson round",
+      "file": "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py",
+      "line": "238 (also _clipped_fun.py:852-856, engine/clipping/_distributed.py:224-230, dpsgd/clipping/_adaptive.py:423)",
+      "category": "distributed-correctness",
+      "severity": "medium",
+      "claim": "The #368 empty-batch fix left the aux schema itself data-dependent under per-group clipping: the empty-batch short-circuit hardcodes clipping_rate=0.0 while the non-empty per-group path emits clipping_rate=None, so _sync_clipping_rate's new presence check raises RuntimeError on every rank the first time some-but-not-all ranks draw an empty Poisson batch.",
+      "failure_scenario": "DPTrainer with TrainingArguments.clipping_norm={...} (per-group dict, any clipping_mode: fixed/adaptive both affected) + DDP + Poisson sampling. On a step where one rank's Poisson draw is empty and another's is not, sync(aux) in training_step (_dp_trainer.py:2104) raises 'Clipped auxiliary clipping_rate presence mismatch across ranks.' on every rank and the training run dies mid-stream. Reproduced live on 2-rank gloo: rank 0 empty -> clipping_rate=0.0, rank 1 batch of 4 -> clipping_rate=None, both ranks raise (no hang; follow-up collective still works, so it is a fail-closed crash, not silent corruption).",
+      "evidence": [
+        "_clipped_grad.py:238 (empty-batch aux): 'clipping_rate=0.0,' — unconditional, even when clipping_norm is a PerGroup",
+        "_clipped_fun.py:852-856 (non-empty aux): 'clipping_rate=(stats.clipping_rate if isinstance(stats.clipping_rate, float) or stats.clipping_rate is None else None)' — per-group rates are a dict, so the aux field becomes None",
+        "engine/clipping/_distributed.py:224-230: 'local_presence = int(clipping_rate is not None); ... if min_presence != max_presence: raise RuntimeError(\"Clipped auxiliary clipping_rate presence mismatch across ranks.\")'",
+        "dpsgd/clipping/_adaptive.py:423 empty path 'clipping_rate=0.0' vs :617 non-empty 'clipping_rate=aux.clipping_rate if aux is not None else None' — adaptive per-group has the same divergence",
+        "Reachability: _dp_trainer.py:1408-1421 builds a PerGroup clip_norm from the documented clipping_norm dict; :4177-4185 passes it to clipped_grad(return_aux=True); :2099-2104 calls sync under DDP",
+        "Live 2-rank gloo repro output: 'rank 0: local clipping_rate=0.0 bs=0 / rank 1: local clipping_rate=None bs=4 / both ranks: SYNC RAISED RuntimeError: Clipped auxiliary clipping_rate presence mismatch across ranks.'",
+        "The shipped regression test _worker_sync_aux_empty_vs_per_group (engine_ddp_helpers.py:673-715) hand-builds the non-empty rank with clipping_rate=0.5 (a float), which real per-group clipped_grad never produces — the test therefore passes while the real path crashes"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Make the aux clipping_rate presence a function of the clipping schema, not the batch: in _empty_batch_response (and the adaptive empty path) emit clipping_rate=None when clipping_norm is a PerGroup (matching the non-empty aux), or have _sync_clipping_rate derive presence from the clip configuration. Extend _worker_sync_aux_empty_vs_per_group to build both auxes through the real clipped_grad(PerGroup, return_aux=True) instead of hand-crafting fields.",
+      "confidence": "high"
+    },
+    {
+      "title": "Distributed CI lane passes silently if its test selection collapses to zero",
+      "file": ".github/workflows/pr.yml",
+      "line": "80 (with .github/scripts/run_python_test_package.sh:40-43 and ci.yml:45)",
+      "category": "ci-fail-open",
+      "severity": "low",
+      "claim": "The blocking two-rank lane added for #366/#328 sets allow-empty-test-selection:true, and the runner converts pytest exit code 5 (no tests collected) into success per package, so a refactor that renames/unmarks the 'distributed' tests or moves them out of the scanned package paths turns the desync-regression lane green with zero tests executed.",
+      "failure_scenario": "A marker rename (e.g. 'distributed' -> 'ddp'), a conftest change that deselects the ddp directories, or moving the spawn tests out of packages/*/tests makes every suite in the linux-distributed job exit 5; run_python_test_package.sh logs '::notice::No tests matched' and exits 0; the branch-protection 'Python tests' gate sees success. The exact regression class this lane exists to block (OPQ-001-style collective desync) can then reland invisibly — the failure mode the original audit called out for OPQ-051.",
+      "evidence": [
+        ".github/workflows/pr.yml:76-85: python-tests-distributed passes 'allow-empty-test-selection: true' with pytest-marker 'distributed and not cuda' (same in ci.yml:41-50 and prepare-release-implementation.yml:307-317)",
+        ".github/scripts/run_python_test_package.sh:40-43: 'if [[ \"$status\" -eq 5 && \"$ALLOW_EMPTY_TEST_SELECTION\" == \"true\" ]]; then echo \"::notice::No tests matched...\"; exit 0; fi'",
+        "No step in python-tests.yml asserts that at least one suite in the distributed job actually collected tests (TEST_RESULTS_FILE is written but never checked for non-emptiness)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "For the distributed lane, require a minimum collected-test count: either drop allow-empty-test-selection and give every package at least one distributed test, or add a post-loop check that TEST_RESULTS_FILE is non-empty for the suites known to carry distributed tests (engine, dpsgd, dpftrl, optimizers, alignment, transformers).",
+      "confidence": "high"
+    },
+    {
+      "title": "Optimizer-state drift audit marshals float64 fingerprints through float32 collectives with rtol=1e-5",
+      "file": "packages/opaque-optimizers/src/opaque/api/optimizers/distributed.py",
+      "line": "98-103",
+      "category": "distributed-correctness",
+      "severity": "low",
+      "claim": "Residual of #365: _assert_tensor_fingerprint_equal computes (sum, sumsq, min, max) in double precision but compares them via assert_scalar_equal without compute_dtype, so the collective runs at the float32 default with atol=1e-8/rtol=1e-5 — cross-rank optimizer-state drift below roughly 1e-5 relative (or below float32 resolution for large sums, ~2^-24 relative) passes an audit whose stated purpose is exactly drift detection.",
+      "failure_scenario": "Two ranks' Adam second-moment tensors diverge by a small relative amount (e.g. a non-deterministic kernel introduces 1e-6-relative drift that compounds over thousands of steps). sync_optimizer_state fingerprints each tensor, but min/max reduction of the float64 stats happens in float32 and the isclose check uses rtol=1e-5, so the audit stays silent while parameters slowly de-synchronize; the drift is only caught much later (or never, if it stays sub-tolerance while steadily accumulating).",
+      "evidence": [
+        "optimizers/distributed.py:98-103: 't = tensor.detach().double(); assert_scalar_equal(float(t.sum().item()), name=...)' — no compute_dtype argument on any of the five calls",
+        "engine/distributed/_state.py:65: 'dtype = compute_dtype or torch.float32' and :174: tensor dtype 'compute_dtype or torch.float32' — the float path defaults to float32 marshalling with atol=1e-8, rtol=1e-5",
+        "The module's own docstring (optimizers/distributed.py:85-93) says the fingerprint exists because 'drift detection is the entire point'; the master-list OPQ-049 note said float32 marshalling 'partially defeats' the audit — the integer half was fixed by #365 (ints now exact int64), the float half was not"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Pass compute_dtype=torch.float64 and atol=0.0/rtol=0.0 (or a deliberately tiny tolerance) on the five assert_scalar_equal calls in _assert_tensor_fingerprint_equal, mirroring what sync_object's assert_equal path already does for float fields.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Scope: distributed code across opaque-engine, opaque-dpsgd, opaque-dpftrl (noise sync), opaque-optimizers (state audit), opaque-alignment (precompute sharding), opaque-transformers (trainer/eval collectives), plus the distributed CI lane. Reviewed all delta commits 79c916e3..4b13d82 touching these paths: 782d59c2 (empty-batch sync(aux) collectives), 444acc33 (paired-wrapper reduction + leaf TypeErrors), 4791110e (MRO sync dispatch), cd2f7250 (symmetric gather_pytree + eval gathers), 940f6693 (paired reduction parity tests), 7abedebd (scalar exactness), e15a4d36 (schema-derived sync), 0c50b8cc (ref-logprob sharding), 239e364d/095992d6/938a8a56 (Gloo lane + workflow consolidation), 5303203e (seed string-compare, SecondMomentMFNoiseState registration, correlated-noise docs), 955c9b3a (field-callback single invocation), plus current-tree reads of engine distributed/_state.py, collectives.py, gradients.py, clipping/_distributed.py, profiling/_distributed.py, dpsgd noise+clipping _distributed.py and _adaptive.py, dpftrl noise/_distributed.py, optimizers/distributed.py, alignment _precompute.py, transformers _dp_trainer.py/_eval.py, and the pr/ci/python-tests workflows. Executed the full 'distributed and not cuda' selection locally (67 tests across engine/dpsgd/dpftrl/optimizers/alignment/transformers, all green after installing transformers/peft/datasets into the repo venv) and wrote a fresh 2-rank gloo repro that demonstrates the per-group empty-batch presence crash the shipped tests miss. Checked collective-schedule determinism across every sync/gather/reduce path (presence checks, schema-fixed field loops, dict-iteration ordering, error-after-collective consistency); checked the noise_stddev sum/mean metadata semantics (correlated MF draws now explicitly documented in distributed.md with the aggregate-then-noise recommendation); confirmed no surviving except-TypeError retry around collectives. Not re-verified here: NCCL/CUDA variants of the ddp tests (no GPU in this environment) and the #415 adaptive-clipping docs issue (dpsgd|docs labels, outside the distributed label set)."
+}

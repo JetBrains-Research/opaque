@@ -1,0 +1,144 @@
+{
+  "statuses": [
+    {
+      "issue": 411,
+      "title": "Make Adafactor epsilon floors scale-aware",
+      "status": "fixed-verified",
+      "fix_commits": ["d33fbf3e"],
+      "note": "All three eps_root sites are now scale-relative: _adafactor.py:141-146 clamps r_mean to eps_root*v_row.mean() (inner clamp 1e-30 guards the zero-state first step), :247-248 clamps the factored denominator to eps_root*sqrt(mean(v_hat)), :259-260 the scalar-branch denominator to eps_root*sqrt(mean(v_eff)). Genuinely scale-invariant, not a different constant: multiplying gradients by k scales v_* by k^2 and every floor by k, so the update is invariant. Verified empirically -- update norms identical (to 6 decimals) for gradient scales 1.0, 1e-4, 1e-8, and 1e-12 (only eps_grad=1e-30 breaks invariance below ~1e-12, which is genuine underflow guarding). The commit's regression tests (TestScaleAware, 4 tests) assert non-collapse at DP scale, non-equivalence to RMS-SGD, scale invariance, and BC activity at DP scale; all 23 test_adafactor.py tests pass on the current tree."
+    },
+    {
+      "issue": 410,
+      "title": "Restore per-group noise-variance EMA from checkpoints",
+      "status": "fixed-verified",
+      "fix_commits": ["8109c169", "444acc33", "c2c45515"],
+      "note": "phi is now a dict[ParamPath, float] keyed by optree ParamPath (init_per_group_phi, _bias_correction.py:97-99) and round-trips through state_dict -> torch.save -> torch.load -> from_state_dict. Verified empirically on the current tree with a real on-disk round-trip for adamw (per-group PerGroup stddevs producing DISTINCT per-path phi values 4.49e-4 vs 1.25e-3 -- both restored exactly), adafactor (phi_flat), and adadelta (dict phi_g + tensor phi_dx). c2c45515 made the round-trip tests non-vacuous (BC enabled, isinstance(phi, dict) + all-nonzero asserted) and extended coverage to radam/rmsprop/adagrad; b9faed0a later added a state-sensitivity meta-assertion so a restore that silently reverts to fresh state fails loudly. All 29 test_state_dict.py tests pass."
+    },
+    {
+      "issue": 409,
+      "title": "Give update_rms_clip one model-wide or per-leaf meaning",
+      "status": "fixed-verified",
+      "fix_commits": ["fe92f618", "5c5c9a5e"],
+      "note": "Standardized on model-wide: every update_rms_clip path now routes through the single _clip_by_global_rms helper (_chain.py:61-77, param-count-weighted RMS over all tensor leaves). Adafactor's previously per-leaf clip was replaced by a call to the same helper inside the moment scaler (_adafactor.py:265, before the beta1 first-moment EMA, matching Shazeer-Stern Alg 4 ordering) and the chain-level clip is disabled for it (:370, no double clip). adamw/ademamix/radam/rmsprop/adadelta pass the knob to the chain stage. Docstrings and docs (docs/reference/optimizers.md:57-59, user guide) now say model-wide explicitly. test_rms_clip.py (7 tests) and TestUpdateRmsClip in test_adafactor.py verify a large leaf triggers clipping of an otherwise-unscaled leaf. Note the model-wide choice deviates from the paper's per-tensor update clipping -- a documented utility trade-off, not a defect."
+    },
+    {
+      "issue": 408,
+      "title": "Provide the documented schedule-free evaluation accessor",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["48eccebd"],
+      "note": "Resolved the docs-drift direction: every reference to the phantom get_eval_params() is gone repo-wide (grep returns zero hits), and the docs (_schedule_free.py:42-47, docs/reference/optimizers.md:196-197, docs/user-guide/optimizers.md:396-398) now teach reading the published params off the state as opt_state.x. New tests verify x differs from the training iterate mid-run and matches a hand-computed Polyak average under SGD. CAVEAT (reported as a finding): the DPTrainer stack accepts optim='schedule_free' and the schedule_free_radam alias but never consults ScheduleFreeState.x anywhere, so trainer evaluation and checkpoints use the y_t iterate the wrapper's own docstring says defeats the purpose of schedule-free averaging; docs/reference/transformers.md:233-234 lists schedule_free with no caveat."
+    },
+    {
+      "issue": 406,
+      "title": "Align Adafactor and Adadelta memory behavior with their documentation",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["d64572ee", "6fe85832"],
+      "note": "Adadelta: BC state (phi_g dict, per-element phi_dx) is now allocated only when noise_bias_correction=True (_adadelta.py:129-146; None otherwise), the false '1.5x vanilla footprint' claim is gone, and the docstring/user guide state the real cost (~|params| extra elements when BC on). Update path handles None phi cleanly (guards at :249-253, :269-273); tests assert phi fields stay None with BC off. Adafactor: the unverifiable empirical memory/accuracy comparison claims were removed from docs/user-guide/optimizers.md (benchmark restoration tracked by open #417). CAVEAT (reported as a finding): _adafactor.py:6-7 still says rank<2 leaves 'fall back to a scalar second moment' while _init_v_for_leaf:120 allocates a full per-element zeros_like(leaf) tensor for vectors -- a residual memory-documentation misstatement in the exact scope of this issue, folded into the Adafactor-docstring finding."
+    },
+    {
+      "issue": 405,
+      "title": "Replace vacuous optimizer regressions with behavior-sensitive tests",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["b9faed0a", "c2c45515"],
+      "note": "The named vacuous tests were replaced with closed-form-oracle tests: adagrad and rmsprop DP-correction tests now pin the exact update value and the exact sqrt(g^2/(g^2-sigma^2)) corrected/uncorrected gain at rtol=1e-5, and the noise-dominant regime is distinguished from a floor clamp by bit-equality with the plain optimizer plus a >1e3 magnitude-separation bound. All state-dict round-trips now compare at rtol=atol=0 and carry a meta-assertion (_assert_round_trip, _MIN_STATE_SENSITIVITY=1e-2) that fails loudly if a fresh state would produce the same update, i.e. the test polices its own vacuity. The commit also removed adagrad's dead bc_floor parameter and corrected the adagrad/_bias_correction docstrings to the real torch.where-fallback semantics. All 230 package tests pass. CAVEATS (reported as findings): the same vacuity pattern survives in test_adadelta.py:306-338 (test_mode_switch_does_not_double_correct promises a phi-zero reference comparison but asserts only isfinite), and adadelta still carries the dead bc_floor parameter the commit removed from adagrad."
+    },
+    {
+      "issue": 389,
+      "title": "Translate or reject fused Hugging Face optimizer settings",
+      "status": "fixed-verified",
+      "fix_commits": ["6cc02681"],
+      "note": "adamw_torch_fused now translates to plain 'adamw' with a RuntimeWarning naming the dropped kernel request (_hf_convert.py:254-262) instead of forwarding optim_args={'fused': True}, which raised TypeError at build time (opaque's torchopt adamw has no fused kwarg). The quantized/apex rejection message (:240-245) no longer recommends the broken optim_args={'fused': True} escape hatch. adamw_apex_fused and all 8-bit/paged variants stay in _HF_PAGED_OPTIMS (:200-214) and raise. The TRL config path shares the same converter (trl/_convert.py:24 imports from trainer._hf_convert), so SFT/DPO configs get the same translation. A user-supplied stray kwarg in optim_args still fails loudly via factory(lr=..., **kwargs) TypeError (_optim.py:239). Regression test updated to pytest.warns + assert no optim_args forwarded."
+    }
+  ],
+  "findings": [
+    {
+      "title": "DPTrainer never consults ScheduleFreeState.x: schedule-free eval and checkpoints use the wrong weight sequence",
+      "file": "packages/opaque-transformers/src/opaque/api/transformers/trainer/_optim.py",
+      "line": "55, 94, 165-216; also packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py:39-47; docs/reference/transformers.md:233-234",
+      "category": "silent-degradation",
+      "severity": "medium",
+      "claim": "DPTrainer accepts optim='schedule_free' and the HF alias 'schedule_free_radam' (_optim.py:55, :94), but no code in opaque-transformers reads ScheduleFreeState.x -- grep for ScheduleFreeState/schedule_free across the package hits only the factory table and _build_schedule_free. The trainer therefore evaluates, checkpoints, and saves the y_t forward-pass iterate, which the wrapper's own module docstring (_schedule_free.py:43-45) says 'would defeat the purpose of schedule-free averaging'. Issue #408 was closed by documenting `opt_state.x` as the accessor, but through the trainer that accessor is never used and the documented save/eval contract is unattainable. docs/reference/transformers.md:233-234 lists schedule_free as a supported optim with no caveat.",
+      "failure_scenario": "A user sets optim='schedule_free' (or TrainingArguments.from_hf with HF's schedule_free_radam) expecting the published Polyak-averaged x_t -- the entire point of the method, and under DP the source of the ~Var/n noise reduction the docs advertise. Every eval metric, best-model selection, and saved checkpoint instead reflects y_t = (1-beta)z_t + beta*x_t, which at beta=0.9 is still 10% raw noisy iterate; the noise-reduction benefit is silently lost and reported eval numbers do not describe the model a library user following docs/reference/optimizers.md:196-197 would export.",
+      "evidence": [
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_optim.py:55: '\"schedule_free\": opaque_opt.schedule_free,' and :94: '\"schedule_free_radam\": (\"schedule_free\", {\"base\": \"radam\"}),'",
+        "grep -rn 'ScheduleFreeState|schedule_free' over packages/opaque-transformers/src returns only _optim.py and _training_arguments.py alias/doc lines -- zero consumers of .x in _dp_trainer.py, _checkpoint.py, _eval.py, _hub.py",
+        "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py:42-47: 'Saving / evaluating against y_t would defeat the purpose... This is the dependency that gates schedule-free's usefulness through DPTrainer'",
+        "docs/reference/transformers.md:233-234 lists 'schedule_free' among supported optim values with no eval/save caveat"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "In DPTrainer, when the built optimizer is a schedule_free wrapper, swap model params to opt_state.x around evaluate()/save_model()/checkpoint export (and swap back), or refuse optim='schedule_free' with a message pointing at the library-level API until the trainer integration lands; at minimum add the caveat to docs/reference/transformers.md. May partially overlap open umbrella issues #321/#323, but neither names this specific gap.",
+      "confidence": "high"
+    },
+    {
+      "title": "Adafactor module docstring misstates the BC default (says True, actual False) plus two stale/incorrect memory statements",
+      "file": "packages/opaque-optimizers/src/opaque/api/optimizers/_adafactor.py",
+      "line": "30-31, 28, 6-7",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "Three docstring statements contradict the code: (1) lines 30-31 say noise_bias_correction 'defaults to ``True`` so BC is on by default' while the signature (line 303) is noise_bias_correction: bool = False and the arg docstring (line 335) correctly says False -- the module contradicts itself; (2) line 28 says the phi-EMA is subtracted 'with a positive floor', stale since the where-fallback semantics that b9faed0a documented in _bias_correction.py:20-31 (torch.where(corr>0, corr, v), no floor, _adafactor.py:238-239); (3) lines 6-7 say rank<2 tensors 'fall back to a scalar second moment' while _init_v_for_leaf:120 allocates torch.zeros_like(leaf) -- a full per-element tensor for vectors (paper-correct behavior, wrong description; also relevant to closed #406's memory-doc alignment).",
+      "failure_scenario": "A DP user reads the module doc (the file whose header sells the BC feature), concludes bias correction is already active, and trains with adafactor() defaults: the second-moment factors silently retain the +sigma^2 noise bias the docstring told them was being removed. No error, just the uncorrected optimizer the docs say they are not running.",
+      "evidence": [
+        "_adafactor.py:30-31: '``noise_bias_correction=True`` activates this path; defaults to ``True`` so BC is on by default.'",
+        "_adafactor.py:303: 'noise_bias_correction: bool = False' and :335: 'Defaults to ``False``; Adafactor's relative-step per-tensor normalization already plays BC's role'",
+        "_adafactor.py:238-239: 'torch.where(corr_row > 0, corr_row, new_v_row)' -- fallback, not a positive floor",
+        "_adafactor.py:120: 'return (torch.zeros_like(leaf),)' for leaf.dim() < 2 -- per-element, not scalar"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Rewrite the three sentences: default is False; subtraction falls back to the uncorrected factor where non-positive (cross-reference _bias_correction.py); rank<2 leaves keep a full per-element second moment (unfactored), matching the paper.",
+      "confidence": "high"
+    },
+    {
+      "title": "Fabricated author list 'Defazio, Yaida, Cutkosky' survives the closed citation-repair sweep (#418 / OPQ-136)",
+      "file": "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py",
+      "line": "10",
+      "category": "citation-integrity",
+      "severity": "low",
+      "claim": "OPQ-136's exact defect is still in the tree: _schedule_free.py:10 cites 'The Road Less Scheduled' (arXiv:2405.15682) as 'Defazio, Yaida, Cutkosky'. The real authors are Defazio, Yang, Mehta, Mishchenko, Khaled, Cutkosky; 'Yaida' (Sho Yaida) is not an author. The closed issue #418 'Audit and repair scholarly references' (commit 1d216fcd, which touched docs/reference/optimizers.md and three optimizer source files) missed this site -- the only place in the repo with the bad list, exactly as the audit recorded.",
+      "failure_scenario": "A reviewer verifying the schedule-free implementation against the primary source attributes the paper to a nonexistent author combination; repo-wide grep for 'Yaida' confirms this is the sole remaining instance, so the audit's fix-one-site remedy was simply not applied.",
+      "evidence": [
+        "_schedule_free.py:10: '    Defazio, Yaida, Cutkosky, \"The Road Less Scheduled\",'",
+        "grep -rn Yaida over the repo returns exactly this one line",
+        "AUDIT-master-list.md OPQ-136 records the identical defect and remedy; git show 1d216fcd contains no change to _schedule_free.py"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Replace with 'Defazio, Yang, Mehta, Mishchenko, Khaled, Cutkosky' or 'Defazio et al.' (the form the other four citation sites already use).",
+      "confidence": "high"
+    },
+    {
+      "title": "test_mode_switch_does_not_double_correct promises a reference comparison it never performs (the #405 vacuity pattern in a sibling file)",
+      "file": "packages/opaque-optimizers/tests/test_adadelta.py",
+      "line": "306-338",
+      "category": "test-vacuousness",
+      "severity": "low",
+      "claim": "The test's docstring says the post-switch update 'must be finite and match what we'd get with phi forced to zero (no double correction)' and labels itself a regression test for the noisy_squared_grads-branch guards, but its only assertions after the switch are torch.isfinite(updates_after[k]).all() (line 338). It never computes the phi-zero reference or compares against it, so removing the 'noisy_squared_grads is None' guards in _adadelta.py:236/251 (re-introducing the double correction it guards) would still pass as long as the update stays finite -- which a stale-phi subtraction with the where-fallback always is. b9faed0a (#405) eliminated this pattern in test_adagrad.py and test_rmsprop.py but did not touch this file.",
+      "failure_scenario": "A refactor drops the 'and noisy_squared_grads is None' condition from the phi_g/phi_dx correction guards; second-moment-substitution runs then subtract the stale phi EMAs from the already-debiased v_g/v_dx, skewing update magnitudes; the dedicated regression test stays green.",
+      "evidence": [
+        "test_adadelta.py:333-335 comment: 'The output must be finite and match what we'd get with phi forced to zero (no double correction).'",
+        "test_adadelta.py:336-338: only 'assert torch.isfinite(updates_after[k]).all()' follows",
+        "_adadelta.py:249-253 and :269-273 are the guards the test claims to pin"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Build a second optimizer state with phi_g/phi_dx zeroed (or a BC-off optimizer fed the same debiased stream), compute its update on the same SecondMomentNoiseOutput, and assert torch.testing.assert_close(updates_after, reference, rtol=0, atol=0), mirroring the bit-equality style b9faed0a used for adagrad/rmsprop.",
+      "confidence": "high"
+    },
+    {
+      "title": "Dead bc_floor parameter left in Adadelta after the same cleanup removed it from Adagrad",
+      "file": "packages/opaque-optimizers/src/opaque/api/optimizers/_adadelta.py",
+      "line": "121, 377, 382",
+      "category": "dead-code",
+      "severity": "low",
+      "claim": "_scale_by_adadelta accepts bc_floor (line 121) and adadelta() computes and passes bc_floor = eps*eps (lines 377, 382), but the scaler body never reads it (zero uses between lines 122-304; the noisy_squared_grads branch clamps at min=0.0 on line 247 instead). Commit b9faed0a removed the identical dead parameter from _adagrad.py and rewrote _bias_correction.py:31-34 to say bc_floor 'belongs to the private second-moment branch' of the optimizers that have it -- Adadelta has that branch and does not use bc_floor there, so both the parameter and that doc claim are misleading for this optimizer.",
+      "failure_scenario": "A maintainer auditing the noisy_squared_grads branch reads _bias_correction.py's claim, sees adadelta() compute bc_floor, and assumes the floor is applied in the substitution branch; the actual clamp is min=0.0 with only the additive eps guarding the denominator -- a different numerical behavior than the eps^2 floor the plumbing suggests.",
+      "evidence": [
+        "_adadelta.py:121 'bc_floor: float,' -- sole occurrence within the _scale_by_adadelta body range (verified: 1 grep hit in lines 117-305, the signature itself)",
+        "_adadelta.py:377 'bc_floor = eps * eps' and :382 'bc_floor=bc_floor,'",
+        "_adadelta.py:247 'v_g_corrected = torch.clamp(v_g_corrected, min=0.0)' -- the substitution branch's actual guard",
+        "git show b9faed0a removed the same dead parameter from _adagrad.py (lines 95/215/220 of the pre-image)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Delete the parameter and its computation from _adadelta.py (mirroring b9faed0a's adagrad change), or actually apply it in the substitution branch and document which; adjust _bias_correction.py:31-34 to name only the optimizers that use it (adam, ademamix, radam, rmsprop).",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Reviewed all 13 delta commits touching packages/opaque-optimizers between 79c916e3 and 4b13d82 (git log --oneline 79c916e3..4b13d82 -- packages/opaque-optimizers): the five optimizer fix commits (d33fbf3e Adafactor floors, c2c45515 phi round-trip tests, d64572ee Adadelta allocation, fe92f618 RMS-clip standardization, b9faed0a vacuous-test replacement incl. adagrad bc_floor removal), the docs commits (5c5c9a5e, 48eccebd, 6fe85832, 1d216fcd), the cross-cutting refactors (8109c169 PerGroup-by-ParamPath, 444acc33 nested ParamPath support, 7abedebd exact scalar reductions in optimizers/distributed.py with the int64 path in engine reduce_scalar verified, 919a4572 lint backlog, cc7edb97 noqa comments -- comment-only, 4b13d82a test-infra consolidation, 938a8a56 new Gloo optimizer DDP lane), plus the related opaque-transformers commit 6cc02681 (fused-optim translation) and its TRL-converter reuse. Read the full current _adafactor.py, _adadelta.py, _chain.py, _adagrad.py (targeted), _bias_correction.py, _schedule_free.py (targeted), and the trainer _optim.py/_hf_convert.py surfaces. Ran the full opaque-optimizers suite (230 passed, 1 distributed deselected) plus targeted empirical checks: Adafactor scale-invariance sweep 1.0->1e-12, and on-disk (torch.save) per-group phi round-trips with distinct per-path values for adamw/adafactor/adadelta, including a comparison run against a 79c916e3 worktree. Not covered: CUDA/MPS-only paths (no accelerator) and the multi-rank Gloo lane (spawned tests not run; helpers read)."
+}

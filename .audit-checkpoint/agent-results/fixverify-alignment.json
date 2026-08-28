@@ -1,0 +1,162 @@
+{
+  "statuses": [
+    {
+      "issue": 431,
+      "title": "Install TRL and enforce zero-noise parity in CI",
+      "status": "fixed-verified",
+      "fix_commits": ["2a2c5de9", "a31629f2"],
+      "note": "TRL is a declared extra (packages/opaque-transformers/pyproject.toml:55 'trl = [\"trl>=1.0,<2.0\"]', pulled by opaque[all] via root pyproject.toml:53,59) and CI installs '--extra all' for every dependency selection (.github/scripts/setup_python_test_environment.sh). packages/opaque-alignment/tests/test_trl_parity.py executes real TRL loss code (DPOTrainer._compute_loss, CPO/ORPO methods, sft dft_loss) and is not slow-marked, so it runs in PR lanes; trainer-level zero-noise numeric parity exists in packages/opaque-transformers/tests/opaque_transformers/test_trl_trainers.py (_args uses privacy_noise_multiplier=0.0, clipping_norm=1e9; test_*_matches_* family). Ran locally against trl 1.12.0 / transformers 5.16.1: 132 parity tests passed (1 strict xfail for WPO, see finding) and 14 trainer numeric-parity tests passed."
+    },
+    {
+      "issue": 414,
+      "title": "Document the current alignment reference-cache format",
+      "status": "fixed-verified",
+      "fix_commits": ["ffe53331", "8042ae90", "0c50b8cc"],
+      "note": "docs/alignment/dpo.md:53-141 now documents the content-addressed .safetensors cache, the (dataset._fingerprint, cache_identity, output_columns) fingerprint, use_cache=False for TR-DPO, owner-only permissions, and the node-local default cache-dir warning; matches the implementation in packages/opaque-alignment/src/opaque/api/alignment/dpo/reference/_precompute.py (module docstring lines 1-50, _cache_fingerprint:125-153, _CACHE_FINGERPRINT_VERSION=2)."
+    },
+    {
+      "issue": 395,
+      "title": "Clamp DiscoPOP inside the active dtype range",
+      "status": "fixed-verified",
+      "fix_commits": ["d256c3ad"],
+      "note": "_discopop.py:_exp_clamp_for_dtype returns 11.0 for float16 (exp(11)~5.99e4 < fp16 max 65504) and 80.0 otherwise (exp(80)~5.5e34 < bf16/fp32 max ~3.4e38); clamp applied to the exponent at lines 73-74. tests/dpo/loss/test_discopop.py sweeps fp16/bf16/fp32 for both value and gradient finiteness plus NaN-injection locality; TRL parity test passes. OPQ-174 resolved."
+    },
+    {
+      "issue": 394,
+      "title": "Correct BCO, MPO, f-divergence, and LD-DPO loss contracts",
+      "status": "fixed-verified",
+      "fix_commits": ["4d060dbc"],
+      "note": "Verified against executing TRL 1.12.0, not just formulas: bco_loss (_bco.py:55-57) matches trl bco_pair bit-for-bit incl. gradients; f_divergence_logits (reverse_kl/forward_kl/js/alpha at 0.5 and 2.0) matches TRL's remapped delta; ld_dpo_split now uses completion-relative positions (cumsum over completion_mask, _ld_dpo.py:74-89) and matches TRL's ld_alpha pipeline end-to-end (test_ld_dpo_split_matches_trl_ld_alpha); mpo_combine matches TRL loss_type=list weighted blend. All 132 parity tests pass locally."
+    },
+    {
+      "issue": 393,
+      "title": "Implement the private SquareChiPO construction or keep it explicitly non-private",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["17c58f8c"],
+      "note": "The non-private SquareChiPO head was deleted (commit 17c58f8c removed _squarechipo.py and its test; grep over packages/ finds zero code references, and an unknown loss_type fails eagerly at DPOTrainer construction, _dpo_trainer.py:349-353). Caveat reported as a finding: three docs pages still advertise SquareChiPO as an implemented head / supported loss_type."
+    },
+    {
+      "issue": 391,
+      "title": "Secure or disable the TR-DPO reference-logprob temp cache",
+      "status": "fixed-verified",
+      "fix_commits": ["8042ae90"],
+      "note": "TR-DPO seed pass uses use_cache=False (_dpo_trainer.py:731-732) so nothing is persisted; per-step reference logps are computed in memory only (_inject_tr_ref_logps, _dpo_trainer.py:806-824 — no file I/O). The general precompute cache is additionally owner-only: _secure_cache_path chmods dir 0o700 and archive 0o600 on both read and write paths (_precompute.py:210-224, 237, 246) and raises PermissionError fail-closed if it cannot secure them."
+    },
+    {
+      "issue": 390,
+      "title": "Match fused and eager token-count dtypes",
+      "status": "fixed-verified",
+      "fix_commits": ["d5414cef"],
+      "note": "Token counts are now exact integer counts (bool-cast .sum, never low-precision mask sums) and accumulation is promoted to >= fp32 via _compute_dtype (new file _compute_dtype.py; applied in _wpo.py:64-66, logprob/_sequence.py:98-103, sft/loss/_nll.py:85-87, sft/loss/_dft.py:100-103). Fused paths divide the kernel CE-sum by the same exact shifted-label count (_nll.py:120-123). Verified by test_fused_sft_loss_matches_upstream / test_fused_sequence_logp_matches_torch_cross_entropy plus the new exact-divisor tests, all passing locally via the CPU chunked kernel; the CUDA Triton branch of linear_nll_sum could not be executed in this session (covered by the repo's CUDA CI lanes)."
+    },
+    {
+      "issue": 387,
+      "title": "Identify assistant spans correctly in Gemma chat templates",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["65f05778"],
+      "note": "The silent whole-template-wrap fallback (which flagged user tokens as assistant tokens) is gone: every strategy's output must pass _generation_block_marks_only_assistant (renders user/assistant probes and requires assistant-probe-in / user-probe-out, _chat_template.py:422-445), and failure raises ValueError instead of guessing (256-261). Probed with real templates: Gemma-2 produces exactly the '<start_of_turn>model\\n...<end_of_turn>\\n' spans; Qwen2.5-Instruct correct; real Gemma-3, Llama-3-Instruct, and canonical shared-expression ChatML fail closed with ValueError (safe, never silently wrong). Caveats reported as a finding: internal comments overstate coverage and the exact-string '{% generation %}' guards mishandle whitespace-control marker variants that HF itself accepts."
+    },
+    {
+      "issue": 381,
+      "title": "Preserve policy adapters when a PEFT reference model is supplied",
+      "status": "fixed-verified",
+      "fix_commits": ["1dcd95d9"],
+      "note": "null_ref_context now treats ANY non-None ref_model as separate (no-op; no adapter toggling on the policy) and rejects ref_model is model with ValueError before mutating anything (_adapter.py:152-163). Trainer call sites match: explicit ref (PEFT or not) is used directly with null_ref=False; only the no-ref PEFT case toggles the policy's adapter (_dpo_trainer.py:635-660, 737-742). Regression tests test_separate_peft_reference_path_leaves_policy_adapter_active and test_shared_peft_reference_model_is_rejected_before_mutating_policy pass with real peft LoRA models."
+    },
+    {
+      "issue": 380,
+      "title": "Validate alignment losses with locality and independent parity tests",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["2a2c5de9"],
+      "note": "tests/test_row_locality.py NaN-poisons one row and asserts every other row's forward value and vmap(grad) per-example gradient are untouched, parametrized over the full public __all__ of dpo.loss + sft.loss with a hard pytest.fail for any unregistered export (closes the OPQ-154 gap, including bco/ipo/simpo/apo/exo/sppo/odds_ratio and all combinators, plus per-example lm_head gradient slices for the fused losses). tests/test_trl_parity.py executes real TRL (DPO inline loss, CPO, ORPO, dft_loss) — value, mean, and gradient. All pass locally. Caveat reported as a finding: the suite exposed that wpo_weights does NOT match TRL/the WPO paper and left it as a strict xfail rather than fixing it."
+    },
+    {
+      "issue": 379,
+      "title": "Include reference-model identity in DPO cache fingerprints",
+      "status": "fixed-verified",
+      "fix_commits": ["b033bdb7"],
+      "note": "cache_identity is now a required kwarg of compute_ref_logprobs_for_dataset; the fingerprint is SHA-256 over a versioned canonical JSON of (dataset._fingerprint, cache_identity, output_columns) with _CACHE_FINGERPRINT_VERSION=2 invalidating pre-fix caches, and non-JSON identities raise TypeError instead of falling back to repr (_precompute.py:97-153). The DPO trainer supplies _model_cache_identity: a SHA-256 over the reference's full state_dict bytes+dtypes+shapes, with adapter_mode and (for active-PEFT refs) live adapter status; the PEFT null-ref case excludes adapter tensors so the digest matches the effective base-only reference (_dpo_trainer.py:151-211, 661-664). Distinct refs can no longer alias one cache entry."
+    },
+    {
+      "issue": 364,
+      "title": "Shard reference-logprob precomputation across ranks",
+      "status": "fixed-verified",
+      "fix_commits": ["0c50b8cc"],
+      "note": "Each rank scores a contiguous local_shard slice (engine _shard.py:52-55) and shards are re-concatenated in rank order via one all_gather_object-based gather_pytree (engine _state.py:300-314, _merge_gathered_pytrees preserves rank order), reproducing single-process order; per-column row counts are validated against len(dataset) (_precompute.py:325-333). Collective symmetry holds: dataset size and _fingerprint are asserted equal across ranks up front, the cache-hit decision is min-reduced unconditionally before any early return, empty shards contribute None but still join the collective, and only main writes the cache before wait_for_everyone (_precompute.py:405-460). tests/ddp/test_precompute_shard.py (2-rank Gloo) passes locally."
+    }
+  ],
+  "findings": [
+    {
+      "title": "wpo_weights omits the WPO paper's per-token alignment term (and thus disagrees with TRL)",
+      "file": "packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_wpo.py",
+      "line": "33-67",
+      "category": "numerical-correctness",
+      "severity": "medium",
+      "claim": "With DPOConfig(use_weighting=True), opaque's WPO pair weight is exp(mean masked per_token_logps) while both the cited WPO paper (arXiv:2406.11827, Eq. 2) and TRL 1.12 subtract the per-token alignment term log(sum_v p(v)^2) before averaging; the trainer multiplies per-example losses by this wrong weight, so WPO runs optimize a different objective than the paper the docstring claims to implement. The repo knows: test_trl_parity.py:518-526 marks the parity test as strict xfail instead of fixing the weight. Possibly inside the umbrella of OPEN issue #323 ('align trainer and alignment behavior with their public contracts'), but no open issue names WPO specifically.",
+      "failure_scenario": "User sets use_weighting=True (WPO) on DPOTrainer expecting the published WPO objective / TRL-equivalent behavior. _dpo_trainer.py:1139-1144 multiplies each pair's loss by _wpo_weight(chosen)*_wpo_weight(rejected) built from raw per-token logps; TRL computes aligned_logps = per_token_logps - (logsumexp(2x) - 2*logsumexp(x)) first (site-packages/trl/trainer/dpo_trainer.py:1595-1606). Since log(sum p^2) is in [-log V, 0] and varies per token, the two weights differ systematically (opaque's are smaller and differently ranked), silently changing training dynamics and results versus the cited method.",
+      "evidence": [
+        "packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_wpo.py:62-67 — 'avg_logp = (per_token_logps * mask).to(acc_dtype).sum(dim=-1); avg_logp = avg_logp / token_count...; return avg_logp.detach().exp()' — no logits, no alignment term.",
+        "packages/opaque-alignment/tests/test_trl_parity.py:518-526 — '@pytest.mark.xfail(strict=True, reason=(\"wpo_weights omits the WPO weight-alignment term log(sum_v p_v^2) that both TRL and the authors' reference implementation apply; the fix needs the logits, so it changes the public signature\"))'.",
+        ".venv trl 1.12.0 dpo_trainer.py:1595-1606 — 'lse2 = torch.logsumexp(2.0 * shift_logits, dim=-1); log_denom = lse2 - 2.0 * lse1; aligned_logps = (per_token_logps - log_denom) * shift_completion_mask; ... weights = torch.exp(mean_logps)'.",
+        "packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_trainer.py:1139-1144 applies the product of the two opaque weights to the per-example loss; the trainer's _wpo_weight already receives chosen_out.logits, so the logits needed for the fix are available at that call site."
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Add an optional logits (or log_denom) argument to wpo_weights and compute avg over (per_token_logps - (logsumexp(2*logits,-1) - 2*logsumexp(logits,-1))) under no_grad, mirroring TRL; wire _dpo_trainer._wpo_weight to pass the logits it already has; flip the xfail into a passing parity test. The weight stays detached and per-example, so DP clipping semantics are unchanged.",
+      "confidence": "high"
+    },
+    {
+      "title": "Docs still advertise the deleted SquareChiPO head as implemented",
+      "file": "docs/alignment/trainers.md",
+      "line": "18",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "Commit 17c58f8c (issue #393) deleted the non-private SquareChiPO loss, but docs/alignment/dpo.md:46 and docs/alignment/trainers.md:18 still list SquareChiPO among 'Implemented preference heads' / 'supported loss_type values', and docs/reference/alignment.md:78 keeps it in the implemented-loss citation list — advertising a differentially-private-PO method (the paper's title says 'Differentially Private') that the library no longer ships.",
+      "failure_scenario": "A user reads the trainers guide, concludes the DP SquareChiPO construction is available, and configures loss_type='squarechipo' (or plans a project around it). Construction fails with an unknown-loss KeyError (_dpo_trainer.py:349-353) — fail-loud, so no silent harm, but the docs promise a privacy-relevant capability that does not exist.",
+      "evidence": [
+        "docs/alignment/trainers.md:13-20 — 'The supported loss_type values map onto the corresponding alignment papers: ... [SquareChiPO](https://arxiv.org/abs/2505.21395) ...'.",
+        "docs/alignment/dpo.md:41-48 — 'Implemented preference heads in this guide follow the primary papers for ... [SquareChiPO](https://arxiv.org/abs/2505.21395) ...'.",
+        "docs/reference/alignment.md:78 — SquareChiPO citation row still present.",
+        "grep -rni squarechipo packages/ --include='*.py' returns nothing; git show 17c58f8c removed _squarechipo.py and tests/dpo/loss/test_squarechipo.py."
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Remove SquareChiPO from the three doc lists (or move it to an explicit 'not shipped' note explaining the deletion rationale from #393/#502).",
+      "confidence": "high"
+    },
+    {
+      "title": "Chat-template transform: overstated coverage comments and exact-string generation-marker guards",
+      "file": "packages/opaque-alignment/src/opaque/api/alignment/data/_chat_template.py",
+      "line": "214, 229, 403-406",
+      "category": "api-misuse",
+      "severity": "low",
+      "claim": "Residuals around the #387 fix (all fail-closed, none silently wrong): (a) the Strategy-2 comment 'Handles ChatML, Llama-3, Phi-3, etc.' (line 229) and the _wrap_gemma_shared_expression docstring 'Gemma 2/3 templates' (line 376) overstate coverage — the real Llama-3-Instruct template, canonical shared-expression ChatML, and the real Gemma-3 text template all raise ValueError (Gemma-3 because its '{{ raise_exception(\"Invalid content type\") }}' expression matches the \\bcontent\\b regex, making content_matches count 2 and aborting at line 405); (b) both the idempotency check (line 214, '_GEN_START in template') and apply_chat_template_with_mask's guard (_completion_mask.py:84, exact \"{% generation %}\" substring) miss whitespace-control marker variants ('{%- generation -%}') that transformers itself accepts via regex, so a valid pre-marked template is either rejected outright or gets a second nested marker pair (verified: nesting yields duplicated identical spans, so the final mask is still correct).",
+      "failure_scenario": "SFTTrainer with completion_only_loss on chat data and a Llama-3/ChatML/Gemma-3 tokenizer raises ValueError at dataset prep despite comments suggesting support; a user who hand-installed '{%- generation -%}' markers (valid per transformers' r\"\\{\\%-?\\s*generation\\s*-?\\%\\}\" check, chat_template_utils) gets a ValueError from apply_chat_template_with_mask telling them to install markers they already have. Training either stops with a confusing error or proceeds correctly after redundant re-wrapping — no wrong mask is ever produced.",
+      "evidence": [
+        "Probe run against real templates: GEMMA2 spans ['<start_of_turn>model\\nASSIST1<end_of_turn>\\n', ...] correct; GEMMA3, CHATML (shared-expression), LLAMA3 all 'ValueError (fail-closed)'; QWEN25 correct.",
+        "_chat_template.py:403-406 — content_pat matches both \"{{ message['content'] | trim }}\" and '{{ raise_exception(\"Invalid content type\") }}' in the real Gemma-3 template (probe printed both), so len(content_matches) != 1 returns None.",
+        "_completion_mask.py:84 — 'if not active_template or \"{% generation %}\" not in active_template: raise ValueError' vs transformers 5.16.1 chat_template_utils: 'if return_assistant_tokens_mask and not re.search(r\"\\{\\%-?\\s*generation\\s*-?\\%\\}\", chat_template)'.",
+        "Probe: get_training_chat_template on a template already containing '{%- generation -%}' returned a nested '{%- generation -%}{% generation %}...{% endgeneration %}{%- endgeneration -%}' template; rendered indices [(26, 41), (26, 41)] — duplicated but identical spans."
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Use the same whitespace-tolerant regex as transformers for both the idempotency check and the _completion_mask guard; fix the Strategy-2 comment to name templates it actually handles (role-branched templates, Phi-3) and drop 'Gemma 3' from the helper docstring, or exclude raise_exception(...) expressions from content_pat so real Gemma-3 works.",
+      "confidence": "high"
+    },
+    {
+      "title": "DiscoPOP module cites a fabricated author/title; sequence_logp docstring denies the ld_alpha feature it implements",
+      "file": "packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_discopop.py",
+      "line": "5-7",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "Two doc inaccuracies that survived the citation-repair commit 1d216fcd (#503): (a) _discopop.py:5-7 (and discopop_loss's docstring line 41) attribute DiscoPOP to 'Azar, M. G., et al. (2024). DiscoPOP: Discovering Preference Optimization Procedures Using Self-Supervised Feedback. NeurIPS 2024' — a nonexistent citation; the actual paper is Lu et al., 'Discovering Preference Optimization Algorithms with and for Large Language Models' (arXiv:2406.08414), which docs/reference/alignment.md:72 cites correctly, and Azar et al. is the IPO paper; (b) logprob/_sequence.py:15-16 module docstring says the ld_alpha LD-DPO split 'is not implemented here; pass ld_alpha=None' while sequence_logp in the same file fully implements ld_alpha (lines 81-100) and its own function docstring documents it — the only true limitation is on fused_sequence_logp.",
+      "failure_scenario": "The project's own DP review protocol requires verifying mathematical claims against primary sources and forbids invented citations; a reviewer or user following _discopop.py's reference cannot find the paper (wrong author, wrong subtitle) and may mis-verify the formula against Azar et al. (IPO). A caller reading _sequence.py's module docstring concludes ld_alpha is unsupported and builds a manual LD-DPO path unnecessarily, or distrusts the trainer's ld_alpha wiring.",
+      "evidence": [
+        "_discopop.py:5-7 — 'Azar, M. G., et al. (2024). DiscoPOP: Discovering Preference Optimization Procedures Using Self-Supervised Feedback. NeurIPS 2024.'",
+        "docs/reference/alignment.md:72 — 'DiscoPOP — Lu et al., *Discovering Preference Optimization Algorithms with and for Large Language Models* (https://arxiv.org/abs/2406.08414)' (the correct citation, showing the repo knows the right source).",
+        "logprob/_sequence.py:15-16 — 'The ``ld_alpha`` (LD-DPO, arXiv:2409.06411) length-desensitised logp split is not implemented here; pass ``ld_alpha=None``.' vs lines 81-100 implementing exactly that split ('if ld_alpha is not None: ... weight = target_weight * ld_weight')."
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Replace the _discopop.py citation with Lu et al., arXiv:2406.08414 (matching docs/reference/alignment.md); rewrite _sequence.py's module-docstring sentence to say the ld_alpha split IS implemented by sequence_logp and only the fused path lacks it.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Scope: packages/opaque-alignment (plus the opaque-transformers trl trainer surfaces the 12 closed alignment issues reach into). Reviewed all 32 delta commits touching packages/opaque-alignment in 79c916e3..4b13d82 and the full net src diff (loss heads _bco/_discopop/_f_divergence/_ld_dpo/_wpo/_mpo and siblings, chat-template + completion-mask data helpers, reference _precompute/_adapter/_sync, fused-LCE bridge, logprob, metrics, both collators, and the deletion of _squarechipo), plus the trainer-side fix surfaces in opaque-transformers/trl/_dpo_trainer.py (_model_cache_identity, _precompute_ref_logps, TR-DPO seed/_augment_inputs, WPO application, dpo_loss dispatch) and _sft_trainer.py's get_training_chat_template call site, and the engine distributed helpers the sharding fix relies on (local_shard, gather_pytree, reduce_scalar, assert_*_equal). Executed locally against the repo venv (torch 2.13, transformers 5.16.1, trl 1.12.0, peft installed): full opaque-alignment suite 468 passed / 1 strict-xfail (WPO), the 2-rank Gloo shard test, and 14 zero-noise trainer numeric-parity tests; additionally probed get_training_chat_template with real Gemma-2, Gemma-3, Llama-3-Instruct, canonical ChatML, and Qwen2.5-Instruct templates and with whitespace-control generation markers. Not verified here: CUDA Triton fused-LCE kernel branch (no GPU in this session; covered by repo CUDA CI lanes) and GitHub issue bodies (API unavailable — verified against OPQ master-list entries OPQ-153/154/174 and issue titles). All 12 closed alignment issues verified: 9 fixed-verified, 3 fixed-with-caveats (387, 393, 380), 0 not-fixed/regressed; 4 findings (1 medium, 3 low), none epsilon-affecting."
+}

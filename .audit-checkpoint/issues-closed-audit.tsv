@@ -1,0 +1,96 @@
+# CLOSED audit issues (claimed fixed) snapshot 2026-08-27 - VERIFY against current code
+442	OPQ-188 - MC random-allocation accounting not implemented for DP-SGD Gaussian prefix	accounting|dpsgd
+438	Annotate public facades and callable factories	api
+437	Replace or justify PLD method caches	accounting
+435	Add Google-style docstrings to public surfaces	docs
+433	Reduce public API width and oversized implementations	api
+432	Name domain-significant numeric comparisons	api
+431	Install TRL and enforce zero-noise parity in CI	alignment|transformers|ci
+430	Align opaque-transformers metadata, extras, and Triton policy	transformers|packaging
+428	Test the supported Python 3.12 runtime	ci
+425	Cover workspace manifests and lockfiles with dependency updates	ci|packaging
+426	Verify noise-stream continuity across checkpoint resume	dpftrl|transformers
+424	Make Triton kernel validation blocking	patches|ci
+422	Apply workspace Rust lints to opaque-accounting	accounting|ci
+423	Ship licenses and correct third-party attribution paths	patches|packaging
+421	Produce portable and reproducible accounting artifacts	accounting|packaging
+420	Pin umbrella-package dependencies during builds	packaging
+419	Align transformer reference tables and defaults with dataclass fields	transformers|docs
+418	Audit and repair scholarly references	docs|ci
+416	Execute documentation examples and validate public factory signatures	docs|ci
+414	Document the current alignment reference-cache format	alignment|docs
+413	Express Gaussian per-step privacy in terms of the noise multiplier	docs
+415	Correct adaptive clipping distributed-use documentation	dpsgd|docs
+412	Make contributor, workflow, and export-contract documentation accurate	docs|ci
+411	Make Adafactor epsilon floors scale-aware	optimizers
+410	Restore per-group noise-variance EMA from checkpoints	optimizers
+409	Give update_rms_clip one model-wide or per-leaf meaning	optimizers
+408	Provide the documented schedule-free evaluation accessor	optimizers
+406	Align Adafactor and Adadelta memory behavior with their documentation	optimizers|docs
+405	Replace vacuous optimizer regressions with behavior-sensitive tests	optimizers
+403	Correct unsupported grouped-GEMM claims in fused MoE docs	patches|docs
+404	Compare patched model forwards and gradients with upstream	patches
+402	Stop cross-entropy backward from overwriting model logits	patches
+398	Preserve Gemma2 attention logit softcapping	patches
+399	Validate LoRA bias, projection shape, and vmap dimensions before fused execution	patches
+400	Apply or reject router dropout and batchify consistently	patches
+397	Preserve sliding-window attention semantics	patches
+401	Avoid mutating saved activations in fused LoRA backward	patches
+396	Scope checkpoint differentiation overrides to Opaque transforms	patches
+395	Clamp DiscoPOP inside the active dtype range	alignment
+394	Correct BCO, MPO, f-divergence, and LD-DPO loss contracts	alignment
+393	Implement the private SquareChiPO construction or keep it explicitly non-private	alignment
+392	Enforce stop-at-epsilon on every accounted step	transformers
+391	Secure or disable the TR-DPO reference-logprob temp cache	alignment|transformers
+390	Match fused and eager token-count dtypes	alignment
+389	Translate or reject fused Hugging Face optimizer settings	optimizers|transformers
+388	Wire or remove inert privacy and logging arguments	transformers|docs
+387	Identify assistant spans correctly in Gemma chat templates	alignment
+386	Align best-model selection with save and evaluation boundaries	transformers
+385	Test the actual Hugging Face evaluation cadence	transformers
+384	Evaluate SFT DFT runs with the training objective	transformers
+382	Honor fractional num_train_epochs	transformers
+381	Preserve policy adapters when a PEFT reference model is supplied	alignment
+380	Validate alignment losses with locality and independent parity tests	alignment|transformers
+379	Include reference-model identity in DPO cache fingerprints	alignment
+378	Compute raw ROC metrics with correct infinite-score denominators	auditing
+377	Provide explicit canary construction for coin-flip audits	auditing
+375	Export gradient_scores consistently from the auditing facade	auditing
+374	Domain-separate auditing and mechanism RNG streams	auditing
+370	Make perfect-separation ROC tests non-vacuous	auditing
+372	Validate sorted batch_argnums	auditing
+371	Make score-to-membership ordering explicit and verifiable	auditing
+373	Reject GDP grids that erase detectable leakage	auditing
+369	Gather uneven distributed evaluation shards safely	transformers|distributed
+368	Derive distributed synchronization from schemas, not rank-local values	engine|distributed
+367	Reduce paired private-second-moment gradients across ranks	engine|distributed
+365	Preserve integer and float64 exactness in scalar reductions	engine|distributed
+366	Add a blocking two-rank CPU distributed correctness lane	engine|transformers|ci|distributed
+364	Shard reference-logprob precomputation across ranks	alignment|distributed
+363	Do not retry collectives after callback TypeError	engine|distributed
+362	Apply learning-rate schedules on the MF step axis and expose weighted Grams	accounting|dpftrl
+361	Reuse column-keyed Gaussian draws across MF noise steps	dpftrl
+360	Apply the full BISR strategy operator at runtime	dpftrl
+358	Preserve empty balls-in-bins slots in the runtime sampler	dpftrl
+357	Recreate DP-FTRL samplers across configured epochs	dpftrl
+354	Tighten Poisson sampler statistical regression tests	dpsgd
+355	Compute MF row norms without eager quadratic work	dpftrl
+352	Detect non-finite values through clipped-gradient wrappers	engine
+351	Avoid materializing discarded per-example gradients in adaptive clipping	engine|dpsgd
+350	Define privacy accounting for loss-scaler skipped steps	engine
+349	Reject shape-mismatched tensor checkpoint values	engine
+347	Make PerGroup state deeply immutable	engine|dpftrl
+343	Preserve clipping numerics across microbatching and bfloat16	engine
+342	Serialize every implementation of the public Budget protocol	accounting
+339	Remove latent sorted-sensitivity assumptions from MixtureConstants	accounting
+340	Make the linear-FFT safety fallback effective for zero-tail PMFs	accounting
+337	Return conservative privacy guarantees from Monte Carlo amplification	accounting
+338	Reconcile negative-infinity mass in asymmetric PLD metrics	accounting
+341	Reject invalid and overflowing PLD composition counts	accounting
+336	Normalize Poisson and parallel-Poisson validation and cross-checks	accounting|dpsgd
+335	Add nightly privacy-regression vectors across mechanisms and amplifiers	accounting|ci
+334	Serialize and compare deep process compositions iteratively	accounting
+333	Derive calibration search direction from the calibrated parameter	accounting
+332	Key PLD caches by mechanism and discretization fingerprints	accounting|dpftrl
+331	Make balls-in-bins Monte Carlo reproducible across thread counts	accounting
+328	Make distributed DP correctness blocking and schema-driven	engine|transformers|ci|distributed
