@@ -1,0 +1,133 @@
+{
+  "statuses": [
+    {
+      "issue": 370,
+      "title": "Make perfect-separation ROC tests non-vacuous",
+      "status": "fixed-verified",
+      "fix_commits": ["47aa7796"],
+      "note": "OPQ-139. tests/auditing/test_roc.py:42-57 now asserts unconditionally: 'corner = np.flatnonzero((fn == 0) & (tn == len(out_scores))); assert corner.size == 1' plus exact full-array equality for thresholds/tn/fn, and a separate hull-mode test pins the frontier exactly. The old 'if len(idx) > 0:' guard that could silently skip both assertions is gone. Test runs and passes in the current suite (222 passed)."
+    },
+    {
+      "issue": 371,
+      "title": "Make score-to-membership ordering explicit and verifiable",
+      "status": "fixed-verified",
+      "fix_commits": ["2948b561"],
+      "note": "one_run() now requires CanaryScores (scores paired with dataset-index identifiers); CoinFlip.split_scores raises TypeError on bare arrays (_coin_flip.py:216-228) and _join_scores (_coin_flip.py:230-276) joins by identifier, raising on unexpected/duplicated/missing ids. loss_scores/gradient_scores attach identifiers per batch before collation via _IndexedCanaries + indexed_collate (_helpers.py:69-134), which also rejects collate_fns that change row count; within-batch reordering by a custom collate_fn is documented as undetectable (_loss.py:51-54). canary_scores() provides explicit attestation for external pipelines. Regression tests: test_audit.py TestScoreOrdering (shuffled scores realign, bare arrays raise, wrong/missing ids raise); tutorial and all four examples use the verified-mode API."
+    },
+    {
+      "issue": 372,
+      "title": "Validate sorted batch_argnums",
+      "status": "fixed-verified",
+      "fix_commits": ["24cdadef"],
+      "note": "_validate_batch_argnums (attacks/_helpers.py:17-33) now rejects empty, negative, duplicate, unsorted, and out-of-range batch_argnums; called by both loss_scores (_loss.py:116) and gradient_scores (_gradient.py:124), which additionally rejects 0 in batch_argnums. Test at test_loss_scores.py:41 covers the unsorted case. Minor nit (not a finding): passing a list instead of a tuple trips the sorted check ('tuple(sorted(x)) != x') with a misleading 'must be sorted' message, but it fails closed and the annotation says tuple."
+    },
+    {
+      "issue": 373,
+      "title": "Reject GDP grids that erase detectable leakage",
+      "status": "not-fixed",
+      "fix_commits": [],
+      "note": "No delta commit changes grid validation: _MIN_GRID_SIZE = 16 and the gdp() floor check are byte-identical between 79c916e3 and 4b13d82 (_estimate.py:37, 176-177); 'git log -S grid_size 79c916e3..4b13d82 -- packages/opaque-auditing' hits only the #299 hang fix, which does not touch grid handling. Empirically (this session): for m=1000, u=350 the audit reports eps=2.30 at grid_size=10000 but eps=0.0 at grid_size=16 and 64 — coarse grids still erase detectable leakage exactly as the audit reported, and docs advertise gdp(grid_size=) as merely a 'tunable grid' with no lower-bound guidance. Reported as a finding."
+    },
+    {
+      "issue": 374,
+      "title": "Domain-separate auditing and mechanism RNG streams",
+      "status": "fixed-verified",
+      "fix_commits": ["2cc7eaea", "6f6d132a"],
+      "note": "OPQ-128. coin_flip now derives selection and coins through string domains 'opaque.auditing.canary_selection' / 'opaque.auditing.coin_flip' (_coin_flip.py:35-36, 353-357), and 6f6d132a namespaced every mechanism stream root as a string (GAUSSIAN_STREAM_FOLD='opaque.dpsgd.gaussian' at _gaussian.py:71 used at :338-347 and :407, ADAPTIVE_CLIPPING_STREAM_FOLD, MF_GAUSSIAN_STREAM_FOLD, paired/second-moment folds). The pre-fix collision (coin flips = fold_in(key,1) = DP-SGD step-1 key) is now impossible for opaque's own tags. Cross-package regression tests test_stream_root_namespacing.py (integer folds cannot reach any internal root; roots mutually distinct) and test_domain_separation.py pass when opaque-auditing is on the path (they silently skip otherwise — the auditing roots' rows are importorskip'd). Residual docstring overclaim on fold_in int/str disjointness reported as a separate low finding."
+    },
+    {
+      "issue": 375,
+      "title": "Export gradient_scores consistently from the auditing facade",
+      "status": "fixed-verified",
+      "fix_commits": ["f06a3cd7"],
+      "note": "OPQ-131. 'from opaque.auditing.attacks import gradient_scores' now works (facade attacks/__init__.py exports both scorers, __all__ matches the impl package's __all__), and gradient_scores is documented in docs/reference/auditing.md:112-153. Note: the facade/impl __all__-parity contract test added by this fix (tests/contracts/test_all_exports_match.py) was later deliberately deleted by 864a6442 per ARC-007's Junie-review enforcement model, so the guard is now review-based, but the export itself is verified in the current tree."
+    },
+    {
+      "issue": 377,
+      "title": "Provide explicit canary construction for coin-flip audits",
+      "status": "fixed-verified",
+      "fix_commits": ["26bfffa9", "6fe85832", "7813559d"],
+      "note": "OPQ-127 offered two acceptable remedies; both landed. README now says 'coin-flip canary partitioning' (README.md:4,33 — the false 'injection' claim is gone), docs/user-guide/auditing.md:241-264 explicitly states the default audits natural rows, warns that natural canaries carry less membership signal, and shows the supported crafted-canary route: append constructed rows to the dataset and pass their indices as candidate_indices. PR #751 added coin_flip(candidate_indices=) with full validation (_candidate_pool at _coin_flip.py:279-301: 1-D, integer, unique, in-range; pool-size vs num_canaries check at :348-351) and canonicalizes the pool via np.unique so pool order is irrelevant; the docstring correctly requires fixing the pool before target training (:315-316), preserving the one-run theorem's independence assumption. 10 new tests in test_audit.py cover pools; all pass."
+    },
+    {
+      "issue": 378,
+      "title": "Compute raw ROC metrics with correct infinite-score denominators",
+      "status": "fixed-verified",
+      "fix_commits": ["ec1552fa"],
+      "note": "OPQ-129 plus the hull-bias half: get_tn_fn_counts now returns the RAW empirical ROC by default (hull=True opt-in) and pins the terminal counts to the true totals — fn_counts[-1]=n_in, tn_counts[-1]=n_out (_roc.py:69-74) — so +inf scores can no longer shrink TPR/FPR/AUC denominators; tpr_at_given_fpr guards the zero-width terminal segment with q->1 instead of NaN (_roc.py:103-109). Additionally one_run rejects any non-finite score outright (_estimate.py:84-85, from 5f359a01), making the pinning defense-in-depth on the public path. Tests: test_infinite_scores_counted_in_denominators, test_raw_auc_is_unbiased_under_null (raw mean~0.5, hull provably biased high), test_tpr_at_alpha_one_is_one_not_nan — all pass. _best_r_u's threshold-free max over raw counts equals the old hull max, so eps estimates are unchanged by the raw switch."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Issue #373 closed without any fix: coarse GDP grids still silently erase detectable leakage",
+      "file": "packages/opaque-auditing/src/opaque/api/auditing/one_run/_estimate.py",
+      "line": "37, 176-178",
+      "category": "fix-verification/not-fixed",
+      "severity": "medium",
+      "claim": "Closed issue #373 ('Reject GDP grids that erase detectable leakage', OPQ-060) has no corresponding change anywhere in the 202-commit delta: '_MIN_GRID_SIZE = 16' and the gdp() floor 'if grid_size < _MIN_GRID_SIZE: raise ValueError' are byte-identical between 79c916e3 and 4b13d82, and no rejection logic, warning, test, or doc caveat about small grids was added.",
+      "failure_scenario": "A user lowers grid_size to speed up epsilon_at (the default grid takes ~18 s per query on this host, so lowering is attractive; docs/reference/auditing.md:435 and docs/user-guide/auditing.md:103-108 advertise it as a 'tunable grid' with no lower-bound guidance). Measured in this session with the current code: for m=1000 canaries, u=350 errors, estimate.gdp(grid_size=10000).epsilon_at(delta=1e-5) returns eps=2.30, but grid_size=64 returns 0.0 and grid_size=16 returns 0.0; at u=250, grid 16 returns 0.0 vs 5.11 at 10000. The audit reports 'no detectable leakage' for a mechanism it would otherwise flag — a fail-open audit outcome under an accepted configuration.",
+      "evidence": [
+        "packages/opaque-auditing/src/opaque/api/auditing/one_run/_estimate.py:37 '_MIN_GRID_SIZE = 16' — identical in 'git show 79c916e3:.../_estimate.py'",
+        "git log -S grid_size --oneline 79c916e3..4b13d82 -- packages/opaque-auditing → only 611faf51 (the _mu_at hang cap, which does not touch grid validation)",
+        "Session experiment: GdpMethod stub with (n_in=n_out=500, u=350): mu-hat/eps = (16: 0.0/0.0), (64: 0.0/0.0), (256: 0.506/2.02), (10000: 0.568/2.30); fixed-mu p-value at mu=0.5, r=1000, u=300: 1.0 (grid 16), 0.915 (grid 64), 1.6e-10 (grid 10000)",
+        "docs/user-guide/auditing.md:108 recommends grid_size tuning ('tighter numerics') without any floor guidance beyond the ValueError at <16"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either raise _MIN_GRID_SIZE to a value validated against the v_k order-statistic identity (the repo's own validation showed 10000 is adequate; ~1000+ appears to be the useful floor), or validate grid resolution relative to mu during _p_value (e.g. require enough points per unit of |L| range) and raise/warn when the discretization cannot resolve the leakage the raw counts exhibit. Reopen #373 either way.",
+      "confidence": "high"
+    },
+    {
+      "title": "_mu_at hang fix is symptom-level: strong attacks with >2000 canary guesses now raise RuntimeError, including the default epsilon_at surface at the documented 10000-canary scale",
+      "file": "packages/opaque-auditing/src/opaque/api/auditing/one_run/_gdp.py",
+      "line": "40, 80-91",
+      "category": "fix-verification/fixed-with-caveats",
+      "severity": "medium",
+      "claim": "Commit 611faf51 (PR #299) fixes the infinite _mu_at hang by capping bracket doublings at 60 and raising RuntimeError — verified terminating in <1 s on the audit's pathological inputs (r=3000/u=0, r=5000/u=1400) — but it does not fix the underlying invariant (truncated ranks use v_k=0.5 regardless of mu at _gdp.py:333, so the Chernoff floor is n_trunc/2 and the p-value cannot rise above significance for any finite mu once u is well below n_trunc/2). Consequently every strong attack past _MAX_EXACT_RANKS=2000 guesses crashes instead of reporting an epsilon estimate.",
+      "failure_scenario": "A practitioner audits with m=10000 canaries — the scale the user guide's own canary-count table discusses — and the mechanism is badly under-noised, so the attack reaches 62% accuracy (u=3800). Measured in this session: OneRunEstimate.epsilon_at(delta=1e-5) (the DEFAULT dispatch, which routes to gdp() at _estimate.py:197) raises 'RuntimeError: cannot invert μ-GDP p-value for (m=10000, r=10000, u=3800)...' while u=3900 (61% accuracy) still returns mu=2.23. The audit's most alarming regime — exactly what auditing exists to detect — becomes a crash whose message suggests using fewer canaries; nothing in docs/user-guide/auditing.md or docs/reference/auditing.md mentions the 2000-rank truncation or this failure mode (grep for '2000|truncat' returns nothing). Fail-closed, so no wrong epsilon is emitted, but the limitation is undocumented and the root-cause fix the original audit proposed (a mu-dependent v_k bound for truncated ranks) was not implemented.",
+      "evidence": [
+        "packages/opaque-auditing/src/opaque/api/auditing/one_run/_gdp.py:40 '_MAX_EXACT_RANKS = 2000', :333 'n_trunc = r - r_prime  # truncated ranks use v_k = 0.5', :384 'expected = float(np.sum(v_k)) + n_trunc * 0.5'",
+        "Session experiment: GdpMethod stub (5000,5000): u=3800 → RuntimeError; u=3900 → mu=2.2311; u=3950 → mu=1.6210",
+        "Termination verified: (1500,1500,u=0) RuntimeError in 0.6 s; (2500,2500,u=1400) in 0.7 s; boundary case (1000,1000,u=0), r=2000, converges to mu=5.98/eps=42.6 in 18 s at the default grid",
+        "docs/user-guide/auditing.md:215-228 discusses canary counts up to 1,000,000 with no mention of the mu-GDP 2000-guess power cap; AUDIT-master-list.md:299 records the audit's proposed root-cause fix ('fixing the μ-dependent v_k bound resolves two of them')"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Implement the mu-dependent bound for truncated ranks (any valid upper bound on v_k that decays with mu, e.g. v_k <= E[sigmoid(-|L(Y_(k))|)] evaluated at the truncation boundary rank, restores p-value monotone growth in mu and lets the search converge), or at minimum document the >2000-guess limitation in the auditing user guide and reference. Overlaps the broad open issue #327 (rebuild empirical auditing) but this concrete crash-at-strength behavior and its absence from docs are a specific residual of the #299 fix.",
+      "confidence": "high"
+    },
+    {
+      "title": "OPQ-130 residual: 'Bonferroni (default)' comment still asserts a multiplicity correction that does not exist",
+      "file": "packages/opaque-auditing/tests/auditing/test_integration.py",
+      "line": "42-44",
+      "category": "test-quality",
+      "severity": "low",
+      "claim": "The audit-confirmed OPQ-130 defect survives untouched: test_integration.py:42 '# Test epsilon with Bonferroni (default)' and :44 'assert eps_bonf > 0, \"Bonferroni should also detect leakage\"' still name a Bonferroni correction, while no multiplicity correction exists anywhere — the threshold-free path is still an unadjusted argmax over all thresholds using the true labels (_estimate.py:159-161 'correct = (self.n_in - self.fn_counts) + self.tn_counts; best_c = int(np.max(correct))') tested at raw significance (_eps_delta.py:41-48, 71-80).",
+      "failure_scenario": "A maintainer working the OPEN issue #376 (calibrate one-run auditing under the null — the post-hoc threshold selection problem) greps for the correction, lands on these two lines, and concludes multiple-threshold selection is already handled, delaying the real fix. No computed epsilon changes.",
+      "evidence": [
+        "grep -rni bonferroni packages/ → only test_integration.py:42,44 (plus an unrelated dpsgd sampler comment)",
+        "packages/opaque-auditing/src/opaque/api/auditing/one_run/_estimate.py:159-161 (unadjusted argmax)",
+        "packages/opaque-auditing/src/opaque/api/auditing/one_run/_eps_delta.py:41-48 (p-value at raw significance)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Delete or reword the comment/assert message (e.g. 'threshold-free (Pareto-argmax) path'); the statistical calibration itself is tracked by open #376. This finding is the misleading comment only and does not duplicate #376.",
+      "confidence": "high"
+    },
+    {
+      "title": "fold_in's documented int/str domain disjointness is not structural: a 16-byte string collides with an integer fold",
+      "file": "packages/opaque-engine/src/opaque/api/engine/random/_engine.py",
+      "line": "27-35, 64-67",
+      "category": "rng-domain-separation",
+      "severity": "low",
+      "claim": "The #374/#728 RNG convention rests on the docstring guarantee that 'Integers and strings are hashed down disjoint paths ... no sequence of integer folds can reach a key derived through a string fold' (_engine.py:64-67), but _stable_hash64 encodes an int as exactly its 16-byte signed little-endian form plus a '|' separator and a str as its UTF-8 bytes plus '|' with no type tag, so any string whose UTF-8 encoding is exactly the 16-byte encoding of an int produces the identical key. Demonstrated in this session: fold_in(key(42), 1).seed == fold_in(key(42), \"\\x01\" + \"\\x00\"*15).seed is True.",
+      "failure_scenario": "All of Opaque's own stream roots are dotted-ASCII tags whose lengths differ from 16 bytes, so no internal stream collides today (the test_stream_root_namespacing.py guarantees hold). The exposure is the same forward-looking class OPQ-128 warned about: a third-party mechanism or future internal tag that happens to be a 16-byte string (the docstring's own example 'mylab.rare_events' is 17 bytes; 'mylab.rare_event' would be 16) containing bytes that alias a caller-integer fold would silently share a stream with an integer derivation, and the documented invariant users are told to rely on would not hold. No current epsilon is affected.",
+      "evidence": [
+        "packages/opaque-engine/src/opaque/api/engine/random/_engine.py:27-35 (_stable_hash64: int → to_bytes(16,'little',signed=True)+b'|', str → utf-8+b'|', no type discriminator)",
+        "Session repro: fold_in(key(42), 1) == fold_in(key(42), '\\x01'+'\\x00'*15) → True, contradicting _engine.py:64-65",
+        "packages/opaque-engine/tests/rng/test_stream_root_namespacing.py only probes integer folds in range(-64,512) and split(base,16) against the actual internal tags, so it cannot catch the encoding-aliasing class"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Prefix a one-byte type tag in _stable_hash64 (e.g. b'i' before int bytes, b's' before str bytes) — a breaking key-derivation change like #728 itself, or soften the docstring to state the separation is encoding-based and NUL-containing 16-byte strings are reserved.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Scope: all 24 delta commits in 79c916e3..4b13d82 touching packages/opaque-auditing (net delta +1581/-423 across 28 files), plus the cross-cutting RNG commit 6f6d132a in opaque-engine/dpsgd/dpftrl and the auditing-related docs/examples/tutorial changes. Fix commits verified line-by-line: 5f359a01 (#297 non-finite score rejection), 611faf51 (#299 _mu_at caps), f06a3cd7 (#375), 24cdadef (#372), 2cc7eaea + 6f6d132a (#374), ec1552fa (#378), 2948b561 (#371 CanaryScores redesign), 47aa7796 (#370), a3eabe21 (#726 mandatory bootstrap key), 26bfffa9 (#751 candidate pools), 1d216fcd (OPQ-165 citation repair — 'Xiang et al. (2025)' now correct at all sites), plus infra/docs commits (919a4572, c00143e6, cc7edb97, 5b2a2957, 864a6442 contract-test deletion, 6fe85832, 7813559d, ed766ebd, a950c6b9, 182b80b1, 76e013d8, 4af9e974). Ran the full opaque-auditing suite (222 passed) and the engine RNG namespacing + dpsgd domain-separation tests (pass when auditing is importable; the three auditing-root rows silently skip otherwise). Empirical verification: _mu_at terminates (RuntimeError <1 s) on the audit's pathological truncation inputs and converges at the r=2000 boundary; raw-ROC AUC unbiased under the null while hull is biased high; +inf denominators pinned; GDP grid-size direction measured (coarse grids erase leakage — basis for the #373 not-fixed finding); m=10000 strong-attack RuntimeError measured (basis for the _mu_at caveat finding); fold_in int/str collision demonstrated. Reviewed sibling paths: engine clipped_grad's batch_argnums (order-insensitive by construction, no equivalent hazard), _best_r_u/_auc/tpr interpolation edge cases, _join_scores/_aligned_reference join logic, serialization round-trip incl. new canary_indices field, and the candidate-pool privacy model (pool fixed pre-training, selection-independent coins — sound). Open issues #376/#327 (auditing calibration/rebuild) were not duplicated; findings 2 and 3 name their overlap explicitly. Not verifiable here: GitHub issue closure rationales (API unavailable) — issue-to-fix mapping was established from commit content."
+}

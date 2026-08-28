@@ -1,0 +1,143 @@
+{
+  "statuses": [
+    {
+      "issue": 426,
+      "title": "Verify noise-stream continuity across checkpoint resume",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["4be102ee"],
+      "note": "Commit 4be102ee (#512) added TestNoiseStreamContinuity (packages/opaque-transformers/tests/opaque_transformers/test_checkpoint_helpers.py:235-300): bit-identical uninterrupted-vs-resumed noise draws plus a negative step-counter-reset check, for gaussian_noise and band_mf. Trainer wiring restores noise state on resume (_dp_trainer.py:5205 'ctx.noise_state = opaque_from_state_dict(...)'). I independently verified the continuity invariant holds through state_dict/torch.save/from_state_dict for ALL strategies (identity, band_mf, blt, bisr, bsr, lambda_cgd) and the paired second-moment state — all bit-exact. Caveat: CI tests cover only 2 of the 7 distinct noise-state shapes, and the end-to-end trainer resume test (test_dpftrl_trainer_smoke.py:240-298) still asserts only global_step and epsilon, exactly what OPQ-157 criticized (reported as a low finding)."
+    },
+    {
+      "issue": 362,
+      "title": "Apply learning-rate schedules on the MF step axis and expose weighted Grams",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["0baaba7a"],
+      "note": "Commit 0baaba7a (#529): band-MF now applies lr as per-row query_weights in the optimizer objective (_band_mf.py:80-89 passes 'query_weights=lr' to optimize_toeplitz; _toeplitz.per_query_error:536-547 multiplies per-row error by weight^2) instead of the old wrong-axis Toeplitz-coefficient product (removed diff confirmed). lambda-CGD/BISR/BLT expose weighted Grams via native *_gram_matrix_lr with the schedule materialized on the step axis (materialize_schedule evaluates schedule(step) for step in range(n_steps), _schedule_fingerprint.py:12-18). Verified numerically: gram_matrix output changes when lr_schedule is supplied for lambda_cgd and bisr. Trainer auto-injects the live schedule (test_band_mf_strategy_receives_schedule passes). Caveat (shared with #332, reported as a finding): lr_schedule is field(compare=False) on all four strategy dataclasses, so structural equality — which DpProcess.__or__ uses to merge accountant steps — collapses mechanisms that differ only in schedule."
+    },
+    {
+      "issue": 361,
+      "title": "Reuse column-keyed Gaussian draws across MF noise steps",
+      "status": "fixed-verified",
+      "fix_commits": ["a8388667", "6f6d132a"],
+      "note": "Dense engine (_engine.py:148-185 _gaussian_linear_combination) now derives each z_i from fold_in(key, MF_GAUSSIAN_STREAM_FOLD, 'mf_gaussian_column', idx, leaf_index), so column draws are reproducible across rows. Verified empirically: C^{-1}=tril(ones(3,3)) gives corr(0,1)=0.708 (theory 0.707) and corr(0,2)=0.593 (theory 0.577) vs the pre-fix ~0 reported in OPQ-151. Cross-step covariance tests exist for BOTH dense and streaming engines (test_noise_addition.py:90,184 test_sequence_covariance_matches_noising_matrix) — the exact test OPQ-151 asked for. Streaming path was already correct and remains so."
+    },
+    {
+      "issue": 360,
+      "title": "Apply the full BISR strategy operator at runtime",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["2507548b", "4106222d"],
+      "note": "Commit 2507548b (#509): BisrStrategy.streaming_matrix now computes strategy coefficients at the full horizon (native bisr_strategy_coefficients(inv, n_steps), _bisr.py:198-211) instead of the pre-fix bandwidth-truncated coefficients, and raw_noise_factory routes through the streaming engine with the horizon guard. Verified numerically at n=12, p=3: materialized runtime operator equals the exact banded-Toeplitz C^{-1} (normalized and unnormalized, max err 0.0), and row_norms match. Caveat (reported as a finding): the runtime applies C^{-1} by forward-substitution against the DENSE length-n strategy coefficients, so the streaming state holds n_steps-1 gradient-sized buffers (measured: 2.04 GB and 4.27 s/step at n_steps=512, d=1e6) while docs/mechanisms/dp-ftrl/bisr.md:10,96,109 claim 'p-1 noise vectors (via PRNG replay)'."
+    },
+    {
+      "issue": 358,
+      "title": "Preserve empty balls-in-bins slots in the runtime sampler",
+      "status": "fixed-verified",
+      "fix_commits": ["c90f67d3"],
+      "note": "BallsInBinsSampler.__iter__ (_balls_in_bins.py:121-142) yields bins[i % num_bins] unconditionally, including empty lists, for every one of n_steps slots; __len__ counts empty slots. True BnB assignment (independent uniform bin per example, generated once in __init__ and fixed across epochs) matches the Lemma 3.2 accounting. Downstream, DPTrainer executes empty rounds as pure-noise optimizer steps and advances global_step (_dp_trainer.py:1784-1792, 2020-2034), so the executed schedule matches the accountant's num_bins-slot epoch. Minor: a stale pre-remediation comment in test_dpftrl_trainer_smoke.py:258-262 still says 'BallsInBinsSampler may skip empty bins' and the assertion was left weakened to global_step >= 8 — the comment no longer describes the code."
+    },
+    {
+      "issue": 357,
+      "title": "Recreate DP-FTRL samplers across configured epochs",
+      "status": "fixed-verified",
+      "fix_commits": ["60e69731"],
+      "note": "One sampler now spans the full stream everywhere. Trainer: build_sampler(n_steps=ctx.total_steps) constructs a single sampler (_dp_trainer.py:3685-3718); the train loader iterator is created once before the epoch loop (:1738-1739 'train_loader = self.get_train_dataloader(); train_loader_iter = iter(train_loader)') and the epoch loop only synthesizes HF callbacks. All samplers keep a _consumed cursor so __iter__ resumes rather than restarting (CyclicPoisson _poisson.py:162-165, BnB _balls_in_bins.py:140-142, BMinSep _b_min_sep.py:131-135, Sequential _sequential.py). examples/train_dpftrl.py:1208-1295 likewise constructs ONE sampler with n_steps=total_steps for every mechanism. The dead 'sequential' branch in build_sampler that omits n_steps is unreachable from config (_training_arguments.py _ALLOWED_SAMPLERS never permits 'sequential')."
+    },
+    {
+      "issue": 355,
+      "title": "Compute MF row norms without eager quadratic work",
+      "status": "fixed-verified",
+      "fix_commits": ["4106222d"],
+      "note": "Commit 4106222d (#572) attaches closed-form row_norms_squared_fn: Toeplitz strategies use cumsum(inverse_coefs^2) via scipy lfilter with column-norm rescaling (_toeplitz.py:269-297), BLT has its own closed form (_blt_math.py:405-443), BISR passes its banded inverse as a validated hint (_bisr.py:210, validated at _toeplitz.py:216-237), identity skips entirely and lambda-CGD is analytic (_mf_gaussian_noise.py:254-270). Verified numerically: closed form == generic probing == materialized row norms for band_mf/blt/bsr at n=40 (max err 4.4e-16), and band_mf bands=16 n=5000 row norms take 0.4 ms (the remaining 81 s in that constructor is the L-BFGS coefficient optimization, out of scope per OPQ-152's own note)."
+    },
+    {
+      "issue": 347,
+      "title": "Make PerGroup state deeply immutable",
+      "status": "fixed-verified",
+      "fix_commits": ["fb51c789", "8109c169"],
+      "note": "PerGroup.__post_init__ (packages/opaque-engine/src/opaque/api/engine/types.py:101-108) normalizes keys into a fresh dict and wraps both mappings in MappingProxyType over copies. Verified by experiment: mutating the caller's dicts after construction does not affect the stored state; writes through .values/.groups raise TypeError; equality across equivalent instances holds. Consumers in opaque-dpftrl (per-group MF noise, sync fingerprints over sorted items) operate read-only on the proxies. Note PerGroup is unhashable (mappingproxy) — nothing in the dpftrl tree hashes it; verified sync fingerprinting uses SHA-256 over sorted items instead."
+    },
+    {
+      "issue": 332,
+      "title": "Key PLD caches by mechanism and discretization fingerprints",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["493a9f4a", "819ef0d9"],
+      "note": "Verified from the dpftrl side: pld_cache/horizon_pld_cache key entries by (resolved DiscretizationConfig, self._pld_cache_key(), n_steps) (core _pld_cache.py:160-197), and every dpftrl mechanism/amplifier fingerprint includes noise_multiplier, horizon/participation context and strategy_cache_key(...) which materializes lr_schedule on the step axis (_mf_gaussian.py:65-75, amplification/_poisson.py:131-140, _balls_in_bins.py:115-131, _b_min_sep). lru_cache-level gram caches also key on the materialized lr tuple. Verified: strategy_cache_key distinguishes strategies differing only in lr_schedule. Caveat (reported as a finding, shared with #362): the fingerprints protect the CACHES, but structural equality used by DpProcess.__or__ merging still ignores lr_schedule (compare=False), so two per-step processes with different schedules collapse into Repeated(first, 2) — demonstrated with epsilons 3.52 vs 3.68 merging silently."
+    }
+  ],
+  "findings": [
+    {
+      "title": "lambda-CGD noise stream is not RNG-namespaced — sibling gap of the #728 stream-root fix",
+      "file": "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_lambda_cgd.py",
+      "line": "280,292",
+      "category": "rng-domain-separation",
+      "severity": "medium",
+      "claim": "Commit 6f6d132a (fix(random)!: namespace mechanism RNG stream roots, #728) gave every noise mechanism a namespaced string root (MF_GAUSSIAN_STREAM_FOLD='opaque.dpftrl.mf_gaussian' in _engine.py:37, GAUSSIAN_STREAM_FOLD in dpsgd), but lambda-CGD's PRNG-replay path was not touched: it still derives per-step torch generators from bare integer folds 'current_key = rng_fold_in(st._rng_key, step)' (_lambda_cgd.py:280) and 'prev_key = rng_fold_in(st._rng_key, step - 1)' (:292). Since split(key, n) is defined as fold_in(key, i), the lambda-CGD noise released at step t is byte-identical to a torch draw from the caller's split(base)[t] key — the exact aliasing the fix eliminated everywhere else, and the exact invariant the new enforcement test states ('Any stream root Opaque derives for itself must be a namespaced string', packages/opaque-engine/tests/rng/test_stream_root_namespacing.py:1-10). That test cannot catch lambda-CGD because the mechanism declares no root constant at all. docs/reference/rng.md:220 falsely lists 'opaque.dpftrl.mf_gaussian' as rooting mf_gaussian_noise — untrue when the strategy is LambdaCgdStrategy (the dispatcher special-cases it into _make_lambda_cgd_noise with the raw user key).",
+      "failure_scenario": "A user passes key(seed) to mf_gaussian_noise(..., lambda_cgd_strategy(...)) and, following the documented split/fold_in idioms, derives sibling keys from the same base (k0, k1 = split(key(seed)) or fold_in(key(seed), rank)) for any other component that draws torch noise from its handed key. Demonstrated: with lambda_=0.0, the mechanism's step-0 and step-1 released noise vectors are torch.equal to torch.randn drawn from generator_from_key(split(base)[0]) and [1]. Any such correlated second release voids the independent-Gaussian assumption of the lambda-CGD privacy analysis with nothing to signal it; the accountant's epsilon is then not a bound.",
+      "evidence": [
+        "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_lambda_cgd.py:280 'current_key = rng_fold_in(st._rng_key, step)' — no namespaced root",
+        "git show 6f6d132a --stat: _engine.py and _second_moment.py namespaced; _lambda_cgd.py absent from the diff",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:66-70: 'Without a root the obvious derivation — fold_in(key, step) — is what *every* mechanism writes, and two of them drawing from it produce byte-identical noise with nothing to signal it'",
+        "Executed repro: mf_gaussian_noise step-0/1 outputs torch.equal to draws from generator_from_key(split(key(42))[0]/[1]); fold_in(base,0).seed == split(base,2)[0].seed",
+        "docs/reference/rng.md:220 claims 'opaque.dpftrl.mf_gaussian | opaque.dpftrl.noise.mf_gaussian_noise' — false for the LambdaCgdStrategy dispatch path"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Fold a namespaced root once in _make_lambda_cgd_noise (e.g. LAMBDA_CGD_STREAM_FOLD = 'opaque.dpftrl.lambda_cgd', key = rng_fold_in(key, LAMBDA_CGD_STREAM_FOLD) before building the state), add the constant to _all_roots() in test_stream_root_namespacing.py, and note the checkpoint-stream break (existing mid-run lambda-CGD checkpoints will resume onto a different noise stream — same class of break #728 already shipped as fix(random)!).",
+      "confidence": "high"
+    },
+    {
+      "title": "BISR runtime keeps n_steps-1 gradient-sized buffers, contradicting the documented p-1-vector / PRNG-replay design",
+      "file": "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py",
+      "line": "198-211",
+      "category": "performance-scalability",
+      "severity": "medium",
+      "claim": "The #360 fix (2507548b) made the BISR runtime operator mathematically exact by handing the DENSE length-n_steps strategy coefficients to inverse_as_streaming_matrix (_bisr.py:200: 'strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)'), whose forward-substitution state is (bands-1, *grad_shape) with bands = len(coef) = n_steps (_toeplitz.py:239-244 'return zero.unsqueeze(0).expand(bands - 1, *zero.shape).clone()'). BISR's whole point is that C^{-1} is banded with p coefficients — the noise row is a p-term convolution of past iid draws computable with p-1 buffers or zero-memory PRNG replay — yet the implementation stores n_steps-1 full gradient copies and does O(n_steps * d) work per step. docs/mechanisms/dp-ftrl/bisr.md still documents the intended design: ':10 Memory: p-1 noise vectors (via PRNG replay or small buffer)', ':96 The noise function regenerates p-1 previous noise vectors via PRNG replay', ':109 Bandwidth p retains p-1 noise vectors.' None of that matches the code.",
+      "failure_scenario": "Measured on this tree: bisr_strategy(bandwidth=4), n_steps=512, 1M-param model -> streaming state tensor (511, 1000000) = 2.04 GB and 4.27 s per noise step on CPU; both scale linearly in n_steps. A realistic LLM run (n_steps=10k, 1B params) needs ~40 TB of noise state — the mechanism OOMs at any real scale, and at toy scale silently pays O(n_steps) memory/time while the user believes the documented p-1-vector cost. Correctness of released noise is unaffected (operator verified exact).",
+      "evidence": [
+        "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py:200 'strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)' passed as coef to inverse_as_streaming_matrix",
+        "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_toeplitz.py:239-244 init state = (bands-1, *shape) with bands = coef.shape[0]",
+        "Executed: state tensors [(), (511, 1000000)] -> 2.04 GB; one noise step 4.27 s (n=512, d=1e6, p=4)",
+        "docs/mechanisms/dp-ftrl/bisr.md:10,96,109 claim p-1 vectors / PRNG replay",
+        "Runtime operator exactness separately verified: materialize() == exact banded C^{-1} (and D*C^{-1} when normalized), max err 0.0 at n=12"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Apply the banded C^{-1} directly: keep the last p-1 iid draws (ring buffer keyed like the streaming engine's per-step generators, or PRNG-replay them as lambda-CGD does) and emit sum_k inv_c[k] * z_{t-k}, times the column-norm diagonal d_t when normalized. That is O(p) buffers and O(p*d) per step and matches the docs; the current dense forward-substitution path can remain as a cross-check in tests.",
+      "confidence": "high"
+    },
+    {
+      "title": "lr_schedule is compare=False, so the accountant's structural merge collapses MF mechanisms with different schedules",
+      "file": "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_band_mf.py",
+      "line": "110",
+      "category": "accounting-identity",
+      "severity": "medium",
+      "claim": "All four schedule-carrying strategies declare 'lr_schedule: Schedule | None = field(default=None, compare=False)' (_band_mf.py:110, _bisr.py:160, _blt.py:132, _lambda_cgd.py:119). The #332/#362 remediation keyed the PLD caches by materialized schedules (strategy_cache_key), but DpProcess.__or__ merges accountant steps by structural equality (packages/opaque-accounting/src/opaque/api/accounting/core/_base.py:460-477: 'if left_leaf == right_leaf: return Repeated(left_leaf, left_count + right_count)'), and dataclass equality ignores compare=False fields. Two per-step DP-FTRL processes that differ only in lr_schedule therefore compare equal and merge, silently pricing every step under the FIRST process's schedule-weighted Gram.",
+      "failure_scenario": "Demonstrated on this tree: pa = per_step(balls_in_bins(mf_gaussian(1.0, lambda_cgd_strategy(lambda_=0.5, lr_schedule=cosine)), num_bins=4, n_steps=8)) and pb identical except lr_schedule=constant satisfy pa == pb; pa | pb returns Repeated(count=2) built on pa's leaf, although the two mechanisms' true full-horizon epsilons differ (3.5241 vs 3.6750 at delta=1e-5). A user composing training phases with different LR schedules in one Accountant (acct |= step across phases — the documented idiom) gets an epsilon computed entirely from the first phase's schedule; depending on the schedules, the reported epsilon can understate the true cost. Possible overlap with open issue #319 ('Restore DP-FTRL mechanism and strategy invariants'), but this specific residual is a direct leftover of the closed #332/#362 fixes, which repaired cache keys while leaving merge identity schedule-blind.",
+      "evidence": [
+        "grep: lr_schedule compare=False at _band_mf.py:110, _bisr.py:160, _blt.py:132, _lambda_cgd.py:119",
+        "packages/opaque-accounting/src/opaque/api/accounting/core/_base.py:473-477 merge on structural equality",
+        "Executed repro: pa == pb -> True; (pa | pb) -> Repeated count=2; eps(cosine)=3.5241 vs eps(constant)=3.6750",
+        "Contrast: _pld_cache_key/strategy_cache_key DO distinguish the schedules (verified strategy_cache_key(s_plain, n) != strategy_cache_key(s_lr, n)) — only the equality/merge path is blind"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Make schedule identity participate in strategy equality: either drop compare=False (Schedule recipes are frozen dataclasses that compare structurally; raw callables fall back to identity), or override __eq__ on the strategies to compare materialize_schedule fingerprints; alternatively have DpProcess.__or__ refuse to merge leaves whose _pld_cache_key() differ.",
+      "confidence": "high"
+    },
+    {
+      "title": "Noise-stream continuity tests cover only 2 of 7 noise-state shapes; trainer-level resume test still checks only step count and epsilon",
+      "file": "packages/opaque-transformers/tests/opaque_transformers/test_checkpoint_helpers.py",
+      "line": "283-300",
+      "category": "test-coverage",
+      "severity": "low",
+      "claim": "The #426 fix (commit 4be102ee) added TestNoiseStreamContinuity for gaussian_noise and band_mf only. BLT (buffered streaming state), BISR (dense forward-substitution state), BSR, lambda-CGD (PRNG replay), identity, and the paired SecondMomentMFNoiseState have no continuity regression test, and the end-to-end resume test (test_dpftrl_trainer_smoke.py:240-298) still asserts only out2.global_step == out1.global_step and epsilon approx-equality — both insensitive to noise-state restoration, which is the precise gap OPQ-157 identified. I verified by direct execution that the continuity invariant currently HOLDS for all six strategies and the second-moment state (bit-exact resumed draws through state_dict/torch.save/from_state_dict), so this is regression protection, not a live defect.",
+      "failure_scenario": "A future refactor of BLT buffer serialization, the BISR streaming state, or lambda-CGD's key derivation (e.g. the namespacing fix proposed in the lambda-CGD finding) could silently reset or fork the noise stream on resume; no test would fail, and a resumed run would replay already-released noise (correlated releases the accountant never modeled) or diverge from the accounted mechanism.",
+      "evidence": [
+        "packages/opaque-transformers/tests/opaque_transformers/test_checkpoint_helpers.py:283-300 — only gaussian_noise and band_mf_strategy parametrizations",
+        "packages/opaque-transformers/tests/opaque_transformers/test_dpftrl_trainer_smoke.py:291-298 — resume assertions limited to global_step and privacy_epsilon (rel=1e-3)",
+        "Executed: continuity bit-exact for identity/band_mf/blt/bisr/bsr/lambda_cgd and SecondMomentMFNoiseState on this tree"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Parametrize _assert_continuity over all mf strategies (they share the make_noise closure shape) plus a paired second-moment case, and add one trainer-level test comparing final model parameters of a straight-through run vs checkpoint+resume at noise_multiplier > 0 (bit-identical on CPU with fixed seeds).",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Reviewed all 47 delta commits touching packages/opaque-dpftrl (git log 79c916e3..4b13d82) plus the dpftrl-relevant trainer surface. Read in full against the current tree: noise engine (_engine.py, _mf_gaussian_noise.py, _lambda_cgd.py, _bisr.py, _bsr.py, _blt.py excerpts, _band_mf.py delta, _second_moment.py, _distributed.py, _identity.py, _toeplitz.py, _streaming_matrix.py surface, _schedule_fingerprint.py, _strategy_codec.py), sampling (_poisson.py, _balls_in_bins.py, _b_min_sep.py, _sequential.py), dpftrl accounting (mechanisms/_mf_gaussian.py, amplification/_poisson.py and _balls_in_bins.py, composition/_per_step.py shim, core _pld_cache.py), trainer wiring (_dpftrl.py build_amplifier/build_sampler, _dp_trainer.py sampler construction/epoch loop/empty-round handling/resume restore, _training_arguments.py sampler tables), and examples/train_dpftrl.py sampler construction. Key fix commits inspected as diffs: 2507548b (#509 BISR), a8388667 (#518 column draws), 0baaba7a (#529 step-axis schedules), 60e69731 (#541 one sampler), 4106222d (#572 closed-form row norms), 493a9f4a/819ef0d9 (PLD caches), 6f6d132a (#728 RNG roots), aa922b31 (#316), c90f67d3 (#314), fb51c789 (#440), 4be102ee (#512), 2c3fc575 (#291 horizon guard). Executed verification: full opaque-dpftrl pytest suite (526 tests, all pass, CPU markers) and targeted numeric experiments — dense-engine cross-step correlation, BISR operator/normalization/row-norm exactness and memory measurement, closed-form vs probing row norms for band_mf/blt/bsr, past-horizon raise for all six strategies and the paired second-moment path, lambda-CGD nonzero noise at every in-horizon step, serialization continuity for all strategy states, weighted-Gram sensitivity to lr schedules, PerGroup immutability, RNG-collision repro for lambda-CGD, and cross-schedule accountant merge collapse. Not verified here (open-issue territory left to accounting reviewers): BandMF multi-participation sensitivity and second-moment pricing (#359), sampler-accounting contract (#356), BLT min-sep non-negativity (#595 — confirmed its scope is BLT-only: BSR validates coefficients at the factory (_bsr.py:73-103) and Rust minsep validates unless skip_checks; the skip_checks=True sites are _blt.py:190 and _blt_math.py:850, both within #595's stated scope). Trainer end-to-end runs were not executable (transformers not installed in this environment); trainer claims are from code reading."
+}

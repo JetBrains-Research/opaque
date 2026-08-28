@@ -1,0 +1,190 @@
+{
+  "statuses": [
+    {"issue": 438, "title": "Annotate public facades and callable factories", "status": "fixed-verified", "fix_commits": ["e97c38b2"], "note": "Public factories carry typed callable/state returns (e.g. gaussian_noise -> tuple[GaussianNoiseFn, GaussianNoiseState], packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:156-165). ruff gate passes clean on packages/."},
+    {"issue": 435, "title": "Add Google-style docstrings to public surfaces", "status": "fixed-verified", "fix_commits": ["6f3c11a3"], "note": "Enforced, not just written: pyproject.toml selects D100/D101/D103/D104/D417 with pydocstyle convention=google (pyproject.toml:250-253, 272-273); 'uv run ruff check packages/ tests/' exits clean; autoformat.yml runs this as the lint gate."},
+    {"issue": 433, "title": "Reduce public API width and oversized implementations", "status": "fixed-verified", "fix_commits": ["c5cb659b"], "note": "PLR0913/PLR0915/PLR0917 selected with calibrated limits (max-args 14, max-statements 120, pyproject.toml:275-281) and only six Triton-kernel per-file ignores; ruff clean. Semantic API-width reduction is a judgment call; the enforcement mechanism is real."},
+    {"issue": 432, "title": "Name domain-significant numeric comparisons", "status": "fixed-verified", "fix_commits": ["cc7edb97"], "note": "PLR2004 selected for src (pyproject.toml:249), ignored only under tests (per-file-ignores :297-298); ruff clean, so all remaining magic-value comparisons in src are named or noqa'd with rationale (e.g. _adafactor.py:230)."},
+    {"issue": 431, "title": "Install TRL and enforce zero-noise parity in CI", "status": "fixed-verified", "fix_commits": ["69ea146e", "2a2c5de9"], "note": "opaque[all] chains to opaque-transformers[trl] (root pyproject.toml:53-59), trl is in uv.lock:4141, and CI installs --extra all in every lane (setup_python_test_environment.sh). packages/opaque-alignment/tests/test_trl_parity.py executes real TRL loss code (DPOTrainer._compute_loss, trl dft_loss) against opaque heads. Caveat (not a finding): the suite guards with pytest.importorskip('trl'), so if the extras chain ever drops trl the parity silently skips; no assertion pins trl's presence in CI."},
+    {"issue": 430, "title": "Align opaque-transformers metadata, extras, and Triton policy", "status": "fixed-verified", "fix_commits": ["4c073242", "8722a0c5"], "note": "OPQ-172/173 corrected: README no longer advertises [kernels]/[peft] or opaque-core (packages/opaque-transformers/README.md:9-19); only extra is trl (pyproject:56); root pyproject comment now states Triton is an intentional platform-gated transitive dep (pyproject.toml:111-114). Minor: README's 'For Triton fused kernels ... install opaque-patches[transformers]' is loose — that extra pulls transformers/peft/numpy, not triton (opaque-patches pyproject:31-35); triton still has no version floor anywhere."},
+    {"issue": 428, "title": "Test the supported Python 3.12 runtime", "status": "fixed-with-caveats", "fix_commits": ["76e013d8", "182b80b1"], "note": "#600 added 3.12 latest-dependency lanes; #665 then moved them to 3.13 when 3.13 support landed. Result: 3.11 (locked/minimum) and 3.13 (latest) run, 3.12 — advertised in every wheel's classifiers and inside requires-python — executes zero tests anywhere (grep '3.12' over .github/ returns nothing; validate-distributions matrix is [3.11, 3.13]). See finding."},
+    {"issue": 425, "title": "Cover workspace manifests and lockfiles with dependency updates", "status": "fixed-verified", "fix_commits": ["37445e7c", "c784ebb0"], "note": "OPQ-133 core fixed: Cargo.lock un-gitignored and committed (#478); dependabot.yml now has github-actions@/, cargo@/packages/opaque-accounting (grouped), and uv@/ with versioning-strategy lockfile-only — the uv ecosystem reads the workspace + uv.lock, covering all member resolutions. Deliberate scope: lockfile-only never bumps library compatibility floors (torch>=2.9 etc.), per the in-file comment. Unverifiable residual: the cargo entry's directory (/packages/opaque-accounting) does not contain Cargo.lock (root does); whether Dependabot's cargo updater refreshes the root workspace lockfile from a member directory could not be checked without GitHub API access."},
+    {"issue": 424, "title": "Make Triton kernel validation blocking", "status": "fixed-with-caveats", "fix_commits": ["847b464e", "76e013d8"], "note": "Blocking achieved: continue-on-error removed, CUDA lanes are in the required python-tests gate for same-repo PRs (pr.yml:189-227) and in main's publish gate (ci.yml:204-218). Caveat = finding 1: #476's 'Assert CUDA available' preflight was dropped when #600 rewrote the reusable workflow, so a GPU runner with broken CUDA auto-skips every cuda test (conftest.py:38) and the lanes go green — the validation is blocking but can silently validate nothing."},
+    {"issue": 423, "title": "Ship licenses and correct third-party attribution paths", "status": "fixed-verified", "fix_commits": ["ed766ebd"], "note": "OPQ-160 fixed at every site: all NOTICE file paths resolve (scripted check over the current tree: zero missing); kernel headers carry SPDX + corrected ../../../../../NOTICE backreference to the now-existing per-package NOTICE. Verified by building wheels locally: opaque-base (setuptools) and opaque-accounting (maturin) both ship dist-info/licenses/LICENSE (full Apache-2.0 text, symlink resolved) and licenses/NOTICE."},
+    {"issue": 422, "title": "Apply workspace Rust lints to opaque-accounting", "status": "fixed-verified", "fix_commits": ["47aba30e"], "note": "OPQ-134 fixed via crate-level [lints.rust] unsafe_code = \"warn\" (packages/opaque-accounting/Cargo.toml:38-39) rather than [lints] workspace = true; effect is identical and cargo clippy -- -D warnings in autoformat.yml escalates it. Cosmetic residue: the root [workspace.lints.rust] table (Cargo.toml:13-14) is now redundant duplication rather than the inheritance source."},
+    {"issue": 421, "title": "Produce portable and reproducible accounting artifacts", "status": "fixed-verified", "fix_commits": ["556c9292"], "note": "OPQ-135 fixed: [tool.maturin] exclude for __pycache__/*.pyc/*.pyo plus Cargo package.exclude; rebuilt the maturin wheel on this dirty host (src/ contains live __pycache__ dirs) — zero bytecode entries in the wheel. Enforced by .github/scripts/check_accounting_artifact_policy.py run blocking in build-distributions.yml:165-166 on every wheel and sdist; portability via manylinux 2_28 targets and macos-deployment-target 11.0; sdist self-rebuild proof step at :168-176."},
+    {"issue": 420, "title": "Pin umbrella-package dependencies during builds", "status": "fixed-verified", "fix_commits": ["a950c6b9", "e7582d2b", "f6dda0f7"], "note": "set_build_versions.sh rewrites every internal 'opaque-*>=0.0.0.dev0' sentinel (root umbrella + all cross-package deps, extras included) to ==VERSION with fail-closed sentinel validation; check_wheel_internal_pins.py then verifies every built wheel's METADATA carries the exact pin, run in both build jobs (build-distributions.yml:76-79, 159-163). validate-distributions.yml additionally installs opaque[all] from built wheels only and asserts all installed opaque versions equal the umbrella version."},
+    {"issue": 419, "title": "Align transformer reference tables and defaults with dataclass fields", "status": "fixed-with-caveats", "fix_commits": ["af29e4a9"], "note": "OPQ-142 mostly fixed: chunked_nll in the loss_type row (docs/reference/transformers.md:472), use_performance_kernels rows with correct per-class defaults (:191 False base, :476/:544 True TRL), and the 'default OFF on conversion' claim now matches code (_convert.py:157, _hf_convert.py:500 setdefault False). Caveat = finding 9: docs/alignment/trainers.md:109 still lists only nll/dft."},
+    {"issue": 418, "title": "Audit and repair scholarly references", "status": "fixed-with-caveats", "fix_commits": ["1d216fcd"], "note": "Verified fixed: OPQ-161 (blt.md references correct titles/authors), OPQ-162 (dead arXiv IDs removed from accounting README), OPQ-163 (1905.09982 + 2202.08312 now correct), OPQ-164 (1807.01647), OPQ-165 (Xiang et al. + 'Tight Privacy Audit in One Run' at all six sites), OPQ-166/167 (Dvijotham/McMahan, correct 2306.08153 title), OPQ-168/169 (fabricated λ-CGD/BISR titles replaced with real ones incl. Rust sites). Caveat = finding 5: OPQ-136's exact defect survives — _schedule_free.py:10 still credits 'Defazio, Yaida, Cutkosky'. No mechanical citation CI exists; repairs are one-shot."},
+    {"issue": 416, "title": "Execute documentation examples and validate public factory signatures", "status": "partial", "fix_commits": ["0d23f174", "864a6442"], "note": "Notebooks were re-executed with committed outputs (all tutorials except the torchrun-only distributed one now carry outputs) and DP-FTRL signature docs fixed. But: (a) nothing in CI executes notebooks or doc examples (mkdocs execute:false, no nbmake — mkdocs build --strict checks links only); (b) the factory-signature contract tests #480 added (tests/contracts/test_mf_strategy_signatures.py) were deleted by #587 along with the whole contracts suite; (c) the audited broken examples OPQ-141 (rng.md) and OPQ-144 (dp-sgd.md loop) plus precision.md's swapped optimizer.update binding are still broken in the current tree — findings 2, 3, 4."},
+    {"issue": 414, "title": "Document the current alignment reference-cache format", "status": "fixed-verified", "fix_commits": ["ffe53331", "34e3d733"], "note": "docs/alignment/dpo.md:57-139 describes the content-addressed .safetensors cache keyed by dataset/cache_identity/output_columns with default <tempdir>/opaque_ref_cache — matches _precompute.py:92,166-168; node-local-tempdir and DDP sharding caveats documented."},
+    {"issue": 413, "title": "Express Gaussian per-step privacy in terms of the noise multiplier", "status": "fixed-verified", "fix_commits": ["11d34b39"], "note": "OPQ-138 fixed: dp-concepts.md:123-128 now defines σ = σ_abs/C as the controlling quantity and notes rescaling C and σ_abs together leaves ε unchanged; advanced composition reattributed to Dwork, Rothblum, Vadhan 2010 (:131) with Kairouz 2015 retained in the reference list for optimal composition (:384)."},
+    {"issue": 415, "title": "Correct adaptive clipping distributed-use documentation", "status": "fixed-verified", "fix_commits": ["6d6f5a39", "c98452f1", "3b4266ab"], "note": "docs/user-guide/distributed.md:162-190 now shows explicit sync(clip_state) with local-only semantics stated; executed the documented call shape against the real API (adaptive_clipped_grad with batch_argnums/normalize_by via **clipped_grad_kwargs → ClippedPytree, max_norm 0.25) — it runs."},
+    {"issue": 412, "title": "Make contributor, workflow, and export-contract documentation accurate", "status": "fixed-with-caveats", "fix_commits": ["67ca880f", "864a6442", "a31629f2"], "note": "OPQ-140 fixed (CONTRIBUTING.md has zero opaque-core / tests/ddd stale paths); OPQ-132's WORKFLOWS.md was rewritten and mostly matches reality (entry points, gates, artifact prefixes, ruleset names verified against pr.yml/ci.yml). Caveats = findings 6, 7: the docs re-drifted inside the delta — WORKFLOWS.md:50-52 describes caller-supplied package matrices and 'Build / <distribution>' check names that no longer exist in build-distributions.yml; AGENTS.md:268 and CONTRIBUTING.md:163 still call the minimum-deps lane advisory after #723 made it blocking; docs/user-guide/distributed-trainer.md:90 still points at packages/opaque-core/tests/distributed/."},
+    {"issue": 406, "title": "Align Adafactor and Adadelta memory behavior with their documentation", "status": "fixed-verified", "fix_commits": ["d64572ee"], "note": "Light verification (optimizers deep-dive belongs to the optimizers reviewer): Adafactor keeps factored (v_row, v_col) second moments for rank>=2 exactly as its module docstring states (_adafactor.py:83, 230); #494 reworked Adadelta allocation with behavior tests (test_adadelta.py +36 lines). No contradiction found between current docs and state shapes."},
+    {"issue": 403, "title": "Correct unsupported grouped-GEMM claims in fused MoE docs", "status": "fixed-verified", "fix_commits": ["709f7dfc"], "note": "OPQ-176: fused_moe.py's header now describes torch._grouped_mm's actual 2Dx2D offset-grouped layout and 16-byte alignment rule and explains why the mode-2 weight-grad needs the custom _grouped_AtB Triton kernel (fused_moe.py:12-24) — the previously false capability claims are gone. The rewritten torch-internals description was not independently re-derived against torch source."},
+    {"issue": 388, "title": "Wire or remove inert privacy and logging arguments", "status": "fixed-verified", "fix_commits": ["e0e22246"], "note": "privacy_noise_radius removed from the entire tree (only hits are the regression test asserting it raises: test_logging_wiring.py:88-90); log_level/log_level_replica validated against transformers' level dict and wired (_training_arguments.py:91-108, 310-311) with a dedicated wiring test module."},
+    {"issue": 366, "title": "Add a blocking two-rank CPU distributed correctness lane", "status": "fixed-verified", "fix_commits": ["239e364d", "095992d6", "938a8a56", "5303203e"], "note": "CI-side verification (test content belongs to the distributed reviewer): the 'distributed' marker is registered (pyproject.toml:176), Gloo tests exist across engine/dpsgd/dpftrl/optimizers/alignment/transformers, and the Linux amd64 (distributed) lane runs on every PR and main push as a hard member of the required python-tests gate (pr.yml:76-85, 192-227; ci.yml:41-50, publish gate :204-218) — not continue-on-error."},
+    {"issue": 335, "title": "Add nightly privacy-regression vectors across mechanisms and amplifiers", "status": "fixed-verified", "fix_commits": ["a187842e"], "note": "Delivered as committed deterministic epsilon vectors asserted to rel 1e-9 (dpsgd poisson/truncated/parallel-poisson/adaclip/random-allocation in test_amplification.py:~400-484 and test_k_out_of_t.py; dpftrl amp×mech pairs in test_per_step_invariants.py) running unmarked in every PR lane — stronger cadence than nightly. Confirmed: NO scheduled workflow exists anywhere (no 'schedule:' trigger in .github/workflows). Monte Carlo vector coverage is deliberately deferred to OPEN #666 — not re-reported."},
+    {"issue": 328, "title": "Make distributed DP correctness blocking and schema-driven", "status": "fixed-verified", "fix_commits": ["e15a4d36", "5303203e", "938a8a56"], "note": "CI-scope verification only: schema-driven sync landed (#551, packages/opaque-engine tests include test_sync_schema_contracts.py) and the distributed lane is blocking in both PR and main gates (see #366). Whether the schemas fully cover every sync path is the distributed reviewer's remit."}
+  ],
+  "findings": [
+    {
+      "title": "GPU lanes fail open: CUDA-availability assert dropped in CI refactor",
+      "file": ".github/workflows/python-tests.yml",
+      "line": "97-128",
+      "category": "ci-fail-open",
+      "severity": "medium",
+      "claim": "The 'Assert CUDA available' preflight that #424's fix (commit 847b464e) added to make Triton/CUDA validation meaningful was deleted when commit 76e013d8 (#600) rewrote the reusable test workflow; the current python-tests.yml contains no CUDA availability check (grep 'is_available|Assert CUDA' over .github/ returns nothing), so all three CUDA lanes — the only place Triton kernels, patched-model parity, and CUDA DP paths are validated — pass green when the self-hosted runner's CUDA is broken.",
+      "failure_scenario": "GPU-runner-001 gets a driver/toolkit mismatch after a host update. conftest.py:38 auto-skips every cuda-marked test (torch.cuda.is_available() False), pytest exits 0, the CUDA (locked/minimum/latest) lanes report success, the required python-tests gate passes, and main publishes wheels with zero GPU-side validation — indefinitely, since nothing distinguishes 'all skipped' from 'all passed'.",
+      "evidence": [
+        "847b464e added: '- name: Assert CUDA available ... assert torch.cuda.is_available()' and removed continue-on-error (git show 847b464e)",
+        "06ede505 moved it into a reusable workflow behind an assert-cuda input; 76e013d8 deleted that workflow and its replacement (current .github/workflows/python-tests.yml:97-128) has no such step",
+        "conftest.py:38: 'if \"cuda\" in item.keywords and not torch.cuda.is_available(): <skip>' — skips exit 0",
+        "pr.yml:137-150 / ci.yml:100-138 CUDA lanes pass allow-empty-test-selection: true and rely solely on the marker"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Re-add a runner-scoped preflight in python-tests.yml (e.g. when inputs.runner is the GPU label, run 'uv run python -c \"import torch; assert torch.cuda.is_available()\"' after uv sync), or have run_python_test_package.sh fail the cuda-marker lanes when 100% of selected tests skip.",
+      "confidence": "high"
+    },
+    {
+      "title": "rng.md still teaches TypeError-raising gaussian_noise calls (OPQ-141 unfixed)",
+      "file": "docs/reference/rng.md",
+      "line": "309",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "Issue #416 is closed, but the exact OPQ-141 defects remain: rng.md:309 calls 'gaussian_noise(1.1, key=noise_key)' although the factory is keyword-only ('def gaussian_noise(*, noise_multiplier, key, ...)', _gaussian.py:156-159), and lines 380, 401, 412, 415, 419 bind the (noise_fn, state) 2-tuple to a single name ('noise_fn = gaussian_noise(...)'), while :307/:332 use the correct form in the same file.",
+      "failure_scenario": "A user pastes the 'Training loop with per-step DP randomness' block: TypeError('takes 0 positional arguments'). A user following the troubleshooting/distributed snippets binds the tuple as noise_fn and gets 'tuple is not callable', or copies the wrong binding shape into code where it fails less loudly.",
+      "evidence": [
+        "docs/reference/rng.md:309 'noise_fn, state = gaussian_noise(1.1, key=noise_key)' — positional first arg",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:156-159: bare '*' makes all params keyword-only",
+        "docs/reference/rng.md:380,401,412,415,419 single-name binding of the documented 2-tuple return"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "s/gaussian_noise(1.1, key=/gaussian_noise(noise_multiplier=1.1, key=/ at :309 and 'noise_fn, noise_state = gaussian_noise(...)' at the five remaining sites.",
+      "confidence": "high"
+    },
+    {
+      "title": "dp-sgd.md end-to-end loop still broken (OPQ-144 unfixed)",
+      "file": "docs/user-guide/dp-sgd.md",
+      "line": "143-159",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "The DP-SGD guide's only complete training loop retains every defect OPQ-144 documented: 'for step, batch in enumerate(sampler)' iterates the PoissonSampler directly (it yields list[int] index lists, not data — no DataLoader/batch_sampler anywhere on the page), the sampler at :107 is built without n_steps so iteration never terminates, the loop never composes the accountant or reads epsilon (unlike the DP-FTRL twin), and torchopt.apply_updates is called without importing torchopt.",
+      "failure_scenario": "A reader treats the skeleton as fill-in-the-blanks and keeps the wrong iteration pattern: their model trains on integer index lists (crash) or, after 'fixing' it by indexing manually, runs an unbounded loop past the 1000 calibrated steps with no epsilon readout to notice.",
+      "evidence": [
+        "docs/user-guide/dp-sgd.md:144 'for step, batch in enumerate(sampler):' with sampler = PoissonSampler(dataset, sample_rate=..., key=...) at :107-110 (no n_steps)",
+        "grep -n 'DataLoader|batch_sampler|import torchopt|n_steps' docs/user-guide/dp-sgd.md → zero hits",
+        "The loop body (:145-148) contains no accountant composition; dp-ftrl.md's equivalent shows acct |= step",
+        "Page edited 4x in the delta (499f2d7f, 6fe85832, 1d216fcd, 764620f5) without touching the loop"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Wrap in DataLoader(dataset, batch_sampler=sampler), pass n_steps=1000 to match section 1's calibration, add 'accountant = accountant | step_proc' + epsilon_at readout, and import torchopt.",
+      "confidence": "high"
+    },
+    {
+      "title": "precision.md binds optimizer.update result as (opt_state, params)",
+      "file": "docs/user-guide/precision.md",
+      "line": "97",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "The fp16 loss-scaling recipe still contains OPQ-141's second half: 'opt_state, params = optimizer.update(noisy, opt_state, params=params)' — update returns (updates, new_state), so params becomes the optimizer state and the updates are treated as state; every other doc page uses the correct 'updates, opt_state = optimizer.update(...)' + torchopt.apply_updates (11 sites verified).",
+      "failure_scenario": "A user copies the fp16 recipe verbatim; on the next loop iteration model_fn receives the optimizer state as params — a confusing structure error at best, and if pytree shapes coincide (SGD-like states), silently corrupted training.",
+      "evidence": [
+        "docs/user-guide/precision.md:97 (current tree)",
+        "grep 'optimizer.update' docs/ shows every other site as 'updates, opt_state = ...' (distributed.md:100, dp-ftrl.md:242, dp-sgd.md:147, noise.md:85/:339, optimizers.md x5)",
+        "The same file was edited by 18f67eac (#681) and 6fe85832 without fixing the binding (accountant.advance in the same block WAS fixed to 'accountant | step_process')"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Replace with 'updates, opt_state = optimizer.update(noisy, opt_state, params=params)' followed by 'params = torchopt.apply_updates(params, updates)'.",
+      "confidence": "high"
+    },
+    {
+      "title": "Schedule-Free citation still lists fabricated author 'Yaida' (OPQ-136 unfixed)",
+      "file": "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py",
+      "line": "10",
+      "category": "citation-integrity",
+      "severity": "low",
+      "claim": "Issue #418 (repair scholarly references) is closed, but OPQ-136's exact defect survives: _schedule_free.py:10 cites 'The Road Less Scheduled' (arXiv:2405.15682) as 'Defazio, Yaida, Cutkosky' — the real authors are Defazio, Yang, Mehta, Mishchenko, Khaled, Cutkosky; 'Yaida' (Sho Yaida) is not among them.",
+      "failure_scenario": "A reviewer verifying the schedule-free averaging implementation searches for the cited author list, finds Sho Yaida's unrelated work, and either wastes time or propagates the fabricated attribution into derivative docs.",
+      "evidence": [
+        "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py:10 (current tree): 'Defazio, Yaida, Cutkosky, \"The Road Less Scheduled\", arXiv:2405.15682'",
+        "grep -rn Yaida packages docs → exactly this one hit; the citation-repair commit 1d216fcd never touched this file",
+        "AUDIT master list OPQ-136 (CONFIRMED) records the correct author list"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Replace with 'Defazio et al., \"The Road Less Scheduled\", arXiv:2405.15682' (the form already used at lines 1/4 of the same file).",
+      "confidence": "high"
+    },
+    {
+      "title": "'Enforce Ruff checks for tests' (#706) is a no-op for the root tests/ tree",
+      "file": "pyproject.toml",
+      "line": "231",
+      "category": "ci-fail-open",
+      "severity": "low",
+      "claim": "Commit 8f638482 (#706, tagged v0.15.0) added 'tests/' to the ruff check commands in autoformat.yml to enforce linting on the integration tests, but [tool.ruff.lint].exclude still contains \"tests/**\" (pyproject.toml:231), so 'ruff check tests/' lints nothing under the root tests/ tree — empirically verified: a probe file with an unused import and an F821 undefined name inside tests/ passes 'uv run ruff check tests/' with 'All checks passed', while the same probe under packages/opaque-engine/tests/ correctly fails.",
+      "failure_scenario": "An undefined name, unused import, or worse lands in tests/integration/** (the cross-stack DP scenarios); the lint gate that the commit message and per-file-ignores ('tests/**' at pyproject.toml:298, dead config) claim covers tests never flags it, and only a runtime pytest failure — or nothing, for latent-path lint bugs — catches it.",
+      "evidence": [
+        "pyproject.toml:225-232 [tool.ruff.lint] exclude includes \"tests/**\" (and docs/**, examples/**, .github/scripts/**)",
+        "8f638482 diff: only autoformat.yml command args + one formatting fix; the exclude was not removed",
+        "Probe: wrote tests/_ruff_probe_tmp.py with F401+F821 → 'uv run ruff check tests/ --no-cache' exit 0 'All checks passed'; identical probe under packages/opaque-engine/tests/ → exit 1, 3 errors",
+        "pyproject.toml:298 per-file-ignores '\"tests/**\" = [...]' is unreachable dead config given the exclude"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Drop \"tests/**\" from [tool.ruff.lint].exclude (the per-file-ignores at :297-298 already relax INP/D/PLR2004 there), or revert the misleading 'tests/' argument and commit message claim.",
+      "confidence": "high"
+    },
+    {
+      "title": "Workflow documentation re-drifted after #723: advisory-minimum and matrix claims are stale",
+      "file": "AGENTS.md",
+      "line": "268",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "The OPQ-132/OPQ-140 pattern recurred inside the remediation: (a) AGENTS.md:268 and CONTRIBUTING.md:163 still state 'Failures in the Minimum dependencies lane are currently advisory' although commit a31629f2 (#723) deleted the allow-test-failure plumbing and made every lane blocking (WORKFLOWS.md:71-72 says so correctly); (b) .github/WORKFLOWS.md:50-52 says build-distributions.yml builds 'from caller-supplied package matrices' that callers 'discover once' and that checks render as 'Build / <distribution>' — the current workflow has no matrix input (inputs are artifact-prefix/checkout-ref/retention-days/version) and its jobs render as 'Python packages' and 'opaque-accounting (<label>)'; (c) docs/user-guide/distributed-trainer.md:90 still tells contributors to run 'uv run pytest packages/opaque-core/tests/distributed/' — no opaque-core exists (the real path is packages/opaque-engine/tests/distributed/).",
+      "failure_scenario": "A contributor skips fixing a minimum-lane failure believing it advisory and their PR is blocked with no explanation matching the docs; a maintainer configuring branch protection looks for 'Build / <distribution>' checks that never report; a contributor's documented distributed-test command fails on a nonexistent path.",
+      "evidence": [
+        "AGENTS.md:268-269 and CONTRIBUTING.md:162-163 (current tree) vs a31629f2 diff removing allow-test-failure from python-tests.yml/pr.yml/ci.yml",
+        ".github/WORKFLOWS.md:50-52 vs build-distributions.yml:4-23 (inputs) and :27/:89 (job names)",
+        "docs/user-guide/distributed-trainer.md:90; 'ls packages/opaque-engine/tests/distributed' exists, opaque-core does not; no delta commit ever touched this file"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Update the two advisory sentences to 'blocking'; rewrite WORKFLOWS.md's build-distributions paragraph against the current inputs/job names; s|opaque-core/tests/distributed|opaque-engine/tests/distributed| in distributed-trainer.md.",
+      "confidence": "high"
+    },
+    {
+      "title": "Python 3.12 advertised in every wheel but executes zero tests since #665",
+      "file": ".github/workflows/pr.yml",
+      "line": "87-111",
+      "category": "ci-coverage",
+      "severity": "low",
+      "claim": "Closed issue #428 ('Test the supported Python 3.12 runtime') regressed to untested-middle: #600 added 3.12 lanes, then 182b80b1 (#665) retargeted them to 3.13, so grep '3.12' over .github/ now returns nothing — no test lane, no validate-distributions leg (matrix ['3.11','3.13']), and no release matrix runs 3.12, while every pyproject still declares 'Programming Language :: Python :: 3.12' and requires-python '>=3.11,<3.14' resolves it as supported.",
+      "failure_scenario": "A 3.12-only regression (e.g. a dependency wheel resolving differently on 3.12, or 3.12-specific bytecode/typing behavior in the vmap/pytree layer) ships in a release whose metadata explicitly advertises 3.12 support; users on 3.12 hit it with no CI signal ever having existed.",
+      "evidence": [
+        "grep -rn '3\\.12' .github/ → no matches; pr.yml minimum=3.11, latest=3.13, locked defaults to 3.11 (python-tests.yml:34-38)",
+        "182b80b1 diff: three 'python-version: 3.12' → '3.13' replacements across pr.yml/ci.yml/prepare-release-implementation.yml",
+        "validate-distributions.yml:19 matrix python-version ['3.11','3.13']",
+        "packages/*/pyproject.toml classifiers list 3.11/3.12/3.13 (e.g. opaque-patches:20-22, opaque-accounting:23-25)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either add one cheap 3.12 leg (e.g. run the locked Linux amd64 lane or the validate-distributions install scenario on 3.12), or drop the 3.12 classifier claim — endpoints-only testing should be an explicit documented policy, not an accident of a version bump.",
+      "confidence": "high"
+    },
+    {
+      "title": "chunked_nll still missing from the alignment trainers guide",
+      "file": "docs/alignment/trainers.md",
+      "line": "109",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "OPQ-142's second documentation site was not fixed by #477: docs/alignment/trainers.md:109-110 still describes SFT loss_type as only '\"nll\" ... or \"dft\"' while \"chunked_nll\" is a supported, tested value (guarded at _sft_trainer.py:185, dispatched at :231-235) and is documented in the reference table (docs/reference/transformers.md:472).",
+      "failure_scenario": "A user sizing a large-vocab SFT run from the trainers guide never learns the logits-free chunked_nll path exists and hits OOM on the materialized logits, or is confused when reference table and guide disagree.",
+      "evidence": [
+        "docs/alignment/trainers.md:109-110 (current tree); grep chunked docs/alignment/*.md → zero hits",
+        "packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_trainer.py:185,231-235",
+        "docs/reference/transformers.md:472 documents all three values (fixed by af29e4a9)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Add chunked_nll to the trainers.md loss_type sentence with the same logits-free caveat (no compute_loss_func, no logits for compute_metrics) the reference table carries.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Verified all 26 closed issues labeled ci/packaging/docs/api against the current tree at 4b13d82, cross-referenced to OPQ-132..176 definitions in the master list. Reviewed the packaging/CI delta end to end: every delta commit touching .github/** (~45 commits: gate restructures #495/#584/#600/#638/#682/#704/#723, release pipeline #562/#565/#571/#575/#599-#603/#702/#703/#708, qodana #588-#691, dependabot #478/#752, Gloo lanes #672/#673/#676/#717), all 11 pyproject.toml files, uv.lock security bumps (#576/#637), Cargo.toml/Cargo.lock, NOTICE/LICENSE and third_party_provenance wiring (#473), WORKFLOWS.md, and the release scripts (release.py verify-manifest sha256 checks, publish_release.py, set_build_versions.sh sentinel rewriting, check_wheel_internal_pins.py, check_accounting_artifact_policy.py — all read in full). Empirical checks: built opaque-base (setuptools) and opaque-accounting (maturin) wheels locally and inspected dist-info (LICENSE/NOTICE present, zero pycache on a dirty host); ran the full ruff gate (clean) and probed the tests/ lint exclusion (fail-open confirmed); executed the documented adaptive-clipping API shape; confirmed gaussian_noise keyword-only signature; verified all release tags v0.2.0–v0.15.3 (incl. v0.4.0–v0.9.0) resolve to commits that are ancestors of main (v0.12.0 == pre-remediation tip 79c916e3; remediation-window releases are v0.13.1, v0.15.0-v0.15.3; a dangling 'untagged-7440eaff' ref and skipped v0.8.3/v0.13.0/v0.14.x numbers are cosmetic); confirmed no scheduled (nightly) workflow exists and that the #667 deterministic epsilon vectors run unmarked in PR lanes. Not deep-dived (other reviewers' remit): distributed test semantics behind #366/#328, optimizer numerics behind #406, alignment/DPO privacy content. Unverifiable here: Dependabot's runtime handling of the cargo entry pointing at the workspace member while Cargo.lock lives at the root (GitHub API unavailable)."
+}

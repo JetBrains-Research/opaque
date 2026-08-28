@@ -1,0 +1,224 @@
+{
+  "statuses": [
+    {
+      "issue": 392,
+      "title": "Enforce stop-at-epsilon on every accounted step",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["b7073f37"],
+      "note": "Per-step enforcement is real for deterministic accountants: predict_stop_step (packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:272) binary-searches the crossing step at setup and the loop checks 'global_step >= ctx.stop_at_step' after every accounted step (:1874), placed after 'ctx.accounting |= ctx.step_process' (:1766) and the log/save/eval gate; resume short-circuits when the restored accountant already exceeds target (:1139-1161). Unit tests (TestPredictStopStep) and cadence-independence tests pass (ran locally: 5 passed). CAVEAT: Monte-Carlo accountants (sampling_mode b_min_sep / balls_in_bins, the canonical samplers for mf_band/mf_blt/mf_bisr/mf_bsr/mf_lambda_cgd) are excluded at :1175 and keep the pre-fix log-boundary-only check (:3970), which never fires with logging disabled — see finding. Second caveat: k_out_of_t's flat prefix epsilon makes the predicted stop step k0+1 — see finding."
+    },
+    {
+      "issue": 382,
+      "title": "Honor fractional num_train_epochs",
+      "status": "fixed-verified",
+      "fix_commits": ["c073e915"],
+      "note": "_steps_breakdown (packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:4474) now computes total = ceil(num_train_epochs * steps_per_epoch) and num_epochs = ceil(num_train_epochs); the inner loop's total_steps ceiling (:1895) cuts the partial final epoch, the sampler is built with n_steps=total_steps, and calibration/accounting/scheduler all consume the same total. Tests assert step count, privacy_total_steps, reference epsilon at the fractional horizon, LR schedule values, and the 0<f<1 one-step case."
+    },
+    {
+      "issue": 384,
+      "title": "Evaluate SFT DFT runs with the training objective",
+      "status": "fixed-verified",
+      "fix_commits": ["2aabb0dc"],
+      "note": "SFTTrainer.prediction_step (packages/opaque-transformers/src/opaque/api/transformers/trl/_sft_trainer.py:563) routes loss_type='dft' through the vmapped per-example DFT eval closure in every mode including prediction_loss_only=True (the best-model path), and _eval_token_weighted_loss=False (:199) makes eval_loss the plain per-example mean instead of a realized-token-count reconstruction (base aggregation branch at _dp_trainer.py:2754-2780). nll/chunked_nll keep the inherited CE path. Numerical tests compare eval_loss against an independently computed DFT reference (test_trl_trainers.py:1785-1903)."
+    },
+    {
+      "issue": 386,
+      "title": "Align best-model selection with save and evaluation boundaries",
+      "status": "fixed-verified",
+      "fix_commits": ["89c2d8d6", "c639caf4"],
+      "note": "Two-part fix confirmed in the current tree: (1) _maybe_log_save_evaluate forces ctrl.should_save=True when an eval improves the best metric under load_best_model_at_end, so the just-evaluated params are materialized at that step; (2) BestModelSaveCallback is auto-injected for load_best_model_at_end (not just save_strategy='best') in _dp_trainer.py:~505, and best_model_checkpoint is registered by folder lookup so rotation cannot delete it. __post_init__ validates strategy/step-multiple alignment (_training_arguments.py:603-655). Covered by test_checkpoint_correctness.py (best_metric_forces_checkpoint_at_intermediate_eval_step, best_eval_only_step_forces_checkpoint, best_folder_lookup)."
+    },
+    {
+      "issue": 385,
+      "title": "Test the actual Hugging Face evaluation cadence",
+      "status": "fixed-verified",
+      "fix_commits": ["a558dad3"],
+      "note": "The pure helper should_run_eval_at_step, which the old tests exercised but the trainer never called, was deleted from _eval.py; cadence is now driven only by HF's real DefaultFlowCallback (DEFAULT_CALLBACKS first in build_callback_handler, _callback.py:304-315), and 204 lines of end-to-end tests were added driving the real cadence: eval_steps, epoch cadence, eval_delay in epochs, and both cadences across resume (validation/test_dp_trainer.py)."
+    },
+    {
+      "issue": 388,
+      "title": "Wire or remove inert privacy and logging arguments",
+      "status": "fixed-verified",
+      "fix_commits": ["e0e22246"],
+      "note": "privacy_noise_radius is fully removed (grep over packages/docs/examples finds only the regression test that asserts passing it raises); log_level/log_level_replica are wired through an HF-parity apply_logging (main rank uses log_level, replicas log_level_replica, 'passive' = -1) with validation in __post_init__ and dedicated tests in test_logging_wiring.py (ran locally as part of a 54-passed suite)."
+    },
+    {
+      "issue": 389,
+      "title": "Translate or reject fused Hugging Face optimizer settings",
+      "status": "fixed-verified",
+      "fix_commits": ["6cc02681"],
+      "note": "_optim_collapse (packages/opaque-transformers/src/opaque/api/transformers/trainer/_hf_convert.py:217-264) now translates adamw_torch_fused to plain 'adamw' with a RuntimeWarning instead of forwarding fused=True (which raised TypeError at build time); quantized/apex names still raise; other names pass through and are validated fail-closed by _resolve_optimizer_name at trainer construction. Test asserts the warning and that no optim_args are forwarded. Residual: a stale doc line still describes the old behavior — reported as a docs finding."
+    },
+    {
+      "issue": 391,
+      "title": "Secure or disable the TR-DPO reference-logprob temp cache",
+      "status": "fixed-verified",
+      "fix_commits": ["8042ae90", "b033bdb7"],
+      "note": "TR-DPO's seed pass now calls compute_ref_logprobs_for_dataset with use_cache=False (packages/opaque-transformers/src/opaque/api/transformers/trl/_dpo_trainer.py:732), so per-example seed logps are never persisted; per-step values are recomputed from the EMA reference and overwrite the seeds (_augment_inputs). The persistent precompute cache (non-TR-DPO path) is chmod-0700 dir / 0600 file via _secure_cache_path (opaque-alignment _precompute.py:210-246, fail-closed PermissionError), and #505 added reference identity to the cache fingerprint so two different references cannot collide."
+    },
+    {
+      "issue": 369,
+      "title": "Gather uneven distributed evaluation shards safely",
+      "status": "fixed-verified",
+      "fix_commits": ["cd2f7250", "5303203e"],
+      "note": "gather_tensors/gather_pytree (opaque-engine distributed/_state.py:290-313) use dist.all_gather_object on CPU payloads — object collectives carry variable sizes, so uneven shards cannot truncate or pad; _merge_gathered_pytrees validates dtype/ndim/non-concat dims and pytree structure and tolerates empty (None) rank shards. Eval loss totals are sum-reduced with exact scalar reduction, and cluster-wide num_samples avoids post-gather truncation to one shard (_dp_trainer.py:2860-2876). Exercised by the blocking Gloo lane (test_gloo_eval_gather_matches_reference_for_uneven_shards, test_gloo_eval_gather_supports_empty_rank_shard)."
+    },
+    {
+      "issue": 426,
+      "title": "Verify noise-stream continuity across checkpoint resume (OPQ-157)",
+      "status": "fixed-verified",
+      "fix_commits": ["4be102ee"],
+      "note": "TestNoiseStreamContinuity (test_checkpoint_helpers.py:235-303) matches OPQ-157's fix sketch: 4-step continuous run vs 2+2 resumed run through the real save_dp_runtime_state/load_dp_runtime_state payload, torch.equal on every step's noise, plus the negative check that post-resume noise differs from step 0 (guards a counter reset), for both gaussian_noise and band_mf mf_gaussian_noise. Ran locally: passed. Minor residual (not filed): no full-trainer resumed-vs-uninterrupted parameter-parity test exists, so trainer-side restore plumbing is covered only indirectly."
+    },
+    {
+      "issue": 419,
+      "title": "Align transformer reference tables and defaults with dataclass fields (OPQ-142)",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["af29e4a9"],
+      "note": "docs/reference/transformers.md now documents chunked_nll in the loss_type row (:472, consistent with :449) and use_performance_kernels default True on both TRL config tables (:476, :544) vs base False (:191); the 'kernels default OFF' claim is now scoped to HF/TRL conversion, which matches _hf_convert.py:500 setdefault(False). CAVEAT: OPQ-142's second cited site, docs/alignment/trainers.md (now :109-110), still lists only 'nll'/'dft' and omits chunked_nll — reported as a finding."
+    },
+    {
+      "issue": 430,
+      "title": "Align opaque-transformers metadata, extras, and Triton policy (OPQ-172/173)",
+      "status": "fixed-verified",
+      "fix_commits": ["4c073242"],
+      "note": "README no longer advertises the nonexistent [kernels]/[peft] extras or 'opaque-core'; it now names the real dependency set, which matches pyproject dependencies exactly (transformers/peft/datasets/numpy + 7 opaque wheels), and the only extra is trl (pyproject:47-55). The root pyproject comment (OPQ-173) now states Triton is intentionally a platform-gated transitive torch dependency (pyproject.toml:111-114). OPQ-173's minor 'no triton version floor' note remains open by policy (no triton in any manifest), which the corrected comment now documents as deliberate."
+    },
+    {
+      "issue": 431,
+      "title": "Install TRL and enforce zero-noise parity in CI",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["69ea146e", "2a2c5de9"],
+      "note": "TRL is a real extra (opaque-transformers[trl] -> root opaque[trl] -> [all]); CI installs '--extra all' via .github/scripts/setup_python_test_environment.sh:10-18, so the importorskip('trl') suites run pre-merge. test_trl_parity.py (661 lines) checks every DPO head, f-divergence remap, mpo/orpo/ld-dpo/wpo combinators and SFT losses against the real installed TRL implementations (ran locally: 29 passed, 1 xfailed). CAVEAT: the wpo_weights parity test is xfail — the shipped weighting genuinely diverges from TRL/the WPO paper — reported as a finding."
+    },
+    {
+      "issue": 380,
+      "title": "Validate alignment losses with locality and independent parity tests (OPQ-154)",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["2a2c5de9"],
+      "note": "test_row_locality.py implements OPQ-154's exact fix sketch and more: NaN-poison one row of 4, assert the poisoned row is NaN and every other row's forward value AND vmap(grad) per-example gradient are bit-identical, parametrized from the public __all__ lists so a new export without a case fails by name; fused losses include the per-example lm_head grad slice. Plus reference-value pinning (test_reference_values.py) and real-TRL parity. Ran locally: 79 passed, 1 xfailed. CAVEAT: the parity sweep exposed that wpo_weights omits the WPO Eq.(2) alignment term and this was xfail'ed rather than fixed — reported as a finding."
+    },
+    {
+      "issue": 366,
+      "title": "Add a blocking two-rank CPU distributed correctness lane",
+      "status": "fixed-verified",
+      "fix_commits": ["239e364d", "938a8a56", "5303203e"],
+      "note": "pr.yml runs 'python-tests-distributed' (marker 'distributed and not cuda', ubuntu runner) on every PR (:76-85), and the branch-protection gate job 'Python tests' (:189-227) fails unless that job succeeded (only python-tests-cuda* may be 'skipped'). The lane runs real 2- and 4-rank Gloo tests including trainer train/checkpoint, eval gather (uneven + empty shards), rank gating, and worker seeding (packages/opaque-transformers/tests/distributed/test_ddp_trainer.py)."
+    },
+    {
+      "issue": 328,
+      "title": "Make distributed DP correctness blocking and schema-driven",
+      "status": "fixed-verified",
+      "fix_commits": ["938a8a56", "5303203e"],
+      "note": "Distributed DP correctness is now pre-merge blocking via the same required 'Python tests' gate (pr.yml:192-227 requires python-tests-distributed success), and the per-mechanism reduction schemas in dpsgd/dpftrl noise _distributed.py (e.g. '_step_counter': 'assert_equal') are exercised under real Gloo process groups by the dpsgd/dpftrl ddp helper suites extended in #717 (dpsgd_ddp_helpers.py +104 lines, dpftrl_ddp_helpers.py +56 lines)."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Stop-at-epsilon still only fires at log boundaries for Monte-Carlo accountant modes",
+      "file": "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+      "line": "1175, 3970",
+      "category": "fix-incomplete",
+      "severity": "medium",
+      "claim": "The #392 fix (commit b7073f37, closed issue 392 'Enforce stop-at-epsilon on every accounted step') deliberately excludes sampling_mode 'b_min_sep' and 'balls_in_bins' from the per-step predicted stop ('a.sampling_mode not in (\"b_min_sep\", \"balls_in_bins\")' at :1175); for those modes the only stop mechanism remains the fallback inside 'if ctrl.should_log:' in _maybe_log_save_evaluate (:3955-3983), i.e. the exact pre-fix log-boundary behavior the issue was filed about. These are the CANONICAL samplers for every DP-FTRL mechanism except mf_identity (_SAMPLER_BY_MECHANISM, _training_arguments.py:171-179).",
+      "failure_scenario": "User sets privacy_noise_mechanism='mf_blt' (auto sampling_mode='balls_in_bins'), a fixed privacy_noise_multiplier and privacy_target_epsilon, with default logging_steps=500: epsilon crosses the target at step 900 but training continues to step 1000 before the next log boundary checks — up to 499 extra accounted steps of privacy spend past the declared target. With logging_strategy='no' the stop NEVER fires and the run consumes the full horizon regardless of the target.",
+      "evidence": [
+        "_dp_trainer.py:1171-1176: 'and a.sampling_mode not in (\"b_min_sep\", \"balls_in_bins\")' gates predict_stop_step",
+        "_dp_trainer.py:3955 'if ctrl.should_log:' ... :3969-3977 fallback stop only when 'ctx.stop_at_step is None'",
+        "_training_arguments.py:171-179: b_min_sep/balls_in_bins are the auto samplers for mf_band/mf_blt/mf_bisr/mf_bsr/mf_lambda_cgd",
+        "docs/user-guide/huggingface/training-arguments.md:76-79 documents 'logging_steps=0 disables it silently'"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "For MC accountants, either evaluate epsilon_at on every accounted step (amortized via acc.cached), or refuse/warn loudly at setup when privacy_target_epsilon is combined with a Monte-Carlo sampling mode and a non-per-step logging cadence, so the user knows the target is enforced only at log boundaries.",
+      "confidence": "high"
+    },
+    {
+      "title": "predict_stop_step halts k_out_of_t runs after one accounted step (flat prefix epsilon)",
+      "file": "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py",
+      "line": "1178",
+      "category": "fix-regressive-edge",
+      "severity": "low",
+      "claim": "KOutOfT.pld_at with total_participations > 1 'snaps to the full-horizon bound' for every prefix (packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_k_out_of_t.py:28-33), so epsilon(K) is constant in K — verified numerically: (per_step(k_out_of_t(gaussian(1.0), total_participations=4, n_steps=100)) * K).epsilon_at(1e-5) == 2.4083 for K in {1,2,5,50,100}. predict_stop_step's binary search then returns k0+1 whenever target <= horizon epsilon, and its boundary guard (eps(lo)>=target, lo==1 so no lo-1 probe) accepts it, so the trainer stops after ONE accounted step.",
+      "failure_scenario": "sampling_mode='k_out_of_t' + fixed privacy_noise_multiplier + privacy_target_epsilon at or below the full-horizon epsilon: train() performs a single optimizer step, sets privacy_target_epsilon_reached=True, and returns what looks like a successful run with an essentially untrained model. Pre-#392 the same config trained until the first log boundary (default 500 steps); the fix silently changed this to 1 step. The setup log line ('will stop after step 1 of N') is the only signal.",
+      "evidence": [
+        "_k_out_of_t.py:28-33: 'Prefix accounting ... with total_participations > 1 snaps to the full-horizon bound'",
+        "Numerical check in this session: epsilon flat at 2.4083134058043343 for K=1..100",
+        "_dp_trainer.py:305-320 (binary search + boundary guard passes on a constant sequence with lo=1)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "In predict_stop_step, treat eps(1) >= target as a degenerate prediction: warn explicitly that the accountant reports the full-horizon bound from step 1 for this sampling mode and either refuse the fixed-NM+target combination for k_out_of_t or fall back to no stop with a loud warning telling the user to calibrate against the horizon instead.",
+      "confidence": "high"
+    },
+    {
+      "title": "wpo_weights omits the WPO Eq.(2) weight-alignment term that TRL and the paper apply",
+      "file": "packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_wpo.py",
+      "line": "33",
+      "category": "numerical-contract",
+      "severity": "medium",
+      "claim": "wpo_weights computes exp(mean masked per-token logp) only, while WPO Eq.(2) (arXiv:2406.11827) and TRL's use_weighting additionally subtract the per-token log-sum of squared token probabilities (verified in installed trl 1.12.0 DPOTrainer source: 'Eq (2) of the WPO paper ... lse1 = logsumexp(shift_logits); lse2 = logsumexp(2*shift_logits); log_denom = lse2 - 2*lse1 ...'). The module docstring (:3-22) and docs/alignment/trainers.md:283-285 present the shipped weighting as the paper's method without caveat. The divergence was exposed by the #380/#431 parity work and xfail'ed (packages/opaque-alignment/tests/test_trl_parity.py:518, reason: 'wpo_weights omits the WPO weight-alignment term log(sum_v p_v^2)') instead of fixed or documented user-facing.",
+      "failure_scenario": "A user migrating a TRL DPO run with use_weighting=True gets systematically different per-example weights (opaque's weights over-weight high-entropy completions relative to WPO's), so training dynamics and results silently diverge from both TRL and the cited paper while the docs claim equivalence. Utility only — the weight is detached and per-example, so per-example DP is unaffected. May be nominally in scope of open umbrella issues #323/#475, but neither names this concrete divergence, which was discovered after they were filed.",
+      "evidence": [
+        "_wpo.py:33-46: returns (masked logp sum / count).detach().exp() with no alignment term",
+        "trl 1.12.0 DPOTrainer (inspected in-session): computes lse2 - 2*lse1 correction under 'Eq (2) of the WPO paper'",
+        "test_trl_parity.py:518 xfail reason text; pytest run: 1 xfailed",
+        "docs/alignment/trainers.md:283-285 documents use_weighting as arXiv:2406.11827 without caveat"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either extend wpo_weights to accept the logits (or the precomputed per-token log-denominator) and apply Eq.(2)'s log(sum_v p_v^2) term, or document in _wpo.py and docs/alignment/trainers.md that opaque implements the simplified sequence-probability weight and differs from TRL/the paper.",
+      "confidence": "high"
+    },
+    {
+      "title": "Stop-at-epsilon user guide still documents the pre-#392 log-boundary-only behavior",
+      "file": "docs/user-guide/huggingface/training-arguments.md",
+      "line": "70-81",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "The 'Stop-at-ε' section states 'training halts at the first logging boundary where the accumulated ε ... meets or exceeds the target' and 'The check runs every logging_steps (so setting logging_steps=0 disables it silently — explicit logging is the contract for stop-at-ε visibility)'. After commit b7073f37 this is false for every deterministic accountant: the check is a per-step integer comparison independent of logging cadence (test_stop_at_epsilon_independent_of_logging_cadence asserts exactly this), and it is accurate only for the b_min_sep/balls_in_bins Monte-Carlo modes. The in-source field comment (_training_arguments.py:479-481) repeats the stale claim.",
+      "failure_scenario": "A user reads that logging_steps=0 disables stop-at-epsilon and relies on that to run past the target while keeping the args set — on any deterministic accountant the run now stops at the predicted step anyway; conversely a b_min_sep user reads nothing telling them their mode is the one still on the weaker contract.",
+      "evidence": [
+        "docs/user-guide/huggingface/training-arguments.md:72-79",
+        "_training_arguments.py:479-481 comment 'training halts at the first log boundary'",
+        "b7073f37 touched only _dp_trainer.py and tests — no doc update",
+        "validation/test_dp_trainer.py:256 test_stop_at_epsilon_independent_of_logging_cadence"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Rewrite the section: deterministic accountants stop on the predicted accounted step regardless of logging cadence; b_min_sep/balls_in_bins fall back to the log-boundary check (and are disabled with logging off). Update the field comment to match.",
+      "confidence": "high"
+    },
+    {
+      "title": "from_hf doc still claims adamw_torch_fused maps to optim_args={'fused': True}",
+      "file": "docs/user-guide/huggingface/training-arguments.md",
+      "line": "283",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "The conversion doc lists 'adamw_torch_fused → adamw + optim_args={\"fused\": True}', but commit 6cc02681 (issue #389) changed _optim_collapse to return {'optim': 'adamw'} with a RuntimeWarning and no optim_args (_hf_convert.py:254-262), and the test asserts 'not opaque.optim_args'. The doc describes the removed behavior that used to raise TypeError at optimizer build.",
+      "failure_scenario": "A user reading the migration doc expects fused execution to be requested via optim_args after conversion and may hand-write optim_args={'fused': True} on optim='adamw' — which the opaque adamw factory rejects with TypeError on unknown keys — or simply mis-reports what their converted run does.",
+      "evidence": [
+        "docs/user-guide/huggingface/training-arguments.md:282-283",
+        "_hf_convert.py:248-262 (translate + warn, no optim_args)",
+        "test_compat_hf.py::test_optim_adamw_torch_fused_collapses_to_adamw_with_warning asserts 'not opaque.optim_args'"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Change the bullet to 'adamw_torch_fused → adamw (RuntimeWarning: no fused kernel on the functional DP path)'.",
+      "confidence": "high"
+    },
+    {
+      "title": "docs/alignment/trainers.md still omits the supported chunked_nll SFT loss (OPQ-142 residual)",
+      "file": "docs/alignment/trainers.md",
+      "line": "109-110",
+      "category": "docs-drift",
+      "severity": "low",
+      "claim": "Issue #419 / OPQ-142 named two doc sites listing only 'nll'/'dft' for SFT loss_type; fix commit af29e4a9 corrected docs/reference/transformers.md (:472) but the second cited site, docs/alignment/trainers.md, still reads 'loss_type selects the per-example head: \"nll\" (standard cross-entropy) or \"dft\" (Dynamic Fine-Tuning)' — while chunked_nll is fully implemented and tested (_sft_trainer.py dispatch, test_compat_trl_sft.py:78) and documented in the reference table. grep for 'chunked' over docs/alignment returns nothing.",
+      "failure_scenario": "A user working from the trainers guide never learns the memory-saving fused logits-free loss exists; the two doc pages contradict each other on the supported value set.",
+      "evidence": [
+        "docs/alignment/trainers.md:109-110 (only nll/dft)",
+        "docs/reference/transformers.md:472 (nll/dft/chunked_nll)",
+        "_sft_config.py:80 + _sft_trainer.py chunked_nll dispatch; test_compat_trl_sft.py:78"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Add chunked_nll to the trainers.md sentence with the logits-free caveat (no per-token telemetry / compute_loss_func), mirroring the reference table.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Verified all 16 CLOSED transformers-labeled issues (392, 382, 384, 385, 386, 388, 389, 391, 369, 419, 426, 430, 431, 380, 366, 328) against the current tree at 4b13d82, tracing each fix commit (b7073f37, c073e915, 2aabb0dc, a558dad3, 89c2d8d6+c639caf4, e0e22246, 6cc02681, 8042ae90+b033bdb7, cd2f7250, af29e4a9, 4be102ee, 4c073242, 69ea146e+2a2c5de9, 239e364d+938a8a56+5303203e) into current sources and running the cheap test suites locally (predict_stop_step, noise continuity, logging wiring, HF compat, ignore_data_skip, TRL parity, row locality — all green; 1 xfail investigated and reported). Reviewed the full 56-commit delta on packages/opaque-transformers beyond the fix commits: #747 complexity-limit refactor (diffed pre/post _training_arguments.py sorted-line-wise: pure code motion, all 62 raises preserved, smoke-tested validation paths in the project venv), #729 ignore_data_skip restriction + cursor-derived Poisson stream reseed (verified fold_in('opaque.transformers.ignore_data_skip', restart_step) at _dp_trainer.py:3689-3697 and the _CURSOR_FREE_SAMPLING_MODES rejection), #728/#293 RNG stream separation (namespaced stream roots ADAPTIVE_CLIPPING_STREAM_FOLD / GAUSSIAN_STREAM_FOLD in dpsgd plus trainer-level key split at :1429-1431 — the adaclip-vs-gradient byte-identical-stream bug is dead at both layers), #721 conversion tolerance (unclassified fields still fail closed when user-set; silent skip only at upstream defaults), #720 save_accountant, #604 accumulator inference, #274 eval microbatch search, #461 random-allocation/k-out-of-t wiring (sampler and accountant share num_bins=expected_steps_per_epoch), #298 target_clipping_rate pass-through (uninverted, with an asymmetric-quantile convergence test), and #759 test-infra consolidation. Checked that no NEW un-noised training-batch statistics were added to the logging surface in the delta (grep over the trainer/trl diff for logs/aux/metric keys — only pre-existing keys; open #383 remains the tracker). Confirmed b_min_sep/balls_in_bins accountants are genuinely Monte-Carlo (seed/mc_resolution params) and CyclicPoisson/RandomAllocation/KOutOfT are deterministic, which scopes the stop-at-epsilon findings. Not covered here: dpftrl noise-engine commits (a8388667, 60e69731, 0baaba7a, 2507548b, 4106222d), accounting MC bounding (88a25769), and alignment-only loss-contract commits (4d060dbc, 17c58f8c) — those belong to the dpftrl/accounting/alignment reviewers."
+}

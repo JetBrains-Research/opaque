@@ -1,0 +1,101 @@
+{
+  "statuses": [
+    {
+      "issue": 352,
+      "title": "Detect non-finite values through clipped-gradient wrappers",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["7e5a22e4", "18f67eac", "819068fa"],
+      "note": "all_finite now recurses through ClippedPytree/NoisedPytree/SecondMomentClippingOutput (packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py:220-244); verified empirically: all_finite on a NaN-carrying ClippedPytree, NoisedPytree and SecondMomentClippingOutput all return False. The companion path (18f67eac) adds ClippingStats.all_finite measured pre-sanitization (_clipped_fun.py:695 `aux_dict[\"all_finite\"] = _all_finite(value)` before clip_pytree's nan_to_num), verified on both the vmap fast path and the microbatch stats-only path with a genuine gradient overflow (all_finite=False, summed output finite). Caveat: the same wrapper-blindness survives in sibling functions of the same module family - see finding F2 (unscale_grads silently no-ops on wrappers; opaque.pytree.global_norm returns 0.0 on a wrapper)."
+    },
+    {
+      "issue": 351,
+      "title": "Avoid materializing discarded per-example gradients in adaptive clipping",
+      "status": "fixed-verified",
+      "fix_commits": ["453d9720"],
+      "note": "adaptive_clipped_grad no longer forces the per-example aux path when the caller discards it: packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_adaptive.py:456 passes `return_stats=not inner_return_aux` to the inner clipped_grad, and the pre-fix `_force_grad_norms` plumbing is gone. Adaptation consumes aggregate ClippingStats (scalar path _adaptive.py:563-574; per-group path :490-523 uses stats.num_clipped/clipping_rate dicts), and the same commit added _microbatch_accumulate_stats_only (_clipped_fun.py:353-469) so microbatched runs accumulate only summed outputs plus counts. Per-group and scalar adaptation both count against the step's actual threshold (state._next_clipping_norm, the same value passed as the inner clipping_norm). 93 dpsgd clipping tests pass."
+    },
+    {
+      "issue": 350,
+      "title": "Define privacy accounting for loss-scaler skipped steps",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["18f67eac", "819068fa"],
+      "note": "The skip is gone: the documented and tested contract is that every attempted step runs the noised update and composes into the accountant, with overflow only backing off the scale (docs/user-guide/precision.md:91-108, module docstring _loss_scaler.py:27-34, tests/integration/accounting/test_loss_scale_attempts.py asserts noise_state._step_counter==2 and accountant.process==step_process*2 across a finite and an overflowed step). Zeroed (sanitized) contributions stay inside the clip ball so per-step sensitivity C holds conditioned on the scale. Caveat: the scale state machine itself is an unaccounted data-dependent adaptive choice - see finding F1. The doc's claim that the loop is fully 'composed into the accountant' does not cover that channel."
+    },
+    {
+      "issue": 349,
+      "title": "Reject shape-mismatched tensor checkpoint values",
+      "status": "fixed-verified",
+      "fix_commits": ["54ad623a", "365ea498"],
+      "note": "packages/opaque-engine/src/opaque/api/engine/serialization/_structural.py:43-54 `_check_shape` rejects any shape difference (exact equality, so broadcast-compatible mismatches like (1,3) vs (3,) are rejected too - verified empirically for both torch.Tensor and np.ndarray handlers, lines 61-70 and 90-98). The nn.Parameter subclass-drop bug is also fixed: nn.Parameter has its own registered load handler (_structural.py:73-83, register at :102) that preserves the Parameter subclass and the template's requires_grad - verified by round trip. Unrecognized leaves fail closed with TypeError (365ea498, opaque-base _structural.py:41-47) - verified empirically. Minor non-blocking observation: _tensor_load returns `saved.to(dtype, device)` which aliases the state-dict tensor when dtype/device already match (no defensive copy on load; save-side clones)."
+    },
+    {
+      "issue": 347,
+      "title": "Make PerGroup state deeply immutable",
+      "status": "fixed-verified",
+      "fix_commits": ["fb51c789", "8109c169"],
+      "note": "PerGroup.__post_init__ (packages/opaque-engine/src/opaque/api/engine/types.py:101-108) normalizes keys and wraps both mappings in MappingProxyType over private copies. Verified empirically: item assignment on .values/.groups raises TypeError; mutating the caller's source dicts after construction does not leak into the instance; dataclasses.replace produces an independent instance. All arithmetic ops (__mul__/__rmul__/__truediv__, types.py:115-147) return new PerGroup instances. One quirk (not a defect for current usage): the frozen dataclass's generated __hash__ raises TypeError because MappingProxyType is unhashable; nothing in the repo hashes PerGroup."
+    },
+    {
+      "issue": 343,
+      "title": "Preserve clipping numerics across microbatching and bfloat16",
+      "status": "fixed-verified",
+      "fix_commits": ["37d3ac3f"],
+      "note": "Three layers verified in the current tree: (1) norm reductions auto-promote fp16/bf16 to fp32 with a float64 cross-leaf squared-norm accumulator and a two-stage blocked per-leaf reduction (_pytree.py:81-103, 145-265); (2) the clip scale is shrunk by a computed roundoff guard so `norm(output) <= clipping_norm` holds on the values as stored (_guard_scale/_finalize_scale, _pytree.py:106-142) - empirically confirmed per-example stored norms <= 1.0 in bf16; (3) microbatch accumulation holds the running sum at the promoted compute dtype and casts to the output dtype exactly once (_MicrobatchAccumulator, _clipped_fun.py:137-191), matching the non-microbatch `_sum_clipped_tensor` (:115-134) - empirically confirmed bit-exact parity (max abs diff 0.0) between microbatch_size=7 and full-batch in bf16 for both the gradient and the second-moment stream. AUTO-S goes through the same guarded machinery (auto_scale_pytree). Residual (pre-existing, inherent, not from this fix): the final `/ normalize_by` and the fp32->bf16 output downcast happen after the guard, so the summed output carries one unguarded rounding - a ~2^-9 relative effect in bf16, common to all DP-SGD implementations."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Loss-scale backoff/growth is an unaccounted data-dependent adaptive choice the docs claim is fully accounted",
+      "file": "packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py",
+      "line": "185-195",
+      "category": "privacy-correctness",
+      "severity": "medium",
+      "claim": "The #350 fix removes the data-dependent skip, but the replacement pattern feeds the raw, un-noised private statistic stats.all_finite into LossScaler.update (docs/user-guide/precision.md:99, _loss_scaler.py:185-195), so the scale at step t+1 is a function of private data at step t that was never released or accounted. The scale changes which per-example gradients overflow and are zeroed by clip_pytree's sanitization (_pytree.py:520-527), so under add/remove adjacency one record's presence at step t can flip the scale at t+1 and thereby change other records' released contributions at t+1 by up to C each - the per-step sensitivity conditioned on a shared transcript is no longer C, and per-step PLD composition (which allows adaptivity only through released outputs) does not strictly cover the composed mechanism. docs/user-guide/precision.md:102-106 asserts the overflow path is fully 'composed into the accountant'; the pre-fix warning that this is 'not free privacy-wise' was deleted (18f67eac diff).",
+      "failure_scenario": "fp16 functional-API training following the documented recipe (loss_scaler + return_stats + accountant). After neighboring datasets diverge in a single overflow event, the backoff (or delayed growth) makes the two runs use different scales on all subsequent steps; examples whose scaled gradients sit near the fp16 overflow boundary are zeroed in one run and kept in the other, changing the released noisy gradients by more than the accounted sensitivity C while the reported epsilon is unchanged.",
+      "evidence": [
+        "packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py:185-195 - update(state, grads_were_finite) consumes the raw finiteness bit and moves scale by growth/backoff factors",
+        "docs/user-guide/precision.md:99 'scaler_state = scaler.update(scaler_state, stats.all_finite)' and :102-106 'the zero contribution is still noised, optimized, and composed into the accountant. The stats then back off the next loss scale.'",
+        "packages/opaque-engine/src/opaque/api/engine/clipping/_pytree.py:520-527 - non-finite leaves are zeroed, making the released contribution scale-dependent exactly when overflow flips",
+        "git show 18f67eac - deleted 'A skip is data-dependent and is not free privacy-wise. Unless separately analyzed, advance accounting on a public fixed schedule.'"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Either drive the scale schedule from a released (noised) overflow statistic or a public schedule (e.g. back off on a DP count of non-finite examples, or use a fixed/deterministic scale schedule), or document that stats.all_finite-driven scaling is an adaptive query outside the stated guarantee and quantify/gate it the way adaptive clipping is gated.",
+      "confidence": "medium"
+    },
+    {
+      "title": "The #352 wrapper-blindness pattern survives in unscale_grads and global_norm (silent no-op / silent 0.0 on ClippedPytree)",
+      "file": "packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py",
+      "line": "172-183",
+      "category": "fail-open-behavior",
+      "severity": "low",
+      "claim": "Issue #352 was fixed only for all_finite. Its siblings still treat DP wrapper types as opaque leaves: LossScaler.unscale_grads uses bare optree tree_map (_loss_scaler.py:172-183 via opaque.pytree.tree_map, pytree.py:126-142), and ClippedPytree/NoisedPytree are unregistered dataclasses, so unscale_grads(ClippedPytree, state) returns the wrapper object unchanged without unscaling anything - empirically confirmed (returned object `is` the input, leaf value 8.0 unchanged with scale=4). Likewise opaque.pytree.global_norm(ClippedPytree) silently returns 0.0 because tree_leaves finds no tensor leaves - empirically confirmed (0.0 vs 5.0 on the unwrapped pytree).",
+      "failure_scenario": "A user following the torch.amp.GradScaler mental model calls scaler.unscale_grads on the ClippedPytree returned by grad_fn (instead of wiring it as pre_clipping_transform): the call silently no-ops, gradients remain grads of the scaled loss clipped at C (clipping rate ~100%, update direction preserved but a silently wrong training configuration). A user logging global_norm(clipped_grads) gets a constant 0.0 and debugs the wrong thing. Neither path raises.",
+      "evidence": [
+        "packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py:172-183 - unscale_grads uses tree_map; wrappers are leaves and fail the isinstance(t, torch.Tensor) test",
+        "packages/opaque-engine/src/opaque/api/engine/pytree.py:122-123, 142 - tree_leaves/tree_map are bare optree; ClippedPytree is not registered as a pytree node",
+        "empirical: unscale_grads(clipped({'g': tensor([8.0])}, max_norm=1.0), state) with scale=4 returns the same object with 8.0 intact; global_norm(clipped({'g': [3,4]},...)) == 0.0"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Mirror the all_finite fix: have unscale_grads and global_norm unwrap ClippedPytree/NoisedPytree/SecondMomentClippingOutput (unscale should also rescale max_norm metadata, or raise TypeError directing the caller to .pytree, as ClippedPytree.__add__ already does for unsupported ops).",
+      "confidence": "high"
+    },
+    {
+      "title": "Empty-batch short-circuit ignores dtype= and pre_clipping_transform structure, breaking step-shape stability under Poisson sampling",
+      "file": "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py",
+      "line": "216-256",
+      "category": "correctness",
+      "severity": "low",
+      "claim": "_empty_batch_response builds zero gradients with zero_grads_like(args, argnums) (_clipped_grad.py:218, _helpers.py:76-86), which copies the parameter pytree's structure and dtype, while non-empty steps return gradients in the configured output dtype and in whatever structure pre_clipping_transform produces. Empirically confirmed on the current tree: with dtype=torch.float32 and bf16 params, a non-empty batch returns fp32 and an empty batch returns bf16; with a structure-changing pre_clipping_transform (documented as allowed: 'return a new pytree (possibly with different structure)', _clipped_grad.py:170-175), a non-empty batch returns a dict and an empty batch returns a bare Tensor. adaptive_clipped_grad's own empty-batch path (_adaptive.py:402-415) has the same behavior, and auto_clipped_grad inherits it.",
+      "failure_scenario": "Poisson sampling routinely produces empty batches; the empty-batch path exists precisely so those steps look like every other step. A run configured with dtype= or a structure-changing pre_clipping_transform gets a differently-shaped/typed ClippedPytree on empty steps: MF noise (which latches structure/metadata on first call) or torchopt optimizer state initialized from a non-empty step then errors or silently casts when an empty step arrives - and if the FIRST step is empty, everything downstream latches the wrong template.",
+      "evidence": [
+        "packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py:216-230 - zeros = zero_grads_like(args, argnums_tuple); no dtype cast, no pre_clipping_transform application",
+        "empirical: dtype=torch.float32, bf16 params -> non-empty dtype torch.float32, empty dtype torch.bfloat16; pre_clipping_transform=lambda g: {'g': g} -> non-empty structure dict, empty structure Tensor",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_adaptive.py:402-415 - same zero_grads_like short-circuit"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "In the empty-batch path, apply pre_clipping_transform to the zero pytree (it is per-example and shape-only here) and cast leaves to the configured output dtype, in clipped_grad, adaptive_clipped_grad, and auto_clipped_grad alike; or reject structure-changing transforms/dtype overrides at factory time when they cannot be honored on empty batches.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Scope: packages/opaque-engine (non-distributed) plus the adaptive-clipping half of #351 in opaque-dpsgd. Reviewed all 37 delta commits touching packages/opaque-engine in 79c916e3..4b13d82, excluding the distributed-only ones (955c9b3a, 782d59c2, e15a4d36, 7abedebd, 938a8a56, 940f6693, cd2f7250) which belong to the distributed verifier. Fix commits traced end-to-end: 7e5a22e4 (#352 all_finite wrappers), 18f67eac + 819068fa (#350 overflow accounting, fp16 lane, complex unscale), 453d9720 (#351 adaptive stats), 54ad623a (#349 checkpoint shapes) with 365ea498 (fail-closed serialization, nn.Parameter handler), fb51c789 (#347 PerGroup immutability) with the 8109c169 ParamPath rekeying refactor and 444acc33 nested-path support, 37d3ac3f (#343 clipping numerics: guarded scales, fp64 sq-norm accumulator, blocked reductions, compute_dtype plumbing, microbatch accumulator), 6f6d132a (RNG stream-root namespacing: verified all mechanism tags are >16-byte dotted strings, unreachable from integer folds; engine-side fold_in/split/generator_from_key sound). Also reviewed: noise_allocation.py paired-stream sigma math (Mahalanobis budget verified algebraically; nm==0 short-circuit exists in per_group_noise_stddev but not paired_noise_stddevs - NaN only in the non-private nm=0 + infinite-bound corner, fails loud, not reported), _transform_stack.py (fails safe to keeping the graph), scheduling/random/functional deltas (cosmetic lint/typing), test consolidation. Empirical checks run in the project venv (torch 2.13): serialization round-trips and rejections, PerGroup immutability, bf16 microbatch-vs-full bit parity (0.0 diff, both streams), stored per-example norm bound, all_finite pre-sanitization detection on both execution paths, wrapper no-op reproductions, empty-batch dtype/structure divergence. Test suites run: opaque-engine full non-distributed suite (474 passed, 25 skipped), opaque-dpsgd clipping (93 passed), integration loss-scale attempts (1 passed). Not run: CUDA/MPS/slow/distributed lanes (unavailable hardware / out of scope)."
+}

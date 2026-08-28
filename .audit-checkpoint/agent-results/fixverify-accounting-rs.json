@@ -1,0 +1,201 @@
+{
+  "statuses": [
+    {
+      "issue": 442,
+      "title": "OPQ-188 - MC random-allocation accounting not implemented for DP-SGD Gaussian prefix",
+      "status": "fixed-verified",
+      "fix_commits": ["b7aa6351", "694723bb", "b8f44fe9", "489c4489"],
+      "note": "Implemented, and as a deterministic geometric-grid transform rather than Monte Carlo (deliberate: geom.rs:214-223 says determinism is why it replaced an MC primitive). Rust core: packages/opaque-accounting/src/amplification/random_allocation.rs (random_allocation_gaussian_pld, random_allocation_gaussian_prefix_pld, k_out_of_t_gaussian_prefix_pld), carriers src/pld/pmf/geom.rs + src/pld/realization.rs. Directional rounding traced end to end: disc_dist stochastically dominates (mass moved up to grid, right tail to +inf; dominance regression test realization.rs:250-277); remove direction convolves with Rounding::Up throughout; add direction lower-bounds the exponentiated sum (Rounding::Down, correct because -ln reverses order, random_allocation.rs:123-127) then rounds the final loss Up. k>1 block bound and k-out-of-t prefix hypergeometric trim both push trimmed mass to infinity_mass (add_failure_probability, random_allocation.rs:321-341). Python factories exist (opaque/api/accounting/dpsgd/amplification/_random_allocation.py:164, _k_out_of_t.py:117) with horizon_pld_cache prefix support; one-sided oracle cross-validation against the paper authors' package in packages/opaque-dpsgd/tests/accounting/test_cross_validation_allocation.py (ours <= reference analytic bounds); Rust golden brackets from an independent implementation (random_allocation.rs:591-618, runs on main via include-slow). Caller-selectable lower bound (OPQ-184) removed: python/amplification.rs:227 signature has no upper flag."
+    },
+    {
+      "issue": 437,
+      "title": "Replace or justify PLD method caches",
+      "status": "fixed-verified",
+      "fix_commits": ["493a9f4a", "819ef0d9", "98095968"],
+      "note": "All functools.lru_cache pld() caches replaced by _pld_cache.pld_cache/horizon_pld_cache (packages/opaque-accounting/src/opaque/api/accounting/core/_pld_cache.py), keyed by (resolved DiscretizationConfig, mechanism fingerprint _pld_cache_key(), n_steps), holding processes only via weakref so cache entries cannot leak Rust-backed processes (#679). grep confirms no lru_cache remains on any pld method in opaque-dpsgd/opaque-dpftrl accounting. Compute happens outside the lock with post-compute re-check. Tests test_pld_cache.py, test_native_cache.py, test_calibrate_cache_clear.py and dpftrl test_pld_cache_fingerprints.py pass (96/97 accounting tests green; the one failure is environmental, see finding on test_smoke.py cross-package import)."
+    },
+    {
+      "issue": 422,
+      "title": "Apply workspace Rust lints to opaque-accounting",
+      "status": "fixed-verified",
+      "fix_commits": ["47aba30e"],
+      "note": "OPQ-134 (workspace.lints declared but never inherited = dead config). packages/opaque-accounting/Cargo.toml now carries [lints.rust] unsafe_code = \"warn\" at the crate level (the level that actually applies), and CI escalates it: .github/workflows/autoformat.yml:77 runs cargo clippy -- -D warnings, so unsafe code fails the check. Minor style note (not a defect): the crate duplicates the literal instead of `[lints] workspace = true`, so a future workspace lint addition would not auto-propagate."
+    },
+    {
+      "issue": 421,
+      "title": "Produce portable and reproducible accounting artifacts",
+      "status": "fixed-verified",
+      "fix_commits": ["556c9292"],
+      "note": "OPQ-135 (wheel embedded build-host __pycache__). Cargo.toml package.exclude and pyproject [tool.maturin] exclude now cover **/__pycache__/**, *.pyc, *.pyo; macos-deployment-target pinned to 11.0. A blocking post-build validator (.github/scripts/check_accounting_artifact_policy.py) inspects both the config files and every built wheel/sdist for transient bytecode, wired at .github/workflows/build-distributions.yml:166."
+    },
+    {
+      "issue": 362,
+      "title": "Apply learning-rate schedules on the MF step axis and expose weighted Grams",
+      "status": "fixed-verified",
+      "fix_commits": ["0baaba7a", "b7aa6351"],
+      "note": "Accounting-side half verified in depth: LR-weighted Gram builders exist and are exposed (src/matrix_factorization/gram_matrix.rs lambda_cgd_gram_matrix_lr; python/matrix_factorization.rs:369 py_lambda_cgd_gram_matrix_lr, :519 py_bisr_gram_matrix_lr, both taking per-step lr_weights of length n_steps). The runtime step-axis fix is 0baaba7a in opaque-dpftrl noise modules (_band_mf.py, _bisr.py, _lambda_cgd.py, _toeplitz.py, _blt_math.py) with new tests in test_toeplitz.py; deep numerical verification of that half belongs to the dpftrl-area review. Incidental positive found while diffing gram_matrix.rs: the lambda^b cross-epoch pruning that silently zeroed the cyclic corner (understating G and epsilon) was replaced by a true per-term upper bound max_decay^gap/(1-max_decay^2) with continue-not-break scanning, plus corner-retention regression tests (gram_matrix.rs:744-775)."
+    },
+    {
+      "issue": 342,
+      "title": "Serialize every implementation of the public Budget protocol",
+      "status": "fixed-verified",
+      "fix_commits": ["6f474388"],
+      "note": "core/_budgets.py now has register_budget_serializer(typ, state_dict_fn, from_state_dict_fn) requiring JSON-compatible state and standalone reconstruction; all five built-in budgets registered. packages/opaque-accounting/tests/test_budget_serialization.py passes."
+    },
+    {
+      "issue": 341,
+      "title": "Reject invalid and overflowing PLD composition counts",
+      "status": "fixed-verified",
+      "fix_commits": ["386c5f1f", "3698ac6b"],
+      "note": "Python boundary (src/python/pld.rs:31-39 composition_count) rejects count <= 0 and count > u32::MAX with OverflowError before any Rust math; the singleton a[0].powi(count as i32) i32-wrap replaced by exact pow_usize (fft.rs:20-32, tests at u32::MAX and usize::MAX); self_convolution_full_result_len is checked_add/checked_mul and errors on usize overflow (fft.rs:187-193, added in #528). Residual (reported as a finding): a_freq powu(count as u32) at fft.rs:317 still truncates for count > 2^32, reachable only through the Rust crate's own public API (never from Python) and only on the budgeted circular-fallback path."
+    },
+    {
+      "issue": 340,
+      "title": "Make the linear-FFT safety fallback effective for zero-tail PMFs",
+      "status": "fixed-verified",
+      "fix_commits": ["3698ac6b"],
+      "note": "Pre-remediation (79c916e3 fft.rs:222-231) any oversized composition silently fell back to a circular FFT whose aliasing was only 'bounded by the Chernoff tail budget' - vacuous when the budget was zero. Now select_self_convolution_strategy (fft.rs:195-233) permits the bounded circular buffer only when allow_circular_fallback is true, which dense.rs:331-336 sets to use_chernoff (i.e., a positive tail budget exists); an exact (zero-budget) composition that exceeds MAX_LINEAR_FFT_SIZE returns PldError::SelfCompositionTooLarge instead of aliasing. Fail-closed. The bounded-aliasing math for the budgeted path was independently verified by the original audit (spurious mass <= right+left budgets, right budget separately added to infinity_mass at dense.rs:355)."
+    },
+    {
+      "issue": 339,
+      "title": "Remove latent sorted-sensitivity assumptions from MixtureConstants",
+      "status": "fixed-verified",
+      "fix_commits": ["694723bb", "34d9cda8"],
+      "note": "OPQ-180. Pre-remediation: min_positive_sensitivity() was literally 1.0, max_sensitivity() was sensitivities.last(), sampling_prob assumed index 0 carried zero sensitivity (79c916e3 parallel_poisson.rs:151,164-170). Current code computes all three order-independently: max via fold(f64::max) (parallel_poisson.rs:142-144), min over positive entries via filter+fold (146-152), sampling_prob sums probabilities over strictly-positive sensitivities (123-129). Regression test with unsorted non-unit sensitivities [2.0, 0.0, 3.0, 0.5] pins min/max/sampling_prob and both adjacency deltas against direct quadrature (parallel_poisson.rs:471-485, added in #592)."
+    },
+    {
+      "issue": 338,
+      "title": "Reconcile negative-infinity mass in asymmetric PLD metrics",
+      "status": "not-fixed",
+      "fix_commits": [],
+      "note": "OPQ-181. The audited code is verbatim unchanged: pmf_beta (symmetric) still seeds cdf_y[0] with negative_infinity_mass (metrics.rs:216) while pmf_beta_asymmetric/pmf_beta_symmetrized still drop it via clean_probs renormalization with the very comments the audit quoted ('No negative_infinity_mass: it's absorbed by the renormalization', metrics.rs:297,306). git diff 79c916e3..4b13d82 on metrics.rs shows only the infinity_mass() helper and test-signature churn; no commit in the window touches the asymmetric beta path and no beta/delta-correspondence test on an amplified PLD (the fix the audit asked for) exists. Mitigations that plausibly motivated closing: MC PLDs fail closed (beta_at/risk_at return 0, pld/mod.rs:355-360,403-409), and for all non-MC asymmetric PLDs the reachable negative_infinity_mass is bounded by the Chernoff left-tail budget (tail_mass_truncation/2 = 5e-16 default, budget-capped at dense.rs:312), so the beta discrepancy is ~1e-15 under defaults. Reported as a low-severity finding."
+    },
+    {
+      "issue": 337,
+      "title": "Return conservative privacy guarantees from Monte Carlo amplification",
+      "status": "fixed-verified",
+      "fix_commits": ["88a25769", "f3427abd", "a5277a3f"],
+      "note": "Re-derived from first principles, every inequality direction checked. samples_to_pmf (balls_in_bins/monte_carlo.rs:271-390): per-rank Chernoff bound P[F(X_(j)) < p] <= exp(-n KL(j/n||p)) is the standard binomial bound, inverted on the conservative side (kl_lower_cdf_bound bisection returns the lower endpoint, :392-410); per-rank failure = mc_failure_probability/(2n) union-bounds n ranks x 2 adjacency directions; sample values bucketed by ceil (loss rounded up); constructed CDF <= true CDF at every point whp => stochastic domination => reported delta/epsilon are valid 1-beta upper bounds; residual 1-p_n goes to infinity_mass and is fail-closed checked against mc_resolution (:374-381); non-finite samples now error instead of being silently dropped (:282-295); total-mass conservation asserted (:383-388). resolved_num_mc_samples (discretization/config.rs:150-183) matches the last-rank residual 1-(failure/(2n))^(1/n) exactly. Guarantee threading: epsilon_at returns +inf when delta <= worst-case infinity mass (pld/mod.rs:288-293); beta_at/risk_at fail closed to 0 for MC PLDs; compose() adds failure probabilities (union bound) and combines resolutions as 1-(1-a)(1-b); self_compose keeps the single failure probability - sound because the one domination event implies domination of the k-fold composition. KL band verified below the exact Beta-inverse order-statistic bound by test (monte_carlo.rs:489-510); identity-Gram MC bound verified above the exact deterministic oracle (:645-671). b_min_sep MC (mc.rs) routes both directions through the same samples_to_pmf with num_directions=2. Cholesky covariance guarded by a residual check that errors rather than sampling the wrong covariance (:173-188). Metadata surfaces to Python (python/pld.rs mc_resolution/estimation_failure_probability) and pld() accepts mc_resolution/mc_failure_probability/seed (#573)."
+    },
+    {
+      "issue": 336,
+      "title": "Normalize Poisson and parallel-Poisson validation and cross-checks",
+      "status": "fixed-verified",
+      "fix_commits": ["45f41836", "34d9cda8"],
+      "note": "Rust: shared validate_noise_multiplier/validate_rate used by both poisson and parallel_poisson entry points (amplification/mod.rs:38-46, parallel_poisson.rs:48-49). Python: Poisson.__post_init__ validates sample_rate in (0,1) and truncation pairing on direct construction and deserialization, not just the factory; ParallelPoisson.__post_init__ validates num_workers and rejects truncated inner mechanisms (#516). Cross-checks now behavioral (OPQ-170 remediated): TestParallelPoissonCrossValidation asserts m=1 == Poisson (which is itself cross-validated against dp_accounting at ~1e-9) and strict epsilon monotonicity in workers, plus pinned reference epsilons (test_cross_validation.py:442-486). Caveat noted, not a finding: the m>1 pinned vectors are self-generated goldens, and the blocking independent anchor for m>1 remains the Rust-side Google dp_accounting mixture vectors (parallel_poisson.rs:448-469)."
+    },
+    {
+      "issue": 335,
+      "title": "Add nightly privacy-regression vectors across mechanisms and amplifiers",
+      "status": "partial",
+      "fix_commits": ["c46c3abb", "17cfae6a"],
+      "note": "What exists: dp-accounting + riskcal + random-allocation are in the dev dependency group (root pyproject.toml:123-131), so the cross-validation suites (Gaussian/Poisson epsilon-delta-beta-advantage triple validation, truncated Poisson, parallel Poisson, AdaClip, random-allocation oracle) run as blocking tests on every CI leg, with slow-marked vectors on every push to main (ci.yml include-slow) and the Rust golden/ignored tests likewise. What is missing relative to the title: no scheduled/nightly workflow exists (no cron in .github/workflows), and there are no regression vectors for the Monte Carlo mechanisms (balls-in-bins, b-min-sep) - that residual is explicitly tracked by OPEN issue #666, so it is not reported as a new finding."
+    },
+    {
+      "issue": 334,
+      "title": "Serialize and compare deep process compositions iteratively",
+      "status": "fixed-verified",
+      "fix_commits": ["6a3ccb64"],
+      "note": "Explicit-stack implementations: composition/_iter_repr.py, _iter_eq.py, _iter_cache_key.py, and an iterative codec in _process_codec.py. tests/test_deep_composition.py exercises depth 10_000 round-trip + equality + repr, wire-format and equality parity with the recursive reference on small trees, aliased children, and malformed-payload rejection; all pass in this session's run."
+    },
+    {
+      "issue": 333,
+      "title": "Derive calibration search direction from the calibrated parameter",
+      "status": "fixed-verified",
+      "fix_commits": ["9aab6480", "3fceb212", "db347f19"],
+      "note": "calibration.py no longer assumes the metric decreases in the parameter: the direction is derived by probing both bracket ends and combining with the metric-kind (budget.decreasing) (calibration.py:369-395); flat metrics raise; the bracket must have exactly one privacy-safe endpoint or it raises; interior probes escaping the endpoint value envelope raise (non-monotone detection, :420-467); NaN raises; inf allowed only on the unsafe endpoint; convergence accepted only from the proven privacy-safe endpoint and the returned param is always the safe one; non-convergence raises RuntimeError (fail-closed, :489-495). For MC processes the failure budget is split across max_iterations+2 probes (:298-305). tests/test_calibrate_direction.py 8/8 pass."
+    },
+    {
+      "issue": 332,
+      "title": "Key PLD caches by mechanism and discretization fingerprints",
+      "status": "fixed-verified",
+      "fix_commits": ["493a9f4a"],
+      "note": "Cache key is (resolved DiscretizationConfig dataclass, self._pld_cache_key(), n_steps) (_pld_cache.py:21,189) - every discretization/MC knob including seed participates via the config, and mechanism identity via the fingerprint; changing any config value can no longer return a stale PLD. dpftrl fingerprint behavior covered by packages/opaque-dpftrl/tests/accounting/test_pld_cache_fingerprints.py; accounting-side test_pld_cache.py passes."
+    },
+    {
+      "issue": 331,
+      "title": "Make balls-in-bins Monte Carlo reproducible across thread counts",
+      "status": "fixed-verified",
+      "fix_commits": ["23c0dbc7"],
+      "note": "OPQ-182 (measured 9.06 vs 8.10 epsilon between 4 and 1 threads pre-fix). bnb_mc_pld now partitions samples into fixed SAMPLES_PER_SHARD=1024 shards independent of the worker count, each shard seeded shard_seed(seed, shard, direction) = seed + 2*shard + direction (monte_carlo.rs:43-55), written via par_chunks_mut so rayon scheduling cannot change stream contents or order (:196-246); GeomPmf::conv independently uses fixed ROW_CHUNKS with chunk-index-order reduction (geom.rs:30-36, 214-270). Regression tests: Rust test_bnb_mc_pld_is_identical_across_thread_counts asserts bitwise-equal PMFs at 1 vs 8 threads (:548-596) and Python tests/test_balls_in_bins_reproducible.py. Verified passing. The SAME audited pattern survives untouched in the sibling b-min-sep MC driver - reported as a finding."
+    }
+  ],
+  "findings": [
+    {
+      "title": "b-min-sep MC still thread-count nondeterministic (pattern #331 fixed for balls-in-bins)",
+      "file": "packages/opaque-accounting/src/amplification/b_min_sep/mc.rs",
+      "line": "174-176, 187, 210, 364-366, 378, 404",
+      "category": "numerical-correctness",
+      "severity": "medium",
+      "claim": "The fix for closed issue #331 (OPQ-182, commit 23c0dbc7) converted balls-in-bins MC to fixed 1024-sample shards, but the sibling b-min-sep Monte Carlo driver in the same crate still partitions by the runtime worker count: `let n_threads = rayon::current_num_threads().max(1); let samples_per_thread = num_samples / n_threads;` with per-thread RNGs `StdRng::seed_from_u64(seed.wrapping_add(tid as u64))` (remove) and `seed.wrapping_add(1000 + tid as u64)` (add). The multiset of drawn samples is therefore a function of the host core count / RAYON_NUM_THREADS at a fixed seed, in `bandmf_b_min_sep_warm_mc_pld` and `bandmf_b_min_sep_prepare_transcripts` (the transcript registry bakes the thread-dependent draws into the cached corpus). This is exactly the audited defect OPQ-182, which measured an ~11.9% epsilon spread across thread counts for the balls-in-bins twin.",
+      "failure_scenario": "A user calibrates sigma for a BandMF + b-min-sep run on a 32-core CI box at seed=42, then re-runs the identical config/seed on an 8-core workstation: the reported epsilon differs at the percent level (OPQ-182 measured 9.06 vs 8.10 for the BnB twin at n=1e5) and the PLD cache/serialized guarantee no longer reproduces. Each individual result is still a valid 1-beta confidence bound (the #748 band holds for any iid draw), so this is a reproducibility/auditability defect on the reported number, not an unsound bound.",
+      "evidence": [
+        "mc.rs:174-176: `let n_threads = rayon::current_num_threads().max(1); let samples_per_thread = num_samples / n_threads; let remainder = num_samples - samples_per_thread * n_threads;` (prepare path; same pattern at :364-366 in the one-shot driver)",
+        "mc.rs:378: `let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));` - per-thread stream whose sample count depends on n_threads",
+        "mc.rs:404: `seed.wrapping_add(1000 + tid as u64)` for the add direction - also collides with remove-stream seeds if n_threads > 1000 (theoretical)",
+        "grep current_num_threads over the crate returns only these three sites; balls_in_bins/monte_carlo.rs:48 uses the fixed SAMPLES_PER_SHARD scheme with the comment 'The shard count must depend only on the resolved sample count, not on the Rayon worker count'",
+        "mc.rs:145-147 docstring documents the thread-layout dependence as the sample-order contract ('thread 0 chunk, then thread 1, ... with the same per-thread StdRng seeds'), i.e., the layout is load-bearing for transcript reuse",
+        "Original defect definition: OPQ-182 in docs/development/audit-master-list.md at f398839c^ explicitly notes 'the correlated-strategy path still has it' and prescribes the shard fix later applied only to bnb_mc_pld",
+        "No OPEN issue covers this: #697 is about tightening partial-band prefixes and certifying MC statistical error, not machine-dependent sample streams"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Port the balls-in-bins scheme: partition remove/add sample arrays into fixed SAMPLES_PER_SHARD chunks via par_chunks_mut, seed each shard shard_seed(seed, shard, direction), and derive transcript layout from the shard index rather than tid; extend test_bnb_mc_pld_is_identical_across_thread_counts-style coverage to bandmf_b_min_sep_warm_mc_pld and the transcript registry (registry corpora must be regenerated or version-tagged since cached layouts change).",
+      "confidence": "high"
+    },
+    {
+      "title": "Closed #338 (OPQ-181) not fixed: asymmetric beta still drops negative_infinity_mass",
+      "file": "packages/opaque-accounting/src/pld/metrics.rs",
+      "line": "295-306 (asymmetric) vs 212-216 (symmetric)",
+      "category": "privacy-correctness",
+      "severity": "low",
+      "claim": "Issue #338 is closed, but the code the audit flagged is byte-identical to the pre-remediation tree: pmf_beta (symmetric) seeds cdf_y[0] with pmf.negative_infinity_mass and calls that conservative, while pmf_beta_asymmetric/pmf_beta_symmetrized renormalize it away via clean_probs ('No negative_infinity_mass: it's absorbed by the renormalization to sum(probs) = 1 - infinity_mass'). git diff 79c916e3..4b13d82 -- src/pld/metrics.rs contains no hunk in any beta function, and the beta_at/delta_at correspondence test the audit prescribed does not exist. So beta_at() and delta_at() still use inconsistent treatments of -inf mass on every asymmetric PLD that carries it.",
+      "failure_scenario": "Practical magnitude is tightly bounded with defaults: MC PLDs (the only large -inf-mass producers historically) now fail closed (beta_at returns 0, pld/mod.rs:355-360), and for analytic asymmetric PLDs the only reachable negative_infinity_mass is the Chernoff left-tail budget, capped at tail_mass_truncation/2 = 5e-16 cumulative (dense.rs:312), so the beta discrepancy is ~1e-15. A user who sets DiscretizationConfig.tail_mass_truncation coarse (e.g. 1e-3, a public field) widens the inconsistency proportionally in the trade-off curve while delta_at stays consistent.",
+      "evidence": [
+        "metrics.rs:216: `cdf_y[0] = pmf.negative_infinity_mass + pmf.probs[0];` with comment 'keeping beta estimates conservative' (symmetric path)",
+        "metrics.rs:297: '// No negative_infinity_mass: it's absorbed by the renormalization to' and :306 '// from cleaned probabilities. No negative_infinity_mass added.' (asymmetric path, unchanged)",
+        "git diff 79c916e3..4b13d82 -- packages/opaque-accounting/src/pld/metrics.rs shows only the new infinity_mass() helper and Pmf constructor-signature churn in tests",
+        "OPQ-181 fix prescription ('decide which treatment is correct, apply it to both, and add a test that beta_at and delta_at agree through the (eps,delta) <-> (alpha,beta) correspondence on an amplified PLD') - no such test exists (grep beta_at over packages/opaque-accounting/tests returns nothing; the riskcal parity tests in opaque-dpsgd predate the window and only cover the tiny-budget Poisson path)",
+        "Bound on reachable -inf mass: dense.rs:312 `let effective_left_budget = (self.left_tail_budget - self.negative_infinity_mass).max(0.0);` keeps cumulative -inf mass <= left_tail_budget = tail_mass_truncation/2 (default 5e-16); random-allocation pmf construction contributes ~0 (traced through geom.rs zero_mass plumbing)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either add negative_infinity_mass into cdf_y (and X's +inf into ccdf_x) in pmf_beta_asymmetric the way pmf_beta does, or document the riskcal-matching renormalization as the intended semantics and add the prescribed beta_at/delta_at correspondence test on an asymmetric PLD with an artificially large negative_infinity_mass; if the closure rationale was 'negligible by measurement', record that measurement in a test so a coarse tail_mass_truncation cannot silently void it.",
+      "confidence": "high"
+    },
+    {
+      "title": "self-convolution exponent silently truncated to u32 on the budgeted circular path",
+      "file": "packages/opaque-accounting/src/numerics/fft.rs",
+      "line": "316-318",
+      "category": "numerical-correctness",
+      "severity": "low",
+      "claim": "After the #341/#528 fixes, one overflow survives: `*c = c.powu(count as u32);` truncates count modulo 2^32. For a multi-element PMF with count > u32::MAX the linear strategy is always rejected (full_result_len > 2^32 > MAX_LINEAR_FFT_SIZE), but when tail budgets are set the circular fallback is taken and the frequency spectrum is raised to the WRONG (wrapped) power, silently composing count mod 2^32 steps instead of count - an epsilon underreport by orders of magnitude. Unreachable from Python: python/pld.rs:31-39 composition_count caps count at u32::MAX with OverflowError. Reachable only via the Rust crate's public self_convolve/self_convolve_with_bounds/Pmf::self_compose API (rlib consumers).",
+      "failure_scenario": "A Rust-level consumer (the crate builds as rlib and these functions are pub) calls pmf.with_tail_budgets(1e-15, 1e-15).self_compose(2^32 + 10) on a two-element PMF: the Chernoff window is small, the circular FFT proceeds, and the result is the 10-fold composition presented as the (2^32+10)-fold one, with no error.",
+      "evidence": [
+        "fft.rs:316-318: `for c in a_freq.iter_mut() { *c = c.powu(count as u32); }` - rustfft Complex::powu takes u32; `count as u32` wraps",
+        "fft.rs:187-193 checks usize overflow of the result length but a.len()=2, count=2^32+10 gives full_result_len ~ 2^32+11 which fits usize and merely forces the circular branch when allow_circular_fallback is true",
+        "python/pld.rs:31-39: `let count = u32::try_from(count).map_err(|_| overflow())?;` - the Python surface is safe, tested by test_singleton_self_convolution_supports_maximum_exponent for the singleton path only",
+        "All in-crate call sites (random_allocation.rs:478,671,727; mechanisms/*.rs) pass parameter-bounded counts"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Guard in self_convolve_with_bounds: `if count > u32::MAX as usize { return Err(...) }` (mirroring the Python boundary), or use repeated squaring of the spectrum with a usize exponent as pow_usize already does for the singleton case.",
+      "confidence": "high"
+    },
+    {
+      "title": "opaque-accounting wheel-local test imports opaque.dpftrl",
+      "file": "packages/opaque-accounting/tests/test_smoke.py",
+      "line": "145-161",
+      "category": "test-placement",
+      "severity": "low",
+      "claim": "test_repeated_mc_process_preserves_overall_resolution (added with the #337/#573 MC-guarantee work) imports opaque.dpftrl.accounting and opaque.dpftrl.noise from inside opaque-accounting's wheel-local test directory. opaque-dpftrl depends on opaque-accounting, not vice versa, so this test is not runnable with the wheel plus its declared dependencies - violating ARC-006 (a wheel-local test must be runnable with that wheel, its declared dependencies/extras, and shared tooling) and inverting the dependency direction the repo's own contract tests enforce for source code.",
+      "failure_scenario": "Reproduced in this session: running packages/opaque-accounting/tests in an environment resolved for the accounting package alone fails with ModuleNotFoundError: No module named 'opaque.dpftrl' at test_smoke.py:146 (1 failed, 96 passed). Any per-wheel CI isolation or a contributor following AGENTS.md's `uv run pytest packages/opaque-accounting/tests/` guidance in a minimal env hits the same failure; in the full dev environment it passes and hides the boundary violation.",
+      "evidence": [
+        "test_smoke.py:146-147: `import opaque.dpftrl.accounting as ftrl_acc` / `from opaque.dpftrl.noise import band_mf_strategy`",
+        "AGENTS.md dependency table: opaque-accounting depends only on opaque-base; opaque-dpftrl depends on opaque-accounting",
+        "Observed failure: ModuleNotFoundError at packages/opaque-accounting/tests/test_smoke.py:146 in this session's package-scoped environment"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Move the test to packages/opaque-dpftrl/tests/accounting/ (it exercises b_min_sep + band_mf_strategy) or to tests/integration/, or rewrite it against an accounting-only MC process (e.g. a synthetic DpProcess whose pld() calls the native bnb_mc_pld) so the resolution-propagation property is tested inside the owning wheel.",
+      "confidence": "high"
+    }
+  ],
+  "delta_reviewed": "Scope: packages/opaque-accounting Rust crate plus the accounting-labeled closed issues' Python-side fixes. Reviewed all 30 delta commits touching packages/opaque-accounting/src (git log 79c916e3..4b13d82) and read the full current source of: amplification/balls_in_bins/monte_carlo.rs (rewrote MC as confidence-band construction, #550/#748 - math re-derived: Chernoff-KL lower CDF band, union over ranks x directions, ceil bucketing, residual to infinity_mass, fail-closed), amplification/b_min_sep/{mc.rs,registry.rs} (thread-count nondeterminism survives - finding; K-prefix transcript slicing argument checked and sound since the participation chain is horizon-independent), amplification/random_allocation.rs + pld/pmf/geom.rs + pld/realization.rs (new deterministic Feldman-Shenfeld transform: every Rounding::Up/Down direction traced, disc_dist stochastic domination, index-table direction test, k>1 block bound and hypergeometric prefix trim both fail toward +inf mass; OPQ-183/184/185 confirmed resolved in current code), amplification/{parallel_poisson.rs,discrete_mixture.rs,mod.rs} (OPQ-180 fixed, tail truncation directions conservative), numerics/fft.rs (overflow checks, bounded linear FFT, budget-gated circular fallback; residual powu u32 wrap - finding), numerics/truncation.rs (unchanged in window; previously verified sound), discretization/config.rs (resolved_num_mc_samples matches last-rank residual; coarsening power-of-2), pld/{mod.rs,metrics.rs,pmf/dense.rs,pmf/mod.rs} (MC metadata threading through compose/self_compose verified sound; coarsen +1 up-shift; combine_budgets; eps_delta round->ceil; OPQ-181 asymmetric beta unchanged - finding), matrix_factorization/gram_matrix.rs (cyclic-corner pruning fix with true term bound - conservative), balls_in_bins/cyclic_cholesky.rs (fail-closed non-PSD handling + residual guard at call site), python/{pld.rs,config.rs,amplification.rs,matrix_factorization.rs} (count capped at u32::MAX, no dominated-PLD selector, MC metadata + lr-weighted Gram bindings exposed). Python core files read for the cache/calibration/serialization/composition issues: _pld_cache.py, calibration.py, _budgets.py, composition/_iter_*.py, _base.py (spot), plus CI workflows (rust-tests/autoformat/ci/python-tests, build-distributions policy checker) and the cross-validation suites in opaque-dpsgd. Ran: full opaque-accounting Python test suite (96/97 pass; 1 environmental failure = ARC-006 finding), cargo test --lib (360 pass, 0 fail, 7 slow-ignored), test_calibrate_direction.py (8/8). Confirmed transformations/adaclip.rs and python/adaclip.rs have ZERO commits and zero diff in the window - the Rust adaclip_sensitivity side of open #345 has not silently changed. Not deep-verified here (sibling areas): the dpftrl runtime half of #362 (step-axis schedules - fix commit and tests exist), dpsgd sampler-side of #442, and the dpftrl BLT normalized-Gram fix (OPQ-178, spot-checked as fixed: _blt.py now passes normalized=False). Original defect definitions recovered from the full audit master list in git history (f398839c^:docs/development/audit-master-list.md, OPQ-177..185) and verified against those where they existed (OPQ-180, OPQ-181, OPQ-182, OPQ-183, OPQ-184, OPQ-185, OPQ-134, OPQ-135, OPQ-170, OPQ-171)."
+}

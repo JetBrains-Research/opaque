@@ -1,0 +1,192 @@
+{
+  "statuses": [
+    {
+      "issue": 396,
+      "title": "Scope checkpoint differentiation overrides to Opaque transforms",
+      "status": "fixed-verified",
+      "fix_commits": ["fe9ad05f", "fecf4abb", "d8b3871f"],
+      "note": "Original defect (master-list lead entry): after apply_runtime_patches(), grad(grad-sum)/jacrev(grad)/vjp(grad) silently returned zeros because torch._functorch.eager_transforms._autograd_grad was rebound with create_graph=False process-wide. Current create_graph.py:17-28 conditions create_graph on prev_grad_mode() (the grad mode captured at grad-transform entry, functorch_transform.py:20-36), and clipped_grad enters its transform under torch.no_grad() only when no enclosing differentiating transform is active (_clipped_grad.py:243-246, _transform_stack.py:10-22). Empirically reproduced the master-list repro on torch 2.13.0: after apply_runtime_patches(), grad(grad-sum), jacrev(grad) and vjp(grad) of (x**3).sum() all return [6,12,18] (previously [0,0,0]). saved_tensor_hooks_guard.py:38-63 now scopes the hooks guard to higher-order/compile and raises via disable_saved_tensors_hooks instead of silently permitting, matching the audit's requested fail-closed behavior. Feature probes in native_support.py:13-40 correctly report both native fixes absent on installed torch 2.13.0 (verified: stateless has no _active_reparametrizations, vmap still has the unscoped doesnt_support_saved_tensors_hooks), so the backports apply; gating is unit-tested (tests/torch/test_checkpoint_gating.py). 27 CPU tests in tests/torch pass."
+    },
+    {
+      "issue": 397,
+      "title": "Preserve sliding-window attention semantics",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["fe12b9b1", "e6627189"],
+      "note": "The dense mask path is correct: vmap_create_sliding_window_causal_mask (runtime/masking.py:184-281) enforces k_abs >= q_abs - sliding_window + 1, matching HF's sliding_window_overlay boundary (site-packages transformers/masking_utils.py:99 'kv_idx > q_idx - sliding_window'), handles the cached-KV column layout consistently, and I verified bit-identical logits vs upstream on a tiny Mistral with sliding_window=4, seq=12 for both eager and SDPA WHEN attention_mask is passed (max abs diff 0.0). Residual defect: the SDPA is_causal skip in vmap_create_causal_mask (masking.py:77-82) has no sliding-window awareness and vmap_create_sliding_window_causal_mask propagates the None (masking.py:226-227), so with attn_implementation='sdpa' and attention_mask=None the window is silently dropped (reported as a finding). All unit tests added by fe12b9b1 use _attn_implementation='eager', and the parity suite's sliding test uses seq=10 < window=64, so neither covers the broken branch."
+    },
+    {
+      "issue": 398,
+      "title": "Preserve Gemma2 attention logit softcapping",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["9bc3aee8"],
+      "note": "vmap_eager_attention_forward_gemma2 (components/attention.py:96-157) applies softcap*tanh(scores*scaling/softcap) in exactly upstream's order (verified against site-packages gemma2 modeling_gemma2.py:201-206), and vmap_sdpa_attention_forward_gemma2 (attention.py:160-196) routes softcap!=None to the eager path so Gemma2's default attn_logit_softcapping=50.0 is never silently dropped under SDPA. Non-vacuous component test (test_gemma2_softcap_attention_matches_reference, softcap=1.0 with scores up to 12) checks forward, weights, and grads against an analytic reference; final_logit_softcapping is separately handled by the CE component (components/cross_entropy.py:282-293). Caveat (reported as a finding): _family.py installs the shim via mod.ALL_ATTENTION_FUNCTIONS['sdpa']=..., which is a process-global GeneralInterface singleton shared by every transformers modeling module — empirically verified that after apply_gemma2_family_patches(), llama's ALL_ATTENTION_FUNCTIONS['sdpa'] is also the gemma2 shim."
+    },
+    {
+      "issue": 399,
+      "title": "Validate LoRA bias, projection shape, and vmap dimensions before fused execution",
+      "status": "fixed-verified",
+      "fix_commits": ["769e0a21"],
+      "note": "_validate_vmap_dims (kernels/lora.py:66-75) is called in all 9 custom vmap rules (lines 146, 208, 277, 407, 552, 691, 878, 1052, 1229) with correct batched-index sets (e.g. {0,1,14,15} for _LoRAMLPBackward = grad_out, X, gate, up), rejecting layouts that would silently pair elements across examples. The Lite-backward dX reshape bug is fixed: dX.reshape(*grad.shape[:-1], W.shape[1]) instead of reshaping to grad_out's shape (lora.py:213 and the QKV/MLP Lite equivalents). _auto_fuse_lora now gates MLP fusion on _no_bias for gate/up/down (peft/_router.py:123-125) in addition to the pre-existing QKV bias gates (:89-91). 332 lines of validation tests added in tests/kernels/test_lora.py. CPU peft tests pass."
+    },
+    {
+      "issue": 400,
+      "title": "Apply or reject router dropout and batchify consistently",
+      "status": "partial",
+      "fix_commits": ["6e26cc97", "2b309916"],
+      "note": "6e26cc97 (#493) made apply_transformers_model_patches raise ValueError for an unregistered family whenever dropout/batchify would apply (including via the compat=True default). One day later, 2b309916 (#495, titled as a CI fix) weakened this to raise only when dropout/batchify was EXPLICITLY passed in kwargs (_router.py:116-130 'dropout_explicit and dropout'). DPTrainer calls apply_model_patches(model, compat=True, ...) with no explicit dropout/batchify kwargs (_dp_trainer.py:802-808), so the default trainer path on an unregistered family silently skips both dropout-disabling and batchify again (debug-level log only, _router.py:131-135) — the original fail-open behavior. Reported as a finding. The explicit-kwarg path is fixed and tested."
+    },
+    {
+      "issue": 401,
+      "title": "Avoid mutating saved activations in fused LoRA backward",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["96cf21d1"],
+      "note": "The X-storage clobbering is gone at every site: _lora_qkv_backward_impl, _lora_mlp_backward_impl, and _LoRAMLPBackward.vmap now allocate a fresh dX buffer (current lora.py:337, 426, 486, 790 — 'dX_flat = torch.mm(...)' with no out=X_flat anywhere; grep for 'out=' finds no input-buffer reuse), fixing the parallel-residual (Cohere) corruption where the same X feeds attention and MLP. A dedicated regression test (tests/peft/test_fused_lora_parallel_residual.py, 197 lines) was added. Caveat (reported as a finding): the fused activation backward still overwrites the SAVED gate/up activations in place (lora.py:757-759 'recompute h, overwrite gate→dgate, up→dup (Unsloth pattern)' via _SwiGLUBackward, swiglu.py:145-160), so a second backward with retain_graph=True silently produces wrong gradients."
+    },
+    {
+      "issue": 402,
+      "title": "Stop cross-entropy backward from overwriting model logits",
+      "status": "fixed-verified",
+      "fix_commits": ["a46c6be5"],
+      "note": "Both _CrossEntropyBackward.forward and .vmap now write gradients into logits.clone() (current cross_entropy.py:369, 447) instead of the saved logits buffer, and a regression test asserts torch.equal(logits, logits_before) after backward (tests/kernels/test_cross_entropy.py:test_backward_does_not_mutate_forward_logits). Sibling scan: cross_entropy.py forward does not mutate logits; linear_cross_entropy/_linear_ce_chunked recompute logits per chunk and save none; rms_norm/fused_add_rms_norm clone their saved X/S (rms_norm.py:566, fused_add_rms_norm.py:474) and only reuse the incoming dY buffer. The remaining in-place saved-tensor writes are the gate/up activation buffers (see issue 401 caveat)."
+    },
+    {
+      "issue": 403,
+      "title": "Correct unsupported grouped-GEMM claims in fused MoE docs",
+      "status": "fixed-verified",
+      "fix_commits": ["709f7dfc"],
+      "note": "OPQ-176's false claims ('_grouped_mm ... requires 16-byte-aligned group sizes, unusable for data-dependent MoE groups', 'the mode-2 weight grad torch can't do', 'E <= 1024 cap') are removed from fused_moe.py, _grouped_moe.py, and docs/user-guide/huggingface/model-patches.md. The replacement text (current fused_moe.py:13-20, _grouped_moe.py:14-18) states _grouped_mm's 2D×2D layout CAN express the mode-2 grad (16-byte rule is on matrix strides, not group sizes) and that the Triton _grouped_AtB is kept as a fused variant pending a perf comparison tracked in #417 (which matches the open benchmark-harness issue). Doc-only change; kernel behavior untouched."
+    },
+    {
+      "issue": 404,
+      "title": "Compare patched model forwards and gradients with upstream",
+      "status": "fixed-with-caveats",
+      "fix_commits": ["5936552b"],
+      "note": "A real parity suite landed (tests/transformers/models/test_parity.py, 492 lines + _test_utils.py helpers): forward-logits parity for eager and SDPA across all registered families, backward per-parameter grad parity, vmap(grad) clipped-grad parity, and feature variants (sliding window, softcapping, KV cache, LoRA), with explicit per-family skip lists and dtype-specific tolerances. Two caveats reported as findings: (1) parity_model_patches (_test_utils.py:256-272) restores only class-level forwards on exit while the family apply functions rebind module globals (eager_attention_forward, create_causal_mask, ALL_ATTENTION_FUNCTIONS['sdpa']) that are never restored — empirically verified modeling_llama.eager_attention_forward stays patched after the context exits — so the 'unpatched' reference is genuinely upstream only for the first test per family per process; (2) test_sliding_window_parity sets sliding_window=64 but the harness uses seq_len=10, so the window never binds and the test is vacuous for window semantics. Open issue #330 remains the tracker for full parity; these are deltas in what the closed issue claims landed."
+    },
+    {
+      "issue": 423,
+      "title": "Ship licenses and correct third-party attribution paths",
+      "status": "fixed-verified",
+      "fix_commits": ["ed766ebd"],
+      "note": "OPQ-160 verified fixed: all NOTICE paths now include the api/ segment (NOTICE:26-27, 68-73, 87-88 reference packages/opaque-patches/src/opaque/api/patches/kernels/...), each package ships its own NOTICE (packages/opaque-patches/NOTICE exists with package-relative opaque/api/patches/kernels/ paths) and a LICENSE symlink to the repo root. In-file backreference fixed: rms_norm.py:9 now says '../../../../../NOTICE in this package' — five levels up from kernels/ correctly lands on packages/opaque-patches/ which contains NOTICE. Built the opaque-patches wheel from the current tree via setuptools build_meta and confirmed the artifact contains dist-info/licenses/LICENSE (9154 bytes, symlink content resolved) and dist-info/licenses/NOTICE (3726 bytes)."
+    },
+    {
+      "issue": 424,
+      "title": "Make Triton kernel validation blocking",
+      "status": "fixed-verified",
+      "fix_commits": ["847b464e", "76e013d8", "a31629f2"],
+      "note": "pr.yml defines three CUDA lanes on the self-hosted GPU runner (python-tests-cuda / -minimum / -latest, pr.yml:137-184, marker 'cuda and not slow') and the stable 'Python tests' gate (pr.yml:188-226) fails when any needed job is not success, with a skip escape ONLY for the cuda-prefixed jobs (jq filter at :210-217) — which skip solely for fork PRs / non-dispatch events per the lanes' if-conditions (:139-141), documented as a self-hosted-runner security measure. A CUDA lane FAILURE therefore blocks the PR gate; kernel tests are cuda-marked and run on GPU-runner-001. Verified from workflow config only (cannot execute CI in this session)."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Sliding-window constraint silently dropped under SDPA when attention_mask is None",
+      "file": "packages/opaque-patches/src/opaque/api/patches/transformers/runtime/masking.py",
+      "line": "77-82, 226-227",
+      "category": "patched-model-correctness",
+      "severity": "high",
+      "claim": "The #397 fix's vmap_create_causal_mask returns None (SDPA is_causal skip) whenever attention_mask is None, attn_impl != 'eager' and no cache is populated, with no sliding-window awareness; vmap_create_sliding_window_causal_mask propagates that None ('if causal_mask is None: return None'), so SDPA falls back to plain causal attention and the look-back limit is silently discarded whenever the window binds (seq_len >= sliding_window). Upstream explicitly refuses this skip: transformers/masking_utils.py:262-263 returns False from _ignore_causal_mask_sdpa when 'local_attention_size is not None and kv_length >= local_attention_size'.",
+      "failure_scenario": "Any patched sliding-window model (Mistral/Ministral with sliding_window set, Gemma2, Gemma3 text with its default sliding_window=512, Cohere2, Phi-3) called with attn_implementation='sdpa' (the transformers default) and no attention_mask — the standard model(input_ids) pattern in eval/perplexity/generation-prefill code — attends to the full context on sliding layers. Empirically: tiny Mistral, sliding_window=4, seq=12, SDPA: upstream logits are identical with and without mask (diff 0.0), the patched model deviates by max-abs 0.39 without a mask while matching upstream exactly (0.0) with one. DPTrainer flows are unaffected because the collators always emit attention_mask (opaque-alignment _language_modeling.py:133-173).",
+      "evidence": [
+        "masking.py:77-82: 'if (attention_mask is None and attn_impl != \"eager\" and _safe_seq_length(past_key_values) <= 0): return None' — no config.sliding_window check",
+        "masking.py:226-227: 'if causal_mask is None: return None' in vmap_create_sliding_window_causal_mask",
+        "transformers/masking_utils.py:262-263 (v5.16.1): sliding-window layers must not skip the mask",
+        "Repro in this session: patched Mistral (sliding_window=4, sdpa) no-mask logits differ from upstream by 0.3946; masked path diff 0.0",
+        "All TestSlidingWindowCausalMask tests use _attn_implementation='eager' (tests/transformers/runtime/test_masking.py:114-135), so the SDPA branch is untested"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "In vmap_create_causal_mask, refuse the None skip when the caller needs a sliding window — e.g. add an allow_is_causal_skip flag that vmap_create_sliding_window_causal_mask sets False (or check getattr(config, 'sliding_window', None) is not None and seq_len >= sliding_window before skipping), mirroring upstream's local_attention_size condition; add an SDPA-path regression test with seq_len > sliding_window and no attention_mask.",
+      "confidence": "high"
+    },
+    {
+      "title": "#495 quietly reverted #493's fail-closed dropout/batchify contract for default (trainer) calls",
+      "file": "packages/opaque-patches/src/opaque/api/patches/transformers/_router.py",
+      "line": "116-135",
+      "category": "fix-regression",
+      "severity": "medium",
+      "claim": "Issue #400's fix (6e26cc97) made apply_transformers_model_patches raise for an unregistered family whenever dropout/batchify would apply, including via the compat=True default. Commit 2b309916 — titled 'fix(ci): separate Python and Rust test gates' — changed the guard to raise only when dropout/batchify was explicitly passed ('(dropout_explicit and dropout) or (batchify_explicit and batchify)'), so the default path silently skips both again with only a debug-level log, which is the pre-audit fail-open behavior. DPTrainer hits exactly this path: _dp_trainer.py:802-808 calls apply_model_patches(model, compat=True, ...) without explicit dropout/batchify kwargs, and its docstring (:791-793) still claims an 'info-level message' is logged.",
+      "failure_scenario": "A user trains an unregistered-family HF model (e.g. a new architecture transformers added) through DPTrainer with defaults: no exception, dropout modules keep p>0, and vmap(grad) runs with randomness='same' (_clipped_fun.py:310), so dropout noise is silently shared across all examples in the batch — gradients differ from both standard training and the dropout-free DP-SGD configuration the trainer documents, with only a debug log as signal. Privacy is unaffected (clipping still bounds sensitivity) but training numerics silently deviate.",
+      "evidence": [
+        "_router.py:117-118: 'dropout_explicit = \"dropout\" in kwargs' / batchify_explicit",
+        "_router.py:126: 'if (dropout_explicit and dropout) or (batchify_explicit and batchify): raise ValueError'",
+        "git show 2b309916: the weakening diff on _router.py inside a CI-titled commit, one day after 6e26cc97's 'if dropout or batchify: raise'",
+        "_dp_trainer.py:802-808: apply_model_patches called with compat/performance/kernels only, no explicit dropout/batchify",
+        "_router.py:131-135: logger.debug on the silent-skip path (trainer docstring at _dp_trainer.py:791-793 claims info-level)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Restore the raise for the compat-driven default when the model is an unregistered family (or have DPTrainer pass dropout/batchify explicitly so the explicit-request guard fires); at minimum log at warning level and align the trainer docstring.",
+      "confidence": "high"
+    },
+    {
+      "title": "Parity suite's 'upstream' reference is contaminated by unreverted module-global patches after the first test per family",
+      "file": "packages/opaque-patches/tests/transformers/models/_test_utils.py",
+      "line": "256-272",
+      "category": "test-quality",
+      "severity": "medium",
+      "claim": "parity_model_patches (the #404 harness's isolation mechanism) snapshots and restores only class-level forward methods, but apply_transformers_model_patches also rebinds module-level globals via the family apply functions — mod.eager_attention_forward, mod.create_causal_mask/create_sliding_window_causal_mask, and ALL_ATTENTION_FUNCTIONS['sdpa'] — none of which are restored in the finally block. After the first parity test touches a family module, every later 'unpatched' reference model of that family in the same pytest process runs with opaque's attention and masking functions, so backward-grad, vmap-grad, sliding-window, softcapping and KV-cache parity assertions largely compare patched against patched.",
+      "failure_scenario": "A future regression in vmap_eager_attention_forward or the mask builders that changes numerics identically for 'reference' and 'patched' models (because both use the patched module globals) passes the entire parity suite except the single first forward-logits test per family; the suite's claimed upstream-parity guarantee (closed issue #404, open issue #330) is materially weaker than stated. Empirically verified: after 'with parity_model_patches(patched): pass', modeling_llama.eager_attention_forward and modeling_llama.create_causal_mask are still the opaque replacements ('restored: False' for both).",
+      "evidence": [
+        "_test_utils.py:262-264: original_forwards captures only type(module).forward",
+        "_test_utils.py:270-272: finally block restores only those class attributes",
+        "_family.py (make_apply_family_patches): rebinds mod.eager_attention_forward, mod.ALL_ATTENTION_FUNCTIONS['sdpa'], and calls apply_module_masking_patch which rebinds mod.create_causal_mask / create_sliding_window_causal_mask",
+        "Session repro: after context exit, modeling_llama.eager_attention_forward is not the original function"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Snapshot and restore the family module's rebindable attributes (eager_attention_forward, create_causal_mask, create_sliding_window_causal_mask, ALL_ATTENTION_FUNCTIONS local mapping) in parity_model_patches, or compute all upstream references in a subprocess/fresh-import fixture before any patch is applied.",
+      "confidence": "high"
+    },
+    {
+      "title": "test_sliding_window_parity never exercises a binding window (sliding_window=64 > seq_len=10)",
+      "file": "packages/opaque-patches/tests/transformers/models/test_parity.py",
+      "line": "295-313",
+      "category": "test-quality",
+      "severity": "medium",
+      "claim": "The parity suite's sliding-window variant sets extra['sliding_window'] = 64 but assert_parity_forward generates inputs of shape (2, 10) (_test_utils.py:354), so every causal position is inside the window and the sliding-window constraint contributes nothing to the compared logits — the test is vacuous for the feature it names and cannot detect any window-semantics defect, including the confirmed SDPA no-mask window drop (which additionally needs attention_mask=None, while the harness always passes all-ones masks at _test_utils.py:355).",
+      "failure_scenario": "Any regression in the sliding-window mask (wrong boundary, dropped constraint, wrong absolute positions) passes test_sliding_window_parity for both Mistral and Ministral; the confirmed masking.py skip bug demonstrates the blind spot concretely — the suite passes today while patched no-mask SDPA logits deviate from upstream by 0.39 on a window-binding input.",
+      "evidence": [
+        "test_parity.py:300: extra['sliding_window'] = 64",
+        "_test_utils.py:354-355: input_ids shape (2, 10), attention_mask = ones",
+        "For q_abs <= 9 and window 64, the bound q_abs - 63 <= 0 never excludes any causal key"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Use sliding_window < seq_len (e.g. window 4, seq 16) in the variant test, assert the patched logits also differ from a no-window run (guarding vacuity), and add an attention_mask=None SDPA case.",
+      "confidence": "high"
+    },
+    {
+      "title": "Gemma2 SDPA shim is installed in the process-global attention registry, rerouting every model family",
+      "file": "packages/opaque-patches/src/opaque/api/patches/transformers/_family.py",
+      "line": "172-176",
+      "category": "patch-scoping",
+      "severity": "low",
+      "claim": "The #398 fix installs vmap_sdpa_attention_forward_gemma2 via mod.ALL_ATTENTION_FUNCTIONS['sdpa'] = ..., but ALL_ATTENTION_FUNCTIONS is one shared GeneralInterface instance across all transformers modeling modules (its __setitem__ writes the singleton's _local_mapping), so applying Gemma2 family patches reroutes SDPA attention for every model in the process. Empirically verified: after apply_gemma2_family_patches(), modeling_llama.ALL_ATTENTION_FUNCTIONS['sdpa'] is vmap_sdpa_attention_forward_gemma2. For softcap=None callers the shim delegates verbatim to stock sdpa_attention_forward, but transformers 5.16 has other families that pass softcap to the interface (vaultgemma, t5gemma, videoprism) — for those, an unpatched model in the same process is silently switched to opaque's Gemma2 eager-attention math (softcap applied, eager instead of SDPA kernels) whereas upstream SDPA ignores softcap.",
+      "failure_scenario": "A user patches a Gemma2 policy model, then loads an unpatched VaultGemma or T5Gemma reference/reward model in the same process with SDPA: its attention silently runs opaque's eager Gemma2 path — different numerics from upstream SDPA (softcap now applied), different speed/memory, and attn_weights materialized — the same unscoped-global-override defect class that issue #396 was filed about. Mirrors the audit's scoping concern rather than corrupting the patched model itself.",
+      "evidence": [
+        "_family.py:172-176 (added by 9bc3aee8): mod.ALL_ATTENTION_FUNCTIONS['sdpa'] = sdpa_attention_replacement",
+        "transformers/utils/generic.py:1097-1132: GeneralInterface shares one instance/local mapping; modeling modules import the modeling_utils singleton",
+        "Session repro: after apply_gemma2_family_patches(), llama's ALL_ATTENTION_FUNCTIONS['sdpa'].__name__ == 'vmap_sdpa_attention_forward_gemma2'",
+        "grep: vaultgemma/t5gemma/videoprism pass softcap=self.* to the attention interface in transformers 5.16.1"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Register the shim under a distinct key (e.g. 'opaque_sdpa_gemma2') and set config._attn_implementation on the patched model instance, or restrict the softcap→eager fallback to modules of the gemma2 family (isinstance/module-path check) before delegating.",
+      "confidence": "high"
+    },
+    {
+      "title": "Fused activation backward still mutates saved gate/up activations in place (residual of #401/#402 pattern)",
+      "file": "packages/opaque-patches/src/opaque/api/patches/kernels/lora.py",
+      "line": "757-759",
+      "category": "saved-tensor-mutation",
+      "severity": "low",
+      "claim": "The #482 fix removed the dX/X-storage reuse, but the fused LoRA MLP backward (and the standalone Opaque_SwiGLU/GeGLU backwards) still overwrite the autograd-saved gate/up activation tensors in place: _lora_mlp_backward_impl calls act_backward_fused(dh, gate_flat, up_flat) where gate_flat/up_flat are reshape views of ctx.saved_tensors, and _SwiGLUBackward.forward passes gate_flat/up_flat as both input and output pointers to the Triton kernel (swiglu.py:145-160, 'In-place: gate_flat → grad_gate, up_flat → grad_up'). The Triton write bypasses the dispatcher, so the tensor version counter is not bumped and autograd raises no error.",
+      "failure_scenario": "loss.backward(retain_graph=True) followed by a second backward through the same graph (or any caller holding a reference to the gate/up tensors, e.g. debugging hooks) silently computes the second pass from gradient values instead of activations — wrong gradients with no exception. The DP-SGD vmap(grad) path rebuilds the graph per call and is unaffected; double backward already raises NotImplementedError, but retain_graph re-traversal does not.",
+      "evidence": [
+        "lora.py:757-759: '# Fused backward: recompute h, overwrite gate→dgate, up→dup (Unsloth pattern)' operating on gate.reshape(-1,...) views of the saved tensors",
+        "swiglu.py:145-160: _SwiGLUBackward.forward passes gate_flat/up_flat as de_out/dg_out to _DWf_DW_dfg_kernel",
+        "Contrast: the CE fix (#465) clones logits precisely to keep saved forward tensors bit-identical after backward (cross_entropy.py:369, 447)"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either clone gate/up before the in-place activation backward when torch.is_grad_enabled() (mirroring the CE fix), or mark the saved tensors dirty / document that retain_graph=True is unsupported and detect the second traversal.",
+      "confidence": "medium"
+    }
+  ],
+  "delta_reviewed": "Reviewed all 30 delta commits in 79c916e3..4b13d82 touching packages/opaque-patches (git log scoped to the package): the 11 patches-labeled closed-issue fixes (fe12b9b1/e6627189 masking, 9bc3aee8 softcap, a46c6be5 CE, 769e0a21+96cf21d1 LoRA, 6e26cc97 router, fe9ad05f+fecf4abb+d8b3871f checkpoint scoping, ed766ebd licensing, 709f7dfc MoE docs, 5936552b parity, 847b464e/76e013d8/a31629f2 CI blocking) plus the non-fix delta: kernels/__init__.py fallback-path docstrings and opaque_moe dispatch export, kv_cache training-gate rework (training+grad_enabled gate, generation keeps its empty cache), rms_norm/fused_add_rms_norm/rope/_grouped_moe/_utils stylistic and constant-extraction changes (919a4572, cc7edb97), _factory/_family/_registry annotation passes (e97c38b2, 6f3c11a3), and the test consolidation (4b13d82a). Verified fixes empirically where CPU allows: ran the full opaque-patches CPU suite (303 passed), reproduced the OPQ higher-order silent-zeros defect fixed by #648 (now returns correct [6,12,18] on torch 2.13.0 after apply_runtime_patches), built the opaque-patches wheel to confirm LICENSE/NOTICE shipping, and ran numerical sliding-window/softcap parity probes against upstream transformers 5.16.1 — which surfaced the SDPA no-mask window-drop (0.39 logit deviation) and the parity harness's module-global contamination. PR #268 (version-aware checkpoint patches, pre-remediation) re-checked on the current tree: gating is by feature probe not version (native_support.py), both probes correctly report the native fixes still absent on installed torch 2.13.0 (stateless._active_reparametrizations and the scoped hooks guard do not exist upstream yet), so all backports apply; the backported branches preserve upstream semantics (higher-order transforms now correct, saved-tensor hooks raise under higher-order instead of silently corrupting), and the four gating regimes are unit-tested (test_checkpoint_gating.py). Not verifiable here: CUDA-only Triton kernel behavior (no GPU in this session — kernel tests are cuda-marked and ran only in their CPU fallbacks), and actual CI gate execution (verified from pr.yml config only). The gate/up in-place mutation finding is code-traced but not runtime-reproduced (Triton path needs CUDA)."
+}
