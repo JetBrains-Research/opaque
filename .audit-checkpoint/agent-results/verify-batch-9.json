@@ -1,0 +1,64 @@
+{
+  "verdicts": [
+    {
+      "index": 54,
+      "title": "dp-sgd.md end-to-end loop still broken (OPQ-144 unfixed)",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "Reproduced against HEAD (50402c8c). docs/user-guide/dp-sgd.md:144 is `for step, batch in enumerate(sampler):` where `sampler` is the PoissonSampler built at :105-110. PoissonSampler.__iter__ (packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py:117-131) yields `list[int]` index lists, and its own docstring (:64-70) says to use it as `DataLoader(dataset, batch_sampler=sampler)`. grep over the whole page returns zero hits for DataLoader/batch_sampler/n_steps/import torchopt/accountant, so: the wrap is never shown; the sampler is built without n_steps so __iter__ takes the `while True` branch and never terminates at the num_steps=1000 that section 1 calibrated against; torchopt.apply_updates (:148) is used with no `import torchopt`; and the loop has no per-step accountant readout. Two corrections to the report: (i) the DP-FTRL 'twin' end-to-end loop (dp-ftrl.md:239-243) is character-for-character the same and is *also* accountant-free -- what dp-ftrl.md has that dp-sgd.md lacks is a separate accounting snippet at :114-119 (`acct |= step; eps_so_far = acct.epsilon_at(...)`); (ii) an additional defect the report missed: `optimizer.update(noised, opt_state, params)` passes params positionally, but every opaque optimizer's update_fn makes params keyword-only -- verified at runtime: `TypeError: make_optimizer_chain.<locals>.update_fn() takes 2 positional arguments but 3 were given` (same bug at dp-ftrl.md:242). Docs-only, no privacy consequence; the block is visibly a skeleton (undefined `model`, unused `fmodel`) and a literal paste dies on NameError before reaching the list-vs-tensor error, which keeps this low. Not a duplicate of an open issue: the umbrella #324 and its sub-issue #416 ('Execute documentation examples and validate public factory signatures') are both closed, so this is an unfixed/reopened instance rather than tracked work.",
+      "corrected_failure_scenario": "A reader treats the DP-SGD guide's only complete training loop as fill-in-the-blanks: it iterates PoissonSampler directly (yielding index lists, not batches), never wraps it in DataLoader(batch_sampler=...), builds the sampler without n_steps so the loop never reaches the calibrated 1000 steps, passes params positionally to optimizer.update (TypeError at runtime), uses torchopt without importing it, and shows no per-step epsilon readout. Result is a broken copy-paste and a user who keeps the wrong iteration and step-count pattern. No epsilon impact -- section 1 still calibrates a correct budget."
+    },
+    {
+      "index": 55,
+      "title": "precision.md binds optimizer.update result as (opt_state, params)",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "docs/user-guide/precision.md:97 reads `opt_state, params = optimizer.update(noisy, opt_state, params=params)`. Verified at runtime that update returns `(updates, new_state)` (`u, s2 = adamw(lr=1e-3).update(g, s, params=p)` -> dict, tuple), so the snippet binds the updates to `opt_state` and the optimizer state tuple to `params`. It is the only such site in the tree: every other doc call site uses `updates, opt_state = optimizer.update(...)` (optimizers.md x5, reference/optimizers.md x4, dp-sgd.md:147, dp-ftrl.md:242, distributed.md:100, noise.md:85/:339, quickstart.md:86, llm_finetuning.ipynb). A second defect in the same line the report did not name: even with the binding fixed, the recipe never calls torchopt.apply_updates, so params are never actually updated. Accountant usage in the same block was fixed (`accountant = accountant | step_process` at :98), confirming the file was touched without repairing this line. Docs-only; a copy-paste fails loudly on the next iteration (model_fn receives a state tuple), so low. Not tracked open: sub-issue #416 and umbrella #324 are closed.",
+      "corrected_failure_scenario": "A user copies the fp16 loss-scaling recipe verbatim; optimizer.update returns (updates, new_state) so `params` is bound to the optimizer state tuple and `opt_state` to the update pytree. The next iteration's model_fn/grad_fn receives the optimizer state as parameters and raises a structural error; separately, the recipe never applies the updates (no torchopt.apply_updates), so it cannot train even if the tuple is unpacked correctly."
+    },
+    {
+      "index": 56,
+      "title": "Schedule-Free citation still lists fabricated author 'Yaida' (OPQ-136 unfixed)",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py:9-11 still reads `Defazio, Yaida, Cutkosky, \"The Road Less Scheduled\", arXiv:2405.15682`. The actual author list of arXiv:2405.15682 is Aaron Defazio, Xingyu (Alice) Yang, Harsh Mehta, Konstantin Mishchenko, Ahmed Khaled, Ashok Cutkosky; 'Yaida' (Sho Yaida) is not an author and reads as a corruption of 'Yang'. A repo-wide grep for 'Yaida' returns exactly this one hit, so the citation-repair work (closed issue #418) missed it; the module's other mentions (:1, :4), optimizers/__init__.py and docs/reference/optimizers.md all say 'Defazio et al.' correctly. Attribution-only defect in an internal implementation docstring, no runtime or privacy effect -- low. Not a duplicate of an open issue (#418 is closed; the open list has no citation item).",
+      "corrected_failure_scenario": "A reviewer or user verifying the schedule-free averaging implementation reads the module docstring's author list, searches for a Defazio/Yaida/Cutkosky paper, finds nothing matching (Sho Yaida is not an author of arXiv:2405.15682), and either wastes time reconciling the reference or copies the wrong attribution onward. No effect on behavior or epsilon."
+    },
+    {
+      "index": 57,
+      "title": "'Enforce Ruff checks for tests' (#706) is a no-op for the root tests/ tree",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "Reproduced empirically. pyproject.toml [tool.ruff.lint].exclude (:225-232) contains \"tests/**\"; because the pattern contains a slash, ruff anchors it to the project root, so it excludes the root tests/ tree only (packages/*/tests are still linted). Probe: a file with F401 + F821 written to tests/_ruff_probe_tmp.py -> `uv run --no-sync ruff check tests/ --no-cache` prints 'All checks passed!' (exit 0); the identical file under packages/opaque-engine/tests/ -> 2 errors, exit 1. Commit 8f638482 (#706, 'ci: enforce Ruff checks for tests') only added `tests/` to the autoformat.yml `ruff format`/`ruff check` argument lists (plus one reformat of tests/integration/alignment/test_mechanism_agnostic.py, i.e. only the *format* half had any effect) and left the lint exclude in place. The dead `\"tests/**\" = [\"INP001\", \"D\", \"PLR2004\"]` per-file-ignores entry at :298 shows the intent was for that tree to be linted. Genuine fail-open but bounded to test sources with no production or privacy impact, and pytest still executes those files -- low. No open issue covers it (#325's CI sub-issues are closed).",
+      "corrected_failure_scenario": "Lint defects (unused imports, undefined names, and every other selected rule) in the root tests/ tree -- which holds the cross-stack integration DP scenarios under tests/integration/** -- are never flagged by CI, despite the gate command `ruff check packages/ tests/` implying coverage; verified by probe, a file with F401+F821 under tests/ passes with 'All checks passed'. Only a runtime pytest failure catches such a defect, and latent code paths escape entirely."
+    },
+    {
+      "index": 58,
+      "title": "Workflow documentation re-drifted after #723: advisory-minimum and matrix claims are stale",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "All three sub-claims verified in the current tree. (a) AGENTS.md:268-269 and CONTRIBUTING.md:162-163 still say the Minimum dependencies lane is advisory, but a31629f2 (#723) deleted the `allow-test-failure` input from python-tests.yml and its uses in pr.yml/ci.yml/prepare-release-implementation.yml; no continue-on-error remains on any test lane (the only two hits are the Qodana job at ci.yml:145 and a preview-wheel cleanup at pr.yml:354), and the python-tests gate (pr.yml:192-227) fails on any needed job whose result != success, with a skip exemption only for `python-tests-cuda*` -- so python-tests-minimum failures block. The same commit correctly updated .github/WORKFLOWS.md:71-72. (b) .github/WORKFLOWS.md:48-53 describes caller-supplied package matrices that callers 'discover once' and checks rendering as `Build / <distribution>`; build-distributions.yml's workflow_call inputs are only artifact-prefix/checkout-ref/retention-days/version (:4-23) and its jobs are named 'Python packages' (:27) and 'opaque-accounting (${{ matrix.target.label }})' (:89) -- no per-distribution check names. (c) docs/user-guide/distributed-trainer.md:90 tells contributors to run `uv run pytest packages/opaque-core/tests/distributed/`; no opaque-core distribution exists (the real path packages/opaque-engine/tests/distributed/ does), and this is now the only opaque-core path reference outside a docstring aside (packages/opaque-accounting/tests/test_smoke.py:1). Documentation-only; the loudest consequence is a maintainer marking never-reporting checks as required in branch protection -- low, no epsilon. Not tracked by an open issue: #412 ('Make contributor, workflow, and export-contract documentation accurate') and umbrella #324 are closed, and this is post-remediation re-drift rather than the same open work.",
+      "corrected_failure_scenario": "A contributor reads AGENTS.md:268 / CONTRIBUTING.md:163, believes a Minimum-dependencies lane failure is advisory, and is blocked by the python-tests gate with no doc explaining why; a maintainer configuring branch protection from .github/WORKFLOWS.md:52 requires `Build / <distribution>` checks that never report (real job names are 'Python packages' and 'opaque-accounting (<label>)'), leaving PRs stuck at 'Expected -- waiting for status'; and a contributor running the documented distributed-test command hits a nonexistent packages/opaque-core path."
+    },
+    {
+      "index": 59,
+      "title": "Python 3.12 advertised in every wheel but executes zero tests since #665",
+      "verdict": "CONFIRMED",
+      "severity_adjusted": "low",
+      "affects_epsilon_adjusted": false,
+      "already_tracked": 0,
+      "reasoning": "Verified: `grep -rn '3\\.12' .github/` returns nothing. Every explicit python-version in the workflow set is 3.11 or 3.13 (pr.yml:95/108/164/181, ci.yml:60/73/121/135, prepare-release-implementation.yml:335/353/421/440, build-distributions.yml:37/129), python-tests.yml's python-version input defaults to '3.11' (:34-38), and validate-distributions.yml:19 matrixes only ['3.11','3.13']. 182b80b1 (#665) is the regression point -- its pr.yml diff shows `python-version: \"3.12\"` -> `\"3.13\"`. Meanwhile every package still ships `Programming Language :: Python :: 3.12` (e.g. opaque-accounting:23, opaque-base:21, opaque-dpftrl:21) and requires-python '>=3.11,<3.14' resolves on 3.12. So the middle supported interpreter has no CI signal at all, while closed issue #428 ('Test the supported Python 3.12 runtime') asserts the opposite. Real coverage gap, but bounded: 3.11 (floor) and 3.13 (ceiling) bracket most interpreter- and resolver-sensitive behavior, and nothing here changes a privacy guarantee -- low, epsilon-neutral. Not a duplicate of an open issue: #428 is closed and the umbrella #325 (with all 12 sub-issues completed) is closed too.",
+      "corrected_failure_scenario": "Wheel metadata advertises Python 3.12 support and requires-python admits it, yet no test lane, no dependency-boundary lane, no distribution-validation leg, and no release lane ever runs on 3.12. A 3.12-only defect -- a dependency resolving to a different wheel, or interpreter-specific behavior in the vmap/pytree layer -- ships in a release with no CI signal, and users on 3.12 are the first to see it."
+    }
+  ]
+}
