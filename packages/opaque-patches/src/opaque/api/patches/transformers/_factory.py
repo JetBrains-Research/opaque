@@ -160,9 +160,11 @@ def _resolve(
         return spec
     if spec in registry:
         return registry[spec]
-    ConfigurationError.raise_(
-        f"Unknown kind {spec!r}; registered: {sorted(registry)}.  "
-        "Pass a callable directly, or use ``register_*_kind`` to add a custom name."
+    raise ConfigurationError(
+        *(
+            f"Unknown kind {spec!r}; registered: {sorted(registry)}.  "
+            "Pass a callable directly, or use ``register_*_kind`` to add a custom name.",
+        )
     )
 
 

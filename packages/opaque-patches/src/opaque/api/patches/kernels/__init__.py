@@ -320,7 +320,7 @@ except ModuleNotFoundError as import_error:
         elif activation in (ACTIVATION_GEGLU_APPROX, "geglu_approx"):
             hidden = opaque_geglu_approx(gate, up)
         else:
-            ConfigurationError.raise_(f"Unknown activation: {activation}")
+            raise ConfigurationError(*(f"Unknown activation: {activation}",))
 
         return hidden @ Wd.transpose(-1, -2) + (hidden @ Ad @ Bd) * Sd
 
@@ -368,7 +368,7 @@ except ModuleNotFoundError as import_error:
             inv = torch.rsqrt(ms + eps_t)
             normed = x2 * inv
         else:
-            ConfigurationError.raise_(casting_mode)
+            raise ConfigurationError(*(casting_mode,))
         out = normed * (weight + offset)
         return out.view(orig)
 

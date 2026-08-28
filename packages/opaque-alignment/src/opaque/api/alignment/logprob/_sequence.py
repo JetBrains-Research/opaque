@@ -81,7 +81,7 @@ def sequence_logp(
     weight = target_weight
     if ld_alpha is not None:
         if shared_prefix_len is None:
-            ConfigurationError.raise_("ld_alpha (LD-DPO) requires shared_prefix_len")
+            raise ConfigurationError(*("ld_alpha (LD-DPO) requires shared_prefix_len",))
         completion_pos = target_mask.to(torch.bool).cumsum(dim=-1)
         prefix_len = shared_prefix_len
         if isinstance(prefix_len, torch.Tensor):

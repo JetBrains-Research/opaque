@@ -152,9 +152,11 @@ def null_ref_context(
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).
     """
     if ref_model is model:
-        ConfigurationError.raise_(
-            "ref_model must be a separate model; omit ref_model to use the "
-            "policy's PEFT reference adapter or adapter-disabled base model."
+        raise ConfigurationError(
+            *(
+                "ref_model must be a separate model; omit ref_model to use the "
+                "policy's PEFT reference adapter or adapter-disabled base model.",
+            )
         )
 
     # ── Row 1: separate ref_model ───────────────────────────────────────────

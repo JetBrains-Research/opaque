@@ -99,15 +99,17 @@ def lion(
         A ``torchopt.base.GradientTransformation``.
     """
     if len(betas) != 2:  # noqa: PLR2004 - Lion exposes the documented beta pair
-        ConfigurationError.raise_(f"betas must contain exactly two values, got {betas}")
+        raise ConfigurationError(
+            *(f"betas must contain exactly two values, got {betas}",)
+        )
     b1, b2 = betas
     if not 0 <= b1 < 1:
-        ConfigurationError.raise_(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+        raise ConfigurationError(*(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}",))
     if not 0 <= b2 < 1:
-        ConfigurationError.raise_(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
+        raise ConfigurationError(*(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}",))
     if weight_decay < 0:
-        ConfigurationError.raise_(
-            f"weight_decay must be non-negative, got {weight_decay}"
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
         )
     return make_optimizer_chain(
         _scale_by_lion(b1, b2),

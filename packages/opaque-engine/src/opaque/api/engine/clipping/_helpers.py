@@ -64,12 +64,16 @@ def batch_size_from_args(args: tuple, batch_argnums: tuple[int, ...]) -> int:
 
     tensor = _first_tensor(first_batch_arg)
     if tensor is None:
-        ConfigurationError.raise_(
-            f"Could not determine batch size: no tensor in batch arg at index {batch_argnums[0]}"
+        raise ConfigurationError(
+            *(
+                f"Could not determine batch size: no tensor in batch arg at index {batch_argnums[0]}",
+            )
         )
     if tensor.ndim < 1:
-        ConfigurationError.raise_(
-            f"Expected batch tensor with ndim >= 1, got 0-d tensor in batch arg at index {batch_argnums[0]}"
+        raise ConfigurationError(
+            *(
+                f"Expected batch tensor with ndim >= 1, got 0-d tensor in batch arg at index {batch_argnums[0]}",
+            )
         )
     return tensor.shape[0]
 

@@ -55,9 +55,11 @@ def mpo_combine(
     """
     missing = weights.keys() - losses.keys()
     if missing:
-        ConfigurationError.raise_(
-            f"weights keys {sorted(missing)} are not present in losses "
-            f"(available: {sorted(losses)})"
+        raise ConfigurationError(
+            *(
+                f"weights keys {sorted(missing)} are not present in losses "
+                f"(available: {sorted(losses)})",
+            )
         )
 
     out: torch.Tensor | None = None
@@ -65,5 +67,5 @@ def mpo_combine(
         term = weight * losses[name]
         out = term if out is None else out + term
     if out is None:
-        ConfigurationError.raise_("weights must select at least one loss term")
+        raise ConfigurationError(*("weights must select at least one loss term",))
     return out

@@ -15,14 +15,14 @@ _MAX_SIGNIFICANCE = 0.5
 
 def validate_significance(significance: float) -> None:
     if not 0 < significance < _MAX_SIGNIFICANCE:
-        ConfigurationError.raise_(
-            f"significance must be in (0, 0.5), got {significance}"
+        raise ConfigurationError(
+            *(f"significance must be in (0, 0.5), got {significance}",)
         )
 
 
 def validate_delta(delta: float) -> None:
     if not 0 <= delta <= 1:
-        ConfigurationError.raise_(f"delta must be in [0, 1], got {delta}")
+        raise ConfigurationError(*(f"delta must be in [0, 1], got {delta}",))
 
 
 def search_ceiling(m: int, delta: float, significance: float) -> float:

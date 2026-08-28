@@ -113,12 +113,14 @@ def make_second_moment_mf_noise(
         st: SecondMomentMFNoiseState,
     ) -> tuple[SecondMomentNoiseOutput, SecondMomentMFNoiseState]:
         if not isinstance(clipped_input, SecondMomentClippingOutput):
-            InputTypeError.raise_(
-                "mf_gaussian_noise was constructed with `second_moment_strategy` "
-                "and expects SecondMomentClippingOutput inputs (paired-stream).  "
-                "Build the paired form upstream via "
-                "`clipped_grad(..., second_moment=True)`, or rebuild the noise "
-                "function without `second_moment_strategy` for single-stream mode."
+            raise InputTypeError(
+                *(
+                    "mf_gaussian_noise was constructed with `second_moment_strategy` "
+                    "and expects SecondMomentClippingOutput inputs (paired-stream).  "
+                    "Build the paired form upstream via "
+                    "`clipped_grad(..., second_moment=True)`, or rebuild the noise "
+                    "function without `second_moment_strategy` for single-stream mode.",
+                )
             )
         first_clipped = _expect_clipped(clipped_input.grads, op="mf_gaussian_noise")
         second_clipped = _expect_clipped(

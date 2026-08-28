@@ -107,9 +107,11 @@ def _scale_by_ademamix(
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, AdEMAMixState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
-            ConfigurationError.raise_(
-                "ademamix.update() received both noisy_squared_grads and "
-                "noise_stddev (DP-BC); pass exactly one (or neither)."
+            raise ConfigurationError(
+                *(
+                    "ademamix.update() received both noisy_squared_grads and "
+                    "noise_stddev (DP-BC); pass exactly one (or neither).",
+                )
             )
 
         t = state.step + 1
@@ -245,24 +247,24 @@ def ademamix(
         A ``torchopt.base.GradientTransformation``.
     """
     if len(betas) != 3:  # noqa: PLR2004 - AdEMAMix exposes its documented beta triple
-        ConfigurationError.raise_(
-            f"betas must contain exactly three values, got {betas}"
+        raise ConfigurationError(
+            *(f"betas must contain exactly three values, got {betas}",)
         )
     b1, b2, b3 = betas
     for name, b in (("β₁", b1), ("β₂", b2), ("β₃", b3)):
         if not 0 <= b < 1:
-            ConfigurationError.raise_(f"{name} must satisfy 0 <= b < 1, got {b}")
+            raise ConfigurationError(*(f"{name} must satisfy 0 <= b < 1, got {b}",))
     if alpha < 0:
-        ConfigurationError.raise_(f"alpha must be non-negative, got {alpha}")
+        raise ConfigurationError(*(f"alpha must be non-negative, got {alpha}",))
     if eps <= 0:
-        ConfigurationError.raise_(f"eps must be positive, got {eps}")
+        raise ConfigurationError(*(f"eps must be positive, got {eps}",))
     if weight_decay < 0:
-        ConfigurationError.raise_(
-            f"weight_decay must be non-negative, got {weight_decay}"
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
         )
     if update_rms_clip is not None and update_rms_clip <= 0:
-        ConfigurationError.raise_(
-            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
     bc_floor = eps * eps
     moment = _scale_by_ademamix(

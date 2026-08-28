@@ -161,10 +161,12 @@ def _scale_by_adam(
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, AdamState]:
         if noisy_squared_grads is not None and noise_stddev is not None:
-            ConfigurationError.raise_(
-                "adamw.update() received both noisy_squared_grads and "
-                "noise_stddev (DP-BC); these select mutually exclusive v-update "
-                "branches.  Pass exactly one (or neither, for vanilla AdamW)."
+            raise ConfigurationError(
+                *(
+                    "adamw.update() received both noisy_squared_grads and "
+                    "noise_stddev (DP-BC); these select mutually exclusive v-update "
+                    "branches.  Pass exactly one (or neither, for vanilla AdamW).",
+                )
             )
 
         t = state.step + 1
@@ -367,21 +369,23 @@ def _validate(
     update_rms_clip: float | None,
 ) -> None:
     if eps <= 0:
-        ConfigurationError.raise_(f"eps must be positive, got {eps}")
+        raise ConfigurationError(*(f"eps must be positive, got {eps}",))
     if len(betas) != 2:  # noqa: PLR2004 - Adam exposes the documented beta pair
-        ConfigurationError.raise_(f"betas must contain exactly two values, got {betas}")
+        raise ConfigurationError(
+            *(f"betas must contain exactly two values, got {betas}",)
+        )
     b1, b2 = betas
     if not 0 <= b1 < 1:
-        ConfigurationError.raise_(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+        raise ConfigurationError(*(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}",))
     if not 0 <= b2 < 1:
-        ConfigurationError.raise_(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
+        raise ConfigurationError(*(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}",))
     if weight_decay < 0:
-        ConfigurationError.raise_(
-            f"weight_decay must be non-negative, got {weight_decay}"
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
         )
     if update_rms_clip is not None and update_rms_clip <= 0:
-        ConfigurationError.raise_(
-            f"update_rms_clip must be positive when set, got {update_rms_clip}"
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
 
 

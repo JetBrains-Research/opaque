@@ -25,10 +25,12 @@ def _unwrap_update_value(updates: Any) -> Any:
     if isinstance(updates, NoisedPytree):
         return updates.pytree
     if isinstance(updates, ClippedPytree):
-        InputTypeError.raise_(
-            "optimizer.update() received ClippedPytree updates that have not "
-            "passed through a noise mechanism. Pass NoisedPytree outputs from "
-            "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+        raise InputTypeError(
+            *(
+                "optimizer.update() received ClippedPytree updates that have not "
+                "passed through a noise mechanism. Pass NoisedPytree outputs from "
+                "a DP mechanism, or unwrap `.pytree` explicitly for non-private use.",
+            )
         )
     if isinstance(updates, SecondMomentNoiseOutput):
         return _unwrap_update_value(updates.noisy_grads)

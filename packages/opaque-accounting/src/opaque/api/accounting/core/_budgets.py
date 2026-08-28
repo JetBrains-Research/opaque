@@ -95,9 +95,9 @@ class EpsilonBudget:
     def __post_init__(self) -> None:
         """Validate budget parameters."""
         if self.epsilon <= 0:
-            PrivacyBudgetError.raise_(f"epsilon must be > 0, got {self.epsilon}")
+            raise PrivacyBudgetError(*(f"epsilon must be > 0, got {self.epsilon}",))
         if not (0 < self.delta < 1):
-            PrivacyBudgetError.raise_(f"delta must be in (0, 1), got {self.delta}")
+            raise PrivacyBudgetError(*(f"delta must be in (0, 1), got {self.delta}",))
 
     @property
     def value(self) -> float:
@@ -129,9 +129,9 @@ class DeltaBudget:
     def __post_init__(self) -> None:
         """Validate budget parameters."""
         if not (0 < self.delta < 1):
-            PrivacyBudgetError.raise_(f"delta must be in (0, 1), got {self.delta}")
+            raise PrivacyBudgetError(*(f"delta must be in (0, 1), got {self.delta}",))
         if self.epsilon <= 0:
-            PrivacyBudgetError.raise_(f"epsilon must be > 0, got {self.epsilon}")
+            raise PrivacyBudgetError(*(f"epsilon must be > 0, got {self.epsilon}",))
 
     @property
     def value(self) -> float:
@@ -163,8 +163,8 @@ class AdvantageBudget:
     def __post_init__(self) -> None:
         """Validate budget parameter."""
         if not (0 < self.advantage < 1):
-            PrivacyBudgetError.raise_(
-                f"advantage must be in (0, 1), got {self.advantage}"
+            raise PrivacyBudgetError(
+                *(f"advantage must be in (0, 1), got {self.advantage}",)
             )
 
     @property
@@ -197,9 +197,9 @@ class BetaBudget:
     def __post_init__(self) -> None:
         """Validate budget parameters."""
         if not (0 < self.beta < 1):
-            PrivacyBudgetError.raise_(f"beta must be in (0, 1), got {self.beta}")
+            raise PrivacyBudgetError(*(f"beta must be in (0, 1), got {self.beta}",))
         if not (0 < self.alpha < 1):
-            PrivacyBudgetError.raise_(f"alpha must be in (0, 1), got {self.alpha}")
+            raise PrivacyBudgetError(*(f"alpha must be in (0, 1), got {self.alpha}",))
 
     @property
     def value(self) -> float:
@@ -231,9 +231,9 @@ class RiskBudget:
     def __post_init__(self) -> None:
         """Validate budget parameters."""
         if not (0 < self.risk < 1):
-            PrivacyBudgetError.raise_(f"risk must be in (0, 1), got {self.risk}")
+            raise PrivacyBudgetError(*(f"risk must be in (0, 1), got {self.risk}",))
         if not (0 < self.prior < 1):
-            PrivacyBudgetError.raise_(f"prior must be in (0, 1), got {self.prior}")
+            raise PrivacyBudgetError(*(f"prior must be in (0, 1), got {self.prior}",))
 
     @property
     def value(self) -> float:
@@ -297,8 +297,8 @@ def register_budget_serializer(
         name = type_name or _budget_type_name(typ)
         registered_type = _BUDGET_TYPES.get(name)
         if registered_type is not None and registered_type is not typ:
-            CheckpointError.raise_(
-                f"Budget checkpoint type name already registered: {name}"
+            raise CheckpointError(
+                *(f"Budget checkpoint type name already registered: {name}",)
             )
         previous = _BUDGET_SERIALIZERS.get(typ)
         if previous is not None and previous[0] != name:
@@ -314,17 +314,21 @@ def budget_state_dict(budget: Budget) -> dict[str, Any]:
     with _BUDGET_LOCK:
         serializer = _BUDGET_SERIALIZERS.get(type(budget))
     if serializer is None:
-        CheckpointError.raise_(
-            f"Cannot serialize budget {_budget_type_name(type(budget))}: "
-            "no budget serializer is registered. Register one with "
-            "`register_budget_serializer`."
+        raise CheckpointError(
+            *(
+                f"Cannot serialize budget {_budget_type_name(type(budget))}: "
+                "no budget serializer is registered. Register one with "
+                "`register_budget_serializer`.",
+            )
         )
     type_name, state_dict_fn = serializer
     state = dict(state_dict_fn(budget))
     if "type" in state:
-        CheckpointError.raise_(
-            f"Budget serializer for {_budget_type_name(type(budget))} returned "
-            "reserved key 'type'."
+        raise CheckpointError(
+            *(
+                f"Budget serializer for {_budget_type_name(type(budget))} returned "
+                "reserved key 'type'.",
+            )
         )
     return {"type": type_name} | state
 
@@ -335,17 +339,18 @@ def budget_from_state_dict(state: Mapping[str, Any]) -> Budget:
     try:
         type_name = data.pop("type")
     except KeyError as exc:
-        CheckpointError.raise_(
-            "Budget checkpoint is missing required key 'type'.",
-            cause=exc,
-        )
+        raise CheckpointError(
+            *("Budget checkpoint is missing required key 'type'.",)
+        ) from exc
     if not isinstance(type_name, str):
-        CheckpointError.raise_("Budget checkpoint key 'type' must be a string.")
+        raise CheckpointError(*("Budget checkpoint key 'type' must be a string.",))
     with _BUDGET_LOCK:
         from_state_dict_fn = _BUDGET_DESERIALIZERS.get(type_name)
     if from_state_dict_fn is None:
-        CheckpointError.raise_(
-            f"Cannot restore budget type {type_name!r}: no budget serializer is registered."
+        raise CheckpointError(
+            *(
+                f"Cannot restore budget type {type_name!r}: no budget serializer is registered.",
+            )
         )
     return from_state_dict_fn(data)
 

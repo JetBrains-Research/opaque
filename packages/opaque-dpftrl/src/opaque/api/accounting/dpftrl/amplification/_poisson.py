@@ -78,10 +78,12 @@ class CyclicPoisson(DpHorizonProcess):
             case IdentityStrategy():
                 return 1
             case _:
-                InputTypeError.raise_(
-                    "CyclicPoisson.atomic_unit: inner.strategy must be "
-                    "BandMfStrategy or IdentityStrategy, got "
-                    f"{type(self.inner.strategy).__name__}."
+                raise InputTypeError(
+                    *(
+                        "CyclicPoisson.atomic_unit: inner.strategy must be "
+                        "BandMfStrategy or IdentityStrategy, got "
+                        f"{type(self.inner.strategy).__name__}.",
+                    )
                 )
 
     @property
@@ -107,26 +109,34 @@ class CyclicPoisson(DpHorizonProcess):
         # ``(truncated_batch_size, dataset_size)`` into
         # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
         if (self.truncated_batch_size is None) != (self.dataset_size is None):
-            ConfigurationError.raise_(
-                "CyclicPoisson: truncated_batch_size and dataset_size must be set "
-                "together (both None for plain Poisson, both set for truncated)."
+            raise ConfigurationError(
+                *(
+                    "CyclicPoisson: truncated_batch_size and dataset_size must be set "
+                    "together (both None for plain Poisson, both set for truncated).",
+                )
             )
         if self.truncated_batch_size is not None:
             if int(self.truncated_batch_size) < 1:
-                ConfigurationError.raise_(
-                    "CyclicPoisson: truncated_batch_size must be >= 1, got "
-                    f"{self.truncated_batch_size}"
+                raise ConfigurationError(
+                    *(
+                        "CyclicPoisson: truncated_batch_size must be >= 1, got "
+                        f"{self.truncated_batch_size}",
+                    )
                 )
             if int(self.dataset_size) < 1:
-                ConfigurationError.raise_(
-                    f"CyclicPoisson: dataset_size must be >= 1, got {self.dataset_size}"
+                raise ConfigurationError(
+                    *(
+                        f"CyclicPoisson: dataset_size must be >= 1, got {self.dataset_size}",
+                    )
                 )
             if not isinstance(self.inner.strategy, IdentityStrategy):
-                ConfigurationError.raise_(
-                    "CyclicPoisson: truncated Poisson is only supported for "
-                    "IdentityStrategy inner (BandMfStrategy per-group truncation "
-                    "is not implemented). Use plain Poisson "
-                    "(truncated_batch_size=None) with BandMfStrategy."
+                raise ConfigurationError(
+                    *(
+                        "CyclicPoisson: truncated Poisson is only supported for "
+                        "IdentityStrategy inner (BandMfStrategy per-group truncation "
+                        "is not implemented). Use plain Poisson "
+                        "(truncated_batch_size=None) with BandMfStrategy.",
+                    )
                 )
 
     def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
@@ -165,8 +175,8 @@ class CyclicPoisson(DpHorizonProcess):
         on the K-prefix of the N-step output).
         """
         if n_steps <= 0 or n_steps > self.n_steps:
-            ConfigurationError.raise_(
-                f"n_steps ({n_steps}) must be in [1, {self.n_steps}]"
+            raise ConfigurationError(
+                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
             )
         config = get_discretization(
             discretization=discretization,
@@ -193,9 +203,11 @@ class CyclicPoisson(DpHorizonProcess):
             effective_nm = float(self.inner.noise_multiplier)
             num_groups = int(n_steps)
         else:
-            InputTypeError.raise_(
-                "Poisson requires a BandMfStrategy or IdentityStrategy "
-                f"inner.strategy, got {type(s).__name__}."
+            raise InputTypeError(
+                *(
+                    "Poisson requires a BandMfStrategy or IdentityStrategy "
+                    f"inner.strategy, got {type(s).__name__}.",
+                )
             )
 
         if effective_nm == 0:
@@ -297,18 +309,22 @@ def poisson(
         eps = proc.epsilon_at(1e-5)
     """
     if not isinstance(inner, MfGaussian):
-        InputTypeError.raise_(
-            f"poisson() requires an MfGaussian inner, got {type(inner).__name__}."
+        raise InputTypeError(
+            *(f"poisson() requires an MfGaussian inner, got {type(inner).__name__}.",)
         )
     if not isinstance(inner.strategy, (BandMfStrategy, IdentityStrategy)):
-        InputTypeError.raise_(
-            "poisson() requires inner.strategy to be BandMfStrategy or "
-            f"IdentityStrategy, got {type(inner.strategy).__name__}."
+        raise InputTypeError(
+            *(
+                "poisson() requires inner.strategy to be BandMfStrategy or "
+                f"IdentityStrategy, got {type(inner.strategy).__name__}.",
+            )
         )
     if not 0 < sample_rate <= 1:
-        ConfigurationError.raise_(f"sample_rate must be in (0, 1], got {sample_rate}")
+        raise ConfigurationError(
+            *(f"sample_rate must be in (0, 1], got {sample_rate}",)
+        )
     if int(n_steps) < 1:
-        ConfigurationError.raise_(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
     return CyclicPoisson(
         inner=inner,
         sample_rate=float(sample_rate),

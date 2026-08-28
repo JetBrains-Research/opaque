@@ -83,18 +83,20 @@ class BallsInBinsSampler(Sampler):
         super().__init__()
 
         if len(data_source) == 0:
-            ConfigurationError.raise_("data_source must not be empty")
+            raise ConfigurationError(*("data_source must not be empty",))
         if num_bins < _MIN_NUM_BINS:
-            ConfigurationError.raise_(f"num_bins must be >= 2, got {num_bins}")
+            raise ConfigurationError(*(f"num_bins must be >= 2, got {num_bins}",))
         if n_steps is not None:
             if n_steps < 1:
-                ConfigurationError.raise_(
-                    f"n_steps must be >= 1 or None, got {n_steps}"
+                raise ConfigurationError(
+                    *(f"n_steps must be >= 1 or None, got {n_steps}",)
                 )
             if n_steps % num_bins != 0:
-                ConfigurationError.raise_(
-                    f"n_steps ({n_steps}) must be a positive multiple of "
-                    f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
+                raise ConfigurationError(
+                    *(
+                        f"n_steps ({n_steps}) must be a positive multiple of "
+                        f"num_bins ({num_bins}); BnB analysis assumes integer epochs.",
+                    )
                 )
 
         self.data_source: Sized = data_source
@@ -156,7 +158,7 @@ class BallsInBinsSampler(Sampler):
             TypeError: If n_steps is None (infinite iteration).
         """
         if self.n_steps is None:
-            InputTypeError.raise_("len() of unsized object (n_steps=None)")
+            raise InputTypeError(*("len() of unsized object (n_steps=None)",))
         return self.n_steps - self._consumed
 
     @property
@@ -208,12 +210,14 @@ def _from_state_dict_balls_in_bins(
     saved_n = int(sd["num_samples"])
     template_n = len(template.data_source)
     if saved_n != template_n:
-        ConfigurationError.raise_(
-            f"BallsInBinsSampler.from_state_dict: template dataset length "
-            f"{template_n} does not match snapshot num_samples={saved_n}.  "
-            "Restoring with a differently-sized dataset would silently "
-            "produce a different bin assignment, voiding the BnB privacy "
-            "accounting (Lemma 3.2 requires fixed assignment across the run)."
+        raise ConfigurationError(
+            *(
+                f"BallsInBinsSampler.from_state_dict: template dataset length "
+                f"{template_n} does not match snapshot num_samples={saved_n}.  "
+                "Restoring with a differently-sized dataset would silently "
+                "produce a different bin assignment, voiding the BnB privacy "
+                "accounting (Lemma 3.2 requires fixed assignment across the run).",
+            )
         )
     sampler = BallsInBinsSampler(
         template.data_source,

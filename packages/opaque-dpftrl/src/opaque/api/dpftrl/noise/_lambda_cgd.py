@@ -97,8 +97,10 @@ def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
     zero out the released noise under ``normalized=True``.
     """
     if step < 0 or step >= n_steps:
-        ConfigurationError.raise_(
-            f"column-norm step {step} is outside the calibrated horizon [0, {n_steps})."
+        raise ConfigurationError(
+            *(
+                f"column-norm step {step} is outside the calibrated horizon [0, {n_steps}).",
+            )
         )
     if lambda_ == 0.0:
         return 1.0
@@ -121,7 +123,9 @@ class LambdaCgdStrategy:
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0 or self.lambda_ >= 1.0:
-            ConfigurationError.raise_(f"lambda_ must be in [0, 1), got {self.lambda_}")
+            raise ConfigurationError(
+                *(f"lambda_ must be in [0, 1), got {self.lambda_}",)
+            )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         # [1, λ, λ², ..., λ^{n_steps-1}].

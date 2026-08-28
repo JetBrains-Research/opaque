@@ -141,8 +141,8 @@ def mf_gaussian(
     """
     nm = float(noise_multiplier)
     if nm < 0:
-        ConfigurationError.raise_(
-            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        raise ConfigurationError(
+            *(f"noise_multiplier must be non-negative, got {noise_multiplier}",)
         )
     return MfGaussian(
         noise_multiplier=nm,

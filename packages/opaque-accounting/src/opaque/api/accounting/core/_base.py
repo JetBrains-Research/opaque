@@ -442,9 +442,11 @@ class DpProcess(ABC):
             ValueError: If count < 1.
         """
         if count < 1:
-            ConfigurationError.raise_(
-                f"Repeat count must be >= 1, got {count}. "
-                "Use identity() for zero privacy loss."
+            raise ConfigurationError(
+                *(
+                    f"Repeat count must be >= 1, got {count}. "
+                    "Use identity() for zero privacy loss.",
+                )
             )
 
         from opaque.api.accounting.core.composition.types import Repeated

@@ -319,12 +319,16 @@ def save_dp_runtime_state(  # noqa: PLR0913
 ) -> None:
     """Save the DP runtime bundle as a :class:`RuntimeCheckpoint`."""
     if not isinstance(clip_state, ClipState):
-        CheckpointError.raise_(
-            f"clip_state must be a ClipState instance, got {type(clip_state).__name__}"
+        raise CheckpointError(
+            *(
+                f"clip_state must be a ClipState instance, got {type(clip_state).__name__}",
+            )
         )
     if not isinstance(noise_state, NoiseState):
-        CheckpointError.raise_(
-            f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}"
+        raise CheckpointError(
+            *(
+                f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}",
+            )
         )
     bundle = RuntimeCheckpoint(
         version=DP_STATE_BUNDLE_VERSION,
@@ -368,14 +372,18 @@ def load_dp_runtime_state(path: str) -> RuntimeCheckpoint:
     """
     bundle = torch.load(path, map_location="cpu", weights_only=False)
     if not isinstance(bundle, RuntimeCheckpoint):
-        CheckpointError.raise_(
-            f"dp_state.pt at {path} did not deserialize to RuntimeCheckpoint "
-            f"(got {type(bundle).__name__}); checkpoint may be from an older "
-            "trainer version."
+        raise CheckpointError(
+            *(
+                f"dp_state.pt at {path} did not deserialize to RuntimeCheckpoint "
+                f"(got {type(bundle).__name__}); checkpoint may be from an older "
+                "trainer version.",
+            )
         )
     if bundle.version != DP_STATE_BUNDLE_VERSION:
-        CheckpointError.raise_(
-            f"unsupported dp_state bundle version {bundle.version} "
-            f"(expected {DP_STATE_BUNDLE_VERSION})"
+        raise CheckpointError(
+            *(
+                f"unsupported dp_state bundle version {bundle.version} "
+                f"(expected {DP_STATE_BUNDLE_VERSION})",
+            )
         )
     return bundle

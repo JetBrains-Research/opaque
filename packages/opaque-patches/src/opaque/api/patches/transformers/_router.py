@@ -125,9 +125,11 @@ def apply_transformers_model_patches(
     if family is None or apply_fn is None:
         # Only raise if user explicitly requested dropout/batchify for unknown family
         if (dropout_explicit and dropout) or (batchify_explicit and batchify):
-            ConfigurationError.raise_(
-                "opaque: dropout/batchify patches require a registered "
-                f"transformers family; got {family!r} ({type(model).__name__})"
+            raise ConfigurationError(
+                *(
+                    "opaque: dropout/batchify patches require a registered "
+                    f"transformers family; got {family!r} ({type(model).__name__})",
+                )
             )
         logger.debug(
             "opaque: no registered apply function for model family %s; "

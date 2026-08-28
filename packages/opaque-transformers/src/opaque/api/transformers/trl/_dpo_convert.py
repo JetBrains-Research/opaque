@@ -102,12 +102,14 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
     mapped = [_TRL_TO_OPAQUE_LOSS_TYPE.get(v, v) for v in values]
     unsupported = [v for v in mapped if v not in _OPAQUE_DPO_LOSS_TYPES]
     if unsupported:
-        ConfigurationError.raise_(
-            f"trl_dpo_config.loss_type contains unsupported heads: "
-            f"{sorted(set(unsupported))}. Opaque implements: "
-            f"{sorted(_OPAQUE_DPO_LOSS_TYPES)}. The Adversarial Optimal "
-            f"Transport family (``aot``, ``aot_unpaired``) added in TRL 1.x "
-            f"is not in opaque."
+        raise ConfigurationError(
+            *(
+                f"trl_dpo_config.loss_type contains unsupported heads: "
+                f"{sorted(set(unsupported))}. Opaque implements: "
+                f"{sorted(_OPAQUE_DPO_LOSS_TYPES)}. The Adversarial Optimal "
+                f"Transport family (``aot``, ``aot_unpaired``) added in TRL 1.x "
+                f"is not in opaque.",
+            )
         )
     return {"loss_type": mapped}
 
@@ -148,8 +150,8 @@ def _convert_trl_dpo_config(
     """Translate a ``trl.DPOConfig`` instance into opaque ``DPOConfig`` kwargs."""
     trl = _import_trl()
     if not isinstance(trl_cfg, trl.DPOConfig):
-        InputTypeError.raise_(
-            f"Expected ``trl.DPOConfig`` instance, got {type(trl_cfg).__name__}."
+        raise InputTypeError(
+            *(f"Expected ``trl.DPOConfig`` instance, got {type(trl_cfg).__name__}.",)
         )
 
     dp_layer = _normalize_dp_overrides(dp_overrides)

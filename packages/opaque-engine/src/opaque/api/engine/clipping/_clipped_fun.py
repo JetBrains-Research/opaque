@@ -109,8 +109,8 @@ def _all_finite(value: Any) -> torch.Tensor:
         )
         result = finite if result is None else result & finite
     if result is None:
-        InputTypeError.raise_(
-            "Expected at least one tensor leaf when checking finiteness."
+        raise InputTypeError(
+            *("Expected at least one tensor leaf when checking finiteness.",)
         )
     return result
 
@@ -198,14 +198,16 @@ def _validate_clipping_norm(clipping_norm: float | PerGroup) -> None:
     if isinstance(clipping_norm, PerGroup):
         for group_name, value in clipping_norm.values.items():
             if value <= 0:
-                ConfigurationError.raise_(
-                    "clipping_norm must be positive for all groups, "
-                    f"got {value} for group '{group_name}'"
+                raise ConfigurationError(
+                    *(
+                        "clipping_norm must be positive for all groups, "
+                        f"got {value} for group '{group_name}'",
+                    )
                 )
         return
     if clipping_norm <= 0:
-        ConfigurationError.raise_(
-            f"clipping_norm must be positive, got {clipping_norm}"
+        raise ConfigurationError(
+            *(f"clipping_norm must be positive, got {clipping_norm}",)
         )
 
 
@@ -273,9 +275,11 @@ def _microbatch_accumulate(
 
         first_tensor = get_first_tensor(first_batch_arg)
         if first_tensor is None:
-            ConfigurationError.raise_(
-                "Could not determine batch size: no torch.Tensor found in the "
-                f"batch argument PyTree at index {first_batch_idx}."
+            raise ConfigurationError(
+                *(
+                    "Could not determine batch size: no torch.Tensor found in the "
+                    f"batch argument PyTree at index {first_batch_idx}.",
+                )
             )
         batch_size = first_tensor.shape[0]
 
@@ -390,9 +394,11 @@ def _microbatch_accumulate_stats_only(
 
         first_tensor = get_first_tensor(first_batch_arg)
         if first_tensor is None:
-            ConfigurationError.raise_(
-                "Could not determine batch size: no torch.Tensor found in the "
-                f"batch argument PyTree at index {first_batch_idx}."
+            raise ConfigurationError(
+                *(
+                    "Could not determine batch size: no torch.Tensor found in the "
+                    f"batch argument PyTree at index {first_batch_idx}.",
+                )
             )
         batch_size = first_tensor.shape[0]
 
@@ -636,8 +642,8 @@ def clipped_fun(
         is paired with :class:`ClippingStats`.
     """
     if return_aux and return_stats:
-        ConfigurationError.raise_(
-            "return_stats cannot be combined with return_aux=True"
+        raise ConfigurationError(
+            *("return_stats cannot be combined with return_aux=True",)
         )
 
     # Normalize batch_argnums to tuple

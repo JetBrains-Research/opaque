@@ -71,8 +71,8 @@ def assert_scalar_equal(
             rtol=rtol,
         )
     if not equal:
-        OperationError.raise_(
-            f"{name} mismatch across ranks: min={min_value}, max={max_value}."
+        raise OperationError(
+            *(f"{name} mismatch across ranks: min={min_value}, max={max_value}.",)
         )
 
 
@@ -84,7 +84,7 @@ def assert_string_equal(value: str | None, *, name: str) -> None:
     values: list[str | None] = [None] * get_world_size()
     dist.all_gather_object(values, value)
     if any(other != values[0] for other in values[1:]):
-        OperationError.raise_(f"{name} mismatch across ranks.")
+        raise OperationError(*(f"{name} mismatch across ranks.",))
 
 
 def assert_pytree_equal(
@@ -138,16 +138,18 @@ def reduce_scalar(
     Python float.
     """
     if isinstance(value, bool) or not isinstance(value, (float, int)):
-        InputTypeError.raise_(f"value must be a float or int, got {type(value)}")
+        raise InputTypeError(*(f"value must be a float or int, got {type(value)}",))
     if compute_dtype is not None and not torch.is_floating_point(
         torch.empty((), dtype=compute_dtype)
     ):
-        InputTypeError.raise_(
-            f"compute_dtype must be a real floating-point dtype, got {compute_dtype!r}."
+        raise InputTypeError(
+            *(
+                f"compute_dtype must be a real floating-point dtype, got {compute_dtype!r}.",
+            )
         )
     if isinstance(value, int) and compute_dtype is not None:
-        InputTypeError.raise_(
-            "compute_dtype is only supported for floating-point values."
+        raise InputTypeError(
+            *("compute_dtype is only supported for floating-point values.",)
         )
     if not is_distributed():
         if isinstance(value, int) and op == "mean":
@@ -162,10 +164,12 @@ def reduce_scalar(
         )
         if backend == "nccl":
             if not torch.cuda.is_available():
-                OperationError.raise_(
-                    "Distributed backend is 'nccl' but CUDA is not available; "
-                    "provide an explicit `device` to `reduce_scalar` or initialize "
-                    "with a CUDA-capable process."
+                raise OperationError(
+                    *(
+                        "Distributed backend is 'nccl' but CUDA is not available; "
+                        "provide an explicit `device` to `reduce_scalar` or initialize "
+                        "with a CUDA-capable process.",
+                    )
                 )
             device = torch.device(f"cuda:{torch.cuda.current_device()}")
         else:
@@ -200,42 +204,52 @@ def _validate_gathered_tensor_column(
 ) -> int:
     reference = tensors[0]
     if reference.ndim == 0:
-        ConfigurationError.raise_(
-            "Distributed tensor gathering cannot concatenate scalar tensor "
-            f"leaf {leaf_index}; provide at least one dimension."
+        raise ConfigurationError(
+            *(
+                "Distributed tensor gathering cannot concatenate scalar tensor "
+                f"leaf {leaf_index}; provide at least one dimension.",
+            )
         )
     normalized_dim = dim if dim >= 0 else reference.ndim + dim
     if normalized_dim < 0 or normalized_dim >= reference.ndim:
-        ConfigurationError.raise_(
-            f"Gather dimension {dim} is out of range for tensor leaf {leaf_index} "
-            f"with {reference.ndim} dimensions."
+        raise ConfigurationError(
+            *(
+                f"Gather dimension {dim} is out of range for tensor leaf {leaf_index} "
+                f"with {reference.ndim} dimensions.",
+            )
         )
 
     reference_rank = ranks[0]
     for rank, tensor in zip(ranks[1:], tensors[1:], strict=True):
         if tensor.dtype != reference.dtype:
-            InputTypeError.raise_(
-                "Distributed tensor gathering requires matching dtypes; "
-                f"leaf {leaf_index} has {reference.dtype} on rank "
-                f"{reference_rank} and "
-                f"{tensor.dtype} on rank {rank}."
+            raise InputTypeError(
+                *(
+                    "Distributed tensor gathering requires matching dtypes; "
+                    f"leaf {leaf_index} has {reference.dtype} on rank "
+                    f"{reference_rank} and "
+                    f"{tensor.dtype} on rank {rank}.",
+                )
             )
         if tensor.ndim != reference.ndim:
-            ConfigurationError.raise_(
-                "Distributed tensor gathering requires matching tensor ranks; "
-                f"leaf {leaf_index} has {reference.ndim} dimensions on rank "
-                f"{reference_rank} "
-                f"and {tensor.ndim} on rank {rank}."
+            raise ConfigurationError(
+                *(
+                    "Distributed tensor gathering requires matching tensor ranks; "
+                    f"leaf {leaf_index} has {reference.ndim} dimensions on rank "
+                    f"{reference_rank} "
+                    f"and {tensor.ndim} on rank {rank}.",
+                )
             )
         for axis, (expected, actual) in enumerate(
             zip(reference.shape, tensor.shape, strict=True)
         ):
             if axis != normalized_dim and actual != expected:
-                ConfigurationError.raise_(
-                    "Distributed tensor gathering requires matching "
-                    "non-concatenated dimensions; "
-                    f"leaf {leaf_index}, axis {axis} has size {expected} on "
-                    f"rank {reference_rank} and {actual} on rank {rank}."
+                raise ConfigurationError(
+                    *(
+                        "Distributed tensor gathering requires matching "
+                        "non-concatenated dimensions; "
+                        f"leaf {leaf_index}, axis {axis} has size {expected} on "
+                        f"rank {reference_rank} and {actual} on rank {rank}.",
+                    )
                 )
     return normalized_dim
 
@@ -256,10 +270,12 @@ def _merge_gathered_pytrees(
     for rank, payload in present[1:]:
         other = tree_structure(payload)
         if other != treedef:
-            InputTypeError.raise_(
-                "Distributed tensor gathering requires matching pytree "
-                "structures across non-empty ranks; "
-                f"rank {first_rank} has {treedef} and rank {rank} has {other}."
+            raise InputTypeError(
+                *(
+                    "Distributed tensor gathering requires matching pytree "
+                    "structures across non-empty ranks; "
+                    f"rank {first_rank} has {treedef} and rank {rank} has {other}.",
+                )
             )
 
     leaf_lists = [tree_flatten(payload)[0] for _, payload in present]
@@ -269,10 +285,12 @@ def _merge_gathered_pytrees(
     merged_leaves: list[torch.Tensor] = []
     for leaf_index, column in enumerate(zip(*leaf_lists, strict=True)):
         if not all(isinstance(leaf, torch.Tensor) for leaf in column):
-            InputTypeError.raise_(
-                "Distributed tensor gathering supports tensor leaves only; "
-                f"leaf {leaf_index} has types "
-                f"{[type(leaf).__name__ for leaf in column]}."
+            raise InputTypeError(
+                *(
+                    "Distributed tensor gathering supports tensor leaves only; "
+                    f"leaf {leaf_index} has types "
+                    f"{[type(leaf).__name__ for leaf in column]}.",
+                )
             )
         tensors = list(column)
         normalized_dim = _validate_gathered_tensor_column(
@@ -341,15 +359,19 @@ def _validate_field_op(field_name: str, field_op: Any) -> None:
     """
     if isinstance(field_op, str):
         if field_op not in _VALID_FIELD_OPS:
-            ConfigurationError.raise_(
-                f"field_ops[{field_name!r}] has unsupported operation {field_op!r}. "
-                f"Expected one of {sorted(_VALID_FIELD_OPS)} or a callable."
+            raise ConfigurationError(
+                *(
+                    f"field_ops[{field_name!r}] has unsupported operation {field_op!r}. "
+                    f"Expected one of {sorted(_VALID_FIELD_OPS)} or a callable.",
+                )
             )
         return
     if not callable(field_op):
-        ConfigurationError.raise_(
-            f"field_ops[{field_name!r}] must be an operation name or a callable, "
-            f"got {type(field_op).__name__}."
+        raise ConfigurationError(
+            *(
+                f"field_ops[{field_name!r}] must be an operation name or a callable, "
+                f"got {type(field_op).__name__}.",
+            )
         )
     try:
         signature = inspect.signature(field_op, follow_wrapped=False)
@@ -358,11 +380,12 @@ def _validate_field_op(field_name: str, field_op: Any) -> None:
     try:
         signature.bind(None, None)
     except TypeError as error:
-        ConfigurationError.raise_(
-            f"field_ops[{field_name!r}] must be callable as fn(value, device), "
-            f"but its signature is {signature}: {error}.",
-            cause=error,
-        )
+        raise ConfigurationError(
+            *(
+                f"field_ops[{field_name!r}] must be callable as fn(value, device), "
+                f"but its signature is {signature}: {error}.",
+            )
+        ) from error
 
 
 def sync_object(
@@ -394,7 +417,7 @@ def sync_object(
     prevents rank-local values from changing the collective schedule.
     """
     if not is_dataclass(state):
-        InputTypeError.raise_(f"state must be a dataclass, got {type(state)}")
+        raise InputTypeError(*(f"state must be a dataclass, got {type(state)}",))
 
     dataclass_fields = fields(state)
     state_fields = {field.name for field in dataclass_fields}
@@ -407,8 +430,12 @@ def sync_object(
             details.append(f"unknown fields: {sorted(unknown_fields)}")
         if missing_fields:
             details.append(f"missing fields: {sorted(missing_fields)}")
-        ConfigurationError.raise_(
-            "field_ops must define every dataclass field; " + "; ".join(details) + "."
+        raise ConfigurationError(
+            *(
+                "field_ops must define every dataclass field; "
+                + "; ".join(details)
+                + ".",
+            )
         )
 
     for field in dataclass_fields:
@@ -429,18 +456,22 @@ def sync_object(
             if isinstance(result, bool) or not isinstance(result, (float, int)):
                 continue
             if isinstance(value, bool):
-                InputTypeError.raise_(
-                    f"Callable field_ops[{field_name!r}] cannot update a bool field; "
-                    "use 'local' or return None for assertion-only behavior."
+                raise InputTypeError(
+                    *(
+                        f"Callable field_ops[{field_name!r}] cannot update a bool field; "
+                        "use 'local' or return None for assertion-only behavior.",
+                    )
                 )
             synced = int(result) if isinstance(value, int) else float(result)
             updates[field_name] = synced
             continue
         if field_op == "assert_equal":
             if not isinstance(value, (float, int)) or isinstance(value, bool):
-                InputTypeError.raise_(
-                    f"field_ops[{field_name!r}]='assert_equal' requires a float or int, "
-                    f"got {type(value).__name__}."
+                raise InputTypeError(
+                    *(
+                        f"field_ops[{field_name!r}]='assert_equal' requires a float or int, "
+                        f"got {type(value).__name__}.",
+                    )
                 )
             assert_scalar_equal(
                 value,
@@ -455,15 +486,19 @@ def sync_object(
             present_min = reduce_scalar(is_present, op="min", device=device)
             present_max = reduce_scalar(is_present, op="max", device=device)
             if present_min != present_max:
-                OperationError.raise_(
-                    f"{type(state).__name__}.{field_name} presence mismatch across ranks."
+                raise OperationError(
+                    *(
+                        f"{type(state).__name__}.{field_name} presence mismatch across ranks.",
+                    )
                 )
             if not is_present:
                 continue
             if not isinstance(value, (float, int)) or isinstance(value, bool):
-                InputTypeError.raise_(
-                    f"field_ops[{field_name!r}]='assert_optional_equal' requires "
-                    f"a float, int, or None, got {type(value).__name__}."
+                raise InputTypeError(
+                    *(
+                        f"field_ops[{field_name!r}]='assert_optional_equal' requires "
+                        f"a float, int, or None, got {type(value).__name__}.",
+                    )
                 )
             assert_scalar_equal(
                 value,
@@ -474,9 +509,11 @@ def sync_object(
             )
             continue
         if not isinstance(value, (float, int)) or isinstance(value, bool):
-            InputTypeError.raise_(
-                f"field_ops[{field_name!r}]={field_op!r} requires a float or int, "
-                f"got {type(value).__name__}."
+            raise InputTypeError(
+                *(
+                    f"field_ops[{field_name!r}]={field_op!r} requires a float or int, "
+                    f"got {type(value).__name__}.",
+                )
             )
         synced = reduce_scalar(value, op=field_op, device=device)
         if isinstance(value, int):
@@ -562,9 +599,11 @@ def sync(*states: Any) -> Any:
             sync_fn = _resolve_sync_fn(state_type)
         if sync_fn is not None:
             return sync_fn(single)
-        InputTypeError.raise_(
-            f"No sync function registered for {state_type.__name__}. "
-            f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
+        raise InputTypeError(
+            *(
+                f"No sync function registered for {state_type.__name__}. "
+                f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}",
+            )
         )
 
     if len(states) == 1:

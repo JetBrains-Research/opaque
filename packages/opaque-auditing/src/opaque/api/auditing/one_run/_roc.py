@@ -21,11 +21,11 @@ def pareto_frontier(points: np.ndarray) -> np.ndarray:
         or points.shape[0] < 2  # noqa: PLR2004 - a segment needs two points
         or points.shape[1] != 2  # noqa: PLR2004 - ROC points have two coordinates
     ):
-        ConfigurationError.raise_(
-            f"Expected at least two 2D points, got shape {points.shape}"
+        raise ConfigurationError(
+            *(f"Expected at least two 2D points, got shape {points.shape}",)
         )
     if not np.all(points[:-1, 0] <= points[1:, 0]):
-        ConfigurationError.raise_("Expected points to be sorted by x-coordinate")
+        raise ConfigurationError(*("Expected points to be sorted by x-coordinate",))
 
     indices = np.arange(points.shape[0])
     while True:
@@ -59,8 +59,8 @@ def get_tn_fn_counts(
     out_scores = np.asarray(out_scores)
 
     if in_scores.size == 0 and out_scores.size == 0:
-        ConfigurationError.raise_(
-            "At least one of the canary score arrays must be non-empty"
+        raise ConfigurationError(
+            *("At least one of the canary score arrays must be non-empty",)
         )
 
     unique_scores_sorted = np.union1d(in_scores, out_scores)
@@ -93,7 +93,7 @@ def tpr_at_given_fpr(
     """TPR at a given FPR along the empirical ROC (linear interpolation)."""
     fpr_arr = np.asarray(fpr)
     if not np.all((fpr_arr >= 0) & (fpr_arr <= 1)):
-        ConfigurationError.raise_(f"fpr must be in [0, 1], got {fpr}")
+        raise ConfigurationError(*(f"fpr must be in [0, 1], got {fpr}",))
 
     n_pos = tp_counts[-1]
     n_neg = fp_counts[-1]

@@ -80,10 +80,10 @@ def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
     in_scores, out_scores = coin_flip.split_scores(scores)
 
     if in_scores.size == 0 or out_scores.size == 0:
-        ConfigurationError.raise_("Both in_scores and out_scores must be non-empty")
+        raise ConfigurationError(*("Both in_scores and out_scores must be non-empty",))
 
     if not np.all(np.isfinite(in_scores)) or not np.all(np.isfinite(out_scores)):
-        ConfigurationError.raise_("scores must contain only finite values")
+        raise ConfigurationError(*("scores must contain only finite values",))
 
     thresholds, tn_counts, fn_counts = get_tn_fn_counts(in_scores, out_scores)
 
@@ -175,8 +175,8 @@ class OneRunEstimate:
     def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
         """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
         if grid_size < _MIN_GRID_SIZE:
-            ConfigurationError.raise_(
-                f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}"
+            raise ConfigurationError(
+                *(f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}",)
             )
         return GdpMethod(_estimate=self, grid_size=grid_size)
 
@@ -289,11 +289,15 @@ class OneRunEstimate:
             return point
 
         if not 0 < confidence < 1:
-            ConfigurationError.raise_(f"confidence must be in (0, 1), got {confidence}")
+            raise ConfigurationError(
+                *(f"confidence must be in (0, 1), got {confidence}",)
+            )
         if key is None:
-            ConfigurationError.raise_(
-                "attack_auc(confidence=...) requires an explicit RNG key for "
-                "bootstrap resampling"
+            raise ConfigurationError(
+                *(
+                    "attack_auc(confidence=...) requires an explicit RNG key for "
+                    "bootstrap resampling",
+                )
             )
 
         significance = 1 - confidence

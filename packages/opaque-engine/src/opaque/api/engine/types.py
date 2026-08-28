@@ -128,15 +128,19 @@ class PerGroup:
         """
         if isinstance(other, PerGroup):
             if other.groups != self.groups:
-                ConfigurationError.raise_(
-                    "PerGroup × PerGroup requires identical group mappings; "
-                    f"got groups with {len(self.groups)} vs "
-                    f"{len(other.groups)} parameter assignments."
+                raise ConfigurationError(
+                    *(
+                        "PerGroup × PerGroup requires identical group mappings; "
+                        f"got groups with {len(self.groups)} vs "
+                        f"{len(other.groups)} parameter assignments.",
+                    )
                 )
             if set(other.values) != set(self.values):
-                ConfigurationError.raise_(
-                    "PerGroup × PerGroup requires identical group sets; "
-                    f"got {sorted(self.values)} vs {sorted(other.values)}."
+                raise ConfigurationError(
+                    *(
+                        "PerGroup × PerGroup requires identical group sets; "
+                        f"got {sorted(self.values)} vs {sorted(other.values)}.",
+                    )
                 )
             return PerGroup(
                 self.groups,
@@ -203,10 +207,12 @@ NoiseStddev = Any
 
 def _validate_public_scalar(scalar: Any, *, op: str) -> float:
     if isinstance(scalar, bool) or not isinstance(scalar, Real):
-        InputTypeError.raise_(
-            f"{op} only supports public real-number scalars. "
-            "Operate on `.pytree` and reconstruct the clipped value with an "
-            "explicit max_norm when the clipped interpretation is unclear."
+        raise InputTypeError(
+            *(
+                f"{op} only supports public real-number scalars. "
+                "Operate on `.pytree` and reconstruct the clipped value with an "
+                "explicit max_norm when the clipped interpretation is unclear.",
+            )
         )
     return float(scalar)
 
@@ -309,12 +315,12 @@ class ClippedPytree:
                 or any per-group bound negative.
         """
         if noise_multiplier < 0:
-            ConfigurationError.raise_(
-                f"noise_multiplier must be non-negative, got {noise_multiplier}"
+            raise ConfigurationError(
+                *(f"noise_multiplier must be non-negative, got {noise_multiplier}",)
             )
         if allocation not in ("isotropic", "optimal"):
-            ConfigurationError.raise_(
-                f"allocation must be 'isotropic' or 'optimal', got {allocation!r}."
+            raise ConfigurationError(
+                *(f"allocation must be 'isotropic' or 'optimal', got {allocation!r}.",)
             )
         if isinstance(self.max_norm, PerGroup):
             if allocation == "isotropic":
@@ -346,25 +352,25 @@ class ClippedPytree:
         return self._scaled(1.0 / factor)
 
     def __rtruediv__(self, scalar: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("reverse division"))
+        raise InputTypeError(*(_unsupported_message("reverse division"),))
 
     def __neg__(self) -> ClippedPytree:
         return self._scaled(-1.0)
 
     def __add__(self, other: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("addition"))
+        raise InputTypeError(*(_unsupported_message("addition"),))
 
     def __radd__(self, other: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("addition"))
+        raise InputTypeError(*(_unsupported_message("addition"),))
 
     def __sub__(self, other: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("subtraction"))
+        raise InputTypeError(*(_unsupported_message("subtraction"),))
 
     def __rsub__(self, other: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("subtraction"))
+        raise InputTypeError(*(_unsupported_message("subtraction"),))
 
     def __pow__(self, exponent: Any) -> ClippedPytree:
-        InputTypeError.raise_(_unsupported_message("power"))
+        raise InputTypeError(*(_unsupported_message("power"),))
 
     def clone(self) -> ClippedPytree:
         """Clone tensor leaves while preserving metadata."""

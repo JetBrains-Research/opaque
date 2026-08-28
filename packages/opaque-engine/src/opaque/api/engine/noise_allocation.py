@@ -76,19 +76,23 @@ def per_group_noise_stddev(max_norm: PerGroup, noise_multiplier: float) -> PerGr
             is negative.
     """
     if not isinstance(max_norm, PerGroup):
-        InputTypeError.raise_(
-            "per_group_noise_stddev requires a PerGroup max_norm, "
-            f"got {type(max_norm).__name__}."
+        raise InputTypeError(
+            *(
+                "per_group_noise_stddev requires a PerGroup max_norm, "
+                f"got {type(max_norm).__name__}.",
+            )
         )
     if noise_multiplier < 0:
-        ConfigurationError.raise_(
-            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        raise ConfigurationError(
+            *(f"noise_multiplier must be non-negative, got {noise_multiplier}",)
         )
     for group_name, value in max_norm.values.items():
         if value < 0:
-            ConfigurationError.raise_(
-                "per-group bounds must be non-negative, "
-                f"got {value} for group '{group_name}'."
+            raise ConfigurationError(
+                *(
+                    "per-group bounds must be non-negative, "
+                    f"got {value} for group '{group_name}'.",
+                )
             )
     if noise_multiplier == 0.0:
         # Non-private run: zero noise regardless of the (possibly infinite,
@@ -110,17 +114,19 @@ def _validate_paired_sensitivity(value: float | PerGroup, *, label: str) -> None
     if isinstance(value, PerGroup):
         for name, v in value.values.items():
             if v < 0:
-                ConfigurationError.raise_(
-                    f"{label} per-group bounds must be non-negative, "
-                    f"got {v} for group '{name}'."
+                raise ConfigurationError(
+                    *(
+                        f"{label} per-group bounds must be non-negative, "
+                        f"got {v} for group '{name}'.",
+                    )
                 )
     else:
         if not isinstance(value, (int, float)):
-            InputTypeError.raise_(
-                f"{label} must be float or PerGroup, got {type(value).__name__}."
+            raise InputTypeError(
+                *(f"{label} must be float or PerGroup, got {type(value).__name__}.",)
             )
         if value < 0:
-            ConfigurationError.raise_(f"{label} must be non-negative, got {value}.")
+            raise ConfigurationError(*(f"{label} must be non-negative, got {value}.",))
 
 
 def _sum_sensitivity(value: float | PerGroup) -> float:
@@ -211,31 +217,37 @@ def paired_noise_stddevs(
             or any sensitivity is negative.
     """
     if isinstance(first, PerGroup) != isinstance(second, PerGroup):
-        InputTypeError.raise_(
-            "paired_noise_stddevs requires both streams to have the same "
-            f"kind; got first={type(first).__name__}, "
-            f"second={type(second).__name__}."
+        raise InputTypeError(
+            *(
+                "paired_noise_stddevs requires both streams to have the same "
+                f"kind; got first={type(first).__name__}, "
+                f"second={type(second).__name__}.",
+            )
         )
     if noise_multiplier < 0:
-        ConfigurationError.raise_(
-            f"noise_multiplier must be non-negative, got {noise_multiplier}"
+        raise ConfigurationError(
+            *(f"noise_multiplier must be non-negative, got {noise_multiplier}",)
         )
     _validate_paired_sensitivity(first, label="first")
     _validate_paired_sensitivity(second, label="second")
     if isinstance(first, PerGroup):
         assert isinstance(second, PerGroup)
         if first.groups != second.groups:
-            ConfigurationError.raise_(
-                "paired_noise_stddevs requires identical group mappings on "
-                "both streams; got "
-                f"{len(first.groups)} vs {len(second.groups)} parameter "
-                "assignments."
+            raise ConfigurationError(
+                *(
+                    "paired_noise_stddevs requires identical group mappings on "
+                    "both streams; got "
+                    f"{len(first.groups)} vs {len(second.groups)} parameter "
+                    "assignments.",
+                )
             )
         if set(first.values) != set(second.values):
-            ConfigurationError.raise_(
-                "paired_noise_stddevs requires identical group sets on both "
-                f"streams; got {sorted(first.values)} vs "
-                f"{sorted(second.values)}."
+            raise ConfigurationError(
+                *(
+                    "paired_noise_stddevs requires identical group sets on both "
+                    f"streams; got {sorted(first.values)} vs "
+                    f"{sorted(second.values)}.",
+                )
             )
     sum_total = _sum_sensitivity(first) + _sum_sensitivity(second)
     sigma_first = _scale_sensitivity(first, sum_total, noise_multiplier)
@@ -260,12 +272,12 @@ def resolve_paired_clipped(
     first_clipped = clipped_input.grads
     second_clipped = clipped_input.squared_grads
     if not isinstance(first_clipped, ClippedPytree):
-        InputTypeError.raise_(
-            "SecondMomentClippingOutput.grads must be a ClippedPytree."
+        raise InputTypeError(
+            *("SecondMomentClippingOutput.grads must be a ClippedPytree.",)
         )
     if not isinstance(second_clipped, ClippedPytree):
-        InputTypeError.raise_(
-            "SecondMomentClippingOutput.squared_grads must be a ClippedPytree."
+        raise InputTypeError(
+            *("SecondMomentClippingOutput.squared_grads must be a ClippedPytree.",)
         )
     std_first, std_second = paired_noise_stddevs(
         noise_multiplier,

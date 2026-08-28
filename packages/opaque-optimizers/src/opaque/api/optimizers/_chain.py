@@ -145,10 +145,12 @@ def make_optimizer_chain(
                 return updates.pytree, {}
             return updates.pytree, {"noise_stddev": updates.noise_stddev}
         if isinstance(updates, ClippedPytree):
-            InputTypeError.raise_(
-                "optimizer.update() received ClippedPytree updates that have not "
-                "passed through a noise mechanism. Pass NoisedPytree outputs from "
-                "a DP mechanism, or unwrap `.pytree` explicitly for non-private use."
+            raise InputTypeError(
+                *(
+                    "optimizer.update() received ClippedPytree updates that have not "
+                    "passed through a noise mechanism. Pass NoisedPytree outputs from "
+                    "a DP mechanism, or unwrap `.pytree` explicitly for non-private use.",
+                )
             )
         return updates, {}
 
@@ -156,9 +158,11 @@ def make_optimizer_chain(
         if isinstance(value, NoisedPytree):
             return value.pytree
         if isinstance(value, ClippedPytree):
-            InputTypeError.raise_(
-                f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
-                "passed through a noise mechanism."
+            raise InputTypeError(
+                *(
+                    f"SecondMomentNoiseOutput.{name} is a ClippedPytree that has not "
+                    "passed through a noise mechanism.",
+                )
             )
         return value
 

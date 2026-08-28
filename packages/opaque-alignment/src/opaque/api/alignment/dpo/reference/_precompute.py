@@ -101,14 +101,14 @@ def _canonical_identity_value(value: Any, path: str = "cache_identity") -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            ConfigurationError.raise_(f"{path} contains a non-finite float")
+            raise ConfigurationError(*(f"{path} contains a non-finite float",))
         return value
     if isinstance(value, Mapping):
         normalized: dict[str, Any] = {}
         for key, item in value.items():
             if not isinstance(key, str):
-                InputTypeError.raise_(
-                    f"{path} mapping keys must be strings, got {type(key)!r}"
+                raise InputTypeError(
+                    *(f"{path} mapping keys must be strings, got {type(key)!r}",)
                 )
             normalized[key] = _canonical_identity_value(item, f"{path}.{key}")
         return normalized
@@ -117,9 +117,11 @@ def _canonical_identity_value(value: Any, path: str = "cache_identity") -> Any:
             _canonical_identity_value(item, f"{path}[{index}]")
             for index, item in enumerate(value)
         ]
-    InputTypeError.raise_(
-        f"{path} contains unsupported value {type(value)!r}; use only JSON-like "
-        "scalars, string-keyed mappings, and sequences"
+    raise InputTypeError(
+        *(
+            f"{path} contains unsupported value {type(value)!r}; use only JSON-like "
+            "scalars, string-keyed mappings, and sequences",
+        )
     )
 
 
@@ -135,8 +137,10 @@ def _cache_fingerprint(
     """
     dataset_id = _dataset_fingerprint(dataset)
     if dataset_id is None:
-        ConfigurationError.raise_(
-            "dataset must expose a deterministic `_fingerprint` for reference caching"
+        raise ConfigurationError(
+            *(
+                "dataset must expose a deterministic `_fingerprint` for reference caching",
+            )
         )
     payload = {
         "version": _CACHE_FINGERPRINT_VERSION,
@@ -252,10 +256,12 @@ def _resolve_sharding(shard: bool | None) -> bool:
     if shard is None:
         return is_distributed()
     if shard and not is_distributed():
-        OperationError.raise_(
-            "shard=True requires an initialised process group; call "
-            "torch.distributed.init_process_group first, or pass shard=None "
-            "to shard only when one is live."
+        raise OperationError(
+            *(
+                "shard=True requires an initialised process group; call "
+                "torch.distributed.init_process_group first, or pass shard=None "
+                "to shard only when one is live.",
+            )
         )
     return shard
 
@@ -326,10 +332,12 @@ def _gather_columns(
     for name in columns:
         rows = int(gathered[name].shape[0])
         if rows != expected_rows:
-            OperationError.raise_(
-                f"reference column {name!r} yielded {rows} values for a dataset "
-                f"of {expected_rows} examples; either `ref` did not return one "
-                "value per row, or the ranks disagree on the dataset"
+            raise OperationError(
+                *(
+                    f"reference column {name!r} yielded {rows} values for a dataset "
+                    f"of {expected_rows} examples; either `ref` did not return one "
+                    "value per row, or the ranks disagree on the dataset",
+                )
             )
     return gathered
 
@@ -412,9 +420,11 @@ def compute_ref_logprobs_for_dataset(
         dataset_id = _dataset_fingerprint(dataset)
         assert_string_equal(dataset_id, name="reference precompute dataset fingerprint")
         if dataset_id is None:
-            ConfigurationError.raise_(
-                "dataset must expose a deterministic `_fingerprint` for "
-                "distributed reference precomputation"
+            raise ConfigurationError(
+                *(
+                    "dataset must expose a deterministic `_fingerprint` for "
+                    "distributed reference precomputation",
+                )
             )
 
     path: str | None = None

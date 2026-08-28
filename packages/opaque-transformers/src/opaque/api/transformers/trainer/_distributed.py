@@ -149,18 +149,22 @@ def validate_ddp_backend(args: Any, ddp: DDPState) -> None:
     configured_backend = str(configured).lower()
     if not ddp.is_distributed:
         if configured_backend in _BACKEND_ENV_DEPENDENT_HINTS:
-            ConfigurationError.raise_(
-                f"ddp_backend={configured_backend!r} requires a distributed process "
-                f"group initialized with vendor runtime "
-                f"({_BACKEND_ENV_DEPENDENT_HINTS[configured_backend]}), but no "
-                "process group is currently initialized."
+            raise ConfigurationError(
+                *(
+                    f"ddp_backend={configured_backend!r} requires a distributed process "
+                    f"group initialized with vendor runtime "
+                    f"({_BACKEND_ENV_DEPENDENT_HINTS[configured_backend]}), but no "
+                    "process group is currently initialized.",
+                )
             )
         return
     live_backend = (ddp.backend or "").lower()
     if live_backend and configured_backend != live_backend:
-        ConfigurationError.raise_(
-            "Configured ddp_backend does not match initialized process group: "
-            f"ddp_backend={configured_backend!r}, live_backend={live_backend!r}."
+        raise ConfigurationError(
+            *(
+                "Configured ddp_backend does not match initialized process group: "
+                f"ddp_backend={configured_backend!r}, live_backend={live_backend!r}.",
+            )
         )
     # (Once the group is initialized ``get_backend()`` is always non-empty, so
     # the mismatch check above already covers env-dependent backends — no

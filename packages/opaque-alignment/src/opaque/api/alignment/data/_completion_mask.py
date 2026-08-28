@@ -84,13 +84,15 @@ def apply_chat_template_with_mask(
     if active_template is None:
         active_template = getattr(tokenizer, "chat_template", None)
     if not active_template or "{% generation %}" not in active_template:
-        ConfigurationError.raise_(
-            "apply_chat_template_with_mask: the active chat template does not "
-            "carry the '{% generation %}' / '{% endgeneration %}' markers that "
-            "return_assistant_tokens_mask=True relies on, so no "
-            "assistant-token mask can be produced.  Install them first with "
-            "opaque.alignment.data.get_training_chat_template:\n\n"
-            "    tokenizer.chat_template = get_training_chat_template(tokenizer)\n"
+        raise ConfigurationError(
+            *(
+                "apply_chat_template_with_mask: the active chat template does not "
+                "carry the '{% generation %}' / '{% endgeneration %}' markers that "
+                "return_assistant_tokens_mask=True relies on, so no "
+                "assistant-token mask can be produced.  Install them first with "
+                "opaque.alignment.data.get_training_chat_template:\n\n"
+                "    tokenizer.chat_template = get_training_chat_template(tokenizer)\n",
+            )
         )
 
     encoded = tokenizer.apply_chat_template(
@@ -103,13 +105,15 @@ def apply_chat_template_with_mask(
 
     assistant_masks = encoded.get("assistant_masks")
     if not assistant_masks:
-        ConfigurationError.raise_(
-            "apply_chat_template_with_mask: the tokenizer returned no "
-            "assistant-token mask.  This means the chat template does not "
-            "carry the '{% generation %}' / '{% endgeneration %}' markers that "
-            "return_assistant_tokens_mask=True relies on.  Install them first "
-            "with opaque.alignment.data.get_training_chat_template:\n\n"
-            "    tokenizer.chat_template = get_training_chat_template(tokenizer)\n"
+        raise ConfigurationError(
+            *(
+                "apply_chat_template_with_mask: the tokenizer returned no "
+                "assistant-token mask.  This means the chat template does not "
+                "carry the '{% generation %}' / '{% endgeneration %}' markers that "
+                "return_assistant_tokens_mask=True relies on.  Install them first "
+                "with opaque.alignment.data.get_training_chat_template:\n\n"
+                "    tokenizer.chat_template = get_training_chat_template(tokenizer)\n",
+            )
         )
 
     result: dict[str, Any] = {

@@ -125,10 +125,12 @@ def gradient_scores(
     _validate_batch_argnums(batch_argnums, len(args))
 
     if 0 in batch_argnums:
-        ConfigurationError.raise_(
-            "gradient_scores differentiates w.r.t. the first argument "
-            "(position 0), which must not be in batch_argnums. "
-            f"Got batch_argnums={batch_argnums}."
+        raise ConfigurationError(
+            *(
+                "gradient_scores differentiates w.r.t. the first argument "
+                "(position 0), which must not be in batch_argnums. "
+                f"Got batch_argnums={batch_argnums}.",
+            )
         )
 
     loader = _scoring_loader(

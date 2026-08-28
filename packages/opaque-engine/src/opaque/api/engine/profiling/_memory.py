@@ -356,8 +356,10 @@ class _StepPerfBuilder:
             RuntimeError: If accessed before the context manager exits.
         """
         if self._perf is None:
-            OperationError.raise_(
-                "StepPerf is not available until the step_perf context manager exits."
+            raise OperationError(
+                *(
+                    "StepPerf is not available until the step_perf context manager exits.",
+                )
             )
         return self._perf
 

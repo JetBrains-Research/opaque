@@ -70,9 +70,11 @@ def _validate_vmap_dims(in_dims, *, name, batched_indices):
     for index, batch_dim in enumerate(in_dims):
         expected = 0 if index in batched_indices else None
         if batch_dim != expected:
-            ConfigurationError.raise_(
-                f"{name} vmap requires inputs {sorted(batched_indices)} to be batched "
-                f"at dim 0 and all other inputs to be unbatched, got {in_dims}"
+            raise ConfigurationError(
+                *(
+                    f"{name} vmap requires inputs {sorted(batched_indices)} to be batched "
+                    f"at dim 0 and all other inputs to be unbatched, got {in_dims}",
+                )
             )
 
 

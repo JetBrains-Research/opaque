@@ -25,9 +25,11 @@ def strategy_cache_key(
 ) -> tuple[type[Any], tuple[object, ...]]:
     """Return every strategy recipe input that affects an ``n_steps`` query."""
     if not dataclasses.is_dataclass(strategy):
-        InputTypeError.raise_(
-            "strategy_cache_key() requires a dataclass strategy, got "
-            f"{type(strategy).__name__}."
+        raise InputTypeError(
+            *(
+                "strategy_cache_key() requires a dataclass strategy, got "
+                f"{type(strategy).__name__}.",
+            )
         )
     return (
         type(strategy),

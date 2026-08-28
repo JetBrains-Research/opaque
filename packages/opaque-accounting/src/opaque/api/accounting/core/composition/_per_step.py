@@ -58,12 +58,14 @@ class PerStep(DpProcess):
         mc_failure_probability: float | None = None,
     ) -> Pld:
         if count < 1:
-            ConfigurationError.raise_(f"count ({count}) must be >= 1")
+            raise ConfigurationError(*(f"count ({count}) must be >= 1",))
         if count > self.process.n_steps:
-            ConfigurationError.raise_(
-                f"count ({count}) exceeds n_steps ({self.process.n_steps}); "
-                f"{type(self.process).__name__} is undefined beyond its "
-                "declared horizon."
+            raise ConfigurationError(
+                *(
+                    f"count ({count}) exceeds n_steps ({self.process.n_steps}); "
+                    f"{type(self.process).__name__} is undefined beyond its "
+                    "declared horizon.",
+                )
             )
         return self.process.pld_at(
             count,
@@ -80,8 +82,8 @@ class PerStep(DpProcess):
 def per_step(process: DpHorizonProcess) -> PerStep:
     """Wrap a whole-horizon process for ``acc |= step`` training loops."""
     if not isinstance(process, DpHorizonProcess):
-        InputTypeError.raise_(
-            f"per_step() requires a DpHorizonProcess, got {type(process).__name__}."
+        raise InputTypeError(
+            *(f"per_step() requires a DpHorizonProcess, got {type(process).__name__}.",)
         )
     return PerStep(process=process)
 

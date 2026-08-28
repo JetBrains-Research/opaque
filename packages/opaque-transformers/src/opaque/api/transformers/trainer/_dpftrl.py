@@ -17,8 +17,6 @@ it with :func:`opaque.accounting.per_step` for the
 
 from __future__ import annotations
 
-from opaque.exceptions import ConfigurationError
-
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +47,7 @@ from opaque.dpsgd.sampling import (
     KOutOfTSampler,
     PoissonSampler,
 )
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -175,9 +174,11 @@ def build_amplifier_factory(
             return _ftrl_balls_in_bins(mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns)
 
     else:
-        ConfigurationError.raise_(
-            f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
-            f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'."
+        raise ConfigurationError(
+            *(
+                f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
+                f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'.",
+            )
         )
     return amp
 
@@ -236,14 +237,18 @@ def build_sampler(
         k_raw = sk.get("k")
         allocation = sk.get("allocation")
         if k_raw is None or allocation is None:
-            ConfigurationError.raise_(
-                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                "'k' and 'allocation'."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'k' and 'allocation'.",
+                )
             )
         if allocation not in ("block", "total"):
-            ConfigurationError.raise_(
-                "sampling_kwargs['allocation'] must be 'block' or 'total', got "
-                f"{allocation!r}."
+            raise ConfigurationError(
+                *(
+                    "sampling_kwargs['allocation'] must be 'block' or 'total', got "
+                    f"{allocation!r}.",
+                )
             )
         return KOutOfTSampler(
             dataset,
@@ -254,10 +259,12 @@ def build_sampler(
         )
     if sampling_mode == "b_min_sep":
         if mf is None or noise_multiplier is None:
-            ConfigurationError.raise_(
-                "sampling_mode='b_min_sep' requires a built MFContext and a "
-                "calibrated noise_multiplier; got mf=None or "
-                "noise_multiplier=None."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='b_min_sep' requires a built MFContext and a "
+                    "calibrated noise_multiplier; got mf=None or "
+                    "noise_multiplier=None.",
+                )
             )
         amp = mf.amplifier_factory(noise_multiplier)
         return BMinSepSampler(
@@ -276,9 +283,11 @@ def build_sampler(
         )
     if sampling_mode == "cyclic_poisson":
         if mf is None:
-            ConfigurationError.raise_(
-                "sampling_mode='cyclic_poisson' requires a built MFContext; "
-                "got mf=None."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a built MFContext; "
+                    "got mf=None.",
+                )
             )
         return CyclicPoissonSampler(
             dataset,
@@ -289,7 +298,7 @@ def build_sampler(
         )
     if sampling_mode == "sequential":
         return SequentialBatchSampler(dataset, batch_size=expected_batch_size)
-    ConfigurationError.raise_(f"Unknown sampling_mode {sampling_mode!r}")
+    raise ConfigurationError(*(f"Unknown sampling_mode {sampling_mode!r}",))
 
 
 __all__ = [

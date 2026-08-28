@@ -239,11 +239,13 @@ def _optim_collapse(hf: dict[str, Any]) -> dict[str, Any]:
     optim_str = str(optim_str).lower()
 
     if optim_str in _HF_PAGED_OPTIMS:
-        ConfigurationError.raise_(
-            f"hf_training_arguments.optim={optim_value!r}: Quantized / "
-            f"Apex-fused optimizers are not in opaque-engine's torchopt "
-            f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
-            f"fused CUDA kernel)."
+        raise ConfigurationError(
+            *(
+                f"hf_training_arguments.optim={optim_value!r}: Quantized / "
+                f"Apex-fused optimizers are not in opaque-engine's torchopt "
+                f"path. Use ``optim='adamw'`` (opaque's functional AdamW has no "
+                f"fused CUDA kernel).",
+            )
         )
     if optim_str in {"adamw_torch", "adamw_hf"}:
         return {"optim": "adamw"}
@@ -461,10 +463,12 @@ def _convert_hf_training_arguments(
         ) from e
 
     if not isinstance(hf_args, HFTrainingArguments):
-        InputTypeError.raise_(
-            f"Expected ``transformers.TrainingArguments`` instance, got "
-            f"{type(hf_args).__name__}. To convert a dict, build a "
-            "``TrainingArguments(**your_dict)`` first."
+        raise InputTypeError(
+            *(
+                f"Expected ``transformers.TrainingArguments`` instance, got "
+                f"{type(hf_args).__name__}. To convert a dict, build a "
+                "``TrainingArguments(**your_dict)`` first.",
+            )
         )
 
     source_values = _get_dataclass_field_values(hf_args)

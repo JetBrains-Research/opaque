@@ -97,13 +97,15 @@ def _validate_auto_params(R: float | PerGroup, gamma: float) -> None:
     if isinstance(R, PerGroup):
         for gname, val in R.values.items():
             if val <= 0:
-                ConfigurationError.raise_(
-                    f"R must be positive for all groups, got {val} for group '{gname}'"
+                raise ConfigurationError(
+                    *(
+                        f"R must be positive for all groups, got {val} for group '{gname}'",
+                    )
                 )
     elif R <= 0:
-        ConfigurationError.raise_(f"R must be positive, got {R}")
+        raise ConfigurationError(*(f"R must be positive, got {R}",))
     if gamma <= 0:
-        ConfigurationError.raise_(f"gamma must be positive, got {gamma}")
+        raise ConfigurationError(*(f"gamma must be positive, got {gamma}",))
 
 
 def auto_clipped_fun(

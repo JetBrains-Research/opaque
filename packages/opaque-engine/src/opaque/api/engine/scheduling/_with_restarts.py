@@ -61,12 +61,12 @@ def with_restarts(
     ``[transition_begin, transition_begin + transition_steps)``.
     """
     if num_cycles <= 0:
-        ConfigurationError.raise_(
-            f"with_restarts requires num_cycles > 0; got {num_cycles}."
+        raise ConfigurationError(
+            *(f"with_restarts requires num_cycles > 0; got {num_cycles}.",)
         )
     if transition_steps <= 0:
-        ConfigurationError.raise_(
-            f"with_restarts requires transition_steps > 0; got {transition_steps}."
+        raise ConfigurationError(
+            *(f"with_restarts requires transition_steps > 0; got {transition_steps}.",)
         )
     # ``num_cycles`` need not divide ``transition_steps``: ``WithRestarts``
     # uses a real-valued cycle length so restart boundaries land at

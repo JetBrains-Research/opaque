@@ -9,13 +9,12 @@
 
 from __future__ import annotations
 
-from opaque.exceptions import ConfigurationError
-
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from torch.utils.data import Sampler
 
+from opaque.exceptions import ConfigurationError
 from opaque.random import fold_in
 from opaque.random.types import RngKey
 
@@ -50,14 +49,14 @@ class KOutOfTSampler(Sampler):
     ):
         super().__init__()
         if len(data_source) == 0:
-            ConfigurationError.raise_("data_source must not be empty")
+            raise ConfigurationError(*("data_source must not be empty",))
         if t < 1:
-            ConfigurationError.raise_(f"t must be >= 1, got {t}")
+            raise ConfigurationError(*(f"t must be >= 1, got {t}",))
         if not 1 <= k <= t:
-            ConfigurationError.raise_(f"k must be in [1, t={t}], got {k}")
+            raise ConfigurationError(*(f"k must be in [1, t={t}], got {k}",))
         if allocation not in ("block", "total"):
-            ConfigurationError.raise_(
-                f"allocation must be 'block' or 'total', got {allocation!r}"
+            raise ConfigurationError(
+                *(f"allocation must be 'block' or 'total', got {allocation!r}",)
             )
 
         self.data_source: Sized = data_source
@@ -160,10 +159,12 @@ def _from_state_dict_k_out_of_t(
     state: Mapping[str, Any],
 ) -> KOutOfTSampler:
     if len(template.data_source) != int(state["num_samples"]):
-        ConfigurationError.raise_(
-            "KOutOfTSampler.from_state_dict: template dataset length "
-            f"{len(template.data_source)} does not match snapshot "
-            f"num_samples={state['num_samples']}"
+        raise ConfigurationError(
+            *(
+                "KOutOfTSampler.from_state_dict: template dataset length "
+                f"{len(template.data_source)} does not match snapshot "
+                f"num_samples={state['num_samples']}",
+            )
         )
     restored = KOutOfTSampler(
         template.data_source,

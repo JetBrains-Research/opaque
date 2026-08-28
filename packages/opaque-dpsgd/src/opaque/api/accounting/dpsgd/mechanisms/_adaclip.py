@@ -141,20 +141,22 @@ def adaclip(
         case Gaussian() | NonPrivate():
             pass
         case _:
-            InputTypeError.raise_(
-                f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
-                f"got {type(inner).__name__}."
+            raise InputTypeError(
+                *(
+                    f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
+                    f"got {type(inner).__name__}.",
+                )
             )
     if fraction_noise_std <= 0:
-        ConfigurationError.raise_(
-            f"fraction_noise_std must be positive, got {fraction_noise_std}"
+        raise ConfigurationError(
+            *(f"fraction_noise_std must be positive, got {fraction_noise_std}",)
         )
     if expected_batch_size <= 0:
-        ConfigurationError.raise_(
-            f"expected_batch_size must be positive, got {expected_batch_size}"
+        raise ConfigurationError(
+            *(f"expected_batch_size must be positive, got {expected_batch_size}",)
         )
     if num_groups < 1:
-        ConfigurationError.raise_(f"num_groups must be >= 1, got {num_groups}")
+        raise ConfigurationError(*(f"num_groups must be >= 1, got {num_groups}",))
 
     return AdaClip(
         inner=inner,

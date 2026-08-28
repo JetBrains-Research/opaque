@@ -52,8 +52,8 @@ def _resolve_factory(cls_name: str):
     factory_name = _factory_name_for(cls_name)
     factory = getattr(_noise, factory_name, None)
     if factory is None:
-        CheckpointError.raise_(
-            f"No factory function {factory_name!r} found for strategy {cls_name!r}"
+        raise CheckpointError(
+            *(f"No factory function {factory_name!r} found for strategy {cls_name!r}",)
         )
     _STRATEGY_FACTORIES[cls_name] = factory
     return factory
@@ -64,7 +64,7 @@ def _factory_name_for(cls_name: str) -> str:
     base = cls_name
     base = base.removesuffix("Strategy")
     if not base:
-        CheckpointError.raise_(f"unexpected strategy class name: {cls_name!r}")
+        raise CheckpointError(*(f"unexpected strategy class name: {cls_name!r}",))
     out_chars: list[str] = []
     for i, ch in enumerate(base):
         if ch.isupper():
@@ -116,12 +116,14 @@ def _to_wire(value: Any) -> Any:
             for f in _fields(value):
                 payload[f.name] = _to_wire(getattr(value, f.name))
             return payload
-        CheckpointError.raise_(
-            "Cannot serialize a callable strategy field "
-            f"(type={type(value).__name__}).  Pass an opaque.scheduling "
-            "recipe (e.g. cosine_schedule(...)) instead of a raw "
-            "function/lambda, or re-supply the callable to the strategy "
-            "factory after deserialization."
+        raise CheckpointError(
+            *(
+                "Cannot serialize a callable strategy field "
+                f"(type={type(value).__name__}).  Pass an opaque.scheduling "
+                "recipe (e.g. cosine_schedule(...)) instead of a raw "
+                "function/lambda, or re-supply the callable to the strategy "
+                "factory after deserialization.",
+            )
         )
     return value
 
@@ -137,9 +139,11 @@ def _from_wire(value: Any) -> Any:
         cls_name = value[_RECIPE_TAG]
         cls = _resolve_recipe_class(cls_name)
         if cls is None:
-            CheckpointError.raise_(
-                f"Unknown recipe class {cls_name!r} on strategy field "
-                "(was the schedule defined in opaque.scheduling?)"
+            raise CheckpointError(
+                *(
+                    f"Unknown recipe class {cls_name!r} on strategy field "
+                    "(was the schedule defined in opaque.scheduling?)",
+                )
             )
         kwargs = {k: _from_wire(v) for k, v in value.items() if k != _RECIPE_TAG}
         return cls(**kwargs)
@@ -165,8 +169,10 @@ def deserialize_strategy(sd: dict[str, Any]) -> Any:
     t = sd.pop("type")
     cls = _STRATEGY_REGISTRY.get(t)
     if cls is None:
-        CheckpointError.raise_(
-            f"Unknown strategy type: {t!r} (registered: {sorted(_STRATEGY_REGISTRY)!r})"
+        raise CheckpointError(
+            *(
+                f"Unknown strategy type: {t!r} (registered: {sorted(_STRATEGY_REGISTRY)!r})",
+            )
         )
     factory = _resolve_factory(t)
     kwargs = {k: _from_wire(v) for k, v in sd.items()}

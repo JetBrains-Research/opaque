@@ -44,7 +44,7 @@ def _momentum_workload_coef(
     weights by the optimizer objective.
     """
     if momentum < 0:
-        ConfigurationError.raise_(f"momentum must be >= 0, got {momentum}")
+        raise ConfigurationError(*(f"momentum must be >= 0, got {momentum}",))
     if momentum == 0.0:
         warnings.warn(
             "momentum=0.0 produces an identity workload — MF noise will "
@@ -77,10 +77,10 @@ def _band_mf_coefficients_cached(
 ) -> torch.Tensor:
     """Run the BandMF Toeplitz optimization for the given recipe + horizon."""
     if n_steps < 1:
-        ConfigurationError.raise_(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
     if bands < 1 or bands > n_steps:
-        ConfigurationError.raise_(
-            f"bands must be in [1, n_steps={n_steps}], got {bands}"
+        raise ConfigurationError(
+            *(f"bands must be in [1, n_steps={n_steps}], got {bands}",)
         )
     lr = torch.tensor(lr_key, dtype=torch.float64) if lr_key is not None else None
     workload_coef = _momentum_workload_coef(momentum, n_steps)
@@ -156,7 +156,7 @@ def band_mf_strategy(
         A :class:`BandMfStrategy` recipe.
     """
     if bands < 1:
-        ConfigurationError.raise_(f"bands must be >= 1, got {bands}")
+        raise ConfigurationError(*(f"bands must be >= 1, got {bands}",))
     return BandMfStrategy(
         bands=bands,
         momentum=momentum,

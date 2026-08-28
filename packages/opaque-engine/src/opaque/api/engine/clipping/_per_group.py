@@ -30,12 +30,14 @@ def _tensor_paths(params: Any) -> list[ParamPath]:
         elif leaf is None:
             continue
         else:
-            InputTypeError.raise_(
-                "per_group expects a PyTree of tensors; "
-                f"non-tensor leaf at path {path!r}: {type(leaf).__name__}"
+            raise InputTypeError(
+                *(
+                    "per_group expects a PyTree of tensors; "
+                    f"non-tensor leaf at path {path!r}: {type(leaf).__name__}",
+                )
             )
     if not out:
-        ConfigurationError.raise_("per_group requires at least one tensor leaf.")
+        raise ConfigurationError(*("per_group requires at least one tensor leaf.",))
     return out
 
 
@@ -110,16 +112,18 @@ def per_group(
     all_patterns.update(kwargs)
 
     if not all_patterns and fallback is None:
-        ConfigurationError.raise_("At least one pattern must be provided.")
+        raise ConfigurationError(*("At least one pattern must be provided.",))
 
     for pat, val in all_patterns.items():
         if val <= 0:
-            ConfigurationError.raise_(
-                f"Per-group value must be positive, got {val} for pattern '{pat}'."
+            raise ConfigurationError(
+                *(f"Per-group value must be positive, got {val} for pattern '{pat}'.",)
             )
 
     if fallback is not None and fallback <= 0:
-        ConfigurationError.raise_(f"Fallback value must be positive, got {fallback}.")
+        raise ConfigurationError(
+            *(f"Fallback value must be positive, got {fallback}.",)
+        )
 
     param_paths = _tensor_paths(params)
 
@@ -131,16 +135,20 @@ def per_group(
             if fallback is not None:
                 groups[path] = "fallback"
                 continue
-            ConfigurationError.raise_(
-                f"Parameter path {path!r} (display {display!r}) did not match "
-                f"any pattern. Available patterns: {list(all_patterns.keys())}. "
-                f"Use fallback=<value> to catch unmatched parameters."
+            raise ConfigurationError(
+                *(
+                    f"Parameter path {path!r} (display {display!r}) did not match "
+                    f"any pattern. Available patterns: {list(all_patterns.keys())}. "
+                    f"Use fallback=<value> to catch unmatched parameters.",
+                )
             )
         if len(matches) > 1:
-            ConfigurationError.raise_(
-                f"Parameter path {path!r} (display {display!r}) matched "
-                f"multiple patterns: {matches}. "
-                f"Each parameter must match exactly one pattern."
+            raise ConfigurationError(
+                *(
+                    f"Parameter path {path!r} (display {display!r}) matched "
+                    f"multiple patterns: {matches}. "
+                    f"Each parameter must match exactly one pattern.",
+                )
             )
         groups[path] = matches[0]
 
