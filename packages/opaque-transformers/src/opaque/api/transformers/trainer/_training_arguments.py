@@ -154,7 +154,6 @@ _MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 _SAMPLING_MODES: frozenset[str] = frozenset(
     {
         "poisson",
-        "random_allocation",
         "k_out_of_t",
         "b_min_sep",
         "balls_in_bins",
@@ -183,7 +182,7 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 # its canonical ``"b_min_sep"`` participation pattern; everything else
 # pins a single sampler.
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
-    "gaussian": frozenset({"poisson", "random_allocation", "k_out_of_t"}),
+    "gaussian": frozenset({"poisson", "k_out_of_t"}),
     "mf_identity": frozenset({"poisson", "balls_in_bins"}),
     "mf_band": frozenset({"b_min_sep", "poisson"}),
     "mf_blt": frozenset({"balls_in_bins"}),
@@ -1092,16 +1091,21 @@ class TrainingArguments:
                     f"privacy_noise_mechanism_kwargs (the strategy recipe) "
                     f"and read off the built amplifier at runtime."
                 )
-            if self.sampling_mode == "k_out_of_t" and "total_participations" not in (
-                self.sampling_kwargs
-            ):
-                raise ValueError(
-                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                    "'total_participations' (each example participates in exactly "
-                    "that many optimizer steps, chosen uniformly over the run)."
-                )
+            if self.sampling_mode == "k_out_of_t":
+                missing = {"k", "allocation"} - self.sampling_kwargs.keys()
+                if missing:
+                    raise ValueError(
+                        "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                        f"{sorted(missing)}."
+                    )
+                allocation = self.sampling_kwargs["allocation"]
+                if allocation not in ("block", "total"):
+                    raise ValueError(
+                        "sampling_kwargs['allocation'] must be 'block' or "
+                        f"'total', got {allocation!r}."
+                    )
             if (
-                self.sampling_mode in ("random_allocation", "k_out_of_t")
+                self.sampling_mode == "k_out_of_t"
                 and {
                     "truncated_batch_size",
                     "max_batch_size",
@@ -1115,8 +1119,7 @@ class TrainingArguments:
         elif self.sampling_mode == "k_out_of_t":
             raise ValueError(
                 "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                "'total_participations' (each example participates in exactly "
-                "that many optimizer steps, chosen uniformly over the run)."
+                "'k' and 'allocation'."
             )
 
     # =================================================================

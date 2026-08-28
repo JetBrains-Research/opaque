@@ -15,7 +15,8 @@ sampler using ``local_shard()`` and derive a per-rank key with
 ``fold_in(key, rank)``.
 
 This is *not* the same scheme as
-:class:`opaque.dpsgd.sampling.RandomAllocationSampler`, which redraws the
+:class:`opaque.dpsgd.sampling.KOutOfTSampler` with ``allocation="block"``,
+which redraws the
 assignment every epoch.  Redrawing is valid only when the noise is
 uncorrelated across steps, which is exactly what the matrix mechanism
 gives up.  Pair this sampler only with ``dpftrl_acc.balls_in_bins``.

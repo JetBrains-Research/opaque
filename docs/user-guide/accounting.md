@@ -16,7 +16,7 @@ factories live next to its runtime:
 | Module | Provides | Ships with |
 |--------|----------|------------|
 | `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
-| `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `random_allocation`. | `opaque-dpsgd` |
+| `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t`. | `opaque-dpsgd` |
 | `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
 Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
@@ -150,37 +150,30 @@ step = dpsgd_acc.parallel_poisson(
 )
 ```
 
-### `dpsgd_acc.random_allocation(inner, *, num_bins, n_steps)`
+### `dpsgd_acc.k_out_of_t(inner, *, k, t, allocation)`
 
-1-out-of-`num_bins` random allocation, the scheme
-`opaque.dpsgd.sampling.RandomAllocationSampler` implements: each epoch,
-every example lands in exactly one of `num_bins` batches, redrawn each
-epoch. Amplifies strictly more than `poisson()` at the matched rate
-`1 / num_bins`, and is computed by an exact PLD transform rather than
-Monte Carlo.
-
-This returns a whole-horizon process with exact prefix accounting, including
-partial final epochs:
+With `allocation="block"`, each example lands in exactly one batch in each of
+`k` contiguous, nearly equal blocks. It amplifies strictly more than
+`poisson()` at the matched average rate `k / t`, and is computed by an exact
+PLD transform rather than Monte Carlo.
 
 ```python
-num_bins = dataset_size // batch_size
-process = dpsgd_acc.random_allocation(
+process = dpsgd_acc.k_out_of_t(
     dpsgd_acc.gaussian(0.8),
-    num_bins=num_bins,
-    n_steps=total_steps,
+    k=num_epochs,
+    t=num_epochs * steps_per_epoch,
+    allocation="block",
 )
 eps = process.epsilon_at(1e-5)
 ```
 
-Use `acc.per_step(process)` in a loop that composes privacy after each
-optimizer step.
+The returned whole-horizon process provides exact prefix accounting; use
+`acc.per_step(process)` in a step-wise loop.
 
-### `dpsgd_acc.k_out_of_t(inner, *, total_participations, n_steps)`
-
-Global balanced allocation: every record participates in exactly `k` uniform
-steps of the declared `t`-step horizon. `pld_at(K)` accounts the
-hypergeometric prefix mixture; the full `k>1` PLD uses the conservative
-Feldman–Shenfeld block reduction.
+With `allocation="total"`, each example chooses a uniform `k`-subset of the
+whole horizon. The factory currently reports the block reduction as a valid
+conservative upper bound. For `k > 1`, prefix accounting before the final step
+returns the full-horizon bound.
 
 ### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
@@ -344,8 +337,9 @@ case is exact (its Gram is `num_epochs · I`, so the dominating pair collapses
 onto random allocation at `σ / √num_epochs`); the correlated cases go through
 Monte Carlo.
 
-The DP-SGD analogue is `dpsgd_acc.random_allocation`, which redraws the bin
-assignment every epoch. Do not mix the two: this accountant is for the
+The DP-SGD analogue is
+`dpsgd_acc.k_out_of_t(..., allocation="block")`, which draws an independent
+partition in every block. Do not mix the two: this accountant is for the
 fixed-assignment sampler `opaque.dpftrl.sampling.BallsInBinsSampler`.
 
 ```python
@@ -588,7 +582,7 @@ option to request an optimistic or lower-bound accounting result.
     `mc_failure_probability`. Remaining uncertainty is placed at `+∞`, and the returned PLD
     exposes `mc_confidence` and `mc_resolution`. Statistical confidence is
     separate from DP delta. Balls-in-Bins with `identity_strategy()`, and
-    `random_allocation`, use deterministic transforms. Monte Carlo PLDs certify
+    `k_out_of_t`, use deterministic transforms. Monte Carlo PLDs certify
     ε/δ and advantage; β and Bayes risk fail closed to zero.
 
 ## API reference

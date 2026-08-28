@@ -10,7 +10,6 @@ from opaque.api.accounting.dpsgd.amplification.types import (
     KOutOfT,
     ParallelPoisson,
     Poisson,
-    RandomAllocation,
 )
 from opaque.api.accounting.dpsgd.mechanisms.types import AdaClip, Gaussian
 
@@ -20,5 +19,4 @@ __all__ = [
     "KOutOfT",
     "ParallelPoisson",
     "Poisson",
-    "RandomAllocation",
 ]

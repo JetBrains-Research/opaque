@@ -1,4 +1,4 @@
-"""Random allocation across the DP-SGD and DP-FTRL stacks.
+"""K-out-of-t block allocation across the DP-SGD and DP-FTRL stacks.
 
 Both stacks call the same native primitive, but they parameterise it
 differently, and the difference is exactly one square root:
@@ -7,7 +7,7 @@ differently, and the difference is exactly one square root:
   whole run in one shot, at ``(σ/√E, t=b)``.  With ``C = I`` the Lemma 3.2
   mixture means are orthogonal with norm ``√E``, so the ``E`` epochs collapse
   into a single allocation against effective noise ``σ/√E``.
-- ``dpsgd_acc.random_allocation(gaussian(σ), num_bins=b, n_steps=b·E)``
+- ``dpsgd_acc.k_out_of_t(gaussian(σ), k=E, t=b·E, allocation="block")``
   composes independent epoch allocations because the DP-SGD sampler redraws
   its assignment every epoch.
 
@@ -37,11 +37,12 @@ def _bnb(sigma: float, b: int, epochs: int):
 
 
 def _alloc(sigma: float, b: int, epochs: int):
-    """Whole-horizon redrawn random allocation (scheme B)."""
-    return dpsgd_acc.random_allocation(
+    """Whole-horizon block k-out-of-t allocation (scheme B)."""
+    return dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(sigma),
-        num_bins=b,
-        n_steps=b * epochs,
+        k=epochs,
+        t=b * epochs,
+        allocation="block",
     )
 
 
@@ -61,7 +62,7 @@ def test_single_epoch_paths_coincide(sigma: float, b: int):
 def test_redraw_never_costs_more_than_fixed_assignment(
     sigma: float, b: int, epochs: int
 ):
-    """Per-epoch redraw dominates fixed assignment, at every δ.
+    """Independent block draws dominate fixed assignment, at every δ.
 
     This is a theorem, not a measurement: for ``C = I`` the redrawn pair is a
     mixture ``P_B = E_d[T_d # P_A]`` of shifts of the fixed-assignment pair,

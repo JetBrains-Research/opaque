@@ -61,8 +61,8 @@ def _reference(fn, sigma: float, t: int) -> float:
 
 @lru_cache
 def _ours(sigma: float, t: int) -> float:
-    return dpsgd_acc.random_allocation(
-        dpsgd_acc.gaussian(sigma), num_bins=t, n_steps=t
+    return dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(sigma), k=1, t=t, allocation="block"
     ).epsilon_at(_DELTA)
 
 

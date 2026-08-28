@@ -1,6 +1,6 @@
 # Sampling
 
-Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, random allocation)
+Sampling primitives live in `opaque.dpsgd.sampling` (Poisson, k-out-of-t allocation)
 and `opaque.dpftrl.sampling` (cyclic Poisson with optional `bands`, b-min-sep,
 balls-in-bins, sequential).
 Distributed shard helpers live in `opaque.distributed`. They provide
@@ -20,11 +20,11 @@ Opaque provides these sampling strategies:
    batches and memory; accounting must use the truncated-Poisson PLD (weaker
    than plain Poisson at the same `sample_rate`).
 
-2. **Random Allocation — DP-SGD** (`opaque.dpsgd.sampling.RandomAllocationSampler`):
-   each epoch, every example independently picks one of `num_bins` bins, and
-   the epoch yields those bins as batches. The assignment is **redrawn every
-   epoch**. Bin sizes are Binomial, so some batches are empty and are emitted
-   as such. Amplifies strictly more than Poisson at the matched rate `1/num_bins`.
+2. **K-Out-of-T Allocation — DP-SGD** (`opaque.dpsgd.sampling.KOutOfTSampler`):
+   with `allocation="block"`, each record is assigned to one batch in each of
+   `k` contiguous, nearly equal blocks. With
+   `allocation="total"`, each record instead chooses `k` positions uniformly
+   from the complete horizon.
 
 3. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
    `bands` disjoint groups; step `i` samples only group `i % bands`, with
@@ -79,17 +79,17 @@ Truncated Poisson (when `truncated_batch_size` is set) — account with
 truncated_batch_size=batch, dataset_size=n)` to use the matching
 truncated-Poisson PLD.
 
-## RandomAllocationSampler (DP-SGD)
+## KOutOfTSampler (DP-SGD)
 
 ```python
-from opaque.dpsgd.sampling import RandomAllocationSampler
+from opaque.dpsgd.sampling import KOutOfTSampler
 from opaque.random import key
 
-num_bins = dataset_size // batch_size
-sampler = RandomAllocationSampler(
+sampler = KOutOfTSampler(
     data_source,
-    num_bins=num_bins,
-    n_steps=num_epochs * num_bins,
+    k=num_epochs,
+    t=num_epochs * steps_per_epoch,
+    allocation="block",
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -98,46 +98,31 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
-| `num_bins` | `int` | required | Bins per epoch (≥ 2). Typically `dataset_size / batch_size` |
-| `n_steps` | `int` or `None` | `None` | Total number of batches to yield. A final partial epoch yields its first remaining bins. `None` = infinite |
+| `k` | `int` | required | Participations per record |
+| `t` | `int` | required | Total number of batches to yield |
+| `allocation` | `"block"` or `"total"` | required | Fixed-block or total-horizon allocation |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Each epoch's `num_bins` batches partition the dataset exactly, and the
-assignment is **redrawn every epoch**. Bin sizes are Binomial, so some
-batches are empty; they are emitted rather than compacted away, because
-dropping them would change every record's participation separation and
-invalidate the accounting.
+With `allocation="block"`, the block sizes differ by at most one. Each block's
+batches partition the dataset exactly, with an independent assignment in each
+block. Bin sizes are Binomial, so some batches are empty; they are emitted
+rather than compacted away, because dropping them changes the accounted
+participation schedule.
 
-Account with
-`dpsgd_acc.random_allocation(mechanism, num_bins=num_bins, n_steps=n_steps)`.
-The process computes exact prefix privacy for partial final epochs; use
-`acc.per_step(process)` in a step-wise loop.
+Account block allocation with
+`dpsgd_acc.k_out_of_t(mechanism, k=k, t=t, allocation="block")`.
+The process computes exact prefix privacy. Total allocation uses the same
+factory with `allocation="total"` and currently receives the conservative
+block bound; its `k > 1` prefixes carry the full-horizon bound.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 
     `opaque.dpftrl.sampling.BallsInBinsSampler` draws the bin assignment
     once and reuses it for every epoch, because the matrix-mechanism
     dominating pair needs a known separation between an example's
-    participations. `RandomAllocationSampler` redraws per epoch, which is
+    participations. `KOutOfTSampler(..., allocation="block")` draws each block independently, which is
     valid only because DP-SGD noise is uncorrelated across steps — and is
     strictly better there. Pair each sampler only with its own accountant.
-
-## KOutOfTSampler (DP-SGD)
-
-```python
-from opaque.dpsgd.sampling import KOutOfTSampler
-
-sampler = KOutOfTSampler(
-    dataset,
-    total_participations=4,
-    n_steps=100,
-    key=key(42),
-)
-```
-
-Every example chooses exactly `total_participations` distinct steps uniformly
-from the complete horizon. Pair it with `dpsgd_acc.k_out_of_t(...)`. Unlike
-epoch-redrawn random allocation, this is one global allocation plan.
 
 ## BallsInBinsSampler
 
@@ -247,7 +232,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
       show_source: true
       heading_level: 3
 
-::: opaque.dpsgd.sampling.RandomAllocationSampler
+::: opaque.dpsgd.sampling.KOutOfTSampler
     options:
       show_source: true
       heading_level: 3

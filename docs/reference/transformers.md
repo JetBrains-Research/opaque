@@ -176,7 +176,7 @@ Dataclass surface.  Every field listed here exists on
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
 | `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
-| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table.  Explicit overrides: `"poisson"`, `"random_allocation"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
