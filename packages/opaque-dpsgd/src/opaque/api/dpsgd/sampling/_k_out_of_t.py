@@ -95,7 +95,7 @@ class KOutOfTSampler(Sampler):
         assignment = rng.integers(0, size, size=self._num_samples)
         bins: list[list[int]] = [[] for _ in range(size)]
         for idx, bin_index in enumerate(assignment):
-            bins[bin_index].append(int(idx))
+            bins[bin_index].append(idx)
         return bins
 
     def _total_batches(self) -> Iterator[list[int]]:
@@ -105,7 +105,7 @@ class KOutOfTSampler(Sampler):
         for step in range(self.t):
             probabilities = remaining / (self.t - step)
             mask = rng.random(self._num_samples) < probabilities
-            yield np.flatnonzero(mask).astype(int).tolist()
+            yield np.flatnonzero(mask).tolist()
             remaining -= mask
 
     def __iter__(self) -> Iterator[list[int]]:
