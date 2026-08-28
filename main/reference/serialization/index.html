@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/reference/serialization/">
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../exceptions/">
       
       
         <link rel="next" href="../clipping/">
@@ -2583,6 +2583,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -3290,7 +3318,7 @@ serialized by the nearest base-class handler rather than dropped.
 preserves the subclass and its <code>requires_grad</code> flag on restore, so it does
 not rely on the <code>__mro__</code> fallback.) A leaf that is neither registered nor a
 generic container (dataclass / NamedTuple / tuple / list / mapping) nor a
-primitive raises <code>TypeError</code> on both save and restore instead of being
+primitive raises <code>InputTypeError</code> on both save and restore instead of being
 silently skipped.
 Genuinely inert leaves that the template reproduces (vendor structure handles
 such as <code>optree.PyTreeSpec</code>) are declared with
@@ -3308,7 +3336,7 @@ round-trips without resetting φ. NumPy <code>ndarray</code> leaves are supporte
 <p><code>torch.Tensor</code>, <code>torch.nn.Parameter</code> and <code>numpy.ndarray</code> leaves resolve three
 attributes against the template, each under its own rule:</p>
 <ul>
-<li><strong>Shape</strong> — must match the template exactly; a mismatch raises <code>ValueError</code>
+<li><strong>Shape</strong> — must match the template exactly; a mismatch raises <code>CheckpointError</code>
   for every array leaf kind. Broadcast-compatible shapes (a length-1 buffer
   against a length-<em>d</em> slot) are what make the check load-bearing: they would
   otherwise restore without an error and keep training against state the

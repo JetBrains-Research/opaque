@@ -2586,6 +2586,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../serialization/" class="md-nav__link">
         
   
@@ -4018,8 +4046,8 @@ checkpointing:</p>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">)</span>
 </code></pre></div>
 <p>The serializer must return JSON-compatible state and the deserializer must
-rebuild the budget from that state. Checkpointing an unregistered budget raises
-<code>TypeError</code>; restoring an unknown budget checkpoint type raises <code>ValueError</code>.</p>
+rebuild the budget from that state. Checkpointing an unregistered budget or
+restoring an unknown budget checkpoint type raises <code>CheckpointError</code>.</p>
 <h3 id="dpprocess"><code>DpProcess</code><a class="headerlink" href="#dpprocess" title="Permanent link">&para;</a></h3>
 <p>Abstract base class for all privacy processes. Subclasses implement <code>pld()</code> to
 compute the Privacy Loss Distribution on demand. Results are automatically
@@ -4649,9 +4677,9 @@ decreasing privacy-loss budgets return <code>achieved &lt;= target</code>, while
 privacy-gain budgets return <code>achieved &gt;= target</code>. In both cases,
 <code>math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)</code> is true.
 <code>tolerance</code> must be finite and positive, and <code>max_iterations</code> must be positive;
-invalid values raise <code>ValueError</code> before the process is evaluated. If no safe
-endpoint reaches the requested relative tolerance, <code>calibrate()</code> raises
-<code>RuntimeError</code> instead of returning an under-noised parameter.</p>
+invalid values raise <code>CalibrationError</code> before the process is evaluated. If no
+safe endpoint reaches the requested relative tolerance, <code>calibrate()</code> raises
+<code>CalibrationError</code> instead of returning an under-noised parameter.</p>
 <p>When the process uses a Monte Carlo PLD, calibration divides the configured
 failure probability across the two endpoint probes and at most
 <code>max_iterations</code> interior probes. <code>result.mc_confidence</code> therefore covers the

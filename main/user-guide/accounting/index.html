@@ -2999,6 +2999,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/serialization/" class="md-nav__link">
         
   
@@ -4164,10 +4192,10 @@ privacy-loss budgets (epsilon, delta, and advantage), the returned metric is
 at or below the target. For privacy-gain budgets (beta and risk), it is at or
 above the target. Every successfully returned result has <code>converged=True</code>.</p>
 <p>The <code>tolerance</code> argument must be finite and positive, and <code>max_iterations</code>
-must be positive. Invalid values raise <code>ValueError</code> before the process is
+must be positive. Invalid values raise <code>CalibrationError</code> before the process is
 evaluated. If the search cannot find a safe endpoint satisfying
 <code>math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)</code>, it raises
-<code>RuntimeError</code> instead of returning an under-noised parameter.</p>
+<code>CalibrationError</code> instead of returning an under-noised parameter.</p>
 <h3 id="budget-types">Budget types<a class="headerlink" href="#budget-types" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -4212,7 +4240,7 @@ automatically. Parameters whose increase improves privacy (noise multiplier)
 and parameters whose increase spends privacy (sample rate, step count) are
 both supported, for every budget kind. The metric produced by
 <code>process(param)</code> must be monotone over <code>[param_min, param_max]</code>; flat or
-detectably non-monotone parameterizations raise <code>ValueError</code>.</p>
+detectably non-monotone parameterizations raise <code>CalibrationError</code>.</p>
 <h2 id="accountant">Accountant<a class="headerlink" href="#accountant" title="Permanent link">&para;</a></h2>
 <p>The <code>Accountant</code> class provides step-by-step privacy tracking during training.
 It wraps a <code>DpProcess</code> and provides budget checking.</p>

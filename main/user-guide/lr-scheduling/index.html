@@ -2805,6 +2805,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/serialization/" class="md-nav__link">
         
   
@@ -3437,7 +3465,7 @@ leading plateau into the warmup ramp.</p>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">schedule</span> <span class="o">=</span> <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">opt</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="n">schedule</span><span class="p">)</span>
 </code></pre></div>
-<p><code>with_warmup</code> raises <code>ValueError</code> for <code>transition_steps &lt;= 0</code>, so
+<p><code>with_warmup</code> raises <code>ConfigurationError</code> for <code>transition_steps &lt;= 0</code>, so
 gate it on a runtime warmup length:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">schedule</span> <span class="o">=</span> <span class="p">(</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">with_warmup</span><span class="p">(</span><span class="n">decay</span><span class="p">,</span> <span class="n">transition_steps</span><span class="o">=</span><span class="n">W</span><span class="p">)</span> <span class="k">if</span> <span class="n">W</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">decay</span>

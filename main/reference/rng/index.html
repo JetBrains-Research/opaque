@@ -2586,6 +2586,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../serialization/" class="md-nav__link">
         
   
@@ -3774,7 +3802,7 @@ threading for deterministic and reproducible DP training.</p>
 <p><strong>Args:</strong>
 - <code>seed</code>: Integer seed value</p>
 <p><strong>Returns:</strong> RngKey</p>
-<p><strong>Raises:</strong> TypeError if seed is not an integer</p>
+<p><strong>Raises:</strong> <code>InputTypeError</code> if seed is not an integer</p>
 <hr />
 <h4 id="random_key-rngkey">random_key() → RngKey<a class="headerlink" href="#random_key-rngkey" title="Permanent link">&para;</a></h4>
 <p>Create a nondeterministic RngKey using system entropy.</p>
@@ -3799,7 +3827,7 @@ threading for deterministic and reproducible DP training.</p>
 - <code>rng_key</code>: Key to split
 - <code>num</code>: Number of child keys (default: 2)</p>
 <p><strong>Returns:</strong> Tuple of <code>num</code> independent RngKeys</p>
-<p><strong>Raises:</strong> ValueError if <code>num &lt; 1</code></p>
+<p><strong>Raises:</strong> <code>ConfigurationError</code> if <code>num &lt; 1</code></p>
 <p><strong>Golden Rule:</strong> Never reuse keys. Always split to create independent randomness.</p>
 <hr />
 <h4 id="fold_inrng_key-rngkey-data-int-str-rngkey">fold_in(rng_key: RngKey, *data: int | str) → RngKey<a class="headerlink" href="#fold_inrng_key-rngkey-data-int-str-rngkey" title="Permanent link">&para;</a></h4>
@@ -3827,9 +3855,9 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 - <code>*data</code>: One or more int or str values to fold in sequentially</p>
 <p><strong>Returns:</strong> New RngKey derived from <code>rng_key</code> and all folded values</p>
 <p><strong>Raises:</strong>
-- TypeError if <code>rng_key</code> is not an <code>RngKey</code>, or any value is not int or str
+- <code>InputTypeError</code> if <code>rng_key</code> is not an <code>RngKey</code>, or any value is not int or str
   (<code>bool</code> is rejected even though it subclasses <code>int</code>)
-- ValueError if no data values are provided</p>
+- <code>ConfigurationError</code> if no data values are provided</p>
 <p>Integers and strings occupy disjoint hash paths: <code>fold_in(k, 1)</code> is never
 the same key as <code>fold_in(k, "1")</code>. That split is load-bearing.</p>
 <ul>
