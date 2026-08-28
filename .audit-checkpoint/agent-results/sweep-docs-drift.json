@@ -1,0 +1,233 @@
+{
+  "findings": [
+    {
+      "title": "Quickstart and the DP-SGD tutorial publish a Poisson-amplified epsilon for a torch.randperm shuffled fixed-batch loop (published output says epsilon=3.00; honest bound >=18.85)",
+      "file": "docs/getting-started/quickstart.md, docs/tutorials/dp_sgd_training.ipynb",
+      "line": "quickstart.md:44-51 and :79-91; dp_sgd_training.ipynb cell 9 and cell 13",
+      "category": "docs-drift-epsilon",
+      "severity": "high",
+      "claim": "The two flagship onboarding walkthroughs calibrate the noise multiplier against `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * total_steps` and then report that epsilon, but the training loop they ship draws batches with `torch.randperm` + contiguous slicing -- a deterministic shuffled partition, not Poisson subsampling. Poisson amplification does not apply, so the printed epsilon is not a valid guarantee.",
+      "failure_scenario": "A user follows the Quick Start (docs/getting-started/quickstart.md, the first runnable example in the docs) or the DP-SGD tutorial and ships a model believing epsilon=3.0. dp_sgd_training.ipynb (n=2000, batch=64, 20 epochs, 620 steps) calibrates nm=1.35683 and its COMMITTED cell output prints `Final privacy: (epsilon=3.00, delta=1e-05)`; mkdocs.yml:59-61 sets `execute: false`, so that exact number is what the published page shows. The deployed sampling gives each record exactly one participation per epoch with no subsampling randomness. The most generous honest accounting -- one unamplified Gaussian release per epoch, composed 20 times -- is (D.gaussian(1.35683)*20).epsilon_at(1e-5) = 18.850, a 6.3x understatement. Reading each of the 620 steps as an unamplified release gives 245.757 (82x). The quickstart (n=1000, batch=32, 10 epochs) is the same defect: calibrated nm=1.10530, printed epsilon ~3.05, honest per-epoch composition (D.gaussian(nm)*10).epsilon_at(1e-5) = 15.685 (5.2x) and per-step 199.103 (66x). The quickstart also runs 320 steps while calibrating for `num_steps = 10 * (n_samples // batch_size)` = 310, so the executed horizon exceeds the calibrated one.",
+      "evidence": [
+        "docs/getting-started/quickstart.md:44-51 -- `result = acc.calibrate(budget=acc.epsilon_budget(epsilon, delta=delta), process=lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate) * num_steps, param_min=0.1, param_max=100.0)`",
+        "docs/getting-started/quickstart.md:79-84 -- `for epoch in range(10):` / `perm = torch.randperm(n_samples)` / `for i in range(0, n_samples, batch_size):` / `batch = (X[perm[i:i+batch_size]], y[perm[i:i+batch_size]])` -- no PoissonSampler, no DataLoader(batch_sampler=...)",
+        "docs/getting-started/quickstart.md:91 -- `print(f\"Epoch {epoch+1}/10 - epsilon={accountant.epsilon_at(delta):.2f}\")` where `step_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate)`",
+        "docs/tutorials/dp_sgd_training.ipynb cell 13 -- `perm = torch.randperm(n_samples)` / `X_shuffled, y_shuffled = X[perm], y[perm]` / `for i in range(0, n_samples, batch_size):` and then `process = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate) * total_steps_done`",
+        "docs/tutorials/dp_sgd_training.ipynb cell 13 committed stream output: `Epoch 20/20  loss=0.6665  epsilon=3.00` / `Final privacy: (epsilon=3.00, delta=1e-05)`",
+        "docs/tutorials/dp_sgd_training.ipynb cell 18 (Summary) -- step 5 reads `Train with the standard loop, replacing the gradient call`, i.e. it affirmatively tells the reader the shuffled loop is the supported pattern",
+        "mkdocs.yml:59-61 -- `- mkdocs-jupyter:` / `include_source: true` / `execute: false` (the committed epsilon=3.00 output is what readers see)",
+        "Measured with the repo venv: tutorial params n=2000,bs=64,20 epochs -> total_steps=620, calibrate -> nm=1.35682832673192, reported eps=3.000; (D.gaussian(nm)*620).epsilon_at(1e-5)=245.757; (D.gaussian(nm)*20).epsilon_at(1e-5)=18.850",
+        "Measured: quickstart params n=1000,bs=32 -> nm=1.105301145464182; poisson*320=3.046; unamplified*320=199.103; unamplified*10=15.685; calibrated horizon 310 vs 320 steps actually executed"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Replace the shuffled inner loop in both walkthroughs with `PoissonSampler(dataset, sample_rate=..., n_steps=num_steps, key=...)` fed through `DataLoader(dataset, batch_sampler=sampler)` (the pattern every other page already uses, e.g. docs/user-guide/sampling.md:58), re-execute the notebook so the committed output reflects the corrected run, and make the executed step count equal the calibrated `num_steps`. If a shuffled loop is kept for pedagogy, drop the Poisson factory and account it as unamplified.",
+      "confidence": "high"
+    },
+    {
+      "title": "Trainer docs advertise mf_band + sampling_mode='poisson' as supported while the runtime builds a plain PoissonSampler against the cyclic-group CyclicPoisson accountant, and rejects the sampler the docs say to pair with it",
+      "file": "docs/user-guide/huggingface/training-arguments.md",
+      "line": "142 (table row `| mf_band | b_min_sep (or explicit poisson) | {\"bands\": 16} |`)",
+      "category": "docs-drift-epsilon",
+      "severity": "high",
+      "claim": "docs/mechanisms/dp-ftrl/band-mf.md states that `opaque.dpftrl.accounting.poisson` composes a *cyclic* Poisson participation pattern over ceil(n/b) groups and instructs `Pair with CyclicPoissonSampler for consistent sampling and accounting`. The trainer's documented `mf_band` + `poisson` pairing instead constructs a plain `opaque.dpsgd.sampling.PoissonSampler` over the full dataset (no bands, no separation) while accounting through the same `CyclicPoisson` group decomposition. The `cyclic_poisson` sampler that actually matches the accountant is not in mf_band's allow-list and is rejected.",
+      "failure_scenario": "A user sets `TrainingArguments(privacy_noise_mechanism='mf_band', sampling_mode='poisson')`, which training-arguments.md:142 presents as a supported alternative with no caveat. `build_sampler` returns `PoissonSampler(dataset, sample_rate=..., n_steps=..., truncated_batch_size=...)` -- each record is drawn independently at every one of the n steps, so a record can appear in consecutive steps. `build_amplifier_factory` returns `_ftrl_poisson(...)` = `CyclicPoisson`, whose `pld_at` composes only `num_groups = ceil(n_steps/bands)` per-group Poisson-Gaussian PLDs at `effective_nm = nm / sensitivity` with `sensitivity = BandMfStrategy.sensitivity(...)`, which is identically 1.0. That b-group factorization is valid only under b-min-separated participation; plain Poisson provides none. Measured at nm=1.0, q=0.01, n=1000: `mf_band(bands=10)+dpftrl.poisson` reports eps@1e-5 = 0.7180, while running the *same* deployed PoissonSampler under identity (independent) noise costs 1.8282 -- the reported number is 2.5x below the independent-noise cost of the identical sampler, and the group decomposition it relies on is unjustified. The code comment calling this 'looser-but-valid' is wrong in the unsafe direction.",
+      "evidence": [
+        "docs/user-guide/huggingface/training-arguments.md:142 -- `| mf_band | b_min_sep (or explicit poisson) | {\"bands\": 16} |` with no warning",
+        "docs/mechanisms/dp-ftrl/band-mf.md:78-83 -- `The training run is decomposed into k = ceil(n/b) independent groups of b consecutive steps. Within each group, **cyclic Poisson** participation means each example in the active group is included independently with probability q (this is what opaque.dpftrl.accounting.poisson composes over ...)`",
+        "docs/mechanisms/dp-ftrl/band-mf.md:295 -- `- Pair with CyclicPoissonSampler for consistent sampling and accounting.`",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py:181-193 -- `# ``mf_band`` accepts ``\"poisson\"`` as a looser-but-valid alternative to` / `_ALLOWED_SAMPLERS = {... \"mf_band\": frozenset({\"b_min_sep\", \"poisson\"}), ...}` -- note `cyclic_poisson` is absent",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dpftrl.py:224-232 -- `if sampling_mode == \"poisson\": ... return PoissonSampler(dataset, sample_rate=sample_rate, n_steps=n_steps, truncated_batch_size=truncated_batch_size, key=key)` (imported at :46-48 from `opaque.dpsgd.sampling`)",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dpftrl.py:138-152 -- `if sampling_mode == \"poisson\": ... return _ftrl_poisson(mf_gaussian(nm, _s), sample_rate=_sr, n_steps=_ns, ...)`",
+        "packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/amplification/_poisson.py:178-187 -- `sensitivity = s.sensitivity(n_steps=self.n_steps, min_sep=self.min_sep, max_participations=self.max_participations)` / `effective_nm = self.inner.noise_multiplier / sensitivity` / `num_groups = math.ceil(rounded / bands)`",
+        "packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/amplification/_poisson.py:88-95 -- `def min_sep(self) -> int:` returns `1` with the comment `Cyclic Poisson provides no worst-case separation guarantee: any example could in principle be sampled on consecutive rounds.`",
+        "Measured: `band_mf_strategy(bands=10).sensitivity(n_steps=1000, min_sep=1, max_participations=1000)` == 0.9999999999999999 (identical for min_sep=10/maxpart=100 and min_sep=1/maxpart=1) -- the sensitivity is participation-blind",
+        "Measured: F.poisson(F.mf_gaussian(1.0, band_mf_strategy(bands=10)), sample_rate=0.01, n_steps=1000).epsilon_at(1e-5) = 0.7180; F.poisson(F.mf_gaussian(1.0, identity_strategy()), sample_rate=0.01, n_steps=1000).epsilon_at(1e-5) = 1.8282",
+        "Verified by construction: TrainingArguments(privacy_noise_mechanism='mf_band', sampling_mode='cyclic_poisson') raises `sampling_mode='cyclic_poisson' is not valid for privacy_noise_mechanism='mf_band'; allowed: ['b_min_sep', 'poisson']`"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Either (a) remove `poisson` from `_ALLOWED_SAMPLERS['mf_band']` and delete the `(or explicit poisson)` clause from training-arguments.md:142, leaving `b_min_sep` and `cyclic_poisson`; or (b) map `mf_band` + `poisson` onto `CyclicPoissonSampler(..., bands=mf.strategy.bands)` in `build_sampler` so the deployed participation pattern is the one `CyclicPoisson` prices. Whichever is chosen, band-mf.md's `Pair with CyclicPoissonSampler` instruction and the trainer's allow-list must agree.",
+      "affects_epsilon_note": "Related to open #320 / #356; the delta is that the docs affirmatively advertise the mismatched pairing rather than merely lacking a contract mechanism.",
+      "confidence": "high"
+    },
+    {
+      "title": "Two mechanism pages and the DP-SGD guide instruct accounting the bounded Gaussian with the unbounded accountant; a third page says the accountant does not cover it",
+      "file": "docs/mechanisms/dp-sgd/gaussian.md",
+      "line": "195 (`# Accounting (unchanged from the unbounded mechanism)`), contradicting :176-177 on the same page",
+      "category": "docs-drift-epsilon",
+      "severity": "high",
+      "claim": "docs/user-guide/noise.md:177 and docs/mechanisms/dp-sgd/gaussian.md:176-177 both say `Treat bound= as experimental: dpsgd_acc.gaussian() does **not** cover the bounded output`, but gaussian.md:195-198 then hands the reader a code block commented `# Accounting (unchanged from the unbounded mechanism)` that does exactly that, and docs/user-guide/dp-sgd.md:96 states flatly `For bounded noise support, pass bound=... -- same accounting`. Renormalizing/truncating the Gaussian is not post-processing of the unbounded mechanism, so the unbounded PLD is not a bound for it.",
+      "failure_scenario": "A user enables `gaussian_noise(..., bound=3.0)` (also reachable from the trainer via `privacy_noise_mechanism_kwargs={'bound': ...}`, documented at training-arguments.md:129) and calibrates/reports epsilon with `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), q) * steps` as gaussian.md:195-198 shows. The deployed mechanism is not that mechanism. Two further docs statements about the bounded path are directly false against the shipped code, measured on this tree with `gaussian_noise(noise_multiplier=1.0, bound=B, key=key(0))` over a 200k-element ClippedPytree(max_norm=1.0): (a) noise.md:147 `No probability mass sits at the boundaries` -- at center 5.0 with bound=+/-1 the output has a 0.040% atom exactly at +B and collapses to 1060 distinct values out of 200000, and at center 50.0 with bound=+/-1 100% of the mass is the single value +1.0, i.e. a deterministic zero-noise release; (b) noise.md:136 `noisy_grads.noise_stddev records the realized scalar or per-group noise scale` -- with bound=1.0 and nm=1.0 the reported `noise_stddev` is 1.0 while the realized standard deviation is 0.5408, and 0.0 in the collapsed case. Centers far outside the bound are reachable at the documented `bound=3.0` whenever clipped per-example gradients are summed without `normalize_by` (a batch of 256 clipped-to-1 gradients can put a single coordinate well above 3).",
+      "evidence": [
+        "docs/mechanisms/dp-sgd/gaussian.md:176-177 -- `Treat `bound=` as experimental: `dpsgd_acc.gaussian()` does not cover this variant.`",
+        "docs/mechanisms/dp-sgd/gaussian.md:195-198 -- `# Accounting (unchanged from the unbounded mechanism)` / `step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)` / `training = step * 1000` / `eps = training.epsilon_at(delta=1e-5)`",
+        "docs/user-guide/dp-sgd.md:95-99 -- `For bounded noise support, pass `bound=...` to `opaque.dpsgd.noise.gaussian_noise` -- same accounting, inverse-CDF sampling, ...`",
+        "docs/user-guide/noise.md:146-148 -- ``gaussian_noise(..., bound=...)` draws from a Gaussian renormalized over the interval. No probability mass sits at the boundaries -- the density is smooth but slightly taller than the original Gaussian.`",
+        "docs/user-guide/noise.md:135-137 -- ``noisy_grads.noise_stddev` records the realized scalar or per-group noise scale used for that step.`",
+        "packages/opaque-dpsgd/src/opaque/api/dpsgd/noise/_gaussian.py:175-176 (docstring) -- `the output is sampled from a Gaussian renormalized over the per-coordinate interval and clamped to it` (clamping is exactly boundary mass)",
+        "Measured (repo .venv): center=5.0, bound=1.0 -> min=-0.166578 max=1.000000 std=0.21369 atom@+B=0.00040 distinct=1060; center=50.0, bound=1.0 -> min=max=1.000000 std=0.00000 atom@+B=1.00000 distinct=1; center=0.0, bound=1.0 -> std=0.54090",
+        "Measured: reported `out.noise_stddev` = 1.0 in all three cases above (realized 0.54084 / 0.00000 / 1.00323 unbounded)"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Delete the `# Accounting (unchanged from the unbounded mechanism)` block from gaussian.md and the `same accounting` clause from dp-sgd.md:96; state on all three pages that no shipped accountant prices the bounded variant, so it must not be used for a reported epsilon. Correct noise.md:147 to say the sampler clamps (boundary atoms exist) and can degenerate to a point mass when the input coordinate lies outside the interval, and correct noise.md:136 to say `noise_stddev` reports the nominal scale, not the realized one. Related to open #344.",
+      "confidence": "high"
+    },
+    {
+      "title": "The documented 'Unamplified BLT/BandMF' accounting recipe silently prices a 1-step, single-participation mechanism (MfGaussian defaults n_steps=1) for runs the same page describes as 5000-10000 steps",
+      "file": "docs/mechanisms/dp-ftrl/blt.md",
+      "line": "163-167 (and docs/reference/accounting.md:405-410, :427-428)",
+      "category": "docs-drift-epsilon",
+      "severity": "high",
+      "claim": "`dpftrl_acc.mf_gaussian(nm, strategy)` defaults to `n_steps=1, min_sep=1, max_participations=None` (which resolves to n_steps=1), so calling it bare yields the PLD of a single-participation, single-step Gaussian. blt.md presents exactly that call under the heading `# Unamplified BLT`, with an `assert eps > 0 and eps < float(\"inf\")` that makes the answer look validated, on a page whose noise example runs `n_steps=10000` and whose multi-epoch example uses `min_sep=100, max_participations=5` over 5000 steps. The adjacent note claims `mf_gaussian(nm, strategy)` populates every structural field `from the optimized BLT parameters and the participation pattern` -- there is no participation pattern to read.",
+      "failure_scenario": "A user copies blt.md:163-167 to price an unamplified BLT run. Measured on this tree: `dpftrl_acc.mf_gaussian(1.0, blt_strategy(max_buffers=10))` has `n_steps=1, min_sep=1, max_participations=None` and returns `epsilon_at(1e-5) = 4.3772`. The honest value for the participation context the SAME page's noise example uses (`n_steps=5000, min_sep=100, max_participations=5`, blt.md:139-152) is 28.159 -- 6.4x higher. For the page's other example (`n_steps=10000` with no separation guarantee, i.e. min_sep=1) the honest value is `inf`. Constructing the strategy at n_steps=1 also degenerates the BLT optimizer, which emits `BLT has near-zero output_scale parameters, which means some buffers are ignored` -- the priced strategy is not even the one the noise side would build. `docs/reference/accounting.md:405-410` repeats the pattern for BandMF and :427-428 for BLT (`# Unamplified -- single-Gaussian PLD`).",
+      "evidence": [
+        "docs/mechanisms/dp-ftrl/blt.md:162-167 -- `strategy = blt_strategy(max_buffers=10)` / `# Unamplified BLT` / `proc = dpftrl_acc.mf_gaussian(1.0, strategy)` / `eps = proc.epsilon_at(delta=1e-5)` / `assert eps > 0 and eps < float(\"inf\"), ...`",
+        "docs/mechanisms/dp-ftrl/blt.md:177-180 -- `dpftrl_acc.mf_gaussian(nm, strategy)` populates every structural field (sensitivity, Gram matrix, coefficients, min_sep, max_participations) from the optimized BLT parameters and the participation pattern.`",
+        "docs/mechanisms/dp-ftrl/blt.md:121-152 -- the surrounding noise examples use `n_steps=10000` and `n_steps=5000, min_sep=100, max_participations=5`",
+        "packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/mechanisms/_mf_gaussian.py:52-64 -- `n_steps: int = 1` / `min_sep: int = 1` / `max_participations: int | None = None` and `_effective_max_participations` falls back to `self.n_steps`",
+        "packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/mechanisms/_mf_gaussian.py:44-49 (docstring) -- `Bare-use (no amplification) requires ``n_steps`` ...` -- but the field defaults to 1 instead of raising",
+        "Measured: `F.mf_gaussian(1.0, blt_strategy(max_buffers=10))` -> n_steps=1 min_sep=1 maxpart=None, eps@1e-5 = 4.37717809602987",
+        "Measured: `F.mf_gaussian(1.0, s, n_steps=5000, min_sep=100, max_participations=5).epsilon_at(1e-5)` = 28.15909094329467; `n_steps=10000, min_sep=1, max_participations=10000` -> inf (with a `BLT has near-zero output_scale parameters` warning)",
+        "docs/reference/accounting.md:405-410 and :427-428 repeat the bare call for band_mf_strategy and blt_strategy"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Pass an explicit `n_steps` / `min_sep` / `max_participations` in every documented bare `mf_gaussian(...)` example so the priced horizon matches the run being described, and make `MfGaussian` require `n_steps` (no default of 1) so the docstring's `requires n_steps` is enforced rather than silently defaulted.",
+      "confidence": "high"
+    },
+    {
+      "title": "Both accounting namespace tables and two reference sections document six opaque.dpftrl.accounting factories that do not exist",
+      "file": "docs/user-guide/accounting.md",
+      "line": "20 (and docs/reference/accounting.md:38, :396, :413, :352, docs/mechanisms/dp-ftrl/band-mf.md:156)",
+      "category": "docs-drift-api",
+      "severity": "medium",
+      "claim": "The `opaque.dpftrl.accounting` rows in both namespace tables list `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf` as provided factories, and docs/reference/accounting.md keeps full `### band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess` and `### blt(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess` API sections for them. None of these names exists; the façade exports only `b_min_sep`, `balls_in_bins`, `mf_gaussian`, `per_step`, `poisson`.",
+      "failure_scenario": "A reader of the API reference writes `dpftrl_acc.band_mf(nm, sensitivity, coefficients)` from the documented signature and gets AttributeError. Worse, the stale `band_mf(noise_multiplier, sensitivity, coefficients)` signature invites hand-passing a `sensitivity` value, which the migrated `mf_gaussian(nm, strategy)` API deliberately removed to keep noise and accounting on one source of truth (the reference page's own warning at :389-391 says `never hardcode them`). docs/reference/accounting.md:352 and docs/mechanisms/dp-ftrl/band-mf.md:156 also refer to `dpftrl_acc.band_mf` in prose.",
+      "evidence": [
+        "docs/user-guide/accounting.md:20 -- `| `opaque.dpftrl.accounting` | DP-FTRL factories -- `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` ..., `b_min_sep`, `balls_in_bins`. |`",
+        "docs/reference/accounting.md:38 -- same list under `DP-FTRL mechanisms:`",
+        "docs/reference/accounting.md:396 -- `### `band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess``",
+        "docs/reference/accounting.md:413 -- `### `blt(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess``",
+        "packages/opaque-dpftrl/src/opaque/dpftrl/accounting/__init__.py -- `__all__ = [\"b_min_sep\", \"balls_in_bins\", \"mf_gaussian\", \"per_step\", \"poisson\"]`",
+        "Measured: `import opaque.dpftrl.accounting as f; [hasattr(f,n) for n in ('band_mf','blt','bisr','bsr','lambda_cgd','identity_mf')]` -> all False"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Rewrite both namespace-table rows to the real export set (`mf_gaussian`, `poisson`, `b_min_sep`, `balls_in_bins`, `per_step`) and delete or retarget the `### band_mf(...)` / `### blt(...)` reference sections (their code blocks already use `mf_gaussian`). Fix the `dpftrl_acc.band_mf` prose references at reference/accounting.md:352 and band-mf.md:156.",
+      "confidence": "high"
+    },
+    {
+      "title": "BLT min-sep sensitivity precondition is violated at the DEFAULT momentum=1.0 as soon as an lr_schedule is attached, which the trainer does automatically -- reported sensitivity 1.45-1.54x too small at min_sep=1",
+      "file": "docs/mechanisms/dp-ftrl/blt.md",
+      "line": "188 (`| min_sep | 1 - n_steps (default 1) | ... |`) and packages/opaque-transformers/src/opaque/api/transformers/trainer/_dpftrl.py:87,113-118",
+      "category": "docs-drift-epsilon",
+      "severity": "medium",
+      "claim": "Open issue #595 records that `minsep_sensitivity_squared` (Theorem 2 of arXiv:2405.13763, stated for non-negative non-increasing Toeplitz coefficients) is called with `skip_checks=True`, and concludes `The default momentum=1.0 is sound in everything tested`. That is not true once an `lr_schedule` is supplied: at momentum=1.0 a linear-decay or cosine schedule drives the optimized BLT coefficients negative and non-monotone, and the reported sensitivity stops being an upper bound. The trainer injects an lr_schedule into `mf_blt` by default. blt.md documents `min_sep` default 1 and a `Higher = lower sensitivity` tip, and never mentions the precondition, `momentum`, or `lr_schedule`.",
+      "failure_scenario": "Reproduced on this tree with exhaustive `max_S ||C 1_S||_2` over every participation set respecting min_sep, against `BltStrategy.sensitivity(...)`, at max_buffers=10, momentum=1.0 (the default): n=20, min_sep=1 with a linear-decay schedule -> coefficient min = -0.1604, reported S = 1.86202, true S = 2.69864 (ratio 1.449); with a cosine schedule -> coefficient min = -0.1832, reported 1.75101 vs true 2.69688 (ratio 1.540). Since `MfGaussian.pld` builds the PLD at `effective_nm = nm / S`, a 1.45-1.54x too-small S under-reports epsilon. Without a schedule the same configuration is exact (coefficient min = 0, ratio 1.0000). The gap does collapse at larger separation (min_sep=2 -> ratio 1.0001; min_sep=3 -> 1.0000), so the realistic trainer path (balls-in-bins, min_sep = steps-per-epoch) is not materially affected -- but blt.md:188 documents `min_sep` default 1 and the functional API defaults to `min_sep=1`, which is where the gap lives.",
+      "evidence": [
+        "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_toeplitz.py:462-475 -- `if not skip_checks:` / `if not torch.all(coef >= 0): raise ValueError(f\"coef must be non-negative, found min={coef.min().item()}\")` / `if len(coef) > 1: ... raise ValueError(f\"coef must be non-increasing, ...\")`",
+        "packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_blt.py:185-192 -- `sens_sq = _toeplitz_minsep_sensitivity_squared(strategy_coef=coefs, min_sep=min_sep, max_participations=max_participations, skip_checks=True)`",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_dpftrl.py:87 -- `_LR_SCHEDULED_STRATEGIES: frozenset[str] = frozenset({\"mf_band\", \"mf_blt\"})` and :113-118 auto-inject `extra[\"lr_schedule\"] = lr_schedule`",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py:295 -- `lr_scheduler: SchedulerType | str | Schedule = \"linear\"` (non-constant by default)",
+        "Measured coefficient probe, n_steps=64, min_sep=1: default (no schedule) min=0, max_incr=0; with cosine+warmup min=-0.0700718, max_incr=0.00533213; with linear+warmup min=-0.0612976, max_incr=0.0041301 -- all at momentum=1.0",
+        "Measured exhaustive true-vs-reported sensitivity (max_buffers=10, momentum=1.0): n=20 min_sep=1 no schedule 4.47214 vs 4.47214 (1.0000); linear-decay 1.86202 vs 2.69864 (1.4493); cosine 1.75101 vs 2.69688 (1.5402); n=20 min_sep=2 ratios 1.0001; n=24 min_sep=3 ratios 1.0000",
+        "docs/mechanisms/dp-ftrl/blt.md:186-192 parameter table lists `min_sep`, `max_participations`, `error`, `max_buffers` but neither `momentum` nor `lr_schedule`, and gives no precondition"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Report on #595 that the non-negativity violation is not confined to non-default momentum: any non-constant `lr_schedule` at the default momentum=1.0 reaches the infeasible region, and the trainer injects one by default. In docs, add `momentum` and `lr_schedule` to blt.md's parameter guide with the precondition stated, and note that `min_sep=1` is the regime where the closed form stops being an upper bound.",
+      "confidence": "high"
+    },
+    {
+      "title": "dpsgd_acc.adaclip's num_groups parameter is documented nowhere, including in its published signature, while per-group adaptive clipping is documented",
+      "file": "docs/reference/accounting.md",
+      "line": "310 (`### adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`)",
+      "category": "docs-drift-epsilon",
+      "severity": "medium",
+      "claim": "`adaclip` takes a fourth keyword, `num_groups`, which accounts for K independent noisy-quantile queries under per-group adaptive clipping. `grep -rn num_groups docs/` returns only two hits, both about an unrelated BandMF quantity. docs/user-guide/clipping.md documents `Adaptive per-group clipping` with `initial_clipping_norm=pg` and separately documents the adaclip accounting recipe without `num_groups`, so the documented recipe under-charges the per-group configuration the same page teaches.",
+      "failure_scenario": "A user follows clipping.md:455-473 to run per-group adaptive clipping over G groups, then follows clipping.md:230-249 (or reference/accounting.md:310-322) to account for it with `dpsgd_acc.adaclip(dpsgd_acc.gaussian(nm), fraction_noise_std=0.05, expected_batch_size=...)`. The runtime releases G noisy clip-rate statistics per step; the accountant composes one. Measured at nm=1.0, q=0.01, 1000 steps: num_groups=1 -> eps@1e-5 = 1.83116, num_groups=3 -> 1.83701, num_groups=8 -> 1.85168. The magnitude is small (~1% at 8 groups) but it is a real, systematic under-charge on a documented path, and the published signature makes the parameter undiscoverable.",
+      "evidence": [
+        "docs/reference/accounting.md:310 -- `### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`` (no `num_groups`)",
+        "docs/user-guide/accounting.md:185 -- `### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`` (no `num_groups`)",
+        "docs/user-guide/clipping.md:230-249 -- the accounting recipe, with only `fraction_noise_std` and `expected_batch_size`",
+        "docs/user-guide/clipping.md:455-473 -- `### Adaptive per-group clipping` ... `pg = per_group(params, self_attn=1.0, mlp=2.0)` / `adaptive_clipped_grad(..., initial_clipping_norm=pg, ...)` with no accounting guidance",
+        "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/mechanisms/_adaclip.py:30-37 -- `When ``num_groups > 1``, accounts for ``K`` independent quantile queries (one per parameter group in per-group adaptive clipping).` / `num_groups: int = 1`",
+        "packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/mechanisms/_adaclip.py:100-102 -- `if self.num_groups > 1: bit_pld = bit_pld * self.num_groups`",
+        "`grep -rn num_groups docs/` -> only docs/mechanisms/dp-ftrl/band-mf.md:191 and :212 (a different, BandMF-specific quantity)",
+        "Measured: (D.poisson(D.adaclip(D.gaussian(1.0), fraction_noise_std=0.05, expected_batch_size=256, num_groups=g), 0.01)*1000).epsilon_at(1e-5) = 1.83116 (g=1), 1.83408 (g=2), 1.83701 (g=3), 1.85168 (g=8)"
+      ],
+      "affects_epsilon": true,
+      "fix_sketch": "Add `num_groups` to the published `adaclip` signature in docs/reference/accounting.md:310 and docs/user-guide/accounting.md:185, and add a sentence to clipping.md's `Adaptive per-group clipping` section telling the reader to pass `num_groups=<number of groups>` to `adaclip()`.",
+      "confidence": "high"
+    },
+    {
+      "title": "training-arguments.md publishes a mf_blt default (max_buffers=16) that is both wrong and rejected by the code, plus a wrong noise_calibration_kwargs default",
+      "file": "docs/user-guide/huggingface/training-arguments.md",
+      "line": "143 (`| mf_blt | balls_in_bins | {\"max_buffers\": 16} |`) and 129",
+      "category": "docs-drift-defaults",
+      "severity": "medium",
+      "claim": "The DP-FTRL default-kwargs table states `mf_blt` auto-fills `{\"max_buffers\": 16}`; the code fills `{\"max_buffers\": 10}` and the BLT math hard-rejects values above 15. Line 129 states `noise_calibration_kwargs` defaults `{\"min\": 0.01, \"max\": 10.0, \"tolerance\": 1e-3}`; the code injects `min=0.11`. docs/mechanisms/dp-ftrl/blt.md:191 separately publishes the `max_buffers` range as `1 - 20`.",
+      "failure_scenario": "A user reads training-arguments.md:143, believes 16 is the shipped default, and sets `privacy_noise_mechanism_kwargs={'max_buffers': 16}` explicitly (or writes a config generator from the table). Reproduced: `blt_strategy(max_buffers=16).sensitivity(n_steps=64, min_sep=8, max_participations=8)` raises `ValueError: max_buffers > 15 will likely cause numerical issues.`, so the documented default is unusable; `max_buffers=10` returns 5.109544420457363. blt.md:191's `1 - 20` range has the same defect for 16-20. Separately, a user relying on the documented `min: 0.01` calibration floor gets a different search bracket than the shipped `0.11`.",
+      "evidence": [
+        "docs/user-guide/huggingface/training-arguments.md:143 -- `| `mf_blt` | `balls_in_bins` | `{\"max_buffers\": 16}` |`",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py:205-211 -- `# ... the BLT math rejects > 15 as ill-conditioned. 10 matches the library's own optimize() default.` / `\"mf_blt\": {\"max_buffers\": 10},`",
+        "Measured: `blt_strategy(max_buffers=16).sensitivity(...)` -> `ValueError: max_buffers > 15 will likely cause numerical issues.`; `max_buffers=10` -> 5.109544420457363",
+        "docs/mechanisms/dp-ftrl/blt.md:191 -- `| `max_buffers` | 1 - 20 (default 10) | Number of exponential decay buffers. ... |`",
+        "docs/user-guide/huggingface/training-arguments.md:129 -- `| `noise_calibration_kwargs` | Calibration search bounds; defaults `{\"min\": 0.01, \"max\": 10.0, \"tolerance\": 1e-3}`. |`",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py:894 -- `for key, default in ((\"min\", 0.11), (\"max\", 10.0), (\"tolerance\", 1e-3)):`",
+        "docs/reference/transformers.md:186 gives the correct `{\"min\": 0.11, \"max\": 10.0, \"tolerance\": 1e-3}` -- the two pages disagree",
+        "docs/mechanisms/dp-ftrl/blt.md:190 also lists an `error` parameter (`\"max\" or \"mean\"`) that `blt_strategy(*, max_buffers, momentum, lr_schedule)` does not accept"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Change training-arguments.md:143 to `{\"max_buffers\": 10}` and :129 to `min: 0.11`; change blt.md:191's range to `1 - 15`; drop the non-existent `error` row from blt.md's parameter table.",
+      "confidence": "high"
+    },
+    {
+      "title": "Two documented sampling_mode values (sequential, cyclic_poisson) are accepted by no mechanism, and the reference table's override list omits the modes that are accepted",
+      "file": "docs/user-guide/huggingface/training-arguments.md",
+      "line": "124 (and docs/reference/transformers.md:179)",
+      "category": "docs-drift-api",
+      "severity": "low",
+      "claim": "training-arguments.md:124 lists `{\"poisson\", \"random_allocation\", \"k_out_of_t\", \"b_min_sep\", \"balls_in_bins\", \"cyclic_poisson\", \"sequential\"}` as `explicit values ... validated against the mechanism's allow-list`. `_ALLOWED_SAMPLERS` contains neither `sequential` nor `cyclic_poisson` for any mechanism, so both always raise. docs/reference/transformers.md:179's override list is the complement error: it omits `\"poisson\"` for `mf_band` (which the code does allow, and which training-arguments.md:142 documents) and omits `\"balls_in_bins\"` for `mf_identity`.",
+      "failure_scenario": "A user picking `sampling_mode=\"sequential\"` for BLT (which docs/user-guide/sampling.md:490-494 recommends for `SequentialBatchSampler` with MF mechanisms) gets `sampling_mode='sequential' is not valid for privacy_noise_mechanism='mf_blt'; allowed: ['balls_in_bins']`. A user reading reference/transformers.md:179 believes mf_band pins `b_min_sep`, while training-arguments.md:142 says `poisson` is also accepted -- the two reference pages contradict each other on a privacy-relevant allow-list.",
+      "evidence": [
+        "docs/user-guide/huggingface/training-arguments.md:124 -- lists `\"cyclic_poisson\"` and `\"sequential\"` among the explicit values",
+        "packages/opaque-transformers/src/opaque/api/transformers/trainer/_training_arguments.py:185-193 -- `_ALLOWED_SAMPLERS` values are only {poisson, random_allocation, k_out_of_t}, {poisson, balls_in_bins}, {b_min_sep, poisson}, {balls_in_bins}",
+        "Measured: TrainingArguments(..., privacy_noise_mechanism='mf_blt', sampling_mode='sequential') -> `sampling_mode='sequential' is not valid for privacy_noise_mechanism='mf_blt'; allowed: ['balls_in_bins']`; same for gaussian/mf_band/mf_identity; `cyclic_poisson` likewise rejected for mf_band and mf_identity",
+        "docs/reference/transformers.md:179 -- `Explicit overrides: \"poisson\", \"random_allocation\", \"k_out_of_t\" (gaussian); \"b_min_sep\" (mf_band); \"balls_in_bins\" (mf_blt/bisr/bsr/lambda_cgd).` -- no mf_identity row, no `poisson` for mf_band"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Either add `sequential`/`cyclic_poisson` to the relevant `_ALLOWED_SAMPLERS` entries (with the matching amplifiers) or remove them from the documented value set. Make reference/transformers.md:179 and training-arguments.md:124/142 render the same allow-list, ideally generated from `_ALLOWED_SAMPLERS`.",
+      "confidence": "high"
+    },
+    {
+      "title": "docs/limitations.md, the page the user guide links as the safety page, contains no privacy-correctness limitation at all while high-severity ones are tracked open and other pages assert the opposite",
+      "file": "docs/limitations.md",
+      "line": "1-83 (whole file)",
+      "category": "docs-completeness",
+      "severity": "medium",
+      "claim": "Every one of limitations.md's nine sections is a functional/compatibility limitation (MF workload-utility, PRNG threat model, telemetry, gradient checkpointing, Flash Attention 2, DDP-only, kernel patching, vmap in-place, vmap control flow). Not one tracked privacy-correctness limitation appears: BandMF sensitivity being participation-blind (#359), the BLT min-sep precondition not being enforced (#595), nothing binding the runtime sampler to the amplifier (#320/#356), and the bounded-Gaussian sampler not matching any accountant (#344). The single MF paragraph says only `DP correctness requires that accounting, noise, and sampling match that map` -- placing the burden on the reader without saying which shipped pairings fail to match.",
+      "failure_scenario": "A reader doing exactly the right thing -- reading `Known Limitations` before trusting a reported epsilon -- comes away believing the only privacy-relevant caveats are PRNG secrecy and telemetry. Meanwhile docs/user-guide/dp-sgd.md:96 tells them bounded noise has `same accounting`, docs/user-guide/huggingface/training-arguments.md:142 tells them mf_band+poisson is supported, and docs/mechanisms/dp-ftrl/blt.md:163-167 hands them a bare `mf_gaussian` epsilon. The 'Telemetry outside the guarantee' section is the one entry that is accurate and complete against its issue (#383), which shows the format works -- it is simply not applied to the mechanism-side limitations.",
+      "evidence": [
+        "docs/limitations.md section headings: `Matrix factorization (MF) workloads`, `Randomness and the threat model`, `Telemetry outside the guarantee`, `Gradient checkpointing`, `Flash Attention 2 incompatibility`, `DDP only`, `Kernel patching lives in opaque.patches`, `In-place operations under vmap`, `Data-dependent control flow under vmap`",
+        "docs/limitations.md:3-12 -- the entire MF section; no mention of participation-blind sensitivity, the min-sep precondition, or which sampler/accountant pairings the trainer permits but does not price",
+        "docs/user-guide/index.md:81 -- `- **[Known Limitations](../limitations.md)** -- Flash Attention, ...` and mkdocs.yml:116 `- Known Limitations: limitations.md` (it is the linked safety page)",
+        "Open issues per the reviewed snapshot: #359 (high, BandMF participation sensitivity), #595 (high, BLT min-sep non-negativity precondition), #320/#356 (high, runtime sampling not bound to amplification accounting), #344 (high, deployed Gaussian does not match the accountant)",
+        "Measured confirmations reported in the findings above: BandMfStrategy.sensitivity == 1.0 for every (min_sep, max_participations); BLT reported/true sensitivity ratio 1.4493 at default momentum with a linear schedule; mf_band+plain-Poisson reported eps 0.7180 vs 1.8282 for identity noise on the same sampler; bounded gaussian_noise collapses to a point mass at center 50, bound 1.0",
+        "docs/limitations.md:23-29 (`Telemetry outside the guarantee`) is accurate against the code: the trainer emits `privacy_clip_rate` un-noised (packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:4021) and no warning is raised"
+      ],
+      "affects_epsilon": false,
+      "fix_sketch": "Add a `Privacy-correctness limitations` section to limitations.md listing, with links to the tracked issues: (1) BandMF strategy sensitivity is single-participation and does not increase with max_participations; (2) BLT min-sep sensitivity is computed with the theorem's precondition checks disabled and is not an upper bound when the optimized coefficients go negative (any non-constant lr_schedule); (3) nothing validates that the runtime sampler realizes the participation pattern the amplifier prices -- name the mf_band+poisson pairing explicitly; (4) no shipped accountant covers `gaussian_noise(bound=...)`.",
+      "confidence": "high"
+    }
+  ],
+  "clean_areas": [
+    "b-min-sep sampler-to-accountant binding is genuinely tight and the published formula is correct. docs/mechanisms/dp-ftrl/band-mf.md:120-128 states p = p0 / (1 - p0*(b-1)) for b>1; packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/amplification/_b_min_sep/__init__.py:91-97 computes `sampling_prob` through `participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)`, and the trainer reads it off the accountant instance rather than off user kwargs (_dpftrl.py:260-274: `amp = mf.amplifier_factory(noise_multiplier); BMinSepSampler(dataset, bands=int(mf.strategy.bands), sampling_prob=float(amp.sampling_prob), ...)`). The module docstring's stated invariant matches the code.",
+    "Accounting discretization defaults table (docs/user-guide/accounting.md:568-578) verified field-by-field against `get_discretization()` on this tree: discretization 1e-4, log_x_mass_truncation_bound -50.0, max_grid_size 10,000,000, seed 42, mc_resolution 1e-5, mc_failure_probability 1e-6 -- all correct. The specific claim `require 2,940,252 samples per adjacency direction` reproduces exactly (`get_discretization().resolved_num_mc_samples` == 2940252), and the 50-million advisory threshold matches `_MC_SAMPLE_WARNING_THRESHOLD = 50_000_000` in packages/opaque-accounting/src/opaque/api/accounting/core/discretization.py:84.",
+    "The paired second-moment 'same mechanism PLD' claim (docs/user-guide/accounting.md:22, docs/user-guide/dp-ftrl.md:186-188, docs/user-guide/noise.md:180-186) is mathematically sound and I re-derived it: with sigma_i = nm*sqrt(Delta_i * S) and S = Delta_1 + Delta_2, the joint Gaussian's Mahalanobis shift is sqrt(Delta_1^2/sigma_1^2 + Delta_2^2/sigma_2^2) = sqrt((Delta_1+Delta_2)/(nm^2 * S)) = 1/nm, identical to a scalar Gaussian at multiplier nm. The same argument covers the per-group claim at noise.md:300-303. (Whether the Delta values themselves are correct for BandMF is open #359, not a docs-drift issue.)",
+    "docs/limitations.md's 'Telemetry outside the guarantee' section (lines 23-29) is accurate and complete against the residual state of #383: the trainer does emit un-noised `privacy_clip_rate` / loss to reporting backends (_dp_trainer.py:2182, 4021-4027; dptrainer.md:119-120 documents the W&B/TensorBoard/MLflow export), no warning is raised anywhere (grep for `unaccounted`/`outside the guarantee` in packages/opaque-transformers/src returns nothing), and limitations.md discloses exactly that.",
+    "docs/user-guide/accounting.md:19 and docs/reference/accounting.md:37 correctly enumerate `opaque.dpsgd.accounting` (verified `__all__` == ['adaclip','gaussian','k_out_of_t','parallel_poisson','poisson','random_allocation']); the `opaque.accounting` row's `compose`/`repeat`/`cached`/`calibrate`/`identity`/`nonprivate`/`eps_delta`/`Accountant` list is also correct against the façade's `__all__`.",
+    "The adaclip `fraction_noise_std=0.05` default used in the documented recipe (docs/user-guide/clipping.md:243, docs/reference/accounting.md:321) matches both sides: `adaptive_clipped_grad(..., fraction_noise_std: float = 0.05, ...)` and `adaclip(inner, *, fraction_noise_std: float = 0.05, ...)`. (The `num_groups` gap is reported separately.)",
+    "docs/reference/transformers.md's TrainingArguments default columns spot-checked against the dataclass and all matched except the ones reported: per_device_train_batch_size 8, per_device_eval_batch_size None, learning_rate 5e-5, weight_decay 0.0, adam betas 0.9/0.999/1e-8, optim 'adamw', lr_scheduler 'linear', warmup_steps 0, clipping_mode 'fixed', clipping_norm 1.0, sampling_mode 'auto', privacy_noise_mechanism 'gaussian', use_compat_patches True, use_performance_kernels False, gradient_checkpointing False, noise_calibration_kwargs {'min':0.11,'max':10.0,'tolerance':1e-3}.",
+    "README.md's distribution/import-layout tables match the on-disk `packages/` tree (all ten wheels present including opaque-alignment) and the patching entry points (`apply_runtime_patches()` / `apply_model_patches(model)`, no `patch_all`) match `opaque.patches`.",
+    "Alignment docs' adjacency and sensitivity statements are correctly scoped and internally consistent: docs/alignment/dpo.md:16-39 names the pair as the protected unit, states add-or-remove C vs replace-one 2C, and flags cross-batch statistics as outside the guarantee unless public or separately DP; docs/alignment/sft.md:12-16 correctly explains why the per-example (not per-batch) token divisor is required to keep sensitivity O(C).",
+    "docs/user-guide/auditing.md's description of the one-run pipeline matches the shipped `coin_flip` behavior (natural-row canary partitioning with an optional caller-supplied pool, per-canary identifiers joined by index, explicit warning that a reordering collate_fn silently misattributes scores) -- no overclaim of canary construction, and it correctly frames the estimate as an empirical lower bound.",
+    "Checked and found no drift in: docs/user-guide/sampling.md's PoissonSampler / truncated-Poisson parameter and property tables (expected_batch_size, batch_size_variance, truncated_batch_size, and the explicit 'weaker than plain Poisson' statement, which matches the code and the accountant's truncated form); docs/user-guide/accounting.md's composition-operator semantics (`*` repeat, `|` compose) and the tail_mass_truncation=0 exact-composition note; docs/reference/index.md's sampler catalogue names."
+  ]
+}
