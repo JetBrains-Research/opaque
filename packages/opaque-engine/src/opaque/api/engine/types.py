@@ -113,6 +113,11 @@ class PerGroup:
         """``sqrt(sum v²)`` — effective global value for accounting."""
         return math.sqrt(sum(v**2 for v in self.values.values()))
 
+    @property
+    def num_groups(self) -> int:
+        """Number of independently configured groups."""
+        return len(self.values)
+
     def __rmul__(self, scalar: float) -> PerGroup:
         return PerGroup(self.groups, {k: scalar * v for k, v in self.values.items()})
 

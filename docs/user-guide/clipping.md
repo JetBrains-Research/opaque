@@ -233,7 +233,7 @@ Adaptive clipping introduces an additional privacy cost (the noisy clipping
 rate query). Account for it using `dpsgd_acc.adaclip()`:
 
 ```python
-import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 
 expected_batch_size = sample_rate * dataset_size
 step = dpsgd_acc.poisson(
@@ -471,6 +471,23 @@ grad_fn, clip_state = adaptive_clipped_grad(
     batch_argnums=(1, 2),
     normalize_by=batch_size,
     key=key(7),
+)
+```
+
+`self_attn` and `mlp` adapt from separate noisy clipping-rate queries.
+`pg.num_groups` is 2 here and remains correct if the grouping changes. Pass it
+to `dpsgd_acc.adaclip()` to account for every independently adaptive group:
+
+```python
+expected_batch_size = sample_rate * dataset_size
+step = dpsgd_acc.poisson(
+    dpsgd_acc.adaclip(
+        dpsgd_acc.gaussian(noise_multiplier),
+        fraction_noise_std=0.05,
+        expected_batch_size=expected_batch_size,
+        num_groups=pg.num_groups,
+    ),
+    sample_rate,
 )
 ```
 

@@ -175,10 +175,13 @@ whole horizon. The factory currently reports the block reduction as a valid
 conservative upper bound. For `k > 1`, prefix accounting before the final step
 returns the full-horizon bound.
 
-### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
+### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy
-quantile query). Use this when using `adaptive_clipped_grad`.
+quantile query). Use this when using `adaptive_clipped_grad`. `num_groups`
+defaults to 1 for a single adaptive threshold; set it to the number of
+independently adaptive groups for per-group clipping, because each group
+releases its own noisy quantile query.
 
 ```python
 expected_batch_size = sample_rate * dataset_size
