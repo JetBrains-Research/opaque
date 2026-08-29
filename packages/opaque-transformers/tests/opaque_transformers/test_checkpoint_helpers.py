@@ -12,6 +12,7 @@ import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.exceptions import CheckpointError
 from opaque.random import key
 from opaque.serialization import from_state_dict as opaque_from_state_dict
 from opaque.types import clipped
@@ -182,7 +183,7 @@ class TestDpRuntimeBundle:
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
         _, noise = gaussian_noise(noise_multiplier=1.0, key=key(0))
-        with pytest.raises(TypeError, match="clip_state must be a ClipState"):
+        with pytest.raises(CheckpointError, match="clip_state must be a ClipState"):
             ckpt.save_dp_runtime_state(
                 path,
                 clip_state="not_a_clip_state",
@@ -199,7 +200,7 @@ class TestDpRuntimeBundle:
     def test_unsupported_noise_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
         clip = FixedClipState()
-        with pytest.raises(TypeError, match="noise_state must be a NoiseState"):
+        with pytest.raises(CheckpointError, match="noise_state must be a NoiseState"):
             ckpt.save_dp_runtime_state(
                 path,
                 clip_state=clip,
@@ -228,7 +229,7 @@ class TestDpRuntimeBundle:
             total_steps=1,
         )
         torch.save(fake, path)
-        with pytest.raises(ValueError, match="unsupported dp_state"):
+        with pytest.raises(CheckpointError, match="unsupported dp_state"):
             ckpt.load_dp_runtime_state(path)
 
 

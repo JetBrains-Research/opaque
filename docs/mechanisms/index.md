@@ -72,7 +72,7 @@ advance.
 Subsampling amplification reduces per-step privacy cost. Not all
 mechanisms support all amplification types:
 
-| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.random_allocation` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
+| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.k_out_of_t` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
 |-----------|:-:|:-:|:-:|:-:|:-:|
 | Gaussian | Yes | Yes | Yes | — | — |
 | BandMF | — | — | — | Yes | — |
@@ -88,11 +88,9 @@ mechanisms support all amplification types:
   `truncated_batch_size` and `dataset_size`; caps batches (weaker
   privacy than plain Poisson at the same $q$ unless noise is
   recalibrated).
-- **`opaque.dpsgd.accounting.random_allocation`**: DP-SGD
-  1-out-of-`num_bins` random allocation, redrawn every epoch. Returns a
-  whole-horizon process with exact prefix accounting.
-- **`opaque.dpsgd.accounting.k_out_of_t`**: global balanced allocation where
-  each record participates in exactly k uniform steps of the horizon.
+- **`opaque.dpsgd.accounting.k_out_of_t`**: DP-SGD block or total k-out-of-t
+  allocation. Block accounting is exact; total allocation uses the block
+  reduction as a conservative upper bound.
 - **`opaque.dpftrl.accounting.poisson`**: DP-FTRL whole-process Poisson
   amplification (`BandMf` / `IdentityMf` inner, `n_steps` required).
   For `BandMf` this is the cyclic-participation analysis
@@ -100,7 +98,7 @@ mechanisms support all amplification types:
 - **`opaque.dpftrl.accounting.balls_in_bins`**: Random-partition
   amplification with the assignment **fixed across epochs**. Used with
   BLT, DP-λCGD, BISR, BSR, and identity MF. Not interchangeable with
-  `dpsgd_acc.random_allocation`, which redraws each epoch — the two
+  `dpsgd_acc.k_out_of_t(..., allocation="block")`, which draws each block independently — the two
   schemes have different samplers and different accountants.
 - **internal**: BLT handles multi-participation patterns (min-sep)
   within its own sensitivity computation — no external amplification

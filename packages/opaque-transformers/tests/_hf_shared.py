@@ -17,16 +17,7 @@ import functools
 from typing import Any
 
 import torch
-
-
-def get_default_gpu_device():
-    """CUDA > MPS > None. Inlined to avoid conftest circular import."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
-
+from opaque_test_support import get_default_gpu_device
 
 # =============================================================================
 # Model Testing Utilities

@@ -52,10 +52,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from opaque.exceptions import ConfigurationError
+
 try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
-    raise ImportError(
+    raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
         "torchopt is required for opaque.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
@@ -198,15 +200,19 @@ def _scale_by_adafactor(
 
         flat_paths, flat_grads, _ = tree_flatten_with_paths(updates)
         if flat_paths != list(state.paths):
-            raise ValueError(
-                f"updates ParamPath mismatch: expected {list(state.paths)!r}, "
-                f"got {flat_paths!r}."
+            raise ConfigurationError(
+                *(
+                    f"updates ParamPath mismatch: expected {list(state.paths)!r}, "
+                    f"got {flat_paths!r}.",
+                )
             )
         if len(flat_grads) != len(state.v_flat):
-            raise ValueError(
-                f"updates pytree has {len(flat_grads)} leaves, "
-                f"but state has {len(state.v_flat)} — params/grads "
-                "shape mismatch."
+            raise ConfigurationError(
+                *(
+                    f"updates pytree has {len(flat_grads)} leaves, "
+                    f"but state has {len(state.v_flat)} — params/grads "
+                    "shape mismatch.",
+                )
             )
 
         bc_active = noise_bias_correction and noise_stddev is not None
@@ -342,17 +348,21 @@ def adafactor(
         A ``torchopt.base.GradientTransformation``.
     """
     if decay_rate >= 0:
-        raise ValueError(f"decay_rate must be negative, got {decay_rate}")
+        raise ConfigurationError(*(f"decay_rate must be negative, got {decay_rate}",))
     if eps_grad <= 0 or eps_root <= 0:
-        raise ValueError(
-            f"eps_grad and eps_root must be positive, got {eps_grad}, {eps_root}"
+        raise ConfigurationError(
+            *(f"eps_grad and eps_root must be positive, got {eps_grad}, {eps_root}",)
         )
     if not 0 <= beta1 < 1:
-        raise ValueError(f"beta1 must satisfy 0 <= beta1 < 1, got {beta1}")
+        raise ConfigurationError(*(f"beta1 must satisfy 0 <= beta1 < 1, got {beta1}",))
     if weight_decay < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {weight_decay}")
+        raise ConfigurationError(
+            *(f"weight_decay must be non-negative, got {weight_decay}",)
+        )
     if update_rms_clip <= 0:
-        raise ValueError(f"update_rms_clip must be positive, got {update_rms_clip}")
+        raise ConfigurationError(
+            *(f"update_rms_clip must be positive, got {update_rms_clip}",)
+        )
 
     moment = _scale_by_adafactor(
         b1=beta1,

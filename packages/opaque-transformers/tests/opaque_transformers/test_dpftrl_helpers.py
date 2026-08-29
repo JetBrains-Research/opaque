@@ -29,7 +29,7 @@ from opaque.dpftrl.noise.types import (
     IdentityStrategy,
     LambdaCgdStrategy,
 )
-from opaque.dpsgd.sampling import PoissonSampler, RandomAllocationSampler
+from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler
 from opaque.random import key
 
 
@@ -224,23 +224,7 @@ class TestBuildSampler:
         )
         assert isinstance(sampler, PoissonSampler)
 
-    def test_random_allocation(self):
-        dataset = _ListDataset(64)
-        sampler = _dpftrl.build_sampler(
-            sampling_mode="random_allocation",
-            dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
-            key=key(0),
-            sampling_kwargs=None,
-            mf=None,
-            noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
-        )
-        assert isinstance(sampler, RandomAllocationSampler)
-
-    def test_k_out_of_t(self):
+    def test_block_k_out_of_t(self):
         dataset = _ListDataset(64)
         sampler = _dpftrl.build_sampler(
             sampling_mode="k_out_of_t",
@@ -248,16 +232,32 @@ class TestBuildSampler:
             sample_rate=0.1,
             n_steps=8,
             key=key(0),
-            sampling_kwargs={"total_participations": 3},
+            sampling_kwargs={"k": 2, "allocation": "block"},
             mf=None,
             noise_multiplier=None,
             num_bins=4,
             expected_batch_size=4,
         )
-        from opaque.dpsgd.sampling import KOutOfTSampler
-
         assert isinstance(sampler, KOutOfTSampler)
-        assert sampler.total_participations == 3
+        assert sampler.k == 2
+        assert sampler.allocation == "block"
+
+    def test_total_k_out_of_t(self):
+        dataset = _ListDataset(64)
+        sampler = _dpftrl.build_sampler(
+            sampling_mode="k_out_of_t",
+            dataset=dataset,
+            sample_rate=0.1,
+            n_steps=8,
+            key=key(0),
+            sampling_kwargs={"k": 3, "allocation": "total"},
+            mf=None,
+            noise_multiplier=None,
+            num_bins=4,
+            expected_batch_size=4,
+        )
+        assert isinstance(sampler, KOutOfTSampler)
+        assert sampler.allocation == "total"
 
     def test_b_min_sep_reads_bands_and_sampling_prob_from_amplifier(self):
         from opaque.api.accounting.dpftrl.amplification._b_min_sep import (

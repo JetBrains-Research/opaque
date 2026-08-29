@@ -23,6 +23,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
+from opaque.exceptions import ConfigurationError
+
 __all__ = ["null_ref_context", "with_disabled_adapter"]
 
 if TYPE_CHECKING:
@@ -150,9 +152,11 @@ def null_ref_context(
         Modelled on TRL ``utils.use_adapter`` (``trl/trainer/utils.py``).
     """
     if ref_model is model:
-        raise ValueError(
-            "ref_model must be a separate model; omit ref_model to use the "
-            "policy's PEFT reference adapter or adapter-disabled base model."
+        raise ConfigurationError(
+            *(
+                "ref_model must be a separate model; omit ref_model to use the "
+                "policy's PEFT reference adapter or adapter-disabled base model.",
+            )
         )
 
     # ── Row 1: separate ref_model ───────────────────────────────────────────

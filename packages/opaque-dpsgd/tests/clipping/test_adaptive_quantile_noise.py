@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 from opaque.types import ClippedPytree
 
@@ -37,7 +38,9 @@ class TestQuantileNoise:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        with pytest.raises(ValueError, match="fraction_noise_std must be positive"):
+        with pytest.raises(
+            ConfigurationError, match="fraction_noise_std must be positive"
+        ):
             adaptive_clipped_grad(
                 loss_fn,
                 fraction_noise_std=-1.0,

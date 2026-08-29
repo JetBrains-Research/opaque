@@ -147,6 +147,7 @@ nav:
     - Overview: development/index.md
   - API Reference:
     - Overview: reference/index.md
+    - Exceptions: reference/exceptions.md
     - Serialization: reference/serialization.md
     - Clipping: reference/clipping.md
     - Noise: reference/noise.md

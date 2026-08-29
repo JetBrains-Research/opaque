@@ -8,6 +8,7 @@ import torch
 from opaque.api.dpsgd.clipping._adaptive import adaptive_clipped_grad
 from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
 from opaque.dpsgd.clipping.types import ClippingStats
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree
 
@@ -646,7 +647,9 @@ class TestInputValidation:
         def loss_fn(params):
             return params.sum()
 
-        with pytest.raises(ValueError, match="initial_clipping_norm must be positive"):
+        with pytest.raises(
+            ConfigurationError, match="initial_clipping_norm must be positive"
+        ):
             adaptive_clipped_grad(loss_fn, initial_clipping_norm=-1.0, key=key(0))
 
     def test_invalid_target_quantile(self):
@@ -676,7 +679,9 @@ class TestInputValidation:
         def loss_fn(params):
             return params.sum()
 
-        with pytest.raises(ValueError, match="clipping_norm_min must be positive"):
+        with pytest.raises(
+            ConfigurationError, match="clipping_norm_min must be positive"
+        ):
             adaptive_clipped_grad(loss_fn, clipping_norm_min=-0.1, key=key(0))
 
     def test_invalid_clipping_norm_max(self):

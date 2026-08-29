@@ -9,6 +9,7 @@ from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping.fun import auto_clipped_fun, auto_scale_pytree
 from opaque.api.engine.clipping.types import AutoClippedGradAux, AutoClipState
+from opaque.exceptions import ConfigurationError
 from opaque.types import ClippedPytree, PerGroup
 
 
@@ -140,7 +141,9 @@ class TestAutoScalePytree:
     def test_group_key_mismatch_raises(self):
         pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
         pg = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
-        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
+        with pytest.raises(
+            ConfigurationError, match="must match the pytree tensor leaves"
+        ):
             auto_scale_pytree(pytree, R=pg)
 
 

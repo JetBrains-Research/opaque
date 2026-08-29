@@ -16,6 +16,7 @@ from opaque.dpftrl.noise import (
     mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 from opaque.types import (
     NoisedPytree,
@@ -98,7 +99,9 @@ class TestSecondMomentCalibration:
         assert b_second > a_second
 
     def test_rejects_invalid(self):
-        with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
+        with pytest.raises(
+            ConfigurationError, match="noise_multiplier must be non-negative"
+        ):
             paired_noise_stddevs(-1.0, first=0.1, second=0.01)
         with pytest.raises(ValueError, match="first must be non-negative"):
             paired_noise_stddevs(1.0, first=-0.1, second=0.01)

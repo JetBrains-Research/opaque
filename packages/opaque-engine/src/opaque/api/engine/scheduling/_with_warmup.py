@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from opaque.api.engine.scheduling._constant import ConstantSchedule
 from opaque.api.engine.scheduling._ramp import resolve_ramp
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -70,12 +71,12 @@ def with_warmup(
     ``"cosine"``, ``"1-sqrt"``, or a callable.
     """
     if transition_steps <= 0:
-        raise ValueError(
-            f"with_warmup requires transition_steps > 0; got {transition_steps}."
+        raise ConfigurationError(
+            *(f"with_warmup requires transition_steps > 0; got {transition_steps}.",)
         )
     if not 0.0 <= init_value <= 1.0:
-        raise ValueError(
-            f"with_warmup requires init_value in [0, 1]; got {init_value}."
+        raise ConfigurationError(
+            *(f"with_warmup requires init_value in [0, 1]; got {init_value}.",)
         )
     # Fail-fast on bad string ramps (round-trip the resolver to validate).
     resolve_ramp(ramp)

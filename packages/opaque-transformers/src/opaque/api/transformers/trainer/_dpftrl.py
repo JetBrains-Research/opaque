@@ -46,8 +46,8 @@ from opaque.dpftrl.accounting import (
 from opaque.dpsgd.sampling import (
     KOutOfTSampler,
     PoissonSampler,
-    RandomAllocationSampler,
 )
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -174,9 +174,11 @@ def build_amplifier_factory(
             return _ftrl_balls_in_bins(mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns)
 
     else:
-        raise ValueError(
-            f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
-            f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'."
+        raise ConfigurationError(
+            *(
+                f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
+                f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'.",
+            )
         )
     return amp
 
@@ -231,38 +233,38 @@ def build_sampler(
             truncated_batch_size=truncated_batch_size,
             key=key,
         )
-    if sampling_mode == "random_allocation":
-        return RandomAllocationSampler(
-            dataset,
-            num_bins=num_bins,
-            n_steps=n_steps,
-            key=key,
-        )
     if sampling_mode == "k_out_of_t":
-        k_raw = sk.get("total_participations")
-        if k_raw is None:
-            raise ValueError(
-                "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                "'total_participations'."
+        k_raw = sk.get("k")
+        allocation = sk.get("allocation")
+        if k_raw is None or allocation is None:
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
+                    "'k' and 'allocation'.",
+                )
             )
-        total_participations = int(k_raw)
-        if not 1 <= total_participations <= n_steps:
-            raise ValueError(
-                "total_participations must be in "
-                f"[1, n_steps={n_steps}], got {total_participations}."
+        if allocation not in ("block", "total"):
+            raise ConfigurationError(
+                *(
+                    "sampling_kwargs['allocation'] must be 'block' or 'total', got "
+                    f"{allocation!r}.",
+                )
             )
         return KOutOfTSampler(
             dataset,
-            total_participations=total_participations,
-            n_steps=n_steps,
+            k=int(k_raw),
+            t=n_steps,
+            allocation=allocation,
             key=key,
         )
     if sampling_mode == "b_min_sep":
         if mf is None or noise_multiplier is None:
-            raise ValueError(
-                "sampling_mode='b_min_sep' requires a built MFContext and a "
-                "calibrated noise_multiplier; got mf=None or "
-                "noise_multiplier=None."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='b_min_sep' requires a built MFContext and a "
+                    "calibrated noise_multiplier; got mf=None or "
+                    "noise_multiplier=None.",
+                )
             )
         amp = mf.amplifier_factory(noise_multiplier)
         return BMinSepSampler(
@@ -281,9 +283,11 @@ def build_sampler(
         )
     if sampling_mode == "cyclic_poisson":
         if mf is None:
-            raise ValueError(
-                "sampling_mode='cyclic_poisson' requires a built MFContext; "
-                "got mf=None."
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a built MFContext; "
+                    "got mf=None.",
+                )
             )
         return CyclicPoissonSampler(
             dataset,
@@ -294,7 +298,7 @@ def build_sampler(
         )
     if sampling_mode == "sequential":
         return SequentialBatchSampler(dataset, batch_size=expected_batch_size)
-    raise ValueError(f"Unknown sampling_mode {sampling_mode!r}")
+    raise ConfigurationError(*(f"Unknown sampling_mode {sampling_mode!r}",))
 
 
 __all__ = [

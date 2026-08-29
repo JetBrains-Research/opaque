@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import socket
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -11,7 +9,19 @@ from typing import Any
 import pytest
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
+from opaque_test_support import (
+    cleanup_process_group as _cleanup_ddp,
+)
+from opaque_test_support import (
+    setup_gloo as _setup_gloo_base,
+)
+from opaque_test_support import (
+    spawn as _spawn,
+)
+
+from opaque.exceptions import OperationError
+
+_spawn_gloo = _spawn
 
 # Short timeout: a mismatched collective sequence must fail promptly rather than
 # hang the CI job.
@@ -19,31 +29,9 @@ _PG_TIMEOUT = timedelta(seconds=120)
 _COLUMNS = ("ref_chosen_logps", "ref_rejected_logps")
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def _setup_gloo(rank: int, world_size: int, port: int) -> None:
     """Initialize a CPU process group for the precompute regressions."""
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(
-        backend="gloo", rank=rank, world_size=world_size, timeout=_PG_TIMEOUT
-    )
-
-
-def _cleanup_ddp() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def _spawn_gloo(world_size: int, fn: Any, *args: Any) -> None:
-    port = _find_free_port()
-    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+    _setup_gloo_base(rank, world_size, port, timeout=_PG_TIMEOUT)
 
 
 def _make_dataset(n_rows: int, start: int = 0) -> Any:
@@ -225,7 +213,9 @@ def _assert_dataset_size_mismatch(rank: int, world_size: int) -> None:
 def _assert_dataset_fingerprint_mismatch(rank: int, world_size: int) -> None:
     from opaque.alignment.dpo.reference import compute_ref_logprobs_for_dataset
 
-    with pytest.raises(RuntimeError, match="dataset fingerprint mismatch across ranks"):
+    with pytest.raises(
+        OperationError, match="dataset fingerprint mismatch across ranks"
+    ):
         compute_ref_logprobs_for_dataset(
             _make_dataset(4, start=rank * 10),
             _CountingRef(),

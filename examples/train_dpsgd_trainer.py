@@ -26,13 +26,10 @@ USAGE:
   # Disable W&B/HF reporting callbacks
   python examples/train_dpsgd_trainer.py --preset smoke --no-wandb
 
-  # Gaussian DP-SGD with redrawn random allocation (horizon accounting)
-  python examples/train_dpsgd_trainer.py --preset smoke \\
-      --noise-mechanism gaussian --sampler random_allocation
-
-  # Global k-out-of-t allocation (requires --total-participations)
-  python examples/train_dpsgd_trainer.py --preset smoke \\
-      --noise-mechanism gaussian --sampler k_out_of_t --total-participations 2
+  # Block k-out-of-t allocation
+  python examples/train_dpsgd_trainer.py --preset smoke --num-epochs 2 \\
+      --noise-mechanism gaussian --sampler k_out_of_t --k 2 \
+      --allocation block
 """
 
 from __future__ import annotations
@@ -552,7 +549,6 @@ def parse_args() -> argparse.Namespace:
         choices=[
             "auto",
             "poisson",
-            "random_allocation",
             "k_out_of_t",
             "b_min_sep",
             "balls_in_bins",
@@ -564,21 +560,29 @@ def parse_args() -> argparse.Namespace:
             "``--noise-mechanism`` (poisson for gaussian / mf_identity, "
             "b_min_sep for mf_band, balls_in_bins for mf_blt / mf_bisr / "
             "mf_bsr / mf_lambda_cgd).  Gaussian also accepts "
-            "``random_allocation`` (redrawn 1-out-of-b bins per epoch) and "
-            "``k_out_of_t`` (uniform k participations over the run; pair with "
-            "``--total-participations``).  Explicit overrides are validated "
+            "``k_out_of_t`` (block or total-horizon allocation; pair with "
+            "``--k`` and ``--allocation``). Explicit overrides are validated "
             "by ``TrainingArguments`` against the mechanism allow-list."
         ),
     )
     dp_group.add_argument(
-        "--total-participations",
+        "--k",
         type=int,
         default=None,
         metavar="K",
         help=(
             "For ``--sampler k_out_of_t``: each training example participates "
-            "in exactly K optimizer steps, chosen uniformly over the "
-            "declared run length.  Required when that sampler is selected."
+            "in exactly K optimizer steps. Required when that sampler is selected."
+        ),
+    )
+    dp_group.add_argument(
+        "--allocation",
+        choices=["block", "total"],
+        default=None,
+        help=(
+            "For ``--sampler k_out_of_t``: ``block`` assigns every example once "
+            "in each of K nearly equal blocks; ``total`` chooses K steps uniformly "
+            "from the complete horizon and uses the conservative block accountant."
         ),
     )
     dp_group.add_argument(
@@ -814,25 +818,28 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _validate_sampler_cli(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+def _validate_sampler_cli(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
     sampler = args.sampler
-    if sampler == "k_out_of_t" and args.total_participations is None:
-        parser.error("--sampler k_out_of_t requires --total-participations K")
-    if sampler in ("random_allocation", "k_out_of_t"):
+    if sampler == "k_out_of_t" and args.k is None:
+        parser.error("--sampler k_out_of_t requires --k K")
+    if sampler == "k_out_of_t" and args.allocation is None:
+        parser.error("--sampler k_out_of_t requires --allocation")
+    if sampler == "k_out_of_t":
         if args.noise_mechanism != "gaussian":
             parser.error(
-                f"--sampler {sampler} is only supported with "
-                "--noise-mechanism gaussian"
+                f"--sampler {sampler} is only supported with --noise-mechanism gaussian"
             )
         if args.max_batch_size is not None:
             parser.error(
                 "--max-batch-size (truncated Poisson) is incompatible with "
                 f"--sampler {sampler}"
             )
-    if args.total_participations is not None and sampler != "k_out_of_t":
-        parser.error(
-            "--total-participations is only used with --sampler k_out_of_t"
-        )
+    if args.k is not None and sampler != "k_out_of_t":
+        parser.error("--k is only used with --sampler k_out_of_t")
+    if args.allocation is not None and sampler != "k_out_of_t":
+        parser.error("--allocation is only used with --sampler k_out_of_t")
 
 
 def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
@@ -840,7 +847,8 @@ def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
     if args.max_batch_size is not None:
         sk["max_batch_size"] = args.max_batch_size
     if args.sampler == "k_out_of_t":
-        sk["total_participations"] = int(args.total_participations)
+        sk["k"] = int(args.k)
+        sk["allocation"] = args.allocation
     return sk
 
 

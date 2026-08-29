@@ -19,16 +19,13 @@ small scale.
 from __future__ import annotations
 
 import json
-import os
-import socket
 import tempfile
 from pathlib import Path
 
 import pytest
 import torch
-import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.nn as nn
+from opaque_test_support import cleanup_process_group, setup_nccl, spawn
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import local_shard, sum_gradients
@@ -140,28 +137,8 @@ def _run_single(device: torch.device) -> float:
     return _eval_loss(fmodel, params, x_eval, y_eval)
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _setup_ddp(rank: int, world_size: int, port: int) -> None:
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    torch.cuda.set_device(rank)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-
-
-def _cleanup_ddp() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
 def _worker_ddp(rank: int, world_size: int, port: int, out_path: str) -> None:
-    _setup_ddp(rank, world_size, port)
+    setup_nccl(rank, world_size, port)
     try:
         device = torch.device(f"cuda:{rank}")
         model = _Mlp().to(device)
@@ -226,7 +203,7 @@ def _worker_ddp(rank: int, world_size: int, port: int, out_path: str) -> None:
         if rank == 0:
             Path(out_path).write_text(json.dumps({"eval_loss": float(eval_loss)}))
     finally:
-        _cleanup_ddp()
+        cleanup_process_group()
 
 
 def _run(world_size: int) -> float:
@@ -234,15 +211,9 @@ def _run(world_size: int) -> float:
         pytest.skip(f"Requires >= {world_size} CUDA devices")
     if world_size == 1:
         return _run_single(torch.device("cuda:0"))
-    port = _find_free_port()
     with tempfile.TemporaryDirectory() as tmp:
         out = str(Path(tmp) / "metrics.json")
-        mp.spawn(
-            _worker_ddp,
-            args=(world_size, port, out),
-            nprocs=world_size,
-            join=True,
-        )
+        spawn(world_size, _worker_ddp, out)
         return float(json.loads(Path(out).read_text())["eval_loss"])
 
 
@@ -256,7 +227,8 @@ def test_dpftrl_sampler_short_run_1_vs_2_gpu_parity() -> None:
     # algebraic-identity companion (bound = 1e-4).
     one = _run(1)
     two = _run(2)
-    assert one > 0 and two > 0
+    assert one > 0
+    assert two > 0
     rel = abs(two - one) / one
     print(
         f"\nDP-FTRL sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}"

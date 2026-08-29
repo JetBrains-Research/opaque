@@ -12,13 +12,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.accounting.amplification.types import CyclicPoisson
 from opaque.dpftrl.accounting.types import MfGaussian
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
-
 
 # ── MfGaussian(BandMfStrategy) — banded-Toeplitz path ────────────────────
 
@@ -53,7 +52,8 @@ class TestBandMfGaussian:
     def test_pld_returns_valid(self):
         proc = _band(1.0, n_steps=20, bands=1)
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 # ── CyclicPoisson(MfGaussian(BandMfStrategy)) ────────────────────────────
@@ -87,7 +87,8 @@ class TestFtrlPoissonDataclass:
             _band(1.0, n_steps=20, bands=1), sample_rate=0.01, n_steps=20
         )
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_matches_manual_poisson_composition(self):
         """poisson(BandMf(bands=1)) should match poisson(gaussian(nm/S)) * n_steps."""
@@ -130,9 +131,9 @@ class TestFtrlPoissonConstructor:
 
     def test_rejects_bad_sample_rate(self):
         inner = _band(1.0, n_steps=10, bands=1)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="sample_rate must be in"):
             ftrl_acc.poisson(inner, 0.0, n_steps=10)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="sample_rate must be in"):
             ftrl_acc.poisson(inner, 1.5, n_steps=10)
 
 
@@ -169,7 +170,8 @@ class TestBltMfGaussian:
 
     def test_pld_returns_valid(self):
         eps = self._blt().epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 # ── Composition tests ───────────────────────────────────────────────
@@ -181,15 +183,18 @@ class TestMfComposition:
     def test_band_mf_composes_with_gaussian(self):
         proc = _band(1.0, n_steps=10, bands=1) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_poisson_composes_with_gaussian(self):
         inner = _band(1.0, n_steps=20, bands=1)
         proc = ftrl_acc.poisson(inner, 0.01, n_steps=20) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_identity_strategy_composes_with_gaussian(self):
         proc = ftrl_acc.mf_gaussian(1.0, identity_strategy()) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0

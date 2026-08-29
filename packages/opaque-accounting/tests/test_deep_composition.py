@@ -25,6 +25,7 @@ from opaque.api.accounting.core.composition.types import (
     Composed,
     Repeated,
 )
+from opaque.exceptions import CheckpointError
 from opaque.serialization import from_state_dict, state_dict
 
 DEPTH = 10_000
@@ -173,22 +174,24 @@ class TestWrapperLoadErrors:
     """#334 review F5: wrapper-path error behavior is explicit."""
 
     def test_missing_type_raises_with_clear_message(self):
-        with pytest.raises(ValueError, match="missing required field 'type'"):
+        with pytest.raises(CheckpointError, match="missing required field 'type'"):
             _load_dp_process({})
 
     def test_missing_child_field_raises(self):
         left = _serialize_dp_process(acc.eps_delta(0.1, 1e-9))
-        with pytest.raises(ValueError, match="missing required field 'right'"):
+        with pytest.raises(CheckpointError, match="missing required field 'right'"):
             _load_dp_process({"type": "Composed", "left": left})
 
     def test_non_dict_child_raises_with_clear_message(self):
-        with pytest.raises(ValueError, match="must be a serialized DpProcess dict"):
+        with pytest.raises(
+            CheckpointError, match="must be a serialized DpProcess dict"
+        ):
             _load_dp_process({"type": "Composed", "left": 5, "right": 6})
 
     def test_extra_keys_raise(self):
         w = _serialize_dp_process(Repeated(acc.eps_delta(0.1, 1e-9), 2))
         w["stray"] = 1
-        with pytest.raises(ValueError, match="unexpected keys"):
+        with pytest.raises(CheckpointError, match="unexpected keys"):
             _load_dp_process(w)
 
 

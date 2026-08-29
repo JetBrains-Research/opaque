@@ -38,7 +38,7 @@ def _import_trl() -> Any:
     try:
         import trl
     except ImportError as e:  # pragma: no cover — gated by extras
-        raise ImportError(
+        raise ImportError(  # noqa: TRY003 - preserve standard Python error contract
             "Converting from TRL configs requires the optional ``trl`` "
             "dependency. Install with ``pip install opaque[trl]`` (or "
             "``pip install 'trl>=1.0,<2.0'`` if you manage deps yourself)."

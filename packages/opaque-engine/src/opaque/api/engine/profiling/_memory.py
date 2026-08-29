@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from opaque.api.engine.device import device_capabilities
+from opaque.exceptions import OperationError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -355,8 +356,10 @@ class _StepPerfBuilder:
             RuntimeError: If accessed before the context manager exits.
         """
         if self._perf is None:
-            raise RuntimeError(
-                "StepPerf is not available until the step_perf context manager exits."
+            raise OperationError(
+                *(
+                    "StepPerf is not available until the step_perf context manager exits.",
+                )
             )
         return self._perf
 
@@ -668,7 +671,7 @@ class PerfTracker:
     def __getattr__(self, name: str) -> PerfStage:
         if name in _STAGE_SHORTCUTS:
             return self._get_stage(name)
-        raise AttributeError(
+        raise AttributeError(  # noqa: TRY003 - preserve standard Python error contract
             f"{type(self).__name__!r} has no attribute {name!r}. "
             f"Use tracker[{name!r}] for custom stages."
         )

@@ -1,14 +1,12 @@
 """Tests for MF strategy factories and mf_gaussian_noise()."""
 
+from typing import ClassVar
+
 import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.types import clipped
-
-from opaque.types import NoisedPytree
-
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -23,10 +21,10 @@ from opaque.dpftrl.noise.types import (
     LambdaCgdStrategy,
 )
 from opaque.random import key
+from opaque.types import NoisedPytree, clipped
 
-
-_PART = dict(n_steps=100, min_sep=25, max_participations=4)
-_BAND_PART = dict(n_steps=100, min_sep=1, max_participations=100)
+_PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
+_BAND_PART = {"n_steps": 100, "min_sep": 1, "max_participations": 100}
 
 
 # ── BandMfStrategy ──────────────────────────────────────────────────────
@@ -56,7 +54,7 @@ class TestBandMfStrategy:
         assert s.streaming_matrix(n_steps=100) is not None
 
     def test_rejects_bad_bands(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bands must be >= 1"):
             band_mf_strategy(bands=0)
 
     def test_with_lr_schedule(self):
@@ -132,9 +130,9 @@ class TestLambdaCgdStrategy:
         assert s.sensitivity(**_PART) > 0
 
     def test_rejects_bad_lambda(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="lambda_ must be in"):
             lambda_cgd_strategy(lambda_=-0.1)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="lambda_ must be in"):
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_internal_fields(self):
@@ -168,7 +166,7 @@ class TestBisrStrategy:
         assert bisr_strategy(bandwidth=4, momentum=0.95).sensitivity(**_PART) > 0
 
     def test_rejects_bad_bandwidth(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bandwidth must be >= 2"):
             bisr_strategy(bandwidth=1)
 
 
@@ -264,7 +262,7 @@ class TestBnbEquivalence:
 class TestMfNoise:
     """mf_gaussian_noise() produces noise for all strategy types."""
 
-    grad = {"w": torch.randn(3, 4)}
+    grad: ClassVar = {"w": torch.randn(3, 4)}
 
     def _clipped_grad(self):
         return clipped(self.grad, max_norm=1.0)

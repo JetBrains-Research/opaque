@@ -16,6 +16,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opaque.exceptions import CheckpointError
 from opaque.serialization import from_state_dict, state_dict
 
 
@@ -40,11 +41,11 @@ def _nested(*leaves: Any) -> _State:
 
 @pytest.mark.parametrize("zeros", [torch.zeros, np.zeros], ids=["tensor", "ndarray"])
 def test_nested_shape_mismatch_rejected(zeros: Any) -> None:
-    """Both leaf kinds reject a mismatch with ``ValueError``, naming the key."""
+    """Both leaf kinds reject a mismatch with ``CheckpointError``, naming the key."""
     saved = state_dict(_nested(zeros(2), zeros(3)))
 
     with pytest.raises(
-        ValueError, match=r"shape \(3,\); template expects \(4,\)"
+        CheckpointError, match=r"shape \(3,\); template expects \(4,\)"
     ) as excinfo:
         from_state_dict(_nested(zeros(2), zeros(4)), saved)
 
@@ -55,7 +56,7 @@ def test_parameter_shape_mismatch_rejected() -> None:
     """``nn.Parameter`` restores through the tensor rule, not around it."""
     saved = state_dict({"p": nn.Parameter(torch.ones(3))})
 
-    with pytest.raises(ValueError, match="shape"):
+    with pytest.raises(CheckpointError, match="shape"):
         from_state_dict({"p": nn.Parameter(torch.zeros(4))}, saved)
 
 

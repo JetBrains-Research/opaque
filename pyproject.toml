@@ -217,18 +217,19 @@ src = [
 #   ARG    — unused-arg underscore renames break HF/torch keyword APIs
 #            (create_graph=, batch_size=, prediction_loss_only=, vmap info/…)
 #   PLC0415 — many lazy / optional / cycle-breaking imports are intentional
-#   TRY003  — requires bespoke exception classes for every message; low fit
+#   TRY003  — public semantic categories carry stable catch contracts without
+#             a bespoke exception class per diagnostic message
 #   ANN    — full annotation coverage is a separate initiative
 #   RUF022  — alphabetical __all__ destroys thematic section comments
 # Keep editor diagnostics aligned with the CI lint gate. Ruff still formats
-# these paths, while pytest and Qodana own their behavioral and semantic checks.
+# these excluded paths, while pytest and Qodana own their behavioral and
+# semantic checks.
 exclude = [
   ".github/scripts/**",
   "benchmarks/**",
   "conftest.py",
   "docs/**",
   "examples/**",
-  "tests/**",
 ]
 select = [
   "E", "F", "W",
@@ -244,6 +245,7 @@ select = [
   "FA",
   "ICN",
   "PGH",
+  "TRY003",
   "PT",
   "LOG",
   "SLOT",
@@ -294,8 +296,8 @@ max-statements = 120
 "packages/opaque-patches/src/opaque/api/patches/kernels/rms_norm.py" = ["PLR0913", "PLR0917"]
 "packages/opaque-patches/src/opaque/api/patches/kernels/rope_embedding.py" = ["PLR0913", "PLR0917"]
 # INP001: pytest trees intentionally omit __init__.py.
-"**/tests/**" = ["INP001", "D", "PLR2004"]
-"tests/**" = ["INP001", "D", "PLR2004"]
+"**/tests/**" = ["INP001", "D", "PLR2004", "TRY003"]
+"tests/**" = ["INP001", "D", "PLR2004", "TRY003"]
 # Internal implementation methods are deliberately not selected by the
 # public-surface rules above; test helpers remain outside this docstring scope.
 # PEP 420: `opaque/` has no __init__.py (multi-wheel namespace); façade

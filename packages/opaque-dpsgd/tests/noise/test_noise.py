@@ -8,6 +8,7 @@ import torch
 
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.noise.types import GaussianNoiseState
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree, PerGroup, clipped, noised
 
@@ -64,7 +65,9 @@ class TestGaussian:
         assert not torch.isnan(output.pytree).any()
 
     def test_negative_noise_multiplier_raises(self):
-        with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
+        with pytest.raises(
+            ConfigurationError, match="noise_multiplier must be non-negative"
+        ):
             gaussian_noise(noise_multiplier=-1.0, key=key(0))
 
     def test_negative_bound_raises_at_call(self):

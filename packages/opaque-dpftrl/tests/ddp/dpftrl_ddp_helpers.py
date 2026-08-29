@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import os
-import socket
-
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.nn as nn
+from opaque_test_support import (
+    cleanup_process_group as _cleanup_ddp,
+)
+from opaque_test_support import (
+    setup_gloo as _setup_gloo,
+)
+from opaque_test_support import (
+    setup_nccl as _setup_ddp,
+)
+from opaque_test_support import (
+    spawn as _spawn,
+)
 
 from opaque.distributed import sum_gradients, sync
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
@@ -18,50 +26,7 @@ from opaque.pytree import tree_leaves, tree_map
 from opaque.random import key
 from opaque.types import clipped
 
-
-def _is_ddp_available() -> bool:
-    return dist.is_available() and torch.cuda.is_available()
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _setup_ddp(rank: int, world_size: int, port: int) -> None:
-    if not _is_ddp_available():
-        raise RuntimeError("DDP requires CUDA and torch.distributed support")
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    torch.cuda.set_device(rank)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-
-
-def _setup_gloo(rank: int, world_size: int, port: int) -> None:
-    """Initialize a CPU process group for backend-neutral DDP coverage."""
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["RANK"] = str(rank)
-    os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
-
-
-def _cleanup_ddp() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def _spawn(world_size: int, fn, *args) -> None:
-    port = _find_free_port()
-    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
-
-
-def _spawn_gloo(world_size: int, fn, *args) -> None:
-    port = _find_free_port()
-    mp.spawn(fn, args=(world_size, port, *args), nprocs=world_size, join=True)
+_spawn_gloo = _spawn
 
 
 class SimpleModel(nn.Module):

@@ -27,6 +27,7 @@ from opaque.api.engine.pytree import (
     tree_structure,
     tree_unflatten,
 )
+from opaque.exceptions import InputTypeError, OperationError
 
 from ._auto import AutoClipState
 from ._clipped_fun import ClippedFunAux, FixedClipState
@@ -56,10 +57,12 @@ def sync_clip_state(
     if not is_distributed():
         return state
     if not isinstance(state, _MARKER_CLIP_STATES):
-        raise TypeError(
-            "Expected a marker clip state "
-            f"({' or '.join(t.__name__ for t in _MARKER_CLIP_STATES)}), "
-            f"got {type(state).__name__}"
+        raise InputTypeError(
+            *(
+                "Expected a marker clip state "
+                f"({' or '.join(t.__name__ for t in _MARKER_CLIP_STATES)}), "
+                f"got {type(state).__name__}",
+            )
         )
 
     return state
@@ -110,9 +113,11 @@ def _split_aux_fields(
             details.append(f"unexpected fields: {unexpected}")
         if missing:
             details.append(f"missing fields: {missing}")
-        raise TypeError(
-            f"{type(aux).__name__} does not match the {schema_type.__name__} "
-            f"synchronization schema ({'; '.join(details)})."
+        raise InputTypeError(
+            *(
+                f"{type(aux).__name__} does not match the {schema_type.__name__} "
+                f"synchronization schema ({'; '.join(details)}).",
+            )
         )
 
     tensor_fields = {
@@ -166,9 +171,11 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     for payload in present[1:]:
         other = tree_structure(payload)
         if other != treedef:
-            raise TypeError(
-                "Distributed aux gather requires matching pytree structures "
-                f"across non-empty ranks; got {treedef} vs {other}"
+            raise InputTypeError(
+                *(
+                    "Distributed aux gather requires matching pytree structures "
+                    f"across non-empty ranks; got {treedef} vs {other}",
+                )
             )
 
     leaf_lists = [tree_flatten(payload)[0] for payload in present]
@@ -180,10 +187,12 @@ def _merge_gathered_values(values: list[Any], device: torch.device) -> Any:
     for i in range(len(leaf_lists[0])):
         column = [leaves[i] for leaves in leaf_lists]
         if not all(isinstance(leaf, torch.Tensor) for leaf in column):
-            raise TypeError(
-                "Distributed aux gathering supports tensor leaves only; got "
-                f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
-                "preserved structurally and does not need to be a leaf."
+            raise InputTypeError(
+                *(
+                    "Distributed aux gathering supports tensor leaves only; got "
+                    f"{[type(leaf).__name__ for leaf in column]}. Nested None is "
+                    "preserved structurally and does not need to be a leaf.",
+                )
             )
         merged_leaves.append(torch.cat([leaf.to(device) for leaf in column], dim=0))
     return tree_unflatten(treedef, merged_leaves)
@@ -225,8 +234,8 @@ def _sync_clipping_rate(
     min_presence = reduce_scalar(local_presence, op="min")
     max_presence = reduce_scalar(local_presence, op="max")
     if min_presence != max_presence:
-        raise RuntimeError(
-            "Clipped auxiliary clipping_rate presence mismatch across ranks."
+        raise OperationError(
+            *("Clipped auxiliary clipping_rate presence mismatch across ranks.",)
         )
     if not local_presence:
         return None
@@ -288,7 +297,7 @@ def sync_aux(
         return sync_clipped_grad_aux(aux)
     if isinstance(aux, ClippedFunAux):
         return sync_clipped_fun_aux(aux)
-    raise TypeError(f"Unsupported aux type for sync_aux: {type(aux)}")
+    raise InputTypeError(*(f"Unsupported aux type for sync_aux: {type(aux)}",))
 
 
 register_sync_type(FixedClipState, sync_clip_state)

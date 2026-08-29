@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
+from opaque.exceptions import ConfigurationError
 
 from ._sensitivity import minsep_true_max_participations
 from ._toeplitz import (
@@ -59,7 +60,7 @@ def _bsr_band_coefficients_cached(
 ) -> tuple[float, ...]:
     r"""First-column coefficients of :math:`C^{|p|}_{\alpha,\beta}` (Theorem 1)."""
     if bandwidth < 1:
-        raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
+        raise ConfigurationError(*(f"bandwidth must be >= 1, got {bandwidth}",))
     r = _r_sequence(bandwidth)
     c = [1.0]
     for j in range(1, bandwidth):
@@ -73,34 +74,44 @@ def _bsr_band_coefficients_cached(
 def _validate_bsr_hyperparams(bandwidth: int, alpha: float, beta: float) -> None:
     """Raise ValueError if hyperparameters are outside the supported v1 regime."""
     if bandwidth < 1:
-        raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
+        raise ConfigurationError(*(f"bandwidth must be >= 1, got {bandwidth}",))
     if not (0.0 <= beta < 1.0):
-        raise ValueError(
-            f"BSR v1 requires β in [0, 1), got {beta}. "
-            "Use band_mf_strategy for other workloads."
+        raise ConfigurationError(
+            *(
+                f"BSR v1 requires β in [0, 1), got {beta}. "
+                "Use band_mf_strategy for other workloads.",
+            )
         )
     if not (0.0 < alpha <= 1.0):
-        raise ValueError(
-            f"BSR v1 requires α in (0, 1] (paper), got {alpha}. "
-            "Use band_mf_strategy for other workloads."
+        raise ConfigurationError(
+            *(
+                f"BSR v1 requires α in (0, 1] (paper), got {alpha}. "
+                "Use band_mf_strategy for other workloads.",
+            )
         )
     if alpha <= beta:
-        raise ValueError(
-            f"BSR v1 requires α > β (paper regime); got α={alpha}, β={beta}. "
-            "Reduce β or increase α, or use band_mf_strategy."
+        raise ConfigurationError(
+            *(
+                f"BSR v1 requires α > β (paper regime); got α={alpha}, β={beta}. "
+                "Reduce β or increase α, or use band_mf_strategy.",
+            )
         )
     coefs = _bsr_band_coefficients_cached(bandwidth, alpha, beta)
     for i in range(1, len(coefs)):
         if coefs[i] > coefs[i - 1] + _COEFFICIENT_TOLERANCE:
-            raise ValueError(
-                "BSR coefficients are not non-increasing for these hyperparameters; "
-                "this configuration is not supported by toeplitz_minsep_sensitivity. "
-                "Try different α, β, or bandwidth, or use band_mf_strategy."
+            raise ConfigurationError(
+                *(
+                    "BSR coefficients are not non-increasing for these hyperparameters; "
+                    "this configuration is not supported by toeplitz_minsep_sensitivity. "
+                    "Try different α, β, or bandwidth, or use band_mf_strategy.",
+                )
             )
         if coefs[i] < -_COEFFICIENT_TOLERANCE:
-            raise ValueError(
-                "BSR produced a negative coefficient; unsupported for this Rust path. "
-                "Use band_mf_strategy."
+            raise ConfigurationError(
+                *(
+                    "BSR produced a negative coefficient; unsupported for this Rust path. "
+                    "Use band_mf_strategy.",
+                )
             )
 
 

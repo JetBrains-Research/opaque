@@ -26,6 +26,7 @@ import torch
 from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 
+from opaque.exceptions import CheckpointError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ def test_resume_from_save_only_model_checkpoint_is_refused(
     trainer2 = DPTrainer(
         model=model2, args=args2, train_dataset=lm_dataset, processing_class=tok
     )
-    with pytest.raises(RuntimeError, match="weights-only export"):
+    with pytest.raises(CheckpointError, match="weights-only export"):
         trainer2.train(resume_from_checkpoint=ckpt_dir)
 
 
@@ -154,27 +155,16 @@ def _reference_epsilon(nm: float, q: float, n_steps: int, delta: float) -> float
     return acc.epsilon_at(delta)
 
 
-def _reference_random_allocation_epsilon(
-    nm: float, num_bins: int, n_steps: int, delta: float
-) -> float:
-    import opaque.dpsgd.accounting as dpsgd_acc
-
-    return dpsgd_acc.random_allocation(
-        dpsgd_acc.gaussian(nm),
-        num_bins=num_bins,
-        n_steps=n_steps,
-    ).epsilon_at(delta)
-
-
-def _reference_k_out_of_t_epsilon(
-    nm: float, total_participations: int, n_steps: int, delta: float
+def _reference_block_k_out_of_t_epsilon(
+    nm: float, k: int, t: int, delta: float
 ) -> float:
     import opaque.dpsgd.accounting as dpsgd_acc
 
     return dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(nm),
-        total_participations=total_participations,
-        n_steps=n_steps,
+        k=k,
+        t=t,
+        allocation="block",
     ).epsilon_at(delta)
 
 
@@ -244,45 +234,19 @@ def test_fractional_epochs_calibrate_and_compose_resolved_horizon(
 
 
 @pytest.mark.slow
-def test_random_allocation_calibration_and_step_accounting(
+def test_block_k_out_of_t_calibration_and_step_accounting(
     gpt2_lora, lm_dataset, tmp_path
 ):
     model, tok = gpt2_lora
     target_eps, delta = 8.0, 1e-5
-    args = _args(
-        tmp_path,
-        privacy_noise_multiplier=None,
-        privacy_target_epsilon=target_eps,
-        privacy_target_delta=delta,
-        sampling_mode="random_allocation",
-        max_steps=5,
-        save_strategy="no",
-    )
-    trainer = DPTrainer(
-        model=model, args=args, train_dataset=lm_dataset, processing_class=tok
-    )
-    out = trainer.train()
-    sigma = trainer.state.privacy_resolved_noise_multiplier
-    reported = out.metrics["privacy_epsilon"]
-    ref = _reference_random_allocation_epsilon(
-        sigma, num_bins=2, n_steps=5, delta=delta
-    )
-    assert reported == pytest.approx(ref, rel=1e-6)
-    assert target_eps - 0.5 <= reported <= target_eps + 1e-2
-
-
-@pytest.mark.slow
-def test_k_out_of_t_calibration_and_step_accounting(gpt2_lora, lm_dataset, tmp_path):
-    model, tok = gpt2_lora
-    target_eps, delta = 8.0, 1e-5
-    k, n_steps = 2, 5
+    k, n_steps = 3, 6
     args = _args(
         tmp_path,
         privacy_noise_multiplier=None,
         privacy_target_epsilon=target_eps,
         privacy_target_delta=delta,
         sampling_mode="k_out_of_t",
-        sampling_kwargs={"total_participations": k},
+        sampling_kwargs={"k": k, "allocation": "block"},
         max_steps=n_steps,
         save_strategy="no",
     )
@@ -292,7 +256,7 @@ def test_k_out_of_t_calibration_and_step_accounting(gpt2_lora, lm_dataset, tmp_p
     out = trainer.train()
     sigma = trainer.state.privacy_resolved_noise_multiplier
     reported = out.metrics["privacy_epsilon"]
-    ref = _reference_k_out_of_t_epsilon(sigma, k, n_steps, delta)
+    ref = _reference_block_k_out_of_t_epsilon(sigma, k=k, t=n_steps, delta=delta)
     assert reported == pytest.approx(ref, rel=1e-6)
     assert target_eps - 0.5 <= reported <= target_eps + 1e-2
 

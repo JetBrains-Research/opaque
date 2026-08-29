@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import pld_cache
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,12 +58,14 @@ class PerStep(DpProcess):
         mc_failure_probability: float | None = None,
     ) -> Pld:
         if count < 1:
-            raise ValueError(f"count ({count}) must be >= 1")
+            raise ConfigurationError(*(f"count ({count}) must be >= 1",))
         if count > self.process.n_steps:
-            raise ValueError(
-                f"count ({count}) exceeds n_steps ({self.process.n_steps}); "
-                f"{type(self.process).__name__} is undefined beyond its "
-                "declared horizon."
+            raise ConfigurationError(
+                *(
+                    f"count ({count}) exceeds n_steps ({self.process.n_steps}); "
+                    f"{type(self.process).__name__} is undefined beyond its "
+                    "declared horizon.",
+                )
             )
         return self.process.pld_at(
             count,
@@ -79,8 +82,8 @@ class PerStep(DpProcess):
 def per_step(process: DpHorizonProcess) -> PerStep:
     """Wrap a whole-horizon process for ``acc |= step`` training loops."""
     if not isinstance(process, DpHorizonProcess):
-        raise TypeError(
-            f"per_step() requires a DpHorizonProcess, got {type(process).__name__}."
+        raise InputTypeError(
+            *(f"per_step() requires a DpHorizonProcess, got {type(process).__name__}.",)
         )
     return PerStep(process=process)
 

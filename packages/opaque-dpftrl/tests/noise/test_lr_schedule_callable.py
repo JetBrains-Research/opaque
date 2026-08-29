@@ -14,6 +14,7 @@ import torch
 
 from opaque.api.dpftrl.noise._band_mf import _band_mf_coefficients_cached
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
+from opaque.exceptions import CheckpointError
 from opaque.scheduling import linear_schedule
 from opaque.serialization import state_dict
 
@@ -57,7 +58,7 @@ class TestBandMfLrScheduleCallable:
 
     def test_callable_schedule_not_serialisable(self):
         s = band_mf_strategy(bands=4, lr_schedule=lambda _t: 0.1)
-        with pytest.raises(TypeError, match="callable strategy field"):
+        with pytest.raises(CheckpointError, match="callable strategy field"):
             state_dict(s)
 
     def test_none_schedule_serialises(self):
@@ -75,5 +76,5 @@ class TestBltLrScheduleCallable:
 
     def test_callable_schedule_not_serialisable(self):
         s = blt_strategy(max_buffers=3, lr_schedule=lambda _t: 0.1)
-        with pytest.raises(TypeError, match="callable strategy field"):
+        with pytest.raises(CheckpointError, match="callable strategy field"):
             state_dict(s)

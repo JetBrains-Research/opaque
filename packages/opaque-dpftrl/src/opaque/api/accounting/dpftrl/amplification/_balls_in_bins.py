@@ -51,6 +51,7 @@ from opaque.api.dpftrl.noise._bsr import BsrStrategy
 from opaque.api.dpftrl.noise._identity import IdentityStrategy
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy
 from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._base import Pld
@@ -159,7 +160,9 @@ class BallsInBins(DpHorizonProcess):
         from opaque.api.accounting.core.discretization import get_discretization
 
         if n_steps <= 0 or n_steps > self.n_steps:
-            raise ValueError(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]")
+            raise ConfigurationError(
+                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
+            )
         rounded = min(-(-n_steps // self.num_bins) * self.num_bins, self.n_steps)
         num_epochs_K = rounded // self.num_bins
         min_sep_K = self.num_bins
@@ -319,23 +322,31 @@ def balls_in_bins(
         eps = training.epsilon_at(1e-5)
     """
     if not isinstance(inner, MfGaussian):
-        raise TypeError(
-            f"balls_in_bins() requires an MfGaussian inner, got {type(inner).__name__}."
+        raise InputTypeError(
+            *(
+                f"balls_in_bins() requires an MfGaussian inner, got {type(inner).__name__}.",
+            )
         )
     if not isinstance(inner.strategy, (*_CorrelatedStrategies, IdentityStrategy)):
-        raise TypeError(
-            "balls_in_bins() requires inner.strategy in {BltStrategy, "
-            "BsrStrategy, BisrStrategy, LambdaCgdStrategy, IdentityStrategy}, "
-            f"got {type(inner.strategy).__name__}."
+        raise InputTypeError(
+            *(
+                "balls_in_bins() requires inner.strategy in {BltStrategy, "
+                "BsrStrategy, BisrStrategy, LambdaCgdStrategy, IdentityStrategy}, "
+                f"got {type(inner.strategy).__name__}.",
+            )
         )
     if num_bins < _MIN_NUM_BINS:
-        raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
+        raise ConfigurationError(
+            *(f"num_bins must be >= 2 for BnB amplification, got {num_bins}",)
+        )
     if n_steps < 1:
-        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
     if n_steps % num_bins != 0:
-        raise ValueError(
-            f"n_steps ({n_steps}) must be a positive multiple of "
-            f"num_bins ({num_bins}); BnB analysis assumes integer epochs."
+        raise ConfigurationError(
+            *(
+                f"n_steps ({n_steps}) must be a positive multiple of "
+                f"num_bins ({num_bins}); BnB analysis assumes integer epochs.",
+            )
         )
 
     return BallsInBins(inner=inner, num_bins=num_bins, n_steps=n_steps)

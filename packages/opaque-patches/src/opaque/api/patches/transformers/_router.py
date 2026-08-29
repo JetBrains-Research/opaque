@@ -9,6 +9,7 @@ import types
 from typing import TYPE_CHECKING
 
 from opaque.api.patches.transformers._registry import detect_family, get_family_apply_fn
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -124,9 +125,11 @@ def apply_transformers_model_patches(
     if family is None or apply_fn is None:
         # Only raise if user explicitly requested dropout/batchify for unknown family
         if (dropout_explicit and dropout) or (batchify_explicit and batchify):
-            raise ValueError(
-                "opaque: dropout/batchify patches require a registered "
-                f"transformers family; got {family!r} ({type(model).__name__})"
+            raise ConfigurationError(
+                *(
+                    "opaque: dropout/batchify patches require a registered "
+                    f"transformers family; got {family!r} ({type(model).__name__})",
+                )
             )
         logger.debug(
             "opaque: no registered apply function for model family %s; "

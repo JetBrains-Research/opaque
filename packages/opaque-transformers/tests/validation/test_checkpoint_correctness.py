@@ -28,6 +28,7 @@ from _hf_shared import build_lm_dataset, gpt2_tokenizer, make_gpt2_model
 from peft import LoraConfig, TaskType, get_peft_model
 
 from opaque.api.transformers.trainer._state import DPTrainerState
+from opaque.exceptions import CheckpointError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
@@ -614,7 +615,7 @@ class TestArgDriftWarnings:
         runtime.mechanism_kind = "mf_band"
         runtime.total_steps = 5  # saved=5, current=10 — DP-FTRL extension
 
-        with pytest.raises(ValueError, match="DP-FTRL resume forbids drift"):
+        with pytest.raises(CheckpointError, match="DP-FTRL resume forbids drift"):
             trainer._warn_on_arg_drift(runtime)
 
     def test_shape_drift_warns_on_lr_scheduler(

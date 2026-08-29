@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
+from opaque.exceptions import ConfigurationError, OperationError
+
 from . import (
     _sensitivity as sensitivity,
 )
@@ -159,15 +161,19 @@ class BufferedToeplitz:
     def validate(self) -> None:
         """Validate basic properties of the BLT parameters."""
         if not (self.buf_decay.ndim <= 1 and self.output_scale.ndim <= 1):
-            raise ValueError(
-                f"buf_decay and output_scale must be 0D or 1D, but: "
-                f"buf_decay.shape={self.buf_decay.shape}, "
-                f"output_scale.shape={self.output_scale.shape}"
+            raise ConfigurationError(
+                *(
+                    f"buf_decay and output_scale must be 0D or 1D, but: "
+                    f"buf_decay.shape={self.buf_decay.shape}, "
+                    f"output_scale.shape={self.output_scale.shape}",
+                )
             )
         if self.buf_decay.shape != self.output_scale.shape:
-            raise ValueError(
-                f"buf_decay and output_scale must have same shape: "
-                f"{self.buf_decay.shape} != {self.output_scale.shape}"
+            raise ConfigurationError(
+                *(
+                    f"buf_decay and output_scale must have same shape: "
+                    f"{self.buf_decay.shape} != {self.output_scale.shape}",
+                )
             )
 
     @classmethod
@@ -218,7 +224,7 @@ class BufferedToeplitz:
             A BufferedToeplitz initialization.
         """
         if num_buffers < 1:
-            raise ValueError("num_buffers must be >= 1.")
+            raise ConfigurationError(*("num_buffers must be >= 1.",))
 
         degree = num_buffers
         d1 = (degree + 1) // 2
@@ -345,9 +351,11 @@ def inverse(blt: BufferedToeplitz, skip_checks: bool = False) -> BufferedToeplit
     if not skip_checks and len(blt.buf_decay) > 1:
         gap = min_buf_decay_gap(blt.buf_decay)
         if gap < _MIN_BUFFER_DECAY_GAP:
-            raise ValueError(
-                "Input BLT has buf_decay values too close: "
-                f"gap={float(gap)}, buf_decay={blt.buf_decay}"
+            raise ConfigurationError(
+                *(
+                    "Input BLT has buf_decay values too close: "
+                    f"gap={float(gap)}, buf_decay={blt.buf_decay}",
+                )
             )
 
     nbuf = len(blt.buf_decay)
@@ -368,9 +376,11 @@ def inverse(blt: BufferedToeplitz, skip_checks: bool = False) -> BufferedToeplit
     if not skip_checks:
         Theta2_diag = evecs @ torch.diag(evals) @ einv
         if not torch.allclose(Theta2_diag, Theta2, atol=1e-7):
-            raise RuntimeError(
-                f"Error computing inverse: Theta2 mismatch.\n"
-                f"blt={blt}\nevecs={evecs}\nevals={evals}"
+            raise OperationError(
+                *(
+                    f"Error computing inverse: Theta2 mismatch.\n"
+                    f"blt={blt}\nevecs={evecs}\nevals={evals}",
+                )
             )
 
     omega3 = (einv @ omega2) * (evecs.T @ alpha)
@@ -840,7 +850,7 @@ class LossFn:
         elif error == "max":
             error_fn = max_error_fn
         else:
-            raise ValueError(f"Unknown error={error}")
+            raise ConfigurationError(*(f"Unknown error={error}",))
 
         def minsep_sens_sq(blt):
             return toeplitz.minsep_sensitivity_squared(
@@ -1023,9 +1033,11 @@ def get_init_blt(
         )
 
     if len(init_blt.buf_decay) != num_buffers:
-        raise ValueError(
-            f"num_buffers={num_buffers} does not match "
-            f"len(init_blt.buf_decay)={len(init_blt.buf_decay)}"
+        raise ConfigurationError(
+            *(
+                f"num_buffers={num_buffers} does not match "
+                f"len(init_blt.buf_decay)={len(init_blt.buf_decay)}",
+            )
         )
     return init_blt
 
@@ -1157,8 +1169,8 @@ def optimize_loss(
 
     loss_val = loss(loss_fn, blt)
     if not torch.isfinite(loss_val):
-        raise RuntimeError(
-            f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}"
+        raise OperationError(
+            *(f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}",)
         )
 
     if torch.any(torch.abs(blt.output_scale) < _NEAR_ZERO_OUTPUT_SCALE):
@@ -1236,7 +1248,9 @@ def optimize(
         An optimised BLT.
     """
     if max_buffers > _MAX_OPTIMIZATION_BUFFERS:
-        raise ValueError("max_buffers > 15 will likely cause numerical issues.")
+        raise ConfigurationError(
+            *("max_buffers > 15 will likely cause numerical issues.",)
+        )
 
     k = sensitivity.minsep_true_max_participations(
         n=n, min_sep=min_sep, max_participations=max_participations

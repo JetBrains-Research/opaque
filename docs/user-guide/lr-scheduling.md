@@ -72,7 +72,7 @@ schedule = with_warmup(decay, transition_steps=W)
 opt = torchopt.adamw(lr=schedule)
 ```
 
-`with_warmup` raises `ValueError` for `transition_steps <= 0`, so
+`with_warmup` raises `ConfigurationError` for `transition_steps <= 0`, so
 gate it on a runtime warmup length:
 
 ```python

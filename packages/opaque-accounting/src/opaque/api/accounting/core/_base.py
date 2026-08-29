@@ -50,6 +50,8 @@ import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, TypeAlias
 
+from opaque.exceptions import ConfigurationError
+
 from . import _native
 
 if TYPE_CHECKING:
@@ -440,9 +442,11 @@ class DpProcess(ABC):
             ValueError: If count < 1.
         """
         if count < 1:
-            raise ValueError(
-                f"Repeat count must be >= 1, got {count}. "
-                "Use identity() for zero privacy loss."
+            raise ConfigurationError(
+                *(
+                    f"Repeat count must be >= 1, got {count}. "
+                    "Use identity() for zero privacy loss.",
+                )
             )
 
         from opaque.api.accounting.core.composition.types import Repeated

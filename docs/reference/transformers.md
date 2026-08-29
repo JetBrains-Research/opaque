@@ -58,7 +58,7 @@ DPTrainer(
 | `compute_loss_func` | `Callable[[outputs, labels], Tensor] \| None` | Per-example loss override; **called under vmap** with one example's `outputs` and `labels`. Not HF's `(outputs, labels, num_items_in_batch) -> scalar` signature. |
 | `compute_metrics` | `Callable[[EvalPrediction], dict] \| None` | Standard HF callback over concatenated predictions / label_ids / inputs / losses. |
 | `callbacks` | `list[TrainerCallback] \| None` | User callbacks; `DefaultFlowCallback` is auto-prepended. |
-| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.**  Passing non-`None` raises `RuntimeError`: DPTrainer owns the functional torchopt optimizer. |
+| `optimizers` | `tuple[Any \| None, Any \| None]` | **Not supported.** Passing non-`None` raises `ConfigurationError`: DPTrainer owns the functional torchopt optimizer. |
 | `optimizer_cls_and_kwargs` | `tuple[Callable, dict] \| None` | DPTrainer-specific.  Override the default torchopt factory.  Validated against the functional contract at construction. |
 | `preprocess_logits_for_metrics` | `Callable \| None` | Vmap-batched.  Lets `compute_metrics` consume a reduced representation of logits. |
 
@@ -176,7 +176,7 @@ Dataclass surface.  Every field listed here exists on
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
 | `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
-| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table.  Explicit overrides: `"poisson"`, `"random_allocation"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
@@ -343,7 +343,7 @@ NPU, XLA) are rejected with a redirect message.
 - `torch_compile_mode` checked against the allowed set.
 - `report_to="all"` expands via HF's `get_available_reporting_integrations()`.
 
-Errors raise `ValueError` at construction.
+Configuration errors raise `ConfigurationError` at construction.
 
 Dict-shaped fields (`clipping_kwargs`, `sampling_kwargs`,
 `noise_calibration_kwargs`, `privacy_noise_mechanism_kwargs`,

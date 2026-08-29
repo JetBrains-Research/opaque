@@ -13,6 +13,7 @@ from opaque.api.accounting.core.discretization import get_discretization
 from opaque.dpftrl.accounting.types import MfGaussian
 from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 from opaque.dpftrl.noise.types import BandMfStrategy, IdentityStrategy
+from opaque.exceptions import ConfigurationError
 
 _DELTA = 1e-5
 
@@ -267,7 +268,9 @@ class TestTruncatedPoissonIdentity:
     """``ftrl_acc.poisson(identity_mf(...), ..., truncated_batch_size=, dataset_size=)``."""
 
     def test_rejects_unpaired_truncated_batch_size(self):
-        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+        with pytest.raises(
+            ConfigurationError, match="truncated_batch_size and dataset_size"
+        ):
             ftrl_acc.poisson(
                 ftrl_acc.mf_gaussian(1.0, identity_strategy()),
                 sample_rate=0.01,
@@ -276,7 +279,9 @@ class TestTruncatedPoissonIdentity:
             )
 
     def test_rejects_unpaired_dataset_size(self):
-        with pytest.raises(ValueError, match="truncated_batch_size and dataset_size"):
+        with pytest.raises(
+            ConfigurationError, match="truncated_batch_size and dataset_size"
+        ):
             ftrl_acc.poisson(
                 ftrl_acc.mf_gaussian(1.0, identity_strategy()),
                 sample_rate=0.01,
@@ -285,7 +290,9 @@ class TestTruncatedPoissonIdentity:
             )
 
     def test_rejects_truncated_batch_size_below_one(self):
-        with pytest.raises(ValueError, match="truncated_batch_size must be >= 1"):
+        with pytest.raises(
+            ConfigurationError, match="truncated_batch_size must be >= 1"
+        ):
             ftrl_acc.poisson(
                 ftrl_acc.mf_gaussian(1.0, identity_strategy()),
                 sample_rate=0.01,

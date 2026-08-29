@@ -1,11 +1,11 @@
-"""Random allocation and balls-in-bins are different schemes.
+"""Block k-out-of-t allocation and balls-in-bins are different schemes.
 
-Both samplers take ``(data_source, num_bins, n_steps, key=...)`` and both
-emit ``num_bins`` batches per epoch whose union is the dataset, so a reader
-skimming the constructors could easily believe they are interchangeable.
+Both samplers emit ``num_bins`` batches per epoch whose union is the dataset,
+so a reader skimming their output could easily believe they are
+interchangeable.
 They are not: DP-FTRL's balls-in-bins fixes the assignment once (the
 matrix-mechanism dominating pair needs a known participation separation),
-while DP-SGD's random allocation redraws it every epoch (valid only because
+while DP-SGD's block k-out-of-t allocation redraws it every block (valid only because
 DP-SGD noise is uncorrelated across steps, and strictly better there).
 
 Swapping one for the other silently changes the mechanism being accounted,
@@ -17,7 +17,7 @@ from __future__ import annotations
 from itertools import chain
 
 from opaque.dpftrl.sampling import BallsInBinsSampler
-from opaque.dpsgd.sampling import RandomAllocationSampler
+from opaque.dpsgd.sampling import KOutOfTSampler
 from opaque.random import key
 
 _N = 120
@@ -40,11 +40,15 @@ def test_balls_in_bins_repeats_its_partition_every_epoch():
     assert all(e == epochs[0] for e in epochs[1:])
 
 
-def test_random_allocation_redraws_its_partition_every_epoch():
-    """Per-epoch redraw: the partition changes from one epoch to the next."""
+def test_block_k_out_of_t_redraws_its_partition_every_block():
+    """Block redraw: the partition changes from one block to the next."""
     epochs = _epochs(
-        RandomAllocationSampler(
-            list(range(_N)), num_bins=_BINS, n_steps=_BINS * _EPOCHS, key=key(11)
+        KOutOfTSampler(
+            list(range(_N)),
+            k=_EPOCHS,
+            t=_BINS * _EPOCHS,
+            allocation="block",
+            key=key(11),
         )
     )
     assert any(e != epochs[0] for e in epochs[1:])
@@ -55,8 +59,16 @@ def test_same_key_gives_different_streams():
     args = (list(range(_N)),)
     kwargs = {"num_bins": _BINS, "n_steps": _BINS * _EPOCHS, "key": key(11)}
     bnb = list(BallsInBinsSampler(*args, **kwargs))
-    ra = list(RandomAllocationSampler(*args, **kwargs))
-    assert bnb != ra
+    block = list(
+        KOutOfTSampler(
+            *args,
+            k=_EPOCHS,
+            t=_BINS * _EPOCHS,
+            allocation="block",
+            key=key(11),
+        )
+    )
+    assert bnb != block
 
 
 def test_both_partition_each_epoch():
@@ -66,8 +78,12 @@ def test_both_partition_each_epoch():
         BallsInBinsSampler(
             list(range(_N)), num_bins=_BINS, n_steps=_BINS * _EPOCHS, key=key(3)
         ),
-        RandomAllocationSampler(
-            list(range(_N)), num_bins=_BINS, n_steps=_BINS * _EPOCHS, key=key(3)
+        KOutOfTSampler(
+            list(range(_N)),
+            k=_EPOCHS,
+            t=_BINS * _EPOCHS,
+            allocation="block",
+            key=key(3),
         ),
     ):
         for epoch in _epochs(sampler):

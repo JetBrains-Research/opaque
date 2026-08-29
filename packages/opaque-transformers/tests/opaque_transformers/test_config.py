@@ -22,6 +22,7 @@ import pytest
 from transformers.debug_utils import DebugOption
 
 from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import TrainingArguments
 
 
@@ -145,7 +146,9 @@ class TestStrategyCoercion:
         assert getattr(args, field) == expected
 
     def test_unknown_strategy_raises(self):
-        with pytest.raises(ValueError, match=r"eval_strategy=.*expected one of"):
+        with pytest.raises(
+            ConfigurationError, match=r"eval_strategy=.*expected one of"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0, eval_strategy="completely-bogus"
             )
@@ -168,7 +171,9 @@ class TestDataLoaderArguments:
         assert args.dataloader_multiprocessing_context == context
 
     def test_multiprocessing_context_rejects_unknown_method(self):
-        with pytest.raises(ValueError, match="dataloader_multiprocessing_context"):
+        with pytest.raises(
+            ConfigurationError, match="dataloader_multiprocessing_context"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 dataloader_num_workers=1,
@@ -184,7 +189,9 @@ class TestDataLoaderArguments:
             )
 
     def test_out_of_order_loading_is_rejected(self):
-        with pytest.raises(ValueError, match="dataloader_in_order must be True"):
+        with pytest.raises(
+            ConfigurationError, match="dataloader_in_order must be True"
+        ):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 dataloader_in_order=False,
@@ -433,27 +440,28 @@ class TestClippingAndSamplingSurfaces:
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="sequential")
 
-    def test_gaussian_accepts_random_allocation(self):
-        args = TrainingArguments(
-            privacy_noise_multiplier=1.0,
-            sampling_mode="random_allocation",
-        )
-        assert args.sampling_mode == "random_allocation"
-
     def test_gaussian_accepts_k_out_of_t(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
             sampling_mode="k_out_of_t",
-            sampling_kwargs={"total_participations": 2},
+            sampling_kwargs={"k": 2, "allocation": "block"},
         )
         assert args.sampling_mode == "k_out_of_t"
 
-    def test_k_out_of_t_requires_total_participations(self):
-        with pytest.raises(ValueError, match="total_participations"):
+    def test_k_out_of_t_requires_k_and_allocation(self):
+        with pytest.raises(ValueError, match="k"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 sampling_mode="k_out_of_t",
             )
+
+    def test_k_out_of_t_accepts_total_allocation(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_mode="k_out_of_t",
+            sampling_kwargs={"k": 2, "allocation": "total"},
+        )
+        assert args.sampling_kwargs["allocation"] == "total"
 
     def test_k_out_of_t_rejects_truncated_poisson_kwargs(self):
         with pytest.raises(ValueError, match="truncated_batch_size"):
@@ -461,7 +469,8 @@ class TestClippingAndSamplingSurfaces:
                 privacy_noise_multiplier=1.0,
                 sampling_mode="k_out_of_t",
                 sampling_kwargs={
-                    "total_participations": 2,
+                    "k": 2,
+                    "allocation": "block",
                     "truncated_batch_size": 4,
                 },
             )

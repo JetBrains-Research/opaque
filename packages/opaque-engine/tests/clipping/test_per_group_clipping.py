@@ -7,6 +7,7 @@ from opaque.api.engine.clipping import clipped_grad
 from opaque.api.engine.clipping._per_group import per_group
 from opaque.api.engine.clipping._pytree import clip_pytree
 from opaque.api.engine.clipping.types import FixedClipState
+from opaque.exceptions import ConfigurationError
 from opaque.types import ClippedPytree, PerGroup
 
 
@@ -148,14 +149,18 @@ class TestClipPytreePerGroup:
         """Missing or extra PerGroup paths must raise, not skip clipping."""
         pytree = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
         pg_missing = PerGroup(groups={"a": "g1"}, values={"g1": 1.0})
-        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
+        with pytest.raises(
+            ConfigurationError, match="must match the pytree tensor leaves"
+        ):
             clip_pytree(pytree, pg_missing)
 
         pg_extra = PerGroup(
             groups={"a": "g1", "b": "g2", "c": "g3"},
             values={"g1": 1.0, "g2": 1.0, "g3": 1.0},
         )
-        with pytest.raises(ValueError, match="must match the pytree tensor leaves"):
+        with pytest.raises(
+            ConfigurationError, match="must match the pytree tensor leaves"
+        ):
             clip_pytree(pytree, pg_extra)
 
 

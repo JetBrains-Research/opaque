@@ -1,4 +1,4 @@
-"""Global k-out-of-t horizon accounting contracts."""
+"""Block and total k-out-of-t horizon accounting contracts."""
 
 from __future__ import annotations
 
@@ -19,75 +19,149 @@ _DELTA = 1e-5
 def test_factory_returns_horizon_process():
     process = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
-        total_participations=3,
-        n_steps=10,
+        k=2,
+        t=10,
+        allocation="block",
     )
+
     assert isinstance(process, DpHorizonProcess)
-    assert process.n_steps == 10
+    assert process.k == 2
+    assert process.t == 10
+    assert process.block_sizes == (5, 5)
+    assert process.allocation == "block"
 
 
 @pytest.mark.slow
-def test_prefixes_are_finite_and_full_matches_pld():
+def test_block_prefixes_are_exact_and_full_matches_pld():
     process = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
-        total_participations=3,
-        n_steps=10,
+        k=3,
+        t=10,
+        allocation="block",
     )
     step = acc.per_step(process)
-    values = [(step * k).epsilon_at(_DELTA) for k in range(1, 11)]
+    values = [(step * count).epsilon_at(_DELTA) for count in range(1, 11)]
+
     assert all(value > 0 for value in values)
+    assert values == sorted(values)
     assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=1e-12, abs=0)
 
 
 @pytest.mark.slow
-def test_k_one_prefix_matches_redrawn_single_epoch_process():
-    k_out = dpsgd_acc.k_out_of_t(
+def test_first_step_matches_poisson_at_the_epoch_rate():
+    process = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
-        total_participations=1,
-        n_steps=8,
+        k=2,
+        t=16,
+        allocation="block",
     )
-    redrawn = dpsgd_acc.random_allocation(
+    poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=1 / 8)
+
+    assert process.pld_at(1).epsilon_at(1e-8) == pytest.approx(
+        poisson.epsilon_at(1e-8), abs=2e-3
+    )
+
+
+@pytest.mark.slow
+def test_total_full_horizon_uses_the_block_upper_bound():
+    block = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
-        num_bins=8,
-        n_steps=8,
+        k=3,
+        t=10,
+        allocation="block",
     )
-    # The first, interior, and full prefixes exercise the distinct horizon
-    # paths without rebuilding both expensive PLDs at every step.
-    for steps in (1, 4, 8):
-        assert k_out.pld_at(steps).epsilon_at(_DELTA) == pytest.approx(
-            redrawn.pld_at(steps).epsilon_at(_DELTA),
-            rel=1e-12,
-            abs=0,
+    total = dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(1.0),
+        k=3,
+        t=10,
+        allocation="total",
+    )
+
+    assert total.epsilon_at(_DELTA) == pytest.approx(
+        block.epsilon_at(_DELTA), rel=1e-12, abs=0
+    )
+
+
+@pytest.mark.slow
+def test_total_prefix_uses_the_full_horizon_bound_for_k_greater_than_one():
+    total = dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(1.0),
+        k=3,
+        t=10,
+        allocation="total",
+    )
+
+    assert total.pld_at(4).epsilon_at(_DELTA) == pytest.approx(
+        total.epsilon_at(_DELTA), rel=1e-12, abs=0
+    )
+
+
+@pytest.mark.slow
+def test_total_k_one_prefix_is_exact():
+    block = dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(1.0),
+        k=1,
+        t=8,
+        allocation="block",
+    )
+    total = dpsgd_acc.k_out_of_t(
+        dpsgd_acc.gaussian(1.0),
+        k=1,
+        t=8,
+        allocation="total",
+    )
+
+    assert total.pld_at(4).epsilon_at(_DELTA) == pytest.approx(
+        block.pld_at(4).epsilon_at(_DELTA), rel=1e-12, abs=0
+    )
+
+
+@pytest.mark.parametrize(
+    ("k", "t", "match"),
+    [
+        (0, 10, "k"),
+        (2, 0, "t"),
+    ],
+)
+def test_parameters_are_validated(k: int, t: int, match: str):
+    with pytest.raises(ValueError, match=match):
+        dpsgd_acc.k_out_of_t(
+            dpsgd_acc.gaussian(1.0),
+            k=k,
+            t=t,
+            allocation="block",
         )
 
 
 class TestKOutOfTRegressionVectors:
-    """Committed ε values for the two supported deterministic inner mechanisms."""
+    """Committed epsilon values for the supported deterministic inner mechanisms."""
 
     @pytest.mark.parametrize(
         ("name", "factory", "expected"),
         [
             pytest.param(
-                "k_out_of_t(gaussian(1.0), k=2, n_steps=16)",
+                "k_out_of_t(gaussian(1.0), k=2, t=16, block)",
                 lambda: dpsgd_acc.k_out_of_t(
                     dpsgd_acc.gaussian(1.0),
-                    total_participations=2,
-                    n_steps=16,
+                    k=2,
+                    t=16,
+                    allocation="block",
                 ),
                 4.687320185091083,
                 id="gaussian",
                 marks=pytest.mark.slow,
             ),
             pytest.param(
-                "k_out_of_t(adaclip(gaussian(1.1)), k=2, n_steps=16)",
+                "k_out_of_t(adaclip(gaussian(1.1)), k=2, t=16, block)",
                 lambda: dpsgd_acc.k_out_of_t(
                     dpsgd_acc.adaclip(
                         dpsgd_acc.gaussian(1.1),
                         expected_batch_size=250,
                         num_groups=3,
                     ),
-                    total_participations=2,
-                    n_steps=16,
+                    k=2,
+                    t=16,
+                    allocation="block",
                 ),
                 3.9650600884447935,
                 id="adaclip",

@@ -28,6 +28,8 @@ from typing import Any
 import optree as _ot
 import torch
 
+from opaque.exceptions import ConfigurationError, InputTypeError
+
 ParamPath = tuple[str | int, ...]
 """Optree leaf path: nested dict keys (``str``) and sequence indices (``int``).
 
@@ -53,8 +55,10 @@ def param_path(path: tuple[Any, ...] | list[Any] | str) -> ParamPath:
         if isinstance(part, (str, int)):
             out.append(part)
         else:
-            raise TypeError(
-                f"ParamPath components must be str or int; got {type(part).__name__}"
+            raise InputTypeError(
+                *(
+                    f"ParamPath components must be str or int; got {type(part).__name__}",
+                )
             )
     return tuple(out)
 
@@ -323,8 +327,10 @@ def _merge_two(tree1: Any, tree2: Any) -> Any:
     if isinstance(tree1, (list, tuple)) and isinstance(tree2, (list, tuple)):
         # Must have same length
         if len(tree1) != len(tree2):
-            raise ValueError(
-                f"Cannot merge sequences of different lengths: {len(tree1)} vs {len(tree2)}"
+            raise ConfigurationError(
+                *(
+                    f"Cannot merge sequences of different lengths: {len(tree1)} vs {len(tree2)}",
+                )
             )
         merged = [_merge_two(a, b) for a, b in zip(tree1, tree2, strict=True)]
         return type(tree1)(merged)
@@ -371,12 +377,14 @@ def global_norm(
     if compute_dtype is not None and not torch.is_floating_point(
         torch.empty((), dtype=compute_dtype)
     ):
-        raise TypeError(
-            f"compute_dtype must be a real floating-point dtype, got "
-            f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
-            f"silently corrupt the L2-norm reduction (the squared sum is "
-            f"non-negative real and the final sqrt assumes a real "
-            f"accumulator)."
+        raise InputTypeError(
+            *(
+                f"compute_dtype must be a real floating-point dtype, got "
+                f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
+                f"silently corrupt the L2-norm reduction (the squared sum is "
+                f"non-negative real and the final sqrt assumes a real "
+                f"accumulator).",
+            )
         )
 
     leaves = tree_leaves(tree)

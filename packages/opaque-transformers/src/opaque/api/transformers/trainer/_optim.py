@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import opaque.optimizers as opaque_opt
+from opaque.exceptions import ConfigurationError, InputTypeError, OperationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -128,9 +129,11 @@ def resolve_optimizer_name(optim: Any) -> tuple[str, dict[str, Any]]:
     if name in _HF_ALIASES:
         canonical, base = _HF_ALIASES[name]
         return canonical, dict(base)
-    raise ValueError(
-        f"optim={optim!r} is not supported by DPTrainer; "
-        f"expected one of {supported_names()}."
+    raise ConfigurationError(
+        *(
+            f"optim={optim!r} is not supported by DPTrainer; "
+            f"expected one of {supported_names()}.",
+        )
     )
 
 
@@ -178,10 +181,12 @@ def _build_schedule_free(
     pooled = {**base_kwargs, **extra_kwargs}
     base_name = pooled.pop("base", "adamw")
     if base_name not in _OPAQUE_FACTORIES or base_name == "schedule_free":
-        raise ValueError(
-            f"schedule_free base={base_name!r} is not a supported "
-            "opaque optimizer; pick from "
-            f"{tuple(n for n in _OPAQUE_FACTORIES if n != 'schedule_free')}."
+        raise ConfigurationError(
+            *(
+                f"schedule_free base={base_name!r} is not a supported "
+                "opaque optimizer; pick from "
+                f"{tuple(n for n in _OPAQUE_FACTORIES if n != 'schedule_free')}.",
+            )
         )
     # schedule_free's own kwargs (e.g. ``beta``, ``weight_lr_power``)
     # vs. the base factory's kwargs are disambiguated by signature
@@ -255,24 +260,30 @@ def validate_functional_optimizer_cls_and_kwargs(
         not isinstance(optimizer_cls_and_kwargs, tuple)
         or len(optimizer_cls_and_kwargs) != 2  # noqa: PLR2004 - factory/kwargs pair
     ):
-        raise TypeError(
-            "optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs)."
+        raise InputTypeError(
+            *("optimizer_cls_and_kwargs must be a length-2 tuple (factory, kwargs).",)
         )
     factory, opt_kwargs = optimizer_cls_and_kwargs
     if not isinstance(opt_kwargs, dict):
-        raise TypeError(
-            "optimizer_cls_and_kwargs[1] must be dict[str, Any]; "
-            f"got {type(opt_kwargs)!r}."
+        raise InputTypeError(
+            *(
+                "optimizer_cls_and_kwargs[1] must be dict[str, Any]; "
+                f"got {type(opt_kwargs)!r}.",
+            )
         )
     if isinstance(factory, type) and issubclass(factory, torch_optim.Optimizer):
-        raise RuntimeError(
-            "DPTrainer.optimizer_cls_and_kwargs rejects torch.optim.Optimizer "
-            "subclasses: use a callable that returns a torchopt "
-            "GradientTransformation (e.g. opaque.optimizers.adamw)."
+        raise OperationError(
+            *(
+                "DPTrainer.optimizer_cls_and_kwargs rejects torch.optim.Optimizer "
+                "subclasses: use a callable that returns a torchopt "
+                "GradientTransformation (e.g. opaque.optimizers.adamw).",
+            )
         )
     if not callable(factory):
-        raise TypeError(
-            f"optimizer_cls_and_kwargs[0] must be a callable factory; got {factory!r}."
+        raise InputTypeError(
+            *(
+                f"optimizer_cls_and_kwargs[0] must be a callable factory; got {factory!r}.",
+            )
         )
 
     def dummy_lr(_step: int) -> float:
@@ -281,18 +292,22 @@ def validate_functional_optimizer_cls_and_kwargs(
     try:
         transform = factory(lr=dummy_lr, **opt_kwargs)
     except TypeError as exc:
-        raise RuntimeError(
-            "optimizer_cls_and_kwargs factory is not compatible with "
-            "``factory(lr=lr_schedule, **kwargs)``.  Original error: "
-            f"{exc}"
+        raise OperationError(
+            *(
+                "optimizer_cls_and_kwargs factory is not compatible with "
+                "``factory(lr=lr_schedule, **kwargs)``.  Original error: "
+                f"{exc}",
+            )
         ) from exc
     init_fn = getattr(transform, "init", None)
     update_fn = getattr(transform, "update", None)
     if not callable(init_fn) or not callable(update_fn):
-        raise RuntimeError(
-            "optimizer_cls_and_kwargs factory must return an object with "
-            "callable init and update (torchopt GradientTransformation); "
-            f"got {type(transform)!r}."
+        raise OperationError(
+            *(
+                "optimizer_cls_and_kwargs factory must return an object with "
+                "callable init and update (torchopt GradientTransformation); "
+                f"got {type(transform)!r}.",
+            )
         )
     return factory, dict(opt_kwargs)
 

@@ -34,7 +34,7 @@ The accounting API is split into three namespaces:
 | Namespace | Contents | Import |
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
-| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `random_allocation` | `from opaque.dpsgd import accounting as dpsgd_acc` |
+| `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t` | `from opaque.dpsgd import accounting as dpsgd_acc` |
 | `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
 The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
@@ -88,8 +88,8 @@ acc.register_budget_serializer(
 ```
 
 The serializer must return JSON-compatible state and the deserializer must
-rebuild the budget from that state. Checkpointing an unregistered budget raises
-`TypeError`; restoring an unknown budget checkpoint type raises `ValueError`.
+rebuild the budget from that state. Checkpointing an unregistered budget or
+restoring an unknown budget checkpoint type raises `CheckpointError`.
 
 ### `DpProcess`
 
@@ -277,39 +277,37 @@ step = dpsgd_acc.parallel_poisson(
 )
 ```
 
-### `random_allocation(inner, *, num_bins, n_steps) -> DpHorizonProcess`
+### `k_out_of_t(inner, *, k, t, allocation) -> DpHorizonProcess`
 
-1-out-of-`num_bins` random allocation: each epoch, every example lands in
-exactly one of `num_bins` batches, with the assignment redrawn each epoch.
-Pairs with `opaque.dpsgd.sampling.RandomAllocationSampler`.
+With `allocation="block"`, every record participates in exactly one batch in
+each of `k` contiguous, nearly equal blocks. Block sizes differ by at most one.
 
-The process covers the declared horizon and implements exact `pld_at(K)`
-prefix accounting, including partial final epochs. Use
-`acc.per_step(process)` for ordinary step-wise training loops.
-
-Computed by the exact PLD transform of Feldman & Shenfeld (2026) —
-deterministic, with no Monte Carlo sampling. It is strictly tighter than
-`poisson()` at the matched rate `1 / num_bins`.
+This mode pairs with
+`opaque.dpsgd.sampling.KOutOfTSampler(..., allocation="block")` and
+provides exact `pld_at(K)` prefix accounting. It is computed by the exact PLD
+transform of Feldman & Shenfeld (2026), with no Monte Carlo sampling.
 
 - `inner` (Gaussian | AdaClip | NonPrivate): Base mechanism
-- `num_bins` (int): Bins per epoch (≥ 2), matching the sampler's `num_bins`
-- `n_steps` (int): Total optimizer-step horizon
+- `k` (int): Number of blocks / participations per record
+- `t` (int): Total optimizer-step horizon
+- `allocation` (`"block"` or `"total"`): Required allocation mode
 
 ```python
-num_bins = dataset_size // batch_size
-process = dpsgd_acc.random_allocation(
-    dpsgd_acc.gaussian(0.5), num_bins=num_bins, n_steps=total_steps,
+process = dpsgd_acc.k_out_of_t(
+    dpsgd_acc.gaussian(0.5),
+    k=num_epochs,
+    t=num_epochs * steps_per_epoch,
+    allocation="block",
 )
 eps = process.epsilon_at(1e-5)
 ```
 
-### `k_out_of_t(inner, *, total_participations, n_steps) -> DpHorizonProcess`
+With `allocation="total"`, every record chooses a uniform `k`-subset of the
+complete horizon. The accountant currently uses the block reduction as a
+conservative upper bound. For `k > 1`, partial-horizon queries return the
+full-horizon bound.
 
-Global balanced allocation: every record participates in exactly k uniformly
-chosen steps. Prefix accounting uses the hypergeometric participation-count
-mixture with conservative component PLDs.
-
-### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
+### `adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an `AdaClip` process composable with `poisson()`
@@ -318,6 +316,9 @@ fraction query. Returns an `AdaClip` process composable with `poisson()`
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
 - `expected_batch_size` (float): Expected batch size (`sample_rate × dataset_size`), used to compute the absolute noise std for the quantile query.
+- `num_groups` (int): Number of independently adaptive clipping groups, and
+  therefore independent noisy quantile queries. Default: 1. Set this to the
+  number of groups when using per-group adaptive clipping.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
@@ -735,9 +736,9 @@ decreasing privacy-loss budgets return `achieved <= target`, while increasing
 privacy-gain budgets return `achieved >= target`. In both cases,
 `math.isclose(achieved, target, rel_tol=tolerance, abs_tol=0.0)` is true.
 `tolerance` must be finite and positive, and `max_iterations` must be positive;
-invalid values raise `ValueError` before the process is evaluated. If no safe
-endpoint reaches the requested relative tolerance, `calibrate()` raises
-`RuntimeError` instead of returning an under-noised parameter.
+invalid values raise `CalibrationError` before the process is evaluated. If no
+safe endpoint reaches the requested relative tolerance, `calibrate()` raises
+`CalibrationError` instead of returning an under-noised parameter.
 
 When the process uses a Monte Carlo PLD, calibration divides the configured
 failure probability across the two endpoint probes and at most

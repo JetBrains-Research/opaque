@@ -5,8 +5,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque.dpsgd.accounting as dpsgd_acc
 import opaque.dpftrl.accounting as ftrl_acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpftrl.noise import bisr_strategy, lambda_cgd_strategy
 
@@ -94,7 +94,8 @@ class TestBisrDataclass:
 class TestMfGaussianPld:
     def test_epsilon_is_finite_positive(self):
         eps = _lambda_cgd_mech(1.0).epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
     def test_more_noise_lowers_epsilon(self):
         # Higher nm → lower ε (more noise = better privacy)
@@ -114,7 +115,8 @@ class TestMfGaussianPld:
 
     def test_bisr_pld_valid(self):
         eps = _bisr_mech(1.0).epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0
 
 
 # ── BnB amplification tests ────────────────────────────────────────
@@ -138,4 +140,5 @@ class TestBnbAmplification:
         """Can compose with * operator."""
         proc = _lambda_cgd_mech(1.0)
         eps = (proc * 3).epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
+        assert math.isfinite(eps)
+        assert eps > 0

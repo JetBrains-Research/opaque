@@ -11,8 +11,7 @@ import inspect
 import pytest
 import torch
 import torch.nn.functional as F
-
-from ._helpers import requires_hf_auth
+from opaque_test_support import requires_hf_auth
 
 pytest.importorskip("transformers")
 

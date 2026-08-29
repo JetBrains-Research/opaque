@@ -15,6 +15,7 @@ from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
+from opaque.exceptions import ConfigurationError, InputTypeError
 
 #: Mechanism types accepted by plain :func:`poisson`.
 _Inner = DpProcess
@@ -36,14 +37,18 @@ class Poisson(DpProcess):
 
     def __post_init__(self):
         if not isinstance(self.inner, DpProcess):
-            raise TypeError(
-                "Poisson requires a DpProcess inner mechanism, got "
-                f"{type(self.inner).__name__}."
+            raise InputTypeError(
+                *(
+                    "Poisson requires a DpProcess inner mechanism, got "
+                    f"{type(self.inner).__name__}.",
+                )
             )
 
         sample_rate = float(self.sample_rate)
         if not 0 < sample_rate < 1:
-            raise ValueError(f"sample_rate must be in (0, 1), got {self.sample_rate}")
+            raise ConfigurationError(
+                *(f"sample_rate must be in (0, 1), got {self.sample_rate}",)
+            )
         object.__setattr__(self, "sample_rate", sample_rate)
 
         # Validate truncation pairing here (not only in the factory) so direct
@@ -51,25 +56,31 @@ class Poisson(DpProcess):
         # ``(truncated_batch_size, dataset_size)`` into
         # ``_native.truncated_poisson_gaussian_pld`` and fail at PLD time.
         if (self.truncated_batch_size is None) != (self.dataset_size is None):
-            raise ValueError(
-                "Poisson: truncated_batch_size and dataset_size must be set "
-                "together (both None for plain Poisson, both set for truncated)."
+            raise ConfigurationError(
+                *(
+                    "Poisson: truncated_batch_size and dataset_size must be set "
+                    "together (both None for plain Poisson, both set for truncated).",
+                )
             )
         if self.truncated_batch_size is not None:
             if int(self.truncated_batch_size) < 1:
-                raise ValueError(
-                    "Poisson: truncated_batch_size must be >= 1, got "
-                    f"{self.truncated_batch_size}"
+                raise ConfigurationError(
+                    *(
+                        "Poisson: truncated_batch_size must be >= 1, got "
+                        f"{self.truncated_batch_size}",
+                    )
                 )
             if int(self.dataset_size) < 1:
-                raise ValueError(
-                    f"Poisson: dataset_size must be >= 1, got {self.dataset_size}"
+                raise ConfigurationError(
+                    *(f"Poisson: dataset_size must be >= 1, got {self.dataset_size}",)
                 )
             if not isinstance(self.inner, (Gaussian, AdaClip, NonPrivate)):
-                raise TypeError(
-                    "truncated Poisson requires a Gaussian, AdaClip(Gaussian), "
-                    "or NonPrivate inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                raise InputTypeError(
+                    *(
+                        "truncated Poisson requires a Gaussian, AdaClip(Gaussian), "
+                        "or NonPrivate inner mechanism, got "
+                        f"{type(self.inner).__name__}.",
+                    )
                 )
 
     @pld_cache(maxsize=8)
@@ -122,7 +133,7 @@ class Poisson(DpProcess):
                         native_cfg,
                     )
                 case _:
-                    raise AssertionError("validated truncated Poisson inner")
+                    raise AssertionError
 
         return _native.poisson_pld(
             self.inner.pld(

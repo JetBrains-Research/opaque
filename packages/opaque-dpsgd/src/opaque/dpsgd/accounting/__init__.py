@@ -10,12 +10,10 @@ Mechanisms (in :mod:`opaque.dpsgd.accounting.mechanisms`):
 
 Amplification (in :mod:`opaque.dpsgd.accounting.amplification`):
 
-- :func:`k_out_of_t` — global balanced allocation over a declared horizon.
+- :func:`k_out_of_t` — block or total k-out-of-t allocation over a declared horizon.
 - :func:`poisson` — Poisson subsampling. Set ``truncated_batch_size``
   and ``dataset_size`` together for the truncated-Poisson production form.
 - :func:`parallel_poisson` — Poisson subsampling under parallel workers.
-- :func:`random_allocation` — 1-out-of-``num_bins`` random allocation
-  (pairs with :class:`opaque.dpsgd.sampling.RandomAllocationSampler`).
 
 :func:`poisson` and :func:`parallel_poisson` return a **per-step**
 :class:`DpProcess`; compose externally with ``* num_steps`` for
@@ -43,7 +41,6 @@ from opaque.api.accounting.dpsgd import (
     k_out_of_t,
     parallel_poisson,
     poisson,
-    random_allocation,
 )
 
 __all__ = [
@@ -52,5 +49,4 @@ __all__ = [
     "k_out_of_t",
     "parallel_poisson",
     "poisson",
-    "random_allocation",
 ]
