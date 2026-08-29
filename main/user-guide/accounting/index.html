@@ -1103,10 +1103,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size" class="md-nav__link">
+  <a href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)
+        dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)
       
     </span>
   </a>
@@ -3535,10 +3535,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size" class="md-nav__link">
+  <a href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)
+        dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)
       
     </span>
   </a>
@@ -3968,9 +3968,12 @@ PLD transform rather than Monte Carlo.</p>
 whole horizon. The factory currently reports the block reduction as a valid
 conservative upper bound. For <code>k &gt; 1</code>, prefix accounting before the final step
 returns the full-horizon bound.</p>
-<h3 id="dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size"><code>dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)</code><a class="headerlink" href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size" title="Permanent link">&para;</a></h3>
+<h3 id="dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1"><code>dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)</code><a class="headerlink" href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1" title="Permanent link">&para;</a></h3>
 <p>Accounts for the additional privacy cost of adaptive clipping (the noisy
-quantile query). Use this when using <code>adaptive_clipped_grad</code>.</p>
+quantile query). Use this when using <code>adaptive_clipped_grad</code>. <code>num_groups</code>
+defaults to 1 for a single adaptive threshold; set it to the number of
+independently adaptive groups for per-group clipping, because each group
+releases its own noisy quantile query.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">expected_batch_size</span> <span class="o">=</span> <span class="n">sample_rate</span> <span class="o">*</span> <span class="n">dataset_size</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>

@@ -2886,10 +2886,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" class="md-nav__link">
+  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-num_groups1-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess
+        adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -&gt; DpProcess
       
     </span>
   </a>
@@ -3623,10 +3623,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" class="md-nav__link">
+  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-num_groups1-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess
+        adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -&gt; DpProcess
       
     </span>
   </a>
@@ -4307,7 +4307,7 @@ transform of Feldman &amp; Shenfeld (2026), with no Monte Carlo sampling.</p>
 complete horizon. The accountant currently uses the block reduction as a
 conservative upper bound. For <code>k &gt; 1</code>, partial-horizon queries return the
 full-horizon bound.</p>
-<h3 id="adaclipinner-fraction_noise_std-expected_batch_size-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" title="Permanent link">&para;</a></h3>
+<h3 id="adaclipinner-fraction_noise_std-expected_batch_size-num_groups1-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-num_groups1-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an <code>AdaClip</code> process composable with <code>poisson()</code>
 (plain or truncated).</p>
@@ -4315,6 +4315,9 @@ fraction query. Returns an <code>AdaClip</code> process composable with <code>po
 <li><code>inner</code> (Gaussian): Base mechanism (from <code>gaussian()</code>)</li>
 <li><code>fraction_noise_std</code> (float): Noise std on the clipping fraction. Default: 0.05.</li>
 <li><code>expected_batch_size</code> (float): Expected batch size (<code>sample_rate × dataset_size</code>), used to compute the absolute noise std for the quantile query.</li>
+<li><code>num_groups</code> (int): Number of independently adaptive clipping groups, and
+  therefore independent noisy quantile queries. Default: 1. Set this to the
+  number of groups when using per-group adaptive clipping.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">expected_batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
 </code></pre></div>
