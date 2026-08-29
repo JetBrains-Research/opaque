@@ -5,8 +5,9 @@ implementation and Google's dp_accounting library (the reference).  The
 riskcal library provides additional f-DP / error-rate metrics on top of
 dp_accounting PLDs, enabling triple validation.
 
-**Tolerance**: < 1e-6 for reference comparisons and committed numerical
-vectors.
+**Tolerance**: < 1e-6 for direct Gaussian comparisons and committed numerical
+vectors. Generic Poisson comparisons use per-metric tolerances measured against
+the independent oracle grid below.
 
 Requires optional deps — install with ``uv sync --group cross-validation``.
 The ``pytest.importorskip`` calls below gate the entire module automatically.
@@ -43,7 +44,14 @@ from opaque.api.accounting.core.discretization import get_discretization  # noqa
 # Helpers
 # ============================================================================
 
-ATOL = 1e-6  # absolute tolerance for most comparisons
+# The generic pointwise path is compared directly with dp_accounting/riskcal
+# over the parameter grids below. These envelopes exceed the measured maxima
+# by a small margin; exact generic-output vectors retain the 1e-6 drift check.
+ATOL = 1e-6
+POISSON_EPSILON_ATOL = 6e-5
+POISSON_DELTA_ATOL = 3e-8
+POISSON_ADVANTAGE_ATOL = 1.3e-5
+POISSON_BETA_ATOL = 2.2e-4
 
 # NOTE: opaque and dp_accounting agree to ~1e-9 relative error.
 # For high-epsilon regimes (small σ), absolute error can be ~1e-7.
@@ -227,7 +235,7 @@ class TestGaussianDelta:
 
 
 class TestPoissonEpsilon:
-    """Poisson epsilon goldens with an external lower-bound check."""
+    """Poisson epsilon goldens and dp_accounting comparisons."""
 
     # Grid spans the regimes that matter for the opaque-vs-dp_accounting
     # cross-check (low/high σ, two orders of magnitude in q and in steps).
@@ -256,11 +264,11 @@ class TestPoissonEpsilon:
         ref = _ref_epsilon(sigma, 1e-5, sampling_prob=q, steps=steps)
         expected = _POISSON_EPSILON_GOLDENS[(sigma, q, steps)]
         assert ours == pytest.approx(expected, abs=ATOL)
-        assert ours >= ref - ATOL
+        assert ours == pytest.approx(ref, abs=POISSON_EPSILON_ATOL)
 
 
 class TestPoissonHighSteps:
-    """Long Poisson runs: golden values and external lower-bound checks."""
+    """Long Poisson runs: golden values and dp_accounting comparisons."""
 
     @pytest.mark.parametrize("sigma", [0.8, 1.2])
     @pytest.mark.parametrize("q", [0.001, 0.0001])
@@ -269,11 +277,11 @@ class TestPoissonHighSteps:
         ref = _ref_epsilon(sigma, 1e-5, sampling_prob=q, steps=3000)
         expected = _POISSON_EPSILON_GOLDENS[(sigma, q, 3000)]
         assert ours == pytest.approx(expected, abs=ATOL)
-        assert ours >= ref - ATOL
+        assert ours == pytest.approx(ref, abs=POISSON_EPSILON_ATOL)
 
 
 class TestPoissonDelta:
-    """Poisson delta goldens with an external lower-bound check."""
+    """Poisson delta goldens and dp_accounting comparisons."""
 
     @pytest.mark.parametrize(
         ("sigma", "q", "steps"),
@@ -297,7 +305,7 @@ class TestPoissonDelta:
         expected_epsilon, expected_delta = _POISSON_DELTA_GOLDENS[(sigma, q, steps)]
         assert eps == pytest.approx(expected_epsilon, abs=ATOL)
         assert ours == pytest.approx(expected_delta, abs=ATOL)
-        assert ours >= ref - ATOL
+        assert ours == pytest.approx(ref, abs=POISSON_DELTA_ATOL)
 
 
 # ============================================================================
@@ -306,7 +314,7 @@ class TestPoissonDelta:
 
 
 class TestTripleEpsilon:
-    """Poisson epsilon and advantage goldens with external bound checks."""
+    """Poisson epsilon and advantage goldens with external comparisons."""
 
     @pytest.mark.parametrize(
         ("sigma", "q", "steps"),
@@ -334,8 +342,8 @@ class TestTripleEpsilon:
         key = (sigma, q, steps)
         assert eps_ours == pytest.approx(_POISSON_EPSILON_GOLDENS[key], abs=ATOL)
         assert adv_ours == pytest.approx(_POISSON_ADVANTAGE_GOLDENS[key], abs=ATOL)
-        assert eps_ours >= eps_ref - ATOL
-        assert adv_ours >= adv_riskcal - ATOL
+        assert eps_ours == pytest.approx(eps_ref, abs=POISSON_EPSILON_ATOL)
+        assert adv_ours == pytest.approx(adv_riskcal, abs=POISSON_ADVANTAGE_ATOL)
 
 
 class TestTripleBeta:
@@ -371,15 +379,18 @@ class TestTripleBeta:
         proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), q) * steps
         beta_ours = proc.beta_at(alpha)
         expected = _POISSON_BETA_GOLDENS[(sigma, q, steps, alpha)]
+        ref_pld = _ref_gaussian_pld(sigma, q).self_compose(steps)
+        beta_riskcal = float(rc_analysis.get_beta_from_pld(ref_pld, alpha=alpha))
 
         assert beta_ours == pytest.approx(expected, abs=ATOL), (
             f"Poisson(G({sigma}),{q})*{steps} beta@α={alpha}: "
             f"ours={beta_ours}, expected={expected}"
         )
+        assert beta_ours == pytest.approx(beta_riskcal, abs=POISSON_BETA_ATOL)
 
 
 class TestTripleAdvantage:
-    """Advantage goldens with external lower-bound checks."""
+    """Advantage goldens with riskcal comparisons."""
 
     @pytest.mark.parametrize(
         "sigma",
@@ -417,7 +428,7 @@ class TestTripleAdvantage:
 
         expected = _POISSON_ADVANTAGE_GOLDENS[(sigma, q, steps)]
         assert adv_ours == pytest.approx(expected, abs=ATOL)
-        assert adv_ours >= adv_riskcal - ATOL
+        assert adv_ours == pytest.approx(adv_riskcal, abs=POISSON_ADVANTAGE_ATOL)
 
 
 class TestTripleRisk:
@@ -742,7 +753,7 @@ class TestCompositionCrossValidation:
         eps_ref = pld_ref.get_epsilon_for_delta(1e-5)
 
         assert eps_ours == pytest.approx(0.2489660893634798, abs=ATOL)
-        assert eps_ours >= eps_ref - ATOL
+        assert eps_ours == pytest.approx(eps_ref, abs=POISSON_EPSILON_ATOL)
 
     def test_compose_same_mechanism(self):
         """Compose same Poisson steps — should equal repeat."""
@@ -847,7 +858,7 @@ class TestNumericalStability:
             _POISSON_EPSILON_GOLDENS[(0.8, 0.001, 3000)],
             abs=ATOL,
         )
-        assert eps_ours >= eps_ref - ATOL
+        assert eps_ours == pytest.approx(eps_ref, abs=POISSON_EPSILON_ATOL)
 
     def test_compose_many_steps(self):
         """Build up 1000 steps via loop composition vs single repeat."""

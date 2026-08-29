@@ -885,13 +885,14 @@ mod tests {
     fn test_generic_poisson_bounds_enumerated_binary_pair_after_composition() {
         let loss = 0.1_f64;
         let p_positive = (loss.exp() - 1.0) / (loss.exp() - (-loss).exp());
-        let base = PrivacyLossDistribution::new_symmetric(Pmf::new(
-            loss,
-            -1,
-            vec![1.0 - p_positive, p_positive],
-            0.0,
-            usize::MAX,
-        ));
+        let p_negative = 1.0 - p_positive;
+        let q_negative = p_positive * (-loss).exp();
+        let q_positive = p_negative * loss.exp();
+        assert!((q_negative + q_positive - 1.0).abs() < 1e-12);
+        let base = PrivacyLossDistribution::new_asymmetric(
+            Pmf::new(loss, -1, vec![p_negative, p_positive], 0.0, usize::MAX),
+            Pmf::new(loss, -1, vec![q_negative, q_positive], 0.0, usize::MAX),
+        );
         let rate = 0.2;
         let count = 3;
         let pld = poisson_pld(&base, rate)
@@ -899,8 +900,7 @@ mod tests {
             .self_compose(count)
             .unwrap();
 
-        let base_support = [(-loss, 1.0 - p_positive), (loss, p_positive)];
-        let remove: Vec<_> = base_support
+        let remove: Vec<_> = [(-loss, p_negative), (loss, p_positive)]
             .iter()
             .map(|&(base_loss, base_mass)| {
                 (
@@ -909,7 +909,7 @@ mod tests {
                 )
             })
             .collect();
-        let add: Vec<_> = base_support
+        let add: Vec<_> = [(-loss, q_negative), (loss, q_positive)]
             .iter()
             .map(|&(base_loss, base_mass)| {
                 (
