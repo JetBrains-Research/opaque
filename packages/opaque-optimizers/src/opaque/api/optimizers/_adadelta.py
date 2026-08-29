@@ -120,7 +120,6 @@ def _scale_by_adadelta(
     rho: float,
     eps: float,
     noise_bias_correction: bool,
-    bc_floor: float,
 ) -> GradientTransformation:
     """Adadelta moment scaling with two-EMA DP bias correction.
 
@@ -382,12 +381,10 @@ def adadelta(
             *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
 
-    bc_floor = eps * eps
     moment = _scale_by_adadelta(
         rho=rho,
         eps=eps,
         noise_bias_correction=noise_bias_correction,
-        bc_floor=bc_floor,
     )
     return make_optimizer_chain(
         moment,
