@@ -23,9 +23,15 @@ DP behaviour.  Under noised gradients ``g̃_t = g_clean + ξ_t`` with
   ``φ_dx`` per element::
 
       φ_dx,t = ρ φ_dx,{t-1} + (1−ρ) (coef_t · σ_t)²
-      E[Δx²]_corrected,t = max(E[Δx²]_t − φ_dx,t, ε²)
+      E[Δx²]_corrected,t = E[Δx²]_t − φ_dx,t   where that is positive
+                           E[Δx²]_t            elsewhere
 
   Use ``E[Δx²]_corrected,{t-1}`` in the next step's coef.
+
+Both corrections fall back to the uncorrected second moment where the
+φ-EMA has overtaken it, rather than clamping to a small positive floor —
+the shared policy described in ``_bias_correction.py``.  The additive
+``ε`` inside each RMS is what keeps the denominator away from zero.
 
 The two φ-EMAs decay at the same rate ``ρ`` as their respective second
 moments, so subtraction at any step is consistent with the EMA history.
