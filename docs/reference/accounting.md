@@ -305,7 +305,7 @@ complete horizon. The accountant currently uses the block reduction as a
 conservative upper bound. For `k > 1`, partial-horizon queries return the
 full-horizon bound.
 
-### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
+### `adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an `AdaClip` process composable with `poisson()`
@@ -314,6 +314,9 @@ fraction query. Returns an `AdaClip` process composable with `poisson()`
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
 - `expected_batch_size` (float): Expected batch size (`sample_rate × dataset_size`), used to compute the absolute noise std for the quantile query.
+- `num_groups` (int): Number of independently adaptive clipping groups, and
+  therefore independent noisy quantile queries. Default: 1. Set this to the
+  number of groups when using per-group adaptive clipping.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)

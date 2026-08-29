@@ -30,6 +30,13 @@ class TestPerGroup:
         pg = PerGroup(groups={"a": "g1"}, values={"g1": 7.0})
         assert pg.effective == pytest.approx(7.0)
 
+    def test_num_groups_counts_configured_groups(self):
+        pg = PerGroup(
+            groups={"a": "shared", "b": "shared", "c": "other"},
+            values={"shared": 1.0, "other": 2.0},
+        )
+        assert pg.num_groups == 2
+
     def test_rmul(self):
         pg = PerGroup(groups={"a": "g1", "b": "g2"}, values={"g1": 1.0, "g2": 2.0})
         result = 3.0 * pg

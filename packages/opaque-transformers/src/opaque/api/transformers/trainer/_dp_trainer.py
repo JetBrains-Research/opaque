@@ -69,6 +69,7 @@ from opaque.serialization import (
 from opaque.serialization import (
     state_dict as opaque_state_dict,
 )
+from opaque.types import PerGroup
 from transformers import (
     DataCollatorWithPadding,
     PreTrainedModel,
@@ -4282,7 +4283,7 @@ class DPTrainer:
 
             return mechanism
 
-        num_groups = len(clip_norm.values) if hasattr(clip_norm, "values") else 1
+        num_groups = clip_norm.num_groups if isinstance(clip_norm, PerGroup) else 1
 
         base = dpsgd_acc.gaussian
         if a.clipping_mode == "adaptive":
