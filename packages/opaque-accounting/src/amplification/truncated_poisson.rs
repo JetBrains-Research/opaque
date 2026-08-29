@@ -6,9 +6,7 @@ use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{Binomial, DiscreteCDF};
 
-use super::poisson::{
-    poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta, poisson_gaussian_pld,
-};
+use super::poisson::{poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta, poisson_pld};
 use super::{validate_noise_multiplier, validate_rate};
 
 /// Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
@@ -56,9 +54,10 @@ pub fn truncated_poisson_gaussian_pld(
     let sensitivity = 1.0;
     let p_trunc = truncation_probability(dataset_size, rate, batch_size_max);
 
-    // No truncation → fall back to standard Poisson (exact)
+    // No truncation → fall back to plain Poisson.
     if p_trunc == 0.0 {
-        return poisson_gaussian_pld(noise_multiplier, rate, config);
+        let base = crate::mechanisms::gaussian_pld(noise_multiplier, config)?;
+        return poisson_pld(&base, rate);
     }
 
     let q_cond = conditional_sampling_probability(dataset_size, rate, batch_size_max, p_trunc);
@@ -243,7 +242,8 @@ mod tests {
     fn test_truncated_no_truncation_matches_poisson() {
         // batch_size_max ≥ dataset_size → no truncation
         let cfg = default_config();
-        let pld_poisson = poisson_gaussian_pld(0.5, 0.01, &cfg).unwrap();
+        let base = crate::mechanisms::gaussian_pld(0.5, &cfg).unwrap();
+        let pld_poisson = poisson_pld(&base, 0.01).unwrap();
         let pld_trunc = truncated_poisson_gaussian_pld(0.5, 0.01, 200, 100, &cfg).unwrap();
 
         let eps_p = pld_poisson.epsilon_at(1e-5);
@@ -260,7 +260,8 @@ mod tests {
     fn test_truncated_gives_higher_epsilon_than_poisson() {
         // Truncation is a pessimistic bound → more privacy loss
         let cfg = default_config();
-        let pld_poisson = poisson_gaussian_pld(0.5, 0.01, &cfg).unwrap();
+        let base = crate::mechanisms::gaussian_pld(0.5, &cfg).unwrap();
+        let pld_poisson = poisson_pld(&base, 0.01).unwrap();
         let pld_trunc = truncated_poisson_gaussian_pld(0.5, 0.01, 50, 100000, &cfg).unwrap();
 
         let eps_p = pld_poisson.epsilon_at(1e-5);

@@ -2,13 +2,13 @@
 //!
 //! Each public function takes scalar parameters directly (no structs, no traits).
 //!
-//! - [`poisson_gaussian_pld`] — Poisson-subsampled Gaussian
+//! - [`poisson_pld`] — Poisson subsampling applied to an existing PLD
 //! - [`truncated_poisson_gaussian_pld`] — Truncated Poisson-subsampled Gaussian
 //! - [`parallel_poisson_gaussian_pld`] — Parallel Poisson Gaussian (gradient accumulation or parallel workers)
 //! - [`bandmf_b_min_sep_warm_mc_pld`] — BandMF + warm-start b-min-sep subsampling (MC); transcript registry for calibration reuse
 //! - [`bnb_mc_pld`] — Balls-in-Bins Monte Carlo for correlated-noise matrix
 //!   mechanisms (BLT/λCGD/BISR/BSR).  Independent-noise BnB collapses to
-//!   `poisson_gaussian_pld` composed; use that directly for Gaussian/AdaClip.
+//!   `poisson_pld` composed; use that directly for independent noise.
 
 mod b_min_sep;
 pub mod balls_in_bins;
@@ -25,7 +25,7 @@ pub use b_min_sep::{
 };
 pub use balls_in_bins::bnb_mc_pld;
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
-pub use poisson::poisson_gaussian_pld;
+pub use poisson::poisson_pld;
 pub use random_allocation::{
     k_out_of_t_gaussian_prefix_pld, random_allocation_gaussian_pld,
     random_allocation_gaussian_prefix_pld,

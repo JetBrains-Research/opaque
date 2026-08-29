@@ -72,6 +72,10 @@ pub struct PrivacyLossDistribution {
     /// Zero for analytic PLDs. This is tracked separately from numerical tail
     /// truncation even though both contribute to the operational infinity mass.
     mc_resolution: f64,
+
+    /// Gaussian source parameters used to construct a transform-safe
+    /// realization when this PLD becomes a pointwise amplification input.
+    gaussian_source: Option<(f64, f64)>,
 }
 
 impl PrivacyLossDistribution {
@@ -106,6 +110,7 @@ impl PrivacyLossDistribution {
             pmf_add: None,
             estimation_failure_probability: 0.0,
             mc_resolution: 0.0,
+            gaussian_source: None,
         }
     }
 
@@ -147,6 +152,7 @@ impl PrivacyLossDistribution {
             pmf_add: Some(pmf_add),
             estimation_failure_probability: 0.0,
             mc_resolution: 0.0,
+            gaussian_source: None,
         }
     }
 
@@ -159,6 +165,16 @@ impl PrivacyLossDistribution {
         self.estimation_failure_probability = failure_probability;
         self.mc_resolution = resolution;
         self
+    }
+
+    /// Record an analytic Gaussian source for pointwise amplification.
+    pub(crate) fn with_gaussian_source(mut self, noise_multiplier: f64, tail_mass: f64) -> Self {
+        self.gaussian_source = Some((noise_multiplier, tail_mass));
+        self
+    }
+
+    pub(crate) fn gaussian_source(&self) -> Option<(f64, f64)> {
+        self.gaussian_source
     }
 
     /// Failure probability of the Monte Carlo confidence event.
@@ -225,6 +241,7 @@ impl PrivacyLossDistribution {
                 .map(|p| p.with_max_grid_size(max_grid_size)),
             estimation_failure_probability: self.estimation_failure_probability,
             mc_resolution: self.mc_resolution,
+            gaussian_source: self.gaussian_source,
         }
     }
 
@@ -480,6 +497,7 @@ impl PrivacyLossDistribution {
                 .min(1.0),
             mc_resolution: self.mc_resolution + other.mc_resolution
                 - self.mc_resolution * other.mc_resolution,
+            gaussian_source: None,
         })
     }
 
@@ -537,6 +555,7 @@ impl PrivacyLossDistribution {
             } else {
                 -(count as f64 * (-self.mc_resolution).ln_1p()).exp_m1()
             },
+            gaussian_source: None,
         })
     }
 
@@ -553,6 +572,7 @@ impl PrivacyLossDistribution {
                 .map(|p| p.with_max_grid_size(max_grid_size)),
             estimation_failure_probability: self.estimation_failure_probability,
             mc_resolution: self.mc_resolution,
+            gaussian_source: self.gaussian_source,
         };
         let rhs = Self {
             pmf_remove: other.pmf_remove.with_max_grid_size(max_grid_size),
@@ -562,6 +582,7 @@ impl PrivacyLossDistribution {
                 .map(|p| p.with_max_grid_size(max_grid_size)),
             estimation_failure_probability: other.estimation_failure_probability,
             mc_resolution: other.mc_resolution,
+            gaussian_source: other.gaussian_source,
         };
         lhs.compose(&rhs)
     }
@@ -598,6 +619,7 @@ impl PrivacyLossDistribution {
             } else {
                 -(count as f64 * (-self.mc_resolution).ln_1p()).exp_m1()
             },
+            gaussian_source: None,
         })
     }
 }

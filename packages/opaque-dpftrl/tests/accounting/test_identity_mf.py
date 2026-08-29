@@ -78,13 +78,16 @@ class TestIdentityMfMechanism:
 
 class TestPoissonIdentity:
     @pytest.mark.slow
-    def test_pld_matches_self_composed_poisson_gaussian(self):
+    def test_pld_matches_self_composed_generic_poisson(self):
         nm, p, T = 1.1, 0.01, 500
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=p, n_steps=T
         )
         cfg = get_discretization()
-        ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(T)
+        ref = _native.poisson_pld(
+            _native.gaussian_pld(nm, cfg.to_native()),
+            p,
+        ).self_compose(T)
         assert math.isclose(
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
@@ -159,9 +162,10 @@ class TestPoissonBandMf:
         )
         cfg = get_discretization()
         num_groups = math.ceil(n_steps / bands)
-        ref = _native.poisson_gaussian_pld(nm, p, cfg.to_native()).self_compose(
-            num_groups
-        )
+        ref = _native.poisson_pld(
+            _native.gaussian_pld(nm, cfg.to_native()),
+            p,
+        ).self_compose(num_groups)
         assert math.isclose(
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )

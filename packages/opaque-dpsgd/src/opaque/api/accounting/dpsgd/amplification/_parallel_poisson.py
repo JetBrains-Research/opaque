@@ -117,5 +117,13 @@ def parallel_poisson(
         )
         eps = (step * 500).epsilon_at(1e-5)
     """
+    match inner:
+        case Gaussian() | AdaClip() | NonPrivate():
+            pass
+        case _:
+            raise TypeError(
+                "parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
+                f"inner mechanism, got {type(inner).__name__}."
+            )
     poisson_inner = poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

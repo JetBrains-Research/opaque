@@ -6,8 +6,8 @@ into ``num_groups = ceil(n_steps / bands)`` independent groups
 Gaussian.  For ``IdentityStrategy`` (encoder ``I``), ``bands == 1`` so
 every round is its own group — ``num_groups == n_steps``.
 
-The PLD is the ``num_groups``-fold composition of the per-group
-Poisson-Gaussian PLD.  When ``truncated_batch_size`` and
+The PLD is the ``num_groups``-fold composition of the per-group Poisson PLD.
+When ``truncated_batch_size`` and
 ``dataset_size`` are paired (``IdentityStrategy`` only), each group
 instead uses the truncated Poisson-Gaussian PLD — matching a per-step
 batch cap on the runtime sampler.
@@ -46,8 +46,8 @@ class CyclicPoisson(DpHorizonProcess):
     where ``bands = inner.strategy.bands``.  For ``IdentityStrategy``,
     ``num_groups = n_steps``.
 
-    Plain Poisson when ``truncated_batch_size is None``; truncated
-    Poisson (capped batch) when ``truncated_batch_size`` and
+    Plain Poisson when ``truncated_batch_size is None``; capped Poisson when
+    ``truncated_batch_size`` and
     ``dataset_size`` are set together.  Truncated Poisson is supported
     only for ``IdentityStrategy`` (the per-step PLD reduces to the
     DP-SGD truncated Poisson-Gaussian); ``BandMfStrategy`` is rejected
@@ -208,8 +208,9 @@ class CyclicPoisson(DpHorizonProcess):
                 native_cfg,
             )
         else:
-            per_group_pld = _native.poisson_gaussian_pld(
-                effective_nm, self.sample_rate, native_cfg
+            per_group_pld = _native.poisson_pld(
+                _native.gaussian_pld(effective_nm, native_cfg),
+                self.sample_rate,
             )
         return per_group_pld.self_compose(num_groups)
 

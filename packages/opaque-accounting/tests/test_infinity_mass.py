@@ -3,7 +3,7 @@
 After enough compositions, ``delta_at(large_epsilon) == infinity_mass``
 because the tail-truncation budget (``tail_mass_truncation/2``) is absorbed
 into ``infinity_mass`` by successive ``self_compose`` calls.  Tests cover
-both symmetric (``gaussian_pld``) and asymmetric (``poisson_gaussian_pld``)
+both symmetric (``gaussian_pld``) and asymmetric (``poisson_pld``)
 PLDs to exercise the worst-case-over-adjacencies path.
 """
 
@@ -67,11 +67,12 @@ def test_infinity_mass_asymmetric_pld_worst_case():
     worst-case adjacency (max over remove/add) and still saturate at the floor."""
     from opaque.api.accounting.core.opaque_accounting import (
         DiscretizationConfig,
-        poisson_gaussian_pld,
+        gaussian_pld,
+        poisson_pld,
     )
 
     config = DiscretizationConfig(tail_mass_truncation=TAIL_MASS_TRUNCATION)
-    pld = poisson_gaussian_pld(1.1, 0.01, config)
+    pld = poisson_pld(gaussian_pld(1.1, config), 0.01)
     composed = pld.self_compose(20)
     floor = composed.infinity_mass
     assert floor == pytest.approx(EXPECTED_FLOOR, rel=1e-3)

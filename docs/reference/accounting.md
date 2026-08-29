@@ -110,10 +110,10 @@ size (16) or as an opaque merge barrier.
 
 Monte Carlo-backed `Pld` objects expose `mc_failure_probability`,
 `mc_confidence`, and `mc_resolution`; analytic PLDs report zero failure and
-zero MC resolution. The confidence construction certifies hockey-stick metrics
+zero MC resolution. The confidence construction bounds hockey-stick metrics
 (`epsilon_at`, `delta_at`, and `advantage`). `beta_at` and `risk_at` fail
 closed to zero for Monte Carlo PLDs because separate directional CDF bounds do
-not by themselves certify a hypothesis-testing trade-off curve.
+not by themselves establish a hypothesis-testing trade-off curve.
 
 **Composition operators:**
 
@@ -226,10 +226,11 @@ sensitivity-1 queries. Base mechanism for DP-SGD.
 ### `poisson(inner, sample_rate) -> DpProcess`
 
 Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
-`batch_size / dataset_size`.
+`batch_size / dataset_size`. Plain Poisson accepts any Opaque `DpProcess` as
+its base mechanism.
 
-- `inner` (Gaussian | AdaClip): Base mechanism
-- `sample_rate` (float): Probability of including each example, in (0, 1]
+- `inner` (DpProcess): Base mechanism
+- `sample_rate` (float): Probability of including each example, in (0, 1)
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=256 / 50_000)
@@ -241,10 +242,11 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.5), sample_rate=256 / 50_000)
 `truncated_batch_size` and `dataset_size` are set together (must be both
 or neither). This is the truncated-Poisson PLD for capped batches; it does
 **not** improve privacy versus plain Poisson at the same rate—use it when
-training actually truncates draws.
+training actually truncates draws. The capped form accepts a Gaussian,
+AdaClip(Gaussian), or `nonprivate()` base.
 
-- `inner` (Gaussian | AdaClip): Base mechanism
-- `sample_rate` (float): Expected sampling rate, in (0, 1]
+- `inner` (Gaussian | AdaClip | NonPrivate): Base mechanism
+- `sample_rate` (float): Expected sampling rate, in (0, 1)
 - `truncated_batch_size` (int | None): Optional max batch-size cap
 - `dataset_size` (int | None): Required when `truncated_batch_size` is set
 

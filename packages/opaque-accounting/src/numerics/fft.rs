@@ -203,33 +203,33 @@ fn select_self_convolution_strategy(
         .checked_next_power_of_two()
         .ok_or_else(|| PldError::NumericalError("self-composition FFT length overflow".into()))?;
 
-    if alias_free_fft_len <= MAX_LINEAR_FFT_SIZE {
-        return Ok(SelfConvolutionStrategy::Linear {
-            fft_len: alias_free_fft_len,
-        });
+    if allow_circular_fallback {
+        let circular_fft_len = truncated_len
+            .max(input_len)
+            .checked_next_power_of_two()
+            .ok_or_else(|| {
+                PldError::NumericalError("self-composition FFT length overflow".into())
+            })?;
+        let materially_smaller = circular_fft_len <= alias_free_fft_len / 4;
+        if circular_fft_len <= MAX_LINEAR_FFT_SIZE
+            && (alias_free_fft_len > MAX_LINEAR_FFT_SIZE || materially_smaller)
+        {
+            return Ok(SelfConvolutionStrategy::Circular {
+                fft_len: circular_fft_len,
+            });
+        }
     }
 
-    if !allow_circular_fallback {
-        return Err(PldError::SelfCompositionTooLarge {
+    if alias_free_fft_len <= MAX_LINEAR_FFT_SIZE {
+        Ok(SelfConvolutionStrategy::Linear {
+            fft_len: alias_free_fft_len,
+        })
+    } else {
+        Err(PldError::SelfCompositionTooLarge {
             requested: alias_free_fft_len,
             maximum: MAX_LINEAR_FFT_SIZE,
-        });
+        })
     }
-
-    let circular_fft_len = truncated_len
-        .max(input_len)
-        .checked_next_power_of_two()
-        .ok_or_else(|| PldError::NumericalError("self-composition FFT length overflow".into()))?;
-    if circular_fft_len > MAX_LINEAR_FFT_SIZE {
-        return Err(PldError::SelfCompositionTooLarge {
-            requested: circular_fft_len,
-            maximum: MAX_LINEAR_FFT_SIZE,
-        });
-    }
-
-    Ok(SelfConvolutionStrategy::Circular {
-        fft_len: circular_fft_len,
-    })
 }
 
 /// Self-convolve with optional truncation bounds.
@@ -246,10 +246,12 @@ fn select_self_convolution_strategy(
 ///
 /// This function uses a full-size buffer (≥ `full_result_len`, rounded to
 /// next power of 2) to guarantee correct linear convolution. When that
-/// buffer would exceed [`MAX_LINEAR_FFT_SIZE`], a composition with a
-/// positive tail-truncation budget falls back to the smaller circular buffer
-/// (`max(truncated_len, a.len())`). Exact composition rejects the request
-/// instead: circular aliasing is invalid without a tail-error budget.
+/// buffer is materially larger than the bounded circular transform, a
+/// composition with a positive tail-truncation budget uses the smaller buffer
+/// (`max(truncated_len, a.len())`). The excluded tail mass is already covered
+/// by that budget. Exact composition rejects transforms above
+/// [`MAX_LINEAR_FFT_SIZE`] instead: circular aliasing is invalid without a
+/// tail-error budget.
 ///
 /// # Arguments
 ///
@@ -257,7 +259,7 @@ fn select_self_convolution_strategy(
 /// * `count` - Number of times to convolve (must be >= 1)
 /// * `bounds` - Optional (lower, upper) indices to compute. If None, computes full result.
 /// * `allow_circular_fallback` - Whether a positive tail-truncation budget
-///   permits circular aliasing when a linear FFT exceeds the size limit.
+///   permits a materially smaller bounded circular FFT.
 ///
 /// # Returns
 ///
@@ -449,6 +451,24 @@ mod tests {
         assert_eq!(
             select_self_convolution_strategy(2, count, 16, true).unwrap(),
             SelfConvolutionStrategy::Circular { fft_len: 16 }
+        );
+    }
+
+    #[test]
+    fn test_truncated_convolution_prefers_smaller_circular_fft() {
+        assert_eq!(
+            select_self_convolution_strategy(20_000, 1_000, 64_000, true).unwrap(),
+            SelfConvolutionStrategy::Circular { fft_len: 65_536 }
+        );
+        assert_eq!(
+            select_self_convolution_strategy(20_000, 1_000, 64_000, false).unwrap(),
+            SelfConvolutionStrategy::Linear {
+                fft_len: 33_554_432
+            }
+        );
+        assert_eq!(
+            select_self_convolution_strategy(100, 2, 100, true).unwrap(),
+            SelfConvolutionStrategy::Linear { fft_len: 256 }
         );
     }
 
