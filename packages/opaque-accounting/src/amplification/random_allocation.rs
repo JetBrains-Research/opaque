@@ -13,8 +13,8 @@
 //! computed on a geometric grid (`crate::pld::pmf::geom`) by exponentiation by
 //! squaring — `O(log t)` convolutions. The grid size does not grow across them,
 //! which makes large `t` tractable. Each pairwise convolution contributes
-//! roughly `α` of absolute-loss discretisation error, so the total error for a
-//! `t`-fold convolution is bounded by roughly
+//! at most `α` of privacy-loss discretisation error, so the total error for a
+//! `t`-fold convolution is bounded by
 //! `(⌊log₂ t⌋ + popcount(t) − 1) · α`.
 //!
 //! For the Gaussian the dual is closed form — `L̃ ~ N(1/(2σ²), 1/σ²)`, the same
