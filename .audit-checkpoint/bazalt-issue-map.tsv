@@ -1,0 +1,73 @@
+# Milestone Bazalt (#4) — OPQ finding -> GitHub issue traceability
+# Generated 2026-08-29. Umbrellas #762-775, children #776-845. 84 issues, 89 findings.
+# umbrella	umbrella_title	opq	issue
+762	Correct DP-FTRL amplification pairings and unamplified defaults	OPQ-318	776
+762	Correct DP-FTRL amplification pairings and unamplified defaults	OPQ-354	777
+762	Correct DP-FTRL amplification pairings and unamplified defaults	OPQ-317	778
+763	Restore b-min-sep amplification correctness and reproducibility	OPQ-300	779
+763	Restore b-min-sep amplification correctness and reproducibility	OPQ-301	780
+763	Restore b-min-sep amplification correctness and reproducibility	OPQ-306	781
+764	Make accounting state fail closed	OPQ-302	782
+764	Make accounting state fail closed	OPQ-303	783
+764	Make accounting state fail closed	OPQ-304	784
+764	Make accounting state fail closed	OPQ-305	785
+764	Make accounting state fail closed	OPQ-323	786
+764	Make accounting state fail closed	OPQ-307	787
+764	Make accounting state fail closed	OPQ-308	788
+765	Keep sampler, accountant, noise state aligned across resume	OPQ-319	789
+765	Keep sampler, accountant, noise state aligned across resume	OPQ-320	790
+765	Keep sampler, accountant, noise state aligned across resume	OPQ-321	791
+765	Keep sampler, accountant, noise state aligned across resume	OPQ-322	792
+766	Correct DP-FTRL mechanism identity, noise streams, strategy state	OPQ-314	793
+766	Correct DP-FTRL mechanism identity, noise streams, strategy state	OPQ-315	794
+766	Correct DP-FTRL mechanism identity, noise streams, strategy state	OPQ-316	795
+766	Correct DP-FTRL mechanism identity, noise streams, strategy state	OPQ-328	796
+766	Correct DP-FTRL mechanism identity, noise streams, strategy state	OPQ-329	797
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-309	798
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-310	799
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-311	800
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-312	801
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-313	802
+767	Correct DP-SGD sampling, adaptive-clipping, accounting validation	OPQ-356	803
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-330	804
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-331	805
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-332	806
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-333	807
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-334	808
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-335	809
+768	Correct engine clipping, precision, RNG boundary behavior	OPQ-336	810
+769	Restore patched-model fidelity to upstream	OPQ-337	811
+769	Restore patched-model fidelity to upstream	OPQ-338	812
+769	Restore patched-model fidelity to upstream	OPQ-339	813
+769	Restore patched-model fidelity to upstream	OPQ-340	814
+769	Restore patched-model fidelity to upstream	OPQ-341	815
+769	Restore patched-model fidelity to upstream	OPQ-342	816
+769	Restore patched-model fidelity to upstream	OPQ-343	817
+770	Align trainer public-API contracts with runtime behavior	OPQ-324	818
+770	Align trainer public-API contracts with runtime behavior	OPQ-325	819
+770	Align trainer public-API contracts with runtime behavior	OPQ-326	820
+770	Align trainer public-API contracts with runtime behavior	OPQ-327	821
+771	Correct optimizer contracts and remove dead optimizer state	OPQ-344	822
+771	Correct optimizer contracts and remove dead optimizer state	OPQ-345	823
+771	Correct optimizer contracts and remove dead optimizer state	OPQ-346	824
+771	Correct optimizer contracts and remove dead optimizer state	OPQ-347	825
+772	Correct alignment loss and data-preparation contracts	OPQ-348	826
+772	Correct alignment loss and data-preparation contracts	OPQ-349	827
+773	Restore auditing statistical validity	OPQ-350	828
+773	Restore auditing statistical validity	OPQ-351	829
+773	Restore auditing statistical validity	OPQ-352	830
+773	Restore auditing statistical validity	OPQ-353	831
+774	Close CI fail-open gates and restore test integrity	OPQ-377	832
+774	Close CI fail-open gates and restore test integrity	OPQ-378	833
+774	Close CI fail-open gates and restore test integrity	OPQ-379	834
+774	Close CI fail-open gates and restore test integrity	OPQ-380	835
+774	Close CI fail-open gates and restore test integrity	OPQ-381	836
+774	Close CI fail-open gates and restore test integrity	OPQ-382	837
+774	Close CI fail-open gates and restore test integrity	OPQ-383	838
+774	Close CI fail-open gates and restore test integrity	OPQ-384	839
+774	Close CI fail-open gates and restore test integrity	OPQ-385	840
+774	Close CI fail-open gates and restore test integrity	OPQ-386	841
+774	Close CI fail-open gates and restore test integrity	OPQ-387	842
+775	Reconcile documentation and citations (Sweep A: executable snippets)	OPQ-355,357,358,361,362,363,364,365,367,368	843
+775	Reconcile documentation and citations (Sweep B: reference tables)	OPQ-359,360,366,369,370,388	844
+775	Reconcile documentation and citations (Sweep C: citation hypotheses)	OPQ-371,372,373,374,375,376	845
