@@ -39,8 +39,6 @@ gate falls open and the asserts run for real).
 
 from __future__ import annotations
 
-from opaque.exceptions import ConfigurationError
-
 import math
 
 import pytest
@@ -66,7 +64,6 @@ from opaque.types import (
     SecondMomentNoiseOutput,
     clipped,
 )
-
 
 N_STEPS = 16
 BATCH_SIZE = 8
@@ -103,7 +100,7 @@ def _make_strategy(name: str):
     raise AssertionError(f"unknown strategy {name}")
 
 
-_NOISE_PART = dict(n_steps=N_STEPS, min_sep=1, max_participations=1)
+_NOISE_PART = {"n_steps": N_STEPS, "min_sep": 1, "max_participations": 1}
 
 
 def _row_l2_at_zero(strategy, *, n_steps, min_sep=1, max_participations=None) -> float:
@@ -560,13 +557,21 @@ class TestAdaptiveClippingRejected:
         y = torch.randn(BATCH_SIZE) * 100.0
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
         _, noise_state = noise_fn(grads, noise_state)
-        # Subsequent calls drift the threshold; the dispatcher must reject.
-        with pytest.raises(ValueError, match="constant per-step sensitivity"):
+
+        def drift_threshold():
+            current_clip_state = clip_state
+            current_noise_state = noise_state
             for _ in range(N_STEPS):
                 x = torch.randn(BATCH_SIZE, N_FEATURES) * 100.0
                 y = torch.randn(BATCH_SIZE) * 100.0
-                grads, clip_state = grad_fn(params, x, y, state=clip_state)
-                _, noise_state = noise_fn(grads, noise_state)
+                grads, current_clip_state = grad_fn(
+                    params, x, y, state=current_clip_state
+                )
+                _, current_noise_state = noise_fn(grads, current_noise_state)
+
+        # Subsequent calls drift the threshold; the dispatcher must reject.
+        with pytest.raises(ValueError, match="constant per-step sensitivity"):
+            drift_threshold()
 
 
 # ------------------------------------------------------------------ math sanity

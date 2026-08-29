@@ -29,11 +29,15 @@ pytest.importorskip("peft")
 
 from opaque_test_support import (
     cleanup_process_group as _cleanup_ddp,
+)
+from opaque_test_support import (
     setup_nccl as _setup_ddp,
+)
+from opaque_test_support import (
     spawn as _spawn,
 )
-from peft import LoraConfig, get_peft_model  # noqa: E402
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
+from peft import LoraConfig, get_peft_model
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import sum_gradients

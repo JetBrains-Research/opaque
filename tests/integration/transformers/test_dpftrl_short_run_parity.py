@@ -14,8 +14,8 @@ pytest.importorskip("transformers")
 pytest.importorskip("peft")
 
 from opaque_test_support import cleanup_process_group, setup_nccl, spawn
-from peft import LoraConfig, get_peft_model  # noqa: E402
-from transformers import AutoModelForCausalLM, LlamaConfig  # noqa: E402
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM, LlamaConfig
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import sum_gradients
@@ -268,6 +268,7 @@ def test_dpftrl_short_run_1_vs_2_gpu_parity(strategy_name: str) -> None:
     # ``tests/integration/ddp/test_dpftrl_sampler_short_run_parity.py``.
     one = _run(1, strategy_name)
     two = _run(2, strategy_name)
-    assert one["eval_loss"] > 0 and two["eval_loss"] > 0
+    assert one["eval_loss"] > 0
+    assert two["eval_loss"] > 0
     rel = abs(two["eval_loss"] - one["eval_loss"]) / one["eval_loss"]
     assert rel < 1e-4, f"eval relative delta {rel:.2e} exceeds 1e-4"
