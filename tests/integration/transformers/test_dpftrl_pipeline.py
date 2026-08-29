@@ -20,8 +20,8 @@ import torch
 pytest.importorskip("transformers")
 pytest.importorskip("peft")
 
-from peft import LoraConfig, get_peft_model  # noqa: E402
-from transformers import (  # noqa: E402
+from peft import LoraConfig, get_peft_model
+from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,

@@ -25,8 +25,8 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn as nn
-
 from opaque_test_support import cleanup_process_group, setup_nccl, spawn
+
 from opaque.api.engine.clipping import clipped_grad
 from opaque.distributed import local_shard, sum_gradients
 from opaque.dpsgd.noise import gaussian_noise
@@ -230,7 +230,8 @@ def test_dpsgd_sampler_short_run_1_vs_2_gpu_parity() -> None:
     # companion that uses the *same* batch + noise key (bound = 1e-4).
     one = _run(1)
     two = _run(2)
-    assert one > 0 and two > 0
+    assert one > 0
+    assert two > 0
     rel = abs(two - one) / one
     print(
         f"\nDP-SGD sampler parity: eval_1gpu={one:.6f}, eval_2gpu={two:.6f}, rel={rel:.4%}"

@@ -21,12 +21,11 @@ import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpftrl.noise import identity_strategy
 
-
 _DELTA = 1e-5
 
 
 @pytest.mark.parametrize(
-    "nm, sample_rate, n_steps, truncated_batch_size, dataset_size",
+    ("nm", "sample_rate", "n_steps", "truncated_batch_size", "dataset_size"),
     [
         (1.1, 0.01, 200, 64, 50_000),
         (0.8, 0.005, 500, 32, 100_000),

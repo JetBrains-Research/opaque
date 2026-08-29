@@ -28,9 +28,9 @@ import torch
 import torch.nn as nn
 
 from opaque.alignment.sft.loss import nll_loss
+from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.functional import make_functional
 from opaque.random import key
 

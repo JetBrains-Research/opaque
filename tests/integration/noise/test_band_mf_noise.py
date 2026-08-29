@@ -1,7 +1,5 @@
 """Tests for BandMfStrategy factory and accounting equivalence."""
 
-from opaque.exceptions import ConfigurationError
-
 import math
 
 import pytest
@@ -11,13 +9,12 @@ import opaque.dpftrl.accounting as ftrl_acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy, band_mf_strategy
 
-
 _N_STEPS = 100
 _BANDS = 10
 
 
 def _full_part() -> dict:
-    return dict(n_steps=_N_STEPS, min_sep=1, max_participations=_N_STEPS)
+    return {"n_steps": _N_STEPS, "min_sep": 1, "max_participations": _N_STEPS}
 
 
 class TestBandMfStrategy:
@@ -44,7 +41,7 @@ class TestBandMfStrategy:
         assert s.streaming_matrix(n_steps=_N_STEPS) is not None
 
     def test_rejects_bad_bands(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bands must be >= 1"):
             band_mf_strategy(bands=0)
 
     def test_with_lr_schedule(self):
