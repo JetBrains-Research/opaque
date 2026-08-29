@@ -1,0 +1,536 @@
+{
+"300": {
+"title": "b-min-sep warm-start likelihood ratio misnormalizes the stationary mixture; the add-direction PLD is anti-conservative.",
+"loc": "`packages/opaque-accounting/src/amplification/b_min_sep/mc.rs:69-75`",
+"fix": "`sum_f = (f[0] + p * tail) / denom` (tail 0 when `bands == 1`). Add a normalization test asserting empirical `E_Q[likelihood_ratio_warm] \u2248 1` for bands \u2208 {2,4,8}, and a bands=1 oracle test asserting the MC bound dominates `poisson_gaussian_pld(sigma,p).self_compose(n)`.",
+"imp": "any BandMF + b-min-sep run \u2014 the default sampler for `mf_band`. Verified against exact enumeration of all warm-start participation patterns (b=2,3; n=8..10): the corrected formula matches to ~1e-15, the shipped one overstates by 1.048\u20131.171\u00d7. Because `epsilon_at` takes the max over adjacencies and the inflated remove side bound in every configuration tested, the user-visible effect today is an **over**-stated \u03b5 (1.27"
+},
+"301": {
+"title": "b-min-sep Monte Carlo transcripts are sharded by the live Rayon thread count: a fixed seed yields a different \u03b5 on a different host.",
+"loc": "`packages/opaque-accounting/src/amplification/b_min_sep/mc.rs:174-176, 187, 210, 364-378, 404`",
+"fix": "port the balls-in-bins scheme \u2014 `par_chunks_mut(SAMPLES_PER_SHARD)` with `shard_seed(seed, shard, direction)` independent of the pool size, for both entry points; derive transcript layout from the shard index; extend the reproducibility subprocess test to `bandmf_b_min_sep_warm_mc_pld`; version-tag or regenerate cached corpora. Use a domain-separated direction offset instead of `+1000`.",
+"imp": "a team pins a seed for a BandMF + b-min-sep run and gets a different reported \u03b5 on different hardware. Measured through the built extension at seed 173 (coef `[\u221a0.7, \u221a0.3]`, n=50, p=0.05, \u03c3=1.0, mc_resolution 5e-3): `epsilon_at(1e-2)` = 1.5789 (1 worker) / 1.5938 (2) / 1.8443 (8) \u2014 a 17 % swing. Calibration on a many-core box selects a different noise multiplier than the same config in CI, and a published (\u03b5, \u03b4, seed"
+},
+"302": {
+"title": "`from_state_dict(Accountant(budget=...), sd)` silently discards the template's budget; `budget_exceeded` then fails open forever.",
+"loc": "`packages/opaque-accounting/src/opaque/api/accounting/core/_accountant.py:222-247, 205-221`",
+"fix": "have the loader keep `template._budget` when the saved dict has no `budget` key; make `budget_exceeded` distinguish \"no budget configured\" from \"budget could not be restored\" (raise or tri-state) and log at restore time whenever a template budget is discarded.",
+"imp": "stage 1 trains with a fixed multiplier and no budget (what DPTrainer always writes \u2014 `_dp_trainer.py:1536` constructs `Accountant()`), stage 2 resumes with the natural one-liner `acct = from_state_dict(Accountant(budget=epsilon_budget(1.0, delta=1e-5)), json.load(f))` and drives the documented `acct = acct | step; if acct.budget_exceeded: break` loop. Reproduced: after the restored 2000-step prefix, `epsilon_at(1e-5)"
+},
+"303": {
+"title": "self-convolution exponent silently truncated to `u32` on the budgeted circular path.",
+"loc": "`packages/opaque-accounting/src/numerics/fft.rs:316-318`",
+"fix": "guard in `self_convolve_with_bounds` (`if count > u32::MAX as usize { return Err(...) }`, mirroring the Python boundary), or use repeated squaring of the spectrum with a `usize` exponent as `pow_usize` already does for the singleton case.",
+"imp": "reproduced with a temporary Rust integration test: `self_convolve_with_bounds(&[0.5,0.5], (1<<32)+10, Some((0,15)), true)` returns `Ok` with values bit-identical to the 10-fold result \u2014 an \u03b5 under-report by orders of magnitude, no error. The documented Python surface is safe (`python/pld.rs:31-39` caps at `u32::MAX` with `OverflowError`); the wrap is reachable from the crate's rlib API (`self_convolve_with_bounds` / "
+},
+"304": {
+"title": "`set_discretization` is a full replace, not a partial update: tuning one knob reverts every previously tightened Monte Carlo / grid parameter.",
+"loc": "`packages/opaque-accounting/src/opaque/api/accounting/core/discretization.py:97-154`",
+"fix": "give every parameter a `None` sentinel and merge onto the current `_default_config` (matching `get_discretization`), or rename to `replace_discretization` and add an explicit `update_discretization`. Make the parameters keyword-only for symmetry.",
+"imp": "reproduced in one process: `set_discretization(mc_failure_probability=1e-10, mc_resolution=1e-8)` \u2192 1e-08/1e-10; then `set_discretization(discretization=1e-3)` \u2192 `discretization=0.001, mc_resolution=1e-05, mc_failure_probability=1e-06`. Both Monte Carlo band parameters are silently back at defaults, four orders of magnitude looser on the failure probability, and every \u03b5 computed afterwards by the MC accountants (b-mi"
+},
+"305": {
+"title": "closed #338 landed no change: asymmetric PLD \u03b2 metrics still renormalize `negative_infinity_mass` away, inconsistently with the symmetric path.",
+"loc": "`packages/opaque-accounting/src/pld/metrics.rs:305-314`",
+"fix": "either fold the mass into the asymmetric CDF as the symmetric path does (with a derivation of the conservative direction for the symmetrized trade-off), or document the riskcal-matching renormalization as deliberate with the bounded error recorded. Reopen or annotate #338 either way.",
+"imp": "`beta_at`/`risk_at` on an asymmetric PLD carrying `negative_infinity_mass` (built by `random_allocation.rs:250`, `b_min_sep/mc.rs:318/420`, `balls_in_bins/monte_carlo.rs:253`, `connect_the_dots.rs:278`, then self-composed so `dense.rs` adds the left Chernoff budget) redistributes that mass proportionally over the finite grid instead of anchoring it at the bottom of the CDF, so the two \u03b2 implementations disagree by co"
+},
+"306": {
+"title": "`random_allocation.rs` module docstring claims the discretisation error does not accumulate across the exponentiation-by-squaring convolutions; the over-estimate grows with `t`.",
+"loc": "`packages/opaque-accounting/src/amplification/random_allocation.rs:13-15`",
+"fix": "reword to \"the grid size does not grow across them\" and state the actual error budget (bounded by roughly `(floor(log2 t) + popcount(t) - 1) \u00b7 alpha` in absolute loss) so users can size `max_conv_grid` against an accuracy target.",
+"imp": "a reader sizing `max_conv_grid` for a large-`t` run concludes the bound is grid-insensitive and leaves the default. Verified by varying only `max_conv_grid`: \u03b5 at \u03c3=1.0, \u03b4=1e-5 for one full epoch, coarse (1024) minus fine (4096), is +0.0159 at t=2 rising to +0.0743 at t=256 \u2014 0.43 % relative rising to 21 %. The rounding is directional and conservative, so \u03b5 is over-stated, never under-stated."
+},
+"307": {
+"title": "`opaque-accounting`'s wheel-local smoke test imports `opaque.dpftrl` (ARC-006).",
+"loc": "`packages/opaque-accounting/tests/test_smoke.py:145-161`",
+"fix": "move the test to `tests/integration/accounting/` (or `packages/opaque-dpftrl/tests/accounting/`), or rewrite it against a core-only horizon process so the resolution-propagation property is tested inside the owning wheel.",
+"imp": "reproduced two ways \u2014 installing a meta-path blocker for `opaque.dpftrl` and running the package's own test directory gives \"1 failed, 96 passed\" with `ModuleNotFoundError: No module named 'opaque.dpftrl'` as the sole failure; and importing on a clean two-root path (`opaque-base` + `opaque-accounting` src only) raises the same. Invisible in CI because every lane syncs `--all-packages`; in a repo checkout the root `co"
+},
+"308": {
+"title": "the crate duplicates the workspace lint locally instead of opting into `[workspace.lints]`.",
+"loc": "`packages/opaque-accounting/Cargo.toml:39-40`",
+"fix": "replace the local table with `[lints]\\nworkspace = true`. ### 2.2 DP-SGD (`opaque-dpsgd`)",
+"imp": "drift only. Any lint added or escalated in `[workspace.lints]` later (or a second workspace member added later) silently fails to apply until someone notices \u2014 the OPQ-134 dead-config situation recreated for every lint except the one that was copied."
+},
+"309": {
+"title": "per-group adaptive clip sync reduces group counts positionally, so an empty rank receives permuted counts and thresholds diverge.",
+"loc": "`packages/opaque-dpsgd/src/opaque/api/dpsgd/clipping/_distributed.py:64-66`",
+"fix": "canonicalize the per-group count dict at every construction site (build over `sorted(current_pg.values)`, including `_empty_num_clipped` and the stats path) and/or make `sync_adaptive_clip_state` iterate `sorted(state._num_clipped)` so the collective schedule derives from the schema. Add a 2-rank gloo test with one empty rank and a non-sorted, non-leaf PerGroup order.",
+"imp": "two-rank DDP, per-group adaptive clipping, one rank draws an empty batch (routine under Poisson, guaranteed under RandomAllocationSampler), and the user's `per_group()` pattern order differs from leaf traversal order. Reproduced on 2-rank gloo with params `{aaa_b, zzz_w}` and patterns `{zzz:1.0, aaa:1000.0}`: rank0 global counts `{aaa:0.0, zzz:4.0}` vs rank1 `{zzz:0.0, aaa:4.0}`; next thresholds `zzz` = 1.1008 vs 0.9"
+},
+"310": {
+"title": "AdaClip accounting accepts invalid parameters on direct construction and deserialization; `num_groups=0` prices adaptive clipping as free.",
+"loc": "`packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/mechanisms/_adaclip.py:23-55`",
+"fix": "add `AdaClip.__post_init__` mirroring the factory checks (`fraction_noise_std > 0`, `expected_batch_size > 0`, `num_groups >= 1` and integral). Consider the same for `Gaussian` (a negative multiplier currently fails only later inside the native call).",
+"imp": "`AdaClip` is a public exported type and the generic `DpProcess` codec rebuilds it with `cls(**kwargs)` on load. Reproduced: `AdaClip(inner=Gaussian(1.1), fraction_noise_std=0.05, expected_batch_size=250.0, num_groups=0)` gives `effective_noise_multiplier == 1.1` (the bare Gaussian \u2014 the `K/(4\u03c3_b\u00b2)` term vanishes) and `poisson(...).pld().epsilon_at(1e-5) = 0.14229` vs 0.14276 at `num_groups=1` and 0.14418 at 4. Also r"
+},
+"311": {
+"title": "samplers are exempt from the #728 namespaced-stream-root convention and seed numpy directly from the caller's key.",
+"loc": "`packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py:108`, `_random_allocation.py:125`, `_k_out_of_t.py:58`; `packages/opaque-dpftrl/src/opaque/api/dpftrl/sampling/{_poisson.py:111,_b_min_sep.py:73,_balls_in_bins.py:103}`",
+"fix": "root each sampler under a namespaced tag (`fold_in(key, \"opaque.dpsgd.poisson\")`, `fold_in(self._key, \"opaque.dpsgd.random_allocation\", epoch)`, etc.), preserving state-dict compatibility via the stored original key; register the tags in rng.md and in the namespacing test. Note this changes sampling streams (breaking, like #728 itself).",
+"imp": "two samplers built from one key draw the identical PCG64 stream (perfectly correlated participation patterns), and `RandomAllocationSampler`'s per-epoch assignment stream is byte-identical to a caller's `np.random.default_rng(fold_in(key, epoch).seed)`. Verified concretely: with `seed=42` and `data_seed=None`, the sampler's epoch-0/epoch-1 key seeds (6663219682538052210 / 2142789487919306769) are bit-identical to the"
+},
+"312": {
+"title": "accounting rejects `sample_rate=1.0` that the runtime `PoissonSampler` supports, tests and documents.",
+"loc": "`packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_poisson.py:38-41`",
+"fix": "align the two ranges (either accept 1.0 in the accountant by delegating to the unamplified Gaussian PLD, or reject it in the sampler too) and point both error messages and `sampling.md` at `gaussian(nm)` for q=1.",
+"imp": "`dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), 1.0)` raises `ValueError: sample_rate must be in (0, 1), got 1.0`, and a `Poisson` process serialized before the change with `sample_rate=1.0` no longer deserializes (`__post_init__` runs on load). Mathematically harmless and fail-closed \u2014 at q=1 the correct accountant is `gaussian(nm)` composed over steps, and it is reachable \u2014 so the real defect is documentation: the samp"
+},
+"313": {
+"title": "the O(G\u00b2) random-allocation epoch transform is rebuilt on every distinct step count, so per-log-boundary `epsilon_at` costs tens of seconds.",
+"loc": "`packages/opaque-dpsgd/src/opaque/api/accounting/dpsgd/amplification/_random_allocation.py:142-161`",
+"fix": "memoise the epoch and prefix primitives on `(noise_multiplier, num_bins, released, resolved-config)` \u2014 an `lru_cache`d module-level helper or a registered `NativeCache` like the b-min-sep one \u2014 collapsing a whole run to two transform evaluations.",
+"imp": "measured on this host at the default `max_conv_grid=32768`: 15.1 s per call at `num_bins=64`, 24.1 s at 256, 21.2 s at 1024. `_maybe_log_save_evaluate` queries `epsilon_at` at every `should_log` boundary and `_predict_stop_step` adds ~log\u2082(horizon) probes at setup, so a 3000-step run with `logging_steps=10` spends hours in the accountant recomputing an identical epoch PLD. No \u03b5 consequence \u2014 purely wasted compute \u2014 b"
+},
+"314": {
+"title": "\u03bb-CGD's noise stream is unrooted: `fold_in(key, step)` collides byte-for-byte with the caller's documented key space (the one mechanism #728 missed).",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_lambda_cgd.py:280, 292`",
+"fix": "`LAMBDA_CGD_STREAM_FOLD = \"opaque.dpftrl.lambda_cgd\"`, folded once so `current_key = rng_fold_in(st._rng_key, LAMBDA_CGD_STREAM_FOLD, step)`. Breaking for existing \u03bb-CGD run reproducibility \u2014 same class as #728, which shipped as `fix(random)!`. Add the tag to rng.md and to `_dpftrl_roots()` in the namespacing test, plus a two-mechanism domain-separation test mirroring `test_domain_separation.py` in opaque-dpsgd.",
+"imp": "a caller passes `base = key(42)` to `mf_gaussian_noise(..., lambda_cgd_strategy(...))` and, following `docs/reference/rng.md:224-227`, derives sibling keys from the same base (`split(base)`, `fold_in(base, step)`, `fold_in(base, rank)`) for any other torch-generator draw \u2014 dropout, augmentation, a second mechanism, a logged or released random quantity. Reproduced live: step-0 \u03bb-CGD noise is `torch.equal` to `torch.ra"
+},
+"315": {
+"title": "`lr_schedule` is `compare=False`, so the accountant's structural merge collapses MF processes with different schedules.",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_band_mf.py:110` (also `_bisr.py:160`, `_blt.py:132`, `_lambda_cgd.py:119`)",
+"fix": "make schedule identity participate in strategy equality \u2014 drop `compare=False` in favour of a materialization-stable token, or a custom `__eq__` comparing the `_lr_key` fingerprint at the declared horizon \u2014 or have `DpProcess.__or__` compare leaves by `_pld_cache_key`-style resolved identity rather than dataclass `__eq__`.",
+"imp": "composing two MF phases that differ only in learning-rate schedule prices every step under the first phase's schedule. Verified twice. (a) \u03bb-CGD + balls-in-bins: `per_step(balls_in_bins(mf_gaussian(1.0, lambda_cgd_strategy(lambda_=0.5, lr_schedule=cosine)), num_bins=4, n_steps=8))` and its constant-schedule twin compare equal and hash equal; their true \u03b5 at \u03b4=1e-5 are 3.5374 vs 3.6750; `pa | pb` returns `Repeated(pa,"
+},
+"316": {
+"title": "BISR keeps `n_steps-1` gradient-sized buffers, contradicting the documented p\u22121-vector / PRNG-replay design.",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py:198-211`",
+"fix": "apply the banded C\u207b\u00b9 directly \u2014 keep the last p\u22121 iid draws in a ring buffer (or PRNG-replay them as \u03bb-CGD does) and emit `sum_k inv_c[k] * z_{t-k}`, times the column-norm diagonal `d_t` when normalized. O(p) buffers, O(p\u00b7d) per step, matching the docs; keep the dense forward-substitution path as a test cross-check.",
+"imp": "measured on this tree with `bisr_strategy(bandwidth=4)`: at 200k params, `n_steps=256` \u2192 204 MB state and 0.055 s per noise step; `n_steps=1024` \u2192 818 MB and 0.411 s \u2014 exactly linear in `n_steps`. A realistic LLM horizon (thousands of steps, hundreds of millions of parameters) needs terabytes of noise state, so BISR OOMs long before it is usable, while `docs/mechanisms/dp-ftrl/bisr.md:10, 47, 96, 109` promises p\u22121 no"
+},
+"317": {
+"title": "`BallsInBins.pld_at`'s docstring claims a K-epoch reparameterization it does not perform, and carries an unreachable BLT pinned-prefix branch.",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/amplification/_balls_in_bins.py:145-158, 181-191, 216-244`",
+"fix": "rewrite the docstring to describe shipped behaviour only (Identity: exact per-epoch prefix; everything else: full-horizon bound), and either delete the dead differentiation or gate it behind the tightening work with tests that actually reach it. ### 2.4 Trainer / `opaque-transformers`",
+"imp": "no user-visible defect \u2014 the full-horizon PLD dominates any prefix by post-processing over the causal streaming transcript, so behaviour is conservative. The cost is a maintenance trap: a contributor implementing the open prefix-tightening issues (#694/#696/#698/#700) reads the first half of the docstring, believes the K-epoch gram path is live and tested, and removes the `:181` guard \u2014 activating a never-exercised `"
+},
+"318": {
+"title": "`mf_band` + `sampling_mode=\"poisson\"` pairs the cyclic-Poisson horizon accountant with a plain full-dataset `PoissonSampler`, violating the hypothesis of the cited Theorem 4.",
+"loc": "`packages/opaque-transformers/src/opaque/api/transformers/trainer/_dpftrl.py:138-154` (amplifier) vs `:224-233` (sampler); `_training_arguments.py:182-193`",
+"fix": "drop `\"poisson\"` from `_ALLOWED_SAMPLERS[\"mf_band\"]` (fail-closed) **or** dispatch mf_band+poisson to `CyclicPoissonSampler(..., bands=int(mf.strategy.bands))` so the runtime matches the accountant, auditing the `sample_rate`/group-size convention against the theorem while doing so. Reconcile band-mf.md:295 with the allow-list and fix the stale reachability comment at `_dp_trainer.py:3675-3684`. Adjacent to closed #320/#356 and open #359, none of which covers this shipped pairing.",
+"imp": "`privacy_noise_mechanism=\"mf_band\"`, `sampling_mode=\"poisson\"`, bands=10, q=256/50000, 1000 steps. Validation accepts it; the accountant reports `epsilon_at(1e-5) = 0.355`. Under the deployed sampler each record is eligible on **every** round, so its per-band-window inclusion probability is `1-(1-q)^bands = 0.0500` rather than the charged `q = 0.00512` \u2014 recomputing only that already gives 3.505 (\u224810\u00d7) \u2014 and particip"
+},
+"319": {
+"title": "calibrated DP-FTRL resume silently changes \u03c3 mid-horizon; the drift guard designed to stop exactly that is disabled for calibrated runs, and the MF noise buffer mixes both scales.",
+"loc": "`packages/opaque-transformers/src/opaque/api/transformers/trainer/_dp_trainer.py:5393-5407` (drift bypass), `4344-4390` (recalibration), `5204` (state restore)",
+"fix": "for DP-FTRL either pin the multiplier on resume (read `RuntimeCheckpoint.noise_multiplier` and reuse it verbatim, skipping recalibration \u2014 the horizon and its accounted \u03b5 were fixed when the run started) or reject calibrated DP-FTRL resume outright with the message the fixed-multiplier path already raises. Do not silence the check by returning `None`: compare against the saved multiplier regardless of `calibration_source`, and add `privacy_target_epsilon` to the compared set.",
+"imp": "verified end to end on the real trainer (mf_band, bands=4, poisson, max_steps=16, target \u03b5=3.0). A resume at a band boundary (step 8) moves nm 0.7670596 \u2192 0.7667578; resumes at non-boundary steps move it **up** \u2014 step 5 ratio 1.0358, step 3 ratio 1.0248 \u2014 so the first `bands-1` steps after the boundary carry old, smaller-\u03c3 columns while the suffix accounting charges \u03c3_new: genuinely under-noised, the non-conservative"
+},
+"320": {
+"title": "stop-at-epsilon is not enforced per step for the Monte-Carlo samplers, which are the auto defaults for 5 of 6 MF mechanisms.",
+"loc": "`_dp_trainer.py:1170-1177` (exclusion), `3956-3985` (log-boundary fallback)",
+"fix": "evaluate \u03b5 on every accounted step whenever `ctx.stop_at_step is None` and a target is set (the MC PLD is cached per horizon-prefix, so the marginal cost is a cache hit inside a band group); or run the binary search offline for MC accountants behind a monotone-envelope guard; or, at minimum, refuse the configuration \u2014 raise when `privacy_target_epsilon` is set with a fixed multiplier, an MC sampler, and a logging cadence coarser than a safe bound.",
+"imp": "`mf_band` + auto (`b_min_sep`), nm=1.0, target \u03b5=0.5, max_steps=16, stock logging. Reproduced: the run executes all 16 steps, returns `metrics[\"privacy_epsilon\"] = 3.4072` \u2014 6.8\u00d7 the requested cap \u2014 leaves `state.privacy_target_epsilon_reached = False`, and emits no warning that the target was exceeded. The identical config with `sampling_mode=\"poisson\"` or with `gaussian` stops after step 1. For longer MF runs the o"
+},
+"321": {
+"title": "DataLoader prefetch advances the allocation cursor past `global_step`, so resume misaligns the accountant's allocation epochs with the sampler's.",
+"loc": "`_dp_trainer.py:4949-4953` (save), `1716-1735` (restore), `3718-3746` (loader); `packages/opaque-dpsgd/.../sampling/_random_allocation.py:150-152, 211`",
+"fix": "make the checkpointed cursor the number of batches the *trainer* consumed (snapshot `min(sampler.consumed, global_step)`, or carry a separate `delivered` counter), or reject `dataloader_num_workers > 0` for participation samplers, or rewind the sampler to `global_step` on restore (the allocation is O(1)-reconstructable from `fold_in(key, epoch)`, so rewinding is free). Add a regression test that checkpoints under `num_workers=2` and asserts `restored.consumed == state.global_step`.",
+"imp": "num_bins=8, \u03c3=1.0, `dataloader_num_workers=2` (prefetch_factor 2 \u2192 lead p=4). Verified empirically that `num_workers=0` gives consumed == batches consumed while `num_workers=2` leads by exactly 4. Train 8 steps, checkpoint (`global_step=8`, `consumed=12`), resume, train 8 more: the accountant charges `pld_at(16) = alloc(8) \u2297 alloc(8)` = \u03b5 3.127790 at \u03b4=1e-5, while what ran is slots 0..7 then 12..19, i.e. `alloc(8) \u2297 "
+},
+"322": {
+"title": "`num_bins` drift on resume is resolved in favour of the sampler snapshot while the accountant uses the new value, and the drift warning asserts the epsilon is still correct.",
+"loc": "`packages/opaque-dpsgd/.../sampling/_random_allocation.py:182-212`; `_dp_trainer.py:5328-5344`; `_checkpoint.py:241-243`",
+"fix": "raise in `_from_state_dict_random_allocation` when `template.num_bins != sd[\"num_bins\"]`, mirroring the existing `num_samples` guard, and make `expected_steps_per_epoch` drift fatal (not `dp_relevant`+warn) whenever `sampling_mode` is a participation sampler. At minimum drop the \"still yields a correct \u03b5\" clause for non-Poisson samplers.",
+"imp": "phase 1 with dataset_size=1600, train_batch_size=200 \u2192 num_bins=8; checkpoint; resume with train_batch_size=100 \u2192 accountant num_bins=16, sampler still 8. Over the next 16 steps the accountant reports \u03b5=1.789395 at \u03b4=1e-5 (one 1-out-of-16 epoch) while the sampler runs two 1-out-of-8 epochs costing 3.127790 \u2014 a 75 % under-report (3.050544 vs 4.687320 at \u03b4=1e-8), surfaced only as a log line saying the number is still c"
+},
+"323": {
+"title": "calibration probes run under a tighter discretization than the runtime accountant, so calibrated Monte-Carlo runs report a final epsilon above the requested budget.",
+"loc": "`packages/opaque-accounting/src/opaque/api/accounting/core/calibration.py:296-325`; `_dp_trainer.py:4374-4390, 1931`",
+"fix": "after `_calibrate_impl` returns, re-evaluate `budget.evaluate(process(result.param))` under `overall_config` outside the probe context and report *that* as `achieved` (continuing to bisect from the safe side if it is not privacy-safe), or spend the union-bound slack by tightening the *target* rather than the probe's failure probability. Either way the trainer should assert `state.privacy_calibration_achieved_epsilon >= ctx.accounting.epsilon_at(target_delta)` at end of training and reconcile loudly otherwise.",
+"imp": "`mf_band` + `b_min_sep`, target \u03b5=3.0, \u03b4=1e-5. Reproduced bit-for-bit: `calibrate()` returns `achieved = 2.9974753177482585` (\u2264 target, stamped into `state.privacy_calibration_achieved_epsilon`), the same process re-evaluated under the probe config gives the identical value (proving the context is the cause), and under the default config gives **3.01083836210856** \u2014 above the requested budget, with no warning. Same s"
+},
+"324": {
+"title": "four privacy-relevant kwargs dicts on `TrainingArguments` accept arbitrary keys silently, and the keys that are read are renames of the underlying public parameters.",
+"loc": "`_dp_trainer.py:4145-4148` (and `1544-1552`); `_training_arguments.py:885-895`",
+"fix": "add an allow-list validator per dict (mirroring `_scheduler._validate_kwargs`) in `_validate_privacy_fields`, keyed by `clipping_mode` / `sampling_mode` / `privacy_noise_mechanism`, raising with the accepted key set. Prefer keeping the underlying public parameter names (`target_quantile`, `clipping_norm_max`) rather than renaming them, or accept both and document the alias.",
+"imp": "a user reads `adaptive_clipped_grad`'s signature and sets `clipping_kwargs={\"target_quantile\": 0.9, \"clipping_norm_max\": 50.0}`. Construction succeeds with zero warnings and the dict round-trips untouched, but training runs at `target_quantile=0.5` and `clipping_norm_max=10.0` \u2014 a materially different clipping schedule, discoverable only by reading trainer source. Verified with `-W error::UserWarning`: a payload of f"
+},
+"325": {
+"title": "`compute_loss_func` (and `label_smoothing_factor`) are silently ignored on the default eval path, so `eval_loss` and best-model selection measure a different objective than training.",
+"loc": "`_dp_trainer.py:2485-2488, 2556-2572`",
+"fix": "when `_compute_loss_func is not None` and the batched branch is taken, either route the batched output through it (it already receives `(outputs, labels)`) or emit a one-shot `RuntimeWarning` naming `include_for_metrics=[\"loss\"]` as the opt-in, and document the exclusion.",
+"imp": "a user passes `compute_loss_func=my_weighted_ce` with `eval_strategy=\"steps\"`, `metric_for_best_model=\"eval_loss\"`, `load_best_model_at_end=True`. Training minimizes the custom objective; the reported `eval_loss` is the HF model's built-in `ForCausalLMLoss` with no smoothing, so checkpoint selection, early-stopping callbacks and every logged eval curve are driven by an objective the user never selected \u2014 silently. Mi"
+},
+"326": {
+"title": "DPTrainer never consults `ScheduleFreeState.x`: schedule-free eval, checkpoints and saves use the wrong weight sequence.",
+"loc": "`packages/opaque-transformers/src/opaque/api/transformers/trainer/_optim.py:55, 94, 165-216`",
+"fix": "when the built optimizer is a schedule-free wrapper, swap model params to `opt_state.x` around `evaluate()` / `save_model()` / checkpoint export and swap back; or refuse `optim=\"schedule_free\"` with a message pointing at the library-level API until that lands. At minimum add the caveat to `docs/reference/transformers.md`.",
+"imp": "a user selects `optim=\"schedule_free\"` expecting the published Polyak-averaged `x_t` \u2014 the point of the method, and under DP the source of the ~Var/n noise reduction the docs advertise. With the paper default \u03b2=0.9 the exported model is 10 % raw noisy iterate; every eval metric, best-model decision, checkpoint and final save reflects `y_t`, no warning is emitted, and `docs/reference/transformers.md:233-234` lists sch"
+},
+"327": {
+"title": "`_compile_with_fullgraph_fallback` catches every `Exception` on the first call, masking non-compile failures as compile fallbacks and re-running the step.",
+"loc": "`_dp_trainer.py:211-221`",
+"fix": "narrow to compile-classified failures and explicitly re-raise `torch.OutOfMemoryError` without retry so the trainer's OOM path sees it first-hand; keep the lazy fallback semantics otherwise.",
+"imp": "`torch_compile=True` and the first step OOMs inside the compiled `vmap(grad)`+clip transform. The user is pointed at compile flags rather than memory, and the wrapper immediately re-runs the full forward/backward on an already-exhausted allocator \u2014 the trainer's collective OOM handling (`:2050-2084`) only sees the exception re-raised from the *second* execution. A first-call-only transient is absorbed entirely behind"
+},
+"328": {
+"title": "`acc.cached()` on a DP-FTRL accountant is a warned no-op: a `RuntimeWarning` fires at every log boundary, every evaluation and on resume, and the intended amortization never happens.",
+"loc": "`_dp_trainer.py:3959, 3244, 1144`",
+"fix": "skip `acc.cached(ctx.accounting)` when `ctx.mechanism_kind != \"gaussian\"`, or have `cached()` return the accountant unchanged **without** warning when the horizon process already sits behind a `CachedProcess`/`PerStep` boundary \u2014 the case the warning tells the caller to create.",
+"imp": "any DP-FTRL run emits the warning from library code with no user-actionable remedy; under `-W error` or a stricter downstream filter the run aborts. \u03b5 values are unaffected. (Under Python's default filters the message prints once per process, not once per boundary \u2014 the reported per-boundary count came from `simplefilter(\"always\")`.)"
+},
+"329": {
+"title": "`build_strategy` silently discards `privacy_noise_mechanism_kwargs` for `mf_identity` while every other mechanism raises `TypeError` on an unknown key.",
+"loc": "`_dpftrl.py:108-118`",
+"fix": "delete the special case and let `identity_strategy()` be called through `factory(**extra)`, or raise an explicit `ValueError` naming the unexpected keys. ### 2.5 Engine (`opaque-engine`)",
+"imp": "a stale `{\"bands\": 8}` carried over from an earlier `mf_band` config, or any typo, is dropped without complaint under `mf_identity` and raises under the other five \u2014 an asymmetric error surface when switching mechanism strings. \u03b5 is unaffected (strategy and accountant both use `IdentityStrategy`, so noise and accounting stay consistent)."
+},
+"330": {
+"title": "loss-scale backoff/growth is an unaccounted data-dependent adaptive choice that the docs claim is fully accounted.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py:185-195`",
+"fix": "drive the scale schedule from a released (noised) overflow statistic or a public schedule, or document that `stats.all_finite`-driven scaling is an adaptive query outside the stated guarantee and gate it the way adaptive clipping is gated for MF mechanisms.",
+"imp": "fp16 functional training following `docs/user-guide/precision.md:99`. After two neighbouring datasets diverge on a single overflow event, the backoff (or delayed growth) makes them run every subsequent step at different scales; examples whose scaled gradients sit near the fp16 overflow boundary are zeroed in one run and kept in the other, so the released sums differ by more than the accounted per-step sensitivity C. "
+},
+"331": {
+"title": "per-group clipping crashes DDP training on any partially-empty Poisson round.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py:238`; `_clipped_fun.py:849-856`; `engine/clipping/_distributed.py:224-230`; `dpsgd/clipping/_adaptive.py:423, 617`",
+"fix": "make aux `clipping_rate` presence a function of the clipping *schema*, not the batch: emit `None` in `_empty_batch_response` (and the adaptive empty path) when `clipping_norm` is a `PerGroup`, or have `_sync_clipping_rate` derive presence from the clip configuration. Rebuild the regression helper's auxes through the real `clipped_grad(PerGroup, return_aux=True)`.",
+"imp": "DPTrainer with a per-group `TrainingArguments.clipping_norm` dict (fixed or adaptive) under DDP with Poisson sampling. On a step where one rank's draw is empty and another's is not, `sync(aux)` raises `RuntimeError: Clipped auxiliary clipping_rate presence mismatch across ranks.` on **every** rank and the run dies mid-training. Reproduced on a real 2-rank gloo spawn: rank 0 empty \u2192 0.0, rank 1 bs=4 \u2192 None, both raise"
+},
+"332": {
+"title": "`per_group()` silently drops patterns that match no parameter, so a typo'd or model-mismatched group degrades to the fallback clip norm with no signal.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/clipping/_per_group.py:145-149`",
+"fix": "raise `ValueError` listing the patterns that matched no leaf (with a few sample display paths), or at minimum warn; add `allow_unused_patterns=True` for the legitimate one-config-across-architectures case.",
+"imp": "`per_group(params, self_atten=0.1, mlp=2.0, fallback=1.0)` (typo for `self_attn`), or a q_proj/k_proj/v_proj pattern set reused against a fused-QKV model. Reproduced on LLaMA-shaped names: the returned PerGroup is `values={\"mlp\": 2.0, \"fallback\": 1.0}` with the attention leaf assigned `fallback`, so those parameters are clipped at 1.0 instead of 0.1 \u2014 no exception, no warning, and the `self_atten` entry simply vanish"
+},
+"333": {
+"title": "the #352 wrapper-blindness pattern survives in `unscale_grads` and `global_norm` (silent no-op / silent 0.0 on a `ClippedPytree`).",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/precision/_loss_scaler.py:172-183`; `engine/pytree.py:122-142`",
+"fix": "mirror the `all_finite` fix \u2014 have `unscale_grads` and `global_norm` unwrap the DP wrappers (unscale should also rescale `max_norm` metadata), or raise `TypeError` directing the caller to `.pytree`, as `ClippedPytree.__add__` already does for unsupported ops.",
+"imp": "reproduced \u2014 `loss_scaler(init_scale=4.0).unscale_grads(clipped({\"g\": tensor([8.0])}, max_norm=1.0), state)` returns the identical object with 8.0 untouched, and `global_norm(clipped({\"g\": tensor([3.0,4.0])}, max_norm=1.0))` returns `tensor(0.)` instead of `tensor(5.)`. A user following the `torch.amp.GradScaler` mental model who calls `unscale_grads` on the `ClippedPytree` returned by `grad_fn` (instead of wiring it"
+},
+"334": {
+"title": "the empty-batch short-circuit ignores `dtype=` and `pre_clipping_transform` structure, breaking step-shape stability under Poisson sampling.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/clipping/_clipped_grad.py:216-256`; `dpsgd/clipping/_adaptive.py:402-415`",
+"fix": "in the empty-batch path, apply `pre_clipping_transform` to the zero pytree and cast leaves to the configured output dtype, in `clipped_grad`, `adaptive_clipped_grad` and `auto_clipped_grad` alike; or reject structure-changing transforms / dtype overrides at factory time when they cannot be honoured on empty batches.",
+"imp": "reproduced \u2014 with bf16 params and `dtype=torch.float32`, a non-empty batch returns fp32 and an empty batch bf16; with `pre_clipping_transform` renaming `w`\u2192`q`, keys are `[\"q\"]` non-empty and `[\"w\"]` empty. Downstream, MF noise built on the transformed template raises `ValueError: dictionary key mismatch` on the empty step, while `gaussian_noise` silently accepts the wrong structure and emits a noised pytree keyed by"
+},
+"335": {
+"title": "`fold_in`'s documented int/str domain disjointness is not structural: a 16-byte string collides with an integer fold.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/random/_engine.py:27-35, 64-67`",
+"fix": "prefix a one-byte type tag in `_stable_hash64` (`b\"i\"` before int bytes, `b\"s\"` before str bytes) \u2014 a breaking key-derivation change like #728 itself \u2014 or soften the docstring to state the separation is encoding-based and NUL-containing 16-byte strings are reserved.",
+"imp": "reproduced: `fold_in(key(42), 1).seed == fold_in(key(42), \"\\x01\" + \"\\x00\"*15).seed` \u2192 both 2142789487919306769. Practical reachability is essentially nil: colliding with a small caller integer requires a string of 15 NUL bytes plus one payload byte; colliding with a printable 16-byte ASCII tag requires folding an integer around 10\u00b3\u2078, which nothing in Opaque does. Every internal stream root is a dotted-ASCII tag of no"
+},
+"336": {
+"title": "`StepPerf.memory_peak_gb` on MPS is the run-wide reserved high-water, not the per-step peak its docstring claims.",
+"loc": "`packages/opaque-engine/src/opaque/api/engine/profiling/_memory.py:162-178, 275, 410-415`",
+"fix": "correct the `StepPerf` docstring to state the CUDA/MPS distinction and surface a `peak_is_per_step` flag in `to_dict`, or approximate a per-step figure on MPS as `max(current_allocated at marks)` while keeping the high-water separately.",
+"imp": "a user profiling a DP step on Apple Silicon logs `sp.perf.to_dict(prefix=\"train/\")` per step and reads step 500's `memory_peak_gb` as step 500's peak; it is in fact the maximum reservation since process start (inflated by an earlier eval or the first uncompiled step), so step-to-step comparisons are meaningless and an optimization that genuinely halves step usage shows no movement. The same field name means something"
+},
+"337": {
+"title": "the sliding-window constraint is silently dropped under SDPA when `attention_mask is None`.",
+"loc": "`packages/opaque-patches/src/opaque/api/patches/transformers/runtime/masking.py:76-82, 226-227`",
+"fix": "refuse the `None` skip when a sliding window is in play \u2014 an `allow_is_causal_skip` flag that the sliding-window builder sets `False`, or check `getattr(config, \"sliding_window\", None) is not None and seq_len >= sliding_window` before skipping, mirroring upstream's `local_attention_size` condition. Add an SDPA regression test with `seq_len > sliding_window` and no attention mask.",
+"imp": "any patched sliding-window model (Mistral/Ministral, Gemma2, Gemma3 text with default `sliding_window=512`, Cohere2, Phi-3) called with `attn_implementation=\"sdpa\"` (the transformers default) and no attention mask \u2014 the standard `model(input_ids)` pattern in eval/perplexity/generation-prefill code \u2014 attends to the full context on sliding layers. Reproduced on transformers 5.16.1 with a tiny Mistral (`sliding_window=4"
+},
+"338": {
+"title": "the parity suite's \"upstream\" reference is contaminated by unreverted module-global patches after the first test per family.",
+"loc": "`packages/opaque-patches/tests/transformers/models/_test_utils.py:255-272`",
+"fix": "snapshot and restore the family module's rebindable attributes in `parity_model_patches`, or compute all upstream references in a subprocess / fresh-import fixture before any patch is applied.",
+"imp": "within one pytest process, the first parity test to touch a family permanently rebinds that family's globals; every later \"unpatched\" reference model of that family therefore runs opaque's attention and mask builders. Verified on `modeling_llama` after `with parity_model_patches(model): pass` \u2014 `eager_attention_forward` is `vmap_eager_attention_forward` and `create_causal_mask` is `vmap_create_causal_mask` (class for"
+},
+"339": {
+"title": "the parity suite `pytest.skip`s gradient and vmap-grad parity for 4 of 26 registered families, and one of those skips hides a real gpt2 gradient mismatch.",
+"loc": "`packages/opaque-patches/tests/transformers/models/test_parity.py:85-93, 269-270, 456-457, 482-490`",
+"fix": "convert each entry to `pytest.param(family, marks=pytest.mark.xfail(strict=True, reason=...))` so the suite reports when a family starts passing and cannot rot into a permanent hole; fix the gpt2 backward path or de-register gpt2 from `supported_families()`; document any remaining family in `docs/user-guide/huggingface.md` as not gradient-verified; extend `test_parity_families_covered` to assert every grad-parity exemption is listed in one reviewed constant with an issue reference.",
+"imp": "clearing the skip set and re-running shows the exemptions are a mixed bag, and one is a live defect: **gpt2 genuinely fails vmap-grad parity** with a large numerical mismatch, not roundoff \u2014 on `transformer.h.0.attn.c_attn.bias` the patched per-example gradient reads 9.81e-3 where unpatched reads 6.20e-3, while forward-logits parity passes in the same run. `gpt_oss` and `deepseek_v4` now **pass** vmap-grad parity (st"
+},
+"340": {
+"title": "#495 quietly relaxed #493's fail-closed dropout/batchify contract for default (trainer) calls.",
+"loc": "`packages/opaque-patches/src/opaque/api/patches/transformers/_router.py:116-135`",
+"fix": "log at warning level and align the trainer docstring; distinguish \"unregistered HF family\" (where compat patches were expected) from \"not an HF model at all\" and raise only for the former.",
+"imp": "reproduced with a tiny `FalconForCausalLM` (unregistered): `apply_model_patches(m)` raises nothing, logs only DEBUG \"no registered apply function for model family falcon\", and leaves `nn.Dropout(p=0.3)` untouched. Under `vmap(grad)` with `randomness=\"same\"` the surviving dropout mask is shared across every example in the batch, so gradients differ from both standard training and the dropout-free configuration the tra"
+},
+"341": {
+"title": "`test_sliding_window_parity` never exercises a binding window (`sliding_window=64` > `seq_len=10`).",
+"loc": "`packages/opaque-patches/tests/transformers/models/test_parity.py:295-313`",
+"fix": "use `sliding_window < seq_len` (e.g. window 4, seq 16), assert the patched logits also differ from a no-window run (guarding vacuity), and add an `attention_mask=None` SDPA case.",
+"imp": "a future off-by-one or dropped-constraint regression in the window bound passes unnoticed. No current defect is hidden by this specific gap \u2014 verified that with a binding window and a mask present (sliding_window=4, seq=12) the patched Mistral matches upstream bit-for-bit \u2014 so its value is guarding future boundary regressions."
+},
+"342": {
+"title": "the Gemma2 SDPA shim is installed in the process-global attention registry, rerouting every model family.",
+"loc": "`packages/opaque-patches/src/opaque/api/patches/transformers/_family.py:176-180`",
+"fix": "register the shim under a distinct key (`\"opaque_sdpa_gemma2\"`) and set `config._attn_implementation` on the patched model instance, or restrict the softcap\u2192eager fallback to gemma2-family modules (module-path check) before delegating.",
+"imp": "for `softcap=None` callers the shim delegates verbatim to stock `sdpa_attention_forward`, but transformers 5.16.1 has families that *do* forward `softcap` into the interface \u2014 vaultgemma (`attn_logit_softcapping` defaults to 50.0), t5gemma, videoprism \u2014 where upstream SDPA swallows it in `**kwargs`. Confirmed with two subprocesses on identical weights: an unpatched tiny VaultGemma with sdpa produces logits differing "
+},
+"343": {
+"title": "the fused activation backward still mutates saved gate/up activations in place.",
+"loc": "`packages/opaque-patches/src/opaque/api/patches/kernels/lora.py:747-759`; `kernels/swiglu.py:145-160, 370-400`",
+"fix": "clone gate/up before the in-place activation backward when `torch.is_grad_enabled()` (mirroring the CE fix), or mark the saved tensors dirty / document that `retain_graph=True` is unsupported and detect the second traversal.",
+"imp": "on a CUDA+Triton host, a caller that re-traverses the same graph \u2014 `loss.backward(retain_graph=True)` then another backward, or two `torch.autograd.grad` calls with `retain_graph=True` \u2014 recomputes the activation backward from gradient values instead of activations, producing silently wrong dX and LoRA weight gradients with no exception. **PLAUSIBLE not CONFIRMED:** the static chain was verified end to end but `torch"
+},
+"344": {
+"title": "the optimizer-state drift audit marshals float64 fingerprints through float32 collectives at rtol=1e-5.",
+"loc": "`packages/opaque-optimizers/src/opaque/api/optimizers/distributed.py:97-102`; `engine/distributed/_state.py:57-70, 171-181`",
+"fix": "pass `compute_dtype=torch.float64` **and** a deliberately tiny `atol`/`rtol` on the five calls, mirroring what `sync_object`'s `assert_equal` path already does for float fields.",
+"imp": "reproduced on 2-rank gloo: a uniform **1e-6 relative** drift on a 1000-element float32 state tensor passes the audit undetected on both ranks; 1e-3 is correctly caught. So cross-rank optimizer-state drift below ~1e-5 relative goes unreported by an audit whose stated purpose (module docstring, `:85-93`) is drift detection. Debug facility only; no privacy or numerical guarantee depends on it. **Correction to the origin"
+},
+"345": {
+"title": "the Adafactor module docstring misstates the bias-correction default (says `True`, actual `False`) plus two stale memory/semantics statements.",
+"loc": "`packages/opaque-optimizers/src/opaque/api/optimizers/_adafactor.py:5-7, 28, 30-31`",
+"fix": "rewrite the three sentences \u2014 default is False; the correction falls back to the uncorrected factor where non-positive (cross-reference `_bias_correction.py`); rank<2 leaves keep a full per-element second moment.",
+"imp": "a DP user reads the module header, concludes bias correction is already active, and trains with `adafactor()` defaults; the row/column second-moment EMAs silently retain the +\u03c3\u00b2 DP noise bias the header claims is removed."
+},
+"346": {
+"title": "`test_mode_switch_does_not_double_correct` promises a reference comparison it never performs.",
+"loc": "`packages/opaque-optimizers/tests/test_adadelta.py:306-338`",
+"fix": "build a second optimizer state with `phi_g`/`phi_dx` zeroed (or a BC-off optimizer fed the same debiased stream), compute its update on the same `SecondMomentNoiseOutput`, and assert bit equality, mirroring b9faed0a's adagrad/rmsprop style.",
+"imp": "verified by mutation \u2014 removing both `and noisy_squared_grads is None` conditions from the `phi_g`/`phi_dx` guards in `_adadelta.py` (re-introducing exactly the double correction the test names as its target) leaves the test **passing**, and the entire 231-test optimizers suite passing. The `where`-fallback plus the `clamp(min=0.0)` and the additive eps in `_rms` keep the result finite under the mutation, so the fini"
+},
+"347": {
+"title": "a dead `bc_floor` parameter is left in Adadelta after the same cleanup removed it from Adagrad.",
+"loc": "`packages/opaque-optimizers/src/opaque/api/optimizers/_adadelta.py:121, 377, 382`",
+"fix": "delete the parameter and its computation (mirroring b9faed0a's adagrad change), or actually apply it in the substitution branch and say which. ### 2.8 Alignment (`opaque-alignment`)",
+"imp": "maintenance/readability only \u2014 a maintainer auditing the branch sees the plumbing and assumes an eps\u00b2 denominator floor is applied there, as it is in RMSprop and Adam. No runtime behaviour change."
+},
+"348": {
+"title": "`wpo_weights` omits the WPO paper's per-token weight-alignment term (Eq. 2), so `use_weighting=True` optimizes a different objective than the cited method and than TRL.",
+"loc": "`packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_wpo.py:33-67`",
+"fix": "add an optional `logits` (or precomputed `log_denom`) argument to `wpo_weights` and average `per_token_logps - (logsumexp(2*logits,-1) - 2*logsumexp(logits,-1))` under `no_grad`, mirroring TRL; wire `_dpo_trainer._wpo_weight` to pass the logits it already has; flip the xfail into a passing parity test. If the simplified weight is kept deliberately, say so in `_wpo.py` and in `docs/alignment/trainers.md`.",
+"imp": "a user sets `DPOConfig(use_weighting=True)` \u2014 advertised at `docs/alignment/trainers.md:281-284` and in `_wpo.py`'s docstring as arXiv:2406.11827 with no caveat \u2014 and gets per-example weights differing from the paper and TRL by a per-example factor `exp(-mean_t log \u03a3_v p_v\u00b2) > 1` that is **not constant across the batch** (it varies with per-token confidence), so relative pair weighting, training dynamics and results "
+},
+"349": {
+"title": "chat-template transform: overstated coverage comments and exact-string generation-marker guards.",
+"loc": "`packages/opaque-alignment/src/opaque/api/alignment/data/_chat_template.py:214, 229, 376-380, 403-406`; `_completion_mask.py:84`",
+"fix": "use the same whitespace-tolerant regex as transformers for both the idempotency check and the `_completion_mask` guard; fix the Strategy-2 comment to name templates it actually handles and drop \"Gemma 3\" from the helper docstring, or exclude `raise_exception(...)` expressions from `content_pat` so real Gemma-3 works.",
+"imp": "reproduced against templates downloaded from the Hub. Real Meta-Llama-3-8B-Instruct, real gemma-3-1b-it and canonical shared-expression ChatML all raise `ValueError(\"could not identify and validate an assistant-only render path\")` from `get_training_chat_template`, while gemma-2-2b-it and Qwen2.5-0.5B-Instruct succeed \u2014 so completion-only-loss chat data on those tokenizers fails at dataset prep despite the comments. "
+},
+"350": {
+"title": "the `_mu_at` hang fix is symptom-level: strong attacks past 2000 canary guesses now raise `RuntimeError` on the default `epsilon_at` surface, at the guide's own recommended scale.",
+"loc": "`packages/opaque-auditing/src/opaque/api/auditing/one_run/_gdp.py:40, 80-91, 331-334, 384`",
+"fix": "implement a \u03bc-dependent upper bound on `v_k` for truncated ranks (any valid bound that decays with \u03bc restores p-value growth and lets the search converge) \u2014 the root-cause fix the original audit proposed. At minimum document the >2000-guess limitation in the auditing user guide and reference.",
+"imp": "a practitioner audits at the guide's recommended scale (m = 10 000 canaries; `docs/user-guide/auditing.md:215-228` tabulates 10\u2074/10\u2075/10\u2076 and says the ceiling table \"does not apply to the \u03bc-GDP estimator\") and the mechanism is badly under-noised, so the attack reaches ~62 % accuracy (u = 3800). Reproduced with the real `GdpMethod`: `estimate.epsilon_at(1e-5)` \u2014 the default dispatch, `_estimate.py:197-201` \u2014 raises `Ru"
+},
+"351": {
+"title": "closed #373 landed no change: coarse GDP grids still silently erase detectable leakage.",
+"loc": "`packages/opaque-auditing/src/opaque/api/auditing/one_run/_estimate.py:37, 176-178`",
+"fix": "raise `_MIN_GRID_SIZE` to a value validated against the `v_k` order-statistic identity (the repo's own validation showed 10000 adequate; ~1000+ appears to be the useful floor), or validate grid resolution relative to \u03bc during `_p_value` and raise/warn when the discretization cannot resolve the leakage the raw counts exhibit. Reopen #373 either way.",
+"imp": "a user lowers `grid_size` to cut the ~15\u201319 s per-query cost of the default 10 000-point grid. Measured with the shipped `GdpMethod` (n_in=n_out=500): at u=250, `gdp(grid_size=16).epsilon_at(1e-5)` returns **0.0** while grid 10000 returns 5.11; at u=350, grids 16 and 64 both return 0.0 versus 2.30. The audit reports \"no detectable leakage\" for a mechanism it would otherwise flag. **Direction is loose, not unsound:** "
+},
+"352": {
+"title": "`loss_scores`/`gradient_scores` silently score the wrong dataset when canary indices happen to be in range.",
+"loc": "`packages/opaque-auditing/src/opaque/api/auditing/attacks/_helpers.py:69-81`; `_coin_flip.py:136-157`",
+"fix": "record `dataset_size` (and optionally a cheap content fingerprint of a few canary rows) on `CoinFlip` at creation and assert it in `_scoring_loader` before building the loader, with a message naming the concatenated-audited-dataset requirement \u2014 turning both the base-dataset and train-subset mistakes into deterministic failures instead of range-dependent silent corruption.",
+"imp": "reproduced on a 20-record dataset \u2014 `cf = coin_flip(ds, num_canaries=4, key=key(3), candidate_indices=range(0,4))` scored against `cf.train_subset(ds)` (len 19) returns `[-0., -1., -9., -16.]` instead of the correct `[-0., -1., -4., -9.]`, and `one_run` accepts it: `OneRunEstimate(n_in=3, n_out=1, auc=0.6667)`, no error. With a **tail**-placed pool (the documented layout) the same mistake raises `IndexError`, so the "
+},
+"353": {
+"title": "OPQ-130 residual: the \"Bonferroni (default)\" comment still asserts a multiplicity correction that does not exist.",
+"loc": "`packages/opaque-auditing/tests/auditing/test_integration.py:42-44`",
+"fix": "delete or reword the comment and assertion message (e.g. \"threshold-free (Pareto-argmax) path\"). The statistical calibration itself is tracked by open #376; this finding is the misleading naming only. ### 2.10 Documentation",
+"imp": "a maintainer working open #376 (calibrate one-run auditing under the null \u2014 the post-hoc threshold-selection problem) greps for the correction, lands on these two lines, and concludes multiple-threshold selection is already handled. No computed \u03b5, \u03b4 or test outcome changes."
+},
+"354": {
+"title": "the documented \"Unamplified BLT/BandMF\" accounting recipe silently prices a 1-step, single-participation mechanism.",
+"loc": "`docs/mechanisms/dp-ftrl/blt.md:163-167` (also `docs/reference/accounting.md:405-410, 427-428`, `docs/user-guide/accounting.md:291-292`)",
+"fix": "pass explicit `n_steps` / `min_sep` / `max_participations` in every documented bare `mf_gaussian(...)` example so the priced horizon matches the run being described, and make `MfGaussian` **require** `n_steps` (no default of 1) so the docstring's \"requires `n_steps`\" is enforced rather than silently defaulted.",
+"imp": "a user copies the recipe to price an unamplified BLT run. Measured: `mf_gaussian(1.0, blt_strategy(max_buffers=10))` has `n_steps=1 / min_sep=1 / max_participations=None` and returns `epsilon_at(1e-5) = 4.37718`; the honest value for the participation context the same page's noise example uses (n=5000, min_sep=100, max_participations=5) is **28.15909** (6.4\u00d7 higher), and for the page's other example (n=10000, min_sep"
+},
+"355": {
+"title": "the Quick Start and the DP-SGD tutorial publish a Poisson-amplified epsilon for a `torch.randperm` shuffled fixed-batch loop, and both under-count steps.",
+"loc": "`docs/getting-started/quickstart.md:44-51, 79-91`; `docs/tutorials/dp_sgd_training.ipynb` cells 9 and 13",
+"fix": "replace the shuffled inner loop with `PoissonSampler(dataset, sample_rate=\u2026, n_steps=num_steps, key=\u2026)` fed through `DataLoader(dataset, batch_sampler=sampler)` (the pattern every other page uses), re-execute the notebook so the committed output reflects the corrected run, and make the executed step count equal the calibrated `num_steps`. If a shuffled loop is kept for pedagogy, drop the Poisson factory and price it with `random_allocation`.",
+"imp": "a user follows the first runnable example in the docs and reports \u03b5=3.00. **Correction to the original report, which materially deflates the magnitude:** the \"honest\" alternative is not unamplified composition \u2014 Opaque ships `random_allocation`, the closest applicable model for shuffled fixed-size batching. Recomputing at the same calibrated multiplier gives 2.830 (tutorial, num_bins=32 \u00d7 20 epochs) and 2.703 (quicks"
+},
+"356": {
+"title": "`dpsgd_acc.adaclip`'s `num_groups` parameter is documented nowhere, including in its published signature, while per-group adaptive clipping is documented.",
+"loc": "`docs/reference/accounting.md:310`; `docs/user-guide/accounting.md:185`; `docs/user-guide/clipping.md:230-249, 455-473`",
+"fix": "add `num_groups` to the published `adaclip` signature in both reference pages and add a sentence to `clipping.md`'s per-group section telling the reader to pass `num_groups=<number of groups>`.",
+"imp": "a user follows `clipping.md:455-473` to run per-group adaptive clipping over G groups, then accounts for it with the recipe the same page publishes. The runtime releases one independently-noised clipping rate **per group** each step (`_adaptive.py:498-510` loops over sorted group names folding a per-group RNG key), but the accountant composes one, so \u03b5 is systematically under-charged. Measured at nm=1.0, q=0.01, 1000"
+},
+"357": {
+"title": "both accounting namespace tables, two reference API sections, and the shipped `opaque.accounting` module docstring name factories that do not exist.",
+"loc": "`docs/user-guide/accounting.md:20`; `docs/reference/accounting.md:38, 352, 396, 413`; `docs/mechanisms/dp-ftrl/band-mf.md:156`; `packages/opaque-accounting/src/opaque/accounting/__init__.py:9-13`",
+"fix": "rewrite both namespace rows and the module docstring to the real export sets, delete or retarget the two stale `###` reference sections (their code blocks already use `mf_gaussian`), fix the prose at `reference/accounting.md:352` and `band-mf.md:156`, and add a behavior test asserting every name a docstring lists resolves on the named module.",
+"imp": "a reader writes `dpftrl_acc.band_mf(nm, sensitivity, coefficients)` from the published signature and gets `AttributeError`. Loud, so no wrong result \u2014 but the stale signature invites hand-passing a `sensitivity` value, which the current API deliberately removed to keep noise and accounting on one source of truth (the same page's warning at `:389-391` says \"never hardcode them\")."
+},
+"358": {
+"title": "`training-arguments.md` publishes an `mf_blt` default (`max_buffers=16`) that is both wrong and hard-rejected by the code, plus a wrong `noise_calibration_kwargs` default.",
+"loc": "`docs/user-guide/huggingface/training-arguments.md:129, 143`; `docs/mechanisms/dp-ftrl/blt.md:190-191`",
+"fix": "`max_buffers: 10` at training-arguments.md:143, `min: 0.11` at :129, range \"1 \u2013 15\" at blt.md:191, and drop the non-existent `error` row.",
+"imp": "a user reads the table, believes 16 is the shipped default, and pins it explicitly or generates configs from it. Reproduced: `blt_strategy(max_buffers=16)` constructs but `.sensitivity(n_steps=64, min_sep=8, max_participations=8)` raises `ValueError: max_buffers > 15 will likely cause numerical issues.`; `max_buffers=10` returns 5.109544. So the documented default is not merely wrong but unusable, and blt.md's range "
+},
+"359": {
+"title": "the docs still advertise the deleted SquareChiPO head as implemented.",
+"loc": "`docs/alignment/trainers.md:18`; `docs/alignment/dpo.md:46`; `docs/reference/alignment.md:78`",
+"fix": "remove SquareChiPO from the three lists, or move it to an explicit \"not shipped\" note with the #393/#502 rationale.",
+"imp": "a user concludes the DP SquareChiPO construction ships and configures `loss_type=\"squarechipo\"`; construction fails with a `KeyError` at `_dpo_trainer.py:352-355` \u2014 fail-loud, so no silent harm, but the docs promise a privacy-relevant capability that does not exist. Mitigating: the authoritative supported-names table further down `trainers.md` correctly omits it, so the drift is in the prose lists only."
+},
+"360": {
+"title": "two documented `sampling_mode` values are accepted by no mechanism, and the reference table's override list omits modes that are accepted.",
+"loc": "`docs/user-guide/huggingface/training-arguments.md:124`; `docs/reference/transformers.md:179`",
+"fix": "either add sequential/cyclic_poisson to the relevant `_ALLOWED_SAMPLERS` entries with matching amplifiers (see OPQ-318 \u2014 cyclic_poisson is the sampler mf_band actually needs), or remove them from the documented value set. Render both doc sites from `_ALLOWED_SAMPLERS`.",
+"imp": "verified by construction (with `privacy_noise_multiplier` set so the calibration guard does not mask it) \u2014 all four of gaussian/mf_band/mf_blt/mf_identity \u00d7 sequential/cyclic_poisson raise `sampling_mode='\u2026' is not valid for privacy_noise_mechanism='\u2026'; allowed: [...]`. Conversely mf_band+poisson and mf_identity+balls_in_bins both construct successfully, so the two reference pages contradict each other on a privacy-r"
+},
+"361": {
+"title": "`accounting.md` documents a \"hypergeometric prefix mixture\" for `k_out_of_t` that the Python surface never computes.",
+"loc": "`docs/user-guide/accounting.md:180-183`",
+"fix": "state that k>1 prefixes conservatively return the full-horizon block bound (matching the `KOutOfT` docstring) and mention the exact k=1 prefix path; update once #693 lands.",
+"imp": "a user planning a k>1 run expects mid-run \u03b5 to grow with released steps and budgets for an early stop. Verified: `KOutOfT(gaussian(1.0), k=2, n=8).pld_at(K).epsilon_at(1e-6)` = 4.766211 for K \u2208 {1,3,7,8} (identical), while k=1 grows 2.430 \u2192 2.662 \u2192 2.835 \u2192 2.861. The budget monitor trips immediately or the early-stop plan is unusable. The returned number stays a valid upper bound; only the documentation is wrong."
+},
+"362": {
+"title": "`docs/reference/rng.md` calls `gaussian_noise` positionally and binds its 2-tuple to a single name.",
+"loc": "`docs/reference/rng.md:309, 380, 401, 412, 415, 419`",
+"fix": "`gaussian_noise(noise_multiplier=1.1, key=noise_key)` at `:309` and `noise_fn, noise_state = \u2026` at the five remaining sites; include reference-page fenced blocks in doc-example validation.",
+"imp": "a reader copies the \"Training loop with per-step DP randomness\" block and gets `TypeError: gaussian_noise() takes 0 positional arguments but 1 positional argument (and 1 keyword-only argument) were given` (executed). The five tuple-binding lines all pass a literal `...` and are visibly elided pseudo-code, so they teach a shape that yields `'tuple' object is not callable` if transplanted rather than crashing on paste."
+},
+"363": {
+"title": "`clipping.md`'s accounting snippets call `dpsgd_acc` without ever importing it.",
+"loc": "`docs/user-guide/clipping.md:236-247, 559-568`",
+"fix": "replace the unused import with `import opaque.dpsgd.accounting as dpsgd_acc` in both blocks, and extend the docs-snippet execution check to user-guide fenced blocks.",
+"imp": "a reader who fixes up the surrounding placeholders hits `NameError: name 'dpsgd_acc' is not defined` at exactly the safety-relevant step (pricing the quantile release), and the natural repair fails again because `opaque.accounting` exposes no `poisson`/`gaussian`/`adaclip`. Deflating slightly: both blocks are illustrative pseudo-code that also reference undefined `sample_rate`/`dataset_size`/`noise_multiplier`, so a "
+},
+"364": {
+"title": "the DP-SGD guide's only end-to-end loop iterates the batch sampler directly, never terminates, never composes the accountant, and mis-calls `optimizer.update`.",
+"loc": "`docs/user-guide/dp-sgd.md:143-159`",
+"fix": "wrap in `DataLoader(dataset, batch_sampler=sampler)`, pass `n_steps=1000` to match section 1's calibration, use the keyword form of `optimizer.update`, import torchopt, and add `accountant = accountant | step_proc` plus an `epsilon_at` readout.",
+"imp": "a reader treats the skeleton as fill-in-the-blanks and keeps the wrong iteration and step-count pattern; the block is visibly a skeleton (undefined `model`, unused `fmodel`) so a literal paste dies on `NameError` first. Note the DP-FTRL \"twin\" loop is character-for-character the same and also accountant-free \u2014 what dp-ftrl.md has that dp-sgd.md lacks is a *separate* accounting snippet at `:114-119`."
+},
+"365": {
+"title": "`precision.md` binds `optimizer.update`'s result as `(opt_state, params)` and never applies the updates.",
+"loc": "`docs/user-guide/precision.md:97`",
+"fix": "`updates, opt_state = optimizer.update(noisy, opt_state, params=params)` followed by `params = torchopt.apply_updates(params, updates)`.",
+"imp": "the next iteration's `model_fn`/`grad_fn` receives the optimizer state as parameters and raises a structural error. The `accountant.advance` line in the same block *was* fixed to `accountant | step_process`, confirming the file was touched without repairing this line."
+},
+"366": {
+"title": "the stop-at-epsilon guide and `DPTrainer.train()`'s docstring misdescribe both the stop cadence and resume-drift behaviour.",
+"loc": "`docs/user-guide/huggingface/training-arguments.md:70-81`; `_dp_trainer.py:932-939`, `_training_arguments.py:478-481`",
+"fix": "state that deterministic accountants stop on the predicted accounted step regardless of logging cadence while `b_min_sep`/`balls_in_bins` fall back to the log-boundary check (and are disabled with logging off); rewrite the `train()` resume paragraph to the three actual dispositions (intentional_extend / shape warn / dp_relevant warn-for-DP-SGD, raise-for-DP-FTRL) and note that the calibrated multiplier and the target are exempt from comparison. Update the field comment to match.",
+"imp": "a user sets `logging_steps=0` believing that disables the target and is stopped anyway on a deterministic accountant, or sets `logging_steps=1` to tighten a check that is already per-step; an operator resuming a calibrated DP-FTRL run sees a clean log and concludes nothing privacy-relevant drifted."
+},
+"367": {
+"title": "the `from_hf` conversion doc still claims `adamw_torch_fused` maps to `optim_args={\"fused\": True}`.",
+"loc": "`docs/user-guide/huggingface/training-arguments.md:283`",
+"fix": "`adamw_torch_fused \u2192 adamw (RuntimeWarning: no fused kernel on the functional DP path)`.",
+"imp": "a user hand-writes `optim_args={\"fused\": True}` on `optim=\"adamw\"` \u2014 the opaque functional AdamW factory has no such argument and rejects it at build \u2014 or mis-reports what their converted run executes, never learning that the fused-kernel request is dropped with a warning."
+},
+"368": {
+"title": "the alignment trainers guide still omits the supported `chunked_nll` SFT loss.",
+"loc": "`docs/alignment/trainers.md:62, 109-110`",
+"fix": "add `chunked_nll` to the trainers.md sentence with the same logits-free caveat the reference table carries (no `compute_loss_func`, no logits for `compute_metrics`).",
+"imp": "a user sizing a large-vocab SFT run from the trainers guide never learns the logits-free fused path exists and hits OOM on materialized logits, or is confused when the two pages state different supported value sets."
+},
+"369": {
+"title": "the default `privacy_target_delta` is documented as `1/(10\u00b7dataset_size)` but computed as `1/dataset_size",
+"loc": "`docs/user-guide/huggingface/training-arguments.md:45`; `_dp_trainer.py:1481-1484`",
+"fix": "correct `training-arguments.md:45` to `1 / dataset_size**1.1`, and state explicitly that this exceeds `1/n` for small n so users on small corpora must set the field.",
+"imp": "verified at runtime \u2014 a 64-example dataset with delta unset logs `privacy_delta = 0.01031` (= 1/64^1.1) against 0.0015625 from the documented formula. Nothing the library computes or reports is wrong: calibration, accounting, every log row and the returned metrics all carry the true delta. The risk is confined to a user who republishes the doc's formula as their (\u03b5, \u03b4) claim, overstating the delta guarantee by 2.5\u00d7 a"
+},
+"370": {
+"title": "workflow documentation re-drifted after #723: advisory-minimum, build-matrix and test-path claims are stale.",
+"loc": "`AGENTS.md:268`; `CONTRIBUTING.md:163`; `.github/WORKFLOWS.md:50-52`; `docs/user-guide/distributed-trainer.md:90`",
+"fix": "change the two advisory sentences to \"blocking\"; rewrite WORKFLOWS.md's build-distributions paragraph against the current inputs and job names; `s|opaque-core/tests/distributed|opaque-engine/tests/distributed|`.",
+"imp": "a contributor skips fixing a minimum-lane failure believing it advisory and is blocked with no explanation matching the docs; a maintainer configuring branch protection from WORKFLOWS.md requires `Build / <distribution>` checks that never report, leaving PRs stuck at \"Expected \u2014 waiting for status\"; a documented distributed-test command fails on a nonexistent path."
+},
+"371": {
+"title": "Schedule-Free cites \"The Road Less Scheduled\" with the fabricated author \"Yaida\" (OPQ-136 unfixed).",
+"loc": "`packages/opaque-optimizers/src/opaque/api/optimizers/_schedule_free.py:10`",
+"fix": "\"Defazio, Yang, Mehta, Mishchenko, Khaled, Cutkosky\" or \"Defazio et al.\" \u2014 the form the other four sites already use.",
+"imp": "a reviewer verifying the schedule-free averaging implementation searches on the printed author list, finds Sho Yaida's unrelated work, and either wastes time or propagates the fabricated attribution downstream. A repo-wide grep for \"Yaida\" returns exactly this one source line."
+},
+"372": {
+"title": "the DiscoPOP module cites a fabricated author/title, and `sequence_logp`'s module docstring denies the `ld_alpha` feature it implements.",
+"loc": "`packages/opaque-alignment/src/opaque/api/alignment/dpo/loss/_discopop.py:5-7, 41`; `packages/opaque-alignment/src/opaque/api/alignment/logprob/_sequence.py:15-16`",
+"fix": "replace the `_discopop.py` citation with Lu et al., arXiv:2406.08414 at both sites; rewrite the `_sequence.py` module-docstring sentence to say the split **is** implemented by `sequence_logp` and only the fused path lacks it.",
+"imp": "a reviewer following the in-source reference finds nothing, or lands on IPO and tries to verify the logistic/exponential gate formula against the wrong objective \u2014 the project's own DP review protocol explicitly forbids invented citations. A caller reading the module docstring concludes `ld_alpha` is unsupported and builds a manual LD-DPO path unnecessarily."
+},
+"373": {
+"title": "truncated-Poisson accounting's sole citation is the unresolvable key `[Gan25]`, and the dataset-size-dependent adjacency its guarantee assumes is undocumented.",
+"loc": "`packages/opaque-accounting/src/amplification/truncated_poisson.rs:20, 125`; `docs/reference/accounting.md:238-249`",
+"fix": "replace `[Gan25]` with the full citation (Ganesh, arXiv:2508.15089) in `truncated_poisson.rs` and the test, and state in the `poisson(..., truncated_batch_size=)` docstring and `docs/reference/accounting.md` that the truncated form's guarantee is under add-or-remove-1-of-n with `dataset_size` public and fixed, that it is a different adjacency from the plain-Poisson form, and that the source cautions against composing it with unrelated mechanisms.",
+"imp": "a reviewer hits `[Gan25]` twice, finds no definition and no identifier, and cannot reach the source to check the mixture formula or its hypotheses. A user following `docs/reference/accounting.md:250-259` composes the truncated step with other releases \u2014 reproduced: `Accountant() | poisson(gaussian(1.0), 0.01, truncated_batch_size=600, dataset_size=50000) | gaussian(2.0)` \u2192 \u03b5=1.9944, no warning \u2014 never told the analys"
+},
+"374": {
+"title": "\u03bb-CGD sensitivity is documented as \"Theorem 1, eq 15 of the paper\"; Theorem 1's hypotheses do not cover the default normalized mechanism and eq (15) is a utility metric.",
+"loc": "`docs/mechanisms/dp-ftrl/lambda-cgd.md:70-73`; `packages/opaque-accounting/src/matrix_factorization/lambda_cgd.rs:8, 65, 130`",
+"fix": "point at Lemma 8 / eq (12) for the default normalized path and eq (14) for `normalized=False`, and note that Theorem 1's decreasing-non-negative-Toeplitz hypothesis is what the normalized case does not satisfy directly.",
+"imp": "a reviewer following the repo's own DP-review protocol opens the paper, finds Theorem 1 stating a generic min-sep formula and eq (15) a row-norm, and cannot confirm or refute what `lambda_cgd_normalized_sensitivity_squared` computes. The correct pointers appear nowhere in the docs. The Rust header carries the same mis-citation (its displayed formula is in fact eq (14)); the normalized function there does cite Lemma 8"
+},
+"375": {
+"title": "the Balls-in-Bins modules cite \"Definition 3.1\" and \"Lemma 3.2\" of a paper whose arXiv id they never give, next to a URL for a different paper that contains neither result.",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/dpftrl/sampling/_balls_in_bins.py:3-5, 10, 23-27`; `packages/opaque-dpftrl/src/opaque/api/accounting/dpftrl/amplification/_balls_in_bins.py:11, 31-36`",
+"fix": "add `https://arxiv.org/abs/2410.06266` and the full title to both Python modules' References blocks (as `monte_carlo.rs` already does) and label which numbered results come from which paper.",
+"imp": "a reviewer verifying that the shipped dominating pair matches its source opens the only link the Python modules provide and cannot check the load-bearing claim `P = (1/b) \u03a3_i N(m_i, \u03c3\u00b2I)`, `Q = N(0, \u03c3\u00b2I)` with `m_i = \u03a3_j |C|[:, b\u00b7j+i]`, nor its hypothesis that C be lower-triangular with non-negative entries \u2014 a hypothesis that matters for every correlated strategy the module accepts (BLT/BSR/BISR/\u03bb-CGD). Lemma 3.2 wa"
+},
+"376": {
+"title": "BISR implements Lemma 1 with \u03b1 silently pinned to 1 and enforces none of its `0 \u2264 \u03b2 < \u03b1 \u2264 1` hypothesis, while the sibling BSR strategy enforces exactly that hypothesis.",
+"loc": "`packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py:77-97, 162-173, 247-276`",
+"fix": "add `0.0 \u2264 momentum < 1.0` to `BisrStrategy.__post_init__` (matching `_validate_bsr_hyperparams`), document `momentum` as the paper's \u03b2, state that \u03b1 is pinned to 1 in the module and in `docs/mechanisms/dp-ftrl/bisr.md`, and either expose \u03b1 or drop it from the reproduced formula. ### 2.12 Packaging / CI / test integrity",
+"imp": "`bisr_strategy(bandwidth=8, momentum=1.0)` (a natural carry-over from `band_mf_strategy`, whose momentum defaults to 1.0) or `momentum=1.5` is accepted silently. At momentum=1.5, bandwidth=8 the recovered strategy column reaches **2.52e8** over 64 steps instead of decaying \u2014 a numerically absurd mechanism with no signal. \u03b5 is *not* affected: the same coefficients drive noise generation and the Gram/sensitivity the ac"
+},
+"377": {
+"title": "the GPU lanes fail open: the CUDA-availability preflight was dropped in a CI refactor.",
+"loc": "`.github/workflows/python-tests.yml:97-128`; `pr.yml:137-166`; `ci.yml:100-138`",
+"fix": "re-add a runner-scoped preflight in `python-tests.yml` (when `inputs.runner` is the GPU label, run the assert after `uv sync`), or have `run_python_test_package.sh` fail `cuda`-marker lanes when 100 % of selected tests skip.",
+"imp": "GPU-runner-001 loses CUDA after a host update. `conftest.py:37-39` auto-skips every `cuda`-marked test, pytest exits 0, `run_python_test_package.sh` records success, and all three CUDA lanes (locked / minimum / latest) in both `pr.yml` and `ci.yml` report green \u2014 feeding the required aggregate gate \u2014 so main keeps publishing wheels with **zero** GPU-side validation, indefinitely. Nothing in `.github/` distinguishes \""
+},
+"378": {
+"title": "the suite cannot detect a ~3 % divergence between applied and reported Gaussian noise.",
+"loc": "`packages/opaque-dpsgd/tests/noise/test_gaussian_compute_dtype.py:27-58`; `tests/noise/test_noise.py:106-166`; `packages/opaque-transformers/tests/validation/test_dp_guarantees.py:437`",
+"fix": "add one high-n statistical conformance test per noise mechanism tying the realized second moment to the reported `noise_stddev` at a sample-size-derived tolerance \u2014 draw \u226510\u2076 coordinates and assert `abs(\u03c3\u0302/output.noise_stddev - 1) < 5/sqrt(2n)` (~0.35 % at n=10\u2076, still a 5\u03c3 gate) for `gaussian_noise`, per-group `gaussian_noise` and `mf_gaussian_noise`. Mark `slow` if needed but keep it in the main gate. A chi-square test on `\u03a3x\u00b2/(n\u03c3\u00b2)` is more powerful than KS against a pure scale error.",
+"imp": "no current defect \u2014 the shipped code is correct. If a future refactor of `_sample` / `_clipped_stddev` / the compute-dtype cast path introduced a \u22643 % shortfall between the noise drawn and the `noise_stddev` the accountant is charged for (an fp32\u2194bf16 round-trip, a Bessel-correction slip, a per-group `effective` bound recomputed slightly low), the entire suite would stay green while users training at reported nm=1.0,"
+},
+"379": {
+"title": "the only \u03b5-value regression test for the `CachedProcess.repeated_pld` bug (OPQ-005) was deleted; the surviving guards use the one strategy where the buggy and correct answers are bit-identical.",
+"loc": "`packages/opaque-dpftrl/tests/accounting/test_per_step.py:109-115, 172-178`; `packages/opaque-dpsgd/tests/accounting/test_accountant.py:508-518`, `test_composition.py:127-133`",
+"fix": "restore one value-level assertion on a correlated strategy \u2014 build `poisson(mf_gaussian(1.0, band_mf_strategy(bands=16)), sample_rate=0.01, n_steps=128)`, assert `(acc.cached(per_step(p)) * n).epsilon_at(1e-5) \u2248 p.pld_at(n).epsilon_at(1e-5)` **and** that `step.pld().self_compose(n)` exceeds it by >1.5\u00d7. Keep the `is` assertions as the cheap cache-identity check.",
+"imp": "verified by mutation \u2014 a pytest plugin doing `del CachedProcess.repeated_pld` over the three accounting test trees gives \"2 failed, 579 passed\", and **both** failures are `assert \u2026 is \u2026` with equal-valued PLDs (`assert Pld(asymmetric, 105371 bins) is Pld(asymmetric, 105371 bins)`). Measured degeneracy: identity_strategy, n=10, K=5 \u2192 horizon / self_compose / cached all `0.3165010449987564`; band_mf(bands=16), n=128, K"
+},
+"380": {
+"title": "the CI test-package matrix is a hand-maintained inventory with no coverage guard, and `pyproject.toml` still documents automatic pickup.",
+"loc": "`.github/workflows/python-tests.yml:62-89`; `pyproject.toml:163-170`",
+"fix": "restore dynamic discovery (a job step that globs `packages/*/tests` and fails if any directory is absent from the flattened `paths`), or keep the static matrix and add a repo test asserting the flattened `suite.paths` equals `{p.parent.name for p in Path(\"packages\").glob(\"*/tests\")} | {\"tests\"}`. Correct the pyproject comment to describe pytest discovery only.",
+"imp": "a contributor adds `packages/opaque-<new>/` with a full `tests/` tree and does not edit the workflow: local `uv run pytest` runs the tests, every CI lane runs zero of them on PRs, main and the release gate, and the `Python tests` check stays green. A rename makes the affected leg collect nothing (which then also hits the exit-5 path, OPQ-381). No package is actually missing today \u2014 `opaque-alignment`, added during th"
+},
+"381": {
+"title": "`allow-empty-test-selection` makes the distributed and CUDA lanes pass on zero collected tests, and two of five distributed suites already rely on that escape hatch.",
+"loc": "`.github/scripts/run_python_test_package.sh:40-43`; `pr.yml:80, 144, 159, 176`; `ci.yml:45, 104, 116, 130`",
+"fix": "replace the boolean with a per-suite expected minimum \u2014 have the runner accept `MIN_TESTS` (default 1) and, on exit 5, fail unless that suite is on an explicit allow-list keyed by (lane, suite id); or add a post-loop check that the results file records at least one successful package for a lane whose marker is expected to select tests.",
+"imp": "the escape hatch is already load-bearing. Measured collection under the distributed lane's exact marker (`distributed and not cuda`), one path at a time: opaque-base 0, opaque-accounting 0, opaque-auditing 0, opaque-patches 0, `tests` 0 \u2014 so the \"foundation\" and \"integration\" legs pass today without executing anything, and the lane's green check carries no information about whether it ran 6 tests or 0. If a refactor "
+},
+"382": {
+"title": "a test that creates a real Gloo process group and binds a port runs in the parallel lane and fail-opens with a silent skip.",
+"loc": "`packages/opaque-transformers/tests/opaque_transformers/test_trl_trainers.py:1914, 1930-1944`",
+"fix": "add `@pytest.mark.distributed` so it lands in the serial lane with its siblings, and replace the `is_initialized()` skip with a fixture that asserts no group is live at setup and destroys any leftover at teardown (a leaked group is a bug in whichever test leaked it, not a reason to stop testing this one).",
+"imp": "**PLAUSIBLE not CONFIRMED** \u2014 no trigger was reproduced. The test passes (1 passed in 2.81 s); the only other bind-then-close helper is used exclusively by `distributed`-marked tests that never co-run in this lane; the ephemeral-port window is milliseconds against a ~28k-port range; and the only other in-process `init_process_group` call sites spawn subprocesses and are `distributed`-marked, so the self-skip guard is"
+},
+"383": {
+"title": "the BallsInBins+IdentityMf composition case has zero PR-gate coverage: the fast test skips it and its replacement is marked slow.",
+"loc": "`packages/opaque-dpftrl/tests/accounting/test_per_step_invariants.py:499-517`",
+"fix": "drop `@pytest.mark.slow` from the stand-in (it builds one small process and calls `epsilon_at` twice), or shrink the pair's build parameters so the inline case can stay without the skip. Whichever is chosen, the skip reason should name the marker so the PR-gate gap is visible when reading the test.",
+"imp": "verified by execution \u2014 running the class under the PR marker with `-k composition` gives \"7 passed, 1 skipped\" with the skip reason printed, and `--collect-only` under the same marker does not list the slow stand-in. A change to the balls-in-bins prefix path (the subject of open #695/#698) that breaks composition for the identity mechanism leaves every PR lane green; the breakage surfaces only on the post-merge main"
+},
+"384": {
+"title": "a test comment asserts a PLD cross-test cache-contamination hazard that the current implementation does not have.",
+"loc": "`packages/opaque-dpftrl/tests/accounting/test_per_step.py:414-418`",
+"fix": "replace the comment with the fact it now tests \u2014 the resolved config is part of the cache key, so `proc.epsilon_at(d, **mc)` and `set_discretization(**mc); proc.epsilon_at(d)` resolve to the same key and the same `Pld` object. Consider asserting object identity in addition to value equality so the test guards the keying property directly.",
+"imp": "a maintainer debugging PLD caching reads the comment, concludes the cache is not config-keyed, and either adds redundant `cache_clear()` calls (evicting shared entries other tests' identity assertions depend on) or \"preserves\" the non-existent constraint when tightening the key. The test itself still asserts the right thing and passes."
+},
+"385": {
+"title": "\"Enforce Ruff checks for tests\" (#706) is a no-op for the root `tests/` tree.",
+"loc": "`pyproject.toml:225-232, 298`",
+"fix": "drop `\"tests/**\"` from `[tool.ruff.lint].exclude` (the per-file-ignores already relax INP/D/PLR2004 there), or revert the misleading `tests/` argument and the commit-message claim.",
+"imp": "reproduced \u2014 a probe file with an unused import and an undefined name written to `tests/_ruff_probe_tmp.py` passes `uv run ruff check tests/ --no-cache` with \"All checks passed!\" (exit 0), while the identical probe under `packages/opaque-engine/tests/` yields 2 errors and exit 1. Lint defects in the root tests tree \u2014 which holds the cross-stack integration DP scenarios under `tests/integration/**` \u2014 are never flagged"
+},
+"386": {
+"title": "Python 3.12 is advertised in every wheel but executes zero tests since #665.",
+"loc": "`.github/workflows/pr.yml:87-111`; `ci.yml:60-135`; `validate-distributions.yml:19`; `packages/*/pyproject.toml` classifiers",
+"fix": "add one cheap 3.12 leg (e.g. the `validate-distributions` install scenario on 3.12), or drop the 3.12 classifier claim \u2014 endpoints-only testing should be an explicit documented policy, not an accident of a version bump.",
+"imp": "a 3.12-only regression \u2014 a dependency resolving to a different wheel, or interpreter-specific behaviour in the vmap/pytree layer \u2014 ships in a release whose metadata explicitly advertises 3.12 support, with no CI signal ever having existed and users on 3.12 the first to see it. Bounded: 3.11 and 3.13 bracket most interpreter- and resolver-sensitive behaviour, and nothing here changes a privacy guarantee."
+},
+"387": {
+"title": "noise-stream continuity tests cover 2 of 7 noise-state shapes, and the trainer-level resume test checks only step count and epsilon.",
+"loc": "`packages/opaque-transformers/tests/opaque_transformers/test_checkpoint_helpers.py:283-300`; `test_dpftrl_trainer_smoke.py:291-298`",
+"fix": "parametrize `_assert_continuity` over all MF strategies (they share the `make_noise` closure shape) plus a paired second-moment case, and add one trainer-level test comparing final model parameters of a straight-through run against checkpoint+resume at `noise_multiplier > 0` (bit-identical on CPU with fixed seeds).",
+"imp": "no current defect \u2014 verified by direct execution that a `state_dict \u2192 torch.save \u2192 torch.load \u2192 from_state_dict` resume at step 3 of 6 reproduces the uninterrupted draws **bit-exactly** for identity, band_mf, blt, bisr, bsr and \u03bb-CGD, and for the second-moment state. This is regression protection: a future change to BLT buffer serialization, the BISR streaming state, or \u03bb-CGD's key derivation (e.g. the namespacing fi"
+},
+"388": {
+"title": "`AGENTS.md` points `@requires_hf_auth` at a helper file deleted in the same commit.",
+"loc": "`AGENTS.md:241-243`",
+"fix": "update AGENTS.md:241-242 to `tests/_support/opaque_test_support.py`, and note that the module is importable because the repo-root conftest prepends `tests/_support` to `sys.path` (so package test trees must be run from the repository root). ---",
+"imp": "an agent or contributor following AGENTS.md to add a gated-model test writes the old import and gets an `ImportError` at collection. Because the working bare-module import only resolves thanks to the root `conftest.py:13-21` injecting `tests/_support` onto `sys.path` \u2014 not from anything visible in the test file \u2014 the likely recovery is to hand-roll a local `skipif` copy of the mark, re-fragmenting exactly what #759 c"
+}
+}
