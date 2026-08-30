@@ -1,11 +1,18 @@
 """Tests for BltStrategy factory and accounting equivalence."""
 
+import warnings
+
 import pytest
+import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.dpftrl.amplification import _balls_in_bins
 from opaque.api.dpftrl.noise._blt import BltStrategy, blt_strategy
+from opaque.api.dpftrl.noise._toeplitz import (
+    materialize_lower_triangular,
+    minsep_sensitivity_squared,
+)
 
 _PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
 _SMALL_PART = {"n_steps": 20, "min_sep": 5, "max_participations": 4}
@@ -62,6 +69,30 @@ class TestBltStrategy:
     def test_single_participation(self):
         s = blt_strategy()
         assert s.sensitivity(n_steps=50, min_sep=1, max_participations=1) > 0
+
+    @pytest.mark.parametrize("momentum", [0.0, 0.5])
+    def test_nondefault_momentum_stays_in_minsep_domain(self, momentum):
+        part = {"n_steps": 20, "min_sep": 1, "max_participations": 20}
+        strategy = blt_strategy(max_buffers=3, momentum=momentum)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            coefs = strategy.coefficients(**part)
+
+        assert torch.all(coefs >= 0)
+        assert torch.all(coefs[:-1] >= coefs[1:])
+        reported = strategy.sensitivity(**part)
+
+        dense = materialize_lower_triangular(coefs, part["n_steps"])
+        all_steps = torch.ones(part["n_steps"], dtype=coefs.dtype)
+        aligned_sensitivity = torch.linalg.vector_norm(dense @ all_steps)
+        assert reported == pytest.approx(float(aligned_sensitivity))
+
+        expected = minsep_sensitivity_squared(
+            coefs,
+            min_sep=part["min_sep"],
+            max_participations=part["max_participations"],
+        ).sqrt()
+        assert reported == pytest.approx(float(expected))
 
 
 class TestBltPld:
