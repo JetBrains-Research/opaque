@@ -124,6 +124,17 @@ class TestPoissonIdentity:
             proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
         )
 
+    def test_rejects_full_rate_with_truncation(self):
+        nm = 1.1
+        with pytest.raises(ConfigurationError, match=r"sample_rate=1\.0"):
+            ftrl_acc.poisson(
+                ftrl_acc.mf_gaussian(nm, identity_strategy()),
+                sample_rate=1.0,
+                n_steps=10,
+                truncated_batch_size=64,
+                dataset_size=10_000,
+            )
+
     def test_rejects_zero_rate_on_direct_construction(self):
         from opaque.dpftrl.accounting.types import CyclicPoisson
 
