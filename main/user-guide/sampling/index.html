@@ -3618,6 +3618,11 @@ sample rate, the stronger the amplification:</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">256</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span>  <span class="c1"># 0.00512</span>
 </code></pre></div>
+<p>Both the <code>PoissonSampler</code> and the <code>dpsgd_acc.poisson</code> accountant accept
+<code>sample_rate</code> in <code>(0, 1]</code>. At <code>sample_rate=1.0</code> every example participates
+every step, so there is no amplification: the accountant accounts such a
+step as the plain Gaussian, identical to <code>dpsgd_acc.gaussian(nm)</code>.
+Truncated Poisson (<code>truncated_batch_size</code>) requires <code>sample_rate &lt; 1</code>.</p>
 <h3 id="poissonsampler"><code>PoissonSampler</code><a class="headerlink" href="#poissonsampler" title="Permanent link">&para;</a></h3>
 <p>The standard sampler. Each example is included independently with probability
 <code>sample_rate</code>, producing variable-size batches.</p>

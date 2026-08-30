@@ -4209,7 +4209,7 @@ full dataset.</p>
 <td><code>sample_rate</code></td>
 <td><code>float</code></td>
 <td>required</td>
-<td>Probability of including each example, in (0, 1]</td>
+<td>Probability of including each example, in (0, 1]. At <code>sample_rate=1.0</code> there is no amplification — the accountant treats the step as the plain <code>gaussian(nm)</code></td>
 </tr>
 <tr>
 <td><code>n_steps</code></td>
@@ -4236,7 +4236,9 @@ full dataset.</p>
 <p>Truncated Poisson (when <code>truncated_batch_size</code> is set) — account with
 <code>dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate,
 truncated_batch_size=batch, dataset_size=n)</code> to use the matching
-truncated-Poisson PLD.</p>
+truncated-Poisson PLD. Truncated Poisson requires <code>sample_rate &lt; 1</code>;
+for a full participation step (<code>sample_rate=1.0</code>) account directly with
+<code>dpsgd_acc.gaussian(nm)</code>.</p>
 <h2 id="koutoftsampler-dp-sgd">KOutOfTSampler (DP-SGD)<a class="headerlink" href="#koutoftsampler-dp-sgd" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">KOutOfTSampler</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -4696,7 +4698,9 @@ per-rank key via <code>fold_in(key, rank)</code>::</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Probability of including each example <code>∈ (0, 1]</code>.</p>
+                <p>Probability of including each example <code>∈ (0, 1]</code>.
+At <code>1.0</code> every example is in every batch — no amplification;
+account the step with :func:<code>opaque.dpsgd.accounting.gaussian</code>.</p>
               </div>
             </td>
             <td>
@@ -4919,7 +4923,9 @@ Poisson at the same <code>sample_rate</code>).</p>
 <span class="normal"><a href="#__codelineno-0-165">165</a></span>
 <span class="normal"><a href="#__codelineno-0-166">166</a></span>
 <span class="normal"><a href="#__codelineno-0-167">167</a></span>
-<span class="normal"><a href="#__codelineno-0-168">168</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="k">class</span><span class="w"> </span><span class="nc">PoissonSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
+<span class="normal"><a href="#__codelineno-0-168">168</a></span>
+<span class="normal"><a href="#__codelineno-0-169">169</a></span>
+<span class="normal"><a href="#__codelineno-0-170">170</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="k">class</span><span class="w"> </span><span class="nc">PoissonSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="w">    </span><span class="sd">"""Poisson sampler for privacy amplification (DP-SGD).</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a>
 <a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="sd">    Each example is independently included with probability</span>
@@ -4940,120 +4946,122 @@ Poisson at the same <code>sample_rate</code>).</p>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        data_source: Dataset to sample from (any object with ``__len__``).</span>
 <a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">        sample_rate: Probability of including each example ``∈ (0, 1]``.</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">        n_steps: Number of batches to yield. ``None`` yields indefinitely.</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">        truncated_batch_size: Optional cap on per-step batch size (truncated</span>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">            Poisson; use matching accounting—privacy is weaker than uncapped</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">            Poisson at the same ``sample_rate``).</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        key: RNG key for reproducibility.</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">            At ``1.0`` every example is in every batch — no amplification;</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">            account the step with :func:`opaque.dpsgd.accounting.gaussian`.</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        n_steps: Number of batches to yield. ``None`` yields indefinitely.</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        truncated_batch_size: Optional cap on per-step batch size (truncated</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">            Poisson; use matching accounting—privacy is weaker than uncapped</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">            Poisson at the same ``sample_rate``).</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">        key: RNG key for reproducibility.</span>
 <a id="__codelineno-0-62" name="__codelineno-0-62"></a>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        from opaque.random import key</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        sampler = PoissonSampler(</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">            dataset, sample_rate=0.01, n_steps=1000, key=key(42),</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">        )</span>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">        loader = DataLoader(dataset, batch_sampler=sampler)</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">    Note:</span>
-<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">        - Batch sizes are variable (Poisson property).</span>
-<a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">        - Expected batch size: ``len(data_source) * sample_rate`` (uncapped).</span>
-<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">        - Use with ``DataLoader``'s ``batch_sampler`` parameter.</span>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">        - Resume via :func:`opaque.serialization.state_dict` /</span>
-<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">          :func:`opaque.serialization.from_state_dict`: state captures the</span>
-<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">          original ``key`` plus the consumed-step count; load replays the</span>
-<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">          generator forward to the resume position.</span>
-<a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="sd">    """</span>
-<a id="__codelineno-0-78" name="__codelineno-0-78"></a>
-<a id="__codelineno-0-79" name="__codelineno-0-79"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
-<a id="__codelineno-0-80" name="__codelineno-0-80"></a>        <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a>        <span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span><span class="p">,</span>
-<a id="__codelineno-0-82" name="__codelineno-0-82"></a>        <span class="n">sample_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-83" name="__codelineno-0-83"></a>        <span class="n">n_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-84" name="__codelineno-0-84"></a>        <span class="n">truncated_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a>        <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-86" name="__codelineno-0-86"></a>        <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
-<a id="__codelineno-0-87" name="__codelineno-0-87"></a>    <span class="p">):</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-<a id="__codelineno-0-89" name="__codelineno-0-89"></a>
-<a id="__codelineno-0-90" name="__codelineno-0-90"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">sample_rate</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"sample_rate must be in (0, 1], got </span><span class="si">{</span><span class="n">sample_rate</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-93" name="__codelineno-0-93"></a>            <span class="p">)</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a>        <span class="k">if</span> <span class="n">n_steps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">n_steps</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-95" name="__codelineno-0-95"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"n_steps must be &gt;= 1 or None, got </span><span class="si">{</span><span class="n">n_steps</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a>        <span class="k">if</span> <span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">truncated_batch_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-98" name="__codelineno-0-98"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"truncated_batch_size must be &gt;= 1, got </span><span class="si">{</span><span class="n">truncated_batch_size</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a>            <span class="p">)</span>
-<a id="__codelineno-0-100" name="__codelineno-0-100"></a>
-<a id="__codelineno-0-101" name="__codelineno-0-101"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span> <span class="o">=</span> <span class="n">data_source</span>
-<a id="__codelineno-0-102" name="__codelineno-0-102"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">sample_rate</span>
-<a id="__codelineno-0-103" name="__codelineno-0-103"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">=</span> <span class="n">n_steps</span>
-<a id="__codelineno-0-104" name="__codelineno-0-104"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="o">=</span> <span class="n">truncated_batch_size</span>
-<a id="__codelineno-0-105" name="__codelineno-0-105"></a>
-<a id="__codelineno-0-106" name="__codelineno-0-106"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span>
-<a id="__codelineno-0-107" name="__codelineno-0-107"></a>        <span class="c1"># Original key kept for state-dict round-trips; the live</span>
-<a id="__codelineno-0-108" name="__codelineno-0-108"></a>        <span class="c1"># ``generator`` advances each yield and isn't reconstructable</span>
-<a id="__codelineno-0-109" name="__codelineno-0-109"></a>        <span class="c1"># from the key alone after that point.</span>
-<a id="__codelineno-0-110" name="__codelineno-0-110"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_key</span> <span class="o">=</span> <span class="n">key</span>
-<a id="__codelineno-0-111" name="__codelineno-0-111"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">generator</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">key</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-112" name="__codelineno-0-112"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">=</span> <span class="mi">0</span>
-<a id="__codelineno-0-113" name="__codelineno-0-113"></a>
-<a id="__codelineno-0-114" name="__codelineno-0-114"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_step</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
-<a id="__codelineno-0-115" name="__codelineno-0-115"></a>        <span class="k">return</span> <span class="n">_plain_poisson_step_indices</span><span class="p">(</span>
-<a id="__codelineno-0-116" name="__codelineno-0-116"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="p">,</span>
-<a id="__codelineno-0-117" name="__codelineno-0-117"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span><span class="p">,</span>
-<a id="__codelineno-0-118" name="__codelineno-0-118"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">,</span>
-<a id="__codelineno-0-119" name="__codelineno-0-119"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-120" name="__codelineno-0-120"></a>        <span class="p">)</span>
-<a id="__codelineno-0-121" name="__codelineno-0-121"></a>
-<a id="__codelineno-0-122" name="__codelineno-0-122"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
-<a id="__codelineno-0-123" name="__codelineno-0-123"></a><span class="w">        </span><span class="sd">"""Yield variable-size batches as lists of indices.</span>
-<a id="__codelineno-0-124" name="__codelineno-0-124"></a>
-<a id="__codelineno-0-125" name="__codelineno-0-125"></a><span class="sd">        Each iteration samples the entire dataset using Poisson subsampling,</span>
-<a id="__codelineno-0-126" name="__codelineno-0-126"></a><span class="sd">        optionally truncated.  ``self._consumed`` increments after each</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="sd">        yielded batch so state-dict snapshots reflect the live position.</span>
-<a id="__codelineno-0-128" name="__codelineno-0-128"></a><span class="sd">        """</span>
-<a id="__codelineno-0-129" name="__codelineno-0-129"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-130" name="__codelineno-0-130"></a>            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<a id="__codelineno-0-131" name="__codelineno-0-131"></a>                <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
-<a id="__codelineno-0-132" name="__codelineno-0-132"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-133" name="__codelineno-0-133"></a>                <span class="k">yield</span> <span class="n">batch</span>
-<a id="__codelineno-0-134" name="__codelineno-0-134"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-135" name="__codelineno-0-135"></a>            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
-<a id="__codelineno-0-136" name="__codelineno-0-136"></a>                <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
-<a id="__codelineno-0-137" name="__codelineno-0-137"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-138" name="__codelineno-0-138"></a>                <span class="k">yield</span> <span class="n">batch</span>
-<a id="__codelineno-0-139" name="__codelineno-0-139"></a>
-<a id="__codelineno-0-140" name="__codelineno-0-140"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="w">        </span><span class="sd">"""Return the number of batches the iterator will yield.</span>
-<a id="__codelineno-0-142" name="__codelineno-0-142"></a>
-<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">        After a partial run, this is ``n_steps - consumed`` so</span>
-<a id="__codelineno-0-144" name="__codelineno-0-144"></a><span class="sd">        ``len(DataLoader(batch_sampler=sampler))`` reflects the batches</span>
-<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">        actually remaining (not the original total).  ``__iter__``</span>
-<a id="__codelineno-0-146" name="__codelineno-0-146"></a><span class="sd">        starts at ``self._consumed``; ``__len__`` matches.</span>
-<a id="__codelineno-0-147" name="__codelineno-0-147"></a>
-<a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">        Raises:</span>
-<a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="sd">            TypeError: If n_steps is None (infinite iteration).</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        """</span>
-<a id="__codelineno-0-151" name="__codelineno-0-151"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-152" name="__codelineno-0-152"></a>            <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"len() of unsized object (n_steps=None)"</span><span class="p">,))</span>
-<a id="__codelineno-0-153" name="__codelineno-0-153"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
-<a id="__codelineno-0-154" name="__codelineno-0-154"></a>
-<a id="__codelineno-0-155" name="__codelineno-0-155"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-156" name="__codelineno-0-156"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">consumed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-157" name="__codelineno-0-157"></a><span class="w">        </span><span class="sd">"""Number of batches yielded so far (resume cursor)."""</span>
-<a id="__codelineno-0-158" name="__codelineno-0-158"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
-<a id="__codelineno-0-159" name="__codelineno-0-159"></a>
-<a id="__codelineno-0-160" name="__codelineno-0-160"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-161" name="__codelineno-0-161"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">expected_batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="w">        </span><span class="sd">"""Expected batch size = num_samples * sample_rate (before truncation)."""</span>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">batch_size_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="w">        </span><span class="sd">"""Variance of batch size for Poisson sampling (before truncation)."""</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        from opaque.random import key</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">        sampler = PoissonSampler(</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">            dataset, sample_rate=0.01, n_steps=1000, key=key(42),</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">        )</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">        loader = DataLoader(dataset, batch_sampler=sampler)</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a>
+<a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">    Note:</span>
+<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">        - Batch sizes are variable (Poisson property).</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">        - Expected batch size: ``len(data_source) * sample_rate`` (uncapped).</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">        - Use with ``DataLoader``'s ``batch_sampler`` parameter.</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">        - Resume via :func:`opaque.serialization.state_dict` /</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">          :func:`opaque.serialization.from_state_dict`: state captures the</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="sd">          original ``key`` plus the consumed-step count; load replays the</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">          generator forward to the resume position.</span>
+<a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">    """</span>
+<a id="__codelineno-0-80" name="__codelineno-0-80"></a>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<a id="__codelineno-0-82" name="__codelineno-0-82"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-83" name="__codelineno-0-83"></a>        <span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span><span class="p">,</span>
+<a id="__codelineno-0-84" name="__codelineno-0-84"></a>        <span class="n">sample_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a>        <span class="n">n_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-86" name="__codelineno-0-86"></a>        <span class="n">truncated_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-87" name="__codelineno-0-87"></a>        <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-88" name="__codelineno-0-88"></a>        <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
+<a id="__codelineno-0-89" name="__codelineno-0-89"></a>    <span class="p">):</span>
+<a id="__codelineno-0-90" name="__codelineno-0-90"></a>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<a id="__codelineno-0-91" name="__codelineno-0-91"></a>
+<a id="__codelineno-0-92" name="__codelineno-0-92"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">sample_rate</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-93" name="__codelineno-0-93"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"sample_rate must be in (0, 1], got </span><span class="si">{</span><span class="n">sample_rate</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-95" name="__codelineno-0-95"></a>            <span class="p">)</span>
+<a id="__codelineno-0-96" name="__codelineno-0-96"></a>        <span class="k">if</span> <span class="n">n_steps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">n_steps</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"n_steps must be &gt;= 1 or None, got </span><span class="si">{</span><span class="n">n_steps</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
+<a id="__codelineno-0-98" name="__codelineno-0-98"></a>        <span class="k">if</span> <span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">truncated_batch_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-99" name="__codelineno-0-99"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-100" name="__codelineno-0-100"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"truncated_batch_size must be &gt;= 1, got </span><span class="si">{</span><span class="n">truncated_batch_size</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-101" name="__codelineno-0-101"></a>            <span class="p">)</span>
+<a id="__codelineno-0-102" name="__codelineno-0-102"></a>
+<a id="__codelineno-0-103" name="__codelineno-0-103"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span> <span class="o">=</span> <span class="n">data_source</span>
+<a id="__codelineno-0-104" name="__codelineno-0-104"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">sample_rate</span>
+<a id="__codelineno-0-105" name="__codelineno-0-105"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">=</span> <span class="n">n_steps</span>
+<a id="__codelineno-0-106" name="__codelineno-0-106"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="o">=</span> <span class="n">truncated_batch_size</span>
+<a id="__codelineno-0-107" name="__codelineno-0-107"></a>
+<a id="__codelineno-0-108" name="__codelineno-0-108"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span>
+<a id="__codelineno-0-109" name="__codelineno-0-109"></a>        <span class="c1"># Original key kept for state-dict round-trips; the live</span>
+<a id="__codelineno-0-110" name="__codelineno-0-110"></a>        <span class="c1"># ``generator`` advances each yield and isn't reconstructable</span>
+<a id="__codelineno-0-111" name="__codelineno-0-111"></a>        <span class="c1"># from the key alone after that point.</span>
+<a id="__codelineno-0-112" name="__codelineno-0-112"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_key</span> <span class="o">=</span> <span class="n">key</span>
+<a id="__codelineno-0-113" name="__codelineno-0-113"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">generator</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">key</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-114" name="__codelineno-0-114"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-115" name="__codelineno-0-115"></a>
+<a id="__codelineno-0-116" name="__codelineno-0-116"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_step</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<a id="__codelineno-0-117" name="__codelineno-0-117"></a>        <span class="k">return</span> <span class="n">_plain_poisson_step_indices</span><span class="p">(</span>
+<a id="__codelineno-0-118" name="__codelineno-0-118"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="p">,</span>
+<a id="__codelineno-0-119" name="__codelineno-0-119"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span><span class="p">,</span>
+<a id="__codelineno-0-120" name="__codelineno-0-120"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">,</span>
+<a id="__codelineno-0-121" name="__codelineno-0-121"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-122" name="__codelineno-0-122"></a>        <span class="p">)</span>
+<a id="__codelineno-0-123" name="__codelineno-0-123"></a>
+<a id="__codelineno-0-124" name="__codelineno-0-124"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<a id="__codelineno-0-125" name="__codelineno-0-125"></a><span class="w">        </span><span class="sd">"""Yield variable-size batches as lists of indices.</span>
+<a id="__codelineno-0-126" name="__codelineno-0-126"></a>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="sd">        Each iteration samples the entire dataset using Poisson subsampling,</span>
+<a id="__codelineno-0-128" name="__codelineno-0-128"></a><span class="sd">        optionally truncated.  ``self._consumed`` increments after each</span>
+<a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">        yielded batch so state-dict snapshots reflect the live position.</span>
+<a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">        """</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-132" name="__codelineno-0-132"></a>            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-133" name="__codelineno-0-133"></a>                <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
+<a id="__codelineno-0-134" name="__codelineno-0-134"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-135" name="__codelineno-0-135"></a>                <span class="k">yield</span> <span class="n">batch</span>
+<a id="__codelineno-0-136" name="__codelineno-0-136"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-137" name="__codelineno-0-137"></a>            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
+<a id="__codelineno-0-138" name="__codelineno-0-138"></a>                <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
+<a id="__codelineno-0-139" name="__codelineno-0-139"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-140" name="__codelineno-0-140"></a>                <span class="k">yield</span> <span class="n">batch</span>
+<a id="__codelineno-0-141" name="__codelineno-0-141"></a>
+<a id="__codelineno-0-142" name="__codelineno-0-142"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="w">        </span><span class="sd">"""Return the number of batches the iterator will yield.</span>
+<a id="__codelineno-0-144" name="__codelineno-0-144"></a>
+<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">        After a partial run, this is ``n_steps - consumed`` so</span>
+<a id="__codelineno-0-146" name="__codelineno-0-146"></a><span class="sd">        ``len(DataLoader(batch_sampler=sampler))`` reflects the batches</span>
+<a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="sd">        actually remaining (not the original total).  ``__iter__``</span>
+<a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">        starts at ``self._consumed``; ``__len__`` matches.</span>
+<a id="__codelineno-0-149" name="__codelineno-0-149"></a>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">        Raises:</span>
+<a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">            TypeError: If n_steps is None (infinite iteration).</span>
+<a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">        """</span>
+<a id="__codelineno-0-153" name="__codelineno-0-153"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-154" name="__codelineno-0-154"></a>            <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"len() of unsized object (n_steps=None)"</span><span class="p">,))</span>
+<a id="__codelineno-0-155" name="__codelineno-0-155"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<a id="__codelineno-0-156" name="__codelineno-0-156"></a>
+<a id="__codelineno-0-157" name="__codelineno-0-157"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-158" name="__codelineno-0-158"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">consumed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-159" name="__codelineno-0-159"></a><span class="w">        </span><span class="sd">"""Number of batches yielded so far (resume cursor)."""</span>
+<a id="__codelineno-0-160" name="__codelineno-0-160"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<a id="__codelineno-0-161" name="__codelineno-0-161"></a>
+<a id="__codelineno-0-162" name="__codelineno-0-162"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">expected_batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="w">        </span><span class="sd">"""Expected batch size = num_samples * sample_rate (before truncation)."""</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">batch_size_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a><span class="w">        </span><span class="sd">"""Variance of batch size for Poisson sampling (before truncation)."""</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_samples</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
@@ -5155,9 +5163,7 @@ yielded batch so state-dict snapshots reflect the live position.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-122">122</a></span>
-<span class="normal"><a href="#__codelineno-0-123">123</a></span>
-<span class="normal"><a href="#__codelineno-0-124">124</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-124">124</a></span>
 <span class="normal"><a href="#__codelineno-0-125">125</a></span>
 <span class="normal"><a href="#__codelineno-0-126">126</a></span>
 <span class="normal"><a href="#__codelineno-0-127">127</a></span>
@@ -5171,23 +5177,25 @@ yielded batch so state-dict snapshots reflect the live position.</p>
 <span class="normal"><a href="#__codelineno-0-135">135</a></span>
 <span class="normal"><a href="#__codelineno-0-136">136</a></span>
 <span class="normal"><a href="#__codelineno-0-137">137</a></span>
-<span class="normal"><a href="#__codelineno-0-138">138</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-122" name="__codelineno-0-122"></a><span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
-<a id="__codelineno-0-123" name="__codelineno-0-123"></a><span class="w">    </span><span class="sd">"""Yield variable-size batches as lists of indices.</span>
-<a id="__codelineno-0-124" name="__codelineno-0-124"></a>
-<a id="__codelineno-0-125" name="__codelineno-0-125"></a><span class="sd">    Each iteration samples the entire dataset using Poisson subsampling,</span>
-<a id="__codelineno-0-126" name="__codelineno-0-126"></a><span class="sd">    optionally truncated.  ``self._consumed`` increments after each</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="sd">    yielded batch so state-dict snapshots reflect the live position.</span>
-<a id="__codelineno-0-128" name="__codelineno-0-128"></a><span class="sd">    """</span>
-<a id="__codelineno-0-129" name="__codelineno-0-129"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-130" name="__codelineno-0-130"></a>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-<a id="__codelineno-0-131" name="__codelineno-0-131"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
-<a id="__codelineno-0-132" name="__codelineno-0-132"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-133" name="__codelineno-0-133"></a>            <span class="k">yield</span> <span class="n">batch</span>
-<a id="__codelineno-0-134" name="__codelineno-0-134"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-135" name="__codelineno-0-135"></a>        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
-<a id="__codelineno-0-136" name="__codelineno-0-136"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
-<a id="__codelineno-0-137" name="__codelineno-0-137"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-138" name="__codelineno-0-138"></a>            <span class="k">yield</span> <span class="n">batch</span>
+<span class="normal"><a href="#__codelineno-0-138">138</a></span>
+<span class="normal"><a href="#__codelineno-0-139">139</a></span>
+<span class="normal"><a href="#__codelineno-0-140">140</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-124" name="__codelineno-0-124"></a><span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<a id="__codelineno-0-125" name="__codelineno-0-125"></a><span class="w">    </span><span class="sd">"""Yield variable-size batches as lists of indices.</span>
+<a id="__codelineno-0-126" name="__codelineno-0-126"></a>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a><span class="sd">    Each iteration samples the entire dataset using Poisson subsampling,</span>
+<a id="__codelineno-0-128" name="__codelineno-0-128"></a><span class="sd">    optionally truncated.  ``self._consumed`` increments after each</span>
+<a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">    yielded batch so state-dict snapshots reflect the live position.</span>
+<a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">    """</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-132" name="__codelineno-0-132"></a>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-133" name="__codelineno-0-133"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
+<a id="__codelineno-0-134" name="__codelineno-0-134"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-135" name="__codelineno-0-135"></a>            <span class="k">yield</span> <span class="n">batch</span>
+<a id="__codelineno-0-136" name="__codelineno-0-136"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-137" name="__codelineno-0-137"></a>        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
+<a id="__codelineno-0-138" name="__codelineno-0-138"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">()</span>
+<a id="__codelineno-0-139" name="__codelineno-0-139"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-140" name="__codelineno-0-140"></a>            <span class="k">yield</span> <span class="n">batch</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5237,9 +5245,7 @@ starts at <code>self._consumed</code>; <code>__len__</code> matches.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpsgd/src/opaque/api/dpsgd/sampling/_poisson.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-140">140</a></span>
-<span class="normal"><a href="#__codelineno-0-141">141</a></span>
-<span class="normal"><a href="#__codelineno-0-142">142</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-142">142</a></span>
 <span class="normal"><a href="#__codelineno-0-143">143</a></span>
 <span class="normal"><a href="#__codelineno-0-144">144</a></span>
 <span class="normal"><a href="#__codelineno-0-145">145</a></span>
@@ -5250,20 +5256,22 @@ starts at <code>self._consumed</code>; <code>__len__</code> matches.</p>
 <span class="normal"><a href="#__codelineno-0-150">150</a></span>
 <span class="normal"><a href="#__codelineno-0-151">151</a></span>
 <span class="normal"><a href="#__codelineno-0-152">152</a></span>
-<span class="normal"><a href="#__codelineno-0-153">153</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-140" name="__codelineno-0-140"></a><span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="w">    </span><span class="sd">"""Return the number of batches the iterator will yield.</span>
-<a id="__codelineno-0-142" name="__codelineno-0-142"></a>
-<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">    After a partial run, this is ``n_steps - consumed`` so</span>
-<a id="__codelineno-0-144" name="__codelineno-0-144"></a><span class="sd">    ``len(DataLoader(batch_sampler=sampler))`` reflects the batches</span>
-<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">    actually remaining (not the original total).  ``__iter__``</span>
-<a id="__codelineno-0-146" name="__codelineno-0-146"></a><span class="sd">    starts at ``self._consumed``; ``__len__`` matches.</span>
-<a id="__codelineno-0-147" name="__codelineno-0-147"></a>
-<a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">    Raises:</span>
-<a id="__codelineno-0-149" name="__codelineno-0-149"></a><span class="sd">        TypeError: If n_steps is None (infinite iteration).</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">    """</span>
-<a id="__codelineno-0-151" name="__codelineno-0-151"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-152" name="__codelineno-0-152"></a>        <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"len() of unsized object (n_steps=None)"</span><span class="p">,))</span>
-<a id="__codelineno-0-153" name="__codelineno-0-153"></a>    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<span class="normal"><a href="#__codelineno-0-153">153</a></span>
+<span class="normal"><a href="#__codelineno-0-154">154</a></span>
+<span class="normal"><a href="#__codelineno-0-155">155</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="w">    </span><span class="sd">"""Return the number of batches the iterator will yield.</span>
+<a id="__codelineno-0-144" name="__codelineno-0-144"></a>
+<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">    After a partial run, this is ``n_steps - consumed`` so</span>
+<a id="__codelineno-0-146" name="__codelineno-0-146"></a><span class="sd">    ``len(DataLoader(batch_sampler=sampler))`` reflects the batches</span>
+<a id="__codelineno-0-147" name="__codelineno-0-147"></a><span class="sd">    actually remaining (not the original total).  ``__iter__``</span>
+<a id="__codelineno-0-148" name="__codelineno-0-148"></a><span class="sd">    starts at ``self._consumed``; ``__len__`` matches.</span>
+<a id="__codelineno-0-149" name="__codelineno-0-149"></a>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-151" name="__codelineno-0-151"></a><span class="sd">        TypeError: If n_steps is None (infinite iteration).</span>
+<a id="__codelineno-0-152" name="__codelineno-0-152"></a><span class="sd">    """</span>
+<a id="__codelineno-0-153" name="__codelineno-0-153"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-154" name="__codelineno-0-154"></a>        <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"len() of unsized object (n_steps=None)"</span><span class="p">,))</span>
+<a id="__codelineno-0-155" name="__codelineno-0-155"></a>    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5692,7 +5700,9 @@ BandMF, set <code>bands</code> to the band count in <code>band_mf_strategy</code
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Per-step inclusion probability <code>∈ (0, 1]</code>.</p>
+                <p>Per-step inclusion probability <code>∈ (0, 1]</code>.  At
+<code>1.0</code> every example of the active group participates — no
+amplification; accounting treats each step as the plain Gaussian.</p>
               </div>
             </td>
             <td>
@@ -5962,7 +5972,9 @@ Poisson at the same <code>sample_rate</code>).  Only the <code>bands == 1</code>
 <span class="normal"><a href="#__codelineno-0-193">193</a></span>
 <span class="normal"><a href="#__codelineno-0-194">194</a></span>
 <span class="normal"><a href="#__codelineno-0-195">195</a></span>
-<span class="normal"><a href="#__codelineno-0-196">196</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="k">class</span><span class="w"> </span><span class="nc">CyclicPoissonSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="k">class</span><span class="w"> </span><span class="nc">CyclicPoissonSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="w">    </span><span class="sd">"""Cyclic Poisson subsampling for DP-FTRL (one active group per step).</span>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    Disjoint example groups are fixed at construction (modulo</span>
@@ -5976,145 +5988,147 @@ Poisson at the same <code>sample_rate</code>).  Only the <code>bands == 1</code>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a>
 <a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">        data_source: Dataset to sample from (any object with ``__len__``).</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        bands: Number of groups in the cycle.  ``1`` = identity-style plain</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">            Poisson on the full dataset every step.</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">        n_steps: Total number of batches to yield.  Defaults to ``1``.</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        partition_type: Partition strategy when ``bands &gt; 1``.</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        truncated_batch_size: Optional cap on per-step batch size (truncated</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">            Poisson; use matching accounting—privacy is weaker than uncapped</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">            Poisson at the same ``sample_rate``).  Only the ``bands == 1`` /</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">            ``IdentityMf`` combination is supported in</span>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">            :func:`opaque.dpftrl.accounting.poisson`.</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">        key: RNG key for reproducibility.</span>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a>
-<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.  At</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">            ``1.0`` every example of the active group participates — no</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">            amplification; accounting treats each step as the plain Gaussian.</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">        bands: Number of groups in the cycle.  ``1`` = identity-style plain</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">            Poisson on the full dataset every step.</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        n_steps: Total number of batches to yield.  Defaults to ``1``.</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        partition_type: Partition strategy when ``bands &gt; 1``.</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        truncated_batch_size: Optional cap on per-step batch size (truncated</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">            Poisson; use matching accounting—privacy is weaker than uncapped</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">            Poisson at the same ``sample_rate``).  Only the ``bands == 1`` /</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">            ``IdentityMf`` combination is supported in</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">            :func:`opaque.dpftrl.accounting.poisson`.</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">        key: RNG key for reproducibility.</span>
 <a id="__codelineno-0-71" name="__codelineno-0-71"></a>
-<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">        from opaque.random import key</span>
-<a id="__codelineno-0-73" name="__codelineno-0-73"></a><span class="sd">        sampler = CyclicPoissonSampler(</span>
-<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">            dataset, sample_rate=0.01, bands=4, n_steps=1000, key=key(42),</span>
-<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">        )</span>
-<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">        loader = DataLoader(dataset, batch_sampler=sampler)</span>
-<a id="__codelineno-0-77" name="__codelineno-0-77"></a>
-<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">    Note:</span>
-<a id="__codelineno-0-79" name="__codelineno-0-79"></a><span class="sd">        Batch sizes are variable (Poisson).  Expected batch size per step is</span>
-<a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">        ``|group| * sample_rate`` where ``|group| = |D| / bands``.  Use with</span>
-<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">        ``DataLoader``'s ``batch_sampler``.</span>
-<a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">    """</span>
-<a id="__codelineno-0-83" name="__codelineno-0-83"></a>
-<a id="__codelineno-0-84" name="__codelineno-0-84"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
-<a id="__codelineno-0-85" name="__codelineno-0-85"></a>        <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-86" name="__codelineno-0-86"></a>        <span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span><span class="p">,</span>
-<a id="__codelineno-0-87" name="__codelineno-0-87"></a>        <span class="n">sample_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-88" name="__codelineno-0-88"></a>        <span class="n">bands</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-89" name="__codelineno-0-89"></a>        <span class="n">n_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-90" name="__codelineno-0-90"></a>        <span class="n">partition_type</span><span class="p">:</span> <span class="n">PartitionType</span> <span class="o">=</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">EQUAL_SPLIT</span><span class="p">,</span>
-<a id="__codelineno-0-91" name="__codelineno-0-91"></a>        <span class="n">truncated_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a>        <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-93" name="__codelineno-0-93"></a>        <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a>    <span class="p">):</span>
-<a id="__codelineno-0-95" name="__codelineno-0-95"></a>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-<a id="__codelineno-0-96" name="__codelineno-0-96"></a>
-<a id="__codelineno-0-97" name="__codelineno-0-97"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-98" name="__codelineno-0-98"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"data_source must not be empty"</span><span class="p">,))</span>
-<a id="__codelineno-0-99" name="__codelineno-0-99"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">sample_rate</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-100" name="__codelineno-0-100"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-101" name="__codelineno-0-101"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"sample_rate must be in (0, 1], got </span><span class="si">{</span><span class="n">sample_rate</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-102" name="__codelineno-0-102"></a>            <span class="p">)</span>
-<a id="__codelineno-0-103" name="__codelineno-0-103"></a>        <span class="k">if</span> <span class="n">bands</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-104" name="__codelineno-0-104"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"bands must be &gt;= 1, got </span><span class="si">{</span><span class="n">bands</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
-<a id="__codelineno-0-105" name="__codelineno-0-105"></a>        <span class="k">if</span> <span class="n">n_steps</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-106" name="__codelineno-0-106"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"n_steps must be &gt;= 1, got </span><span class="si">{</span><span class="n">n_steps</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
-<a id="__codelineno-0-107" name="__codelineno-0-107"></a>        <span class="k">if</span> <span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">truncated_batch_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-<a id="__codelineno-0-108" name="__codelineno-0-108"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-109" name="__codelineno-0-109"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"truncated_batch_size must be &gt;= 1, got </span><span class="si">{</span><span class="n">truncated_batch_size</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-110" name="__codelineno-0-110"></a>            <span class="p">)</span>
-<a id="__codelineno-0-111" name="__codelineno-0-111"></a>
-<a id="__codelineno-0-112" name="__codelineno-0-112"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span>
-<a id="__codelineno-0-113" name="__codelineno-0-113"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_key</span> <span class="o">=</span> <span class="n">key</span>
-<a id="__codelineno-0-114" name="__codelineno-0-114"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">generator</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">key</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-115" name="__codelineno-0-115"></a>
-<a id="__codelineno-0-116" name="__codelineno-0-116"></a>        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">INDEPENDENT</span><span class="p">:</span>
-<a id="__codelineno-0-117" name="__codelineno-0-117"></a>            <span class="n">partition_fn</span> <span class="o">=</span> <span class="n">_independent_partition</span>
-<a id="__codelineno-0-118" name="__codelineno-0-118"></a>        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">EQUAL_SPLIT</span><span class="p">:</span>
-<a id="__codelineno-0-119" name="__codelineno-0-119"></a>            <span class="n">partition_fn</span> <span class="o">=</span> <span class="n">_equal_split_partition</span>
-<a id="__codelineno-0-120" name="__codelineno-0-120"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-121" name="__codelineno-0-121"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-122" name="__codelineno-0-122"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported partition_type: </span><span class="si">{</span><span class="n">partition_type</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-123" name="__codelineno-0-123"></a>            <span class="p">)</span>
-<a id="__codelineno-0-124" name="__codelineno-0-124"></a>
-<a id="__codelineno-0-125" name="__codelineno-0-125"></a>        <span class="n">dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min_scalar_type</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span><span class="p">)</span>
-<a id="__codelineno-0-126" name="__codelineno-0-126"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">partition_fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span><span class="p">,</span> <span class="n">bands</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
-<a id="__codelineno-0-127" name="__codelineno-0-127"></a>
-<a id="__codelineno-0-128" name="__codelineno-0-128"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span> <span class="o">=</span> <span class="n">data_source</span>
-<a id="__codelineno-0-129" name="__codelineno-0-129"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">sample_rate</span>
-<a id="__codelineno-0-130" name="__codelineno-0-130"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">bands</span> <span class="o">=</span> <span class="n">bands</span>
-<a id="__codelineno-0-131" name="__codelineno-0-131"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">=</span> <span class="n">n_steps</span>
-<a id="__codelineno-0-132" name="__codelineno-0-132"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">partition_type</span> <span class="o">=</span> <span class="n">partition_type</span>
-<a id="__codelineno-0-133" name="__codelineno-0-133"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="o">=</span> <span class="n">truncated_batch_size</span>
-<a id="__codelineno-0-134" name="__codelineno-0-134"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">=</span> <span class="mi">0</span>
-<a id="__codelineno-0-135" name="__codelineno-0-135"></a>
-<a id="__codelineno-0-136" name="__codelineno-0-136"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
-<a id="__codelineno-0-137" name="__codelineno-0-137"></a><span class="w">        </span><span class="sd">"""Sample one batch at the given step index.</span>
-<a id="__codelineno-0-138" name="__codelineno-0-138"></a>
-<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="sd">        The active group rotates with ``step_idx % bands``; the per-step</span>
-<a id="__codelineno-0-140" name="__codelineno-0-140"></a><span class="sd">        generator advance is the same regardless of whether the result</span>
-<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="sd">        is yielded or discarded, so state-dict replay can use this</span>
-<a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="sd">        helper to fast-forward the generator without yielding.</span>
-<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">        """</span>
-<a id="__codelineno-0-144" name="__codelineno-0-144"></a>        <span class="n">group_idx</span> <span class="o">=</span> <span class="n">step_idx</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
-<a id="__codelineno-0-145" name="__codelineno-0-145"></a>        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="p">[</span><span class="n">group_idx</span><span class="p">]</span>
-<a id="__codelineno-0-146" name="__codelineno-0-146"></a>
-<a id="__codelineno-0-147" name="__codelineno-0-147"></a>        <span class="n">sample_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">p</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
-<a id="__codelineno-0-148" name="__codelineno-0-148"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-149" name="__codelineno-0-149"></a>            <span class="n">sample_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">sample_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span><span class="p">)</span>
-<a id="__codelineno-0-150" name="__codelineno-0-150"></a>
-<a id="__codelineno-0-151" name="__codelineno-0-151"></a>        <span class="k">if</span> <span class="n">sample_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-152" name="__codelineno-0-152"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
-<a id="__codelineno-0-153" name="__codelineno-0-153"></a>                <span class="n">group</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">sample_size</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span>
-<a id="__codelineno-0-154" name="__codelineno-0-154"></a>            <span class="p">)</span>
-<a id="__codelineno-0-155" name="__codelineno-0-155"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-156" name="__codelineno-0-156"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">group</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-<a id="__codelineno-0-157" name="__codelineno-0-157"></a>
-<a id="__codelineno-0-158" name="__codelineno-0-158"></a>        <span class="k">return</span> <span class="n">batch</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a><span class="sd">        from opaque.random import key</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a><span class="sd">        sampler = CyclicPoissonSampler(</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a><span class="sd">            dataset, sample_rate=0.01, bands=4, n_steps=1000, key=key(42),</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77"></a><span class="sd">        )</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a><span class="sd">        loader = DataLoader(dataset, batch_sampler=sampler)</span>
+<a id="__codelineno-0-79" name="__codelineno-0-79"></a>
+<a id="__codelineno-0-80" name="__codelineno-0-80"></a><span class="sd">    Note:</span>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a><span class="sd">        Batch sizes are variable (Poisson).  Expected batch size per step is</span>
+<a id="__codelineno-0-82" name="__codelineno-0-82"></a><span class="sd">        ``|group| * sample_rate`` where ``|group| = |D| / bands``.  Use with</span>
+<a id="__codelineno-0-83" name="__codelineno-0-83"></a><span class="sd">        ``DataLoader``'s ``batch_sampler``.</span>
+<a id="__codelineno-0-84" name="__codelineno-0-84"></a><span class="sd">    """</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a>
+<a id="__codelineno-0-86" name="__codelineno-0-86"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<a id="__codelineno-0-87" name="__codelineno-0-87"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-88" name="__codelineno-0-88"></a>        <span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span><span class="p">,</span>
+<a id="__codelineno-0-89" name="__codelineno-0-89"></a>        <span class="n">sample_rate</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-90" name="__codelineno-0-90"></a>        <span class="n">bands</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-91" name="__codelineno-0-91"></a>        <span class="n">n_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-92" name="__codelineno-0-92"></a>        <span class="n">partition_type</span><span class="p">:</span> <span class="n">PartitionType</span> <span class="o">=</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">EQUAL_SPLIT</span><span class="p">,</span>
+<a id="__codelineno-0-93" name="__codelineno-0-93"></a>        <span class="n">truncated_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a>        <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-95" name="__codelineno-0-95"></a>        <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
+<a id="__codelineno-0-96" name="__codelineno-0-96"></a>    <span class="p">):</span>
+<a id="__codelineno-0-97" name="__codelineno-0-97"></a>        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<a id="__codelineno-0-98" name="__codelineno-0-98"></a>
+<a id="__codelineno-0-99" name="__codelineno-0-99"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-100" name="__codelineno-0-100"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="s2">"data_source must not be empty"</span><span class="p">,))</span>
+<a id="__codelineno-0-101" name="__codelineno-0-101"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">sample_rate</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-102" name="__codelineno-0-102"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-103" name="__codelineno-0-103"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"sample_rate must be in (0, 1], got </span><span class="si">{</span><span class="n">sample_rate</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-104" name="__codelineno-0-104"></a>            <span class="p">)</span>
+<a id="__codelineno-0-105" name="__codelineno-0-105"></a>        <span class="k">if</span> <span class="n">bands</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-106" name="__codelineno-0-106"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"bands must be &gt;= 1, got </span><span class="si">{</span><span class="n">bands</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
+<a id="__codelineno-0-107" name="__codelineno-0-107"></a>        <span class="k">if</span> <span class="n">n_steps</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-108" name="__codelineno-0-108"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"n_steps must be &gt;= 1, got </span><span class="si">{</span><span class="n">n_steps</span><span class="si">}</span><span class="s2">"</span><span class="p">,))</span>
+<a id="__codelineno-0-109" name="__codelineno-0-109"></a>        <span class="k">if</span> <span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">truncated_batch_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-110" name="__codelineno-0-110"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-111" name="__codelineno-0-111"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"truncated_batch_size must be &gt;= 1, got </span><span class="si">{</span><span class="n">truncated_batch_size</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-112" name="__codelineno-0-112"></a>            <span class="p">)</span>
+<a id="__codelineno-0-113" name="__codelineno-0-113"></a>
+<a id="__codelineno-0-114" name="__codelineno-0-114"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_source</span><span class="p">)</span>
+<a id="__codelineno-0-115" name="__codelineno-0-115"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_key</span> <span class="o">=</span> <span class="n">key</span>
+<a id="__codelineno-0-116" name="__codelineno-0-116"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">generator</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">key</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-117" name="__codelineno-0-117"></a>
+<a id="__codelineno-0-118" name="__codelineno-0-118"></a>        <span class="k">if</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">INDEPENDENT</span><span class="p">:</span>
+<a id="__codelineno-0-119" name="__codelineno-0-119"></a>            <span class="n">partition_fn</span> <span class="o">=</span> <span class="n">_independent_partition</span>
+<a id="__codelineno-0-120" name="__codelineno-0-120"></a>        <span class="k">elif</span> <span class="n">partition_type</span> <span class="o">==</span> <span class="n">PartitionType</span><span class="o">.</span><span class="n">EQUAL_SPLIT</span><span class="p">:</span>
+<a id="__codelineno-0-121" name="__codelineno-0-121"></a>            <span class="n">partition_fn</span> <span class="o">=</span> <span class="n">_equal_split_partition</span>
+<a id="__codelineno-0-122" name="__codelineno-0-122"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-123" name="__codelineno-0-123"></a>            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-124" name="__codelineno-0-124"></a>                <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported partition_type: </span><span class="si">{</span><span class="n">partition_type</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-125" name="__codelineno-0-125"></a>            <span class="p">)</span>
+<a id="__codelineno-0-126" name="__codelineno-0-126"></a>
+<a id="__codelineno-0-127" name="__codelineno-0-127"></a>        <span class="n">dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">min_scalar_type</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span><span class="p">)</span>
+<a id="__codelineno-0-128" name="__codelineno-0-128"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">partition_fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span><span class="p">,</span> <span class="n">bands</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
+<a id="__codelineno-0-129" name="__codelineno-0-129"></a>
+<a id="__codelineno-0-130" name="__codelineno-0-130"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span><span class="p">:</span> <span class="n">Sized</span> <span class="o">=</span> <span class="n">data_source</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">sample_rate</span>
+<a id="__codelineno-0-132" name="__codelineno-0-132"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">bands</span> <span class="o">=</span> <span class="n">bands</span>
+<a id="__codelineno-0-133" name="__codelineno-0-133"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">=</span> <span class="n">n_steps</span>
+<a id="__codelineno-0-134" name="__codelineno-0-134"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">partition_type</span> <span class="o">=</span> <span class="n">partition_type</span>
+<a id="__codelineno-0-135" name="__codelineno-0-135"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="o">=</span> <span class="n">truncated_batch_size</span>
+<a id="__codelineno-0-136" name="__codelineno-0-136"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-137" name="__codelineno-0-137"></a>
+<a id="__codelineno-0-138" name="__codelineno-0-138"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_sample_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="w">        </span><span class="sd">"""Sample one batch at the given step index.</span>
+<a id="__codelineno-0-140" name="__codelineno-0-140"></a>
+<a id="__codelineno-0-141" name="__codelineno-0-141"></a><span class="sd">        The active group rotates with ``step_idx % bands``; the per-step</span>
+<a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="sd">        generator advance is the same regardless of whether the result</span>
+<a id="__codelineno-0-143" name="__codelineno-0-143"></a><span class="sd">        is yielded or discarded, so state-dict replay can use this</span>
+<a id="__codelineno-0-144" name="__codelineno-0-144"></a><span class="sd">        helper to fast-forward the generator without yielding.</span>
+<a id="__codelineno-0-145" name="__codelineno-0-145"></a><span class="sd">        """</span>
+<a id="__codelineno-0-146" name="__codelineno-0-146"></a>        <span class="n">group_idx</span> <span class="o">=</span> <span class="n">step_idx</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
+<a id="__codelineno-0-147" name="__codelineno-0-147"></a>        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="p">[</span><span class="n">group_idx</span><span class="p">]</span>
+<a id="__codelineno-0-148" name="__codelineno-0-148"></a>
+<a id="__codelineno-0-149" name="__codelineno-0-149"></a>        <span class="n">sample_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">p</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
+<a id="__codelineno-0-150" name="__codelineno-0-150"></a>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-151" name="__codelineno-0-151"></a>            <span class="n">sample_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">sample_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_batch_size</span><span class="p">)</span>
+<a id="__codelineno-0-152" name="__codelineno-0-152"></a>
+<a id="__codelineno-0-153" name="__codelineno-0-153"></a>        <span class="k">if</span> <span class="n">sample_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-154" name="__codelineno-0-154"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generator</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
+<a id="__codelineno-0-155" name="__codelineno-0-155"></a>                <span class="n">group</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">sample_size</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span>
+<a id="__codelineno-0-156" name="__codelineno-0-156"></a>            <span class="p">)</span>
+<a id="__codelineno-0-157" name="__codelineno-0-157"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-158" name="__codelineno-0-158"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">group</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 <a id="__codelineno-0-159" name="__codelineno-0-159"></a>
-<a id="__codelineno-0-160" name="__codelineno-0-160"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
-<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="w">        </span><span class="sd">"""Yield Poisson batches.</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">        For each step, samples from group ``step % bands`` with inclusion</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        probability ``sample_rate`` per example, optionally capped at</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">        ``truncated_batch_size``.</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">        """</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a>        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a>            <span class="k">yield</span> <span class="n">batch</span>
-<a id="__codelineno-0-171" name="__codelineno-0-171"></a>
-<a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="w">        </span><span class="sd">"""Batches remaining (``n_steps - consumed``).</span>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">        After a partial run, this reports what ``__iter__`` will yield</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">        — not the original total — so ``len(DataLoader(...))`` matches</span>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">        the resumed iteration count.</span>
-<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">        """</span>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
-<a id="__codelineno-0-180" name="__codelineno-0-180"></a>
-<a id="__codelineno-0-181" name="__codelineno-0-181"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-182" name="__codelineno-0-182"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">consumed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="w">        </span><span class="sd">"""Number of batches yielded so far (resume cursor)."""</span>
-<a id="__codelineno-0-184" name="__codelineno-0-184"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
-<a id="__codelineno-0-185" name="__codelineno-0-185"></a>
-<a id="__codelineno-0-186" name="__codelineno-0-186"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-187" name="__codelineno-0-187"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">expected_batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="w">        </span><span class="sd">"""Expected batch size: ``|group| * sample_rate`` (before truncation)."""</span>
-<a id="__codelineno-0-189" name="__codelineno-0-189"></a>        <span class="n">avg_group_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
-<a id="__codelineno-0-190" name="__codelineno-0-190"></a>        <span class="k">return</span> <span class="n">avg_group_size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span>
-<a id="__codelineno-0-191" name="__codelineno-0-191"></a>
-<a id="__codelineno-0-192" name="__codelineno-0-192"></a>    <span class="nd">@property</span>
-<a id="__codelineno-0-193" name="__codelineno-0-193"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">batch_size_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="w">        </span><span class="sd">"""Variance of batch size (Poisson property; before truncation)."""</span>
-<a id="__codelineno-0-195" name="__codelineno-0-195"></a>        <span class="n">avg_group_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
-<a id="__codelineno-0-196" name="__codelineno-0-196"></a>        <span class="k">return</span> <span class="n">avg_group_size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
+<a id="__codelineno-0-160" name="__codelineno-0-160"></a>        <span class="k">return</span> <span class="n">batch</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<a id="__codelineno-0-161" name="__codelineno-0-161"></a>
+<a id="__codelineno-0-162" name="__codelineno-0-162"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="w">        </span><span class="sd">"""Yield Poisson batches.</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">        For each step, samples from group ``step % bands`` with inclusion</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">        probability ``sample_rate`` per example, optionally capped at</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">        ``truncated_batch_size``.</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">        """</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>            <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-172" name="__codelineno-0-172"></a>            <span class="k">yield</span> <span class="n">batch</span>
+<a id="__codelineno-0-173" name="__codelineno-0-173"></a>
+<a id="__codelineno-0-174" name="__codelineno-0-174"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="w">        </span><span class="sd">"""Batches remaining (``n_steps - consumed``).</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">        After a partial run, this reports what ``__iter__`` will yield</span>
+<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">        — not the original total — so ``len(DataLoader(...))`` matches</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">        the resumed iteration count.</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">        """</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">consumed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="w">        </span><span class="sd">"""Number of batches yielded so far (resume cursor)."""</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">expected_batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a><span class="w">        </span><span class="sd">"""Expected batch size: ``|group| * sample_rate`` (before truncation)."""</span>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a>        <span class="n">avg_group_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a>        <span class="k">return</span> <span class="n">avg_group_size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="nd">@property</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">batch_size_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="w">        </span><span class="sd">"""Variance of batch size (Poisson property; before truncation)."""</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>        <span class="n">avg_group_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_examples</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>        <span class="k">return</span> <span class="n">avg_group_size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_rate</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
@@ -6216,9 +6230,7 @@ probability <code>sample_rate</code> per example, optionally capped at
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/api/dpftrl/sampling/_poisson.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-160">160</a></span>
-<span class="normal"><a href="#__codelineno-0-161">161</a></span>
-<span class="normal"><a href="#__codelineno-0-162">162</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-162">162</a></span>
 <span class="normal"><a href="#__codelineno-0-163">163</a></span>
 <span class="normal"><a href="#__codelineno-0-164">164</a></span>
 <span class="normal"><a href="#__codelineno-0-165">165</a></span>
@@ -6226,17 +6238,19 @@ probability <code>sample_rate</code> per example, optionally capped at
 <span class="normal"><a href="#__codelineno-0-167">167</a></span>
 <span class="normal"><a href="#__codelineno-0-168">168</a></span>
 <span class="normal"><a href="#__codelineno-0-169">169</a></span>
-<span class="normal"><a href="#__codelineno-0-170">170</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-160" name="__codelineno-0-160"></a><span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
-<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="w">    </span><span class="sd">"""Yield Poisson batches.</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">    For each step, samples from group ``step % bands`` with inclusion</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">    probability ``sample_rate`` per example, optionally capped at</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">    ``truncated_batch_size``.</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">    """</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a>    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>        <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
-<a id="__codelineno-0-170" name="__codelineno-0-170"></a>        <span class="k">yield</span> <span class="n">batch</span>
+<span class="normal"><a href="#__codelineno-0-170">170</a></span>
+<span class="normal"><a href="#__codelineno-0-171">171</a></span>
+<span class="normal"><a href="#__codelineno-0-172">172</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="w">    </span><span class="sd">"""Yield Poisson batches.</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">    For each step, samples from group ``step % bands`` with inclusion</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">    probability ``sample_rate`` per example, optionally capped at</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">    ``truncated_batch_size``.</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">    """</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span><span class="p">):</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>        <span class="n">batch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sample_step</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-172" name="__codelineno-0-172"></a>        <span class="k">yield</span> <span class="n">batch</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -6262,21 +6276,21 @@ the resumed iteration count.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/api/dpftrl/sampling/_poisson.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-172">172</a></span>
-<span class="normal"><a href="#__codelineno-0-173">173</a></span>
-<span class="normal"><a href="#__codelineno-0-174">174</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-174">174</a></span>
 <span class="normal"><a href="#__codelineno-0-175">175</a></span>
 <span class="normal"><a href="#__codelineno-0-176">176</a></span>
 <span class="normal"><a href="#__codelineno-0-177">177</a></span>
 <span class="normal"><a href="#__codelineno-0-178">178</a></span>
-<span class="normal"><a href="#__codelineno-0-179">179</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-172" name="__codelineno-0-172"></a><span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="w">    </span><span class="sd">"""Batches remaining (``n_steps - consumed``).</span>
-<a id="__codelineno-0-174" name="__codelineno-0-174"></a>
-<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">    After a partial run, this reports what ``__iter__`` will yield</span>
-<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">    — not the original total — so ``len(DataLoader(...))`` matches</span>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    the resumed iteration count.</span>
-<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">    """</span>
-<a id="__codelineno-0-179" name="__codelineno-0-179"></a>    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
+<span class="normal"><a href="#__codelineno-0-179">179</a></span>
+<span class="normal"><a href="#__codelineno-0-180">180</a></span>
+<span class="normal"><a href="#__codelineno-0-181">181</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="w">    </span><span class="sd">"""Batches remaining (``n_steps - consumed``).</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    After a partial run, this reports what ``__iter__`` will yield</span>
+<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">    — not the original total — so ``len(DataLoader(...))`` matches</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">    the resumed iteration count.</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">    """</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a>    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_steps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_consumed</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
