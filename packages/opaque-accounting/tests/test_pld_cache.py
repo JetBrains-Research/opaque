@@ -84,7 +84,7 @@ def test_existing_cached_process_tracks_global_discretization(
     default_pld = process.pld()
     acc.set_discretization(**config)
     changed_pld = process.pld()
-    acc.set_discretization()
+    acc.reset_discretization()
 
     assert changed_pld is not default_pld
     assert process.pld() is default_pld

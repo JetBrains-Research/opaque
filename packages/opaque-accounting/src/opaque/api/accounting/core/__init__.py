@@ -45,6 +45,7 @@ from opaque.api.accounting.core.calibration import (
 from opaque.api.accounting.core.composition import cached, compose, per_step, repeat
 from opaque.api.accounting.core.discretization import (
     get_discretization,
+    reset_discretization,
     set_discretization,
 )
 from opaque.api.accounting.core.mechanisms import eps_delta, identity, nonprivate
@@ -70,6 +71,7 @@ __all__ = [
     # Discretization
     "set_discretization",
     "get_discretization",
+    "reset_discretization",
     # Generic mechanisms
     "eps_delta",
     "identity",

@@ -205,8 +205,11 @@ proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01)
 eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
-- `acc.set_discretization(discretization=1e-4, ...)` — Set the global default
+- `acc.set_discretization(discretization=1e-4, ...)` — Update the global
+  default for only the named parameters; every omitted parameter keeps its
+  current value. A bare call is a no-op.
 - `acc.get_discretization()` — Return the current `DiscretizationConfig`
+- `acc.reset_discretization()` — Restore the library defaults
 
 ---
 

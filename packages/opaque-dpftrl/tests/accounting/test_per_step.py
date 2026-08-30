@@ -306,9 +306,10 @@ def _seed_mc():
     many ``epsilon_at`` call sites in these tests unchanged.  Set for the
     duration of the test.
     """
+    acc.reset_discretization()
     acc.set_discretization(**_MC_KW)
     yield
-    acc.set_discretization()  # restore defaults
+    acc.reset_discretization()
 
 
 @pytest.mark.parametrize("amp", list(_AMPLIFICATIONS))
@@ -420,5 +421,5 @@ class TestQueryTimeMcParams:
         try:
             e_global = proc.epsilon_at(_MC_DELTA)
         finally:
-            acc.set_discretization()  # restore defaults
+            acc.reset_discretization()
         assert e_per_call == e_global

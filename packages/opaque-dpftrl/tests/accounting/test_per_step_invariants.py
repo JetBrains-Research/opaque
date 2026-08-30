@@ -82,9 +82,10 @@ def _seed_mc():
     the shared helpers here parameter-free.  Set for the duration of the
     test.
     """
+    acc.reset_discretization()
     acc.set_discretization(**_MC_KW)
     yield
-    acc.set_discretization()  # restore defaults
+    acc.reset_discretization()
 
 
 # ---------------------------------------------------------------------------

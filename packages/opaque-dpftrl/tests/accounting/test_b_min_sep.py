@@ -227,6 +227,7 @@ def test_b_min_sep_stricter_than_mf_only():
 def test_calibration_reports_one_overall_mc_confidence_budget():
     import opaque.accounting as acc
 
+    acc.reset_discretization()
     acc.set_discretization(
         mc_resolution=5e-2,
         mc_failure_probability=1e-2,
@@ -250,7 +251,7 @@ def test_calibration_reports_one_overall_mc_confidence_budget():
             max_iterations=8,
         )
     finally:
-        acc.set_discretization()
+        acc.reset_discretization()
 
     assert result.mc_failure_probability == pytest.approx(1e-2)
     assert result.mc_confidence == pytest.approx(0.99)

@@ -14,11 +14,8 @@ from opaque.api.accounting.core.discretization import (
 @pytest.fixture(autouse=True)
 def _reset_discretization():
     """Reset module-level default after each test."""
-    from opaque.accounting import discretization
-
-    original = discretization._default_config
     yield
-    discretization._default_config = original
+    acc.reset_discretization()
 
 
 class TestSetGetDiscretization:
@@ -67,6 +64,34 @@ class TestSetGetDiscretization:
         set_discretization(discretization=1e-5)
         cfg = get_discretization()
         assert cfg.discretization == pytest.approx(1e-5)
+
+    def test_partial_update_preserves_other_params(self):
+        """Setting one parameter keeps previously set parameters (issue #784)."""
+        set_discretization(mc_failure_probability=1e-10, mc_resolution=1e-8)
+        set_discretization(discretization=1e-3)
+        cfg = get_discretization()
+        assert cfg.discretization == pytest.approx(1e-3)
+        assert cfg.mc_resolution == pytest.approx(1e-8)
+        assert cfg.mc_failure_probability == pytest.approx(1e-10)
+
+    def test_bare_call_is_noop(self):
+        """``set_discretization()`` without arguments leaves the default intact."""
+        set_discretization(discretization=1e-3, seed=7)
+        set_discretization()
+        cfg = get_discretization()
+        assert cfg.discretization == pytest.approx(1e-3)
+        assert cfg.seed == 7
+        assert cfg.mc_resolution == pytest.approx(1e-5)  # library default
+
+    def test_reset_restores_library_defaults(self):
+        acc.reset_discretization()
+        set_discretization(discretization=1e-3, mc_resolution=1e-8)
+        acc.reset_discretization()
+        assert get_discretization() == DiscretizationConfig()
+
+    def test_params_are_keyword_only(self):
+        with pytest.raises(TypeError):
+            set_discretization(1e-3)
 
 
 class TestDiscretizationAffectsResults:
