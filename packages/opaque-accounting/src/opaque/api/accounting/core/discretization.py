@@ -146,6 +146,21 @@ def set_discretization(
         # Back to library defaults
         acc.reset_discretization()
     """
+    if all(
+        v is None
+        for v in (
+            discretization,
+            log_x_mass_truncation_bound,
+            max_grid_size,
+            tail_mass_truncation,
+            seed,
+            max_conv_grid,
+            mc_resolution,
+            mc_failure_probability,
+        )
+    ):
+        return
+
     global _default_config
     base = _default_config if _default_config is not None else DiscretizationConfig()
     overrides = {

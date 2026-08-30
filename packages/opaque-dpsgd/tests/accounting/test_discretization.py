@@ -82,6 +82,12 @@ class TestSetGetDiscretization:
         assert cfg.discretization == pytest.approx(1e-3)
         assert cfg.seed == 7
         assert cfg.mc_resolution == pytest.approx(1e-5)  # library default
+        # A bare call must not even materialize a config when none is set.
+        acc.reset_discretization()
+        set_discretization()
+        from opaque.accounting import discretization
+
+        assert discretization._default_config is None
 
     def test_reset_restores_library_defaults(self):
         acc.reset_discretization()
