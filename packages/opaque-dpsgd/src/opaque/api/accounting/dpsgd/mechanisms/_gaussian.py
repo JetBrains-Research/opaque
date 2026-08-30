@@ -9,6 +9,7 @@ from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.exceptions import ConfigurationError
 
 _VERY_SMALL_NOISE_MULTIPLIER = 0.1
 
@@ -18,6 +19,16 @@ class Gaussian(DpProcess):
     """Gaussian mechanism — stores noise_multiplier, computes PLD on demand."""
 
     noise_multiplier: float
+
+    def __post_init__(self) -> None:
+        # Reject negative σ on construction (including deserialization, which
+        # rebuilds via ``cls(**kwargs)``) instead of failing later inside the
+        # native PLD call.  ``0.0`` stays valid: it is the documented
+        # non-private value, short-circuited before the native call.
+        if self.noise_multiplier < 0:
+            raise ConfigurationError(
+                *(f"noise_multiplier must be >= 0, got {self.noise_multiplier}",)
+            )
 
     @pld_cache(maxsize=8)
     def pld(
