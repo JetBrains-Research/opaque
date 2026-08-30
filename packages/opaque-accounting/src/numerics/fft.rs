@@ -254,7 +254,9 @@ fn select_self_convolution_strategy(
 /// # Arguments
 ///
 /// * `a` - Sequence to convolve with itself
-/// * `count` - Number of times to convolve (must be >= 1)
+/// * `count` - Number of times to convolve (must be >= 1, and `<= u32::MAX`
+///   for multi-entry inputs; the singleton path supports full `usize`
+///   exponents)
 /// * `bounds` - Optional (lower, upper) indices to compute. If None, computes full result.
 /// * `allow_circular_fallback` - Whether a positive tail-truncation budget
 ///   permits circular aliasing when a linear FFT exceeds the size limit.
@@ -283,6 +285,16 @@ pub fn self_convolve_with_bounds(
 
     if a.len() == 1 {
         return Ok(vec![pow_usize(a[0], count)]);
+    }
+
+    // The FFT power path raises each frequency bin with `powu(count as u32)`;
+    // reject counts above u32 instead of silently truncating them, mirroring
+    // the Python composition-count boundary.
+    if count > u32::MAX as usize {
+        return Err(PldError::InvalidParameter(format!(
+            "self-composition count must not exceed {}",
+            u32::MAX
+        )));
     }
 
     let full_result_len = self_convolution_full_result_len(a.len(), count)?;
@@ -420,6 +432,29 @@ mod tests {
         let result = self_convolve(&[-1.0], usize::MAX).unwrap();
 
         assert_eq!(result, vec![-1.0]);
+    }
+
+    #[test]
+    fn test_fft_self_convolution_rejects_count_above_u32_max() {
+        // Counts above u32::MAX must be rejected on the FFT path (including
+        // the budgeted circular fallback) instead of silently truncating the
+        // exponent, mirroring the Python composition-count boundary.
+        let count = u32::MAX as usize + 1;
+
+        let err = self_convolve_with_bounds(&[0.5, 0.5], count, Some((0, 15)), true).unwrap_err();
+        assert!(matches!(err, PldError::InvalidParameter(_)));
+
+        let err = self_convolve(&[0.5, 0.5], count).unwrap_err();
+        assert!(matches!(err, PldError::InvalidParameter(_)));
+    }
+
+    #[test]
+    fn test_circular_self_convolution_accepts_count_at_u32_max() {
+        let result =
+            self_convolve_with_bounds(&[0.5, 0.5], u32::MAX as usize, Some((0, 15)), true).unwrap();
+
+        assert_eq!(result.len(), 16);
+        assert!(result.iter().all(|&x| x.is_finite()));
     }
 
     #[test]
