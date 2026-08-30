@@ -493,3 +493,85 @@ class TestSyncAdaptiveClippedGradAux:
         result = sync_adaptive_clipped_grad_aux(aux)
         assert result.clipping_rate == 0.0
         assert result.grad_norms.shape == (0,)
+
+
+# ---------------------------------------------------------------------------
+# Empty-batch vs non-empty parity: dtype + pre_clipping_transform structure
+# ---------------------------------------------------------------------------
+
+
+def _dict_linear_loss(params, x, y):
+    return ((x @ params["w"] - y) ** 2).mean()
+
+
+class TestAdaptiveEmptyBatchStructureAndDtypeParity:
+    """Empty adaptive steps must mirror non-empty structure and dtype."""
+
+    @staticmethod
+    def _params_and_batches():
+        params = {"w": torch.randn(10, dtype=torch.bfloat16)}
+        x = torch.randn(8, 10, dtype=torch.bfloat16)
+        y = torch.randn(8, dtype=torch.bfloat16)
+        return params, (x, y), (x[:0], y[:0])
+
+    def test_dtype_override_applies_to_empty_batch(self):
+        params, (x, y), (empty_x, empty_y) = self._params_and_batches()
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _dict_linear_loss,
+            batch_argnums=(1, 2),
+            key=key(0),
+            dtype=torch.float32,
+        )
+        full, _ = grad_fn(params, x, y, state=clip_state)
+        empty, _ = grad_fn(params, empty_x, empty_y, state=clip_state)
+        assert full.pytree["w"].dtype == torch.float32
+        assert empty.pytree["w"].dtype == torch.float32
+        assert torch.all(empty.pytree["w"] == 0)
+
+    def test_transform_structure_applies_to_empty_batch(self):
+        params, (x, y), (empty_x, empty_y) = self._params_and_batches()
+
+        def transform(g):
+            return {"q": g["w"]}
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _dict_linear_loss,
+            batch_argnums=(1, 2),
+            key=key(0),
+            pre_clipping_transform=transform,
+            dtype=torch.float32,
+        )
+        full, _ = grad_fn(params, x, y, state=clip_state)
+        empty, _ = grad_fn(params, empty_x, empty_y, state=clip_state)
+        assert sorted(full.pytree) == sorted(empty.pytree) == ["q"]
+        assert torch.all(empty.pytree["q"] == 0)
+
+    def test_second_moment_streams_parity(self):
+        from opaque.types import SecondMomentClippingOutput
+
+        params, (x, y), (empty_x, empty_y) = self._params_and_batches()
+
+        def transform(g):
+            return {"q": g["w"]}
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _dict_linear_loss,
+            batch_argnums=(1, 2),
+            key=key(0),
+            pre_clipping_transform=transform,
+            dtype=torch.float32,
+            second_moment=True,
+        )
+        full, _ = grad_fn(params, x, y, state=clip_state)
+        empty, _ = grad_fn(params, empty_x, empty_y, state=clip_state)
+        assert isinstance(full, SecondMomentClippingOutput)
+        assert isinstance(empty, SecondMomentClippingOutput)
+        for stream in (full, empty):
+            assert sorted(stream.grads.pytree) == ["q"]
+            assert sorted(stream.squared_grads.pytree) == ["q"]
+        assert empty.grads.pytree["q"].dtype == torch.float32
+        assert empty.squared_grads.pytree["q"].dtype == torch.float32
+        assert torch.all(empty.grads.pytree["q"] == 0)
+        assert torch.all(empty.squared_grads.pytree["q"] == 0)
+        assert full.grads.max_norm == empty.grads.max_norm
+        assert full.squared_grads.max_norm == empty.squared_grads.max_norm

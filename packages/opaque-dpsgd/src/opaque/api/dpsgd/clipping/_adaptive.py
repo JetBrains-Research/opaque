@@ -15,9 +15,10 @@ from opaque.api.engine.clipping._clipped_grad import (
 )
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
+    empty_clipped_grads_like,
     normalize_to_tuple,
-    zero_grads_like,
 )
+from opaque.api.engine.pytree import tree_map
 from opaque.exceptions import ConfigurationError
 from opaque.random import fold_in, generator_from_key
 from opaque.random.types import RngKey
@@ -136,6 +137,28 @@ def _adaptive_clipping_norm_update(
     ).item()
     new_clipping_norm = base_clipping_norm * update_factor
     return float(max(clipping_norm_min, min(clipping_norm_max, new_clipping_norm)))
+
+
+def _empty_batch_grads(
+    zeros: Any,
+    bound: float,
+    squared_bound: float,
+    second_moment: bool,
+):
+    """Wrap zero gradients in the same output structure as a non-empty step."""
+    grads = clipped(zeros, max_norm=bound)
+    if not second_moment:
+        return grads
+    return SecondMomentClippingOutput(
+        grads=grads,
+        squared_grads=clipped(
+            tree_map(
+                lambda x: torch.zeros_like(x) if isinstance(x, torch.Tensor) else x,
+                zeros,
+            ),
+            max_norm=squared_bound,
+        ),
+    )
 
 
 def adaptive_clipped_grad(
@@ -418,18 +441,21 @@ def adaptive_clipped_grad(
         # same bound ``clipped_grad`` would attach on a non-empty step.
         if batch_size_from_args(args, batch_argnums_tuple) == 0:
             new_state = _empty_batch_state(state)
-            grads = clipped(
-                zero_grads_like(args, argnums_tuple),
-                max_norm=output_bound(state._next_clipping_norm),
+            # Mirror the inner ``clipped_grad`` output contract: transform the
+            # zero pytree, then cast to the configured output dtype (the
+            # across-batch sum casts to ``dtype`` on non-empty steps).
+            zeros = empty_clipped_grads_like(
+                args,
+                argnums_tuple,
+                pre_clipping_transform,
+                clipped_grad_kwargs.get("dtype"),
             )
-            if second_moment:
-                grads = SecondMomentClippingOutput(
-                    grads=grads,
-                    squared_grads=clipped(
-                        zero_grads_like(args, argnums_tuple),
-                        max_norm=_output_squared_bound(state._next_clipping_norm),
-                    ),
-                )
+            grads = _empty_batch_grads(
+                zeros,
+                output_bound(state._next_clipping_norm),
+                _output_squared_bound(state._next_clipping_norm),
+                second_moment,
+            )
             if return_aux:
                 empty = torch.empty(0)
                 adaptive_aux = AdaptiveClippedGradAux(

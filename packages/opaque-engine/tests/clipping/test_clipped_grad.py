@@ -881,3 +881,102 @@ class TestSecondMoment:
         assert aux.batch_size == batch_size
         assert aux.grad_norms is not None
         assert aux.grad_norms.shape == (batch_size,)
+
+
+# ---------------------------------------------------------------------------
+# Empty-batch vs non-empty parity: dtype + pre_clipping_transform structure
+# ---------------------------------------------------------------------------
+
+
+def _linear_loss(params, x, y):
+    return ((x @ params["w"] - y) ** 2).mean()
+
+
+class TestEmptyBatchStructureAndDtypeParity:
+    """Empty steps must return the same tree structure and dtypes as non-empty ones."""
+
+    @staticmethod
+    def _params():
+        return {"w": torch.randn(10, dtype=torch.bfloat16)}
+
+    @staticmethod
+    def _batches():
+        x = torch.randn(8, 10, dtype=torch.bfloat16)
+        y = torch.randn(8, dtype=torch.bfloat16)
+        return (x, y), (x[:0], y[:0])
+
+    def test_dtype_override_applies_to_empty_batch(self):
+        params = self._params()
+        (x, y), (empty_x, empty_y) = self._batches()
+        gf, state = clipped_grad(
+            _linear_loss,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            dtype=torch.float32,
+        )
+        full, _ = gf(params, x, y, state=state)
+        empty, _ = gf(params, empty_x, empty_y, state=state)
+        assert full.pytree["w"].dtype == torch.float32
+        assert empty.pytree["w"].dtype == torch.float32
+        assert empty.pytree["w"].shape == params["w"].shape
+        assert torch.all(empty.pytree["w"] == 0)
+
+    def test_transform_structure_applies_to_empty_batch(self):
+        params = self._params()
+        (x, y), (empty_x, empty_y) = self._batches()
+
+        def transform(g):
+            return {"q": g["w"]}
+
+        gf, state = clipped_grad(
+            _linear_loss,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            pre_clipping_transform=transform,
+        )
+        full, _ = gf(params, x, y, state=state)
+        empty, _ = gf(params, empty_x, empty_y, state=state)
+        assert sorted(full.pytree) == sorted(empty.pytree) == ["q"]
+        assert empty.pytree["q"].dtype == full.pytree["q"].dtype
+        assert torch.all(empty.pytree["q"] == 0)
+
+    def test_second_moment_streams_parity(self):
+        from opaque.types import SecondMomentClippingOutput
+
+        params = self._params()
+        (x, y), (empty_x, empty_y) = self._batches()
+
+        def transform(g):
+            return {"q": g["w"] * 2.0}
+
+        gf, state = clipped_grad(
+            _linear_loss,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            pre_clipping_transform=transform,
+            dtype=torch.float32,
+            second_moment=True,
+        )
+        full, _ = gf(params, x, y, state=state)
+        empty, _ = gf(params, empty_x, empty_y, state=state)
+        assert isinstance(full, SecondMomentClippingOutput)
+        assert isinstance(empty, SecondMomentClippingOutput)
+        for full_stream, empty_stream in (
+            (full.grads, empty.grads),
+            (full.squared_grads, empty.squared_grads),
+        ):
+            assert sorted(full_stream.pytree) == sorted(empty_stream.pytree) == ["q"]
+            for key in ("q",):
+                assert empty_stream.pytree[key].dtype == full_stream.pytree[key].dtype
+                assert empty_stream.pytree[key].shape == full_stream.pytree[key].shape
+        assert torch.all(empty.grads.pytree["q"] == 0)
+        assert torch.all(empty.squared_grads.pytree["q"] == 0)
+
+    def test_defaults_keep_param_dtype_and_structure(self):
+        params = self._params()
+        (x, y), (empty_x, empty_y) = self._batches()
+        gf, state = clipped_grad(_linear_loss, batch_argnums=(1, 2), clipping_norm=1.0)
+        full, _ = gf(params, x, y, state=state)
+        empty, _ = gf(params, empty_x, empty_y, state=state)
+        assert sorted(full.pytree) == sorted(empty.pytree) == ["w"]
+        assert full.pytree["w"].dtype == empty.pytree["w"].dtype

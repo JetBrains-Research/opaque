@@ -482,3 +482,40 @@ class TestAutoClippedFun:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestAutoClippedGradEmptyBatchParity:
+    """Empty-batch short-circuit must mirror non-empty structure and dtype."""
+
+    @staticmethod
+    def _loss(params, x, y):
+        return ((x @ params["w"] - y) ** 2).mean()
+
+    def test_dtype_and_transform_parity(self):
+        params = {"w": torch.randn(10, dtype=torch.bfloat16)}
+        x = torch.randn(8, 10, dtype=torch.bfloat16)
+        y = torch.randn(8, dtype=torch.bfloat16)
+
+        def transform(g):
+            return {"q": g["w"]}
+
+        gf, state = auto_clipped_grad(
+            self._loss,
+            batch_argnums=(1, 2),
+            R=1.0,
+            pre_clipping_transform=transform,
+            dtype=torch.float32,
+            second_moment=True,
+        )
+        full, _ = gf(params, x, y, state=state)
+        empty, _ = gf(params, x[:0], y[:0], state=state)
+        assert sorted(full.grads.pytree) == sorted(empty.grads.pytree) == ["q"]
+        assert (
+            sorted(full.squared_grads.pytree)
+            == sorted(empty.squared_grads.pytree)
+            == ["q"]
+        )
+        assert empty.grads.pytree["q"].dtype == torch.float32
+        assert empty.squared_grads.pytree["q"].dtype == torch.float32
+        assert torch.all(empty.grads.pytree["q"] == 0)
+        assert torch.all(empty.squared_grads.pytree["q"] == 0)
