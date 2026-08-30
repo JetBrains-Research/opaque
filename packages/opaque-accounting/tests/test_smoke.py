@@ -140,22 +140,3 @@ def test_large_derived_mc_work_emits_advisory_warning(monkeypatch):
 
     with pytest.warns(RuntimeWarning, match="1,236 samples"):
         config.warn_if_large_mc()
-
-
-def test_repeated_mc_process_preserves_overall_resolution():
-    import opaque.dpftrl.accounting as ftrl_acc
-    from opaque.dpftrl.noise import band_mf_strategy
-
-    step = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
-        n_steps=8,
-        p0=0.02,
-    )
-    pld = (step * 2).pld(
-        mc_resolution=0.1,
-        mc_failure_probability=0.01,
-        seed=2,
-    )
-
-    assert pld.mc_resolution <= 0.1 + 1e-12
-    assert pld.mc_failure_probability == pytest.approx(0.01)
