@@ -55,7 +55,9 @@ class CyclicPoissonSampler(Sampler):
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
-        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.
+        sample_rate: Per-step inclusion probability ``∈ (0, 1]``.  At
+            ``1.0`` every example of the active group participates — no
+            amplification; accounting treats each step as the plain Gaussian.
         bands: Number of groups in the cycle.  ``1`` = identity-style plain
             Poisson on the full dataset every step.
         n_steps: Total number of batches to yield.  Defaults to ``1``.

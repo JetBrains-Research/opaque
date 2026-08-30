@@ -27,7 +27,9 @@ class Poisson(DpProcess):
 
     Plain Poisson when ``truncated_batch_size is None``; truncated Poisson
     (capped batch) when ``truncated_batch_size`` and ``dataset_size`` are
-    set together.
+    set together.  ``sample_rate`` is in ``(0, 1]``; at ``sample_rate=1.0``
+    every example participates and the step is accounted as the unamplified
+    Gaussian mechanism.
     """
 
     inner: _Inner
@@ -37,11 +39,25 @@ class Poisson(DpProcess):
 
     def __post_init__(self):
         sample_rate = float(self.sample_rate)
-        if not 0 < sample_rate < 1:
+        if not 0 < sample_rate <= 1:
             raise ConfigurationError(
-                *(f"sample_rate must be in (0, 1), got {self.sample_rate}",)
+                *(
+                    f"sample_rate must be in (0, 1], got {self.sample_rate}. "
+                    "For q=1 (every example participates) there is no Poisson "
+                    "amplification — account the step with gaussian(nm) directly.",
+                )
             )
         object.__setattr__(self, "sample_rate", sample_rate)
+        if sample_rate == 1.0 and self.truncated_batch_size is not None:
+            raise ConfigurationError(
+                *(
+                    "Poisson: sample_rate=1.0 requires plain Poisson "
+                    "(truncated_batch_size=None). With q=1 the batch cap yields a "
+                    "fixed-size full batch, which has no truncated-Poisson "
+                    "analysis — account a full-batch step with gaussian(nm), or "
+                    "use sample_rate<1.",
+                )
+            )
 
         # Validate truncation pairing here (not only in the factory) so direct
         # construction and deserialization can't pass an unpaired
@@ -93,11 +109,16 @@ class Poisson(DpProcess):
 
         native_cfg = config.to_native()
         truncated = self.truncated_batch_size is not None
+        # q=1 is no subsampling: the step is the plain Gaussian mechanism
+        # (matches the native q→1 limit of poisson_gaussian_pld).
+        full_step = self.sample_rate == 1.0
 
         match self.inner:
             case NonPrivate() | Gaussian(noise_multiplier=0):
                 return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
+                if full_step:
+                    return _native.gaussian_pld(nm, native_cfg)
                 if truncated:
                     return _native.truncated_poisson_gaussian_pld(
                         nm,
@@ -110,6 +131,10 @@ class Poisson(DpProcess):
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
             case AdaClip(inner=Gaussian()) as ac:
+                if full_step:
+                    return _native.gaussian_pld(
+                        ac.effective_noise_multiplier, native_cfg
+                    )
                 if truncated:
                     return _native.truncated_poisson_gaussian_pld(
                         ac.effective_noise_multiplier,
@@ -153,9 +178,12 @@ def poisson(
         inner: The base mechanism — :func:`gaussian`, :func:`adaclip`, or
             :func:`opaque.accounting.nonprivate`.
         sample_rate: Probability of including each example
-            (``E[batch_size] / |D|``), strictly between zero and one.
+            (``E[batch_size] / |D|``), between zero and one inclusive.
+            ``sample_rate=1.0`` means every example participates — no
+            amplification; the step is accounted as the plain Gaussian
+            (equivalent to ``gaussian(nm)``).
         truncated_batch_size: Optional max batch-size cap; switches the
-            analysis to truncated Poisson.
+            analysis to truncated Poisson (requires ``sample_rate < 1``).
         dataset_size: Required when ``truncated_batch_size`` is set;
             ``|D|``.
 

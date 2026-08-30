@@ -122,5 +122,12 @@ def parallel_poisson(
         )
         eps = (step * 500).epsilon_at(1e-5)
     """
+    if not 0 < float(sample_rate) < 1:
+        raise ConfigurationError(
+            *(
+                f"parallel_poisson: sample_rate must be in (0, 1), got {sample_rate}. "
+                "q=1 (full participation on every worker) is not supported here.",
+            )
+        )
     poisson_inner = poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

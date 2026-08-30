@@ -66,7 +66,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
-| `sample_rate` | `float` | required | Probability of including each example, in (0, 1] |
+| `sample_rate` | `float` | required | Probability of including each example, in (0, 1]. At `sample_rate=1.0` there is no amplification — the accountant treats the step as the plain `gaussian(nm)` |
 | `n_steps` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
 | `truncated_batch_size` | `int` or `None` | `None` | Optional per-step batch-size cap. When set, the sampler emits batches truncated to this many examples (uniform random subset of the Poisson draw). |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
@@ -77,7 +77,9 @@ Plain Poisson — account with
 Truncated Poisson (when `truncated_batch_size` is set) — account with
 `dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), sample_rate,
 truncated_batch_size=batch, dataset_size=n)` to use the matching
-truncated-Poisson PLD.
+truncated-Poisson PLD. Truncated Poisson requires `sample_rate < 1`;
+for a full participation step (`sample_rate=1.0`) account directly with
+`dpsgd_acc.gaussian(nm)`.
 
 ## KOutOfTSampler (DP-SGD)
 
