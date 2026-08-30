@@ -194,3 +194,12 @@ class TestCodecCannotProduceUnvalidated:
         proc = dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000)
         restored = from_state_dict(acc.identity(), state_dict(proc))
         assert restored == proc
+
+    def test_whole_numbered_float_groups_normalized_to_int(self):
+        """``2.0`` is accepted but normalized so the field matches its ``int``
+        annotation, including after a codec round-trip."""
+        proc = AdaClip(Gaussian(1.1), 0.05, 250.0, num_groups=2.0)
+        assert isinstance(proc.num_groups, int)
+        restored = from_state_dict(acc.identity(), state_dict(proc))
+        assert restored == proc
+        assert isinstance(restored.num_groups, int)

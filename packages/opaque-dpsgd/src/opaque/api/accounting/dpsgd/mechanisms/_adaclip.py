@@ -58,6 +58,9 @@ class AdaClip(DpProcess):
             raise ConfigurationError(
                 *(f"num_groups must be an integral number >= 1, got {self.num_groups}",)
             )
+        # Normalise a whole-numbered float (e.g. ``2.0``) so the field matches
+        # its ``int`` annotation before reaching the native primitives.
+        object.__setattr__(self, "num_groups", int(self.num_groups))
 
     @property
     def effective_noise_multiplier(self) -> float:
