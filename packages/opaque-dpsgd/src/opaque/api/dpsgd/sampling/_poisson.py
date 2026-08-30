@@ -52,6 +52,8 @@ class PoissonSampler(Sampler):
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
         sample_rate: Probability of including each example ``∈ (0, 1]``.
+            At ``1.0`` every example is in every batch — no amplification;
+            account the step with :func:`opaque.dpsgd.accounting.gaussian`.
         n_steps: Number of batches to yield. ``None`` yields indefinitely.
         truncated_batch_size: Optional cap on per-step batch size (truncated
             Poisson; use matching accounting—privacy is weaker than uncapped

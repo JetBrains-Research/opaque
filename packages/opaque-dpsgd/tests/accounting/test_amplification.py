@@ -50,12 +50,39 @@ class TestPoissonDataclass:
         assert math.isfinite(eps)
         assert eps > 0
 
-    @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
+    @pytest.mark.parametrize("sample_rate", [0.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
         with pytest.raises(
-            ConfigurationError, match=r"sample_rate must be in \(0, 1\)"
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
         ):
             Poisson(Gaussian(0.8), sample_rate)
+
+    def test_accepts_full_participation_rate(self):
+        assert Poisson(Gaussian(0.8), 1.0).sample_rate == pytest.approx(1.0)
+
+    def test_full_participation_matches_gaussian(self):
+        poisson_eps = Poisson(Gaussian(0.8), 1.0).epsilon_at(1e-5)
+        gaussian_eps = Gaussian(0.8).epsilon_at(1e-5)
+        assert poisson_eps == pytest.approx(gaussian_eps)
+
+    def test_rejects_full_rate_with_truncation(self):
+        with pytest.raises(ConfigurationError, match=r"sample_rate=1\.0"):
+            Poisson(Gaussian(0.8), 1.0, truncated_batch_size=128, dataset_size=10_000)
+
+
+class TestPoissonFullRateSerialization:
+    """A Poisson process stored with sample_rate=1.0 still round-trips."""
+
+    def test_state_dict_round_trip_at_q1(self):
+        from opaque.serialization import from_state_dict, state_dict
+
+        proc = Poisson(Gaussian(0.8), 1.0)
+        restored = from_state_dict(Poisson(Gaussian(0.8), 0.5), state_dict(proc))
+        assert isinstance(restored, Poisson)
+        assert restored.sample_rate == pytest.approx(1.0)
+        assert restored.epsilon_at(1e-5) == pytest.approx(
+            Gaussian(0.8).epsilon_at(1e-5)
+        )
 
 
 class TestPoissonTruncatedDataclass:
@@ -135,12 +162,26 @@ class TestPoissonConstructor:
         with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
             dpsgd_acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize("sample_rate", [0.0, 1.0, -0.01, 1.01])
+    @pytest.mark.parametrize("sample_rate", [0.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
         with pytest.raises(
-            ConfigurationError, match=r"sample_rate must be in \(0, 1\)"
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
         ):
             dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate)
+
+    def test_accepts_full_participation_rate(self):
+        step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 1.0)
+        assert step.sample_rate == pytest.approx(1.0)
+        assert step.epsilon_at(1e-5) == pytest.approx(
+            dpsgd_acc.gaussian(0.8).epsilon_at(1e-5)
+        )
+
+    def test_full_participation_adaclip_matches_gaussian(self):
+        ac = dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000)
+        step = dpsgd_acc.poisson(ac, 1.0)
+        assert step.epsilon_at(1e-5) == pytest.approx(
+            dpsgd_acc.gaussian(ac.effective_noise_multiplier).epsilon_at(1e-5)
+        )
 
     def test_accepts_adaclip(self):
         step = dpsgd_acc.poisson(
@@ -207,6 +248,15 @@ class TestPoissonTruncatedConstructor:
             ConfigurationError, match="truncated_batch_size and dataset_size"
         ):
             dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), 0.01, dataset_size=10_000)
+
+    def test_rejects_full_rate_with_truncation(self):
+        with pytest.raises(ConfigurationError, match=r"sample_rate=1\.0"):
+            dpsgd_acc.poisson(
+                dpsgd_acc.gaussian(0.8),
+                1.0,
+                truncated_batch_size=128,
+                dataset_size=10_000,
+            )
 
 
 class TestParallelPoissonConstructor:
