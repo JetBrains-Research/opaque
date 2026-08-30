@@ -25,9 +25,10 @@ _Inner = DpProcess
 class Poisson(DpProcess):
     """Poisson-subsampled mechanism (single step).
 
-    Plain Poisson accepts any Opaque ``DpProcess``. The capped form requires a
-    Gaussian, AdaClip(Gaussian), or NonPrivate inner mechanism, with both
-    ``truncated_batch_size`` and ``dataset_size`` set.
+    Plain Poisson accepts any Opaque ``DpProcess``. ``sample_rate=1.0``
+    returns the base mechanism without amplification. The capped form
+    requires a Gaussian, AdaClip(Gaussian), or NonPrivate inner mechanism,
+    with both ``truncated_batch_size`` and ``dataset_size`` set.
     """
 
     inner: _Inner
@@ -45,11 +46,24 @@ class Poisson(DpProcess):
             )
 
         sample_rate = float(self.sample_rate)
-        if not 0 < sample_rate < 1:
+        if not 0 < sample_rate <= 1:
             raise ConfigurationError(
-                *(f"sample_rate must be in (0, 1), got {self.sample_rate}",)
+                *(
+                    f"sample_rate must be in (0, 1], got {self.sample_rate}. "
+                    "For q=1 (every example participates) there is no Poisson "
+                    "amplification.",
+                )
             )
         object.__setattr__(self, "sample_rate", sample_rate)
+        if sample_rate == 1.0 and self.truncated_batch_size is not None:
+            raise ConfigurationError(
+                *(
+                    "Poisson: sample_rate=1.0 requires plain Poisson "
+                    "(truncated_batch_size=None). With q=1 the batch cap yields a "
+                    "fixed-size full batch, which has no truncated-Poisson "
+                    "analysis; use plain Poisson or sample_rate<1.",
+                )
+            )
 
         # Validate truncation pairing here (not only in the factory) so direct
         # construction and deserialization can't pass an unpaired
@@ -109,6 +123,16 @@ class Poisson(DpProcess):
 
         native_cfg = config.to_native()
         truncated = self.truncated_batch_size is not None
+        if self.sample_rate == 1.0:
+            return self.inner.pld(
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+                max_conv_grid=max_conv_grid,
+                seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
+            )
 
         if truncated:
             match self.inner:
@@ -170,9 +194,11 @@ def poisson(
             :func:`gaussian`, :func:`adaclip`, or
             :func:`opaque.accounting.nonprivate`.
         sample_rate: Probability of including each example
-            (``E[batch_size] / |D|``), strictly between zero and one.
+            (``E[batch_size] / |D|``), between zero and one inclusive.
+            ``sample_rate=1.0`` means every example participates — no
+            amplification; the step is equivalent to ``inner``.
         truncated_batch_size: Optional max batch-size cap; switches the
-            analysis to truncated Poisson.
+            analysis to truncated Poisson (requires ``sample_rate < 1``).
         dataset_size: Required when ``truncated_batch_size`` is set;
             ``|D|``.
 

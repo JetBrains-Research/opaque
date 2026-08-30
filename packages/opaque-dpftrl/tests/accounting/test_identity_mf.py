@@ -115,6 +115,39 @@ class TestPoissonIdentity:
                 n_steps=10,
             )
 
+    def test_accepts_full_participation_rate(self):
+        nm, T = 1.1, 50
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=1.0, n_steps=T
+        )
+        assert proc.sample_rate == pytest.approx(1.0)
+        # q=1 ⇒ no amplification: Gaussian self-composed T times.
+        ref = _native.gaussian_pld(nm, get_discretization().to_native()).self_compose(T)
+        assert math.isclose(
+            proc.epsilon_at(_DELTA), ref.epsilon_at(_DELTA), rel_tol=1e-9
+        )
+
+    def test_rejects_full_rate_with_truncation(self):
+        nm = 1.1
+        with pytest.raises(ConfigurationError, match=r"sample_rate=1\.0"):
+            ftrl_acc.poisson(
+                ftrl_acc.mf_gaussian(nm, identity_strategy()),
+                sample_rate=1.0,
+                n_steps=10,
+                truncated_batch_size=64,
+                dataset_size=10_000,
+            )
+
+    def test_rejects_zero_rate_on_direct_construction(self):
+        from opaque.dpftrl.accounting.types import CyclicPoisson
+
+        with pytest.raises(
+            ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
+        ):
+            CyclicPoisson(
+                ftrl_acc.mf_gaussian(1.0, identity_strategy()), 0.0, n_steps=10
+            )
+
 
 class TestPoissonBandMf:
     def test_passes_amplification_context_to_sensitivity(self, monkeypatch):

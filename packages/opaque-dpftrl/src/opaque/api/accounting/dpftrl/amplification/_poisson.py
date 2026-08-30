@@ -48,8 +48,9 @@ class CyclicPoisson(DpHorizonProcess):
     ``num_groups = n_steps``.
 
     Plain Poisson when ``truncated_batch_size is None``; capped Poisson when
-    ``truncated_batch_size`` and
-    ``dataset_size`` are set together.  Truncated Poisson is supported
+    ``truncated_batch_size`` and ``dataset_size`` are set together.
+    ``sample_rate=1.0`` represents full participation, so each group's
+    release is accounted as the plain Gaussian. Truncated Poisson is supported
     only for ``IdentityStrategy`` (the per-step PLD reduces to the
     DP-SGD truncated Poisson-Gaussian); ``BandMfStrategy`` is rejected
     because the per-group population is the BandMF group of size
@@ -104,6 +105,25 @@ class CyclicPoisson(DpHorizonProcess):
         return self.n_steps
 
     def __post_init__(self):
+        sample_rate = float(self.sample_rate)
+        if not 0 < sample_rate <= 1:
+            raise ConfigurationError(
+                *(
+                    f"sample_rate must be in (0, 1], got {self.sample_rate}. "
+                    "For q=1 (every example participates) there is no Poisson "
+                    "amplification — the per-step release is the plain Gaussian.",
+                )
+            )
+        object.__setattr__(self, "sample_rate", sample_rate)
+        if sample_rate == 1.0 and self.truncated_batch_size is not None:
+            raise ConfigurationError(
+                *(
+                    "CyclicPoisson: sample_rate=1.0 requires plain Poisson "
+                    "(truncated_batch_size=None). With q=1 the batch cap yields a "
+                    "fixed-size full batch, which has no truncated-Poisson "
+                    "analysis; use sample_rate<1.",
+                )
+            )
         # Validate truncation pairing here (not only in the factory) so
         # direct construction and deserialization can't pass an unpaired
         # ``(truncated_batch_size, dataset_size)`` into
@@ -214,7 +234,11 @@ class CyclicPoisson(DpHorizonProcess):
             return _native.non_private_pld(config.to_native())
 
         native_cfg = config.to_native()
-        if self.truncated_batch_size is not None:
+        if self.sample_rate == 1.0:
+            # q=1 is no subsampling: the per-group release is the plain
+            # Gaussian at the mechanism's effective noise multiplier.
+            per_group_pld = _native.gaussian_pld(effective_nm, native_cfg)
+        elif self.truncated_batch_size is not None:
             per_group_pld = _native.truncated_poisson_gaussian_pld(
                 effective_nm,
                 self.sample_rate,
@@ -279,6 +303,8 @@ def poisson(
         inner: ``mf_gaussian(nm, BandMfStrategy(...))`` or
             ``mf_gaussian(nm, identity_strategy())``.
         sample_rate: Per-step Poisson sampling probability ``∈ (0, 1]``.
+            At ``1.0`` every example participates — no amplification; each
+            step is accounted as the plain Gaussian.
         n_steps: Total number of training rounds.  For ``BandMfStrategy``
             the cycle count is ``ceil(n_steps / bands)``; for
             ``IdentityStrategy`` it equals ``n_steps``.
@@ -322,7 +348,11 @@ def poisson(
         )
     if not 0 < sample_rate <= 1:
         raise ConfigurationError(
-            *(f"sample_rate must be in (0, 1], got {sample_rate}",)
+            *(
+                f"sample_rate must be in (0, 1], got {sample_rate}. "
+                "For q=1 (every example participates) there is no Poisson "
+                "amplification — the per-step release is the plain Gaussian.",
+            )
         )
     if int(n_steps) < 1:
         raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))

@@ -38,6 +38,12 @@ batch_size = 256
 sample_rate = batch_size / dataset_size  # 0.00512
 ```
 
+Both the `PoissonSampler` and the `dpsgd_acc.poisson` accountant accept
+`sample_rate` in `(0, 1]`. At `sample_rate=1.0` every example participates
+every step, so there is no amplification: the accountant accounts such a
+step as the plain Gaussian, identical to `dpsgd_acc.gaussian(nm)`.
+Truncated Poisson (`truncated_batch_size`) requires `sample_rate < 1`.
+
 ### `PoissonSampler`
 
 The standard sampler. Each example is included independently with probability

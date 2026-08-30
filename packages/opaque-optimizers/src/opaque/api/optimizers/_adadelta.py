@@ -23,7 +23,8 @@ DP behaviour.  Under noised gradients ``g̃_t = g_clean + ξ_t`` with
   ``φ_dx`` per element::
 
       φ_dx,t = ρ φ_dx,{t-1} + (1−ρ) (coef_t · σ_t)²
-      E[Δx²]_corrected,t = max(E[Δx²]_t − φ_dx,t, ε²)
+      E[Δx²]_corrected,t = E[Δx²]_t − φ_dx,t   where that is positive
+                           E[Δx²]_t            elsewhere
 
   Use ``E[Δx²]_corrected,{t-1}`` in the next step's coef.
 
@@ -120,7 +121,6 @@ def _scale_by_adadelta(
     rho: float,
     eps: float,
     noise_bias_correction: bool,
-    bc_floor: float,
 ) -> GradientTransformation:
     """Adadelta moment scaling with two-EMA DP bias correction.
 
@@ -382,12 +382,10 @@ def adadelta(
             *(f"update_rms_clip must be positive when set, got {update_rms_clip}",)
         )
 
-    bc_floor = eps * eps
     moment = _scale_by_adadelta(
         rho=rho,
         eps=eps,
         noise_bias_correction=noise_bias_correction,
-        bc_floor=bc_floor,
     )
     return make_optimizer_chain(
         moment,
