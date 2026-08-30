@@ -225,19 +225,20 @@ the strategy internally and compute the correct sensitivity — do not use
 
 ### Strategy-driven accounting
 
-Each MF accounting constructor takes a `sensitivity` (and optionally a
-`gram_matrix`) that describes the privacy cost of the strategy matrix.
-These values are **computed by the noise strategy**, not set manually.
+`mf_gaussian()` couples a noise multiplier to a strategy recipe. The enclosing
+amplifier owns the horizon and participation geometry, and asks the strategy to
+derive any required sensitivity or Gram matrix at PLD evaluation time. These
+values are never supplied manually.
 
 The workflow is:
 
-1. Create a **noise strategy** (e.g. `band_mf_strategy()`,
-   `lambda_cgd_strategy()`) with the training parameters (number of steps,
-   bands, participation pattern, momentum, etc.).
-2. The strategy computes `sensitivity` and `gram_matrix` internally from
-   the strategy matrix C.
-3. Pass `strategy.sensitivity(n_steps=...)` and `strategy.gram_matrix` to the accounting
-   constructor.
+1. Create a **noise strategy** (for example, `band_mf_strategy()` or
+   `lambda_cgd_strategy()`) with its structural knobs: bands, correlation,
+   momentum, and any supported workload schedule.
+2. Wrap it with `mf_gaussian(noise_multiplier, strategy)`.
+3. Wrap that mechanism in the sampler-matching amplifier, which supplies
+   `n_steps` and the participation pattern and derives the strategy's privacy
+   quantities internally.
 
 This separation ensures that noise generation and privacy accounting always
 agree on the mechanism parameters — the strategy is the single source of

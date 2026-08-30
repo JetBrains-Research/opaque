@@ -11,6 +11,7 @@ References:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
@@ -20,7 +21,6 @@ import torch
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.exceptions import ConfigurationError
 
-from ._schedule_fingerprint import materialize_schedule
 from ._toeplitz import inverse_as_streaming_matrix
 
 if TYPE_CHECKING:
@@ -34,15 +34,13 @@ if TYPE_CHECKING:
 
 
 _MIN_BANDWIDTH = 2
+_MIN_LEADING_COEFFICIENT_MAGNITUDE = 1e-30
 
 
 def _native():
     from opaque.api.accounting.core import _native as _n
 
     return _n
-
-
-_lr_key = materialize_schedule
 
 
 @lru_cache(maxsize=256)
@@ -52,21 +50,8 @@ def _bisr_gram_matrix_cached(
     n_steps: int,
     min_sep: int,
     max_participations: int | None,
-    lr_key: tuple[float, ...] | None,
 ) -> tuple[float, ...]:
     """Gram sequence for BISR; cached across repeated σ / PLD probes."""
-    if lr_key is not None:
-        return tuple(
-            _native().bisr_gram_matrix_lr(
-                list(inv),
-                0.0,
-                n_steps,
-                min_sep,
-                max_participations,
-                normalized,
-                list(lr_key),
-            )
-        )
     return tuple(
         _native().bisr_gram_matrix(
             list(inv), n_steps, min_sep, max_participations, normalized
@@ -96,21 +81,6 @@ def _bisr_inverse_coefficients_cached(bandwidth: int, beta: float) -> tuple[floa
             s += r_tilde[j] * (beta**j) * r_tilde[k - j]
         coefs[k] = s
     return tuple(coefs)
-
-
-def _recover_strategy_coefficients(inv_coefs: Sequence[float], n: int) -> list[float]:
-    """Recover strategy matrix first-column entries from C^{-1} coefficients."""
-    alpha0 = inv_coefs[0]
-    p = len(inv_coefs)
-    col = [0.0] * n
-    col[0] = 1.0 / alpha0
-    for t in range(1, n):
-        s = 0.0
-        k_max = min(t, p - 1)
-        for k in range(1, k_max + 1):
-            s += inv_coefs[k] * col[t - k]
-        col[t] = -s / alpha0
-    return col
 
 
 def _make_bisr_noise(
@@ -158,17 +128,29 @@ class BisrStrategy:
     bandwidth: int
     normalized: bool = True
     momentum: float = 0.0
+    # Compatibility tombstone for legacy state dictionaries. Non-None values
+    # are rejected because optimizer LR schedules are not part of this encoder.
     lr_schedule: Schedule | None = field(default=None, compare=False)
     inv_coefficients: tuple[float, ...] | None = field(default=None)
 
     def __post_init__(self) -> None:
+        if self.lr_schedule is not None:
+            raise ConfigurationError(
+                *(
+                    "BisrStrategy does not support lr_schedule. Learning-rate "
+                    "schedules are optimizer post-processing and cannot weight its "
+                    "Balls-in-Bins privacy accounting. Remove lr_schedule from the "
+                    "strategy, pass it only to the optimizer, and recalibrate privacy "
+                    "and noise for any result previously computed with this option.",
+                )
+            )
         if self.bandwidth < _MIN_BANDWIDTH:
             raise ConfigurationError(
                 *(f"bandwidth must be >= 2, got {self.bandwidth}",)
             )
-        if not 0.0 <= self.momentum < 1.0:
+        if not math.isfinite(self.momentum) or not 0.0 <= self.momentum < 1.0:
             raise ConfigurationError(
-                *(f"momentum must be in [0, 1), got {self.momentum}",)
+                *(f"momentum must be finite and in [0, 1), got {self.momentum}",)
             )
         if (
             self.inv_coefficients is not None
@@ -180,6 +162,21 @@ class BisrStrategy:
                     f"equal bandwidth ({self.bandwidth})",
                 )
             )
+        if self.inv_coefficients is not None:
+            if not all(math.isfinite(float(coef)) for coef in self.inv_coefficients):
+                raise ConfigurationError(
+                    *("inv_coefficients must contain only finite values",)
+                )
+            if (
+                abs(float(self.inv_coefficients[0]))
+                < _MIN_LEADING_COEFFICIENT_MAGNITUDE
+            ):
+                raise ConfigurationError(
+                    *(
+                        "inv_coefficients[0] must have magnitude "
+                        f">= {_MIN_LEADING_COEFFICIENT_MAGNITUDE:.0e}",
+                    )
+                )
 
     def _inv_coefs(self) -> tuple[float, ...]:
         if self.inv_coefficients is not None:
@@ -187,9 +184,9 @@ class BisrStrategy:
         return _bisr_inverse_coefficients_cached(self.bandwidth, self.momentum)
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
-        inv = self._inv_coefs()
         return torch.tensor(
-            _recover_strategy_coefficients(inv, n_steps), dtype=torch.float64
+            _native().bisr_strategy_coefficients(list(self._inv_coefs()), n_steps),
+            dtype=torch.float64,
         )
 
     def gram_matrix(
@@ -201,14 +198,12 @@ class BisrStrategy:
             n_steps,
             min_sep,
             max_participations,
-            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(self, *, n_steps: int, **_) -> StreamingMatrix:
-        inv = list(self._inv_coefs())
-        strategy_coefs = _native().bisr_strategy_coefficients(inv, n_steps)
+        inv = self._inv_coefs()
         return inverse_as_streaming_matrix(
-            torch.tensor(strategy_coefs, dtype=torch.float64),
+            self.coefficients(n_steps=n_steps),
             column_normalize_for_n=n_steps if self.normalized else None,
             # The strategy coefficients are dense (length n_steps), but
             # C^{-1} is banded with exactly these coefficients — hand them
@@ -267,8 +262,8 @@ def bisr_strategy(
         bandwidth: BISR bandwidth p (>= 2).
         normalized: Use column-normalized matrix (default True).
         momentum: Optimizer momentum in [0, 1) (default 0).
-        lr_schedule: Optional per-step learning-rate schedule used for
-            schedule-weighted Gram accounting.
+        lr_schedule: Deprecated compatibility argument. Only ``None`` is
+            accepted. Pass learning-rate schedules to the optimizer instead.
         inv_coefficients: Explicit :math:`C^{-1}` coefficients (default BISR optimal).
 
     Returns:

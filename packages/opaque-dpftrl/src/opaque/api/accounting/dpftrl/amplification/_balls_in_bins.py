@@ -6,7 +6,10 @@ is fixed once at sampler init and reused across all ``n_steps //
 num_bins`` epochs, so each example stays in its bin — required for the
 dominating-pair analysis.
 
-The Choquette-Choo et al. (2024) dominating pair (Lemma 3.2) is::
+Lemma 3.2 of Choquette-Choo et al. (2024) is stated for elementwise
+non-negative encoders. This implementation uses the lemma directly on that
+domain and extends it conservatively to signed encoders by the row-wise
+triangle inequality::
 
     P = (1/b) Σ_{i=1}^{b} N(m_i, σ²I)        m_i = Σ_{j=0}^{E-1} |C|[:, b·j + i]
     Q = N(0, σ²I)
@@ -19,11 +22,21 @@ construction:
 
 - **Correlated-noise** (matrix-factorisation): MfGaussian wrapping
   ``BltStrategy`` / ``BsrStrategy`` / ``BisrStrategy`` /
-  ``LambdaCgdStrategy`` — pass the strategy's pre-computed Gram matrix.
+  ``LambdaCgdStrategy`` — pass the strategy's pre-computed Gram matrix of
+  the elementwise-absolute forward encoder.
 - **MF identity** (uncorrelated noise): MfGaussian wrapping
   ``IdentityStrategy`` (encoder ``C = I``) gives orthogonal ``m_i`` with
   ``‖m_i‖² = E``, i.e. ``G = E · I_b`` (diagonal).  This feeds the same
   Lemma 3.2 dominating pair through a specialised MC primitive.
+
+The reachable coefficient domains differ: BSR validates non-negative forward
+coefficients and λ-CGD has non-negative geometric coefficients by construction,
+while generic Toeplitz and custom BISR inputs are not assumed non-negative.
+Consequently the native Toeplitz/BISR Gram builders apply ``|C|`` explicitly,
+using the conservative signed extension even when the absolute value is a no-op.
+For column-normalized BISR/λ-CGD they normalize each column first (the norm is
+unchanged by absolute value), then take the absolute epoch-column sum; they
+never normalize an already-aggregated bin mode.
 
 The returned process represents the **total** privacy cost across
 all ``n_steps`` rounds.  Do NOT compose further externally.
@@ -254,7 +267,9 @@ class BallsInBins(DpHorizonProcess):
         else:
             # BSR / BiSR / λ-CGD are recipe-driven: ``gram_matrix(n_steps=K)``
             # is a closed-form K-row gram of the *same* mechanism (no
-            # re-tuning), so post-processing applies directly.
+            # re-tuning), so post-processing applies directly. Their native
+            # BnB builders construct means from |C|; for normalized families,
+            # per-column normalization precedes the epoch sum.
             gram = s.gram_matrix(
                 n_steps=rounded,
                 min_sep=min_sep_K,

@@ -12,10 +12,11 @@ installs a ``state_dict`` / ``from_state_dict`` pair on the universal
 :mod:`opaque.serialization` registry so direct ``state_dict(strategy)``
 works too.
 
-Recipe-typed fields (e.g. ``lr_schedule: Schedule`` carrying a
-:mod:`opaque.scheduling` recipe dataclass) round-trip through a
-tagged sub-dict ``{"__opaque_recipe__": "CosineSchedule", **fields}``
-so the deserializer can reconstruct the right subtype.  A user
+Recipe-typed fields (for example the supported ``lr_schedule`` fields on
+BandMF and BLT carrying a :mod:`opaque.scheduling` recipe dataclass) round-trip
+through a tagged sub-dict
+``{"__opaque_recipe__": "CosineSchedule", **fields}`` so the deserializer can
+reconstruct the right subtype.  A user
 passing a raw lambda for ``lr_schedule`` still raises — only
 registered recipe classes round-trip cleanly.
 """
