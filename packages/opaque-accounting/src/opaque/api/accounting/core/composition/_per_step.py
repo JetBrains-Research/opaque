@@ -16,6 +16,15 @@ class PerStep(DpProcess):
 
     process: DpHorizonProcess
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.process, DpHorizonProcess):
+            raise InputTypeError(
+                *(
+                    f"PerStep requires a DpHorizonProcess, got "
+                    f"{type(self.process).__name__}.",
+                )
+            )
+
     def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         return (
             "PerStep",
@@ -81,10 +90,7 @@ class PerStep(DpProcess):
 
 def per_step(process: DpHorizonProcess) -> PerStep:
     """Wrap a whole-horizon process for ``acc |= step`` training loops."""
-    if not isinstance(process, DpHorizonProcess):
-        raise InputTypeError(
-            *(f"per_step() requires a DpHorizonProcess, got {type(process).__name__}.",)
-        )
+    # The DpHorizonProcess check lives in ``PerStep.__post_init__``.
     return PerStep(process=process)
 
 

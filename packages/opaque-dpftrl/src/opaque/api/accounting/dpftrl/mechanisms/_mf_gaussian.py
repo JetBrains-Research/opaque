@@ -55,6 +55,14 @@ class MfGaussian(DpProcess):
     min_sep: int = 1
     max_participations: int | None = None
 
+    def __post_init__(self) -> None:
+        if self.noise_multiplier < 0:
+            raise ConfigurationError(
+                *(
+                    f"noise_multiplier must be non-negative, got {self.noise_multiplier}",
+                )
+            )
+
     @property
     def _effective_max_participations(self) -> int:
         return (
@@ -140,10 +148,7 @@ def mf_gaussian(
         An :class:`MfGaussian` process.
     """
     nm = float(noise_multiplier)
-    if nm < 0:
-        raise ConfigurationError(
-            *(f"noise_multiplier must be non-negative, got {noise_multiplier}",)
-        )
+    # sigma >= 0 is validated in ``MfGaussian.__post_init__``.
     return MfGaussian(
         noise_multiplier=nm,
         strategy=strategy,

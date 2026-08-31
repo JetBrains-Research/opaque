@@ -116,6 +116,9 @@ class CyclicPoisson(DpHorizonProcess):
                 )
             )
         object.__setattr__(self, "sample_rate", sample_rate)
+        if int(self.n_steps) < 1:
+            raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
+        object.__setattr__(self, "n_steps", int(self.n_steps))
         if sample_rate == 1.0 and self.truncated_batch_size is not None:
             raise ConfigurationError(
                 *(
@@ -346,16 +349,7 @@ def poisson(
                 f"IdentityStrategy, got {type(inner.strategy).__name__}.",
             )
         )
-    if not 0 < sample_rate <= 1:
-        raise ConfigurationError(
-            *(
-                f"sample_rate must be in (0, 1], got {sample_rate}. "
-                "For q=1 (every example participates) there is no Poisson "
-                "amplification — the per-step release is the plain Gaussian.",
-            )
-        )
-    if int(n_steps) < 1:
-        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
+    # Bounds live in ``CyclicPoisson.__post_init__``.
     return CyclicPoisson(
         inner=inner,
         sample_rate=float(sample_rate),

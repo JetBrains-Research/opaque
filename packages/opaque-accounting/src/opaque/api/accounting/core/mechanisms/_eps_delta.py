@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
+from opaque.exceptions import ConfigurationError
 
 from .. import _native
 
@@ -17,6 +18,16 @@ class EpsDelta(DpProcess):
 
     epsilon: float
     delta: float
+
+    def __post_init__(self) -> None:
+        # Mirrors native ``eps_delta_pld`` bounds; bounds stay inclusive
+        # because ``eps_delta(0, 1)`` is the documented non-private equivalent.
+        if self.epsilon < 0:
+            raise ConfigurationError(
+                *(f"epsilon must be non-negative, got {self.epsilon}",)
+            )
+        if not (0.0 <= self.delta <= 1.0):
+            raise ConfigurationError(*(f"delta must be in [0, 1], got {self.delta}",))
 
     @pld_cache(maxsize=8)
     def pld(

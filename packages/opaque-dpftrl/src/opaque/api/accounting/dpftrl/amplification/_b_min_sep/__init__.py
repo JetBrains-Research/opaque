@@ -67,6 +67,14 @@ class BMinSep(DpHorizonProcess):
     n_steps: int
     p0: float
 
+    def __post_init__(self) -> None:
+        if self.n_steps < 1:
+            raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
+        if not 0.0 < self.p0 < 1.0:
+            raise ConfigurationError(
+                *(f"per-example rate p_0 must be in (0, 1), got {self.p0}",)
+            )
+
     @property
     def atomic_unit(self) -> int:
         # b-min-sep enforces one user contribution per ``bands``-row window;
@@ -281,8 +289,6 @@ def b_min_sep(
         raise ConfigurationError(
             *("BandMfStrategy inner must have non-empty coefficients (bands >= 1).",)
         )
-    if n_steps < 1:
-        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
 
     return BMinSep(
         inner=inner,

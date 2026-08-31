@@ -90,6 +90,21 @@ class BallsInBins(DpHorizonProcess):
     num_bins: int
     n_steps: int
 
+    def __post_init__(self) -> None:
+        if self.num_bins < _MIN_NUM_BINS:
+            raise ConfigurationError(
+                *(f"num_bins must be >= 2 for BnB amplification, got {self.num_bins}",)
+            )
+        if self.n_steps < 1:
+            raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
+        if self.n_steps % self.num_bins != 0:
+            raise ConfigurationError(
+                *(
+                    f"n_steps ({self.n_steps}) must be a positive multiple of "
+                    f"num_bins ({self.num_bins}); BnB analysis assumes integer epochs.",
+                )
+            )
+
     @property
     def num_epochs(self) -> int:
         """Per-bin participation count: ``n_steps // num_bins``."""
@@ -335,18 +350,5 @@ def balls_in_bins(
                 f"got {type(inner.strategy).__name__}.",
             )
         )
-    if num_bins < _MIN_NUM_BINS:
-        raise ConfigurationError(
-            *(f"num_bins must be >= 2 for BnB amplification, got {num_bins}",)
-        )
-    if n_steps < 1:
-        raise ConfigurationError(*(f"n_steps must be >= 1, got {n_steps}",))
-    if n_steps % num_bins != 0:
-        raise ConfigurationError(
-            *(
-                f"n_steps ({n_steps}) must be a positive multiple of "
-                f"num_bins ({num_bins}); BnB analysis assumes integer epochs.",
-            )
-        )
-
+    # num_bins/n_steps bounds live in ``BallsInBins.__post_init__``.
     return BallsInBins(inner=inner, num_bins=num_bins, n_steps=n_steps)
