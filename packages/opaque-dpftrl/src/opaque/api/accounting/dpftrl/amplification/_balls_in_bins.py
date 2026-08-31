@@ -144,6 +144,7 @@ class BallsInBins(DpHorizonProcess):
             self.num_bins,
             self.n_steps,
             strategy_cache_key(self.inner.strategy, prefix_steps),
+            prefix_steps,
         )
 
     @horizon_pld_cache(maxsize=8)

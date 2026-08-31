@@ -579,7 +579,10 @@ class TestRecipeDrivenGramRegen:
 
     @pytest.mark.usefixtures("_seed_mc")
     def test_prefix_returns_cached_full_horizon_pld(self):
-        proc = _bnb(ftrl_acc.mf_gaussian(1.0, bsr_strategy(bandwidth=2)), _REGEN_N_FULL)
+        proc = _bnb(
+            ftrl_acc.mf_gaussian(1.0, bsr_strategy(bandwidth=2, alpha=1.0, beta=0.5)),
+            _REGEN_N_FULL,
+        )
         full = proc.pld_at(_REGEN_N_FULL, **_MC_KW)
         prefix = proc.pld_at(_REGEN_K, **_MC_KW)
         assert prefix is full
