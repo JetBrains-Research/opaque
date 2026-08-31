@@ -47,7 +47,6 @@ from opaque.api.accounting.core import (
     per_step,
     register_budget_serializer,
     repeat,
-    reset_discretization,
     risk_budget,
     set_discretization,
 )
@@ -65,7 +64,6 @@ __all__ = [
     # Discretization
     "set_discretization",
     "get_discretization",
-    "reset_discretization",
     # Generic mechanisms
     "eps_delta",
     "identity",

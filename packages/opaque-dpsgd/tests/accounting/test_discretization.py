@@ -1,5 +1,7 @@
 """Tests for opaque.accounting.discretization — module-level PLD config management."""
 
+from dataclasses import asdict
+
 import pytest
 
 import opaque.accounting as acc
@@ -14,8 +16,11 @@ from opaque.api.accounting.core.discretization import (
 @pytest.fixture(autouse=True)
 def _reset_discretization():
     """Reset module-level default after each test."""
+    from opaque.accounting import discretization
+
+    original = discretization._default_config
     yield
-    acc.reset_discretization()
+    discretization._default_config = original
 
 
 class TestSetGetDiscretization:
@@ -77,22 +82,20 @@ class TestSetGetDiscretization:
     def test_bare_call_is_noop(self):
         """``set_discretization()`` without arguments leaves the default intact."""
         set_discretization(discretization=1e-3, seed=7)
+        before = get_discretization()
         set_discretization()
-        cfg = get_discretization()
-        assert cfg.discretization == pytest.approx(1e-3)
-        assert cfg.seed == 7
-        assert cfg.mc_resolution == pytest.approx(1e-5)  # library default
-        # A bare call must not even materialize a config when none is set.
-        acc.reset_discretization()
-        set_discretization()
+        assert get_discretization() == before
+        # A bare call must not materialize a config when none is set.
         from opaque.accounting import discretization
 
+        discretization._default_config = None
+        set_discretization()
         assert discretization._default_config is None
 
-    def test_reset_restores_library_defaults(self):
-        acc.reset_discretization()
+    def test_full_set_restores_library_defaults(self):
+        """Explicitly naming every field overrides earlier partial updates."""
         set_discretization(discretization=1e-3, mc_resolution=1e-8)
-        acc.reset_discretization()
+        set_discretization(**asdict(DiscretizationConfig()))
         assert get_discretization() == DiscretizationConfig()
 
     def test_params_are_keyword_only(self):

@@ -72,7 +72,6 @@ class DiscretizationConfig:
 __all__ = [
     "DiscretizationConfig",
     "get_discretization",
-    "reset_discretization",
     "set_discretization",
 ]
 
@@ -110,8 +109,10 @@ def set_discretization(
 
     This is a partial update: only the named parameters change, and every
     omitted parameter keeps its current default (mirroring how
-    ``get_discretization`` resolves overrides). A bare call is a no-op;
-    use ``reset_discretization()`` to restore the library defaults.
+    ``get_discretization`` resolves overrides). A bare call is a no-op.
+    To return to the library defaults, read them with
+    ``get_discretization()`` before changing them and pass them back
+    explicitly.
 
     These defaults are used when query parameters are not provided.
     Existing process objects resolve these defaults at every PLD cache lookup:
@@ -142,9 +143,6 @@ def set_discretization(
 
         # Tighten Monte Carlo bounds; discretization stays at 1e-3
         acc.set_discretization(mc_resolution=1e-8, mc_failure_probability=1e-10)
-
-        # Back to library defaults
-        acc.reset_discretization()
     """
     if all(
         v is None
@@ -178,16 +176,6 @@ def set_discretization(
         if value is not None
     }
     _default_config = replace(base, **overrides)
-
-
-def reset_discretization() -> None:
-    """Restore library defaults for module-level discretization parameters.
-
-    Undoes every ``set_discretization`` update. Subsequent
-    ``get_discretization()`` calls return the library defaults.
-    """
-    global _default_config
-    _default_config = None
 
 
 def get_discretization(

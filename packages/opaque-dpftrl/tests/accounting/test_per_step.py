@@ -21,6 +21,7 @@ These tests cover the contract:
 from __future__ import annotations
 
 import math
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import pytest
@@ -306,10 +307,10 @@ def _seed_mc():
     many ``epsilon_at`` call sites in these tests unchanged.  Set for the
     duration of the test.
     """
-    acc.reset_discretization()
+    prev = asdict(acc.get_discretization())
     acc.set_discretization(**_MC_KW)
     yield
-    acc.reset_discretization()
+    acc.set_discretization(**prev)
 
 
 @pytest.mark.parametrize("amp", list(_AMPLIFICATIONS))
@@ -417,9 +418,10 @@ class TestQueryTimeMcParams:
         # not have been populated under a different global config by an
         # earlier test (all files pin the same _MC_KW).
         e_per_call = proc.epsilon_at(_MC_DELTA, **_MC_KW)
+        prev = asdict(acc.get_discretization())
         acc.set_discretization(**_MC_KW)
         try:
             e_global = proc.epsilon_at(_MC_DELTA)
         finally:
-            acc.reset_discretization()
+            acc.set_discretization(**prev)
         assert e_per_call == e_global
