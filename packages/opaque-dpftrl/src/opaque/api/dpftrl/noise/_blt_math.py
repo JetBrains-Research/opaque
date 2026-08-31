@@ -857,7 +857,6 @@ class LossFn:
                 strategy_coef=toeplitz_coefs(blt, n),
                 min_sep=min_sep,
                 max_participations=max_participations,
-                skip_checks=True,
             )
 
         return cls(
@@ -1088,6 +1087,42 @@ class Parameterization:
             blt_and_inverse_from_params=blt_and_inverse_from_params,
         )
 
+    @classmethod
+    def interlaced_decay_pair(cls) -> Parameterization:
+        """Parameterize strategy and inverse with interlaced decays.
+
+        Ratios in ``(0, 1)`` keep ``theta_0 > theta_hat_0 > ... > 0``.
+        The BLT residue formula then gives positive strategy output scales and
+        negative inverse output scales, so strategy coefficients are
+        non-negative and non-increasing by construction.
+        """
+
+        def params_from_blt(blt: BufferedToeplitz) -> torch.Tensor:
+            blt = canonicalize(blt)
+            inv_blt = canonicalize(inverse(blt))
+            decays = torch.stack((blt.buf_decay, inv_blt.buf_decay), dim=1).flatten()
+            valid = (
+                torch.all(decays > 0)
+                & (decays[0] < 1)
+                & torch.all(decays[:-1] > decays[1:])
+            )
+            if not bool(valid):
+                raise ConfigurationError(
+                    *("buffer decays must strictly interlace in (0, 1)",)
+                )
+            return torch.cat((decays[:1], decays[1:] / decays[:-1]))
+
+        def blt_and_inverse_from_params(
+            params: torch.Tensor,
+        ) -> tuple[BufferedToeplitz, BufferedToeplitz]:
+            decays = torch.cumprod(params, dim=0)
+            return blt_pair_from_theta_pair(decays[::2], decays[1::2])
+
+        return cls(
+            params_from_blt=params_from_blt,
+            blt_and_inverse_from_params=blt_and_inverse_from_params,
+        )
+
 
 def get_parameterized_loss(
     param: Parameterization, loss_fn: LossFn
@@ -1125,7 +1160,7 @@ def optimize_loss(
         num_buffers: Number of buffers for the BLT.
         init_blt: Optional explicit initial BLT.
         parameterization: Reparameterization to use.  Defaults to
-            ``Parameterization.buf_decay_pair()``.
+            ``Parameterization.interlaced_decay_pair()``.
         max_optimizer_steps: Maximum L-BFGS iterations.
         **kwargs: Additional keyword arguments forwarded to
             ``_lbfgs_optimize``.
@@ -1135,7 +1170,8 @@ def optimize_loss(
         *loss_val* is the unpenalised loss value.
 
     Raises:
-        RuntimeError: If the optimiser produces a BLT with non-finite loss.
+        OperationError: If the optimizer leaves the sensitivity domain or
+            produces a non-finite loss.
     """
     from ._toeplitz import _lbfgs_optimize
 
@@ -1144,15 +1180,14 @@ def optimize_loss(
         return blt, loss(loss_fn, blt)
 
     if parameterization is None:
-        parameterization = Parameterization.buf_decay_pair()
+        parameterization = Parameterization.interlaced_decay_pair()
 
     blt = get_init_blt(num_buffers=num_buffers, init_blt=init_blt)
     params = parameterization.params_from_blt(blt)
 
     loss_fn_to_optimize = get_parameterized_loss(parameterization, loss_fn)
 
-    # For buf_decay_pair parameterization, all parameters are buf_decay
-    # values (theta and theta_hat) which must be in (0, 1).
+    # Interlaced decay ratios must stay in (0, 1).
     if "bounds" not in kwargs:
         eps = 1e-9
         kwargs["bounds"] = [(eps, 1.0 - eps)] * len(params)
@@ -1167,7 +1202,12 @@ def optimize_loss(
     blt, _ = parameterization.blt_and_inverse_from_params(params)
     blt = canonicalize(blt)
 
-    loss_val = loss(loss_fn, blt)
+    try:
+        loss_val = loss(loss_fn, blt)
+    except ConfigurationError as error:
+        raise OperationError(
+            *(f"Optimization produced BLT outside the sensitivity domain:\n{blt}",)
+        ) from error
     if not torch.isfinite(loss_val):
         raise OperationError(
             *(f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}",)
@@ -1273,7 +1313,7 @@ def optimize(
         opt_blt_and_loss_fn=lambda nbuf: optimize_loss(
             loss_fn=loss_fn,
             num_buffers=nbuf,
-            parameterization=Parameterization.buf_decay_pair(),
+            parameterization=Parameterization.interlaced_decay_pair(),
             **kwargs,
         ),
         min_buffers=min_buffers,

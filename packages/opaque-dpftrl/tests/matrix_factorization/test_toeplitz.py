@@ -2,12 +2,14 @@
 
 import dataclasses
 import warnings
+from types import SimpleNamespace
 
 import pytest
 import torch
 
 from opaque.api.dpftrl.noise._band_mf import _momentum_workload_coef
 from opaque.api.dpftrl.noise._toeplitz import (
+    _lbfgs_optimize,
     inverse_as_streaming_matrix,
     inverse_coef,
     loss,
@@ -15,6 +17,7 @@ from opaque.api.dpftrl.noise._toeplitz import (
     max_error,
     mean_error,
     minsep_sensitivity_squared,
+    minsep_sensitivity_upper_bound,
     multiply,
     optimal_max_error_strategy_coefs,
     optimize,
@@ -22,6 +25,16 @@ from opaque.api.dpftrl.noise._toeplitz import (
     per_query_error,
     sensitivity_squared,
 )
+
+
+def test_lbfgs_rejects_nonfinite_result(monkeypatch):
+    def fake_minimize(*_args, **_kwargs):
+        return SimpleNamespace(fun=float("nan"), x=[0.5], message="converged")
+
+    monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+
+    with pytest.raises(RuntimeError, match="non-finite"):
+        _lbfgs_optimize(lambda x: x.square().sum(), torch.tensor([0.5]))
 
 
 class TestMaterializeLowerTriangular:
@@ -253,9 +266,54 @@ class TestMinsepSensitivitySquared:
     def test_decreasing_required(self):
         coef = torch.tensor([1.0, 2.0], dtype=torch.float64)
         with pytest.raises(ValueError, match="non-increasing"):
-            minsep_sensitivity_squared(
-                coef, min_sep=1, max_participations=1, skip_checks=False
-            )
+            minsep_sensitivity_squared(coef, min_sep=1, max_participations=2)
+
+    def test_nonnegative_required(self):
+        coef = torch.tensor([1.0, -0.5], dtype=torch.float64)
+        with pytest.raises(ValueError, match="non-negative"):
+            minsep_sensitivity_squared(coef, min_sep=1, max_participations=2)
+
+    def test_explicit_upper_bound_uses_safe_monotone_majorant(self):
+        coef = torch.tensor([1.0, -0.5, 0.75, 0.25], dtype=torch.float64)
+        majorant = torch.tensor([1.0, 0.75, 0.75, 0.25], dtype=torch.float64)
+
+        actual = minsep_sensitivity_upper_bound(coef, min_sep=1, max_participations=4)
+        expected = minsep_sensitivity_squared(majorant, min_sep=1, max_participations=4)
+
+        torch.testing.assert_close(actual, expected)
+
+        # A concrete allowed participation pattern already exceeded the old
+        # unchecked closed form for these signed coefficients.
+        participation = torch.tensor([1.0, 1.0, 0.0, 1.0], dtype=torch.float64)
+        lower_bound = torch.linalg.vector_norm(
+            materialize_lower_triangular(coef) @ participation
+        )
+        assert float(actual.sqrt()) >= float(lower_bound)
+
+    def test_upper_bound_is_exact_for_zero_and_single_participation(self):
+        coef = torch.tensor([1.0, -0.5, 0.75], dtype=torch.float64)
+
+        zero = minsep_sensitivity_upper_bound(coef, min_sep=1, max_participations=0)
+        single = minsep_sensitivity_upper_bound(coef, min_sep=1, max_participations=1)
+
+        assert zero == pytest.approx(0.0)
+        assert single == pytest.approx(float(torch.dot(coef, coef)))
+
+    @pytest.mark.parametrize(
+        "sensitivity_fn",
+        [minsep_sensitivity_squared, minsep_sensitivity_upper_bound],
+    )
+    def test_negative_max_participations_rejected(self, sensitivity_fn):
+        coef = torch.tensor([1.0, 0.5], dtype=torch.float64)
+
+        with pytest.raises(ValueError, match="max_participations must be non-negative"):
+            sensitivity_fn(coef, min_sep=1, max_participations=-1)
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf")])
+    def test_nonfinite_coefficients_rejected(self, bad):
+        coef = torch.tensor([1.0, bad], dtype=torch.float64)
+        with pytest.raises(ValueError, match="finite"):
+            minsep_sensitivity_upper_bound(coef, min_sep=1)
 
 
 class TestPerQueryError:

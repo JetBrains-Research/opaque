@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import math
 from collections.abc import Callable
 from typing import Any, Protocol, TypeAlias, TypeVar
 
@@ -22,7 +23,7 @@ import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 from scipy.signal import lfilter as scipy_lfilter
 
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, OperationError
 
 from . import (
     _checks as checks,
@@ -123,6 +124,12 @@ def _lbfgs_optimize(
             bounds=bounds,
             options={"maxiter": max_optimizer_steps, "ftol": 1e-15, "gtol": 1e-10},
         )
+        if not math.isfinite(float(result.fun)) or not bool(
+            torch.isfinite(torch.as_tensor(result.x)).all()
+        ):
+            raise OperationError(
+                *(f"L-BFGS produced a non-finite result: {result.message}",)
+            )
         optimal_params = torch.tensor(result.x, dtype=original_dtype)
     except _EarlyStopException as e:
         optimal_params = torch.tensor(e.params, dtype=original_dtype)
@@ -140,6 +147,7 @@ __all__ = [
     "max_error",
     "mean_error",
     "minsep_sensitivity_squared",
+    "minsep_sensitivity_upper_bound",
     "optimal_max_error_strategy_coefs",
     "optimize",
     "per_query_error",
@@ -448,9 +456,12 @@ def minsep_sensitivity_squared(
     min_sep: int,
     max_participations: int | None = None,
     n: int | None = None,
-    skip_checks: bool = False,
 ) -> torch.Tensor:
-    """Returns the sensitivity squared of the Toeplitz matrix under min-sep.
+    """Return exact min-separation sensitivity squared on the theorem domain.
+
+    The closed form requires finite, non-negative, non-increasing Toeplitz
+    coefficients.  Use :func:`minsep_sensitivity_upper_bound` for arbitrary
+    signed or non-monotone coefficients.
 
     Reference: https://arxiv.org/abs/2405.13763, Theorem 2.
 
@@ -459,34 +470,42 @@ def minsep_sensitivity_squared(
         min_sep: Minimum separation between participations.
         max_participations: Maximum participations.
         n: Optional matrix size.
-        skip_checks: Skip input checks.
 
     Returns:
-        The sensitivity squared.
+        The exact sensitivity squared.
     """
     coef, n = _reconcile(strategy_coef, n)
 
-    if not skip_checks:
-        if not torch.all(coef >= 0):
+    if not torch.all(torch.isfinite(coef)):
+        raise ConfigurationError(*("coef must contain only finite values",))
+    if not torch.all(coef >= 0):
+        raise ConfigurationError(
+            *(f"coef must be non-negative, found min={coef.min().item()}",)
+        )
+    if len(coef) > 1:
+        incr = coef[1:] - coef[:-1]
+        max_incr = incr.max()
+        if max_incr > 0:
             raise ConfigurationError(
-                *(f"coef must be non-negative, found min={coef.min().item()}",)
-            )
-        if len(coef) > 1:
-            incr = coef[1:] - coef[:-1]
-            max_incr = incr.max()
-            if max_incr > 0:
-                raise ConfigurationError(
-                    *(
-                        f"coef must be non-increasing, found increase "
-                        f"{max_incr.item()} at index {incr.argmax().item()}",
-                    )
+                *(
+                    f"coef must be non-increasing, found increase "
+                    f"{max_incr.item()} at index {incr.argmax().item()}",
                 )
-        if min_sep <= 0:
-            raise ConfigurationError(*("min_sep must be positive",))
+            )
+    if min_sep <= 0:
+        raise ConfigurationError(*("min_sep must be positive",))
+    if max_participations is not None and max_participations < 0:
+        raise ConfigurationError(
+            *(f"max_participations must be non-negative, found {max_participations}",)
+        )
 
     k = sensitivity.minsep_true_max_participations(
         n=n, min_sep=min_sep, max_participations=max_participations
     )
+    if k == 0:
+        return coef.new_zeros(())
+    if k == 1:
+        return _l2_norm_squared(coef)
 
     padding = (min_sep - n) % min_sep
     full_coef = pad_coefs_to_n(coef, n + padding)
@@ -496,6 +515,46 @@ def minsep_sensitivity_squared(
             vector[min_sep * k :] - vector[: len(vector) - min_sep * k]
         )
     return torch.dot(vector[:n], vector[:n])
+
+
+def minsep_sensitivity_upper_bound(
+    strategy_coef: torch.Tensor,
+    min_sep: int,
+    max_participations: int | None = None,
+    n: int | None = None,
+) -> torch.Tensor:
+    """Return a safe min-separation sensitivity bound for any Toeplitz column.
+
+    Replacing each coefficient by the reverse cumulative maximum of its
+    absolute value gives the smallest pointwise non-negative, non-increasing
+    majorant.  The triangle inequality reduces the arbitrary signed case to
+    that majorant, where :func:`minsep_sensitivity_squared` is exact.
+    """
+    coef, n = _reconcile(strategy_coef, n)
+    if not torch.all(torch.isfinite(coef)):
+        raise ConfigurationError(*("coef must contain only finite values",))
+    if min_sep <= 0:
+        raise ConfigurationError(*("min_sep must be positive",))
+    if max_participations is not None and max_participations < 0:
+        raise ConfigurationError(
+            *(f"max_participations must be non-negative, found {max_participations}",)
+        )
+
+    k = sensitivity.minsep_true_max_participations(
+        n=n, min_sep=min_sep, max_participations=max_participations
+    )
+    if k == 0:
+        return coef.new_zeros(())
+    if k == 1:
+        return _l2_norm_squared(coef)
+
+    majorant = torch.cummax(coef.abs().flip(0), dim=0).values.flip(0)
+    return minsep_sensitivity_squared(
+        majorant,
+        min_sep=min_sep,
+        max_participations=max_participations,
+        n=n,
+    )
 
 
 def per_query_error(

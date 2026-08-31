@@ -1,6 +1,7 @@
 """Tests for Buffered Linear Toeplitz (BLT) mechanisms."""
 
 import dataclasses
+import itertools
 
 import pytest
 import torch
@@ -460,6 +461,39 @@ class TestParameterization:
         assert torch.isfinite(result)
         assert float(result) > 0
 
+    def test_interlaced_decay_pair_roundtrip_and_domain(self):
+        param = Parameterization.interlaced_decay_pair()
+        blt = get_init_blt(num_buffers=3)
+        params = param.params_from_blt(blt)
+
+        assert torch.all((params > 0) & (params < 1))
+        decays = torch.cumprod(params, dim=0)
+        assert torch.all(decays[:-1] > decays[1:])
+
+        blt_out, inv_blt_out = param.blt_and_inverse_from_params(params)
+        assert torch.all(blt_out.output_scale > 0)
+        assert torch.all(inv_blt_out.output_scale < 0)
+
+        coefs = toeplitz_coefs(blt_out, 10)
+        assert torch.all(coefs >= 0)
+        assert torch.all(coefs[:-1] >= coefs[1:])
+        torch.testing.assert_close(materialize(blt_out, 10), materialize(blt, 10))
+        torch.testing.assert_close(
+            materialize(blt_out, 10) @ materialize(inv_blt_out, 10),
+            torch.eye(10, dtype=torch.float64),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
+    def test_interlaced_decay_pair_rejects_invalid_initialization(self):
+        invalid_blt = BufferedToeplitz.build(
+            buf_decay=[0.4],
+            output_scale=[-0.2],
+        )
+
+        with pytest.raises(ValueError, match="strictly interlace"):
+            Parameterization.interlaced_decay_pair().params_from_blt(invalid_blt)
+
 
 class TestOptimizeLoss:
     def test_zero_buffers(self):
@@ -489,6 +523,70 @@ class TestOptimizeLoss:
         assert opt_blt._num_buffers == 2
         assert torch.isfinite(opt_loss)
         assert float(opt_loss) > 0
+
+    def test_rejects_infeasible_final_iterate(self, monkeypatch):
+        def return_signed_pair(*_args, **_kwargs):
+            # theta < theta_hat produces a negative strategy output scale.
+            return torch.tensor([0.4, 0.6], dtype=torch.float64)
+
+        monkeypatch.setattr(
+            "opaque.api.dpftrl.noise._toeplitz._lbfgs_optimize",
+            return_signed_pair,
+        )
+        loss_fn = LossFn.build_min_sep(
+            n=4,
+            min_sep=1,
+            max_participations=4,
+        )
+
+        with pytest.raises(RuntimeError, match="outside the sensitivity domain"):
+            optimize_loss(
+                loss_fn,
+                num_buffers=1,
+                parameterization=Parameterization.buf_decay_pair(),
+            )
+
+    def test_minsep_optimization_is_nontrivial_and_exact(self):
+        n, min_sep, max_participations = 12, 3, 4
+        loss_fn = LossFn.build_min_sep(
+            n=n,
+            min_sep=min_sep,
+            max_participations=max_participations,
+        )
+
+        blt, loss_value = optimize_loss(
+            loss_fn,
+            num_buffers=1,
+            max_optimizer_steps=100,
+        )
+        coefs = toeplitz_coefs(blt, n)
+
+        assert torch.isfinite(loss_value)
+        assert coefs[1] > 0.1  # Exercise a real correlated strategy, not identity.
+        assert torch.all(coefs >= 0)
+        assert torch.all(coefs[:-1] >= coefs[1:])
+
+        # Independently enumerate every allowed participation set. This keeps
+        # the regression independent of the closed-form sensitivity helper
+        # used by the optimizer objective.
+        matrix = materialize(blt, n)
+        exhaustive = coefs.new_zeros(())
+        for count in range(max_participations + 1):
+            for participation in itertools.combinations(range(n), count):
+                if any(
+                    right - left < min_sep
+                    for left, right in itertools.pairwise(participation)
+                ):
+                    continue
+                indicator = coefs.new_zeros(n)
+                indicator[list(participation)] = 1
+                exhaustive = torch.maximum(
+                    exhaustive,
+                    torch.linalg.vector_norm(matrix @ indicator),
+                )
+
+        reported = loss_fn.sensitivity_squared_fn(blt).sqrt()
+        torch.testing.assert_close(reported, exhaustive)
 
 
 class TestFromRationalApprox:

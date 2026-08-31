@@ -193,7 +193,6 @@ class BsrStrategy:
             strategy_coef=coef_tensor,
             min_sep=min_sep,
             max_participations=max_participations,
-            skip_checks=True,
         )
         return float(sens_sq.sqrt())
 
