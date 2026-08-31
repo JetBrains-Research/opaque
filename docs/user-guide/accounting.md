@@ -541,7 +541,8 @@ concrete process as the template).
 
 PLD computation uses a discretized grid. The default parameters are suitable
 for most use cases. For tighter bounds at the cost of computation, adjust the
-discretization:
+discretization. Each call updates only the named parameters; every other
+setting keeps its current value:
 
 ```python
 from opaque.accounting import set_discretization

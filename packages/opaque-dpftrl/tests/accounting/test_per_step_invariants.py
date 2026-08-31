@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import pytest
@@ -82,9 +83,10 @@ def _seed_mc():
     the shared helpers here parameter-free.  Set for the duration of the
     test.
     """
+    prev = asdict(acc.get_discretization())
     acc.set_discretization(**_MC_KW)
     yield
-    acc.set_discretization()  # restore defaults
+    acc.set_discretization(**prev)
 
 
 # ---------------------------------------------------------------------------

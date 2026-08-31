@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from . import _native
@@ -95,57 +95,87 @@ def _use_discretization(config: DiscretizationConfig) -> Iterator[None]:
 
 
 def set_discretization(
-    discretization: float = 1e-4,
-    log_x_mass_truncation_bound: float = -50.0,
-    max_grid_size: int = 10_000_000,
-    tail_mass_truncation: float = 1e-15,
-    seed: int = 42,
-    max_conv_grid: int = 32_768,
-    mc_resolution: float = 1e-5,
-    mc_failure_probability: float = 1e-6,
+    *,
+    discretization: float | None = None,
+    log_x_mass_truncation_bound: float | None = None,
+    max_grid_size: int | None = None,
+    tail_mass_truncation: float | None = None,
+    seed: int | None = None,
+    max_conv_grid: int | None = None,
+    mc_resolution: float | None = None,
+    mc_failure_probability: float | None = None,
 ) -> None:
-    """Set module-level default discretization parameters.
+    """Update module-level default discretization parameters.
+
+    This is a partial update: only the named parameters change, and every
+    omitted parameter keeps its current default (mirroring how
+    ``get_discretization`` resolves overrides). A bare call is a no-op.
+    To return to the library defaults, read them with
+    ``get_discretization()`` before changing them and pass them back
+    explicitly.
 
     These defaults are used when query parameters are not provided.
     Existing process objects resolve these defaults at every PLD cache lookup:
     changing the defaults computes a distinct PLD, while restoring an equal
     configuration reuses its prior bounded cache entry.
-    By default, uses high-precision settings matching Google's dp_accounting.
+    Until the first call, the defaults match Google's dp_accounting
+    high-precision settings (see ``DiscretizationConfig``).
 
     Args:
         discretization: Grid spacing for PLD PMF. Smaller = more precise, larger = faster.
-            Error scales as O(disc^2). Default: 1e-4.
+            Error scales as O(disc^2). Current default: 1e-4.
         log_x_mass_truncation_bound: Tails with log-probability below this bound in x-space
-            are truncated. Default: -50 (matching Google).
+            are truncated. Current default: -50 (matching Google).
         max_grid_size: If grid exceeds this many bins, coarsen discretization
-            automatically. Default: 10,000,000.
-        tail_mass_truncation: Chernoff tail budget during composition (Rust default 1e-15).
-        seed: RNG seed for Monte Carlo reproducibility. Default: 42.
+            automatically. Current default: 10,000,000.
+        tail_mass_truncation: Chernoff tail budget during composition (current default 1e-15).
+        seed: RNG seed for Monte Carlo reproducibility. Current default: 42.
         max_conv_grid: Maximum convolution grid size before the native
             accountant uses its bounded-memory composition path.
-        mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-5.
+        mc_resolution: Maximum unresolved Monte Carlo mass. Current default: 1e-5.
         mc_failure_probability: Failure probability of the simultaneous Monte
-            Carlo confidence band. Default: 1e-6.
+            Carlo confidence band. Current default: 1e-6.
 
     Example::
 
         # Use coarser discretization for faster computation
         acc.set_discretization(discretization=1e-3)
 
-        # Use maximum precision
-        acc.set_discretization(discretization=1e-5, max_grid_size=100_000_000)
+        # Tighten Monte Carlo bounds; discretization stays at 1e-3
+        acc.set_discretization(mc_resolution=1e-8, mc_failure_probability=1e-10)
     """
+    if all(
+        v is None
+        for v in (
+            discretization,
+            log_x_mass_truncation_bound,
+            max_grid_size,
+            tail_mass_truncation,
+            seed,
+            max_conv_grid,
+            mc_resolution,
+            mc_failure_probability,
+        )
+    ):
+        return
+
     global _default_config
-    _default_config = DiscretizationConfig(
-        discretization=discretization,
-        log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-        max_grid_size=max_grid_size,
-        tail_mass_truncation=tail_mass_truncation,
-        seed=seed,
-        max_conv_grid=max_conv_grid,
-        mc_resolution=mc_resolution,
-        mc_failure_probability=mc_failure_probability,
-    )
+    base = _default_config if _default_config is not None else DiscretizationConfig()
+    overrides = {
+        name: value
+        for name, value in {
+            "discretization": discretization,
+            "log_x_mass_truncation_bound": log_x_mass_truncation_bound,
+            "max_grid_size": max_grid_size,
+            "tail_mass_truncation": tail_mass_truncation,
+            "seed": seed,
+            "max_conv_grid": max_conv_grid,
+            "mc_resolution": mc_resolution,
+            "mc_failure_probability": mc_failure_probability,
+        }.items()
+        if value is not None
+    }
+    _default_config = replace(base, **overrides)
 
 
 def get_discretization(
