@@ -4225,7 +4225,9 @@ by all Monte Carlo nodes — the same semantics as <code>set_discretization</cod
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># Uses 1e-4 default</span>
 </code></pre></div>
 <ul>
-<li><code>acc.set_discretization(discretization=1e-4, ...)</code> — Set the global default</li>
+<li><code>acc.set_discretization(discretization=1e-4, ...)</code> — Update the global
+  default for only the named parameters; every omitted parameter keeps its
+  current value. A bare call is a no-op.</li>
 <li><code>acc.get_discretization()</code> — Return the current <code>DiscretizationConfig</code></li>
 </ul>
 <hr />
