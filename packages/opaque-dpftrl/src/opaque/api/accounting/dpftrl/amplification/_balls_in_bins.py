@@ -130,14 +130,14 @@ class BallsInBins(DpHorizonProcess):
 
     def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
         prefix_steps = self.n_steps if n_steps is None else n_steps
-        if isinstance(self.inner.strategy, BltStrategy):
-            # BLT prefix PLDs use coefficients optimized for the full horizon.
-            prefix_steps = self.n_steps
-        else:
+        if isinstance(self.inner.strategy, IdentityStrategy):
             prefix_steps = min(
                 -(-prefix_steps // self.num_bins) * self.num_bins,
                 self.n_steps,
             )
+        else:
+            # Correlated inners share one full-horizon PLD for every prefix.
+            prefix_steps = self.n_steps
         return (
             "BallsInBins",
             self.inner.noise_multiplier,
@@ -159,18 +159,13 @@ class BallsInBins(DpHorizonProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        """K-step BnB PLD using N-tuned strategy quantities.
+        """Return the BnB PLD for a prefix of ``n_steps`` rounds.
 
-        ``n_steps`` is rounded up to the next epoch (multiple of
-        ``num_bins``; capped at ``self.n_steps``).  For horizon-
-        independent inners (Identity, BSR, BiSR, λ-CGD) the gram /
-        primitive is reparameterised by ``K_epochs = rounded // num_bins``.
-        For BLT (the only retuning inner) the N-tuned Toeplitz first
-        column is read at ``self.n_steps`` and the K-prefix gram is
-        built via the closed-form Toeplitz gram on those coefficients,
-        evaluated at participation context ``(K, num_bins, K_epochs)``.
-        Correlated-strategy Monte Carlo paths use the full-horizon confidence
-        bound for every nonzero prefix. Identity retains its exact prefix path.
+        ``n_steps`` is rounded up to the next epoch (a multiple of
+        ``num_bins``, capped at ``self.n_steps``).  ``IdentityStrategy``
+        yields an exact per-epoch prefix via the random-allocation PLD
+        transform.  Every other inner charges the full-horizon Monte Carlo
+        bound for any nonzero prefix.
         """
         from opaque.api.accounting.core.discretization import get_discretization
 
@@ -180,8 +175,6 @@ class BallsInBins(DpHorizonProcess):
             )
         rounded = min(-(-n_steps // self.num_bins) * self.num_bins, self.n_steps)
         num_epochs_K = rounded // self.num_bins
-        min_sep_K = self.num_bins
-        max_participations_K = num_epochs_K
 
         config = get_discretization(
             discretization=discretization,
@@ -231,35 +224,11 @@ class BallsInBins(DpHorizonProcess):
                 native_cfg,
             )
 
-        if isinstance(s, BltStrategy):
-            # BLT is the only retuning inner: re-running L-BFGS at K
-            # would yield a different mechanism, breaking post-processing
-            # monotonicity.  Pin the N-tuned Toeplitz first column and
-            # evaluate its K-prefix gram instead.
-            coefs = s.coefficients(
-                n_steps=self.n_steps,
-                min_sep=self.min_sep,
-                max_participations=self.max_participations,
-            )
-            pinned = list(coefs[:rounded].tolist())
-            gram = tuple(
-                _native.toeplitz_gram_matrix(
-                    pinned,
-                    rounded,
-                    min_sep_K,
-                    max_participations_K,
-                    False,
-                )
-            )
-        else:
-            # BSR / BiSR / λ-CGD are recipe-driven: ``gram_matrix(n_steps=K)``
-            # is a closed-form K-row gram of the *same* mechanism (no
-            # re-tuning), so post-processing applies directly.
-            gram = s.gram_matrix(
-                n_steps=rounded,
-                min_sep=min_sep_K,
-                max_participations=max_participations_K,
-            )
+        gram = s.gram_matrix(
+            n_steps=self.n_steps,
+            min_sep=self.min_sep,
+            max_participations=self.max_participations,
+        )
         config.warn_if_large_mc()
         return _native.bnb_mc_pld(
             list(gram),

@@ -269,6 +269,11 @@ class TestBallsInBinsIdentity:
 
         assert _eps_via_step(proc, 2, _DELTA) == pytest.approx(proc.epsilon_at(_DELTA))
 
+    def test_cache_key_follows_epoch_rounding(self):
+        proc = self._proc(num_bins=4, num_epochs=3)
+        assert proc._pld_cache_key(n_steps=1) == proc._pld_cache_key(n_steps=4)
+        assert proc._pld_cache_key(n_steps=4) != proc._pld_cache_key(n_steps=12)
+
     @pytest.mark.slow
     @pytest.mark.usefixtures("_seed_mc")
     def test_endpoints_and_monotonic_prefixes(self):
@@ -520,12 +525,8 @@ def test_balls_in_bins_identity_supports_composition():
 
 
 # ---------------------------------------------------------------------------
-# BallsInBins(correlated MF): K-prefix gram matches a freshly-built strategy
-# at the shorter horizon for recipe-driven strategies (BSR, BiSR, λ-CGD).
-# For BLT (the only retuning inner) the K-prefix uses the N-tuned Toeplitz
-# first column, so the values may differ from a K-tuned re-build — they
-# stay bounded by ε(self) and monotone in K, which the parametrised
-# invariants above already check.
+# BallsInBins(correlated MF): every nonzero prefix charges the full-horizon
+# Monte Carlo PLD. Identity keeps an exact per-epoch prefix (covered above).
 # ---------------------------------------------------------------------------
 
 
@@ -567,3 +568,21 @@ class TestRecipeDrivenGramRegen:
         e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
         e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
         assert e_at == pytest.approx(e_full)
+
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_blt(self):
+        proc = _bnb(ftrl_acc.mf_gaussian(1.0, blt_strategy()), _REGEN_N_FULL)
+        step = acc.per_step(proc)
+        e_at = (step * _REGEN_K).epsilon_at(_MC_DELTA)
+        e_full = proc.pld(**_MC_KW).epsilon_at(_MC_DELTA)
+        assert e_at == pytest.approx(e_full)
+
+    @pytest.mark.usefixtures("_seed_mc")
+    def test_prefix_returns_cached_full_horizon_pld(self):
+        proc = _bnb(ftrl_acc.mf_gaussian(1.0, bsr_strategy(bandwidth=2)), _REGEN_N_FULL)
+        full = proc.pld_at(_REGEN_N_FULL, **_MC_KW)
+        prefix = proc.pld_at(_REGEN_K, **_MC_KW)
+        assert prefix is full
+        assert proc._pld_cache_key(n_steps=_REGEN_K) == proc._pld_cache_key(
+            n_steps=_REGEN_N_FULL
+        )
