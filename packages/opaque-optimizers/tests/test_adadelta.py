@@ -17,6 +17,8 @@ decay ``ρ`` to subtract both biases.  Tests assert:
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 import torch
 
@@ -24,6 +26,7 @@ torchopt = pytest.importorskip("torchopt")
 
 from opaque.optimizers import adadelta
 from opaque.optimizers.types import AdadeltaState
+from opaque.pytree import tree_map
 from opaque.types import (
     PerGroup,
     SecondMomentNoiseOutput,
@@ -310,7 +313,9 @@ class TestSecondMomentSubstitution:
         Regression for Copilot review #3191963511 — without the
         ``noisy_squared_grads is None`` guards, the carried-over EMAs
         would silently apply on top of the post-processing-debiased
-        second moment, producing a wrong update direction.
+        second moment, producing a wrong update direction.  Bit-equality
+        against a φ-zeroed clone of the same state (identical v_g/v_dx/
+        step) pins this: any guard removal makes the two updates differ.
         """
         sigma = 0.5
         opt = adadelta(rho=0.9, noise_bias_correction=True)
@@ -326,16 +331,34 @@ class TestSecondMomentSubstitution:
         assert isinstance(s_before_switch.phi_g, dict)
         assert all(v > 0 for v in s_before_switch.phi_g.values())
         assert all(s_before_switch.phi_dx[k].max() > 0 for k in params)
-        # Now feed a substitution call.  The output must be finite and
-        # match what we'd get with phi forced to zero (no double
-        # correction).
+        # Same state with φ forced to zero — identical v_g/v_dx/step, only
+        # the bias EMAs differ.  If the substitution branch honours its
+        # guards, φ is never consulted and the two updates are bit-equal;
+        # if a guard is removed, the live run subtracts the stale φ from
+        # the already-debiased accumulators and the updates diverge.
+        mom_zeroed = dataclasses.replace(
+            s_before_switch,
+            phi_g=dict.fromkeys(s_before_switch.phi_g, 0.0),
+            phi_dx=tree_map(torch.zeros_like, s_before_switch.phi_dx),
+        )
+        state_zeroed = tuple(
+            mom_zeroed if entry is s_before_switch else entry for entry in state
+        )
         sq = {k: v.pow(2) for k, v in grads.items()}
         first = noised(grads, max_norm=1.0, noise_stddev=sigma)
         second = noised(sq, max_norm=1.0, noise_stddev=sigma)
         out = SecondMomentNoiseOutput(noisy_grads=first, noisy_squared_grads=second)
-        updates_after, _ = opt.update(out, state, params=params)
+        updates_live, state_after_live = opt.update(out, state, params=params)
+        updates_zeroed, _ = opt.update(out, state_zeroed, params=params)
         for k in params:
-            assert torch.isfinite(updates_after[k]).all()
+            assert torch.isfinite(updates_live[k]).all()
+            assert torch.equal(updates_live[k], updates_zeroed[k])
+        # The substitution step must also freeze φ (documented branch
+        # contract): carried-over EMAs survive untouched, not decayed.
+        s_after_switch = _state(state_after_live)
+        assert s_after_switch.phi_g == s_before_switch.phi_g
+        for k in params:
+            assert torch.equal(s_after_switch.phi_dx[k], s_before_switch.phi_dx[k])
 
 
 # ---------------------------------------------------------------------------
