@@ -413,10 +413,9 @@ class TestQueryTimeMcParams:
         """``pld(**mc)`` and ``set_discretization(**mc); pld()`` resolve the
         same native config, hence identical PLDs (broadcast semantics)."""
         proc = self._mc_proc()
-        # ``pld_at``'s lru_cache keys on (process, kwargs), not the resolved
-        # global config: the no-kwargs entry for an equal-valued process must
-        # not have been populated under a different global config by an
-        # earlier test (all files pin the same _MC_KW).
+        # The explicit query and equivalent global setting resolve to the same
+        # DiscretizationConfig. ``horizon_pld_cache`` keys PLDs by that config,
+        # the process cache key, and the horizon, so both calls reuse one PLD.
         e_per_call = proc.epsilon_at(_MC_DELTA, **_MC_KW)
         prev = asdict(acc.get_discretization())
         acc.set_discretization(**_MC_KW)
