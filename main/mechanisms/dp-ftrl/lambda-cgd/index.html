@@ -1833,10 +1833,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#accounting-parameters" class="md-nav__link">
+  <a href="#amplifier-and-accounting-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accounting parameters
+        Amplifier and accounting parameters
       
     </span>
   </a>
@@ -3166,10 +3166,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#accounting-parameters" class="md-nav__link">
+  <a href="#amplifier-and-accounting-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accounting parameters
+        Amplifier and accounting parameters
       
     </span>
   </a>
@@ -3260,31 +3260,24 @@ PRNG seed replay instead of storing previous noise vectors.</p>
 <h2 id="accounting">Accounting<a class="headerlink" href="#accounting" title="Permanent link">&para;</a></h2>
 <p>The noise <strong>strategy</strong> and the privacy <strong>accounting</strong> are connected through two
 values that the strategy computes: <code>sensitivity</code> and <code>gram_matrix</code>. The strategy
-knows the full structure of the mechanism (λ, participation pattern, number of
-steps) and derives these quantities from the strategy matrix C. The accounting
-constructor then takes only these pre-computed values — it does not need to know
-how they were obtained.</p>
+is a recipe for C; the amplifier supplies the participation pattern and horizon
+when it derives those values.</p>
 <p>This separation keeps accounting constructors simple and avoids duplicating
 mechanism parameters in two places.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">lambda_cgd_strategy</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>           <span class="c1"># cross-cutting balls_in_bins</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>  <span class="c1"># DP-FTRL factories</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 1. Create strategy — computes sensitivity and Gram matrix internally</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># 2. Build accounting mechanism via strategy.as_mechanism</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">training</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="p">)</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 1. Create a strategy recipe</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span><span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># 2. The amplifier supplies n_steps and the participation geometry</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">training</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="strategy-parameters">Strategy parameters<a class="headerlink" href="#strategy-parameters" title="Permanent link">&para;</a></h3>
 <table>
@@ -3300,28 +3293,16 @@ mechanism parameters in two places.</p>
 <td>Correlation coefficient in <span class="arithmatex">\([0, 1)\)</span>. <span class="arithmatex">\(\lambda = 0\)</span> is DP-SGD.</td>
 </tr>
 <tr>
-<td><code>n_steps</code></td>
-<td>Total training steps</td>
-</tr>
-<tr>
-<td><code>min_sep</code></td>
-<td>Steps per epoch (= bins per epoch)</td>
-</tr>
-<tr>
-<td><code>max_participations</code></td>
-<td>Number of epochs</td>
-</tr>
-<tr>
 <td><code>normalized</code></td>
 <td>Column-normalize C (default True, gives sensitivity=1 for k=1)</td>
 </tr>
 <tr>
 <td><code>lr_schedule</code></td>
-<td>Optional per-step schedule for a step-weighted BnB Gram</td>
+<td>Deprecated compatibility argument; only <code>None</code> is accepted</td>
 </tr>
 </tbody>
 </table>
-<h3 id="accounting-parameters">Accounting parameters<a class="headerlink" href="#accounting-parameters" title="Permanent link">&para;</a></h3>
+<h3 id="amplifier-and-accounting-parameters">Amplifier and accounting parameters<a class="headerlink" href="#amplifier-and-accounting-parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -3335,25 +3316,26 @@ mechanism parameters in two places.</p>
 <td>Raw noise σ (calibrated or fixed)</td>
 </tr>
 <tr>
-<td><code>sensitivity</code></td>
-<td>From <code>strategy.sensitivity(n_steps=...)</code> — L2 sensitivity of C</td>
+<td><code>n_steps</code></td>
+<td>Total training steps; supplied by the amplifier</td>
 </tr>
 <tr>
-<td><code>gram_matrix</code></td>
-<td>From <code>strategy.gram_matrix</code> — for BnB Monte Carlo accounting</td>
+<td><code>num_bins</code></td>
+<td>Steps per epoch; determines minimum separation and participation count</td>
 </tr>
 </tbody>
 </table>
 <h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
-<p>The sensitivity depends only on the strategy matrix C, not on the optimizer
-workload. A supplied <code>lr_schedule</code> does not change sensitivity or noise; it
-selects the corresponding step-weighted Gram for Balls-in-Bins accounting. The
-sensitivity formula (Theorem 1, eq 15 of the paper) has a closed-form
-expression in terms of λ, min_sep, and max_participations.</p>
+<p>The sensitivity and Balls-in-Bins Gram depend only on the strategy matrix C,
+not on the optimizer workload. Learning-rate schedules belong to the optimizer
+and are deterministic post-processing of the private mechanism; they must not
+weight the privacy Gram. The sensitivity formula (Theorem 1, eq 15 of the
+paper) has a closed-form expression in terms of λ, min_sep, and
+max_participations.</p>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Bandwidth is <strong>fixed</strong> (bidiagonal inverse); correlation is controlled by a single <span class="arithmatex">\(\lambda\)</span>. Does <strong>not</strong> accept <code>momentum</code> (use <code>bisr_strategy</code> with bandwidth &gt; 2 for momentum-aware coefficients).</li>
-<li><code>lr_schedule</code> weights the BnB Gram on the training-step axis only; it does not add a momentum parameter or change the noise strategy. Use the identical schedule in the optimizer; the strategy cannot validate external updates.</li>
+<li>Learning-rate schedules are not strategy parameters. The temporary <code>lr_schedule</code> compatibility argument rejects non-<code>None</code> values; pass the schedule only to the optimizer.</li>
 <li>Uses <strong>Balls-in-Bins</strong> amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.</li>
 <li><strong>Private second moments (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. Pass <code>second_moment_strategy</code> explicitly.</li>
 <li>Broader MF context: <a href="../../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>

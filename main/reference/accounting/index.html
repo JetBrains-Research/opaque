@@ -4469,14 +4469,18 @@ transform — deterministic, no sampling. For correlated-noise strategies
 <li><code>n_steps</code> (int): Total training rounds; must be a multiple of <code>num_bins</code>.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># With DP-λCGD</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="p">)</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
-<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="p">)</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span><span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">steps_per_epoch</span> <span class="o">*</span> <span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="p">)</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="c1"># With uncorrelated MF noise (analytic identity-strategy path)</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">identity_strategy</span><span class="p">()),</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="per_stepproc-perstep"><code>per_step(proc) -&gt; PerStep</code><a class="headerlink" href="#per_stepproc-perstep" title="Permanent link">&para;</a></h3>
 <p>Adapter that wraps a whole-horizon accountant so it composes step-by-step

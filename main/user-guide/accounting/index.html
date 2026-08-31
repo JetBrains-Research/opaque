@@ -4003,18 +4003,19 @@ modified sensitivity of the strategy matrix. These mechanisms optimize
 the strategy internally and compute the correct sensitivity — do not use
 <code>dpsgd_acc.gaussian()</code> for MF noise.</p>
 <h3 id="strategy-driven-accounting">Strategy-driven accounting<a class="headerlink" href="#strategy-driven-accounting" title="Permanent link">&para;</a></h3>
-<p>Each MF accounting constructor takes a <code>sensitivity</code> (and optionally a
-<code>gram_matrix</code>) that describes the privacy cost of the strategy matrix.
-These values are <strong>computed by the noise strategy</strong>, not set manually.</p>
+<p><code>mf_gaussian()</code> couples a noise multiplier to a strategy recipe. The enclosing
+amplifier owns the horizon and participation geometry, and asks the strategy to
+derive any required sensitivity or Gram matrix at PLD evaluation time. These
+values are never supplied manually.</p>
 <p>The workflow is:</p>
 <ol>
-<li>Create a <strong>noise strategy</strong> (e.g. <code>band_mf_strategy()</code>,
-   <code>lambda_cgd_strategy()</code>) with the training parameters (number of steps,
-   bands, participation pattern, momentum, etc.).</li>
-<li>The strategy computes <code>sensitivity</code> and <code>gram_matrix</code> internally from
-   the strategy matrix C.</li>
-<li>Pass <code>strategy.sensitivity(n_steps=...)</code> and <code>strategy.gram_matrix</code> to the accounting
-   constructor.</li>
+<li>Create a <strong>noise strategy</strong> (for example, <code>band_mf_strategy()</code> or
+   <code>lambda_cgd_strategy()</code>) with its structural knobs: bands, correlation,
+   momentum, and any supported workload schedule.</li>
+<li>Wrap it with <code>mf_gaussian(noise_multiplier, strategy)</code>.</li>
+<li>Wrap that mechanism in the sampler-matching amplifier, which supplies
+   <code>n_steps</code> and the participation pattern and derives the strategy's privacy
+   quantities internally.</li>
 </ol>
 <p>This separation ensures that noise generation and privacy accounting always
 agree on the mechanism parameters — the strategy is the single source of

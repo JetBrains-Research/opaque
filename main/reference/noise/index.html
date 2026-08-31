@@ -5470,8 +5470,8 @@ when the strategy first sees the amplifier's <code>n_steps</code>.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Optional per-step learning-rate schedule used for
-schedule-weighted Gram accounting. λ-CGD remains momentum-free.</p>
+                <p>Deprecated compatibility argument. Only <code>None</code> is
+accepted. Pass learning-rate schedules to the optimizer instead.</p>
               </div>
             </td>
             <td>
@@ -5507,7 +5507,11 @@ schedule-weighted Gram accounting. λ-CGD remains momentum-free.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_lambda_cgd.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-196">196</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
 <span class="normal"><a href="#__codelineno-0-197">197</a></span>
 <span class="normal"><a href="#__codelineno-0-198">198</a></span>
 <span class="normal"><a href="#__codelineno-0-199">199</a></span>
@@ -5524,32 +5528,28 @@ schedule-weighted Gram accounting. λ-CGD remains momentum-free.</p>
 <span class="normal"><a href="#__codelineno-0-210">210</a></span>
 <span class="normal"><a href="#__codelineno-0-211">211</a></span>
 <span class="normal"><a href="#__codelineno-0-212">212</a></span>
-<span class="normal"><a href="#__codelineno-0-213">213</a></span>
-<span class="normal"><a href="#__codelineno-0-214">214</a></span>
-<span class="normal"><a href="#__codelineno-0-215">215</a></span>
-<span class="normal"><a href="#__codelineno-0-216">216</a></span>
-<span class="normal"><a href="#__codelineno-0-217">217</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-196" name="__codelineno-0-196"></a><span class="k">def</span><span class="w"> </span><span class="nf">lambda_cgd_strategy</span><span class="p">(</span>
-<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-198" name="__codelineno-0-198"></a>    <span class="n">lambda_</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-<a id="__codelineno-0-199" name="__codelineno-0-199"></a>    <span class="n">normalized</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="n">lr_schedule</span><span class="p">:</span> <span class="n">Schedule</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LambdaCgdStrategy</span><span class="p">:</span>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="w">    </span><span class="sd">"""Create a DP-lambda-CGD strategy recipe (bandwidth=2, PRNG-replay noise).</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">        lambda_: Correlation coefficient in [0, 1).</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        normalized: Use column-normalized matrix (default True).</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">        lr_schedule: Optional per-step learning-rate schedule used for</span>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">            schedule-weighted Gram accounting. λ-CGD remains momentum-free.</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">        A :class:`LambdaCgdStrategy` recipe.</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">    """</span>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a>    <span class="k">return</span> <span class="n">LambdaCgdStrategy</span><span class="p">(</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a>        <span class="n">lambda_</span><span class="o">=</span><span class="n">lambda_</span><span class="p">,</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="n">normalized</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="k">def</span><span class="w"> </span><span class="nf">lambda_cgd_strategy</span><span class="p">(</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="n">lambda_</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="n">normalized</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>    <span class="n">lr_schedule</span><span class="p">:</span> <span class="n">Schedule</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LambdaCgdStrategy</span><span class="p">:</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="w">    </span><span class="sd">"""Create a DP-lambda-CGD strategy recipe (bandwidth=2, PRNG-replay noise).</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">        lambda_: Correlation coefficient in [0, 1).</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">        normalized: Use column-normalized matrix (default True).</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">        lr_schedule: Deprecated compatibility argument. Only ``None`` is</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a><span class="sd">            accepted. Pass learning-rate schedules to the optimizer instead.</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">        A :class:`LambdaCgdStrategy` recipe.</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">    """</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>    <span class="k">return</span> <span class="n">LambdaCgdStrategy</span><span class="p">(</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>        <span class="n">lambda_</span><span class="o">=</span><span class="n">lambda_</span><span class="p">,</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>        <span class="n">normalized</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5638,8 +5638,8 @@ schedule-weighted Gram accounting. λ-CGD remains momentum-free.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Optional per-step learning-rate schedule used for
-schedule-weighted Gram accounting.</p>
+                <p>Deprecated compatibility argument. Only <code>None</code> is
+accepted. Pass learning-rate schedules to the optimizer instead.</p>
               </div>
             </td>
             <td>
@@ -5691,7 +5691,12 @@ schedule-weighted Gram accounting.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-dpftrl/src/opaque/api/dpftrl/noise/_bisr.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-256">256</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
 <span class="normal"><a href="#__codelineno-0-257">257</a></span>
 <span class="normal"><a href="#__codelineno-0-258">258</a></span>
 <span class="normal"><a href="#__codelineno-0-259">259</a></span>
@@ -5715,41 +5720,36 @@ schedule-weighted Gram accounting.</p>
 <span class="normal"><a href="#__codelineno-0-277">277</a></span>
 <span class="normal"><a href="#__codelineno-0-278">278</a></span>
 <span class="normal"><a href="#__codelineno-0-279">279</a></span>
-<span class="normal"><a href="#__codelineno-0-280">280</a></span>
-<span class="normal"><a href="#__codelineno-0-281">281</a></span>
-<span class="normal"><a href="#__codelineno-0-282">282</a></span>
-<span class="normal"><a href="#__codelineno-0-283">283</a></span>
-<span class="normal"><a href="#__codelineno-0-284">284</a></span>
-<span class="normal"><a href="#__codelineno-0-285">285</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="k">def</span><span class="w"> </span><span class="nf">bisr_strategy</span><span class="p">(</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a>    <span class="n">bandwidth</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a>    <span class="n">normalized</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a>    <span class="n">momentum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a>    <span class="n">lr_schedule</span><span class="p">:</span> <span class="n">Schedule</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a>    <span class="n">inv_coefficients</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BisrStrategy</span><span class="p">:</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="w">    </span><span class="sd">"""Create a BISR (Banded Inverse Square Root) strategy recipe.</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        bandwidth: BISR bandwidth p (&gt;= 2).</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a><span class="sd">        normalized: Use column-normalized matrix (default True).</span>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">        momentum: Optimizer momentum in [0, 1) (default 0).</span>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        lr_schedule: Optional per-step learning-rate schedule used for</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">            schedule-weighted Gram accounting.</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">        inv_coefficients: Explicit :math:`C^{-1}` coefficients (default BISR optimal).</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">        A :class:`BisrStrategy` recipe.</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">    """</span>
-<a id="__codelineno-0-277" name="__codelineno-0-277"></a>    <span class="k">return</span> <span class="n">BisrStrategy</span><span class="p">(</span>
-<a id="__codelineno-0-278" name="__codelineno-0-278"></a>        <span class="n">bandwidth</span><span class="o">=</span><span class="n">bandwidth</span><span class="p">,</span>
-<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="n">normalized</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
-<a id="__codelineno-0-280" name="__codelineno-0-280"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
-<a id="__codelineno-0-281" name="__codelineno-0-281"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
-<a id="__codelineno-0-282" name="__codelineno-0-282"></a>        <span class="n">inv_coefficients</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-0-283" name="__codelineno-0-283"></a>            <span class="nb">tuple</span><span class="p">(</span><span class="n">inv_coefficients</span><span class="p">)</span> <span class="k">if</span> <span class="n">inv_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-284" name="__codelineno-0-284"></a>        <span class="p">),</span>
-<a id="__codelineno-0-285" name="__codelineno-0-285"></a>    <span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="k">def</span><span class="w"> </span><span class="nf">bisr_strategy</span><span class="p">(</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>    <span class="n">bandwidth</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>    <span class="n">normalized</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>    <span class="n">momentum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>    <span class="n">lr_schedule</span><span class="p">:</span> <span class="n">Schedule</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>    <span class="n">inv_coefficients</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BisrStrategy</span><span class="p">:</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="w">    </span><span class="sd">"""Create a BISR (Banded Inverse Square Root) strategy recipe.</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">        bandwidth: BISR bandwidth p (&gt;= 2).</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        normalized: Use column-normalized matrix (default True).</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">        momentum: Optimizer momentum in [0, 1) (default 0).</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="sd">        lr_schedule: Deprecated compatibility argument. Only ``None`` is</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a><span class="sd">            accepted. Pass learning-rate schedules to the optimizer instead.</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a><span class="sd">        inv_coefficients: Explicit :math:`C^{-1}` coefficients (default BISR optimal).</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="sd">        A :class:`BisrStrategy` recipe.</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a><span class="sd">    """</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a>    <span class="k">return</span> <span class="n">BisrStrategy</span><span class="p">(</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a>        <span class="n">bandwidth</span><span class="o">=</span><span class="n">bandwidth</span><span class="p">,</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>        <span class="n">normalized</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a>        <span class="n">inv_coefficients</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a>            <span class="nb">tuple</span><span class="p">(</span><span class="n">inv_coefficients</span><span class="p">)</span> <span class="k">if</span> <span class="n">inv_coefficients</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="p">),</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
