@@ -6,7 +6,8 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
-from opaque.dpsgd.accounting.mechanisms.types import AdaClip
+from opaque.dpsgd.accounting.mechanisms.types import AdaClip, Gaussian
+from opaque.serialization import from_state_dict, state_dict
 
 # ── Constructor function tests ───────────────────────────────────────
 
@@ -85,3 +86,120 @@ class TestEffectiveNoiseMultiplier:
         eps_eff = step_eff.epsilon_at(1e-5)
         # Should match: both use the same z_eff
         assert abs(eps_ac - eps_eff) < 1e-6
+
+
+# ── Parameter validation ────────────────────────────────────────────────────────
+
+
+class TestAdaclipValidation:
+    """Bounds live in ``AdaClip.__post_init__`` so direct construction, the
+    factory, and codec deserialization all reject a mis-priced process (e.g.
+    ``num_groups=0``, which used to price the quantile release as free)."""
+
+    def test_direct_construction_rejects_zero_num_groups(self):
+        with pytest.raises(ValueError, match="num_groups"):
+            AdaClip(Gaussian(1.1), 0.05, 250.0, num_groups=0)
+
+    def test_direct_construction_rejects_fractional_num_groups(self):
+        with pytest.raises(ValueError, match="num_groups"):
+            AdaClip(Gaussian(1.1), 0.05, 250.0, num_groups=2.5)
+
+    def test_direct_construction_rejects_non_positive_noise_std(self):
+        with pytest.raises(ValueError, match="fraction_noise_std"):
+            AdaClip(Gaussian(1.1), 0.0, 250.0)
+        with pytest.raises(ValueError, match="fraction_noise_std"):
+            AdaClip(Gaussian(1.1), -0.05, 250.0)
+
+    def test_direct_construction_rejects_non_positive_batch_size(self):
+        with pytest.raises(ValueError, match="expected_batch_size"):
+            AdaClip(Gaussian(1.1), 0.05, 0.0)
+        with pytest.raises(ValueError, match="expected_batch_size"):
+            AdaClip(Gaussian(1.1), 0.05, -250.0)
+
+    def test_factory_still_rejects_invalid_params(self):
+        with pytest.raises(ValueError, match="fraction_noise_std"):
+            dpsgd_acc.adaclip(
+                dpsgd_acc.gaussian(1.1),
+                fraction_noise_std=0.0,
+                expected_batch_size=250,
+            )
+        with pytest.raises(ValueError, match="expected_batch_size"):
+            dpsgd_acc.adaclip(dpsgd_acc.gaussian(1.1), expected_batch_size=0)
+        with pytest.raises(ValueError, match="num_groups"):
+            dpsgd_acc.adaclip(
+                dpsgd_acc.gaussian(1.1), expected_batch_size=250, num_groups=0
+            )
+
+
+class TestGaussianValidation:
+    """A negative multiplier fails on construction, not later inside the
+    native PLD call.  ``0.0`` stays valid: documented non-private value."""
+
+    def test_negative_multiplier_rejected_on_construction(self):
+        with pytest.raises(ValueError, match="noise_multiplier"):
+            Gaussian(-1.0)
+
+    def test_factory_rejects_negative_multiplier(self):
+        with pytest.raises(ValueError, match="noise_multiplier"):
+            dpsgd_acc.gaussian(-0.5)
+
+    def test_zero_multiplier_stays_valid(self):
+        assert math.isinf(Gaussian(0.0).epsilon_at(1e-5))
+
+
+class TestCodecCannotProduceUnvalidated:
+    """The generic DpProcess codec rebuilds with ``cls(**kwargs)``, so
+    ``__post_init__`` validation fires on deserialization."""
+
+    def _adaclip_state(self, **overrides):
+        state = {
+            "type": "AdaClip",
+            "inner": {"type": "Gaussian", "noise_multiplier": 1.1},
+            "fraction_noise_std": 0.05,
+            "expected_batch_size": 250.0,
+            "num_groups": 1,
+        }
+        state.update(overrides)
+        return state
+
+    def test_num_groups_zero_rejected_on_load(self):
+        with pytest.raises(ValueError, match="num_groups"):
+            from_state_dict(acc.identity(), self._adaclip_state(num_groups=0))
+
+    def test_fraction_noise_std_zero_rejected_on_load(self):
+        with pytest.raises(ValueError, match="fraction_noise_std"):
+            from_state_dict(acc.identity(), self._adaclip_state(fraction_noise_std=0.0))
+
+    def test_expected_batch_size_negative_rejected_on_load(self):
+        with pytest.raises(ValueError, match="expected_batch_size"):
+            from_state_dict(
+                acc.identity(), self._adaclip_state(expected_batch_size=-5.0)
+            )
+
+    def test_nested_negative_gaussian_rejected_on_load(self):
+        state = self._adaclip_state(
+            inner={"type": "Gaussian", "noise_multiplier": -1.0},
+        )
+        with pytest.raises(ValueError, match="noise_multiplier"):
+            from_state_dict(acc.identity(), state)
+
+    def test_standalone_negative_gaussian_rejected_on_load(self):
+        with pytest.raises(ValueError, match="noise_multiplier"):
+            from_state_dict(
+                acc.identity(), {"type": "Gaussian", "noise_multiplier": -2.0}
+            )
+
+    def test_valid_adaclip_round_trips(self):
+        """Valid checkpoints keep loading unchanged (no over-eager rejection)."""
+        proc = dpsgd_acc.adaclip(dpsgd_acc.gaussian(0.8), expected_batch_size=1000)
+        restored = from_state_dict(acc.identity(), state_dict(proc))
+        assert restored == proc
+
+    def test_whole_numbered_float_groups_normalized_to_int(self):
+        """``2.0`` is accepted but normalized so the field matches its ``int``
+        annotation, including after a codec round-trip."""
+        proc = AdaClip(Gaussian(1.1), 0.05, 250.0, num_groups=2.0)
+        assert isinstance(proc.num_groups, int)
+        restored = from_state_dict(acc.identity(), state_dict(proc))
+        assert restored == proc
+        assert isinstance(restored.num_groups, int)

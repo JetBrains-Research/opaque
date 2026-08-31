@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
+from opaque.exceptions import ConfigurationError
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -14,6 +15,16 @@ class Repeated(DpProcess):
 
     inner: DpProcess
     count: int
+
+    def __post_init__(self) -> None:
+        # Same bound as ``DpProcess.__mul__``; native self_compose rejects it late.
+        if self.count < 1:
+            raise ConfigurationError(
+                *(
+                    f"Repeat count must be >= 1, got {self.count}. "
+                    "Use identity() for zero privacy loss.",
+                )
+            )
 
     def __hash__(self) -> int:
         # Iterative tree walk — depth bounded by heap, not stack.

@@ -37,6 +37,31 @@ class AdaClip(DpProcess):
     expected_batch_size: float
     num_groups: int = 1
 
+    def __post_init__(self) -> None:
+        # Validate here (not only in ``adaclip()``) so direct construction and
+        # deserialization — the generic DpProcess codec rebuilds with
+        # ``cls(**kwargs)`` — cannot produce an instance that prices the
+        # quantile release as free (e.g. ``num_groups=0``).
+        if self.fraction_noise_std <= 0:
+            raise ConfigurationError(
+                *(
+                    f"fraction_noise_std must be positive, got {self.fraction_noise_std}",
+                )
+            )
+        if self.expected_batch_size <= 0:
+            raise ConfigurationError(
+                *(
+                    f"expected_batch_size must be positive, got {self.expected_batch_size}",
+                )
+            )
+        if self.num_groups < 1 or self.num_groups != int(self.num_groups):
+            raise ConfigurationError(
+                *(f"num_groups must be an integral number >= 1, got {self.num_groups}",)
+            )
+        # Normalise a whole-numbered float (e.g. ``2.0``) so the field matches
+        # its ``int`` annotation before reaching the native primitives.
+        object.__setattr__(self, "num_groups", int(self.num_groups))
+
     @property
     def effective_noise_multiplier(self) -> float:
         """Noise multiplier adjusted for the quantile estimator's privacy cost.
@@ -147,17 +172,9 @@ def adaclip(
                     f"got {type(inner).__name__}.",
                 )
             )
-    if fraction_noise_std <= 0:
-        raise ConfigurationError(
-            *(f"fraction_noise_std must be positive, got {fraction_noise_std}",)
-        )
-    if expected_batch_size <= 0:
-        raise ConfigurationError(
-            *(f"expected_batch_size must be positive, got {expected_batch_size}",)
-        )
-    if num_groups < 1:
-        raise ConfigurationError(*(f"num_groups must be >= 1, got {num_groups}",))
-
+    # Parameter bounds (fraction_noise_std, expected_batch_size, num_groups)
+    # are validated in ``AdaClip.__post_init__`` so direct construction and
+    # deserialization stay consistent with this factory.
     return AdaClip(
         inner=inner,
         fraction_noise_std=fraction_noise_std,

@@ -157,6 +157,9 @@ class BsrStrategy:
     alpha: float
     beta: float
 
+    def __post_init__(self) -> None:
+        _validate_bsr_hyperparams(self.bandwidth, self.alpha, self.beta)
+
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         return _bsr_full_coefficients(self.bandwidth, self.alpha, self.beta, n_steps)
 
@@ -211,7 +214,7 @@ def bsr_strategy(
     Returns:
         A :class:`BsrStrategy` recipe.
     """
-    _validate_bsr_hyperparams(bandwidth, alpha, beta)
+    # Hyperparameters are validated in ``BsrStrategy.__post_init__``.
     return BsrStrategy(bandwidth=bandwidth, alpha=alpha, beta=beta)
 
 
