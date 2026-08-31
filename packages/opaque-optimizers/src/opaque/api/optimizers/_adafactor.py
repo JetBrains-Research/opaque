@@ -3,8 +3,8 @@
 Memory-efficient Adam variant: the second moment is **factored** for
 tensors of rank ≥ 2 (one ``v_row`` of size ``rows`` and one ``v_col``
 of size ``cols`` instead of a full ``rows × cols`` ``v``).  For
-tensors of rank < 2 (vectors, scalars) Adafactor falls back to a
-scalar second moment.
+tensors of rank < 2 (vectors, scalars) Adafactor keeps a full
+per-element second moment ``v``.
 
 Reference:
     Shazeer & Stern, "Adafactor: Adaptive Learning Rates with Sublinear
@@ -25,10 +25,11 @@ per element, so it propagates cleanly through the row and column
     E[mean_i (g_ij + ξ_ij)²] = mean_i g_ij² + σ²
 
 A single scalar φ-EMA tracking ``β₂_t`` matches the v_row/v_col EMAs;
-subtracting it (with a positive floor) from each factor before the
-``v̂`` approximation recovers the clean second-moment estimate.
-``noise_bias_correction=True`` activates this path; defaults to
-``True`` so BC is on by default.
+subtracting it from each factor before the ``v̂`` approximation recovers
+the clean second-moment estimate wherever the result stays positive and
+falls back to the uncorrected factor elsewhere (see
+``_bias_correction.py``).  ``noise_bias_correction=True`` activates
+this path; it defaults to ``False``.
 
 The private second-moment substitution path (``noisy_squared_grads``)
 is **not** offered for Adafactor.  Substituting a privately-estimated
