@@ -346,10 +346,11 @@ pub fn py_lambda_cgd_gram_matrix(
     )?)
 }
 
-/// Compute the BnB Gram matrix for DP-λCGD with LR-schedule weighting.
+/// Compatibility tombstone for LR-weighted DP-λCGD accounting.
 ///
-/// Numerical computation: the effective column for bin i is
-///   m_i[t] = η_t · Σ_{epoch} accumulated(C_λ[:,b·epoch+i], β)[t]
+/// Opaque's deployed λ-CGD mechanism does not apply LR weights to its
+/// encoder/noise path, so this function always raises ``ValueError``.  It is
+/// retained temporarily to give old callers a migration error.
 ///
 /// Args:
 ///     lambda_ (float): Correlation coefficient in [0, 1).
@@ -360,11 +361,8 @@ pub fn py_lambda_cgd_gram_matrix(
 ///     normalized (bool): Whether to use column-normalized matrix.
 ///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
 ///
-/// Returns:
-///     list[float]: Flattened row-major b×b Gram matrix.
-///
 /// Raises:
-///     ValueError: If parameters are invalid.
+///     ValueError: Always; omit the schedule and recalibrate, or use BandMF/BLT.
 #[pyfunction]
 #[pyo3(name = "lambda_cgd_gram_matrix_lr", signature = (lambda_, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
 pub fn py_lambda_cgd_gram_matrix_lr(
@@ -410,7 +408,7 @@ pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f
 
 // ── BISR (Banded Inverse Square Root) ────────────────────────────
 
-/// Squared L2 sensitivity for BISR under min-sep participation.
+/// Squared L2 sensitivity upper bound for BISR under min-sep participation.
 ///
 /// Args:
 ///     coefficients (list[float]): Banded C^{-1} coefficients [c̃_0, ..., c̃_{p-1}].
@@ -420,7 +418,8 @@ pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f
 ///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
 ///
 /// Returns:
-///     float: The squared L2 sensitivity.
+///     float: The squared L2 sensitivity upper bound. Exact when the effective
+///         forward coefficients are non-negative and non-increasing.
 #[pyfunction]
 #[pyo3(name = "bisr_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
 pub fn py_bisr_sensitivity_squared(
@@ -439,7 +438,7 @@ pub fn py_bisr_sensitivity_squared(
     )?)
 }
 
-/// Squared L2 sensitivity of column-normalized BISR.
+/// Squared L2 sensitivity upper bound for column-normalized BISR.
 ///
 /// Args:
 ///     coefficients (list[float]): Banded C^{-1} coefficients.
@@ -449,7 +448,8 @@ pub fn py_bisr_sensitivity_squared(
 ///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
 ///
 /// Returns:
-///     float: The squared L2 sensitivity of the column-normalized matrix.
+///     float: A conservative squared L2 sensitivity upper bound for the
+///         column-normalized matrix.
 #[pyfunction]
 #[pyo3(name = "bisr_normalized_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
 pub fn py_bisr_normalized_sensitivity_squared(
@@ -502,7 +502,11 @@ pub fn py_bisr_gram_matrix(
     )?)
 }
 
-/// BnB Gram matrix for BISR with LR-schedule weighting.
+/// Compatibility tombstone for LR-weighted BISR accounting.
+///
+/// Opaque's deployed BISR mechanism does not apply LR weights to its
+/// encoder/noise path, so this function always raises ``ValueError``. It is
+/// retained temporarily to give old callers a migration error.
 ///
 /// Args:
 ///     coefficients (list[float]): Banded C^{-1} coefficients.
@@ -513,8 +517,8 @@ pub fn py_bisr_gram_matrix(
 ///     normalized (bool): Whether to use column-normalized matrix.
 ///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
 ///
-/// Returns:
-///     list[float]: Flattened row-major b×b Gram matrix.
+/// Raises:
+///     ValueError: Always; omit the schedule and recalibrate, or use BandMF/BLT.
 #[pyfunction]
 #[pyo3(name = "bisr_gram_matrix_lr", signature = (coefficients, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
 pub fn py_bisr_gram_matrix_lr(
@@ -576,8 +580,14 @@ pub fn py_toeplitz_gram_matrix(
 ///
 /// Returns:
 ///     list[float]: First n entries of column 0 of the strategy matrix.
+///
+/// Raises:
+///     ValueError: If coefficients are invalid or n is zero.
 #[pyfunction]
 #[pyo3(name = "bisr_strategy_coefficients", signature = (coefficients, n))]
-pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f64> {
-    crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
+pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> PyResult<Vec<f64>> {
+    Ok(crate::matrix_factorization::bisr::try_bisr_column_zero(
+        &coefficients,
+        n,
+    )?)
 }

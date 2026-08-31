@@ -38,7 +38,6 @@ from ._engine import (
     _iid_normal_noise,
     _require_positive_int_horizon,
 )
-from ._schedule_fingerprint import materialize_schedule
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,7 +55,6 @@ def _native():
     return _n
 
 
-_lr_key = materialize_schedule
 _COLUMN_NORM_TAIL_CUTOFF = 1e-30
 
 
@@ -67,21 +65,8 @@ def _lambda_cgd_gram_matrix_cached(
     n_steps: int,
     min_sep: int,
     max_participations: int | None,
-    lr_key: tuple[float, ...] | None,
 ) -> tuple[float, ...]:
     """Gram sequence for λ-CGD; cached across repeated σ / PLD probes."""
-    if lr_key is not None:
-        return tuple(
-            _native().lambda_cgd_gram_matrix_lr(
-                lambda_,
-                0.0,
-                n_steps,
-                min_sep,
-                max_participations,
-                normalized,
-                list(lr_key),
-            )
-        )
     return tuple(
         _native().lambda_cgd_gram_matrix(
             lambda_, n_steps, min_sep, max_participations, normalized
@@ -119,12 +104,24 @@ class LambdaCgdStrategy:
 
     lambda_: float
     normalized: bool = True
+    # Compatibility tombstone for legacy state dictionaries. Non-None values
+    # are rejected because optimizer LR schedules are not part of this encoder.
     lr_schedule: Schedule | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        if self.lambda_ < 0 or self.lambda_ >= 1.0:
+        if self.lr_schedule is not None:
             raise ConfigurationError(
-                *(f"lambda_ must be in [0, 1), got {self.lambda_}",)
+                *(
+                    "LambdaCgdStrategy does not support lr_schedule. Learning-rate "
+                    "schedules are optimizer post-processing and cannot weight its "
+                    "Balls-in-Bins privacy accounting. Remove lr_schedule from the "
+                    "strategy, pass it only to the optimizer, and recalibrate privacy "
+                    "and noise for any result previously computed with this option.",
+                )
+            )
+        if not math.isfinite(self.lambda_) or not 0.0 <= self.lambda_ < 1.0:
+            raise ConfigurationError(
+                *(f"lambda_ must be finite and in [0, 1), got {self.lambda_}",)
             )
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
@@ -142,7 +139,6 @@ class LambdaCgdStrategy:
             n_steps,
             min_sep,
             max_participations,
-            _lr_key(self.lr_schedule, n_steps),
         )
 
     def streaming_matrix(self, **_) -> StreamingMatrix:
@@ -204,8 +200,8 @@ def lambda_cgd_strategy(
     Args:
         lambda_: Correlation coefficient in [0, 1).
         normalized: Use column-normalized matrix (default True).
-        lr_schedule: Optional per-step learning-rate schedule used for
-            schedule-weighted Gram accounting. λ-CGD remains momentum-free.
+        lr_schedule: Deprecated compatibility argument. Only ``None`` is
+            accepted. Pass learning-rate schedules to the optimizer instead.
 
     Returns:
         A :class:`LambdaCgdStrategy` recipe.

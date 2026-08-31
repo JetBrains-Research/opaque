@@ -769,9 +769,7 @@ def lambda_cgd_gram_matrix_lr(
     normalized: bool,
     lr_weights: list[float],
 ) -> list[float]:
-    """Compute the BnB Gram matrix with LR-schedule weighting.
-
-    Numerical computation of the Gram matrix with per-step LR weights.
+    """Compatibility tombstone for LR-weighted DP-lambda-CGD accounting.
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
@@ -782,8 +780,8 @@ def lambda_cgd_gram_matrix_lr(
         normalized: Whether to use column-normalized matrix.
         lr_weights: Per-step LR weights, length = n_steps.
 
-    Returns:
-        Flattened row-major b×b Gram matrix.
+    Raises:
+        ValueError: Always. Omit the schedule and recalibrate, or use BandMF/BLT.
     """
 
 # ---------------------------------------------------------------------------
@@ -797,7 +795,7 @@ def bisr_sensitivity_squared(
     max_participations: int | None = None,
     momentum: float = 0.0,
 ) -> float:
-    """Squared L2 sensitivity for BISR under min-sep participation."""
+    """Squared L2 sensitivity upper bound for BISR under min-sep participation."""
 
 def bisr_normalized_sensitivity_squared(
     coefficients: list[float],
@@ -806,7 +804,7 @@ def bisr_normalized_sensitivity_squared(
     max_participations: int | None = None,
     momentum: float = 0.0,
 ) -> float:
-    """Squared L2 sensitivity of column-normalized BISR."""
+    """Conservative squared L2 sensitivity bound for column-normalized BISR."""
 
 def bisr_gram_matrix(
     coefficients: list[float],
@@ -827,7 +825,11 @@ def bisr_gram_matrix_lr(
     normalized: bool,
     lr_weights: list[float],
 ) -> list[float]:
-    """BnB Gram matrix for BISR with LR-schedule weighting."""
+    """Compatibility tombstone for LR-weighted BISR accounting.
+
+    Raises:
+        ValueError: Always. Omit the schedule and recalibrate, or use BandMF/BLT.
+    """
 
 # ---------------------------------------------------------------------------
 # Toeplitz Gram matrix (for BnB with BandMF/BLT strategy coefs)
@@ -871,6 +873,9 @@ def bisr_strategy_coefficients(
 
     Returns:
         First n entries of column 0.
+
+    Raises:
+        ValueError: If coefficients are invalid or n is zero.
     """
 
 # ---------------------------------------------------------------------------

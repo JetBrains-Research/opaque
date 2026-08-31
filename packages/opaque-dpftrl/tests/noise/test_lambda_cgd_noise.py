@@ -4,12 +4,11 @@ import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.dpftrl.noise import _lambda_cgd as lambda_cgd_module
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
-from opaque.api.dpftrl.noise._toeplitz import materialize_lower_triangular
 from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.exceptions import CheckpointError
 from opaque.random import key
-from opaque.serialization import state_dict
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import NoisedPytree, clipped
 
 
@@ -142,10 +141,11 @@ class TestLambdaCgdNoise:
         assert state._step_counter == 2
 
     def test_rejects_invalid_lambda(self):
-        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
-            lambda_cgd_strategy(lambda_=-0.1)
-        with pytest.raises(ValueError, match=r"lambda_ must be in \[0, 1\)"):
-            lambda_cgd_strategy(lambda_=1.0)
+        for value in (-0.1, 1.0, float("nan"), float("inf")):
+            with pytest.raises(
+                ValueError, match=r"lambda_ must be finite and in \[0, 1\)"
+            ):
+                lambda_cgd_strategy(lambda_=value)
 
     def test_prng_replay_correctness(self):
         """Verify the PRNG replay: step 1's z_prev should equal step 0's z_current."""
@@ -187,53 +187,61 @@ class TestLambdaCgdStrategy:
         assert gram is not None
         assert len(gram) == 25 * 25
 
-    def test_schedule_weighted_gram_matches_dense_step_weighted_operator(self):
-        n_steps, min_sep, max_participations = 6, 2, 3
-        learning_rates = torch.tensor(
-            [1.0, 0.5, 2.0, 1.5, 0.25, 3.0], dtype=torch.float64
-        )
-        strategy = lambda_cgd_strategy(
-            lambda_=0.4,
-            normalized=False,
-            lr_schedule=lambda step: float(learning_rates[step]),
+    def test_lr_schedule_is_rejected_with_recalibration_guidance(self):
+        with pytest.raises(
+            ValueError, match=r"does not support lr_schedule.*recalibrate"
+        ):
+            lambda_cgd_strategy(lambda_=0.4, lr_schedule=lambda _step: 1.0)
+
+    def test_legacy_none_schedule_state_loads(self):
+        strategy = from_state_dict(
+            lambda_cgd_strategy(lambda_=0.4),
+            {
+                "type": "LambdaCgdStrategy",
+                "lambda_": 0.4,
+                "normalized": False,
+                "lr_schedule": None,
+            },
         )
 
-        encoder = materialize_lower_triangular(
-            strategy.coefficients(n_steps=n_steps), n_steps
-        )
-        grouped_columns = torch.stack(
-            [encoder[:, bin_index::min_sep].sum(dim=1) for bin_index in range(min_sep)],
-            dim=1,
-        )
-        expected = grouped_columns.T @ torch.diag(learning_rates) ** 2 @ grouped_columns
+        assert strategy == lambda_cgd_strategy(lambda_=0.4, normalized=False)
+        assert state_dict(strategy)["lr_schedule"] is None
 
-        gram = torch.tensor(
-            strategy.gram_matrix(
-                n_steps=n_steps,
-                min_sep=min_sep,
-                max_participations=max_participations,
-            ),
-            dtype=torch.float64,
-        ).reshape(min_sep, min_sep)
-        torch.testing.assert_close(gram, expected)
+    def test_legacy_non_none_schedule_state_is_rejected(self):
+        with pytest.raises(
+            ValueError, match=r"does not support lr_schedule.*recalibrate"
+        ):
+            from_state_dict(
+                lambda_cgd_strategy(lambda_=0.4),
+                {
+                    "type": "LambdaCgdStrategy",
+                    "lambda_": 0.4,
+                    "normalized": False,
+                    "lr_schedule": {
+                        "__opaque_recipe__": "ConstantSchedule",
+                        "value": 0.1,
+                    },
+                },
+            )
 
-    def test_uniform_schedule_matches_unweighted_gram(self):
-        kwargs = {"n_steps": 12, "min_sep": 3, "max_participations": 4}
-        unweighted = lambda_cgd_strategy(lambda_=0.4, normalized=False)
-        weighted = lambda_cgd_strategy(
-            lambda_=0.4,
-            normalized=False,
-            lr_schedule=lambda _step: 1.0,
-        )
+    def test_gram_uses_only_unweighted_native_path(self, monkeypatch):
+        expected = (2.0, 0.5, 0.5, 1.0)
 
-        assert weighted.gram_matrix(**kwargs) == pytest.approx(
-            unweighted.gram_matrix(**kwargs)
-        )
+        class CapturingNative:
+            def lambda_cgd_gram_matrix(self, *_args):
+                return expected
 
-    def test_callable_schedule_is_not_serializable(self):
-        strategy = lambda_cgd_strategy(lambda_=0.4, lr_schedule=lambda _step: 1.0)
-        with pytest.raises(CheckpointError, match="callable strategy field"):
-            state_dict(strategy)
+            def lambda_cgd_gram_matrix_lr(self, *_args):
+                raise AssertionError("weighted Gram path must not be called")
+
+        monkeypatch.setattr(lambda_cgd_module, "_native", CapturingNative)
+        lambda_cgd_module._lambda_cgd_gram_matrix_cached.cache_clear()
+        strategy = lambda_cgd_strategy(lambda_=0.4)
+
+        assert strategy.gram_matrix(
+            n_steps=4, min_sep=2, max_participations=2
+        ) == pytest.approx(expected)
+        lambda_cgd_module._lambda_cgd_gram_matrix_cached.cache_clear()
 
     def test_normalized_single_participation_sensitivity_one(self):
         """Normalized + single participation -> sensitivity = 1.0."""

@@ -53,11 +53,15 @@ class TestStrategyRecipeValidation:
             bsr_strategy(bandwidth=4, alpha=0.9, beta=1.0)
 
     def test_bisr_rejects_invalid_momentum(self):
-        with pytest.raises(ConfigurationError, match=r"momentum must be in \[0, 1\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"momentum must be finite and in \[0, 1\)"
+        ):
             bisr_strategy(bandwidth=3, momentum=1.0)
 
     def test_lambda_cgd_rejects_invalid_lambda(self):
-        with pytest.raises(ConfigurationError, match=r"lambda_ must be in \[0, 1\)"):
+        with pytest.raises(
+            ConfigurationError, match=r"lambda_ must be finite and in \[0, 1\)"
+        ):
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_tampered_strategy_state_fails_on_load(self):

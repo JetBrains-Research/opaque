@@ -6,15 +6,16 @@ import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.accounting.dpftrl.amplification import _balls_in_bins
+from opaque.api.dpftrl.noise import _bisr as bisr_module
 from opaque.api.dpftrl.noise._bisr import BisrStrategy, _native, bisr_strategy
 from opaque.api.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     materialize_lower_triangular,
 )
 from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.exceptions import CheckpointError
 from opaque.random import key
-from opaque.serialization import state_dict
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import clipped
 
 _PART = {"n_steps": 100, "min_sep": 25, "max_participations": 4}
@@ -32,55 +33,65 @@ class TestBisrStrategy:
         assert gram is not None
         assert len(gram) == 25 * 25
 
-    def test_schedule_weighted_gram_matches_dense_step_weighted_operator(self):
-        n_steps, min_sep, max_participations = 6, 2, 3
-        learning_rates = torch.tensor(
-            [1.0, 0.5, 2.0, 1.5, 0.25, 3.0], dtype=torch.float64
-        )
-        strategy = bisr_strategy(
-            bandwidth=3,
-            normalized=False,
-            momentum=0.3,
-            lr_schedule=lambda step: float(learning_rates[step]),
+    def test_lr_schedule_is_rejected_with_recalibration_guidance(self):
+        with pytest.raises(
+            ValueError, match=r"does not support lr_schedule.*recalibrate"
+        ):
+            bisr_strategy(bandwidth=3, lr_schedule=lambda _step: 1.0)
+
+    def test_legacy_none_schedule_state_loads(self):
+        strategy = from_state_dict(
+            bisr_strategy(bandwidth=3),
+            {
+                "type": "BisrStrategy",
+                "bandwidth": 3,
+                "normalized": False,
+                "momentum": 0.3,
+                "lr_schedule": None,
+                "inv_coefficients": None,
+            },
         )
 
-        encoder = materialize_lower_triangular(
-            strategy.coefficients(n_steps=n_steps), n_steps
-        )
-        grouped_columns = torch.stack(
-            [encoder[:, bin_index::min_sep].sum(dim=1) for bin_index in range(min_sep)],
-            dim=1,
-        )
-        expected = grouped_columns.T @ torch.diag(learning_rates) ** 2 @ grouped_columns
+        assert strategy == bisr_strategy(bandwidth=3, normalized=False, momentum=0.3)
+        assert state_dict(strategy)["lr_schedule"] is None
 
-        gram = torch.tensor(
-            strategy.gram_matrix(
-                n_steps=n_steps,
-                min_sep=min_sep,
-                max_participations=max_participations,
-            ),
-            dtype=torch.float64,
-        ).reshape(min_sep, min_sep)
-        torch.testing.assert_close(gram, expected)
+    def test_legacy_non_none_schedule_state_is_rejected(self):
+        with pytest.raises(
+            ValueError, match=r"does not support lr_schedule.*recalibrate"
+        ):
+            from_state_dict(
+                bisr_strategy(bandwidth=3),
+                {
+                    "type": "BisrStrategy",
+                    "bandwidth": 3,
+                    "normalized": False,
+                    "momentum": 0.3,
+                    "lr_schedule": {
+                        "__opaque_recipe__": "ConstantSchedule",
+                        "value": 0.1,
+                    },
+                    "inv_coefficients": None,
+                },
+            )
 
-    def test_uniform_schedule_matches_unweighted_gram(self):
-        kwargs = {"n_steps": 12, "min_sep": 3, "max_participations": 4}
-        unweighted = bisr_strategy(bandwidth=3, normalized=False, momentum=0.3)
-        weighted = bisr_strategy(
-            bandwidth=3,
-            normalized=False,
-            momentum=0.3,
-            lr_schedule=lambda _step: 1.0,
-        )
+    def test_gram_uses_only_unweighted_native_path(self, monkeypatch):
+        expected = (2.0, 0.5, 0.5, 1.0)
 
-        assert weighted.gram_matrix(**kwargs) == pytest.approx(
-            unweighted.gram_matrix(**kwargs)
-        )
+        class CapturingNative:
+            def bisr_gram_matrix(self, *_args):
+                return expected
 
-    def test_callable_schedule_is_not_serializable(self):
-        strategy = bisr_strategy(bandwidth=3, lr_schedule=lambda _step: 1.0)
-        with pytest.raises(CheckpointError, match="callable strategy field"):
-            state_dict(strategy)
+            def bisr_gram_matrix_lr(self, *_args):
+                raise AssertionError("weighted Gram path must not be called")
+
+        monkeypatch.setattr(bisr_module, "_native", CapturingNative)
+        bisr_module._bisr_gram_matrix_cached.cache_clear()
+        strategy = bisr_strategy(bandwidth=3)
+
+        assert strategy.gram_matrix(
+            n_steps=4, min_sep=2, max_participations=2
+        ) == pytest.approx(expected)
+        bisr_module._bisr_gram_matrix_cached.cache_clear()
 
     def test_streaming_matrix_present(self):
         assert bisr_strategy(bandwidth=4).streaming_matrix(**_PART) is not None
@@ -180,6 +191,25 @@ class TestBisrStrategy:
         with pytest.raises(ValueError, match="bandwidth must be >= 2"):
             bisr_strategy(bandwidth=1)
 
+    @pytest.mark.parametrize("momentum", [-0.1, 1.0, float("nan"), float("inf")])
+    def test_rejects_invalid_momentum(self, momentum):
+        with pytest.raises(
+            ValueError, match=r"momentum must be finite and in \[0, 1\)"
+        ):
+            bisr_strategy(bandwidth=2, momentum=momentum)
+
+    @pytest.mark.parametrize(
+        "coefficients",
+        [(0.0, 1.0), (1e-31, 1.0), (1.0, float("nan")), (1.0, float("inf"))],
+    )
+    def test_rejects_invalid_custom_inverse_coefficients(self, coefficients):
+        with pytest.raises(ValueError, match="inv_coefficients"):
+            bisr_strategy(bandwidth=2, inv_coefficients=coefficients)
+
+    def test_coefficients_reject_nonpositive_horizon(self):
+        with pytest.raises(ValueError, match="n_steps must be >= 1"):
+            bisr_strategy(bandwidth=2).coefficients(n_steps=0)
+
 
 class TestBisrPld:
     delta = 1e-5
@@ -201,3 +231,50 @@ class TestBisrPld:
             mc_failure_probability=1e-2,
         )
         assert eps > 0
+
+    def test_bnb_uses_absolute_normalized_forward_encoder(self, monkeypatch):
+        n_steps, num_bins = 4, 2
+        strategy = bisr_strategy(
+            bandwidth=2,
+            normalized=True,
+            inv_coefficients=(1.0, 1.0),
+        )
+        process = ftrl_acc.balls_in_bins(
+            ftrl_acc.mf_gaussian(1.0, strategy),
+            num_bins=num_bins,
+            n_steps=n_steps,
+        )
+
+        actual_native = _balls_in_bins._native
+        captured: dict[str, tuple[float, ...]] = {}
+        sentinel = object()
+
+        class CapturingNative:
+            def __getattr__(self, name):
+                return getattr(actual_native, name)
+
+            def bnb_mc_pld(self, gram, *_):
+                captured["gram"] = tuple(gram)
+                return sentinel
+
+        monkeypatch.setattr(_balls_in_bins, "_native", CapturingNative())
+        assert process.pld() is sentinel
+
+        encoder = materialize_lower_triangular(
+            strategy.coefficients(n_steps=n_steps), n_steps
+        )
+        normalized_encoder = encoder / encoder.square().sum(dim=0).sqrt()
+        grouped = torch.stack(
+            [
+                normalized_encoder[:, bin_index::num_bins].abs().sum(dim=1)
+                for bin_index in range(num_bins)
+            ],
+            dim=1,
+        )
+        expected = grouped.T @ grouped
+
+        actual = torch.tensor(captured["gram"], dtype=torch.float64).reshape(
+            num_bins, num_bins
+        )
+        torch.testing.assert_close(actual, expected)
+        assert actual[0, 1] > 0

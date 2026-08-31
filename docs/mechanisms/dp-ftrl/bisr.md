@@ -13,25 +13,23 @@ from the inverse square root of the workload matrix.
 
 ## Accounting
 
-Like all MF mechanisms, the noise **strategy** computes `sensitivity` and
-`gram_matrix` from the mechanism parameters; the accounting constructor
-receives only these pre-computed values. This avoids duplicating mechanism
-parameters and keeps the accounting API uniform across all MF mechanisms.
+Like all MF mechanisms, the noise **strategy** is a recipe. The amplifier
+supplies the horizon and participation pattern when it asks the recipe for its
+`sensitivity` and `gram_matrix`. This keeps those accounting-owned parameters
+in one place.
 
 ```python
 from opaque.dpftrl.noise import bisr_strategy
 import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
-# 1. Create strategy — computes sensitivity and Gram matrix internally
+# 1. Create a strategy recipe
 strategy = bisr_strategy(
-    bandwidth=4, n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
+    bandwidth=4,
     momentum=0.9,
 )
 
-# 2. Build accounting mechanism via strategy.as_mechanism
+# 2. The amplifier supplies n_steps and the participation geometry
 training = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
@@ -45,19 +43,22 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `bandwidth` | Number of bands p (≥ 2). Higher = better utility, more PRNG replays. |
-| `n_steps` | Total training steps |
-| `min_sep` | Steps per epoch |
-| `max_participations` | Number of epochs |
 | `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
-| `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
+| `lr_schedule` | Deprecated compatibility argument; only `None` is accepted |
 
-### Accounting parameters
+### Amplifier and accounting parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise σ |
-| `sensitivity` | From `strategy.sensitivity(n_steps=...)` — L2 sensitivity of the BISR strategy |
-| `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
+| `n_steps` | Total training steps; supplied by the amplifier |
+| `num_bins` | Steps per epoch; determines minimum separation and participation count |
+
+The amplifier derives the BISR sensitivity and BnB Gram matrix from these
+values. For a signed or non-monotone custom `inv_coefficients` override,
+unnormalized sensitivity majorizes the absolute forward coefficients;
+normalized sensitivity majorizes their prefix-normalized envelope. These
+bounds may be conservative, but remain safe.
 
 ### BISR coefficients
 
@@ -100,7 +101,7 @@ and computes the linear combination defined by the BISR coefficients.
 
 - **BnB sampling**: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).
 - **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
-- **`lr_schedule` affects accounting only**: BISR coefficients remain analytically determined by its existing workload model. Supplying a schedule uses the matching step-weighted Gram for Balls-in-Bins accounting; it does not change the BISR strategy or introduce additional optimizer parameters. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
+- **Learning-rate schedules are optimizer-only**: they do not change BISR's encoder or noise and therefore must not weight its privacy Gram. The temporary `lr_schedule` compatibility argument rejects non-`None` values; pass the schedule only to the optimizer.
 - **Not BSR**: BISR bands the **inverse** square-root construction (generalized λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD with momentum and weight decay.
 - For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../../user-guide/dp-ftrl.md).
 

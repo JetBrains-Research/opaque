@@ -130,9 +130,9 @@ class TestLambdaCgdStrategy:
         assert s.sensitivity(**_PART) > 0
 
     def test_rejects_bad_lambda(self):
-        with pytest.raises(ValueError, match="lambda_ must be in"):
+        with pytest.raises(ValueError, match="lambda_ must be finite and in"):
             lambda_cgd_strategy(lambda_=-0.1)
-        with pytest.raises(ValueError, match="lambda_ must be in"):
+        with pytest.raises(ValueError, match="lambda_ must be finite and in"):
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_internal_fields(self):

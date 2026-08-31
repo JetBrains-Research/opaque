@@ -30,8 +30,17 @@ use crate::error::{PldError, Result};
 /// need column 0 of length n.
 ///
 /// Returns a Vec of length `len` containing C[0..len, 0].
+///
+/// This preserves the original unchecked Rust API. New callers, including the
+/// Python boundary, should prefer [`try_bisr_column_zero`].
 pub fn bisr_column_zero_pub(coefficients: &[f64], len: usize) -> Vec<f64> {
     bisr_column_zero(coefficients, len)
+}
+
+/// Checked variant of [`bisr_column_zero_pub`].
+pub fn try_bisr_column_zero(coefficients: &[f64], len: usize) -> Result<Vec<f64>> {
+    validate_common(coefficients, len, 1, 0.0)?;
+    bisr_effective_column_zero(coefficients, len, 0.0)
 }
 
 fn bisr_column_zero(coefficients: &[f64], len: usize) -> Vec<f64> {
@@ -40,7 +49,7 @@ fn bisr_column_zero(coefficients: &[f64], len: usize) -> Vec<f64> {
     }
     let p = coefficients.len();
     let alpha0 = coefficients[0];
-    debug_assert!(alpha0.abs() > 1e-30, "c̃_0 must be non-zero");
+    debug_assert!(alpha0.abs() >= 1e-30, "c̃_0 must have magnitude >= 1e-30");
 
     let mut col = vec![0.0f64; len];
     col[0] = 1.0 / alpha0;
@@ -68,12 +77,13 @@ fn bisr_column_zero(coefficients: &[f64], len: usize) -> Vec<f64> {
 ///
 /// Due to Toeplitz structure, this depends only on `gap = c - a` and
 /// `remaining = n - c`. We exploit this in the Gram matrix computation.
-fn bisr_column_inner_product_momentum(
+fn bisr_column_inner_product_momentum_impl(
     col0: &[f64],
     momentum: f64,
     n: usize,
     a: usize,
     c: usize,
+    absolute: bool,
 ) -> f64 {
     debug_assert!(a <= c);
     debug_assert!(c < n);
@@ -91,7 +101,11 @@ fn bisr_column_inner_product_momentum(
             if idx_a >= col0.len() || u >= col0.len() {
                 break;
             }
-            dot += col0[idx_a] * col0[u];
+            dot += if absolute {
+                col0[idx_a].abs() * col0[u].abs()
+            } else {
+                col0[idx_a] * col0[u]
+            };
         }
         return dot;
     }
@@ -125,10 +139,38 @@ fn bisr_column_inner_product_momentum(
         acc_a = momentum * acc_a + ca;
         acc_c = momentum * acc_c + cc;
 
-        dot += acc_a * acc_c;
+        dot += if absolute {
+            acc_a.abs() * acc_c.abs()
+        } else {
+            acc_a * acc_c
+        };
     }
 
     dot
+}
+
+fn bisr_column_inner_product_momentum(
+    col0: &[f64],
+    momentum: f64,
+    n: usize,
+    a: usize,
+    c: usize,
+) -> f64 {
+    bisr_column_inner_product_momentum_impl(col0, momentum, n, a, c, false)
+}
+
+/// Inner product of elementwise-absolute effective forward columns.
+///
+/// Balls-in-Bins accounting uses `|C|` in its dominating pair. Keep this
+/// separate from the signed helper used by sensitivity calculations.
+fn bisr_abs_column_inner_product_momentum(
+    col0: &[f64],
+    momentum: f64,
+    n: usize,
+    a: usize,
+    c: usize,
+) -> f64 {
+    bisr_column_inner_product_momentum_impl(col0, momentum, n, a, c, true)
 }
 
 fn validate_coefficients(coefficients: &[f64]) -> Result<()> {
@@ -138,9 +180,18 @@ fn validate_coefficients(coefficients: &[f64]) -> Result<()> {
             coefficients.len()
         )));
     }
+    if let Some((index, coefficient)) = coefficients
+        .iter()
+        .enumerate()
+        .find(|(_, coefficient)| !coefficient.is_finite())
+    {
+        return Err(PldError::InvalidParameter(format!(
+            "BISR coefficients must be finite, found {coefficient} at index {index}"
+        )));
+    }
     if coefficients[0].abs() < 1e-30 {
         return Err(PldError::InvalidParameter(
-            "c̃_0 (first coefficient) must be non-zero".into(),
+            "c̃_0 (first coefficient) must have magnitude >= 1e-30".into(),
         ));
     }
     Ok(())
@@ -159,7 +210,7 @@ fn validate_common(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if !(0.0..1.0).contains(&momentum) {
+    if !momentum.is_finite() || !(0.0..1.0).contains(&momentum) {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
@@ -168,7 +219,73 @@ fn validate_common(
     Ok(())
 }
 
+/// Build the first column after the optional optimizer-momentum transform.
+///
+/// The transformed encoder remains lower-triangular Toeplitz, with first
+/// column `effective[t] = momentum * effective[t - 1] + col0[t]`.
+fn bisr_effective_column_zero(
+    coefficients: &[f64],
+    n_steps: usize,
+    momentum: f64,
+) -> Result<Vec<f64>> {
+    let col0 = bisr_column_zero(coefficients, n_steps);
+    let mut effective = Vec::with_capacity(n_steps);
+    let mut accumulator = 0.0;
+
+    for (index, value) in col0.into_iter().enumerate() {
+        accumulator = momentum * accumulator + value;
+        if !accumulator.is_finite() {
+            return Err(PldError::NumericalError(format!(
+                "BISR forward recurrence produced a non-finite value at index {index}"
+            )));
+        }
+        effective.push(accumulator);
+    }
+
+    Ok(effective)
+}
+
+/// Smallest non-negative, non-increasing pointwise majorant of `|values|`.
+fn absolute_nonincreasing_majorant(values: &[f64]) -> Vec<f64> {
+    let mut majorant = vec![0.0; values.len()];
+    let mut suffix_max = 0.0_f64;
+    for index in (0..values.len()).rev() {
+        suffix_max = suffix_max.max(values[index].abs());
+        majorant[index] = suffix_max;
+    }
+    majorant
+}
+
+/// Safe min-sep sensitivity bound for a (possibly signed) Toeplitz encoder.
+///
+/// Pointwise domination by a non-negative encoder is valid for arbitrary
+/// record-update directions by the triangle inequality. The reverse suffix
+/// maximum is the smallest pointwise majorant satisfying the monotonicity
+/// assumption of the specialized Toeplitz sensitivity theorem.
+fn toeplitz_majorant_sensitivity_squared(
+    values: &[f64],
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+) -> Result<f64> {
+    let majorant = absolute_nonincreasing_majorant(values);
+    let result = crate::matrix_factorization::sensitivity::toeplitz_minsep_sensitivity_squared(
+        &majorant,
+        n_steps,
+        min_sep,
+        max_participations,
+    )?;
+    if !result.is_finite() {
+        return Err(PldError::NumericalError(
+            "BISR sensitivity bound is non-finite".into(),
+        ));
+    }
+    Ok(result)
+}
+
 fn effective_k(n_steps: usize, min_sep: usize, max_participations: Option<usize>) -> usize {
+    debug_assert!(n_steps >= 1);
+    debug_assert!(min_sep >= 1);
     let k_inferred = n_steps.div_ceil(min_sep);
     match max_participations {
         Some(max_k) => max_k.min(k_inferred),
@@ -176,11 +293,11 @@ fn effective_k(n_steps: usize, min_sep: usize, max_participations: Option<usize>
     }
 }
 
-/// Sensitivity squared for BISR under min-sep participation pattern.
+/// Squared sensitivity upper bound for BISR under min-sep participation.
 ///
-/// S² = max_j ‖Σ_{p=0}^{k-1} m_{j+p·b}‖² = Σ_{p,q} ⟨m_{p·b}, m_{q·b}⟩
-///
-/// Worst case is j=0 (earliest start position, longest columns).
+/// The result is exact when the effective forward Toeplitz coefficients are
+/// non-negative and non-increasing. For arbitrary custom coefficients, their
+/// absolute reverse-suffix-max majorant is used, giving a safe upper bound.
 pub fn bisr_sensitivity_squared(
     coefficients: &[f64],
     n_steps: usize,
@@ -197,36 +314,29 @@ pub fn bisr_sensitivity_squared(
     if k == 0 {
         return Ok(0.0);
     }
+    debug_assert!(k >= 1);
 
-    // Build column 0 (reused for all inner products via Toeplitz structure)
-    let col0 = bisr_column_zero(coefficients, n);
-
-    let mut sens_sq = 0.0;
-    for p in 0..k {
-        let col_p = p * b;
-        if col_p >= n {
-            break;
+    let effective = bisr_effective_column_zero(coefficients, n, momentum)?;
+    if k == 1 {
+        let result: f64 = effective.iter().map(|value| value * value).sum();
+        if !result.is_finite() {
+            return Err(PldError::NumericalError(
+                "BISR single-participation sensitivity is non-finite".into(),
+            ));
         }
-        for q in 0..k {
-            let col_q = q * b;
-            if col_q >= n {
-                break;
-            }
-            let (lo, hi) = if col_p <= col_q {
-                (col_p, col_q)
-            } else {
-                (col_q, col_p)
-            };
-            sens_sq += bisr_column_inner_product_momentum(&col0, momentum, n, lo, hi);
-        }
+        return Ok(result);
     }
-    Ok(sens_sq)
+
+    toeplitz_majorant_sensitivity_squared(&effective, n, b, Some(k))
 }
 
-/// Normalized sensitivity squared for BISR (column-normalized).
+/// Squared sensitivity upper bound for column-normalized BISR.
 ///
-/// All columns are divided by their L2 norm, so single participation (k=1)
-/// always gives sensitivity = 1.
+/// At lag `r`, every normalized column entry is pointwise bounded by
+/// `q_r = |c_r| / sqrt(sum_{u=0}^r c_u^2)`, where `c` is the effective
+/// forward Toeplitz sequence. Applying the non-negative, non-increasing
+/// majorant theorem to `q` yields a safe bound for arbitrary coefficients.
+/// The result is capped by `k²`, since normalized columns have unit norm.
 pub fn bisr_normalized_sensitivity_squared(
     coefficients: &[f64],
     n_steps: usize,
@@ -243,49 +353,41 @@ pub fn bisr_normalized_sensitivity_squared(
     if k == 0 {
         return Ok(0.0);
     }
+    debug_assert!(k >= 1);
+    let effective = bisr_effective_column_zero(coefficients, n, momentum)?;
     if k == 1 {
         return Ok(1.0);
     }
 
-    let col0 = bisr_column_zero(coefficients, n);
-
-    // Column norms (with momentum)
-    let col_norms: Vec<f64> = (0..k)
-        .map(|j| {
-            let col = j * b;
-            if col >= n {
-                return 1.0;
-            }
-            bisr_column_inner_product_momentum(&col0, momentum, n, col, col).sqrt()
-        })
-        .collect();
-
-    let mut sens_sq = 0.0;
-    for p in 0..k {
-        let col_p = p * b;
-        if col_p >= n {
-            break;
+    let mut prefix_norm = 0.0_f64;
+    let mut normalized_envelope = Vec::with_capacity(n);
+    for (index, value) in effective.into_iter().enumerate() {
+        // `hypot` avoids avoidable overflow/underflow in the prefix norm.
+        prefix_norm = prefix_norm.hypot(value);
+        if !prefix_norm.is_finite() || prefix_norm == 0.0 {
+            return Err(PldError::NumericalError(format!(
+                "BISR normalized prefix norm is invalid at index {index}"
+            )));
         }
-        for q in 0..k {
-            let col_q = q * b;
-            if col_q >= n {
-                break;
-            }
-            let (lo, hi) = if col_p <= col_q {
-                (col_p, col_q)
-            } else {
-                (col_q, col_p)
-            };
-            let ip = bisr_column_inner_product_momentum(&col0, momentum, n, lo, hi);
-            sens_sq += ip / (col_norms[p] * col_norms[q]);
-        }
+        normalized_envelope.push(value.abs() / prefix_norm);
     }
-    Ok(sens_sq)
+
+    let theorem_bound = toeplitz_majorant_sensitivity_squared(&normalized_envelope, n, b, Some(k))?;
+    let column_norm_bound = (k as f64) * (k as f64);
+    let result = theorem_bound.min(column_norm_bound);
+    if !result.is_finite() {
+        return Err(PldError::NumericalError(
+            "BISR normalized sensitivity bound is non-finite".into(),
+        ));
+    }
+    Ok(result)
 }
 
 /// BnB Gram matrix for BISR with optional momentum.
 ///
-/// G_{ij} = ⟨m_i, m_j⟩ (or normalized) where m_i aggregates across epochs.
+/// G_{ij} = ⟨m_i, m_j⟩ where
+/// `m_i = Σ_e |C̃[:, i + e·b]|` and `C̃` is independently
+/// column-normalized when requested.
 pub fn bisr_gram_matrix(
     coefficients: &[f64],
     n_steps: usize,
@@ -298,17 +400,16 @@ pub fn bisr_gram_matrix(
 
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = n.div_ceil(b);
-    let e = match max_participations {
-        Some(k) => k.min(k_inferred),
-        None => k_inferred,
-    };
+    let e = effective_k(n, b, max_participations);
 
     if e == 0 || b == 0 {
         return Ok(vec![0.0; b * b]);
     }
 
-    let col0 = bisr_column_zero(coefficients, n);
+    // Materialize the post-momentum Toeplitz column once. Besides avoiding
+    // repeated recurrence work, this rejects a non-finite recurrence before
+    // it can become a NaN/Inf Gram matrix.
+    let col0 = bisr_effective_column_zero(coefficients, n, momentum)?;
 
     // Precompute column norms for normalization
     let col_norms: Vec<f64> = if normalized {
@@ -317,9 +418,13 @@ pub fn bisr_gram_matrix(
             for i in 0..b {
                 let col = b * p + i;
                 if col < n {
-                    norms.push(
-                        bisr_column_inner_product_momentum(&col0, momentum, n, col, col).sqrt(),
-                    );
+                    let squared_norm = bisr_column_inner_product_momentum(&col0, 0.0, n, col, col);
+                    if !squared_norm.is_finite() || squared_norm <= 0.0 {
+                        return Err(PldError::NumericalError(format!(
+                            "BISR column norm is invalid at column {col}"
+                        )));
+                    }
+                    norms.push(squared_norm.sqrt());
                 } else {
                     norms.push(1.0);
                 }
@@ -354,7 +459,7 @@ pub fn bisr_gram_matrix(
                         (col_c, col_a)
                     };
 
-                    let ip = bisr_column_inner_product_momentum(&col0, momentum, n, lo, hi);
+                    let ip = bisr_abs_column_inner_product_momentum(&col0, 0.0, n, lo, hi);
 
                     let contribution = if normalized {
                         let d_a = col_norms[p * b + i];
@@ -375,14 +480,20 @@ pub fn bisr_gram_matrix(
         }
     }
 
+    if gram.iter().any(|value| !value.is_finite()) {
+        return Err(PldError::NumericalError(
+            "BISR Gram matrix is non-finite".into(),
+        ));
+    }
     Ok(gram)
 }
 
-/// BnB Gram matrix with LR-schedule weighting (numerical rank-1 updates).
+/// Compatibility tombstone for LR-weighted BISR accounting.
 ///
-/// The effective column for bin i at step t uses a ring buffer of p-1
-/// recent column values for the banded recurrence.
-#[allow(clippy::needless_range_loop)]
+/// A learning-rate-weighted Gram does not describe the deployed BISR
+/// mechanism unless the same schedule changes its encoder/noise path. Opaque's
+/// BISR mechanism does not do that, so the symbol remains only to return an
+/// actionable migration error to old callers.
 pub fn bisr_gram_matrix_lr(
     coefficients: &[f64],
     momentum: f64,
@@ -392,134 +503,31 @@ pub fn bisr_gram_matrix_lr(
     normalized: bool,
     lr_weights: &[f64],
 ) -> Result<Vec<f64>> {
-    validate_common(coefficients, n_steps, min_sep, momentum)?;
-    if lr_weights.len() != n_steps {
-        return Err(PldError::InvalidParameter(format!(
-            "lr_weights length ({}) must equal n_steps ({})",
-            lr_weights.len(),
-            n_steps
-        )));
-    }
-
-    let p = coefficients.len();
-    let b = min_sep;
-    let n = n_steps;
-    let k_inferred = n.div_ceil(b);
-    let e = match max_participations {
-        Some(k) => k.min(k_inferred),
-        None => k_inferred,
-    };
-
-    if e == 0 || b == 0 {
-        return Ok(vec![0.0; b * b]);
-    }
-
-    let alpha0 = coefficients[0];
-    let beta = momentum;
-
-    // For each bin i and epoch ep, maintain:
-    // - ring buffer of p-1 recent column values (for the recurrence)
-    // - momentum accumulator
-    // Total state: b * e * p floats
-    let state_size = b * e;
-    let mut ring_bufs: Vec<Vec<f64>> = vec![vec![0.0; p - 1]; state_size];
-    let mut mom_accs: Vec<f64> = vec![0.0; state_size];
-
-    let mut gram = vec![0.0f64; b * b];
-    let mut col_norm_sq = vec![0.0f64; b];
-
-    for t in 0..n {
-        let lr_t = lr_weights[t];
-        let mut v = vec![0.0f64; b];
-
-        for i in 0..b {
-            let mut sum_acc = 0.0;
-            for ep in 0..e {
-                let col_start = i + ep * b;
-                if col_start > t || col_start >= n {
-                    continue;
-                }
-                let idx = i * e + ep;
-                let steps_since = t - col_start;
-
-                // Compute the new column entry via recurrence
-                let new_val = if steps_since == 0 {
-                    1.0 / alpha0
-                } else {
-                    let mut s = 0.0;
-                    let k_max = steps_since.min(p - 1);
-                    for k in 1..=k_max {
-                        let buf_idx = (k - 1) % (p - 1);
-                        s += coefficients[k] * ring_bufs[idx][buf_idx];
-                    }
-                    -s / alpha0
-                };
-
-                // Update ring buffer (shift and insert)
-                if p > 2 {
-                    // Shift: move entries forward
-                    for k in (1..p - 1).rev() {
-                        ring_bufs[idx][k] = ring_bufs[idx][k - 1];
-                    }
-                }
-                if p >= 2 {
-                    ring_bufs[idx][0] = new_val;
-                }
-
-                // Update momentum accumulator
-                mom_accs[idx] = beta * mom_accs[idx] + new_val;
-                sum_acc += mom_accs[idx];
-            }
-            v[i] = lr_t * sum_acc;
-        }
-
-        // Rank-1 update
-        for i in 0..b {
-            if v[i] == 0.0 {
-                continue;
-            }
-            col_norm_sq[i] += v[i] * v[i];
-            gram[i * b + i] += v[i] * v[i];
-            for j in (i + 1)..b {
-                gram[i * b + j] += v[i] * v[j];
-            }
-        }
-    }
-
-    // Fill lower triangle
-    for i in 0..b {
-        for j in (i + 1)..b {
-            gram[j * b + i] = gram[i * b + j];
-        }
-    }
-
-    // Normalization
-    if normalized {
-        for i in 0..b {
-            let d_i = col_norm_sq[i].sqrt();
-            if d_i == 0.0 {
-                continue;
-            }
-            for j in 0..b {
-                let d_j = col_norm_sq[j].sqrt();
-                if d_j == 0.0 {
-                    continue;
-                }
-                gram[i * b + j] /= d_i * d_j;
-            }
-        }
-    }
-
-    Ok(gram)
+    let _ = (
+        coefficients,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        lr_weights,
+    );
+    Err(PldError::InvalidParameter(
+        "LR-weighted BISR accounting is unsupported: the schedule does not alter the \
+         deployed BISR encoder or noise. Omit lr_schedule and recalibrate with the \
+         unweighted mechanism, or use BandMF/BLT for a schedule-shaped workload."
+            .into(),
+    ))
 }
 
 /// BnB Gram matrix for a banded Toeplitz strategy with known forward coefficients.
 ///
 /// For a Toeplitz strategy with coefficients `[c_0, c_1, ..., c_{p-1}]`,
-/// column j has entries `C[t,j] = c_{t-j}` for `j ≤ t < j+p`, else 0.
+/// column j has entries `|C[t,j]| = |c_{t-j}|` for `j ≤ t < j+p`, else 0.
 ///
 /// The inner product of columns a and c (a ≤ c, gap d = c-a) is:
-///   ⟨C[:,a], C[:,c]⟩ = Σ_{k=0}^{p-1-d} c_{k+d} · c_k   (if d < p, else 0)
+///   ⟨|C[:,a]|, |C[:,c]|⟩ = Σ_{k=0}^{p-1-d} |c_{k+d}| · |c_k|
+///   (if d < p, else 0)
 ///
 /// This is used for BnB accounting of BandMF/BLT mechanisms where the
 /// strategy coefficients are known from the Toeplitz optimization.
@@ -538,6 +546,19 @@ pub fn toeplitz_gram_matrix(
             "strategy_coef must be non-empty".into(),
         ));
     }
+    if strategy_coef
+        .iter()
+        .any(|coefficient| !coefficient.is_finite())
+    {
+        return Err(PldError::InvalidParameter(
+            "strategy_coef must contain only finite values".into(),
+        ));
+    }
+    if strategy_coef[0] == 0.0 {
+        return Err(PldError::InvalidParameter(
+            "strategy_coef[0] must be non-zero".into(),
+        ));
+    }
     if n_steps == 0 {
         return Err(PldError::InvalidParameter("n_steps must be >= 1".into()));
     }
@@ -545,39 +566,31 @@ pub fn toeplitz_gram_matrix(
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
 
+    // Lemma 3.2 is stated for a non-negative forward encoder. Replacing a
+    // signed encoder by its elementwise absolute value is a conservative
+    // extension via the row-wise triangle inequality and prevents cancellation
+    // when epoch columns are aggregated. Column norms are unchanged, so
+    // normalization still applies to each original column before aggregation.
+    let strategy_coef: Vec<f64> = strategy_coef.iter().map(|coef| coef.abs()).collect();
+    let strategy_coef = strategy_coef.as_slice();
+
     let p = strategy_coef.len(); // bandwidth
     let b = min_sep;
     let n = n_steps;
-    let k_inferred = n.div_ceil(b);
-    let e = match max_participations {
-        Some(k) => k.min(k_inferred),
-        None => k_inferred,
-    };
+    let e = effective_k(n, b, max_participations);
 
     if e == 0 || b == 0 {
         return Ok(vec![0.0; b * b]);
     }
 
-    // Precompute the inner product for each gap d = 0..p-1.
-    // ip_by_gap[d] = Σ_{k=0}^{p-1-d} c_{k+d} · c_k
-    let mut ip_by_gap = vec![0.0f64; p];
-    for d in 0..p {
-        let s: f64 = strategy_coef[d..p]
-            .iter()
-            .zip(strategy_coef[..p - d].iter())
-            .map(|(a, b)| a * b)
-            .sum();
-        ip_by_gap[d] = s;
-    }
-
-    // Column norm = sqrt(ip_by_gap[0]) for all columns (Toeplitz → same norm).
-    // But boundary columns (near end of matrix) have truncated entries.
-    // For simplicity and correctness, compute norms per-column accounting for truncation.
+    // Boundary columns have truncated entries, so compute each norm from its
+    // actually present prefix. `hypot` avoids avoidable overflow/underflow.
     let col_norm = |col: usize| -> f64 {
         let remaining = n - col; // entries available
         let effective_len = remaining.min(p);
-        let s: f64 = strategy_coef[..effective_len].iter().map(|c| c * c).sum();
-        s.sqrt()
+        strategy_coef[..effective_len]
+            .iter()
+            .fold(0.0_f64, |norm, coefficient| norm.hypot(*coefficient))
     };
 
     let col_ip = |a: usize, c: usize| -> f64 {
@@ -645,6 +658,11 @@ pub fn toeplitz_gram_matrix(
         }
     }
 
+    if gram.iter().any(|value| !value.is_finite()) {
+        return Err(PldError::NumericalError(
+            "Toeplitz Gram matrix is non-finite".into(),
+        ));
+    }
     Ok(gram)
 }
 
@@ -665,6 +683,95 @@ mod tests {
         [1.0, -lambda]
     }
 
+    fn inverse_coefficients_from_forward(forward: &[f64]) -> Vec<f64> {
+        assert!(!forward.is_empty());
+        assert_ne!(forward[0], 0.0);
+
+        let mut inverse = vec![0.0; forward.len()];
+        inverse[0] = 1.0 / forward[0];
+        for index in 1..forward.len() {
+            let convolution: f64 = (0..index).map(|j| inverse[j] * forward[index - j]).sum();
+            inverse[index] = -convolution / forward[0];
+        }
+        inverse
+    }
+
+    /// Exhaustive feasible scalar-update sensitivity for a small Toeplitz
+    /// encoder. This is a lower bound on the vector-valued sensitivity and is
+    /// useful for checking that an upper bound never relies on cancellation.
+    fn exhaustive_scalar_sensitivity_squared(
+        effective: &[f64],
+        min_sep: usize,
+        max_participations: usize,
+        normalized: bool,
+    ) -> f64 {
+        let n = effective.len();
+        assert!(n < usize::BITS as usize);
+
+        let column_norms: Vec<f64> = (0..n)
+            .map(|column| {
+                effective[..n - column]
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f64>()
+                    .sqrt()
+            })
+            .collect();
+
+        let mut best = 0.0_f64;
+        for support_mask in 1_usize..(1_usize << n) {
+            let participation_count = support_mask.count_ones() as usize;
+            if participation_count > max_participations {
+                continue;
+            }
+
+            let support: Vec<usize> = (0..n)
+                .filter(|index| support_mask & (1_usize << index) != 0)
+                .collect();
+            if support.windows(2).any(|pair| pair[1] - pair[0] < min_sep) {
+                continue;
+            }
+
+            for sign_mask in 0_usize..(1_usize << participation_count) {
+                let mut squared_norm = 0.0;
+                for row in 0..n {
+                    let mut output = 0.0;
+                    for (support_index, &column) in support.iter().enumerate() {
+                        if column > row {
+                            continue;
+                        }
+                        let sign = if sign_mask & (1_usize << support_index) == 0 {
+                            -1.0
+                        } else {
+                            1.0
+                        };
+                        let scale = if normalized {
+                            column_norms[column]
+                        } else {
+                            1.0
+                        };
+                        output += sign * effective[row - column] / scale;
+                    }
+                    squared_norm += output * output;
+                }
+                best = best.max(squared_norm);
+            }
+        }
+        best
+    }
+
+    fn next_random_u64(state: &mut u64) -> u64 {
+        *state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        *state
+    }
+
+    fn next_random_signed_unit(state: &mut u64) -> f64 {
+        let fraction = (next_random_u64(state) >> 11) as f64 / ((1_u64 << 53) as f64);
+        2.0 * fraction - 1.0
+    }
+
     #[test]
     fn test_column_zero_p2_is_lambda_cgd() {
         // p=2 with [1, -0.5] should give col0[t] = 0.5^t (λCGD with λ=0.5)
@@ -679,6 +786,14 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_checked_column_zero_accepts_minimum_leading_magnitude() {
+        let col = try_bisr_column_zero(&[1e-30, 0.0], 1).unwrap();
+        assert_eq!(col.len(), 1);
+        assert!(col[0].is_finite());
+        assert!((col[0] / 1e30 - 1.0).abs() < 1e-15);
     }
 
     #[test]
@@ -738,26 +853,29 @@ mod tests {
     }
 
     #[test]
-    fn test_sensitivity_p2_normalized_matches_lambda_cgd() {
+    fn test_sensitivity_p2_normalized_majorant_bounds_lambda_cgd() {
         let lambda: f64 = 0.9;
         let coefs = lambda_cgd_coefs(lambda);
+        let k = 3;
 
-        let bisr_sens = bisr_normalized_sensitivity_squared(&coefs, 100, 10, Some(3), 0.0).unwrap();
+        let bisr_bound =
+            bisr_normalized_sensitivity_squared(&coefs, 100, 10, Some(k), 0.0).unwrap();
         let lcgd_sens = crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
             lambda,
             100,
             10,
-            Some(3),
+            Some(k),
             0.0,
         )
         .unwrap();
 
         assert!(
-            (bisr_sens - lcgd_sens).abs() / lcgd_sens < 1e-6,
-            "normalized BISR p=2: {}, λCGD: {}",
-            bisr_sens,
+            bisr_bound + 1e-12 >= lcgd_sens,
+            "normalized BISR bound: {}, λCGD sensitivity: {}",
+            bisr_bound,
             lcgd_sens
         );
+        assert!(bisr_bound <= (k * k) as f64);
     }
 
     #[test]
@@ -772,6 +890,18 @@ mod tests {
                 sens
             );
         }
+    }
+
+    #[test]
+    fn test_zero_participations_has_zero_sensitivity() {
+        assert_eq!(
+            bisr_sensitivity_squared(&BISR_P3, 10, 1, Some(0), 0.0).unwrap(),
+            0.0
+        );
+        assert_eq!(
+            bisr_normalized_sensitivity_squared(&BISR_P3, 10, 1, Some(0), 0.0).unwrap(),
+            0.0
+        );
     }
 
     #[test]
@@ -824,6 +954,97 @@ mod tests {
     }
 
     #[test]
+    fn test_signed_custom_sensitivity_uses_non_cancelling_majorant() {
+        // C^{-1} = [1, 1] gives forward coefficients [1, -1, 1, -1].
+        // Feasible scalar updates [1, -1, 1, -1] make the released vector
+        // [1, -2, 3, -4], whose squared norm is exactly 30.
+        let sensitivity_sq = bisr_sensitivity_squared(&[1.0, 1.0], 4, 1, Some(4), 0.0).unwrap();
+        assert!((sensitivity_sq - 30.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_normalized_majorant_covers_later_placement_counterexample() {
+        // These inverse coefficients recover the non-negative,
+        // non-increasing forward sequence [1, 1, 1, 0] at n=4. Column
+        // normalization invalidates the old earliest-placement shortcut:
+        // columns (1, 3) are more correlated than columns (0, 2).
+        let inverse = [1.0, -1.0, 0.0, 1.0];
+        let old_earliest_squared = 2.0 + 2.0 / 6.0_f64.sqrt();
+        let feasible_later_squared = 2.0 + 2.0 / 3.0_f64.sqrt();
+        assert!(old_earliest_squared < feasible_later_squared);
+
+        let bound = bisr_normalized_sensitivity_squared(&inverse, 4, 2, Some(2), 0.0).unwrap();
+        assert!(bound + 1e-12 >= feasible_later_squared);
+        assert!(bound <= 4.0); // universal k^2 cap
+    }
+
+    #[test]
+    fn test_nonnegative_nonincreasing_forward_sequence_remains_exact() {
+        let forward = [1.0, 0.8, 0.55, 0.3, 0.1, 0.05];
+        let inverse = inverse_coefficients_from_forward(&forward);
+        let expected = crate::matrix_factorization::toeplitz_minsep_sensitivity_squared(
+            &forward,
+            forward.len(),
+            2,
+            Some(3),
+        )
+        .unwrap();
+        let actual = bisr_sensitivity_squared(&inverse, forward.len(), 2, Some(3), 0.0).unwrap();
+
+        assert!((actual - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_momentum_is_applied_before_majorization() {
+        let inverse = [1.0, 1.0];
+        let effective = bisr_effective_column_zero(&inverse, 4, 0.5).unwrap();
+        assert_eq!(effective, vec![1.0, -0.5, 0.75, -0.625]);
+
+        let expected = toeplitz_majorant_sensitivity_squared(&effective, 4, 1, Some(4)).unwrap();
+        let actual = bisr_sensitivity_squared(&inverse, 4, 1, Some(4), 0.5).unwrap();
+        assert!((actual - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_random_small_majorants_dominate_all_scalar_witnesses() {
+        let mut random_state = 0x5eed_cafe_f00d_beef_u64;
+
+        for case_index in 0..96 {
+            let n = 2 + (next_random_u64(&mut random_state) as usize % 6);
+            let bandwidth = 2 + (next_random_u64(&mut random_state) as usize % 3).min(n - 2);
+            let mut inverse = Vec::with_capacity(bandwidth);
+            inverse.push(1.0);
+            for _ in 1..bandwidth {
+                inverse.push(0.9 * next_random_signed_unit(&mut random_state));
+            }
+            let min_sep = 1 + next_random_u64(&mut random_state) as usize % n;
+            let feasible_k = (n + min_sep - 1) / min_sep;
+            let k = 1 + next_random_u64(&mut random_state) as usize % feasible_k;
+            let momentum =
+                0.8 * ((next_random_u64(&mut random_state) >> 11) as f64 / ((1_u64 << 53) as f64));
+            let effective = bisr_effective_column_zero(&inverse, n, momentum).unwrap();
+
+            for normalized in [false, true] {
+                let bound = if normalized {
+                    bisr_normalized_sensitivity_squared(&inverse, n, min_sep, Some(k), momentum)
+                        .unwrap()
+                } else {
+                    bisr_sensitivity_squared(&inverse, n, min_sep, Some(k), momentum).unwrap()
+                };
+                let witness =
+                    exhaustive_scalar_sensitivity_squared(&effective, min_sep, k, normalized);
+                let tolerance = 1e-10 * bound.max(1.0);
+                assert!(
+                    witness <= bound + tolerance,
+                    "case={case_index}, normalized={normalized}, n={n}, b={min_sep}, \
+                     k={k}, momentum={momentum}, inverse={inverse:?}, \
+                     witness={witness}, bound={bound}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_sensitivity_with_momentum() {
         let coefs = &BISR_P3;
         let sens_no_mom = bisr_sensitivity_squared(coefs, 60, 10, Some(3), 0.0).unwrap();
@@ -856,6 +1077,18 @@ mod tests {
                 bisr_gram[idx],
                 lcgd_gram[idx]
             );
+        }
+    }
+
+    #[test]
+    fn test_gram_matrix_signed_forward_uses_absolute_encoder() {
+        // C^{-1} = [1, 1] gives forward coefficients [1, -1, 1, -1].
+        // Signed epoch sums would produce G[0,1] = -7. The conservative
+        // signed extension uses |C| and gives the non-cancelling Gram below.
+        let gram = bisr_gram_matrix(&[1.0, 1.0], 4, 2, Some(2), false, 0.0).unwrap();
+        let expected = [10.0, 7.0, 7.0, 6.0];
+        for (actual, expected) in gram.iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-12);
         }
     }
 
@@ -914,24 +1147,42 @@ mod tests {
     }
 
     #[test]
-    fn test_gram_lr_uniform_matches_closed_form() {
-        let coefs = &BISR_P3;
-        let b = 8;
-        let e = 3;
-        let n = b * e;
-        let lr = vec![1.0; n];
+    fn test_lr_weighted_gram_is_a_compatibility_tombstone() {
+        let err =
+            bisr_gram_matrix_lr(&BISR_P3, 0.0, 24, 8, Some(3), false, &[1.0; 24]).unwrap_err();
+        assert!(err.to_string().contains("unsupported"));
+    }
 
-        let gram_cf = bisr_gram_matrix(coefs, n, b, Some(e), false, 0.0).unwrap();
-        let gram_lr = bisr_gram_matrix_lr(coefs, 0.0, n, b, Some(e), false, &lr).unwrap();
+    #[test]
+    fn test_toeplitz_gram_signed_coefficients_do_not_cancel() {
+        let gram = toeplitz_gram_matrix(&[1.0, -1.0, 1.0, -1.0], 4, 2, Some(2), false).unwrap();
+        assert_eq!(gram, vec![10.0, 7.0, 7.0, 6.0]);
+    }
 
-        for idx in 0..(b * b) {
-            assert!(
-                (gram_cf[idx] - gram_lr[idx]).abs() / gram_cf[idx].abs().max(1e-10) < 1e-4,
-                "entry {}: cf={}, lr={}",
-                idx,
-                gram_cf[idx],
-                gram_lr[idx]
-            );
+    #[test]
+    fn test_toeplitz_gram_normalizes_columns_before_epoch_sum() {
+        let coefs = [1.0, -1.0, 1.0, -1.0];
+        let gram = toeplitz_gram_matrix(&coefs, 4, 2, Some(2), true).unwrap();
+
+        let sqrt2 = 2.0_f64.sqrt();
+        let sqrt3 = 3.0_f64.sqrt();
+        let means = [
+            [0.5, 0.5, 0.5 + 1.0 / sqrt2, 0.5 + 1.0 / sqrt2],
+            [0.0, 1.0 / sqrt3, 1.0 / sqrt3, 1.0 + 1.0 / sqrt3],
+        ];
+        let mut expected = vec![0.0; 4];
+        for i in 0..2 {
+            for j in 0..2 {
+                expected[i * 2 + j] = means[i]
+                    .iter()
+                    .zip(means[j])
+                    .map(|(left, right)| left * right)
+                    .sum();
+            }
+        }
+
+        for (actual, expected) in gram.iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-12);
         }
     }
 
@@ -940,6 +1191,30 @@ mod tests {
         assert!(bisr_sensitivity_squared(&[1.0], 10, 1, None, 0.0).is_err()); // bandwidth < 2
         assert!(bisr_sensitivity_squared(&BISR_P3, 0, 1, None, 0.0).is_err()); // n=0
         assert!(bisr_sensitivity_squared(&BISR_P3, 10, 0, None, 0.0).is_err()); // min_sep=0
+        assert!(bisr_sensitivity_squared(&[0.0, -0.5], 10, 1, None, 0.0).is_err());
+        assert!(bisr_sensitivity_squared(&[1e-31, -0.5], 10, 1, None, 0.0).is_err());
+        assert!(bisr_sensitivity_squared(&[f64::NAN, -0.5], 10, 1, None, 0.0).is_err());
+        assert!(bisr_sensitivity_squared(&[1.0, f64::INFINITY], 10, 1, None, 0.0).is_err());
+        assert!(bisr_sensitivity_squared(&BISR_P3, 10, 1, None, f64::NAN).is_err());
+        assert!(bisr_sensitivity_squared(&BISR_P3, 10, 1, None, -0.1).is_err());
         assert!(bisr_sensitivity_squared(&BISR_P3, 10, 1, None, 1.0).is_err()); // momentum=1
+
+        // Finite inverse inputs can still yield an overflowing forward
+        // recurrence; expose that as an error rather than an infinite bound.
+        assert!(bisr_sensitivity_squared(&[1e-29, f64::MAX], 2, 1, None, 0.0).is_err());
+        assert!(
+            bisr_normalized_sensitivity_squared(&[1e-29, f64::MAX], 2, 2, Some(1), 0.0,).is_err()
+        );
+        assert!(try_bisr_column_zero(&BISR_P3, 0).is_err());
+        assert!(try_bisr_column_zero(&[1.0, f64::INFINITY], 2).is_err());
+        assert!(try_bisr_column_zero(&[1e-29, f64::MAX], 2).is_err());
+        assert!(bisr_gram_matrix(&[1e-29, f64::MAX], 2, 1, None, true, 0.0).is_err());
+        assert!(toeplitz_gram_matrix(&[f64::NAN], 2, 1, None, false).is_err());
+        assert!(toeplitz_gram_matrix(&[0.0], 2, 1, None, true).is_err());
+    }
+
+    #[test]
+    fn test_public_column_helper_retains_vec_return_type() {
+        assert_eq!(bisr_column_zero_pub(&BISR_P2, 3), vec![1.0, 0.5, 0.25]);
     }
 }

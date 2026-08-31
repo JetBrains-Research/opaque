@@ -402,16 +402,13 @@ vectors. Zero extra memory overhead compared to DP-SGD.
 from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
 
-strategy = lambda_cgd_strategy(
-    lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
-)
+strategy = lambda_cgd_strategy(lambda_=0.9)
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
-    n_steps=1000,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -427,14 +424,15 @@ from opaque.dpftrl.noise import mf_gaussian_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
-    n_steps=total_steps,
     bandwidth=4,
     momentum=0.95,
 )
 noise_fn, noise_state = mf_gaussian_noise(
     params,
     strategy,
-    n_steps=1000,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )

@@ -232,7 +232,14 @@ pub fn lambda_cgd_gram_matrix(
     let ip_fn =
         |a: usize, c: usize| -> f64 { column_inner_product_momentum(lambda, momentum, n, a, c) };
 
-    // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨m_{b*p+i}, m_{b*q+j}⟩ / (d_{b*p+i} · d_{b*q+j})
+    // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨|m_{b*p+i}|, |m_{b*q+j}|⟩
+    //          / (d_{b*p+i} · d_{b*q+j}).
+    //
+    // Here lambda and momentum are both non-negative, so every effective
+    // forward-encoder entry is non-negative and the absolute value is a no-op.
+    // For signed encoders, replacing C by |C| is our conservative extension of
+    // Lemma 3.2 via the same row-wise triangle inequality; signed column sums
+    // would not provide a valid dominating construction.
     //
     // Terms are pruned by the *actual* column gap |b(q-p) + (j-i)|, not by b.
     // Cross-epoch terms do NOT uniformly decay as λ^{b·|p-q|}: the cyclic corner
@@ -325,12 +332,13 @@ pub fn lambda_cgd_gram_matrix(
     Ok(gram)
 }
 
-/// Compute the BnB Gram matrix with LR-schedule weighting (numerical).
+/// Compatibility tombstone for LR-weighted λ-CGD accounting.
 ///
-/// The effective column for bin i is:
-///   m_i[t] = η_t · Σ_{e: i+e·b ≤ t} Σ_{s=i+e·b}^{t} β^{t-s} · C_λ[s, i+e·b]
-///
-/// Computed via incremental rank-1 updates: O(n · b²/2) total.
+/// A learning-rate-weighted Gram does not describe the deployed λ-CGD
+/// mechanism unless the same schedule also changes its encoder/noise path.
+/// Opaque's λ-CGD mechanism does not do that, so accepting this calculation
+/// could understate privacy loss.  The symbol remains temporarily so callers
+/// receive an actionable error instead of an import failure.
 ///
 /// # Arguments
 ///
@@ -354,114 +362,21 @@ pub fn lambda_cgd_gram_matrix_lr(
     normalized: bool,
     lr_weights: &[f64],
 ) -> Result<Vec<f64>> {
-    if !(0.0..1.0).contains(&lambda) {
-        return Err(PldError::InvalidParameter(format!(
-            "lambda must be in [0, 1), got {}",
-            lambda
-        )));
-    }
-    if n_steps == 0 {
-        return Err(PldError::InvalidParameter("n_steps must be >= 1".into()));
-    }
-    if min_sep == 0 {
-        return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
-    }
-    if !(0.0..1.0).contains(&momentum) {
-        return Err(PldError::InvalidParameter(format!(
-            "momentum must be in [0, 1), got {}",
-            momentum
-        )));
-    }
-    if lr_weights.len() != n_steps {
-        return Err(PldError::InvalidParameter(format!(
-            "lr_weights length ({}) must equal n_steps ({})",
-            lr_weights.len(),
-            n_steps
-        )));
-    }
-
-    let b = min_sep;
-    let n = n_steps;
-    let k_inferred = n.div_ceil(b);
-    let e = match max_participations {
-        Some(k) => k.min(k_inferred),
-        None => k_inferred,
-    };
-
-    if e == 0 || b == 0 {
-        return Ok(vec![0.0; b * b]);
-    }
-
-    // For each bin i, maintain running accumulators for each epoch's column.
-    // acc[i * e + ep] = momentum-accumulated value for column i + ep * b at current step.
-    let mut acc = vec![0.0f64; b * e];
-
-    // Accumulate m_i[t] = η_t · Σ_ep acc[i][ep] into Gram matrix via rank-1 updates.
-    let mut gram = vec![0.0f64; b * b];
-    // Also accumulate column norm-squared for normalization.
-    let mut col_norm_sq = vec![0.0f64; b];
-
-    let beta = momentum;
-
-    for (t, &lr_t) in lr_weights.iter().enumerate().take(n) {
-        // Update accumulators and compute v[i] for this step
-        let mut v = vec![0.0f64; b];
-
-        for i in 0..b {
-            let mut sum_acc = 0.0;
-            for ep in 0..e {
-                let col_start = i + ep * b;
-                if col_start > t || col_start >= n {
-                    continue;
-                }
-                // Decay the accumulator by β, then add the new C_λ contribution.
-                // At t = col_start: acc = λ^0 = 1
-                // At t > col_start: acc = β·prev + λ^{t - col_start}
-                let lambda_power = lambda.powi((t - col_start) as i32);
-                acc[i * e + ep] = beta * acc[i * e + ep] + lambda_power;
-                sum_acc += acc[i * e + ep];
-            }
-            v[i] = lr_t * sum_acc;
-        }
-
-        // Rank-1 update: gram += v · v^T (upper triangle only)
-        for i in 0..b {
-            if v[i] == 0.0 {
-                continue;
-            }
-            col_norm_sq[i] += v[i] * v[i];
-            for j in (i + 1)..b {
-                gram[i * b + j] += v[i] * v[j];
-            }
-            gram[i * b + i] += v[i] * v[i];
-        }
-    }
-
-    // Fill lower triangle
-    for i in 0..b {
-        for j in (i + 1)..b {
-            gram[j * b + i] = gram[i * b + j];
-        }
-    }
-
-    // Apply normalization if requested
-    if normalized {
-        for i in 0..b {
-            let d_i = col_norm_sq[i].sqrt();
-            if d_i == 0.0 {
-                continue;
-            }
-            for j in 0..b {
-                let d_j = col_norm_sq[j].sqrt();
-                if d_j == 0.0 {
-                    continue;
-                }
-                gram[i * b + j] /= d_i * d_j;
-            }
-        }
-    }
-
-    Ok(gram)
+    let _ = (
+        lambda,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        lr_weights,
+    );
+    Err(PldError::InvalidParameter(
+        "LR-weighted lambda-CGD accounting is unsupported: the schedule does not alter the \
+         deployed lambda-CGD encoder or noise. Omit lr_schedule and recalibrate with the \
+         unweighted mechanism, or use BandMF/BLT for a schedule-shaped workload."
+            .into(),
+    ))
 }
 
 #[cfg(test)]
@@ -844,85 +759,11 @@ mod tests {
         }
     }
 
-    // ── LR-weighted Gram matrix tests ─────────────────────────────
-
     #[test]
-    fn test_gram_lr_uniform_matches_closed_form() {
-        // Uniform LR = 1.0 should match the closed-form (no-LR) result
-        let lambda = 0.9;
-        let b = 10;
-        let e = 3;
-        let n = b * e;
-        let lr = vec![1.0; n];
-
-        let gram_cf = lambda_cgd_gram_matrix(lambda, n, b, Some(e), false, 0.0).unwrap();
-        let gram_lr = lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr).unwrap();
-
-        for i in 0..(b * b) {
-            assert!(
-                (gram_cf[i] - gram_lr[i]).abs() / gram_cf[i].abs().max(1e-10) < 1e-4,
-                "entry {}: closed_form={}, lr_numerical={}",
-                i,
-                gram_cf[i],
-                gram_lr[i]
-            );
-        }
-    }
-
-    #[test]
-    fn test_gram_lr_uniform_with_momentum_matches() {
-        // Uniform LR + momentum should match closed-form with momentum
-        let lambda = 0.7;
-        let beta = 0.9;
-        let b = 8;
-        let e = 3;
-        let n = b * e;
-        let lr = vec![1.0; n];
-
-        let gram_cf = lambda_cgd_gram_matrix(lambda, n, b, Some(e), false, beta).unwrap();
-        let gram_lr = lambda_cgd_gram_matrix_lr(lambda, beta, n, b, Some(e), false, &lr).unwrap();
-
-        for i in 0..(b * b) {
-            assert!(
-                (gram_cf[i] - gram_lr[i]).abs() / gram_cf[i].abs().max(1e-10) < 1e-4,
-                "entry {}: closed_form={}, lr_numerical={}",
-                i,
-                gram_cf[i],
-                gram_lr[i]
-            );
-        }
-    }
-
-    #[test]
-    fn test_gram_lr_lower_lr_reduces_diagonal() {
-        // Lower LR → smaller effective columns → smaller Gram diagonal entries
-        let lambda = 0.9;
-        let b = 10;
-        let e = 3;
-        let n = b * e;
-
-        let lr_high = vec![1.0; n];
-        let lr_low = vec![0.5; n];
-
-        let gram_high =
-            lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_high).unwrap();
-        let gram_low =
-            lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_low).unwrap();
-
-        for i in 0..b {
-            assert!(
-                gram_low[i * b + i] < gram_high[i * b + i],
-                "bin {}: low LR gram {} should be < high LR gram {}",
-                i,
-                gram_low[i * b + i],
-                gram_high[i * b + i]
-            );
-        }
-    }
-
-    #[test]
-    fn test_gram_lr_rejects_wrong_length() {
-        assert!(lambda_cgd_gram_matrix_lr(0.9, 0.0, 30, 10, Some(3), false, &[1.0; 20]).is_err());
+    fn test_lr_weighted_gram_is_a_compatibility_tombstone() {
+        let err =
+            lambda_cgd_gram_matrix_lr(0.9, 0.0, 30, 10, Some(3), false, &[1.0; 30]).unwrap_err();
+        assert!(err.to_string().contains("unsupported"));
     }
 
     // ── Helper ─────────────────────────────────────────────────────

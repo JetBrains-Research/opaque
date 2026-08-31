@@ -15,10 +15,8 @@ PRNG seed replay instead of storing previous noise vectors.
 
 The noise **strategy** and the privacy **accounting** are connected through two
 values that the strategy computes: `sensitivity` and `gram_matrix`. The strategy
-knows the full structure of the mechanism (λ, participation pattern, number of
-steps) and derives these quantities from the strategy matrix C. The accounting
-constructor then takes only these pre-computed values — it does not need to know
-how they were obtained.
+is a recipe for C; the amplifier supplies the participation pattern and horizon
+when it derives those values.
 
 This separation keeps accounting constructors simple and avoids duplicating
 mechanism parameters in two places.
@@ -28,15 +26,10 @@ from opaque.dpftrl.noise import lambda_cgd_strategy
 import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
-# 1. Create strategy — computes sensitivity and Gram matrix internally
-strategy = lambda_cgd_strategy(
-    lambda_=0.9,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
-)
+# 1. Create a strategy recipe
+strategy = lambda_cgd_strategy(lambda_=0.9)
 
-# 2. Build accounting mechanism via strategy.as_mechanism
+# 2. The amplifier supplies n_steps and the participation geometry
 training = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     num_bins=steps_per_epoch,
@@ -50,32 +43,30 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `lambda_` | Correlation coefficient in \([0, 1)\). \(\lambda = 0\) is DP-SGD. |
-| `n_steps` | Total training steps |
-| `min_sep` | Steps per epoch (= bins per epoch) |
-| `max_participations` | Number of epochs |
 | `normalized` | Column-normalize C (default True, gives sensitivity=1 for k=1) |
-| `lr_schedule` | Optional per-step schedule for a step-weighted BnB Gram |
+| `lr_schedule` | Deprecated compatibility argument; only `None` is accepted |
 
-### Accounting parameters
+### Amplifier and accounting parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise σ (calibrated or fixed) |
-| `sensitivity` | From `strategy.sensitivity(n_steps=...)` — L2 sensitivity of C |
-| `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
+| `n_steps` | Total training steps; supplied by the amplifier |
+| `num_bins` | Steps per epoch; determines minimum separation and participation count |
 
 ### Sensitivity
 
-The sensitivity depends only on the strategy matrix C, not on the optimizer
-workload. A supplied `lr_schedule` does not change sensitivity or noise; it
-selects the corresponding step-weighted Gram for Balls-in-Bins accounting. The
-sensitivity formula (Theorem 1, eq 15 of the paper) has a closed-form
-expression in terms of λ, min_sep, and max_participations.
+The sensitivity and Balls-in-Bins Gram depend only on the strategy matrix C,
+not on the optimizer workload. Learning-rate schedules belong to the optimizer
+and are deterministic post-processing of the private mechanism; they must not
+weight the privacy Gram. The sensitivity formula (Theorem 1, eq 15 of the
+paper) has a closed-form expression in terms of λ, min_sep, and
+max_participations.
 
 ## Assumptions and limitations
 
 - Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
-- `lr_schedule` weights the BnB Gram on the training-step axis only; it does not add a momentum parameter or change the noise strategy. Use the identical schedule in the optimizer; the strategy cannot validate external updates.
+- Learning-rate schedules are not strategy parameters. The temporary `lr_schedule` compatibility argument rejects non-`None` values; pass the schedule only to the optimizer.
 - Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
 - **Private second moments (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. Pass `second_moment_strategy` explicitly.
 - Broader MF context: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
