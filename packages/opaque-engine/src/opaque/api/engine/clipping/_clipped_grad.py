@@ -13,13 +13,14 @@ from torch.func import grad_and_value
 from opaque.api.engine.clipping._clipped_fun import FixedClipState, clipped_fun
 from opaque.api.engine.clipping._helpers import (
     batch_size_from_args,
+    empty_clipped_grads_like,
     normalize_fun_to_return_aux,
     normalize_to_tuple,
-    zero_grads_like,
 )
 from opaque.api.engine.functional._transform_stack import (
     under_differentiating_transform,
 )
+from opaque.api.engine.pytree import tree_map
 from opaque.api.engine.types import PerGroup, clipped
 from opaque.exceptions import ConfigurationError
 
@@ -219,15 +220,29 @@ def clipped_grad(
     )
 
     def _empty_batch_response(args, state):
-        """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
-        zeros = zero_grads_like(args, argnums_tuple)
+        """Short-circuit for empty batches: zero grads + empty aux, no vmap.
+
+        Mirrors the non-empty step's output structure and dtype: the
+        ``pre_clipping_transform`` is applied to the zero pytree and leaves
+        are cast to the configured ``dtype`` (as the across-batch sum does
+        on non-empty steps), so downstream buffers stay stable across empty
+        and non-empty draws.
+        """
+        zeros = empty_clipped_grads_like(
+            args, argnums_tuple, pre_clipping_transform, dtype
+        )
         if second_moment:
             from opaque.api.engine.types import SecondMomentClippingOutput
 
             grads = SecondMomentClippingOutput(
                 grads=clipped(zeros, max_norm=output_max_norm),
                 squared_grads=clipped(
-                    zero_grads_like(args, argnums_tuple),
+                    tree_map(
+                        lambda x: (
+                            torch.zeros_like(x) if isinstance(x, torch.Tensor) else x
+                        ),
+                        zeros,
+                    ),
                     max_norm=output_squared_max_norm,
                 ),
             )

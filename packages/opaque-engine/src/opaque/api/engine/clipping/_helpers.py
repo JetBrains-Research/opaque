@@ -91,8 +91,45 @@ def zero_grads_like(args: tuple, argnums: tuple[int, ...]):
     return zeros
 
 
+def empty_clipped_grads_like(
+    args: tuple,
+    argnums: tuple[int, ...],
+    pre_clipping_transform: Callable = lambda x: x,
+    dtype: torch.dtype | None = None,
+):
+    """Zero gradients matching the structure/dtype of a non-empty step.
+
+    Mirrors the non-empty clipping pipeline so empty-batch short-circuits
+    return step-stable outputs: ``pre_clipping_transform`` is applied to the
+    zero gradient pytree first (it may change the tree structure), then
+    tensor leaves are cast to the configured output ``dtype`` (``None`` keeps
+    the input dtype).
+
+    Args:
+        args: Positional arguments of the wrapped loss function.
+        argnums: Which argument(s) the zeros correspond to.
+        pre_clipping_transform: Transform applied to the gradient pytree,
+            identical to the one used on non-empty steps.
+        dtype: Optional output dtype to cast leaves to, matching the
+            ``dtype`` argument of ``clipped_grad`` / ``clipped_fun``.
+
+    Returns:
+        Zero-valued pytree (or tuple of pytrees, following the
+        ``zero_grads_like`` convention) with the same structure and dtypes
+        a non-empty step would produce.
+    """
+    zeros = zero_grads_like(args, argnums)
+    transformed = pre_clipping_transform(zeros)
+    if dtype is None:
+        return transformed
+    return tree_map(
+        lambda x: x.to(dtype) if isinstance(x, torch.Tensor) else x, transformed
+    )
+
+
 __all__ = [
     "batch_size_from_args",
+    "empty_clipped_grads_like",
     "normalize_fun_to_return_aux",
     "normalize_to_tuple",
     "zero_grads_like",
