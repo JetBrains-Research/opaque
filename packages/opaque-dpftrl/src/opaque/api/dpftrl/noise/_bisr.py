@@ -166,6 +166,10 @@ class BisrStrategy:
             raise ConfigurationError(
                 *(f"bandwidth must be >= 2, got {self.bandwidth}",)
             )
+        if not 0.0 <= self.momentum < 1.0:
+            raise ConfigurationError(
+                *(f"momentum must be in [0, 1), got {self.momentum}",)
+            )
         if (
             self.inv_coefficients is not None
             and len(self.inv_coefficients) != self.bandwidth

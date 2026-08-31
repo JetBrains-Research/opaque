@@ -62,6 +62,16 @@ class MfGaussian(DpProcess):
                     f"noise_multiplier must be non-negative, got {self.noise_multiplier}",
                 )
             )
+        if self.n_steps < 1:
+            raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
+        if self.min_sep < 1:
+            raise ConfigurationError(*(f"min_sep must be >= 1, got {self.min_sep}",))
+        if self.max_participations is not None and self.max_participations < 1:
+            raise ConfigurationError(
+                *(
+                    f"max_participations must be >= 1 or None, got {self.max_participations}",
+                )
+            )
 
     @property
     def _effective_max_participations(self) -> int:

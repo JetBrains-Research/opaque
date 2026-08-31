@@ -112,6 +112,12 @@ class BandMfStrategy:
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
 
+    def __post_init__(self) -> None:
+        if self.bands < 1:
+            raise ConfigurationError(*(f"bands must be >= 1, got {self.bands}",))
+        if self.momentum < 0:
+            raise ConfigurationError(*(f"momentum must be >= 0, got {self.momentum}",))
+
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:
         return _band_mf_coefficients_cached(
             n_steps, self.bands, self.momentum, _lr_key(self.lr_schedule, n_steps)
@@ -155,8 +161,7 @@ def band_mf_strategy(
     Returns:
         A :class:`BandMfStrategy` recipe.
     """
-    if bands < 1:
-        raise ConfigurationError(*(f"bands must be >= 1, got {bands}",))
+    # Recipe bounds live in ``BandMfStrategy.__post_init__``.
     return BandMfStrategy(
         bands=bands,
         momentum=momentum,

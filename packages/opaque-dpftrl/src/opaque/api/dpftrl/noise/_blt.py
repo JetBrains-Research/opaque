@@ -132,6 +132,14 @@ class BltStrategy:
     momentum: float = 1.0
     lr_schedule: Schedule | None = field(default=None, compare=False)
 
+    def __post_init__(self) -> None:
+        if self.max_buffers < 1:
+            raise ConfigurationError(
+                *(f"max_buffers must be >= 1, got {self.max_buffers}",)
+            )
+        if self.momentum < 0:
+            raise ConfigurationError(*(f"momentum must be >= 0, got {self.momentum}",))
+
     def _blt(
         self, *, n_steps: int, min_sep: int, max_participations: int | None
     ) -> BufferedToeplitz:
@@ -216,8 +224,7 @@ def blt_strategy(
     Returns:
         A :class:`BltStrategy` recipe.
     """
-    if max_buffers < 1:
-        raise ConfigurationError(*(f"max_buffers must be >= 1, got {max_buffers}",))
+    # max_buffers/momentum bounds live in ``BltStrategy.__post_init__``.
     return BltStrategy(
         max_buffers=max_buffers,
         momentum=momentum,
