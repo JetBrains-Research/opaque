@@ -5,8 +5,9 @@ benchmarking depends on:
 
 - memory stats report a real total / reserved budget (not zeros);
 - ``peak_gb`` is the driver's reserved high-water, so it *captures transients*
-  freed before the read — the property that makes per-step peak meaningful on a
-  backend with no peak counter;
+  freed before the read — at *run* scope: ``step_perf`` never resets it on
+  MPS, so ``StepPerf.peak_is_per_step`` is False there and the figure must
+  be attributed to the run, not to the step;
 - ``reset_peak_memory`` actually lowers that high-water on MPS;
 - ``step_perf`` does NOT pay an ``empty_cache`` per step (it would tank a
   training loop), so MPS peak accumulates as the run high-water instead;
@@ -57,8 +58,9 @@ class TestMpsPeakTracking:
         """The regression guard: peak must reflect a transient freed mid-step.
 
         Current allocation would report ~0 after the free; the driver
-        high-water keeps the 1 GiB, which is the number Track-B benchmarking
-        needs ("how much did this kernel actually need").
+        high-water keeps the 1 GiB.  The number answers "how much did the
+        run need so far", not "what this step alone needed" — see
+        ``peak_is_per_step`` below.
         """
         reset_peak_memory("mps")  # clean high-water baseline
         with step_perf("mps", batch_size=1) as sp:
@@ -70,6 +72,16 @@ class TestMpsPeakTracking:
         assert perf.memory_peak_gb >= 0.9  # captured the ~1 GiB transient
         # ... and is well above the (near-zero) end-of-step allocation.
         assert perf.memory_peak_gb > perf.memory_allocated_gb + 0.5
+
+    def test_peak_is_not_per_step_on_mps(self):
+        """peak_gb is the run-wide reserved high-water, not a step figure."""
+        with step_perf("mps", batch_size=1) as sp:
+            torch.randn(64, 64, device="mps")
+        perf = sp.perf
+        assert perf.peak_is_per_step is False
+        assert perf.to_dict(prefix="train/")["train/peak_is_per_step"] is False
+        # On MPS the reported peak equals the end-of-step reserved high-water.
+        assert perf.memory_peak_gb == perf.memory_reserved_gb
 
     def test_reset_peak_memory_lowers_high_water(self):
         t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")

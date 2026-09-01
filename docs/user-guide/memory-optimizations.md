@@ -220,11 +220,10 @@ On MPS, `get_memory_stats` reports allocated, reserved, and total memory
 `recommended_max_memory`). PyTorch's MPS backend exposes no allocated-peak
 counter, so **`peak_gb` is the driver's reserved high-water mark** — a
 monotonic measurement that *captures transients* (a tensor freed before the
-read still counts), which is the useful number for "how much did this step
-need". This is a precise measurement, so `MemoryStats.exact_peak` is `True`;
-it differs from CUDA's `peak_gb` only in *quantity* — reserved high-water (it
-equals `reserved_gb` and upper-bounds the allocated peak) rather than the
-allocated peak — not in precision.
+read still counts). This is a precise measurement, so `MemoryStats.exact_peak`
+is `True`; it differs from CUDA's `peak_gb` only in *quantity* — reserved
+high-water (it equals `reserved_gb` and upper-bounds the allocated peak)
+rather than the allocated peak — not in precision.
 
 Because there is no cheap per-step peak reset on MPS, `step_perf` does not
 reset it each step (the only reset is `torch.mps.empty_cache`, too costly to
@@ -232,6 +231,15 @@ run every step). Instead, MPS `peak_gb` accumulates as the run's reserved
 high-water and `max_peak_memory_gb` gives the run peak. For a clean
 per-config measurement (e.g. benchmarking kernels), call
 `reset_peak_memory(device)` before the measured region.
+
+`StepPerf.to_dict()` therefore emits a **`peak_is_per_step`** flag telling
+you which quantity you are logging: `True` on CUDA, where the step's peak
+counter is reset when the window opens and `memory_peak_gb` is truly this
+step's peak allocated; `False` on MPS, where `memory_peak_gb` equals
+`memory_reserved_gb` and is the run-wide reserved high-water — an early spike
+inflates every later step's value, so attribute it to the run, not the step;
+and `False` on CPU (`peak_gb` stays `0.0`). If you track per-step memory
+trends, gate on the flag rather than assuming CUDA semantics everywhere.
 
 Sub-step `.mark()` calls are device-synchronized, so their timings reflect
 real GPU execution — without the sync, an accelerator mark would record only
