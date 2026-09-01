@@ -30,8 +30,10 @@ def _stable_hash64(*parts: object) -> int:
     h = hashlib.blake2b(digest_size=8)
     for part in parts:
         if isinstance(part, int):
+            h.update(b"i")
             h.update(part.to_bytes(16, byteorder="little", signed=True))
         else:
+            h.update(b"s")
             h.update(str(part).encode("utf-8"))
         h.update(b"|")
     return int.from_bytes(h.digest(), byteorder="little", signed=False)

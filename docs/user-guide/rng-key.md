@@ -97,8 +97,9 @@ full     = fold_in(k, step, rank, worker) # step → rank → worker
 
 `fold_in(k, a, b)` is equivalent to `fold_in(fold_in(k, a), b)`.
 
-Integers and strings occupy disjoint hash paths, and that split is
-load-bearing. Integers are the caller's space (`split`, steps, ranks).
+Integers and strings occupy disjoint hash paths: each fold is prefixed with a
+type tag before hashing. That split is load-bearing. Integers are the caller's
+space (`split`, steps, ranks).
 Strings root a mechanism: fold one unique tag once, then derive steps
 beneath it. Opaque's shipped tags are listed in the
 [RNG reference](../reference/rng.md).
