@@ -10,6 +10,13 @@ set -euo pipefail
 : "${TEST_PATH:?TEST_PATH must be set}"
 : "${TEST_RESULTS_FILE:?TEST_RESULTS_FILE must be set}"
 
+# Keep the CUDA capability check next to the pytest invocation it protects, not
+# only in the calling workflow: any lane that runs a CUDA-selecting marker
+# expression through this script is then covered, and a workflow refactor cannot
+# quietly leave the GPU lanes passing on a CPU host. A no-op for every other
+# marker expression.
+bash "$(dirname "${BASH_SOURCE[0]}")/assert_cuda_available.sh"
+
 pytest_args=(
   uv run pytest "$TEST_PATH"
   -m "$PYTEST_MARKER"
