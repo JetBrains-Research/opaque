@@ -161,11 +161,11 @@ docs = [
 # tests/noise/ in both opaque-dpsgd and opaque-dpftrl).
 addopts = "--import-mode=importlib"
 
-# Test discovery walks the whole `packages/` tree — any package with a
-# `tests/` dir is picked up automatically. New packages, renames, and
-# deletes don't need matching edits in CI. Non-test directories are
-# skipped by pytest's `test_*.py` convention. Identical behavior locally
-# (`pytest` from repo root) and in CI.
+# Local test discovery walks the whole `packages/` tree — any package with a
+# `tests/` directory is picked up automatically. CI uses grouped explicit
+# package paths for parallelism and verifies that they cover every package test
+# directory. Non-test directories are skipped by pytest's `test_*.py`
+# convention.
 #
 testpaths = ["packages", "tests"]
 
