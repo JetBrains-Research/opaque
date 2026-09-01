@@ -85,6 +85,14 @@ def test_integer_and_string_tags_occupy_disjoint_spaces():
         assert fold_in(base, value).seed != fold_in(base, str(value)).seed
 
 
+def test_integer_and_string_tags_are_structurally_disjoint():
+    base = key(42)
+    integer_payload = 1
+    string_payload = "\x01" + "\x00" * 15
+
+    assert fold_in(base, integer_payload).seed != fold_in(base, string_payload).seed
+
+
 def test_fold_in_variadic_three_values():
     """fold_in(k, a, b, c) == fold_in(fold_in(fold_in(k, a), b), c)."""
     k = key(0)

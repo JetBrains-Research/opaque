@@ -200,8 +200,9 @@ key_v2 = fold_in(base_key, "v2")
   (`bool` is rejected even though it subclasses `int`)
 - `ConfigurationError` if no data values are provided
 
-Integers and strings occupy disjoint hash paths: `fold_in(k, 1)` is never
-the same key as `fold_in(k, "1")`. That split is load-bearing.
+Integers and strings occupy disjoint hash paths: each fold is prefixed with a
+type tag before hashing, so `fold_in(k, 1)` is never the same key as
+`fold_in(k, "1")`. That split is load-bearing.
 
 - **Integers are the caller's.** Steps, ranks, epochs, leaf and group
   indices, and every key `split` returns are integer folds.
