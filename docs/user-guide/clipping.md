@@ -366,8 +366,11 @@ Each parameter leaf is matched by substring against the patterns, using the
 leaf's display path (`".".join` of the optree `ParamPath`). Flat
 `named_parameters` keys from `make_functional` are one-segment paths; nested
 dicts/lists use multi-segment paths (e.g. `("layer", "attn")` displays as
-`layer.attn`). Every leaf must match exactly one pattern. Use
-`fallback=<value>` as a catch-all for unmatched parameters.
+`layer.attn`). Every leaf must match exactly one pattern, and every explicit
+pattern must match at least one leaf. Use `fallback=<value>` as a catch-all
+for unmatched parameters. To intentionally share a pattern configuration
+across architectures with different parameter names, pass
+`allow_unused_patterns=True`.
 
 Prefer `per_group(params, …)` over constructing `PerGroup` by hand: a bare
 string key such as `"layer.attn"` normalizes to the one-segment path

@@ -47,6 +47,7 @@ def per_group(
     patterns: dict[str, float] | None = None,
     *,
     fallback: float | None = None,
+    allow_unused_patterns: bool = False,
     **kwargs: float,
 ) -> _PerGroup:
     """Construct PerGroup from parameter leaf paths and substring patterns.
@@ -73,6 +74,10 @@ def per_group(
     not match an explicit pattern.  Without ``fallback``, unmatched
     parameters raise ``ValueError``.
 
+    By default, every explicit pattern must match at least one parameter.
+    Set ``allow_unused_patterns=True`` when intentionally reusing a
+    configuration across models with different parameter names.
+
     Args:
         params: Parameter pytree (flat or nested).  Leaf paths are matched
             against patterns via their dotted display form.
@@ -81,6 +86,8 @@ def per_group(
         fallback: Optional value for parameters that don't match any
             explicit pattern.  Unmatched params are assigned to a group
             named ``"fallback"``.
+        allow_unused_patterns: Whether to allow explicit patterns that do
+            not match any parameter. Defaults to ``False``.
         **kwargs: Pattern-value pairs where the kwarg name is the substring
             pattern and the value is the per-group value (e.g. clipping norm).
 
@@ -97,7 +104,9 @@ def per_group(
         TypeError: If ``params`` has a non-tensor leaf.
         ValueError: If no patterns are provided, if a parameter matches zero
             patterns (and no ``fallback`` is given), if a parameter
-            matches multiple patterns, or if any value is not positive.
+            matches multiple patterns, if an explicit pattern matches no
+            parameter (unless ``allow_unused_patterns=True``), or if any
+            value is not positive.
 
     Examples:
         >>> per_group(params, self_attn=1.0, mlp=2.0)
@@ -128,6 +137,7 @@ def per_group(
     param_paths = _tensor_paths(params)
 
     groups: dict[ParamPath, str] = {}
+    matched_patterns: set[str] = set()
     for path in param_paths:
         display = param_path_display(path)
         matches = [pat for pat in all_patterns if pat in display]
@@ -151,6 +161,21 @@ def per_group(
                 )
             )
         groups[path] = matches[0]
+        matched_patterns.add(matches[0])
+
+    unused_patterns = [
+        pattern for pattern in all_patterns if pattern not in matched_patterns
+    ]
+    if unused_patterns and not allow_unused_patterns:
+        sample_paths = [param_path_display(path) for path in param_paths[:3]]
+        raise ConfigurationError(
+            *(
+                f"Patterns did not match any parameter: {unused_patterns}. "
+                f"Sample parameter paths: {sample_paths}. "
+                "Use allow_unused_patterns=True when intentionally sharing "
+                "patterns across architectures.",
+            )
+        )
 
     used_groups = set(groups.values())
     values = {
