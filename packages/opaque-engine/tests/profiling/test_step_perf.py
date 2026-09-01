@@ -33,7 +33,6 @@ class TestStepPerf:
         assert perf.samples_per_second == 0.0
         assert perf.memory_peak_gb == 0.0
         assert perf.batch_size == 0
-        assert perf.peak_is_per_step is False
         assert perf.marks == {}
 
     def test_to_dict_bare_keys(self):
@@ -42,20 +41,8 @@ class TestStepPerf:
         assert "step_time_sec" in d
         assert "samples_per_second" in d
         assert "memory_peak_gb" in d
-        assert d["peak_is_per_step"] is False
         assert d["step_time_sec"] == 1.5
         assert d["samples_per_second"] == 20.0
-
-    def test_to_dict_peak_is_per_step_flag(self):
-        perf = StepPerf(memory_peak_gb=3.0, peak_is_per_step=True)
-        d = perf.to_dict(prefix="train/")
-        assert d["train/peak_is_per_step"] is True
-
-    def test_new_flag_preserves_positional_marks_argument(self):
-        marks = {"clip": 0.25}
-        perf = StepPerf(1.0, 2.0, 3.0, 4.0, 5.0, 6, marks)
-        assert perf.marks == marks
-        assert perf.peak_is_per_step is False
 
     def test_to_dict_with_prefix(self):
         perf = StepPerf(step_time_sec=1.0)
@@ -134,43 +121,6 @@ class TestStepPerfContextManager:
         assert result.memory_peak_gb == 0.0
         assert result.memory_allocated_gb == 0.0
 
-    def test_peak_is_per_step_false_on_cpu(self):
-        # CPU has no peak counter, so nothing is measured per step.
-        with step_perf("cpu", batch_size=8) as sp:
-            pass
-        assert sp.perf.peak_is_per_step is False
-        assert sp.perf.to_dict("train/")["train/peak_is_per_step"] is False
-
-    def test_peak_is_per_step_true_when_device_peak_trackable(self, monkeypatch):
-        # Simulate a CUDA-style cheap resettable peak counter: the flag must
-        # follow device_capabilities, not the (cpu) numbers themselves.
-        from opaque.api.engine.profiling import _memory
-
-        monkeypatch.setattr(
-            _memory,
-            "device_capabilities",
-            lambda device: replace(
-                device_capabilities(device), peak_memory_trackable=True
-            ),
-        )
-        with step_perf("cpu", batch_size=8) as sp:
-            pass
-        assert sp.perf.peak_is_per_step is True
-
-    def test_peak_is_per_step_false_when_track_memory_disabled(self, monkeypatch):
-        from opaque.api.engine.profiling import _memory
-
-        monkeypatch.setattr(
-            _memory,
-            "device_capabilities",
-            lambda device: replace(
-                device_capabilities(device), peak_memory_trackable=True
-            ),
-        )
-        with step_perf("cpu", batch_size=8, track_memory=False) as sp:
-            pass
-        assert sp.perf.peak_is_per_step is False
-
     def test_legacy_mps_peak_is_sampled_per_step(self, monkeypatch):
         from opaque.api.engine.profiling import _memory
 
@@ -207,7 +157,6 @@ class TestStepPerfContextManager:
         assert sp.perf.memory_peak_gb == 3.0
         assert sp.perf.memory_allocated_gb == 2.0
         assert sp.perf.memory_reserved_gb == 4.0
-        assert sp.perf.peak_is_per_step is True
 
     def test_synchronizes_before_resetting_peak(self, monkeypatch):
         from opaque.api.engine.profiling import _memory

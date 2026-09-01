@@ -129,16 +129,12 @@ def _peak_memory_trackable(device_type: str) -> bool:
     if device_type != "mps" or not torch.backends.mps.is_available():
         return False
 
-    # MPS implemented the generic allocator statistics in PyTorch 2.13.
-    # Probe the capability rather than version-sniffing so nightlies and
-    # backports behave according to their actual allocator.
+    # The generic API may exist without MPS allocator-statistics support.
     probe = torch.empty(1, device="mps")
     del probe
     try:
         stats = torch.accelerator.memory.memory_stats()
     except RuntimeError:
-        # PyTorch 2.9-2.12 expose the generic API but the MPS allocator does
-        # not implement its statistics hooks.
         return False
     return "allocated_bytes.all.peak" in stats
 
@@ -156,9 +152,7 @@ class DeviceCapabilities:
         supports_fused_kernels: the Triton fused-kernel runtime is available
             (CUDA + Triton); otherwise eager fallbacks are used.
         peak_memory_trackable: the device exposes a cheap, resettable
-            allocated-memory peak that ``step_perf`` can zero each step. True
-            on CUDA and on MPS when the installed PyTorch implements generic
-            allocator statistics (2.13+); false on older MPS releases and CPU.
+            allocated-memory peak that ``step_perf`` can zero each step.
         supports_pin_memory: pinned host memory accelerates H2D copies here
             (CUDA only; a no-op on CPU, a noisy warning on MPS).
     """

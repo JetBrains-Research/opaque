@@ -39,10 +39,6 @@ def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | N
     last_time = reduce_scalar(float(last.step_time_sec), op="max", device=device)
     last_samples = int(reduce_scalar(float(last.batch_size), op="sum", device=device))
     last_peak = reduce_scalar(float(last.memory_peak_gb), op="max", device=device)
-    # Peak is per-step only if every rank measured it per step (min = all).
-    peak_is_per_step = bool(
-        reduce_scalar(float(last.peak_is_per_step), op="min", device=device)
-    )
     return StepPerf(
         step_time_sec=last_time,
         samples_per_second=last_samples / last_time if last_time > 0 else 0.0,
@@ -50,7 +46,6 @@ def _sync_step_perf(last: StepPerf | None, device: torch.device) -> StepPerf | N
         memory_allocated_gb=0.0,
         memory_reserved_gb=0.0,
         batch_size=last_samples,
-        peak_is_per_step=peak_is_per_step,
         marks=MappingProxyType({}),
     )
 

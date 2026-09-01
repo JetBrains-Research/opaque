@@ -1,20 +1,4 @@
-"""MPS-specific profiling behavior (validated empirically on Apple Silicon).
-
-These tests lock in the Apple-Silicon profiling guarantees that Track-B kernel
-benchmarking depends on:
-
-- memory stats report a real total / reserved budget (not zeros);
-- generic MPS allocator statistics provide an exact, cheaply resettable
-  allocated-memory peak when the installed PyTorch supports them;
-- older releases preserve per-step scope by sampling allocated memory at
-  entry, marks, and exit;
-- ``peak_gb`` captures transients freed after a mark;
-- ``step_perf`` does NOT pay an ``empty_cache`` per step;
-- ``.mark()`` is device-synchronized, so sub-step timings reflect real GPU
-  execution rather than async kernel-launch time.
-
-All are ``@pytest.mark.mps`` and auto-skip off Apple Silicon.
-"""
+"""MPS profiling behavior on Apple Silicon."""
 
 import pytest
 import torch
@@ -71,14 +55,6 @@ class TestMpsPeakTracking:
         assert perf.memory_peak_gb >= 0.9  # captured the ~1 GiB transient
         # ... and is well above the (near-zero) end-of-step allocation.
         assert perf.memory_peak_gb > perf.memory_allocated_gb + 0.5
-
-    def test_peak_is_per_step(self):
-        with step_perf("mps", batch_size=1) as sp:
-            torch.randn(64, 64, device="mps")
-        perf = sp.perf
-        metrics = perf.to_dict(prefix="train/")
-        assert perf.peak_is_per_step is True
-        assert metrics["train/peak_is_per_step"] is True
 
     def test_reset_peak_memory_lowers_peak(self):
         t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")

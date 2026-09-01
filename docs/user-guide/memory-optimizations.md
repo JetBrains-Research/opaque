@@ -215,36 +215,18 @@ or `get_memory_stats(device)`.
 | MPS | Full | Partial | Supported |
 | CPU | Limited | Not available | Supported |
 
-On MPS, `get_memory_stats` reports allocated, reserved, and total memory
-(via `torch.mps.current_allocated_memory`, `driver_allocated_memory`, and
-`recommended_max_memory`). `driver_allocated_memory` is a current total for
-the process, including allocator caches and MPS/MPSGraph allocations; Metal
-does not define it as a monotonic peak counter.
+On MPS, `memory_peak_gb` is always scoped to the measured step:
 
-PyTorch 2.13 added MPS allocator statistics to the backend-neutral
-`torch.accelerator.memory` API. Opaque uses its
-`reset_peak_memory_stats()` and `max_memory_allocated()` calls, so
-`step_perf` records the exact peak allocated tensor memory for each MPS step,
-including a transient freed before the step ends, without emptying the cache.
-This is the same measurement contract used on CUDA.
+| PyTorch | Measurement |
+|---------|-------------|
+| 2.13+ | Exact allocated-memory peak from `torch.accelerator.memory` |
+| 2.9–2.12 | Maximum current allocation sampled at entry, marks, and exit |
 
-On PyTorch 2.9–2.12, the MPS allocator does not implement those generic
-statistics. `step_perf` preserves per-step scope by taking the maximum of
-`current_allocated_memory()` at step entry, every `.mark()`, and step exit.
-This observed peak is useful for trends but can miss an allocation created and
-freed between samples; add marks after memory-intensive phases when profiling
-on these releases. `memory_reserved_gb` separately retains the current
-Metal-driver allocation. The point-in-time `get_memory_stats()` helper cannot
-construct a sampled window, so its older-MPS `peak_gb` fallback remains the
-driver allocation with `exact_peak=False`.
+Add marks after memory-intensive phases to improve the sampled measurement.
+`memory_reserved_gb` reports the current Metal-driver allocation, including
+allocator caches and MPS/MPSGraph allocations.
 
-`StepPerf.to_dict()` emits **`peak_is_per_step=True`** on CUDA and MPS,
-regardless of which MPS implementation produced the best available value. It
-is `False` on CPU or when `track_memory=False`.
-
-Sub-step `.mark()` calls are device-synchronized, so their timings reflect
-real GPU execution — without the sync, an accelerator mark would record only
-async kernel-launch time (microseconds for hundreds of ms of work).
+Sub-step `.mark()` calls synchronize the device for accurate timing.
 
 ### Distributed memory considerations
 
