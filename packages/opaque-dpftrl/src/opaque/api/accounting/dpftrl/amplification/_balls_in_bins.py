@@ -57,6 +57,7 @@ from typing import TYPE_CHECKING
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import horizon_pld_cache
+from opaque.api.accounting.core._random_allocation_cache import epoch_pld
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
 from opaque.api.dpftrl.noise._blt import BltStrategy
@@ -237,11 +238,11 @@ class BallsInBins(DpHorizonProcess):
             if self.inner.noise_multiplier == 0:
                 return _native.non_private_pld(native_cfg)
             sigma_eff = float(self.inner.noise_multiplier) / math.sqrt(num_epochs_K)
-            return _native.random_allocation_gaussian_pld(
+            return epoch_pld(
                 sigma_eff,
                 self.num_bins,
                 1,
-                native_cfg,
+                config,
             )
 
         if isinstance(s, BltStrategy):
