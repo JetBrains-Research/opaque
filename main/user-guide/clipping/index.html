@@ -4186,8 +4186,11 @@ patterns:</p>
 leaf's display path (<code>".".join</code> of the optree <code>ParamPath</code>). Flat
 <code>named_parameters</code> keys from <code>make_functional</code> are one-segment paths; nested
 dicts/lists use multi-segment paths (e.g. <code>("layer", "attn")</code> displays as
-<code>layer.attn</code>). Every leaf must match exactly one pattern. Use
-<code>fallback=&lt;value&gt;</code> as a catch-all for unmatched parameters.</p>
+<code>layer.attn</code>). Every leaf must match exactly one pattern, and every explicit
+pattern must match at least one leaf. Use <code>fallback=&lt;value&gt;</code> as a catch-all
+for unmatched parameters. To intentionally share a pattern configuration
+across architectures with different parameter names, pass
+<code>allow_unused_patterns=True</code>.</p>
 <p>Prefer <code>per_group(params, …)</code> over constructing <code>PerGroup</code> by hand: a bare
 string key such as <code>"layer.attn"</code> normalizes to the one-segment path
 <code>("layer.attn",)</code>, which does <strong>not</strong> match a nested leaf at

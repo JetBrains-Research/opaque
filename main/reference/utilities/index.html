@@ -5530,7 +5530,31 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <span class="normal"><a href="#__codelineno-0-437">437</a></span>
 <span class="normal"><a href="#__codelineno-0-438">438</a></span>
 <span class="normal"><a href="#__codelineno-0-439">439</a></span>
-<span class="normal"><a href="#__codelineno-0-440">440</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-342" name="__codelineno-0-342"></a><span class="k">def</span><span class="w"> </span><span class="nf">global_norm</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-440">440</a></span>
+<span class="normal"><a href="#__codelineno-0-441">441</a></span>
+<span class="normal"><a href="#__codelineno-0-442">442</a></span>
+<span class="normal"><a href="#__codelineno-0-443">443</a></span>
+<span class="normal"><a href="#__codelineno-0-444">444</a></span>
+<span class="normal"><a href="#__codelineno-0-445">445</a></span>
+<span class="normal"><a href="#__codelineno-0-446">446</a></span>
+<span class="normal"><a href="#__codelineno-0-447">447</a></span>
+<span class="normal"><a href="#__codelineno-0-448">448</a></span>
+<span class="normal"><a href="#__codelineno-0-449">449</a></span>
+<span class="normal"><a href="#__codelineno-0-450">450</a></span>
+<span class="normal"><a href="#__codelineno-0-451">451</a></span>
+<span class="normal"><a href="#__codelineno-0-452">452</a></span>
+<span class="normal"><a href="#__codelineno-0-453">453</a></span>
+<span class="normal"><a href="#__codelineno-0-454">454</a></span>
+<span class="normal"><a href="#__codelineno-0-455">455</a></span>
+<span class="normal"><a href="#__codelineno-0-456">456</a></span>
+<span class="normal"><a href="#__codelineno-0-457">457</a></span>
+<span class="normal"><a href="#__codelineno-0-458">458</a></span>
+<span class="normal"><a href="#__codelineno-0-459">459</a></span>
+<span class="normal"><a href="#__codelineno-0-460">460</a></span>
+<span class="normal"><a href="#__codelineno-0-461">461</a></span>
+<span class="normal"><a href="#__codelineno-0-462">462</a></span>
+<span class="normal"><a href="#__codelineno-0-463">463</a></span>
+<span class="normal"><a href="#__codelineno-0-464">464</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-342" name="__codelineno-0-342"></a><span class="k">def</span><span class="w"> </span><span class="nf">global_norm</span><span class="p">(</span>
 <a id="__codelineno-0-343" name="__codelineno-0-343"></a>    <span class="n">tree</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <a id="__codelineno-0-344" name="__codelineno-0-344"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-0-345" name="__codelineno-0-345"></a>    <span class="n">compute_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -5565,70 +5589,94 @@ See: Pascanu et al. 2013, "On the difficulty of training RNNs"</p>
 <a id="__codelineno-0-374" name="__codelineno-0-374"></a><span class="sd">        This function is commonly used in gradient clipping for deep learning.</span>
 <a id="__codelineno-0-375" name="__codelineno-0-375"></a><span class="sd">        See: Pascanu et al. 2013, "On the difficulty of training RNNs"</span>
 <a id="__codelineno-0-376" name="__codelineno-0-376"></a><span class="sd">    """</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>    <span class="p">):</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>            <span class="o">*</span><span class="p">(</span>
-<a id="__codelineno-0-382" name="__codelineno-0-382"></a>                <span class="sa">f</span><span class="s2">"compute_dtype must be a real floating-point dtype, got "</span>
-<a id="__codelineno-0-383" name="__codelineno-0-383"></a>                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">compute_dtype</span><span class="si">!r}</span><span class="s2">.  Integer/bool/complex compute dtypes can "</span>
-<a id="__codelineno-0-384" name="__codelineno-0-384"></a>                <span class="sa">f</span><span class="s2">"silently corrupt the L2-norm reduction (the squared sum is "</span>
-<a id="__codelineno-0-385" name="__codelineno-0-385"></a>                <span class="sa">f</span><span class="s2">"non-negative real and the final sqrt assumes a real "</span>
-<a id="__codelineno-0-386" name="__codelineno-0-386"></a>                <span class="sa">f</span><span class="s2">"accumulator)."</span><span class="p">,</span>
-<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="p">)</span>
-<a id="__codelineno-0-388" name="__codelineno-0-388"></a>        <span class="p">)</span>
-<a id="__codelineno-0-389" name="__codelineno-0-389"></a>
-<a id="__codelineno-0-390" name="__codelineno-0-390"></a>    <span class="n">leaves</span> <span class="o">=</span> <span class="n">tree_leaves</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
-<a id="__codelineno-0-391" name="__codelineno-0-391"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">leaves</span><span class="p">:</span>
-<a id="__codelineno-0-392" name="__codelineno-0-392"></a>        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">compute_dtype</span> <span class="ow">or</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<a id="__codelineno-0-393" name="__codelineno-0-393"></a>
-<a id="__codelineno-0-394" name="__codelineno-0-394"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-395" name="__codelineno-0-395"></a>        <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">compute_dtype</span>
-<a id="__codelineno-0-396" name="__codelineno-0-396"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-397" name="__codelineno-0-397"></a>        <span class="c1"># Auto-promote: at least float32, but match user's intent if they</span>
-<a id="__codelineno-0-398" name="__codelineno-0-398"></a>        <span class="c1"># supplied higher-precision inputs.</span>
-<a id="__codelineno-0-399" name="__codelineno-0-399"></a>        <span class="n">dtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">dtype</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">leaves</span><span class="p">]</span>
-<a id="__codelineno-0-400" name="__codelineno-0-400"></a>        <span class="n">float_dtypes</span> <span class="o">=</span> <span class="p">[</span>
-<a id="__codelineno-0-401" name="__codelineno-0-401"></a>            <span class="n">dt</span> <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dtypes</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dt</span><span class="p">))</span>
-<a id="__codelineno-0-402" name="__codelineno-0-402"></a>        <span class="p">]</span>
-<a id="__codelineno-0-403" name="__codelineno-0-403"></a>        <span class="n">complex_dtypes</span> <span class="o">=</span> <span class="p">[</span>
-<a id="__codelineno-0-404" name="__codelineno-0-404"></a>            <span class="n">dt</span> <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dtypes</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dt</span><span class="p">))</span>
-<a id="__codelineno-0-405" name="__codelineno-0-405"></a>        <span class="p">]</span>
-<a id="__codelineno-0-406" name="__codelineno-0-406"></a>
-<a id="__codelineno-0-407" name="__codelineno-0-407"></a>        <span class="k">if</span> <span class="n">complex_dtypes</span><span class="p">:</span>
-<a id="__codelineno-0-408" name="__codelineno-0-408"></a>            <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span>
-<a id="__codelineno-0-409" name="__codelineno-0-409"></a>            <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">complex_dtypes</span><span class="p">:</span>
-<a id="__codelineno-0-410" name="__codelineno-0-410"></a>                <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
-<a id="__codelineno-0-411" name="__codelineno-0-411"></a>            <span class="c1"># For complex, accumulate real magnitudes in the corresponding real dtype</span>
-<a id="__codelineno-0-412" name="__codelineno-0-412"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span>
-<a id="__codelineno-0-413" name="__codelineno-0-413"></a>                <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">acc_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">dtype</span>
-<a id="__codelineno-0-414" name="__codelineno-0-414"></a>            <span class="p">)</span>
-<a id="__codelineno-0-415" name="__codelineno-0-415"></a>        <span class="k">elif</span> <span class="n">float_dtypes</span><span class="p">:</span>
-<a id="__codelineno-0-416" name="__codelineno-0-416"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
-<a id="__codelineno-0-417" name="__codelineno-0-417"></a>            <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">float_dtypes</span><span class="p">:</span>
-<a id="__codelineno-0-418" name="__codelineno-0-418"></a>                <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
-<a id="__codelineno-0-419" name="__codelineno-0-419"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-420" name="__codelineno-0-420"></a>            <span class="c1"># All integer/bool → accumulate in float32</span>
-<a id="__codelineno-0-421" name="__codelineno-0-421"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
-<a id="__codelineno-0-422" name="__codelineno-0-422"></a>
-<a id="__codelineno-0-423" name="__codelineno-0-423"></a>    <span class="n">device</span> <span class="o">=</span> <span class="n">leaves</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">device</span>
-<a id="__codelineno-0-424" name="__codelineno-0-424"></a>    <span class="n">total</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-425" name="__codelineno-0-425"></a>
-<a id="__codelineno-0-426" name="__codelineno-0-426"></a>    <span class="k">for</span> <span class="n">leaf</span> <span class="ow">in</span> <span class="n">leaves</span><span class="p">:</span>
-<a id="__codelineno-0-427" name="__codelineno-0-427"></a>        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_complex</span><span class="p">(</span><span class="n">leaf</span><span class="p">):</span>
-<a id="__codelineno-0-428" name="__codelineno-0-428"></a>            <span class="c1"># ||z||^2 = (real^2 + imag^2)</span>
-<a id="__codelineno-0-429" name="__codelineno-0-429"></a>            <span class="n">real</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-430" name="__codelineno-0-430"></a>            <span class="n">imag</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-431" name="__codelineno-0-431"></a>            <span class="n">total</span> <span class="o">=</span> <span class="p">(</span>
-<a id="__codelineno-0-432" name="__codelineno-0-432"></a>                <span class="n">total</span>
-<a id="__codelineno-0-433" name="__codelineno-0-433"></a>                <span class="o">+</span> <span class="p">(</span><span class="n">real</span> <span class="o">*</span> <span class="n">real</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-434" name="__codelineno-0-434"></a>                <span class="o">+</span> <span class="p">(</span><span class="n">imag</span> <span class="o">*</span> <span class="n">imag</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-435" name="__codelineno-0-435"></a>            <span class="p">)</span>
-<a id="__codelineno-0-436" name="__codelineno-0-436"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-437" name="__codelineno-0-437"></a>            <span class="n">x</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-438" name="__codelineno-0-438"></a>            <span class="n">total</span> <span class="o">=</span> <span class="n">total</span> <span class="o">+</span> <span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-439" name="__codelineno-0-439"></a>
-<a id="__codelineno-0-440" name="__codelineno-0-440"></a>    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">total</span><span class="p">)</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.api.engine.types</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="n">ClippedPytree</span><span class="p">,</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>        <span class="n">NoisedPytree</span><span class="p">,</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="n">SecondMomentClippingOutput</span><span class="p">,</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>        <span class="n">SecondMomentNoiseOutput</span><span class="p">,</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>    <span class="p">)</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>        <span class="n">tree</span><span class="p">,</span>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>        <span class="p">(</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="n">ClippedPytree</span><span class="p">,</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>            <span class="n">NoisedPytree</span><span class="p">,</span>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a>            <span class="n">SecondMomentClippingOutput</span><span class="p">,</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a>            <span class="n">SecondMomentNoiseOutput</span><span class="p">,</span>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>        <span class="p">),</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a>    <span class="p">):</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a>        <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>            <span class="o">*</span><span class="p">(</span>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a>                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> global norm is unsupported because "</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a>                <span class="s2">"global_norm() operates on raw tensor pytrees. Use `.pytree` "</span>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a>                <span class="s2">"for an explicit numerical-only view."</span><span class="p">,</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a>            <span class="p">)</span>
+<a id="__codelineno-0-399" name="__codelineno-0-399"></a>        <span class="p">)</span>
+<a id="__codelineno-0-400" name="__codelineno-0-400"></a>
+<a id="__codelineno-0-401" name="__codelineno-0-401"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(</span>
+<a id="__codelineno-0-402" name="__codelineno-0-402"></a>        <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">compute_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-403" name="__codelineno-0-403"></a>    <span class="p">):</span>
+<a id="__codelineno-0-404" name="__codelineno-0-404"></a>        <span class="k">raise</span> <span class="n">InputTypeError</span><span class="p">(</span>
+<a id="__codelineno-0-405" name="__codelineno-0-405"></a>            <span class="o">*</span><span class="p">(</span>
+<a id="__codelineno-0-406" name="__codelineno-0-406"></a>                <span class="sa">f</span><span class="s2">"compute_dtype must be a real floating-point dtype, got "</span>
+<a id="__codelineno-0-407" name="__codelineno-0-407"></a>                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">compute_dtype</span><span class="si">!r}</span><span class="s2">.  Integer/bool/complex compute dtypes can "</span>
+<a id="__codelineno-0-408" name="__codelineno-0-408"></a>                <span class="sa">f</span><span class="s2">"silently corrupt the L2-norm reduction (the squared sum is "</span>
+<a id="__codelineno-0-409" name="__codelineno-0-409"></a>                <span class="sa">f</span><span class="s2">"non-negative real and the final sqrt assumes a real "</span>
+<a id="__codelineno-0-410" name="__codelineno-0-410"></a>                <span class="sa">f</span><span class="s2">"accumulator)."</span><span class="p">,</span>
+<a id="__codelineno-0-411" name="__codelineno-0-411"></a>            <span class="p">)</span>
+<a id="__codelineno-0-412" name="__codelineno-0-412"></a>        <span class="p">)</span>
+<a id="__codelineno-0-413" name="__codelineno-0-413"></a>
+<a id="__codelineno-0-414" name="__codelineno-0-414"></a>    <span class="n">leaves</span> <span class="o">=</span> <span class="n">tree_leaves</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>
+<a id="__codelineno-0-415" name="__codelineno-0-415"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">leaves</span><span class="p">:</span>
+<a id="__codelineno-0-416" name="__codelineno-0-416"></a>        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">compute_dtype</span> <span class="ow">or</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+<a id="__codelineno-0-417" name="__codelineno-0-417"></a>
+<a id="__codelineno-0-418" name="__codelineno-0-418"></a>    <span class="k">if</span> <span class="n">compute_dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-419" name="__codelineno-0-419"></a>        <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">compute_dtype</span>
+<a id="__codelineno-0-420" name="__codelineno-0-420"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-421" name="__codelineno-0-421"></a>        <span class="c1"># Auto-promote: at least float32, but match user's intent if they</span>
+<a id="__codelineno-0-422" name="__codelineno-0-422"></a>        <span class="c1"># supplied higher-precision inputs.</span>
+<a id="__codelineno-0-423" name="__codelineno-0-423"></a>        <span class="n">dtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">dtype</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">leaves</span><span class="p">]</span>
+<a id="__codelineno-0-424" name="__codelineno-0-424"></a>        <span class="n">float_dtypes</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-0-425" name="__codelineno-0-425"></a>            <span class="n">dt</span> <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dtypes</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dt</span><span class="p">))</span>
+<a id="__codelineno-0-426" name="__codelineno-0-426"></a>        <span class="p">]</span>
+<a id="__codelineno-0-427" name="__codelineno-0-427"></a>        <span class="n">complex_dtypes</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-0-428" name="__codelineno-0-428"></a>            <span class="n">dt</span> <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dtypes</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dt</span><span class="p">))</span>
+<a id="__codelineno-0-429" name="__codelineno-0-429"></a>        <span class="p">]</span>
+<a id="__codelineno-0-430" name="__codelineno-0-430"></a>
+<a id="__codelineno-0-431" name="__codelineno-0-431"></a>        <span class="k">if</span> <span class="n">complex_dtypes</span><span class="p">:</span>
+<a id="__codelineno-0-432" name="__codelineno-0-432"></a>            <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex64</span>
+<a id="__codelineno-0-433" name="__codelineno-0-433"></a>            <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">complex_dtypes</span><span class="p">:</span>
+<a id="__codelineno-0-434" name="__codelineno-0-434"></a>                <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
+<a id="__codelineno-0-435" name="__codelineno-0-435"></a>            <span class="c1"># For complex, accumulate real magnitudes in the corresponding real dtype</span>
+<a id="__codelineno-0-436" name="__codelineno-0-436"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span>
+<a id="__codelineno-0-437" name="__codelineno-0-437"></a>                <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">acc_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">dtype</span>
+<a id="__codelineno-0-438" name="__codelineno-0-438"></a>            <span class="p">)</span>
+<a id="__codelineno-0-439" name="__codelineno-0-439"></a>        <span class="k">elif</span> <span class="n">float_dtypes</span><span class="p">:</span>
+<a id="__codelineno-0-440" name="__codelineno-0-440"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+<a id="__codelineno-0-441" name="__codelineno-0-441"></a>            <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">float_dtypes</span><span class="p">:</span>
+<a id="__codelineno-0-442" name="__codelineno-0-442"></a>                <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
+<a id="__codelineno-0-443" name="__codelineno-0-443"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-444" name="__codelineno-0-444"></a>            <span class="c1"># All integer/bool → accumulate in float32</span>
+<a id="__codelineno-0-445" name="__codelineno-0-445"></a>            <span class="n">real_acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+<a id="__codelineno-0-446" name="__codelineno-0-446"></a>
+<a id="__codelineno-0-447" name="__codelineno-0-447"></a>    <span class="n">device</span> <span class="o">=</span> <span class="n">leaves</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">device</span>
+<a id="__codelineno-0-448" name="__codelineno-0-448"></a>    <span class="n">total</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-449" name="__codelineno-0-449"></a>
+<a id="__codelineno-0-450" name="__codelineno-0-450"></a>    <span class="k">for</span> <span class="n">leaf</span> <span class="ow">in</span> <span class="n">leaves</span><span class="p">:</span>
+<a id="__codelineno-0-451" name="__codelineno-0-451"></a>        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_complex</span><span class="p">(</span><span class="n">leaf</span><span class="p">):</span>
+<a id="__codelineno-0-452" name="__codelineno-0-452"></a>            <span class="c1"># ||z||^2 = (real^2 + imag^2)</span>
+<a id="__codelineno-0-453" name="__codelineno-0-453"></a>            <span class="n">real</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-454" name="__codelineno-0-454"></a>            <span class="n">imag</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-455" name="__codelineno-0-455"></a>            <span class="n">total</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-456" name="__codelineno-0-456"></a>                <span class="n">total</span>
+<a id="__codelineno-0-457" name="__codelineno-0-457"></a>                <span class="o">+</span> <span class="p">(</span><span class="n">real</span> <span class="o">*</span> <span class="n">real</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-458" name="__codelineno-0-458"></a>                <span class="o">+</span> <span class="p">(</span><span class="n">imag</span> <span class="o">*</span> <span class="n">imag</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-459" name="__codelineno-0-459"></a>            <span class="p">)</span>
+<a id="__codelineno-0-460" name="__codelineno-0-460"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-461" name="__codelineno-0-461"></a>            <span class="n">x</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-462" name="__codelineno-0-462"></a>            <span class="n">total</span> <span class="o">=</span> <span class="n">total</span> <span class="o">+</span> <span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">real_acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-463" name="__codelineno-0-463"></a>
+<a id="__codelineno-0-464" name="__codelineno-0-464"></a>    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">total</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
