@@ -38,6 +38,16 @@ from opaque.random import key
 from opaque.types import clipped
 
 
+def _assert_realized_stddev_matches_reported(
+    noise: torch.Tensor, reported_stddev: float
+) -> None:
+    """Check RMS noise against its report within six sampling standard errors."""
+    sample_count = noise.numel()
+    relative_tolerance = 6.0 / math.sqrt(2.0 * sample_count)
+    realized_stddev = noise.square().mean().sqrt().item()
+    assert abs(realized_stddev / reported_stddev - 1.0) <= relative_tolerance
+
+
 def _step(
     strategy,
     *,
@@ -86,6 +96,61 @@ class TestIdentityReducesToDPSGD:
         sigmas = _step(identity_strategy(), n_steps=10, nm=1.5, max_norm=0.7, n_calls=4)
         for s in sigmas:
             assert s == pytest.approx(1.5 * 0.7, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("strategy", "part", "n_calls"),
+    [
+        (
+            identity_strategy(),
+            {"n_steps": 20, "min_sep": 1, "max_participations": 20},
+            1,
+        ),
+        (
+            band_mf_strategy(bands=4, momentum=0.9),
+            {"n_steps": 20, "min_sep": 1, "max_participations": 20},
+            1,
+        ),
+        (
+            blt_strategy(momentum=0.9),
+            {"n_steps": 20, "min_sep": 4, "max_participations": 5},
+            1,
+        ),
+        (
+            bisr_strategy(bandwidth=4, momentum=0.5),
+            {"n_steps": 20, "min_sep": 4, "max_participations": 5},
+            1,
+        ),
+        (
+            bsr_strategy(bandwidth=4, alpha=1.0, beta=0.5),
+            {"n_steps": 20, "min_sep": 4, "max_participations": 5},
+            1,
+        ),
+        (
+            lambda_cgd_strategy(lambda_=0.7),
+            {"n_steps": 20, "min_sep": 1, "max_participations": 1},
+            2,
+        ),
+    ],
+    ids=["identity", "band_mf", "blt", "bisr", "bsr", "lambda_cgd"],
+)
+def test_realized_noise_matches_reported_stddev(strategy, part, n_calls):
+    """All public MF mechanisms publish the sampled per-coordinate standard deviation."""
+    template = {"w": torch.zeros(1_000_000)}
+    noise_fn, state = mf_gaussian_noise(
+        template,
+        strategy,
+        **part,
+        noise_multiplier=1.5,
+        key=key(42),
+    )
+    grads = clipped(template, max_norm=0.8)
+    for _ in range(n_calls):
+        output, state = noise_fn(grads, state)
+
+    _assert_realized_stddev_matches_reported(
+        output.pytree["w"], float(output.noise_stddev)
+    )
 
 
 class TestStreamingMatrixRealizedSigma:
