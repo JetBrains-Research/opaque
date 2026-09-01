@@ -281,6 +281,45 @@ class TestClippedGradPerGroup:
         assert isinstance(grads, dict)
         assert aux.grad_norms is not None
 
+    def test_empty_batch_aux_rate_presence_tracks_schema(self):
+        """Empty-batch aux must mirror the non-empty per-group ``clipping_rate``.
+
+        Per-group steps report ``clipping_rate=None`` (rates travel via
+        ``group_norms``); a hardcoded float on the empty short-circuit makes
+        ``sync(aux)`` raise a presence mismatch under DDP on partially-empty
+        Poisson rounds.
+        """
+
+        def loss(params, data):
+            return ((params["w"] - data) ** 2).mean()
+
+        params = {"w": torch.tensor(0.0)}
+        pg = per_group(params, w=1.0)
+        grad_fn, clip_state = clipped_grad(
+            loss,
+            argnums=0,
+            batch_argnums=1,
+            clipping_norm=pg,
+            return_aux=True,
+        )
+
+        (_, empty_aux), _ = grad_fn(params, torch.empty(0), state=clip_state)
+        assert empty_aux.clipping_rate is None
+        assert empty_aux.batch_size == 0
+
+        (_, full_aux), _ = grad_fn(params, torch.tensor([1.0, 2.0]), state=clip_state)
+        assert full_aux.clipping_rate is None
+
+        scalar_fn, scalar_state = clipped_grad(
+            loss,
+            argnums=0,
+            batch_argnums=1,
+            clipping_norm=1.0,
+            return_aux=True,
+        )
+        (_, scalar_empty_aux), _ = scalar_fn(params, torch.empty(0), state=scalar_state)
+        assert scalar_empty_aux.clipping_rate == 0.0
+
     def test_global_vs_per_group_single_group(self):
         """Single-group PerGroup should behave like global clipping."""
 
