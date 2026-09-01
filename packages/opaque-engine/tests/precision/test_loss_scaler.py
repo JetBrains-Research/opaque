@@ -173,6 +173,25 @@ def test_unscale_recovers_original_magnitude():
     torch.testing.assert_close(unscaled["bf16"], original["bf16"])
 
 
+@pytest.mark.parametrize(
+    "updates",
+    [
+        clipped({"w": torch.tensor([8.0])}, max_norm=4.0),
+        NoisedPytree(
+            pytree={"w": torch.tensor([8.0])},
+            max_norm=4.0,
+            noise_stddev=2.0,
+        ),
+    ],
+)
+@pytest.mark.parametrize("enabled", [True, False])
+def test_unscale_grads_rejects_dp_pytree_wrappers(updates, enabled):
+    scaler, state = loss_scaler(enabled=enabled, init_scale=4.0)
+
+    with pytest.raises(TypeError, match="must run before clipping"):
+        scaler.unscale_grads(updates, state)
+
+
 # ----------------------------------------------------------------------------
 # all_finite (free function)
 # ----------------------------------------------------------------------------

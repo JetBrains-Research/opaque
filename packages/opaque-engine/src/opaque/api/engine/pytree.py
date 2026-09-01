@@ -374,6 +374,17 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
+    from opaque.api.engine.types import ClippedPytree
+
+    if isinstance(tree, ClippedPytree):
+        raise InputTypeError(
+            *(
+                f"{type(tree).__name__} global norm is unsupported because "
+                "global_norm() operates on raw tensor pytrees. Use `.pytree` "
+                "for an explicit numerical-only view.",
+            )
+        )
+
     if compute_dtype is not None and not torch.is_floating_point(
         torch.empty((), dtype=compute_dtype)
     ):
