@@ -3921,7 +3921,9 @@ typically uses Poisson sampling.</p>
 <h3 id="dpsgd_accpoissoninner-sample_rate"><code>dpsgd_acc.poisson(inner, sample_rate)</code><a class="headerlink" href="#dpsgd_accpoissoninner-sample_rate" title="Permanent link">&para;</a></h3>
 <p>Standard Poisson-subsampled mechanism. Each example is included independently
 with probability <code>sample_rate</code>. This provides privacy amplification through
-subsampling. Accepts <code>gaussian()</code> or <code>adaclip()</code> as the inner mechanism.</p>
+subsampling. Plain Poisson accepts any Opaque <code>DpProcess</code> as its base
+mechanism. Use the capped form only when training truncates draws; it requires
+<code>gaussian()</code>, <code>adaclip()</code>, or <code>nonprivate()</code> as its base.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mi">256</span> <span class="o">/</span> <span class="mi">50_000</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
@@ -4385,7 +4387,8 @@ adjacency directions. The sample count is derived from <code>mc_resolution</code
 <code>mc_failure_probability</code>. Remaining uncertainty is placed at <code>+∞</code>, and the returned PLD
 exposes <code>mc_confidence</code> and <code>mc_resolution</code>. Statistical confidence is
 separate from DP delta. Balls-in-Bins with <code>identity_strategy()</code>, and
-<code>k_out_of_t</code>, use deterministic transforms. Monte Carlo PLDs certify
+<code>random_allocation</code> and <code>k_out_of_t</code>, use deterministic transforms. Monte
+Carlo PLDs bound
 ε/δ and advantage; β and Bayes risk fail closed to zero.</p>
 </div>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
