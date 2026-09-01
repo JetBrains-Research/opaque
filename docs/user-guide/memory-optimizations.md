@@ -229,16 +229,18 @@ including a transient freed before the step ends, without emptying the cache.
 This is the same measurement contract used on CUDA.
 
 On PyTorch 2.9–2.12, the MPS allocator does not implement those generic
-statistics. Opaque falls back to the current Metal-driver allocation and sets
-`MemoryStats.exact_peak` to `False`; resetting that fallback requires the
-costlier `torch.mps.empty_cache`, so `step_perf` does not do it every step.
+statistics. `step_perf` preserves per-step scope by taking the maximum of
+`current_allocated_memory()` at step entry, every `.mark()`, and step exit.
+This observed peak is useful for trends but can miss an allocation created and
+freed between samples; add marks after memory-intensive phases when profiling
+on these releases. `memory_reserved_gb` separately retains the current
+Metal-driver allocation. The point-in-time `get_memory_stats()` helper cannot
+construct a sampled window, so its older-MPS `peak_gb` fallback remains the
+driver allocation with `exact_peak=False`.
 
-`StepPerf.to_dict()` therefore emits a **`peak_is_per_step`** flag telling
-you which quantity you are logging: `True` on CUDA and on MPS with generic
-allocator peak statistics; `False` on older MPS releases using the
-process-level fallback, on CPU (`peak_gb` stays `0.0`), and whenever
-`track_memory=False`. Gate per-step memory trends on the flag rather than
-assuming every backend/version supports the same counter.
+`StepPerf.to_dict()` emits **`peak_is_per_step=True`** on CUDA and MPS,
+regardless of which MPS implementation produced the best available value. It
+is `False` on CPU or when `track_memory=False`.
 
 Sub-step `.mark()` calls are device-synchronized, so their timings reflect
 real GPU execution — without the sync, an accelerator mark would record only

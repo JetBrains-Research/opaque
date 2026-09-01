@@ -6,7 +6,9 @@ benchmarking depends on:
 - memory stats report a real total / reserved budget (not zeros);
 - generic MPS allocator statistics provide an exact, cheaply resettable
   allocated-memory peak when the installed PyTorch supports them;
-- ``peak_gb`` captures transients freed before the end-of-step read;
+- older releases preserve per-step scope by sampling allocated memory at
+  entry, marks, and exit;
+- ``peak_gb`` captures transients freed after a mark;
 - ``step_perf`` does NOT pay an ``empty_cache`` per step;
 - ``.mark()`` is device-synchronized, so sub-step timings reflect real GPU
   execution rather than async kernel-launch time.
@@ -56,13 +58,13 @@ class TestMpsPeakTracking:
         """The regression guard: peak must reflect a transient freed mid-step.
 
         Current allocation reports ~0 after the free; the allocator peak keeps
-        the 1 GiB. Older PyTorch releases retain it in the driver-allocation
-        fallback instead.
+        the 1 GiB. On older PyTorch releases, the explicit mark samples it.
         """
         reset_peak_memory("mps")  # clean high-water baseline
         with step_perf("mps", batch_size=1) as sp:
             t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")  # 1 GiB
             torch.mps.synchronize()
+            sp.mark("allocated")
             del t  # freed before the step ends
             torch.mps.synchronize()
         perf = sp.perf
@@ -70,15 +72,13 @@ class TestMpsPeakTracking:
         # ... and is well above the (near-zero) end-of-step allocation.
         assert perf.memory_peak_gb > perf.memory_allocated_gb + 0.5
 
-    def test_peak_scope_matches_allocator_capability(self):
+    def test_peak_is_per_step(self):
         with step_perf("mps", batch_size=1) as sp:
             torch.randn(64, 64, device="mps")
         perf = sp.perf
-        expected = device_capabilities("mps").peak_memory_trackable
-        assert perf.peak_is_per_step is expected
-        assert perf.to_dict(prefix="train/")["train/peak_is_per_step"] is expected
-        if not expected:
-            assert perf.memory_peak_gb == perf.memory_reserved_gb
+        metrics = perf.to_dict(prefix="train/")
+        assert perf.peak_is_per_step is True
+        assert metrics["train/peak_is_per_step"] is True
 
     def test_reset_peak_memory_lowers_peak(self):
         t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")

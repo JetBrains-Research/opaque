@@ -269,11 +269,8 @@ class StepPerf:
     Attributes:
         step_time_sec: Total wall-clock time for the step.
         samples_per_second: Throughput (batch_size / step_time_sec).
-        memory_peak_gb: Peak GPU memory *attributable to the step on CUDA
-            and on MPS when supported by the installed PyTorch. The quantity
-            is backend-dependent
-            (:attr:`peak_is_per_step` distinguishes the two cases at
-            runtime):
+        memory_peak_gb: Best available peak allocated GPU tensor memory during
+            the step. The precision is backend-dependent:
 
             - **CUDA**: exact peak *allocated* during this step — the peak
               counter is reset when the ``step_perf`` window opens, so the
@@ -281,10 +278,10 @@ class StepPerf:
             - **MPS with generic allocator statistics (PyTorch 2.13+)**:
               exact peak *allocated* during this step, using the same cheap
               resettable allocator-statistics contract as CUDA.
-            - **Older MPS**: current total Metal-driver allocation at the end
-              of the step. It includes allocator caches and framework
-              allocations and is not a contractual peak counter; read it as
-              a process-level fallback, not a step-level figure.
+            - **Older MPS**: observed maximum of current allocated tensor
+              memory sampled at step entry, every :meth:`_StepPerfBuilder.mark`,
+              and step exit. It is per-step but can miss transients between
+              samples.
             - **CPU**: ``0.0`` (no peak counter).
 
         memory_allocated_gb: Allocated memory at end of step.
@@ -294,8 +291,7 @@ class StepPerf:
         batch_size: Number of samples processed.
         marks: Sub-step timing marks as ``{name: elapsed_sec}``.
         peak_is_per_step: Whether :attr:`memory_peak_gb` measures only this
-            step. True on CUDA and on MPS with generic allocator peak
-            statistics; False on older MPS releases and CPU, and whenever
+            step. True on CUDA and MPS; False on CPU and whenever
             ``track_memory=False``.
     """
 
@@ -343,12 +339,28 @@ class _StepPerfBuilder:
     immutable :class:`StepPerf` when the context exits.
     """
 
-    def __init__(self, device: torch.device, batch_size: int) -> None:
+    def __init__(
+        self,
+        device: torch.device,
+        batch_size: int,
+        *,
+        sample_memory_peak: bool = False,
+    ) -> None:
         self._device = device
         self._batch_size = batch_size
+        self._sample_memory_peak = sample_memory_peak
+        self._sampled_memory_peak_gb = 0.0
         self._marks: dict[str, float] = {}
         self._last_mark_time: float = 0.0
         self._perf: StepPerf | None = None
+
+    def _sample_peak(self) -> None:
+        if self._sample_memory_peak:
+            allocated_gb = torch.mps.current_allocated_memory() / (1024**3)
+            self._sampled_memory_peak_gb = max(
+                self._sampled_memory_peak_gb,
+                allocated_gb,
+            )
 
     def mark(self, name: str) -> None:
         """Record a sub-step timing mark (device-synchronized).
@@ -359,13 +371,16 @@ class _StepPerfBuilder:
         asynchronous, so an un-synchronized sub-step mark would record only
         kernel-launch time — microseconds for hundreds of ms of GPU work. The
         sync is a no-op on CPU. Marks therefore partition the step, and their
-        sum approximately equals the whole-step time.
+        sum approximately equals the whole-step time. On MPS releases without
+        allocator peak statistics, each mark also samples current allocated
+        memory for the best-effort step peak.
 
         Args:
             name: Label for this sub-step (e.g. ``"clip"``, ``"noise"``,
                 ``"optimizer"``).
         """
         _sync_device(self._device)
+        self._sample_peak()
         now = time.perf_counter()
         self._marks[name] = now - self._last_mark_time
         self._last_mark_time = now
@@ -432,17 +447,21 @@ def step_perf(
     if isinstance(device, str):
         device = torch.device(device)
 
-    builder = _StepPerfBuilder(device, batch_size)
-
     # Drain work queued before this context before resetting the peak, so
     # earlier allocations cannot contaminate this step's measurement window.
     _sync_device(device)
 
-    # Reset only cheap peak counters. Older MPS releases fall back to a driver
-    # allocation reading whose re-baseline requires an expensive empty_cache.
     peak_trackable = device_capabilities(device).peak_memory_trackable
+    sample_memory_peak = track_memory and device.type == "mps" and not peak_trackable
+    builder = _StepPerfBuilder(
+        device,
+        batch_size,
+        sample_memory_peak=sample_memory_peak,
+    )
+
     if track_memory and peak_trackable:
         reset_peak_memory(device)
+    builder._sample_peak()
 
     t0 = time.perf_counter()
     builder._last_mark_time = t0
@@ -451,19 +470,21 @@ def step_perf(
 
     _sync_device(device)
     elapsed = time.perf_counter() - t0
+    builder._sample_peak()
 
     mem = get_memory_stats(device) if track_memory else MemoryStats()
+    memory_peak_gb = (
+        builder._sampled_memory_peak_gb if sample_memory_peak else mem.peak_gb
+    )
 
     builder._perf = StepPerf(
         step_time_sec=elapsed,
         samples_per_second=batch_size / elapsed if elapsed > 0 else 0.0,
-        memory_peak_gb=mem.peak_gb,
+        memory_peak_gb=memory_peak_gb,
         memory_allocated_gb=mem.allocated_gb,
         memory_reserved_gb=mem.reserved_gb,
         batch_size=batch_size,
-        # CUDA and newer MPS releases expose cheap resettable peak counters;
-        # older MPS releases and CPU do not.
-        peak_is_per_step=track_memory and peak_trackable,
+        peak_is_per_step=track_memory and (peak_trackable or sample_memory_peak),
         marks=MappingProxyType(dict(builder._marks)),
     )
 

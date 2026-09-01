@@ -171,6 +171,44 @@ class TestStepPerfContextManager:
             pass
         assert sp.perf.peak_is_per_step is False
 
+    def test_legacy_mps_peak_is_sampled_per_step(self, monkeypatch):
+        from opaque.api.engine.profiling import _memory
+
+        samples = iter([1 * 1024**3, 3 * 1024**3, 2 * 1024**3])
+        monkeypatch.setattr(
+            _memory,
+            "device_capabilities",
+            lambda device: replace(
+                device_capabilities("cpu"),
+                device_type="mps",
+                peak_memory_trackable=False,
+            ),
+        )
+        monkeypatch.setattr(_memory, "_sync_device", lambda device: None)
+        monkeypatch.setattr(
+            torch.mps,
+            "current_allocated_memory",
+            lambda: next(samples),
+        )
+        monkeypatch.setattr(
+            _memory,
+            "get_memory_stats",
+            lambda device: _memory.MemoryStats(
+                allocated_gb=2.0,
+                reserved_gb=4.0,
+                peak_gb=4.0,
+                exact_peak=False,
+            ),
+        )
+
+        with step_perf("mps", batch_size=8) as sp:
+            sp.mark("middle")
+
+        assert sp.perf.memory_peak_gb == 3.0
+        assert sp.perf.memory_allocated_gb == 2.0
+        assert sp.perf.memory_reserved_gb == 4.0
+        assert sp.perf.peak_is_per_step is True
+
     def test_synchronizes_before_resetting_peak(self, monkeypatch):
         from opaque.api.engine.profiling import _memory
 
