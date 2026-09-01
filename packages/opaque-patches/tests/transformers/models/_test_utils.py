@@ -358,8 +358,20 @@ def assert_parity_forward(
     label: str = "",
     apply_model_patches_kwargs: dict | None = None,
     dtype: torch.dtype | None = None,
+    seq_len: int = 10,
+    use_attention_mask: bool = True,
 ):
-    """Compare forward logits between patched and unpatched models."""
+    """Compare forward logits between patched and unpatched models.
+
+    ``seq_len`` sizes the probe sequence — raise it above a config's window /
+    chunk size to make such a constraint bind. ``use_attention_mask=False``
+    omits the padding mask entirely, which is the configuration where a
+    mask-consuming backend has to materialize every constraint itself instead of
+    leaning on SDPA's ``is_causal`` shortcut.
+
+    Returns ``(logits_patched, logits_upstream)`` so callers can make further
+    assertions (e.g. that a feature actually changed the output).
+    """
     torch.manual_seed(0)
     unpatched, patched = build_patched_model_pair(
         config_cls,
@@ -375,8 +387,8 @@ def assert_parity_forward(
     unpatched.eval()
     patched.eval()
     vocab = unpatched.config.vocab_size
-    input_ids = torch.randint(0, vocab, (2, 10), device=device)
-    attention_mask = torch.ones_like(input_ids)
+    input_ids = torch.randint(0, vocab, (2, seq_len), device=device)
+    attention_mask = torch.ones_like(input_ids) if use_attention_mask else None
 
     with torch.no_grad():
         logits_ref = unpatched(
@@ -399,6 +411,34 @@ def assert_parity_forward(
         rtol=tolerances["rtol"],
         atol=tolerances["atol"],
         label=label,
+    )
+    return logits_test, logits_ref
+
+
+def assert_logits_differ(
+    logits: torch.Tensor,
+    other: torch.Tensor,
+    softcapping: bool = False,
+    label: str = "",
+) -> None:
+    """Assert two logit tensors differ by more than parity noise.
+
+    Vacuity guard for feature-variant parity tests: if toggling the feature
+    under test leaves the logits unchanged, the parity assertion beside this one
+    would pass whether or not the feature is applied at all. The margin is the
+    same dtype-specific tolerance the parity assertions use, so a "difference"
+    here is never numerical noise.
+    """
+    tolerances = _get_tolerances(logits.dtype, softcapping)
+    prefix = f"{label}: " if label else ""
+    max_diff = (logits.float() - other.float()).abs().max().item()
+    assert not torch.allclose(
+        logits, other, rtol=tolerances["rtol"], atol=tolerances["atol"]
+    ), (
+        f"{prefix}logits are unchanged (max diff {max_diff:.2e} within "
+        f"rtol={tolerances['rtol']:.0e}, atol={tolerances['atol']:.0e}) — the "
+        f"feature under test is not constraining the output, so the parity "
+        f"assertion is vacuous"
     )
 
 
