@@ -100,8 +100,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.checkout-ref || github.sha }}
       - name: Verify package test matrix
-        # Checking once is sufficient because every matrix leg shares this definition.
-        if: matrix.suite.id == 'foundation'
         shell: bash
         run: |
           set -euo pipefail
