@@ -13,6 +13,12 @@ modeling module (``mod.repeat_kv``, ``mod.eager_attention_forward``,
 reaches the patched name within that family — once per process,
 regardless of how many model *instances* exist.
 
+An attention-interface override is the one case where the patched name is
+not a plain function: ``mod.ALL_ATTENTION_FUNCTIONS`` is one instance shared
+by every HF modeling module, so it gets *rebound* to a family-private
+``AttentionInterface`` instead of written through (see
+:func:`_scoped_attention_functions`).
+
 Per-class patches (``LlamaMLP.forward``, ``LlamaRMSNorm.forward``, etc.)
 live in :mod:`._factory` and run per-model-instance.
 
@@ -40,6 +46,9 @@ from opaque.api.patches.transformers.components.masking import (
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 
 if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+    from types import ModuleType
+
     from opaque.api.patches.transformers.types import (
         FamilyPatchFn,
         ForwardFn,
@@ -55,6 +64,54 @@ _PATCHED_FAMILIES: dict[str, set[str]] = {}
 def _reset_patched_families() -> None:
     """Clear the family-patch idempotency cache (test hook only)."""
     _PATCHED_FAMILIES.clear()
+
+
+def _scoped_attention_functions(
+    mod: ModuleType,
+) -> MutableMapping[str, ForwardFn] | None:
+    """Return ``mod``'s *own* ``ALL_ATTENTION_FUNCTIONS``, installing it if absent.
+
+    ``transformers`` ships a single ``AttentionInterface`` instance that every
+    ``modeling_X`` module imports, and ``interface[key] = fn`` writes into that
+    shared instance's local mapping.  Assigning through one family's module
+    therefore reroutes *every* family — including families that forward
+    ``softcap`` into the interface (vaultgemma defaults
+    ``attn_logit_softcapping`` to 50.0) and would land in another family's
+    softcap fallback.
+
+    HF's documented way to override an attention function for a single modeling
+    file is to bind a fresh interface instance in that module; this does exactly
+    that, once per module, and tags the instance so later calls reuse it.  Keys
+    the family does not override still resolve through the class-wide mapping,
+    so later ``AttentionInterface.register(...)`` calls stay visible.
+
+    Returns ``None`` when the module has no interface or it cannot be cloned —
+    the shared registry is then left untouched rather than patched
+    process-wide.
+    """
+    shared = getattr(mod, "ALL_ATTENTION_FUNCTIONS", None)
+    if shared is None:
+        return None
+    if getattr(shared, "_opaque_scoped_to", None) == mod.__name__:
+        return shared
+    try:
+        scoped = type(shared)()
+    except TypeError:
+        log.debug(
+            "opaque: cannot scope %s.ALL_ATTENTION_FUNCTIONS; "
+            "leaving the shared attention registry untouched.",
+            mod.__name__,
+        )
+        return None
+    # Carry over local (module-scoped) overrides the shared instance already
+    # holds; class-wide registrations remain reachable via its global mapping.
+    local = getattr(shared, "_local_mapping", None)
+    scoped_local = getattr(scoped, "_local_mapping", None)
+    if isinstance(local, dict) and isinstance(scoped_local, dict):
+        scoped_local.update(local)
+    scoped._opaque_scoped_to = mod.__name__
+    mod.ALL_ATTENTION_FUNCTIONS = scoped
+    return scoped
 
 
 def family_name(model: object) -> str | None:
@@ -109,9 +166,10 @@ def make_apply_family_patches(
         eager_attention_replacement: Replacement for
             ``mod.eager_attention_forward``.  Default: opaque's
             ``vmap_eager_attention_forward``.  ``None`` skips.
-        sdpa_attention_replacement: Replacement for the ``"sdpa"`` entry in
-            ``mod.ALL_ATTENTION_FUNCTIONS``. ``None`` leaves the shared SDPA
-            implementation untouched.
+        sdpa_attention_replacement: Replacement for the ``"sdpa"`` entry of
+            an ``ALL_ATTENTION_FUNCTIONS`` interface bound in ``module_path``
+            alone — other families keep resolving ``"sdpa"`` to the stock
+            implementation. ``None`` leaves SDPA untouched for this family too.
         rope_replacement: Replacement for ``mod.apply_rotary_pos_emb``.
             Default: opaque's ``_opaque_apply_rotary_pos_emb``.  ``None``
             skips.
@@ -173,11 +231,13 @@ def make_apply_family_patches(
             ):
                 mod.eager_attention_forward = eager_attention_replacement
                 patched = True
-            if sdpa_attention_replacement is not None and hasattr(
-                mod, "ALL_ATTENTION_FUNCTIONS"
-            ):
-                mod.ALL_ATTENTION_FUNCTIONS["sdpa"] = sdpa_attention_replacement
-                patched = True
+            if sdpa_attention_replacement is not None:
+                # Scoped to this family's modeling module: the shared
+                # process-global interface must keep the stock SDPA entry.
+                scoped_attention = _scoped_attention_functions(mod)
+                if scoped_attention is not None:
+                    scoped_attention["sdpa"] = sdpa_attention_replacement
+                    patched = True
             if masking_module_patcher is not None:
                 masking_result = masking_module_patcher(mod)
                 if masking_result is not False:
