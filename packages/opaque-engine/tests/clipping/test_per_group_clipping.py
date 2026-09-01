@@ -282,13 +282,7 @@ class TestClippedGradPerGroup:
         assert aux.grad_norms is not None
 
     def test_empty_batch_aux_rate_presence_tracks_schema(self):
-        """Empty-batch aux must mirror the non-empty per-group ``clipping_rate``.
-
-        Per-group steps report ``clipping_rate=None`` (rates travel via
-        ``group_norms``); a hardcoded float on the empty short-circuit makes
-        ``sync(aux)`` raise a presence mismatch under DDP on partially-empty
-        Poisson rounds.
-        """
+        """Empty-batch aux mirrors the non-empty per-group ``clipping_rate=None``."""
 
         def loss(params, data):
             return ((params["w"] - data) ** 2).mean()

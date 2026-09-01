@@ -442,8 +442,7 @@ class TestAdaptiveClippedGradEmptyBatchSecondMoment:
 
 
 # ---------------------------------------------------------------------------
-# Per-group aux schema: clipping_rate presence tracks the config, not the
-# batch (empty short-circuits used to hardcode 0.0 and desync sync(aux)).
+# Per-group aux: clipping_rate presence tracks the config, not the batch
 # ---------------------------------------------------------------------------
 
 

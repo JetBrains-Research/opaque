@@ -578,13 +578,7 @@ def _worker_summed_noise_scaling_gloo(rank: int, world_size: int, port: int) -> 
 def _worker_per_group_adaptive_one_rank_empty_gloo(
     rank: int, world_size: int, port: int
 ) -> None:
-    """Adaptive per-group clipping through a partially-empty Poisson round.
-
-    Rank 0 draws an empty batch.  Both the empty short circuit and the
-    non-empty per-group step must report ``clipping_rate=None`` so
-    ``sync(aux)`` keeps a rank-consistent schema instead of raising a
-    presence mismatch (#805).
-    """
+    """Adaptive per-group clipping with rank 0 empty: sync stays schema-consistent (#805)."""
     from opaque.distributed import sum_gradients, sync
     from opaque.dpsgd.clipping import adaptive_clipped_grad, per_group
     from opaque.random import key

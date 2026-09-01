@@ -458,10 +458,8 @@ def adaptive_clipped_grad(
             )
             if return_aux:
                 empty = torch.empty(0)
-                # Keep ``clipping_rate`` presence tied to the clipping schema:
-                # non-empty per-group steps report ``None`` (per-group rates
-                # travel via ``group_norms``), so empty ones must match or
-                # ``sync(aux)`` desyncs on partially-empty Poisson rounds.
+                # ``clipping_rate`` presence is schema-driven: None for
+                # per-group, like non-empty steps.
                 adaptive_aux = AdaptiveClippedGradAux(
                     loss_values=empty,
                     grad_norms=empty,

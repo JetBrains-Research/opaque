@@ -250,10 +250,8 @@ def clipped_grad(
             grads = clipped(zeros, max_norm=output_max_norm)
         if return_aux:
             empty = torch.empty(0)
-            # ``clipping_rate`` presence must track the clipping schema, not the
-            # batch: non-empty per-group steps report ``None`` here (per-group
-            # rates travel via ``group_norms`` / ``ClippingStats``), so an empty
-            # per-group draw must too or ``sync(aux)`` sees a presence mismatch.
+            # Per-group steps report ``clipping_rate=None`` (rates live in
+            # ``group_norms``), empty draws included, so ``sync(aux)`` matches.
             grad_aux = ClippedGradAux(
                 loss_values=empty if return_aux else None,
                 grad_norms=empty,

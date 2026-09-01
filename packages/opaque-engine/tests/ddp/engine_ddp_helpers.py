@@ -807,13 +807,7 @@ def _worker_sync_schema_contracts_gloo(rank: int, world_size: int, port: int) ->
 def _worker_per_group_clipped_grad_one_rank_empty_gloo(
     rank: int, world_size: int, port: int
 ) -> None:
-    """Real per-group clipped_grad through a partially-empty Poisson round.
-
-    Rank 0 draws an empty batch, rank 1 draws examples.  The empty short
-    circuit must emit ``clipping_rate=None`` for the per-group schema so
-    ``sync(aux)`` sees consistent presence across ranks instead of raising
-    a presence mismatch.
-    """
+    """Per-group clipped_grad with rank 0 empty: sync(aux) must not desync (#805)."""
     from opaque.api.engine.clipping import clipped_grad
     from opaque.api.engine.clipping._per_group import per_group
     from opaque.distributed import sync
