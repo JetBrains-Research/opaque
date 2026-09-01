@@ -99,6 +99,30 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.checkout-ref || github.sha }}
+      - name: Verify package test matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          configured_paths="$(
+            awk '
+              /^[[:space:]]+packages\/[^[:space:]]+[[:space:]]*$/ {
+                path = $0
+                sub(/^[[:space:]]+/, "", path)
+                sub(/[[:space:]]+$/, "", path)
+                print path
+              }
+            ' .github/workflows/python-tests.yml
+          )"
+          missing_paths="$(
+            comm -23 \
+              <(find packages -mindepth 2 -maxdepth 2 -type d -name tests -exec dirname {} \; | sort -u) \
+              <(printf '%s\n' "$configured_paths" | sort -u)
+          )"
+          if [[ -n "$missing_paths" ]]; then
+            echo "::error::Package test directories missing from the Python test matrix:"
+            printf '%s\n' "$missing_paths"
+            exit 1
+          fi
       - uses: ./.github/actions/setup-rust
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
