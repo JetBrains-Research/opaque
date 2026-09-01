@@ -13,6 +13,16 @@ from opaque.random import key
 from opaque.types import ClippedPytree, NoisedPytree, PerGroup, clipped, noised
 
 
+def _assert_realized_stddev_matches_reported(
+    noise: torch.Tensor, reported_stddev: float
+) -> None:
+    """Check RMS noise against its report within six sampling standard errors."""
+    sample_count = noise.numel()
+    relative_tolerance = 6.0 / math.sqrt(2.0 * sample_count)
+    realized_stddev = noise.square().mean().sqrt().item()
+    assert abs(realized_stddev / reported_stddev - 1.0) <= relative_tolerance
+
+
 class TestGaussian:
     """Tests for gaussian_noise() function."""
 
@@ -115,6 +125,17 @@ class TestGaussian:
         measured_stddev = output.pytree.std().item()
         assert output.noise_stddev == pytest.approx(target_stddev)
         assert abs(measured_stddev - target_stddev) < 0.1
+
+    def test_realized_noise_matches_reported_stddev(self):
+        noise_fn, state = gaussian_noise(noise_multiplier=1.5, key=key(42))
+        output, _ = noise_fn(clipped(torch.zeros(1_000_000), max_norm=0.8), state)
+
+        _assert_realized_stddev_matches_reported(output.pytree, output.noise_stddev)
+
+        with pytest.raises(AssertionError):
+            _assert_realized_stddev_matches_reported(
+                output.pytree * 0.97, output.noise_stddev
+            )
 
     def test_uniqueness(self):
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
