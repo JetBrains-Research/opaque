@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from opaque.api.engine.clipping._per_group import per_group
+from opaque.exceptions import ConfigurationError
 from opaque.types import PerGroup
 
 
@@ -208,6 +209,39 @@ class TestPerGroupHelper:
         assert pg.groups[("layers.0.mlp.gate_proj.weight",)] == "mlp"
         assert pg.groups[("layers.0.norm.weight",)] == "fallback"
         assert pg.values["fallback"] == 0.5
+
+    def test_unused_pattern_raises_even_with_fallback(self):
+        params = {
+            "layers.0.self_attn.q_proj.weight": torch.zeros(1),
+            "layers.0.mlp.gate_proj.weight": torch.zeros(1),
+        }
+        with pytest.raises(
+            ValueError,
+            match=r"Patterns did not match any parameter: \['self_atten'\]",
+        ):
+            per_group(params, self_atten=1.0, fallback=0.5)
+
+    def test_unused_pattern_error_includes_sample_display_paths(self):
+        params = {
+            "layers.0.self_attn.q_proj.weight": torch.zeros(1),
+            "layers.0.mlp.gate_proj.weight": torch.zeros(1),
+        }
+        with pytest.raises(ConfigurationError) as exc_info:
+            per_group(params, self_atten=1.0, fallback=0.5)
+
+        assert "layers.0.self_attn.q_proj.weight" in str(exc_info.value)
+        assert "allow_unused_patterns=True" in str(exc_info.value)
+
+    def test_allow_unused_patterns_omits_unused_pattern_value(self):
+        params = {"attn.weight": torch.zeros(1)}
+        pg = per_group(
+            params,
+            attn=1.0,
+            mlp=2.0,
+            allow_unused_patterns=True,
+        )
+        assert pg.groups == {("attn.weight",): "attn"}
+        assert pg.values == {"attn": 1.0}
 
     def test_fallback_not_in_values_when_unused(self):
         """If all params match explicit patterns, fallback is excluded from values."""
