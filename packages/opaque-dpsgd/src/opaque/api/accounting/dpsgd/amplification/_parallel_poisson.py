@@ -129,5 +129,15 @@ def parallel_poisson(
                 "q=1 (full participation on every worker) is not supported here.",
             )
         )
+    match inner:
+        case Gaussian() | AdaClip() | NonPrivate():
+            pass
+        case _:
+            raise InputTypeError(
+                *(
+                    "parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
+                    f"inner mechanism, got {type(inner).__name__}.",
+                )
+            )
     poisson_inner = poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

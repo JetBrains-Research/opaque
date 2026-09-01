@@ -80,8 +80,8 @@ print(total.epsilon_at(1e-5))
 ### Rust
 
 ```rust
+use opaque_accounting::amplification::poisson_pld;
 use opaque_accounting::mechanisms::gaussian_pld;
-use opaque_accounting::amplification::poisson_gaussian_pld;
 use opaque_accounting::DiscretizationConfig;
 
 let config = DiscretizationConfig::default();
@@ -90,8 +90,8 @@ let eps = pld.epsilon_at(1e-5);
 println!("epsilon = {eps:.4}");
 
 // Poisson-subsampled, self-composed 1000 times
-let step = poisson_gaussian_pld(0.5, 0.01, &config)?;
-let training = step.self_compose(1000);
+let step = poisson_pld(&pld, 0.01)?;
+let training = step.self_compose(1000)?;
 println!("epsilon = {:.4}", training.epsilon_at(1e-5));
 ```
 

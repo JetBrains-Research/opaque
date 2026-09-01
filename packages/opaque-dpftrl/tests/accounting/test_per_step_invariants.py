@@ -397,8 +397,8 @@ _SUPPORTED_IDS = [_pair_id(p) for p in _SUPPORTED_PAIRS]
 # Correlated BallsInBins and BMinSep remain MC-backed and use the invariant
 # tests below instead.
 _DETERMINISTIC_VECTORS: dict[tuple[str, str], float] = {
-    ("CyclicPoisson", "IdentityMf"): 0.6260223959034013,
-    ("CyclicPoisson", "BandMf"): 0.4292229170296121,
+    ("CyclicPoisson", "IdentityMf"): 0.6260478486802907,
+    ("CyclicPoisson", "BandMf"): 0.4292410045081416,
     ("BallsInBins", "IdentityMf"): 8.612106227069155,
 }
 

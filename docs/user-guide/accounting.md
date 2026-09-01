@@ -111,7 +111,9 @@ eps = g.epsilon_at(delta=1e-5)
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
-subsampling. Accepts `gaussian()` or `adaclip()` as the inner mechanism.
+subsampling. Plain Poisson accepts any Opaque `DpProcess` as its base
+mechanism. Use the capped form only when training truncates draws; it requires
+`gaussian()`, `adaclip()`, or `nonprivate()` as its base.
 
 ```python
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=256 / 50_000)
@@ -587,7 +589,8 @@ option to request an optimistic or lower-bound accounting result.
     `mc_failure_probability`. Remaining uncertainty is placed at `+∞`, and the returned PLD
     exposes `mc_confidence` and `mc_resolution`. Statistical confidence is
     separate from DP delta. Balls-in-Bins with `identity_strategy()`, and
-    `k_out_of_t`, use deterministic transforms. Monte Carlo PLDs certify
+    `random_allocation` and `k_out_of_t`, use deterministic transforms. Monte
+    Carlo PLDs bound
     ε/δ and advantage; β and Bayes risk fail closed to zero.
 
 ## API reference

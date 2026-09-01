@@ -12,7 +12,7 @@ use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use super::discrete_mixture::{binomial_log_probs, truncate_upper_tail};
-use super::poisson::poisson_gaussian_pld;
+use super::poisson::poisson_pld;
 use super::{validate_noise_multiplier, validate_rate};
 
 /// Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
@@ -52,9 +52,10 @@ pub fn parallel_poisson_gaussian_pld(
             "microbatches must be > 0".into(),
         ));
     }
-    // m=1 fallback: exact match with standard Poisson
+    // m=1 reduces to plain Poisson.
     if microbatches == 1 {
-        return poisson_gaussian_pld(noise_multiplier, rate, config);
+        let base = crate::mechanisms::gaussian_pld(noise_multiplier, config)?;
+        return poisson_pld(&base, rate);
     }
 
     let sigma = noise_multiplier;
@@ -372,7 +373,8 @@ mod tests {
     #[test]
     fn test_accumulated_m1_matches_poisson() {
         let cfg = default_config();
-        let pld_poisson = poisson_gaussian_pld(0.5, 0.01, &cfg).unwrap();
+        let base = crate::mechanisms::gaussian_pld(0.5, &cfg).unwrap();
+        let pld_poisson = poisson_pld(&base, 0.01).unwrap();
         let pld_acc = parallel_poisson_gaussian_pld(0.5, 0.01, 1, &cfg).unwrap();
 
         let eps_p = pld_poisson.epsilon_at(1e-5);

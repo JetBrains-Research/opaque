@@ -496,7 +496,7 @@ pub fn random_allocation_gaussian_pld(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::amplification::poisson::poisson_gaussian_pld;
+    use crate::amplification::poisson::poisson_pld;
     use crate::mechanisms::gaussian_pld;
 
     fn cfg() -> DiscretizationConfig {
@@ -563,7 +563,8 @@ mod tests {
             let prefix = random_allocation_gaussian_prefix_pld(sigma, total, 1, &c)
                 .unwrap()
                 .epsilon_at(1e-8);
-            let poisson = poisson_gaussian_pld(sigma, 1.0 / total as f64, &c)
+            let base = gaussian_pld(sigma, &c).unwrap();
+            let poisson = poisson_pld(&base, 1.0 / total as f64)
                 .unwrap()
                 .epsilon_at(1e-8);
             assert!(
@@ -725,7 +726,8 @@ mod tests {
         let ra = random_allocation_gaussian_pld(sigma, t, 1, &c)
             .unwrap()
             .epsilon_at(1e-8);
-        let po = poisson_gaussian_pld(sigma, 1.0 / t as f64, &c)
+        let base = gaussian_pld(sigma, &c).unwrap();
+        let po = poisson_pld(&base, 1.0 / t as f64)
             .unwrap()
             .self_compose(t)
             .unwrap()

@@ -5,7 +5,7 @@
 //!
 //! For independent (Gaussian / AdaClip) noise, BnB amplification reduces
 //! exactly to Poisson-subsampled Gaussian composed `num_bins * num_epochs`
-//! times — use `poisson_gaussian_pld(...).self_compose(...)` directly.
+//! times — use `poisson_pld(&gaussian_pld(...), ...).self_compose(...)`.
 
 pub(crate) mod cyclic_cholesky;
 pub mod monte_carlo;

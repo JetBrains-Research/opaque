@@ -298,26 +298,18 @@ def non_private_pld(
 # Amplification functions
 # ---------------------------------------------------------------------------
 
-def poisson_gaussian_pld(
-    noise_multiplier: float,
+def poisson_pld(
+    base: Pld,
     rate: float,
-    config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a Poisson-subsampled Gaussian mechanism.
+    """Apply plain Poisson subsampling to an existing PLD.
 
     Args:
-        noise_multiplier: σ/Δ ratio.
-        rate: Poisson sampling probability, in (0, 1].
-        config: PLD discretization configuration.
+        base: PLD of the base mechanism.
+        rate: Poisson sampling probability, in (0, 1).
 
     Returns:
         The amplified privacy loss distribution.
-
-    Example::
-
-        pld = dp.poisson_gaussian_pld(1.1, 0.01, config)
-        training = pld.self_compose(1000)
-        training.epsilon_at(1e-5)
     """
 
 def truncated_poisson_gaussian_pld(

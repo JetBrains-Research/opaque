@@ -29,11 +29,15 @@ pub fn gaussian_pld(
     let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
     let delta_tilde = 1.0 / noise_multiplier;
     let tail_budget = config.tail_mass_truncation / 2.0;
+    let tail_mass = 0.5 * config.log_mass_truncation_bound.exp();
 
     discretize_symmetric_mechanism(config, bounds, |epsilon| {
         crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
     })
-    .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
+    .map(|pld| {
+        pld.with_tail_budgets(tail_budget, tail_budget)
+            .with_gaussian_source(noise_multiplier, tail_mass)
+    })
 }
 
 /// X-space truncation → epsilon bounds for a Gaussian mechanism.

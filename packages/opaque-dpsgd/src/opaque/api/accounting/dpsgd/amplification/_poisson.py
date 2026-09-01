@@ -1,8 +1,8 @@
-"""Poisson-subsampled Gaussian mechanism — standard DP-SGD step.
+"""Poisson-subsampled mechanism — standard DP-SGD step.
 
-Plain or truncated.  When ``truncated_batch_size`` and ``dataset_size`` are
-provided, computes the truncated Poisson-Gaussian PLD via the
-``truncated_poisson_gaussian_pld`` native primitive.
+Plain Poisson accepts any ``DpProcess``. When ``truncated_batch_size`` and
+``dataset_size`` are provided, the capped form requires a Gaussian-derived or
+non-private base.
 """
 
 from __future__ import annotations
@@ -17,19 +17,18 @@ from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
 from opaque.exceptions import ConfigurationError, InputTypeError
 
-#: Mechanism types accepted by :func:`poisson`.
-_Inner = Gaussian | AdaClip | NonPrivate
+#: Mechanism types accepted by plain :func:`poisson`.
+_Inner = DpProcess
 
 
 @dataclass(frozen=True, slots=True)
 class Poisson(DpProcess):
-    """Poisson-subsampled Gaussian mechanism (single step).
+    """Poisson-subsampled mechanism (single step).
 
-    Plain Poisson when ``truncated_batch_size is None``; truncated Poisson
-    (capped batch) when ``truncated_batch_size`` and ``dataset_size`` are
-    set together.  ``sample_rate`` is in ``(0, 1]``; at ``sample_rate=1.0``
-    every example participates and the step is accounted as the unamplified
-    Gaussian mechanism.
+    Plain Poisson accepts any Opaque ``DpProcess``. ``sample_rate=1.0``
+    returns the base mechanism without amplification. The capped form
+    requires a Gaussian, AdaClip(Gaussian), or NonPrivate inner mechanism,
+    with both ``truncated_batch_size`` and ``dataset_size`` set.
     """
 
     inner: _Inner
@@ -38,13 +37,21 @@ class Poisson(DpProcess):
     dataset_size: int | None = None
 
     def __post_init__(self):
+        if not isinstance(self.inner, DpProcess):
+            raise InputTypeError(
+                *(
+                    "Poisson requires a DpProcess inner mechanism, got "
+                    f"{type(self.inner).__name__}.",
+                )
+            )
+
         sample_rate = float(self.sample_rate)
         if not 0 < sample_rate <= 1:
             raise ConfigurationError(
                 *(
                     f"sample_rate must be in (0, 1], got {self.sample_rate}. "
                     "For q=1 (every example participates) there is no Poisson "
-                    "amplification — account the step with gaussian(nm) directly.",
+                    "amplification.",
                 )
             )
         object.__setattr__(self, "sample_rate", sample_rate)
@@ -54,8 +61,7 @@ class Poisson(DpProcess):
                     "Poisson: sample_rate=1.0 requires plain Poisson "
                     "(truncated_batch_size=None). With q=1 the batch cap yields a "
                     "fixed-size full batch, which has no truncated-Poisson "
-                    "analysis — account a full-batch step with gaussian(nm), or "
-                    "use sample_rate<1.",
+                    "analysis; use plain Poisson or sample_rate<1.",
                 )
             )
 
@@ -81,6 +87,14 @@ class Poisson(DpProcess):
             if int(self.dataset_size) < 1:
                 raise ConfigurationError(
                     *(f"Poisson: dataset_size must be >= 1, got {self.dataset_size}",)
+                )
+            if not isinstance(self.inner, (Gaussian, AdaClip, NonPrivate)):
+                raise InputTypeError(
+                    *(
+                        "truncated Poisson requires a Gaussian, AdaClip(Gaussian), "
+                        "or NonPrivate inner mechanism, got "
+                        f"{type(self.inner).__name__}.",
+                    )
                 )
 
     @pld_cache(maxsize=8)
@@ -109,17 +123,22 @@ class Poisson(DpProcess):
 
         native_cfg = config.to_native()
         truncated = self.truncated_batch_size is not None
-        # q=1 is no subsampling: the step is the plain Gaussian mechanism
-        # (matches the native q→1 limit of poisson_gaussian_pld).
-        full_step = self.sample_rate == 1.0
+        if self.sample_rate == 1.0:
+            return self.inner.pld(
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+                max_conv_grid=max_conv_grid,
+                seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
+            )
 
-        match self.inner:
-            case NonPrivate() | Gaussian(noise_multiplier=0):
-                return _native.non_private_pld(native_cfg)
-            case Gaussian(noise_multiplier=nm):
-                if full_step:
-                    return _native.gaussian_pld(nm, native_cfg)
-                if truncated:
+        if truncated:
+            match self.inner:
+                case NonPrivate() | Gaussian(noise_multiplier=0):
+                    return _native.non_private_pld(native_cfg)
+                case Gaussian(noise_multiplier=nm):
                     return _native.truncated_poisson_gaussian_pld(
                         nm,
                         self.sample_rate,
@@ -127,15 +146,9 @@ class Poisson(DpProcess):
                         self.dataset_size,
                         native_cfg,
                     )
-                return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
-            case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
-                return _native.non_private_pld(native_cfg)
-            case AdaClip(inner=Gaussian()) as ac:
-                if full_step:
-                    return _native.gaussian_pld(
-                        ac.effective_noise_multiplier, native_cfg
-                    )
-                if truncated:
+                case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
+                    return _native.non_private_pld(native_cfg)
+                case AdaClip(inner=Gaussian()) as ac:
                     return _native.truncated_poisson_gaussian_pld(
                         ac.effective_noise_multiplier,
                         self.sample_rate,
@@ -143,19 +156,21 @@ class Poisson(DpProcess):
                         self.dataset_size,
                         native_cfg,
                     )
-                return _native.poisson_gaussian_pld(
-                    ac.effective_noise_multiplier,
-                    self.sample_rate,
-                    native_cfg,
-                )
-            case _:
-                raise InputTypeError(
-                    *(
-                        "Poisson requires a Gaussian, AdaClip(Gaussian), or "
-                        "NonPrivate inner mechanism, got "
-                        f"{type(self.inner).__name__}.",
-                    )
-                )
+                case _:
+                    raise AssertionError
+
+        return _native.poisson_pld(
+            self.inner.pld(
+                discretization=discretization,
+                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                max_grid_size=max_grid_size,
+                max_conv_grid=max_conv_grid,
+                seed=seed,
+                mc_resolution=mc_resolution,
+                mc_failure_probability=mc_failure_probability,
+            ),
+            self.sample_rate,
+        )
 
 
 def poisson(
@@ -165,7 +180,7 @@ def poisson(
     truncated_batch_size: int | None = None,
     dataset_size: int | None = None,
 ) -> Poisson:
-    """Poisson-subsampled Gaussian mechanism (per-step DP-SGD factory).
+    """Poisson-subsampled mechanism (per-step DP-SGD factory).
 
     Returns a single-step process — compose externally with ``* num_steps``
     for full-training privacy.
@@ -175,13 +190,13 @@ def poisson(
     PLD (production DP-SGD with capped batch size).
 
     Args:
-        inner: The base mechanism — :func:`gaussian`, :func:`adaclip`, or
+        inner: The base Opaque :class:`DpProcess`. The capped form requires
+            :func:`gaussian`, :func:`adaclip`, or
             :func:`opaque.accounting.nonprivate`.
         sample_rate: Probability of including each example
             (``E[batch_size] / |D|``), between zero and one inclusive.
             ``sample_rate=1.0`` means every example participates — no
-            amplification; the step is accounted as the plain Gaussian
-            (equivalent to ``gaussian(nm)``).
+            amplification; the step is equivalent to ``inner``.
         truncated_batch_size: Optional max batch-size cap; switches the
             analysis to truncated Poisson (requires ``sample_rate < 1``).
         dataset_size: Required when ``truncated_batch_size`` is set;
@@ -204,17 +219,6 @@ def poisson(
         )
         eps = (step * 1000).epsilon_at(1e-5)
     """
-    match inner:
-        case Gaussian() | AdaClip() | NonPrivate():
-            pass
-        case _:
-            raise InputTypeError(
-                *(
-                    "poisson() requires a Gaussian, AdaClip, or NonPrivate inner "
-                    f"mechanism, got {type(inner).__name__}. "
-                    "Example: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), rate)",
-                )
-            )
     # Pairing + per-field bounds on truncated_batch_size / dataset_size are
     # validated in ``Poisson.__post_init__`` so direct construction,
     # deserialization, and this factory stay consistent.

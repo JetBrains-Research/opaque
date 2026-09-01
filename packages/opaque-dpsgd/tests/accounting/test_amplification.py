@@ -9,6 +9,7 @@ import pytest
 
 import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
+from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._base import DpProcess
 from opaque.dpsgd.accounting.amplification.types import (
     KOutOfT,
@@ -17,6 +18,7 @@ from opaque.dpsgd.accounting.amplification.types import (
 )
 from opaque.dpsgd.accounting.mechanisms.types import Gaussian
 from opaque.exceptions import ConfigurationError
+from opaque.serialization import from_state_dict, state_dict
 
 # ── Amplification dataclass tests ────────────────────────────────────
 
@@ -158,9 +160,28 @@ class TestPoissonConstructor:
         assert p.truncated_batch_size is None
         assert p.dataset_size is None
 
-    def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
-            dpsgd_acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
+    def test_accepts_generic_dp_process(self):
+        step = dpsgd_acc.poisson(acc.eps_delta(0.3), 0.2)
+
+        assert step.inner == acc.eps_delta(0.3)
+        assert math.isfinite(step.epsilon_at(1e-5))
+
+    def test_full_participation_matches_generic_inner(self):
+        inner = acc.eps_delta(0.3)
+        step = dpsgd_acc.poisson(inner, 1.0)
+
+        assert step.epsilon_at(1e-5) == pytest.approx(inner.epsilon_at(1e-5))
+
+    def test_serializes_generic_dp_process(self):
+        step = dpsgd_acc.poisson(acc.eps_delta(0.3), 0.2)
+        restored = from_state_dict(Poisson(Gaussian(1.0), 0.2), state_dict(step))
+
+        assert restored == step
+        assert restored.epsilon_at(1e-5) == pytest.approx(step.epsilon_at(1e-5))
+
+    def test_rejects_non_process(self):
+        with pytest.raises(TypeError, match="DpProcess"):
+            dpsgd_acc.poisson("bad", 0.01)  # type: ignore[arg-type]
 
     @pytest.mark.parametrize("sample_rate", [0.0, -0.01, 1.01])
     def test_rejects_invalid_sample_rate(self, sample_rate):
@@ -204,6 +225,12 @@ class TestPoissonConstructor:
         assert math.isfinite(eps2)
         assert eps2 > 0
 
+    def test_gaussian_uses_generic_native_path(self):
+        sigma, sample_rate, steps, delta = 0.6, 0.001, 1000, 1e-8
+        assert not hasattr(_native, "poisson_gaussian_pld")
+        process = dpsgd_acc.poisson(dpsgd_acc.gaussian(sigma), sample_rate) * steps
+        assert math.isfinite(process.epsilon_at(delta))
+
 
 class TestPoissonTruncatedConstructor:
     """dpsgd_acc.poisson(..., truncated_batch_size=..., dataset_size=...)."""
@@ -220,7 +247,7 @@ class TestPoissonTruncatedConstructor:
         assert t.dataset_size == 10_000
 
     def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match=r"Gaussian|AdaClip"):
+        with pytest.raises(TypeError, match="truncated Poisson"):
             dpsgd_acc.poisson(
                 acc.eps_delta(1.0),
                 0.01,
@@ -470,7 +497,7 @@ class TestDeterministicAmplificationVectors:
                 "poisson(adaclip(gaussian(1.1)), q=0.01) * 200",
                 lambda: dpsgd_acc.poisson(_adaclip(), 0.01) * 200,
                 1e-5,
-                0.7256467822715522,
+                0.7256797187172928,
                 id="poisson-adaclip",
             ),
             pytest.param(

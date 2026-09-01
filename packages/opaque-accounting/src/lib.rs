@@ -14,12 +14,13 @@
 //! ## Rust API
 //!
 //! ```rust
+//! use opaque_accounting::amplification::poisson_pld;
 //! use opaque_accounting::mechanisms::gaussian_pld;
-//! use opaque_accounting::amplification::poisson_gaussian_pld;
 //! use opaque_accounting::DiscretizationConfig;
 //!
 //! let config = DiscretizationConfig::default();
-//! let pld = gaussian_pld(1.1, &config).unwrap();
+//! let base = gaussian_pld(1.1, &config).unwrap();
+//! let pld = poisson_pld(&base, 0.01).unwrap();
 //! let epsilon = pld.epsilon_at(1e-5);
 //! ```
 //!

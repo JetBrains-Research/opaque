@@ -5,23 +5,18 @@ use pyo3::prelude::*;
 use super::config::PyDiscretizationConfig;
 use super::pld::PyPld;
 
-/// Compute the PLD for a Poisson-subsampled Gaussian mechanism.
+/// Apply plain Poisson subsampling to an existing PLD.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, must be > 0.
-///     rate (float): Poisson sampling probability, in (0, 1].
-///     config (DiscretizationConfig): Discretization configuration.
+///     base (Pld): PLD of the base mechanism.
+///     rate (float): Poisson sampling probability, in (0, 1).
 ///
 /// Returns:
 ///     Pld: The amplified privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "poisson_gaussian_pld", signature = (noise_multiplier, rate, config))]
-pub fn py_poisson_gaussian_pld(
-    noise_multiplier: f64,
-    rate: f64,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &config.inner)?;
+#[pyo3(name = "poisson_pld", signature = (base, rate))]
+pub fn py_poisson_pld(base: &PyPld, rate: f64) -> PyResult<PyPld> {
+    let pld = crate::amplification::poisson_pld(&base.inner, rate)?;
     Ok(PyPld::new(pld))
 }
 

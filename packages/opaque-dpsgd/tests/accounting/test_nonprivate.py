@@ -108,10 +108,10 @@ class TestNonPrivatePoisson:
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 
-    def test_poisson_delta_is_one(self):
+    def test_poisson_delta_matches_sampling_rate(self):
         step = dpsgd_acc.poisson(acc.nonprivate(), sample_rate=0.01)
         d = step.delta_at(1.0)
-        assert d == pytest.approx(1.0)
+        assert d == pytest.approx(0.01)
 
 
 class TestNonPrivateTruncatedPoisson:

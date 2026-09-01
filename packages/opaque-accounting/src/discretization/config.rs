@@ -68,7 +68,7 @@ pub struct DiscretizationConfig {
     /// O(G²) rather than O(G log G), so it uses a separate budget from the
     /// FFT-based composition grid (`max_grid_size`).
     ///
-    /// The certified ε interval width follows W ≈ c/G; the cost grows as G².
+    /// The ε interval width follows W ≈ c/G; the cost grows as G².
     /// Doubling this cap halves the interval at ~4× the convolution cost for
     /// configurations where the cap binds. A finer grid can only tighten (or
     /// leave unchanged) the upper bound — it never loosens it.
