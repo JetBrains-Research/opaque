@@ -624,5 +624,32 @@ class TestGeGLUApproxPerformance:
         assert_perf_benefit(pt_stats, op_stats, label="GeGLU Approx backward")
 
 
+class TestGeGLURepeatedBackward:
+    """A retained graph must be refused on the second traversal, not silently wrong.
+
+    The Triton backward writes grad_gate/grad_up over the saved gate/up
+    buffers, so a second walk would read overwritten activations. Triton
+    stores bypass the autograd version counter, so nothing else would notice.
+    """
+
+    @pytest.mark.parametrize("fn", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_repeated_backward_raises(self, fn):
+        gate = torch.randn(4, 256, device="cuda", requires_grad=True)
+        up = torch.randn(4, 256, device="cuda", requires_grad=True)
+        grad_out = torch.randn_like(gate)
+        out = fn.apply(gate, up)
+
+        torch.autograd.grad(out, (gate, up), grad_out, retain_graph=True)
+        with pytest.raises(NotImplementedError, match="Repeated backward"):
+            torch.autograd.grad(out, (gate, up), grad_out, retain_graph=True)
+
+    @pytest.mark.parametrize("fn", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_single_backward_unaffected(self, fn):
+        gate = torch.randn(4, 256, device="cuda", requires_grad=True)
+        up = torch.randn(4, 256, device="cuda", requires_grad=True)
+        out = fn.apply(gate, up)
+        torch.autograd.grad(out, (gate, up), torch.randn_like(gate))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

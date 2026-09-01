@@ -1143,6 +1143,9 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out, grad_gate, grad_up, grad_h):
+        if getattr(ctx, "_opaque_backward_done", False):
+            raise NotImplementedError("Repeated backward not supported for LoRA_MLP")
+        ctx._opaque_backward_done = True
         Sg, Su, Sd = ctx.Sg, ctx.Su, ctx.Sd
 
         if ctx.needs_weight_grads:
