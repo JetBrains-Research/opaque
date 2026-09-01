@@ -3858,8 +3858,9 @@ sequentially, so <code>fold_in(k, a, b)</code> equals <code>fold_in(fold_in(k, a
 - <code>InputTypeError</code> if <code>rng_key</code> is not an <code>RngKey</code>, or any value is not int or str
   (<code>bool</code> is rejected even though it subclasses <code>int</code>)
 - <code>ConfigurationError</code> if no data values are provided</p>
-<p>Integers and strings occupy disjoint hash paths: <code>fold_in(k, 1)</code> is never
-the same key as <code>fold_in(k, "1")</code>. That split is load-bearing.</p>
+<p>Integers and strings occupy disjoint hash paths: each fold is prefixed with a
+type tag before hashing, so <code>fold_in(k, 1)</code> is never the same key as
+<code>fold_in(k, "1")</code>. That split is load-bearing.</p>
 <ul>
 <li><strong>Integers are the caller's.</strong> Steps, ranks, epochs, leaf and group
   indices, and every key <code>split</code> returns are integer folds.</li>

@@ -3629,8 +3629,9 @@ first.</p>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">full</span>     <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">worker</span><span class="p">)</span> <span class="c1"># step → rank → worker</span>
 </code></pre></div>
 <p><code>fold_in(k, a, b)</code> is equivalent to <code>fold_in(fold_in(k, a), b)</code>.</p>
-<p>Integers and strings occupy disjoint hash paths, and that split is
-load-bearing. Integers are the caller's space (<code>split</code>, steps, ranks).
+<p>Integers and strings occupy disjoint hash paths: each fold is prefixed with a
+type tag before hashing. That split is load-bearing. Integers are the caller's
+space (<code>split</code>, steps, ranks).
 Strings root a mechanism: fold one unique tag once, then derive steps
 beneath it. Opaque's shipped tags are listed in the
 <a href="../../reference/rng/">RNG reference</a>.</p>
