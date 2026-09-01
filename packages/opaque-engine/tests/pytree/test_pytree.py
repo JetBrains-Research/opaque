@@ -5,7 +5,12 @@ import pytest
 import torch
 
 from opaque import pytree as pu
-from opaque.types import NoisedPytree, clipped
+from opaque.types import (
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    clipped,
+)
 
 
 def _to_device(tree: Any, device: torch.device) -> Any:
@@ -135,6 +140,22 @@ def test_global_norm_complex_uses_squared_magnitude(device):
             pytree={"w": torch.tensor([3.0, 4.0])},
             max_norm=1.0,
             noise_stddev=0.5,
+        ),
+        SecondMomentClippingOutput(
+            grads=clipped({"w": torch.tensor([3.0, 4.0])}, max_norm=1.0),
+            squared_grads=clipped({"w": torch.tensor([3.0, 4.0])}, max_norm=1.0),
+        ),
+        SecondMomentNoiseOutput(
+            noisy_grads=NoisedPytree(
+                pytree={"w": torch.tensor([3.0, 4.0])},
+                max_norm=1.0,
+                noise_stddev=0.5,
+            ),
+            noisy_squared_grads=NoisedPytree(
+                pytree={"w": torch.tensor([3.0, 4.0])},
+                max_norm=1.0,
+                noise_stddev=0.5,
+            ),
         ),
     ],
 )

@@ -374,9 +374,22 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
-    from opaque.api.engine.types import ClippedPytree
+    from opaque.api.engine.types import (
+        ClippedPytree,
+        NoisedPytree,
+        SecondMomentClippingOutput,
+        SecondMomentNoiseOutput,
+    )
 
-    if isinstance(tree, ClippedPytree):
+    if isinstance(
+        tree,
+        (
+            ClippedPytree,
+            NoisedPytree,
+            SecondMomentClippingOutput,
+            SecondMomentNoiseOutput,
+        ),
+    ):
         raise InputTypeError(
             *(
                 f"{type(tree).__name__} global norm is unsupported because "

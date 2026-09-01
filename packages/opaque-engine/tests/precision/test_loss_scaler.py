@@ -25,7 +25,12 @@ import torch
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.precision import LossScaler, LossScalerState, all_finite, loss_scaler
-from opaque.types import NoisedPytree, SecondMomentClippingOutput, clipped
+from opaque.types import (
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    clipped,
+)
 
 _CLIP = 1.0
 
@@ -181,6 +186,22 @@ def test_unscale_recovers_original_magnitude():
             pytree={"w": torch.tensor([8.0])},
             max_norm=4.0,
             noise_stddev=2.0,
+        ),
+        SecondMomentClippingOutput(
+            grads=clipped({"w": torch.tensor([8.0])}, max_norm=4.0),
+            squared_grads=clipped({"w": torch.tensor([8.0])}, max_norm=16.0),
+        ),
+        SecondMomentNoiseOutput(
+            noisy_grads=NoisedPytree(
+                pytree={"w": torch.tensor([8.0])},
+                max_norm=4.0,
+                noise_stddev=2.0,
+            ),
+            noisy_squared_grads=NoisedPytree(
+                pytree={"w": torch.tensor([8.0])},
+                max_norm=16.0,
+                noise_stddev=8.0,
+            ),
         ),
     ],
 )
