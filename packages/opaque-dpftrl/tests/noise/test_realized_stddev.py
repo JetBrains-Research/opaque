@@ -148,9 +148,12 @@ def test_realized_noise_matches_reported_stddev(strategy, part, n_calls):
     for _ in range(n_calls):
         output, state = noise_fn(grads, state)
 
-    _assert_realized_stddev_matches_reported(
-        output.pytree["w"], float(output.noise_stddev)
-    )
+    _assert_realized_stddev_matches_reported(output.pytree["w"], output.noise_stddev)
+
+    with pytest.raises(AssertionError):
+        _assert_realized_stddev_matches_reported(
+            output.pytree["w"] * 0.97, output.noise_stddev
+        )
 
 
 class TestStreamingMatrixRealizedSigma:
