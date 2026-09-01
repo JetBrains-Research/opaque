@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+from opaque.api.engine.device import _capabilities
 from opaque.device import (
     DeviceCapabilities,
     device_capabilities,
@@ -57,6 +58,37 @@ class TestDeviceCapabilities:
         # Honest about what MPS still lacks.
         assert caps.supports_fused_kernels is False
         assert caps.supports_pin_memory is False
+
+    def test_mps_peak_tracking_detects_generic_allocator_stats(self, monkeypatch):
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+        monkeypatch.setattr(torch, "empty", lambda *args, **kwargs: object())
+        monkeypatch.setattr(
+            torch.accelerator.memory,
+            "memory_stats",
+            lambda: {"allocated_bytes.all.peak": 0},
+        )
+        _capabilities._peak_memory_trackable.cache_clear()
+        try:
+            assert _capabilities._peak_memory_trackable("mps") is True
+        finally:
+            _capabilities._peak_memory_trackable.cache_clear()
+
+    def test_mps_peak_tracking_handles_unsupported_allocator_stats(self, monkeypatch):
+        def unsupported_memory_stats():
+            raise RuntimeError("MPS allocator statistics are not implemented")
+
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+        monkeypatch.setattr(torch, "empty", lambda *args, **kwargs: object())
+        monkeypatch.setattr(
+            torch.accelerator.memory,
+            "memory_stats",
+            unsupported_memory_stats,
+        )
+        _capabilities._peak_memory_trackable.cache_clear()
+        try:
+            assert _capabilities._peak_memory_trackable("mps") is False
+        finally:
+            _capabilities._peak_memory_trackable.cache_clear()
 
     @pytest.mark.cuda
     def test_cuda_capabilities(self):

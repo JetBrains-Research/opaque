@@ -4,13 +4,10 @@ These tests lock in the Apple-Silicon profiling guarantees that Track-B kernel
 benchmarking depends on:
 
 - memory stats report a real total / reserved budget (not zeros);
-- ``peak_gb`` is the driver's reserved high-water, so it *captures transients*
-  freed before the read — at *run* scope: ``step_perf`` never resets it on
-  MPS, so ``StepPerf.peak_is_per_step`` is False there and the figure must
-  be attributed to the run, not to the step;
-- ``reset_peak_memory`` actually lowers that high-water on MPS;
-- ``step_perf`` does NOT pay an ``empty_cache`` per step (it would tank a
-  training loop), so MPS peak accumulates as the run high-water instead;
+- generic MPS allocator statistics provide an exact, cheaply resettable
+  allocated-memory peak when the installed PyTorch supports them;
+- ``peak_gb`` captures transients freed before the end-of-step read;
+- ``step_perf`` does NOT pay an ``empty_cache`` per step;
 - ``.mark()`` is device-synchronized, so sub-step timings reflect real GPU
   execution rather than async kernel-launch time.
 
@@ -20,6 +17,7 @@ All are ``@pytest.mark.mps`` and auto-skip off Apple Silicon.
 import pytest
 import torch
 
+from opaque.device import device_capabilities
 from opaque.profiling import (
     get_memory_stats,
     reset_peak_memory,
@@ -38,10 +36,10 @@ class TestMpsMemoryStats:
         assert stats.known_total is True
         assert stats.reserved_gb >= stats.allocated_gb
         assert stats.exact_reserved is True
-        # The driver reserved high-water is a precise measurement (it just
-        # differs from CUDA's peak in quantity, not precision) → exact_peak.
-        assert stats.exact_peak is True
-        assert stats.peak_gb == stats.reserved_gb
+        trackable = device_capabilities("mps").peak_memory_trackable
+        assert stats.exact_peak is trackable
+        if not trackable:
+            assert stats.peak_gb == stats.reserved_gb
 
     def test_allocated_reflects_a_known_tensor(self):
         before = get_memory_stats("mps").allocated_gb
@@ -57,10 +55,9 @@ class TestMpsPeakTracking:
     def test_peak_captures_a_freed_transient(self):
         """The regression guard: peak must reflect a transient freed mid-step.
 
-        Current allocation would report ~0 after the free; the driver
-        high-water keeps the 1 GiB.  The number answers "how much did the
-        run need so far", not "what this step alone needed" — see
-        ``peak_is_per_step`` below.
+        Current allocation reports ~0 after the free; the allocator peak keeps
+        the 1 GiB. Older PyTorch releases retain it in the driver-allocation
+        fallback instead.
         """
         reset_peak_memory("mps")  # clean high-water baseline
         with step_perf("mps", batch_size=1) as sp:
@@ -73,24 +70,39 @@ class TestMpsPeakTracking:
         # ... and is well above the (near-zero) end-of-step allocation.
         assert perf.memory_peak_gb > perf.memory_allocated_gb + 0.5
 
-    def test_peak_is_not_per_step_on_mps(self):
-        """peak_gb is the run-wide reserved high-water, not a step figure."""
+    def test_peak_scope_matches_allocator_capability(self):
         with step_perf("mps", batch_size=1) as sp:
             torch.randn(64, 64, device="mps")
         perf = sp.perf
-        assert perf.peak_is_per_step is False
-        assert perf.to_dict(prefix="train/")["train/peak_is_per_step"] is False
-        # On MPS the reported peak equals the end-of-step reserved high-water.
-        assert perf.memory_peak_gb == perf.memory_reserved_gb
+        expected = device_capabilities("mps").peak_memory_trackable
+        assert perf.peak_is_per_step is expected
+        assert perf.to_dict(prefix="train/")["train/peak_is_per_step"] is expected
+        if not expected:
+            assert perf.memory_peak_gb == perf.memory_reserved_gb
 
-    def test_reset_peak_memory_lowers_high_water(self):
+    def test_reset_peak_memory_lowers_peak(self):
         t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")
-        del t  # grows then frees → driver retains the high-water
+        del t
         torch.mps.synchronize()
         high = get_memory_stats("mps").peak_gb
-        reset_peak_memory("mps")  # empty_cache → re-baseline
+        reset_peak_memory("mps")
         low = get_memory_stats("mps").peak_gb
         assert low < high
+
+    def test_later_small_step_is_not_inflated_by_earlier_spike(self):
+        if not device_capabilities("mps").peak_memory_trackable:
+            pytest.skip("MPS allocator peak statistics require PyTorch 2.13+")
+
+        with step_perf("mps", batch_size=1) as first:
+            t = torch.empty(_GiB_FLOATS, dtype=torch.float32, device="mps")
+            del t
+        with step_perf("mps", batch_size=1) as second:
+            t = torch.empty(16 * 1024 * 1024, dtype=torch.float32, device="mps")
+            del t
+
+        assert first.perf.memory_peak_gb >= 0.9
+        assert second.perf.memory_peak_gb == pytest.approx(0.0625, abs=0.01)
+        assert second.perf.memory_peak_gb < first.perf.memory_peak_gb
 
     def test_step_perf_does_not_empty_cache_per_step(self, monkeypatch):
         """empty_cache every step would cripple a training loop — guard it."""

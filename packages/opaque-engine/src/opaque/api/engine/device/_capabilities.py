@@ -121,12 +121,26 @@ def _recommended_compile_backend(device_type: str) -> str | None:
     return None
 
 
+@functools.cache
 def _peak_memory_trackable(device_type: str) -> bool:
-    # True only where a cheap, resettable peak counter exists for per-step
-    # reset.  CUDA has one; MPS's reserved high-water is exact but resets only
-    # via the costlier empty_cache (so step_perf doesn't reset it per step);
-    # CPU has no peak counter.
-    return device_type == "cuda"
+    """Whether the backend exposes a cheap, resettable allocated-memory peak."""
+    if device_type == "cuda":
+        return True
+    if device_type != "mps" or not torch.backends.mps.is_available():
+        return False
+
+    # MPS implemented the generic allocator statistics in PyTorch 2.13.
+    # Probe the capability rather than version-sniffing so nightlies and
+    # backports behave according to their actual allocator.
+    probe = torch.empty(1, device="mps")
+    del probe
+    try:
+        stats = torch.accelerator.memory.memory_stats()
+    except RuntimeError:
+        # PyTorch 2.9-2.12 expose the generic API but the MPS allocator does
+        # not implement its statistics hooks.
+        return False
+    return "allocated_bytes.all.peak" in stats
 
 
 @dataclass(frozen=True)
@@ -142,10 +156,9 @@ class DeviceCapabilities:
         supports_fused_kernels: the Triton fused-kernel runtime is available
             (CUDA + Triton); otherwise eager fallbacks are used.
         peak_memory_trackable: the device exposes a cheap, resettable
-            peak-memory counter that ``step_perf`` can zero each step (CUDA).
-            False on MPS — its reserved high-water is itself an exact peak
-            figure, but resetting it costs an ``empty_cache``, too heavy to run
-            per step — and on CPU, which has no peak counter at all.
+            allocated-memory peak that ``step_perf`` can zero each step. True
+            on CUDA and on MPS when the installed PyTorch implements generic
+            allocator statistics (2.13+); false on older MPS releases and CPU.
         supports_pin_memory: pinned host memory accelerates H2D copies here
             (CUDA only; a no-op on CPU, a noisy warning on MPS).
     """

@@ -217,29 +217,28 @@ or `get_memory_stats(device)`.
 
 On MPS, `get_memory_stats` reports allocated, reserved, and total memory
 (via `torch.mps.current_allocated_memory`, `driver_allocated_memory`, and
-`recommended_max_memory`). PyTorch's MPS backend exposes no allocated-peak
-counter, so **`peak_gb` is the driver's reserved high-water mark** — a
-monotonic measurement that *captures transients* (a tensor freed before the
-read still counts). This is a precise measurement, so `MemoryStats.exact_peak`
-is `True`; it differs from CUDA's `peak_gb` only in *quantity* — reserved
-high-water (it equals `reserved_gb` and upper-bounds the allocated peak)
-rather than the allocated peak — not in precision.
+`recommended_max_memory`). `driver_allocated_memory` is a current total for
+the process, including allocator caches and MPS/MPSGraph allocations; Metal
+does not define it as a monotonic peak counter.
 
-Because there is no cheap per-step peak reset on MPS, `step_perf` does not
-reset it each step (the only reset is `torch.mps.empty_cache`, too costly to
-run every step). Instead, MPS `peak_gb` accumulates as the run's reserved
-high-water and `max_peak_memory_gb` gives the run peak. For a clean
-per-config measurement (e.g. benchmarking kernels), call
-`reset_peak_memory(device)` before the measured region.
+PyTorch 2.13 added MPS allocator statistics to the backend-neutral
+`torch.accelerator.memory` API. Opaque uses its
+`reset_peak_memory_stats()` and `max_memory_allocated()` calls, so
+`step_perf` records the exact peak allocated tensor memory for each MPS step,
+including a transient freed before the step ends, without emptying the cache.
+This is the same measurement contract used on CUDA.
+
+On PyTorch 2.9–2.12, the MPS allocator does not implement those generic
+statistics. Opaque falls back to the current Metal-driver allocation and sets
+`MemoryStats.exact_peak` to `False`; resetting that fallback requires the
+costlier `torch.mps.empty_cache`, so `step_perf` does not do it every step.
 
 `StepPerf.to_dict()` therefore emits a **`peak_is_per_step`** flag telling
-you which quantity you are logging: `True` on CUDA, where the step's peak
-counter is reset when the window opens and `memory_peak_gb` is truly this
-step's peak allocated; `False` on MPS, where `memory_peak_gb` equals
-`memory_reserved_gb` and is the run-wide reserved high-water — an early spike
-inflates every later step's value, so attribute it to the run, not the step;
-and `False` on CPU (`peak_gb` stays `0.0`). If you track per-step memory
-trends, gate on the flag rather than assuming CUDA semantics everywhere.
+you which quantity you are logging: `True` on CUDA and on MPS with generic
+allocator peak statistics; `False` on older MPS releases using the
+process-level fallback, on CPU (`peak_gb` stays `0.0`), and whenever
+`track_memory=False`. Gate per-step memory trends on the flag rather than
+assuming every backend/version supports the same counter.
 
 Sub-step `.mark()` calls are device-synchronized, so their timings reflect
 real GPU execution — without the sync, an accelerator mark would record only

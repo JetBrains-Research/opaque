@@ -51,6 +51,12 @@ class TestStepPerf:
         d = perf.to_dict(prefix="train/")
         assert d["train/peak_is_per_step"] is True
 
+    def test_new_flag_preserves_positional_marks_argument(self):
+        marks = {"clip": 0.25}
+        perf = StepPerf(1.0, 2.0, 3.0, 4.0, 5.0, 6, marks)
+        assert perf.marks == marks
+        assert perf.peak_is_per_step is False
+
     def test_to_dict_with_prefix(self):
         perf = StepPerf(step_time_sec=1.0)
         d = perf.to_dict(prefix="train/")
@@ -164,6 +170,29 @@ class TestStepPerfContextManager:
         with step_perf("cpu", batch_size=8, track_memory=False) as sp:
             pass
         assert sp.perf.peak_is_per_step is False
+
+    def test_synchronizes_before_resetting_peak(self, monkeypatch):
+        from opaque.api.engine.profiling import _memory
+
+        events: list[str] = []
+        monkeypatch.setattr(
+            _memory,
+            "device_capabilities",
+            lambda device: replace(
+                device_capabilities(device), peak_memory_trackable=True
+            ),
+        )
+        monkeypatch.setattr(
+            _memory, "_sync_device", lambda device: events.append("sync")
+        )
+        monkeypatch.setattr(
+            _memory, "reset_peak_memory", lambda device: events.append("reset")
+        )
+
+        with step_perf("cpu"):
+            pass
+
+        assert events[:2] == ["sync", "reset"]
 
     def test_string_device(self):
         with step_perf("cpu", batch_size=16) as sp:
