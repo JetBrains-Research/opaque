@@ -215,27 +215,18 @@ or `get_memory_stats(device)`.
 | MPS | Full | Partial | Supported |
 | CPU | Limited | Not available | Supported |
 
-On MPS, `get_memory_stats` reports allocated, reserved, and total memory
-(via `torch.mps.current_allocated_memory`, `driver_allocated_memory`, and
-`recommended_max_memory`). PyTorch's MPS backend exposes no allocated-peak
-counter, so **`peak_gb` is the driver's reserved high-water mark** — a
-monotonic measurement that *captures transients* (a tensor freed before the
-read still counts), which is the useful number for "how much did this step
-need". This is a precise measurement, so `MemoryStats.exact_peak` is `True`;
-it differs from CUDA's `peak_gb` only in *quantity* — reserved high-water (it
-equals `reserved_gb` and upper-bounds the allocated peak) rather than the
-allocated peak — not in precision.
+On MPS, `memory_peak_gb` is always scoped to the measured step:
 
-Because there is no cheap per-step peak reset on MPS, `step_perf` does not
-reset it each step (the only reset is `torch.mps.empty_cache`, too costly to
-run every step). Instead, MPS `peak_gb` accumulates as the run's reserved
-high-water and `max_peak_memory_gb` gives the run peak. For a clean
-per-config measurement (e.g. benchmarking kernels), call
-`reset_peak_memory(device)` before the measured region.
+| PyTorch | Measurement |
+|---------|-------------|
+| 2.13+ | Exact allocated-memory peak from `torch.accelerator.memory` |
+| 2.9–2.12 | Maximum current allocation sampled at entry, marks, and exit |
 
-Sub-step `.mark()` calls are device-synchronized, so their timings reflect
-real GPU execution — without the sync, an accelerator mark would record only
-async kernel-launch time (microseconds for hundreds of ms of work).
+Add marks after memory-intensive phases to improve the sampled measurement.
+`memory_reserved_gb` reports the current Metal-driver allocation, including
+allocator caches and MPS/MPSGraph allocations.
+
+Sub-step `.mark()` calls synchronize the device for accurate timing.
 
 ### Distributed memory considerations
 
