@@ -57,8 +57,9 @@ from opaque.api.engine.types import (
     ClippedPytree,
     NoisedPytree,
     SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
 )
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.pytree import tree_map
 
 if TYPE_CHECKING:
@@ -179,6 +180,22 @@ def loss_scaler(
         return loss * state.scale
 
     def unscale_grads(updates: Any, state: LossScalerState) -> Any:
+        if isinstance(
+            updates,
+            (
+                ClippedPytree,
+                NoisedPytree,
+                SecondMomentClippingOutput,
+                SecondMomentNoiseOutput,
+            ),
+        ):
+            raise InputTypeError(
+                *(
+                    f"{type(updates).__name__} unscaling is unsupported because "
+                    "unscale_grads() must run before clipping. Operate on `.pytree` "
+                    "only when explicitly reconstructing metadata.",
+                )
+            )
         if not enabled:
             return updates
         s = state.scale

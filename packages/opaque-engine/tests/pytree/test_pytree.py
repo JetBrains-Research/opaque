@@ -5,6 +5,12 @@ import pytest
 import torch
 
 from opaque import pytree as pu
+from opaque.types import (
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    clipped,
+)
 
 
 def _to_device(tree: Any, device: torch.device) -> Any:
@@ -124,3 +130,35 @@ def test_global_norm_complex_uses_squared_magnitude(device):
     # Norm = sqrt((3^2+4^2) + (1^2+2^2)) = sqrt(25 + 5) = sqrt(30)
     expected = 30**0.5
     assert math.isclose(float(got), expected, rel_tol=0, abs_tol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "tree",
+    [
+        clipped({"w": torch.tensor([3.0, 4.0])}, max_norm=1.0),
+        NoisedPytree(
+            pytree={"w": torch.tensor([3.0, 4.0])},
+            max_norm=1.0,
+            noise_stddev=0.5,
+        ),
+        SecondMomentClippingOutput(
+            grads=clipped({"w": torch.tensor([3.0, 4.0])}, max_norm=1.0),
+            squared_grads=clipped({"w": torch.tensor([3.0, 4.0])}, max_norm=1.0),
+        ),
+        SecondMomentNoiseOutput(
+            noisy_grads=NoisedPytree(
+                pytree={"w": torch.tensor([3.0, 4.0])},
+                max_norm=1.0,
+                noise_stddev=0.5,
+            ),
+            noisy_squared_grads=NoisedPytree(
+                pytree={"w": torch.tensor([3.0, 4.0])},
+                max_norm=1.0,
+                noise_stddev=0.5,
+            ),
+        ),
+    ],
+)
+def test_global_norm_rejects_dp_pytree_wrappers(tree):
+    with pytest.raises(TypeError, match="raw tensor pytrees"):
+        pu.global_norm(tree)

@@ -25,7 +25,12 @@ import torch
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.precision import LossScaler, LossScalerState, all_finite, loss_scaler
-from opaque.types import NoisedPytree, SecondMomentClippingOutput, clipped
+from opaque.types import (
+    NoisedPytree,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    clipped,
+)
 
 _CLIP = 1.0
 
@@ -171,6 +176,41 @@ def test_unscale_recovers_original_magnitude():
     unscaled = scaler.unscale_grads(scaled, state)
     torch.testing.assert_close(unscaled["fp32"], original["fp32"])
     torch.testing.assert_close(unscaled["bf16"], original["bf16"])
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        clipped({"w": torch.tensor([8.0])}, max_norm=4.0),
+        NoisedPytree(
+            pytree={"w": torch.tensor([8.0])},
+            max_norm=4.0,
+            noise_stddev=2.0,
+        ),
+        SecondMomentClippingOutput(
+            grads=clipped({"w": torch.tensor([8.0])}, max_norm=4.0),
+            squared_grads=clipped({"w": torch.tensor([8.0])}, max_norm=16.0),
+        ),
+        SecondMomentNoiseOutput(
+            noisy_grads=NoisedPytree(
+                pytree={"w": torch.tensor([8.0])},
+                max_norm=4.0,
+                noise_stddev=2.0,
+            ),
+            noisy_squared_grads=NoisedPytree(
+                pytree={"w": torch.tensor([8.0])},
+                max_norm=16.0,
+                noise_stddev=8.0,
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize("enabled", [True, False])
+def test_unscale_grads_rejects_dp_pytree_wrappers(updates, enabled):
+    scaler, state = loss_scaler(enabled=enabled, init_scale=4.0)
+
+    with pytest.raises(TypeError, match="must run before clipping"):
+        scaler.unscale_grads(updates, state)
 
 
 # ----------------------------------------------------------------------------
