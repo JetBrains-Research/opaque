@@ -458,12 +458,14 @@ def adaptive_clipped_grad(
             )
             if return_aux:
                 empty = torch.empty(0)
+                # ``clipping_rate`` presence is schema-driven: None for
+                # per-group, like non-empty steps.
                 adaptive_aux = AdaptiveClippedGradAux(
                     loss_values=empty,
                     grad_norms=empty,
                     clipped_grad_norms=empty,
                     loss_aux=None,
-                    clipping_rate=0.0,
+                    clipping_rate=None if is_per_group else 0.0,
                 )
                 return (grads, adaptive_aux), new_state
             if return_stats:

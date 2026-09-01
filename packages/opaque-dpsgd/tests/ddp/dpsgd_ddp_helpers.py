@@ -573,3 +573,60 @@ def _worker_summed_noise_scaling_gloo(rank: int, world_size: int, port: int) -> 
         )
     finally:
         _cleanup_ddp()
+
+
+def _worker_per_group_adaptive_one_rank_empty_gloo(
+    rank: int, world_size: int, port: int
+) -> None:
+    """Adaptive per-group clipping with rank 0 empty: sync stays schema-consistent (#805)."""
+    from opaque.distributed import sum_gradients, sync
+    from opaque.dpsgd.clipping import adaptive_clipped_grad, per_group
+    from opaque.random import key
+    from opaque.types import PerGroup
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        params = {
+            "weight": torch.tensor([0.25, -0.5]),
+            "bias": torch.tensor([0.1]),
+        }
+        bounds = per_group(params, weight=1.0, bias=0.5)
+
+        def loss_fn(current_params, x, y):
+            prediction = x @ current_params["weight"] + current_params["bias"]
+            return (prediction - y).square().mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clipping_norm=bounds,
+            fraction_noise_std=0.05,
+            key=key(97),
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        local_batch_size = 0 if rank == 0 else 2
+        x = torch.arange(local_batch_size * 2, dtype=torch.float32).reshape(
+            local_batch_size, 2
+        )
+        y = torch.linspace(0.0, 1.0, local_batch_size)
+
+        (local_grads, local_aux), clip_state = grad_fn(params, x, y, state=clip_state)
+        assert local_aux.clipping_rate is None
+
+        reduced = sum_gradients(local_grads)
+        assert isinstance(reduced.max_norm, PerGroup)
+        synced_state, synced_aux = sync(clip_state, local_aux)
+
+        assert synced_aux.clipping_rate is None
+        assert synced_aux.batch_size == 2
+        assert synced_aux.group_norms is not None
+        assert set(synced_aux.group_norms) == {"weight", "bias"}
+        assert synced_state._batch_size == 2.0
+        assert isinstance(synced_state._next_clipping_norm, PerGroup)
+
+        # A follow-up collective must still succeed (proves no desync).
+        token = torch.tensor([float(rank + 1)])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert abs(token.item() - sum(range(1, world_size + 1))) < 1e-5
+    finally:
+        _cleanup_ddp()

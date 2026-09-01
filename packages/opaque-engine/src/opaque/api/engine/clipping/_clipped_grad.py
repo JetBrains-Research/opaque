@@ -250,12 +250,14 @@ def clipped_grad(
             grads = clipped(zeros, max_norm=output_max_norm)
         if return_aux:
             empty = torch.empty(0)
+            # Per-group steps report ``clipping_rate=None`` (rates live in
+            # ``group_norms``), empty draws included, so ``sync(aux)`` matches.
             grad_aux = ClippedGradAux(
                 loss_values=empty if return_aux else None,
                 grad_norms=empty,
                 clipped_grad_norms=empty,
                 loss_aux=None,
-                clipping_rate=0.0,
+                clipping_rate=None if isinstance(clipping_norm, PerGroup) else 0.0,
                 batch_size=0,
             )
             return (grads, grad_aux), state

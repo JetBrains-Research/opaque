@@ -8,6 +8,7 @@ from dpsgd_ddp_helpers import (
     _spawn_gloo,
     _worker_cpu_gloo_training_contract,
     _worker_noise_seed_out_of_int64_range_gloo,
+    _worker_per_group_adaptive_one_rank_empty_gloo,
     _worker_per_group_adaptive_state_gloo,
     _worker_per_group_adaptive_training_gloo,
     _worker_summed_noise_scaling_gloo,
@@ -48,3 +49,10 @@ def test_per_group_adaptive_clipping_runs_through_noise() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_per_group_adaptive_training_gloo)
+
+
+def test_per_group_adaptive_clipping_one_rank_empty_syncs() -> None:
+    """Partially-empty Poisson round with adaptive per-group clipping (#805)."""
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_per_group_adaptive_one_rank_empty_gloo)

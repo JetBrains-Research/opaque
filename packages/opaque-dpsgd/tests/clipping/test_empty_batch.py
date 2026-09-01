@@ -442,6 +442,88 @@ class TestAdaptiveClippedGradEmptyBatchSecondMoment:
 
 
 # ---------------------------------------------------------------------------
+# Per-group aux: clipping_rate presence tracks the config, not the batch
+# ---------------------------------------------------------------------------
+
+
+def _pg_loss_fn(params, x, y):
+    pred = x @ params["w"] + params["b"]
+    return ((pred - y) ** 2).mean()
+
+
+class TestPerGroupEmptyBatchAuxSchema:
+    def _per_group(self):
+        from opaque.dpsgd.clipping import per_group
+
+        params = {"w": torch.randn(10), "b": torch.randn(1)}
+        return params, per_group(params, w=1.0, b=0.5)
+
+    def test_fixed_per_group_empty_aux_rate_is_none(self, empty_batch):
+        params, pg = self._per_group()
+        grad_fn, clip_state = clipped_grad(
+            _pg_loss_fn,
+            batch_argnums=(1, 2),
+            clipping_norm=pg,
+            return_aux=True,
+        )
+        (_, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
+        assert aux.clipping_rate is None
+
+    def test_fixed_scalar_empty_aux_rate_stays_zero(self, params, empty_batch):
+        grad_fn, clip_state = clipped_grad(
+            _simple_loss_fn,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            return_aux=True,
+        )
+        (_, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
+        assert aux.clipping_rate == 0.0
+
+    def test_adaptive_per_group_empty_aux_rate_is_none(self, empty_batch):
+        params, pg = self._per_group()
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _pg_loss_fn,
+            initial_clipping_norm=pg,
+            key=key(0),
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        (_, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
+        assert aux.clipping_rate is None
+
+    def test_adaptive_per_group_empty_matches_nonempty_presence(
+        self, empty_batch, normal_batch
+    ):
+        params, pg = self._per_group()
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _pg_loss_fn,
+            initial_clipping_norm=pg,
+            key=key(0),
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        (_, empty_aux), state = grad_fn(params, *empty_batch, state=clip_state)
+        (_, full_aux), _ = grad_fn(params, *normal_batch, state=state)
+        assert empty_aux.clipping_rate is None
+        assert full_aux.clipping_rate is None
+
+    def test_adaptive_scalar_empty_matches_nonempty_presence(
+        self, params, empty_batch, normal_batch
+    ):
+        grad_fn, clip_state = adaptive_clipped_grad(
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
+            batch_argnums=(1, 2),
+            return_aux=True,
+        )
+        (_, empty_aux), state = grad_fn(params, *empty_batch, state=clip_state)
+        (_, full_aux), _ = grad_fn(params, *normal_batch, state=state)
+        assert isinstance(empty_aux.clipping_rate, float)
+        assert isinstance(full_aux.clipping_rate, float)
+
+
+# ---------------------------------------------------------------------------
 # sync_adaptive_clip_state with all-empty ranks (unit test, no real DDP)
 # ---------------------------------------------------------------------------
 
