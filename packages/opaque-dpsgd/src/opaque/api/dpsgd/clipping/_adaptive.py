@@ -396,7 +396,7 @@ def adaptive_clipped_grad(
 
     def _empty_num_clipped():
         if is_per_group:
-            return dict.fromkeys(initial_clipping_norm.values, 0.0)
+            return dict.fromkeys(sorted(initial_clipping_norm.values), 0.0)
         return 0.0
 
     def _empty_batch_state(state: AdaptiveClipState) -> AdaptiveClipState:
@@ -470,8 +470,12 @@ def adaptive_clipped_grad(
                 return (grads, adaptive_aux), new_state
             if return_stats:
                 if is_per_group:
-                    empty_counts = dict.fromkeys(initial_clipping_norm.values, 0.0)
-                    empty_rates = dict.fromkeys(initial_clipping_norm.values, 0.0)
+                    empty_counts = dict.fromkeys(
+                        sorted(initial_clipping_norm.values), 0.0
+                    )
+                    empty_rates = dict.fromkeys(
+                        sorted(initial_clipping_norm.values), 0.0
+                    )
                     stats = ClippingStats(
                         num_clipped=empty_counts,
                         clipping_rate=empty_rates,
@@ -535,12 +539,20 @@ def adaptive_clipped_grad(
                 and isinstance(stats.num_clipped, dict)
                 and batch_size > 0
             ):
-                per_group_num_clipped = stats.num_clipped
-                per_group_rates = (
-                    stats.clipping_rate if isinstance(stats.clipping_rate, dict) else {}
-                )
+                per_group_num_clipped = {
+                    gname: stats.num_clipped[gname]
+                    for gname in sorted(current_pg.values)
+                }
+                per_group_rates = {
+                    gname: (
+                        stats.clipping_rate.get(gname, 0.0)
+                        if isinstance(stats.clipping_rate, dict)
+                        else 0.0
+                    )
+                    for gname in sorted(current_pg.values)
+                }
                 new_values: dict[str, float] = {}
-                for i, gname in enumerate(sorted(current_pg.values.keys())):
+                for i, gname in enumerate(sorted(current_pg.values)):
                     threshold = current_pg.values[gname]
                     rate = per_group_rates.get(gname, 0.0)
 
@@ -569,7 +581,7 @@ def adaptive_clipped_grad(
             elif aux is not None and aux.group_norms is not None and batch_size > 0:
                 per_group_num_clipped: dict[str, float] = {}
                 new_values: dict[str, float] = {}
-                for i, gname in enumerate(sorted(current_pg.values.keys())):
+                for i, gname in enumerate(sorted(current_pg.values)):
                     threshold = current_pg.values[gname]
                     gnorms = aux.group_norms[gname]
                     nc = float((gnorms > threshold).sum().item())

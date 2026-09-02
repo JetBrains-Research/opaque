@@ -52,7 +52,7 @@ def test_per_group_adaptive_clipping_runs_through_noise() -> None:
 
 
 def test_per_group_adaptive_clipping_one_rank_empty_syncs() -> None:
-    """Partially-empty Poisson round with adaptive per-group clipping (#805)."""
+    """Empty-rank count ordering follows the per-group schema (#798)."""
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_per_group_adaptive_one_rank_empty_gloo)

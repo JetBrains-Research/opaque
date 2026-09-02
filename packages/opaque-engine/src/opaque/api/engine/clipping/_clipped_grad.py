@@ -265,8 +265,9 @@ def clipped_grad(
             from opaque.api.engine.clipping._clipped_fun import ClippingStats
 
             if isinstance(clipping_norm, PerGroup):
-                empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
-                empty_rates = dict.fromkeys(clipping_norm.values, 0.0)
+                group_names = sorted(clipping_norm.values)
+                empty_counts = dict.fromkeys(group_names, 0.0)
+                empty_rates = dict.fromkeys(group_names, 0.0)
                 stats = ClippingStats(
                     num_clipped=empty_counts,
                     clipping_rate=empty_rates,
