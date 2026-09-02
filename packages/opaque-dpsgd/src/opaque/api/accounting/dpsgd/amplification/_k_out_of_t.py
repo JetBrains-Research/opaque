@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Literal
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import horizon_pld_cache
+from opaque.api.accounting.core._random_allocation_cache import epoch_pld, prefix_pld
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
@@ -111,12 +112,12 @@ class KOutOfT(DpHorizonProcess):
             seed=seed,
             mc_resolution=mc_resolution,
             mc_failure_probability=mc_failure_probability,
-        ).to_native()
+        )
         noise_multiplier = self._noise_multiplier()
         if noise_multiplier is None:
-            return _native.non_private_pld(config)
+            return _native.non_private_pld(config.to_native())
         if n_steps == self.n_steps:
-            return _native.random_allocation_gaussian_pld(
+            return epoch_pld(
                 noise_multiplier,
                 self.n_steps,
                 self.k,
@@ -144,7 +145,7 @@ class KOutOfT(DpHorizonProcess):
         ):
             full_blocks = min(remaining // block_size, count)
             if full_blocks:
-                block = _native.random_allocation_gaussian_pld(
+                block = epoch_pld(
                     noise_multiplier,
                     block_size,
                     1,
@@ -154,7 +155,7 @@ class KOutOfT(DpHorizonProcess):
                 result = blocks if result is None else result.compose(blocks)
                 remaining -= full_blocks * block_size
             if remaining and full_blocks < count:
-                prefix = _native.random_allocation_gaussian_prefix_pld(
+                prefix = prefix_pld(
                     noise_multiplier,
                     block_size,
                     remaining,
