@@ -31,6 +31,10 @@ class PerStep(DpProcess):
             self.process._pld_cache_key(n_steps=1 if n_steps is None else n_steps),
         )
 
+    def _repeated_pld_cache_key(self, count: int) -> tuple[object, ...]:
+        """Use count as the horizon passed to ``process.pld_at``."""
+        return self._pld_cache_key(n_steps=count)
+
     @pld_cache(maxsize=8)
     def pld(
         self,

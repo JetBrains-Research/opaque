@@ -1,13 +1,4 @@
-"""Tests for ``Schedule`` callable acceptance on BandMF / BLT strategies.
-
-The strategy factories accept :data:`opaque.scheduling.types.Schedule`
-(``Callable[[int], float]``) for ``lr_schedule`` — materialised lazily
-at the amplifier-supplied ``n_steps`` and used as the cache key.  A
-constant schedule must coincide with no schedule; a non-constant
-schedule must change the workload coefficients.  Schedules cannot be
-serialised through :func:`opaque.serialization.state_dict` because a
-callable has no portable representation.
-"""
+"""Tests for learning-rate schedules on matrix-factorization strategies."""
 
 import pytest
 import torch

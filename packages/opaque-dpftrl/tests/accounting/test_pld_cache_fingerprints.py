@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass, field
+
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as ftrl_acc
+from opaque.api.accounting.core.composition.types import Composed
 from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strategy
+from opaque.scheduling import constant_schedule, linear_schedule
 
 
 def _prefix_process(schedule, *, momentum: float = 1.0):
@@ -21,15 +26,13 @@ def test_distinct_materialized_schedules_do_not_share_cached_plds() -> None:
     constant = _prefix_process(lambda _step: 1.0)
     ramp = _prefix_process(lambda step: 1.0 + 0.01 * step)
 
-    assert constant == ramp
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 
-def test_equal_materialized_schedules_reuse_cached_plds() -> None:
+def test_structurally_distinct_equivalent_schedules_reuse_cached_pld() -> None:
     first = _prefix_process(lambda step: 1.0 + 0.01 * step)
     second = _prefix_process(lambda step: float(1.0 + 0.01 * step))
 
-    assert first == second
     assert first.pld(discretization=0.1) is second.pld(discretization=0.1)
 
 
@@ -53,7 +56,6 @@ def test_composed_processes_preserve_schedule_cache_identity() -> None:
     constant = acc.eps_delta(0.1) | _prefix_process(lambda _step: 1.0)
     ramp = acc.eps_delta(0.1) | _prefix_process(lambda step: 1.0 + 0.01 * step)
 
-    assert constant == ramp
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 
@@ -72,7 +74,73 @@ def test_blt_prefix_fingerprint_uses_the_full_schedule() -> None:
         n_steps=16,
     )
 
-    assert constant == changed_after_prefix
     assert constant._pld_cache_key(n_steps=4) != changed_after_prefix._pld_cache_key(
         n_steps=4
     )
+
+
+def _blt_phase(schedule):
+    return ftrl_acc.mf_gaussian(
+        2.0,
+        blt_strategy(max_buffers=1, lr_schedule=schedule),
+        n_steps=4,
+        min_sep=2,
+        max_participations=2,
+    )
+
+
+@dataclass(frozen=True)
+class _ScheduleWithIncompleteEquality:
+    value: float = field(compare=False)
+
+    def __call__(self, _step: int) -> float:
+        return self.value
+
+
+def test_distinct_schedule_phases_remain_heterogeneous() -> None:
+    first = _blt_phase(linear_schedule(1.0, 0.1, 2, transition_begin=2))
+    second = _blt_phase(constant_schedule(1.0))
+
+    combined = first | second
+    assert isinstance(combined, Composed)
+
+    expected = Composed(first, second)
+    homogeneous = first * 2
+
+    actual_epsilon = combined.epsilon_at(1e-5, discretization=0.1)
+    expected_epsilon = expected.epsilon_at(1e-5, discretization=0.1)
+    homogeneous_epsilon = homogeneous.epsilon_at(1e-5, discretization=0.1)
+
+    assert actual_epsilon == expected_epsilon
+    assert homogeneous_epsilon < expected_epsilon
+
+
+def test_callable_equality_cannot_merge_distinct_schedules() -> None:
+    first = _blt_phase(_ScheduleWithIncompleteEquality(1.0))
+    second = _blt_phase(_ScheduleWithIncompleteEquality(0.5))
+
+    assert first.strategy == second.strategy
+    assert isinstance(first | second, Composed)
+
+
+def test_right_spine_does_not_merge_distinct_schedule_phases() -> None:
+    first = _blt_phase(linear_schedule(1.0, 0.1, 2, transition_begin=2))
+    second = _blt_phase(constant_schedule(1.0))
+
+    combined = (acc.eps_delta(0.1) | first) | second
+
+    assert isinstance(combined, Composed)
+    assert combined.right is second
+
+
+def test_repeated_whole_horizon_uses_the_full_schedule_fingerprint() -> None:
+    first = _blt_phase(linear_schedule(1.0, 0.1, 2, transition_begin=2)) * 2
+    second = _blt_phase(constant_schedule(1.0)) * 2
+    first.pld.cache_clear()
+
+    assert first._pld_cache_key() != second._pld_cache_key()
+    first_pld = first.pld(discretization=0.1)
+    second_pld = second.pld(discretization=0.1)
+
+    assert first_pld is not second_pld
+    assert not math.isclose(first_pld.epsilon_at(1e-5), second_pld.epsilon_at(1e-5))

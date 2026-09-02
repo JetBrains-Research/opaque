@@ -17,21 +17,28 @@ def iter_cache_key(
     from ._repeated import Repeated
 
     parts: list[object] = []
-    stack: list[tuple[DpProcess, int | None]] = [(process, n_steps)]
+    stack: list[tuple[DpProcess, int | None, int | None]] = [(process, n_steps, None)]
     while stack:
-        node, node_steps = stack.pop()
+        node, node_steps, repeat_count = stack.pop()
         if isinstance(node, Composed):
             parts.append("Composed")
-            stack.append((node.right, None))
-            stack.append((node.left, None))
+            # Repeating a composition self-composes its complete PLD; it does
+            # not repeat each child independently.
+            stack.append((node.right, None, None))
+            stack.append((node.left, None, None))
             continue
         if isinstance(node, Repeated):
             parts.extend(("Repeated", node.count))
-            stack.append((node.inner, node.count))
+            stack.append((node.inner, None, node.count))
             continue
         if isinstance(node, CachedProcess):
             parts.append("CachedProcess")
-            stack.append((node.inner, node_steps))
+            # CachedProcess.repeated_pld delegates to its inner process, so the
+            # repetition identity remains relevant across this wrapper.
+            stack.append((node.inner, node_steps, repeat_count))
             continue
-        parts.append(node._pld_cache_key(n_steps=node_steps))
+        if repeat_count is not None:
+            parts.append(node._repeated_pld_cache_key(repeat_count))
+        else:
+            parts.append(node._pld_cache_key(n_steps=node_steps))
     return tuple(parts)

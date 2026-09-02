@@ -156,7 +156,9 @@ def band_mf_strategy(
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
         lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`
             (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``
-            when the strategy first sees the amplifier's ``n_steps``.
+            when the strategy first sees the amplifier's ``n_steps``. Custom
+            schedules must be deterministic, side-effect-free, and remain
+            immutable for the strategy's lifetime.
 
     Returns:
         A :class:`BandMfStrategy` recipe.

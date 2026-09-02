@@ -393,6 +393,28 @@ class DpProcess(ABC):
             ),
         )
 
+    def _repeated_pld_cache_key(self, count: int) -> Hashable:
+        """Return the inner cache key for ``repeated_pld(count)``.
+
+        The enclosing :class:`Repeated` key records ``count``. The default
+        implementation composes the ordinary PLD; count-sensitive overrides
+        must return the identity of their repeated computation.
+        """
+        del count
+        return self._pld_cache_key()
+
+    def _has_same_repeated_pld(self, other: DpProcess, count: int) -> bool:
+        """Whether two leaves have the same ``count``-fold PLD computation."""
+        if self is other:
+            return True
+
+        from opaque.api.accounting.core.composition.types import Repeated
+
+        return (
+            Repeated(self, count)._pld_cache_key()
+            == Repeated(other, count)._pld_cache_key()
+        )
+
     def repeated_pld(
         self,
         count: int,
@@ -462,7 +484,7 @@ class DpProcess(ABC):
         """Compose with another process: ``a | b``.
 
         Applies identity elision, direct merge, and right-spine merge
-        using structural equality (``==``).
+        when both leaves resolve to the same repeated PLD computation.
         """
         from opaque.api.accounting.core.composition.types import Composed, Repeated
         from opaque.api.accounting.core.mechanisms.types import Identity
@@ -477,15 +499,17 @@ class DpProcess(ABC):
         # Direct merge: both sides share the same leaf
         left_leaf, left_count = self._leaf_and_count()
         right_leaf, right_count = other._leaf_and_count()
-        if left_leaf == right_leaf:
-            return Repeated(left_leaf, left_count + right_count)
+        merged_count = left_count + right_count
+        if left_leaf._has_same_repeated_pld(right_leaf, merged_count):
+            return Repeated(left_leaf, merged_count)
 
         # Right-spine merge: (X | a*n) | a*m  →  X | a*(n+m)
         match self:
             case Composed():
                 r_leaf, r_count = self.right._leaf_and_count()
-                if r_leaf == right_leaf:
-                    merged = Repeated(r_leaf, r_count + right_count)
+                merged_count = r_count + right_count
+                if r_leaf._has_same_repeated_pld(right_leaf, merged_count):
+                    merged = Repeated(r_leaf, merged_count)
                     return Composed(self.left, merged)
 
         return Composed(self, other)

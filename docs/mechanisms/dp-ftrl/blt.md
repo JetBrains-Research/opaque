@@ -84,7 +84,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 ## Assumptions and limitations
 
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
-- Optional **`lr_schedule`** weights the optimizer objective on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\) while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.
+- Optional **`lr_schedule`** weights the optimizer objective on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\) while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates. Custom callables must be deterministic, side-effect-free, and immutable for the strategy's lifetime.
 - **Subsampling**: BLT does not use `dpftrl_acc.poisson` as BandMF does; combine it with Balls-in-Bins when using correlated MF with epoch structure (see examples).
 - Overview: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
 
