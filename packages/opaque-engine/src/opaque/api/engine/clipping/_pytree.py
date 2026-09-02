@@ -111,23 +111,32 @@ def _resolve_compute_dtype_for_reduction(
 def _guard_scale(
     ratio: torch.Tensor,
     storage_dtype: torch.dtype,
+    multiply_dtype: torch.dtype,
     norm_roundoff: float,
 ) -> torch.Tensor:
     """Shrink a clipping ratio so that storing it cannot break the norm bound.
 
-    Three roundings sit between ``C / ||x||`` and the stored output: the norm
-    reduction (bounded by ``norm_roundoff``), the downcast of the scale into
-    ``storage_dtype``, and the per-element multiply.  Each can round up, so the
-    ratio gives up ``2 (u_store + norm_roundoff)``.  Non-floating leaves carry
-    no rounding error and are returned unchanged.
+    The norm reduction is bounded by ``norm_roundoff``.  The scale is then
+    rounded and multiplied in ``multiply_dtype`` before a single final cast to
+    ``storage_dtype``.  Each step can round up, so the ratio gives up the
+    corresponding ULPs.  Non-floating leaves carry no rounding error and are
+    returned unchanged.
 
     The absolute term covers subnormals, where round-to-nearest error is not
     bounded by ``u * |x|``; it is sized from ``storage_dtype`` alone.
     """
     if not (storage_dtype.is_floating_point or storage_dtype.is_complex):
         return ratio
-    store = torch.finfo(storage_dtype)
-    relative = 1.0 - 2.0 * (store.eps / 2.0 + norm_roundoff)
+    store = torch.finfo(_real_dtype(storage_dtype))
+    multiply = torch.finfo(_real_dtype(multiply_dtype))
+    if multiply_dtype == storage_dtype:
+        # The final cast is a no-op, leaving scale conversion and multiplication.
+        rounding = store.eps
+    else:
+        # Scale conversion and multiplication happen at the wider precision;
+        # only the result is rounded at the storage precision.
+        rounding = store.eps / 2.0 + multiply.eps
+    relative = 1.0 - rounding - 2.0 * norm_roundoff
     absolute = store.smallest_normal * store.eps
     return ratio * relative - absolute
 
@@ -135,16 +144,48 @@ def _guard_scale(
 def _finalize_scale(
     ratio: torch.Tensor,
     storage_dtype: torch.dtype,
+    multiply_dtype: torch.dtype,
     norm_roundoff: float,
     *,
     clamp_to_one: bool,
 ) -> torch.Tensor:
     """Guard a ratio for one leaf and reduce it to a usable scale."""
-    scale = _guard_scale(ratio, storage_dtype, norm_roundoff)
+    scale = _guard_scale(ratio, storage_dtype, multiply_dtype, norm_roundoff)
     if clamp_to_one:
         scale = torch.minimum(torch.ones_like(scale), scale)
     scale = torch.where(torch.isfinite(scale), scale, torch.zeros_like(scale))
     return torch.clamp(scale, min=0.0)
+
+
+def _scale_tensor(
+    tensor: torch.Tensor,
+    ratio: torch.Tensor,
+    compute_dtype: torch.dtype,
+    norm_roundoff: float,
+    *,
+    clamp_to_one: bool,
+) -> torch.Tensor:
+    """Scale a tensor in compute precision before one final storage cast."""
+    if not (tensor.dtype.is_floating_point or tensor.dtype.is_complex):
+        scale = _finalize_scale(
+            ratio,
+            tensor.dtype,
+            tensor.dtype,
+            norm_roundoff,
+            clamp_to_one=clamp_to_one,
+        )
+        return scale.to(dtype=tensor.dtype) * tensor
+
+    multiply_dtype = torch.promote_types(tensor.dtype, compute_dtype)
+    scale = _finalize_scale(
+        ratio,
+        tensor.dtype,
+        multiply_dtype,
+        norm_roundoff,
+        clamp_to_one=clamp_to_one,
+    )
+    scaled = tensor.to(dtype=multiply_dtype) * scale.to(dtype=multiply_dtype)
+    return scaled.to(dtype=tensor.dtype)
 
 
 def _sq_accum_dtype(leaves: list[torch.Tensor]) -> torch.dtype:
@@ -294,18 +335,19 @@ def _scale_leaves_by_group(
     pg: PerGroup,
     group_ratios: dict[str, torch.Tensor],
     treedef: Any,
+    compute_dtype: torch.dtype,
     norm_roundoff: float,
     *,
     clamp_to_one: bool,
 ) -> Any:
     scaled = [
-        _finalize_scale(
+        _scale_tensor(
+            leaf,
             group_ratios[pg.groups[path]],
-            leaf.dtype,
+            compute_dtype,
             norm_roundoff,
             clamp_to_one=clamp_to_one,
-        ).to(dtype=leaf.dtype)
-        * leaf
+        )
         for path, leaf in zip(paths, leaves, strict=True)
     ]
     return tree_unflatten(treedef, scaled)
@@ -337,7 +379,14 @@ def _auto_scale_per_group(
         group_ratios[group_name] = R / (norm + gamma_tensor)
 
     scaled = _scale_leaves_by_group(
-        paths, leaves, pg, group_ratios, treedef, roundoff, clamp_to_one=False
+        paths,
+        leaves,
+        pg,
+        group_ratios,
+        treedef,
+        acc_dtype,
+        roundoff,
+        clamp_to_one=False,
     )
 
     orig_norm = torch.sqrt(_sq_norm(leaves, acc_dtype, sq_dtype)).to(acc_dtype)
@@ -370,8 +419,8 @@ def auto_scale_pytree(
         gamma: Small positive denominator stabilizer :math:`\gamma` (default
             0.01). Must be strictly positive; at ``gamma=0`` this reduces to
             AUTO-V (undefined at zero gradient).
-        compute_dtype: Internal accumulation dtype for the L2-norm
-            reduction.  ``None`` (default) auto-promotes bf16/fp16 inputs to
+        compute_dtype: Internal dtype for the L2-norm reduction and leaf
+            scaling. ``None`` (default) auto-promotes bf16/fp16 inputs to
             float32.
 
     Returns:
@@ -382,12 +431,12 @@ def auto_scale_pytree(
     Formal guarantee:
         For every input, the output has L2 norm at most ``R`` (scalar case)
         or :math:`\sqrt{\sum_k R_k^2}` (per-group case).  The bound holds on
-        the values as *stored*: each leaf's scale is shrunk by a few ULPs of
-        that leaf's own dtype, so neither downcasting it nor the per-element
-        multiply can round the result back above ``R``.  Unlike
-        :func:`clip_pytree` there is no ``min(1, ...)``, so the shrink applies
-        to every input — ~0.8% of the output magnitude at bfloat16, ~0.1% at
-        float16 and ~1.2e-7 at float32.
+        the values as *stored*: each leaf is scaled in ``compute_dtype`` (never
+        below its storage precision) and cast once to its output dtype.  The
+        scale is shrunk by the final cast's rounding margin so the result cannot
+        exceed ``R``. Unlike :func:`clip_pytree` there is no ``min(1, ...)``, so
+        the shrink applies to every input — roughly 0.4% of the output magnitude
+        at bfloat16, 0.05% at float16, and a few ULPs at float32.
 
     NaN/Inf values are sanitized to zero before scaling, matching the
     behavior of :func:`clip_pytree`.
@@ -426,8 +475,7 @@ def auto_scale_pytree(
     def scale_leaf(t):
         if not isinstance(t, torch.Tensor):
             return t
-        scale = _finalize_scale(ratio, t.dtype, roundoff, clamp_to_one=False)
-        return scale.to(dtype=t.dtype) * t
+        return _scale_tensor(t, ratio, acc_dtype, roundoff, clamp_to_one=False)
 
     scaled = tree_map(
         lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
@@ -461,7 +509,14 @@ def _clip_pytree_per_group(
         group_ratios[group_name] = cn / norm
 
     clipped = _scale_leaves_by_group(
-        paths, leaves, pg, group_ratios, treedef, roundoff, clamp_to_one=True
+        paths,
+        leaves,
+        pg,
+        group_ratios,
+        treedef,
+        acc_dtype,
+        roundoff,
+        clamp_to_one=True,
     )
 
     if return_zero:
@@ -489,13 +544,14 @@ def clip_pytree(
     NaN and Inf values in the input are replaced with zeros before clipping.
     This is vmap-compatible and DP-safe: ``norm(output) <= clipping_norm`` holds
     on the values as *stored*, not just in exact arithmetic.  The norm reduction,
-    the downcast of the scale into a leaf's dtype, and the per-element multiply
-    all round to nearest and so can round *up*; each leaf's scale is shrunk by a
-    few ULPs of its own dtype to absorb that.  The shrink is applied before the
-    ``min(1, ...)``, so an input well inside the threshold is returned unchanged;
-    one whose norm sits within a few ULPs of ``clipping_norm`` is scaled by that
-    much.  For clipped inputs the cost is ~0.8% of the output magnitude at
-    bfloat16, ~0.1% at float16 and ~1.2e-7 at float32.
+    the multiplication run in ``compute_dtype`` (never below the leaf's storage
+    precision), and the result is cast once to the leaf dtype. That cast can
+    round up, so each leaf's scale is shrunk by its final-rounding margin. The
+    shrink is applied before the ``min(1, ...)``, so an input well inside the
+    threshold is returned unchanged; one whose norm sits within a few ULPs of
+    ``clipping_norm`` is scaled by that much. For clipped inputs the cost is
+    roughly 0.4% of the output magnitude at bfloat16, 0.05% at float16, and a
+    few ULPs at float32.
 
     Args:
         pytree: Tensor pytree to clip (flat or nested).
@@ -505,11 +561,11 @@ def clip_pytree(
         return_zero: If True, the output PyTree is guaranteed to be zero no matter
             what the inputs are. Does not influence the formal guarantees but useful
             for privacy amplification via padding (see https://arxiv.org/pdf/2411.04205).
-        compute_dtype: Internal accumulation dtype for the L2-norm
-            reduction.  ``None`` (default) auto-promotes bf16/fp16 inputs to
-            float32.  This keeps the sensitivity bound numerically honest
-            under low-precision compute — small per-element contributions
-            don't get rounded away during the sum-of-squares.
+        compute_dtype: Internal dtype for the L2-norm reduction and leaf
+            scaling. ``None`` (default) auto-promotes bf16/fp16 inputs to
+            float32. This keeps the sensitivity bound numerically honest under
+            low-precision compute — small per-element contributions don't get
+            rounded away during the sum-of-squares or multiplication.
 
     Returns:
         Tuple of (clipped_pytree, aux) where aux contains:
@@ -554,8 +610,7 @@ def clip_pytree(
     def scale_leaf(t):
         if not isinstance(t, torch.Tensor):
             return t
-        scale = _finalize_scale(ratio, t.dtype, roundoff, clamp_to_one=True)
-        return scale.to(dtype=t.dtype) * t
+        return _scale_tensor(t, ratio, acc_dtype, roundoff, clamp_to_one=True)
 
     clipped = tree_map(
         lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree

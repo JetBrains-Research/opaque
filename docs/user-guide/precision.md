@@ -127,9 +127,9 @@ sensitivity bound the privacy accountant relies on. Three rules:
 
 - **Safe defaults on every public knob**, but the precise default differs
   by primitive. Clipping defaults to `compute_dtype=None`, which auto-promotes
-  `bfloat16` / `float16` inputs to `float32` for the L2 reduction and leaves
-  `float32` / `float64` inputs untouched (so an fp64 forward stays fp64
-  through clipping). Both `gaussian_noise(...)` and `mf_gaussian_noise(...)`
+  `bfloat16` / `float16` inputs to `float32` for the L2 reduction and leaf
+  scaling, and leaves `float32` / `float64` inputs untouched (so an fp64
+  forward stays fp64 through clipping). Both `gaussian_noise(...)` and `mf_gaussian_noise(...)`
   default to the literal `compute_dtype=torch.float32` and sample at that
   precision regardless of the input pytree's dtype. If you want `compute_dtype
   =torch.float64` end-to-end, you must pass it explicitly to clipping *and*
@@ -141,15 +141,15 @@ sensitivity bound the privacy accountant relies on. Three rules:
 - **You can raise it.** `compute_dtype=torch.float64` is safe (and
   occasionally useful for very small clip thresholds or aggressive
   noise multipliers).
-- **It does not cover the *output* dtype.** A scale computed in `float32` still
-  has to be stored in the leaf dtype and multiplied through, and both steps
-  round to nearest — which can round *up*, past the bound. Clipping therefore
-  shrinks each leaf's scale by a few ULPs of that leaf's own dtype so that
-  `norm(output) <= clipping_norm` holds on the values as stored. Clipped values
-  lose ~0.8% of their magnitude at `bfloat16`, ~0.1% at `float16` and ~1.2e-7 at
-  `float32`; a `float32` leaf sitting beside a `bfloat16` one pays only the
-  `float32` cost. The guard widens if `compute_dtype` is set below `float32`,
-  since the norm it is measured against is then less accurate.
+- **The final output cast still matters.** Clipping multiplies in
+  `compute_dtype`, then casts the result once to the leaf dtype. That final
+  cast can round up past the bound, so clipping shrinks each leaf's scale by
+  its rounding margin and guarantees `norm(output) <= clipping_norm` on the
+  values as stored. Clipped values lose roughly 0.4% of their magnitude at
+  `bfloat16`, 0.05% at `float16`, and a few ULPs at `float32`; a `float32`
+  leaf sitting beside a `bfloat16` one pays only the `float32` cost. The guard
+  widens if `compute_dtype` is set below `float32`, since the norm it is
+  measured against is then less accurate.
 
 Under microbatching the running sum is held at the accumulation precision as
 well, so splitting a batch does not degrade the result — a `bfloat16` run
