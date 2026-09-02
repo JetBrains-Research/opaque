@@ -19,6 +19,7 @@ from opaque.api.dpftrl.noise._lambda_cgd import _column_norm
 from opaque.api.dpftrl.noise._streaming_matrix import identity
 from opaque.dpftrl.noise import (
     band_mf_strategy,
+    bisr_strategy,
     blt_strategy,
     identity_strategy,
     lambda_cgd_strategy,
@@ -101,8 +102,9 @@ class TestStreamingHorizonGuard:
             identity_strategy,
             lambda: blt_strategy(max_buffers=3),
             lambda: band_mf_strategy(bands=3),
+            lambda: bisr_strategy(bandwidth=3),
         ],
-        ids=["identity", "blt", "band_mf"],
+        ids=["identity", "blt", "band_mf", "bisr"],
     )
     def test_raises_past_horizon(self, strategy_factory):
         n_steps = 5
@@ -184,6 +186,17 @@ class TestNStepsTypeValidation:
                 {"w": torch.zeros(8)},
                 lambda_cgd_strategy(lambda_=0.9),
                 n_steps=4.2,  # type: ignore[arg-type]
+                noise_multiplier=1.0,
+                key=key(0),
+            )
+
+    @pytest.mark.parametrize("n_steps", [4.2, True])
+    def test_bisr_rejects_non_integer_n_steps(self, n_steps):
+        with pytest.raises(TypeError, match=r"n_steps must be an int"):
+            mf_gaussian_noise(
+                {"w": torch.zeros(8)},
+                bisr_strategy(bandwidth=3),
+                n_steps=n_steps,
                 noise_multiplier=1.0,
                 key=key(0),
             )

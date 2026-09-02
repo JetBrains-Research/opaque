@@ -17,7 +17,9 @@ from opaque.dpftrl.noise import (
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.exceptions import ConfigurationError
+from opaque.pytree import tree_leaves
 from opaque.random import key
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import (
     NoisedPytree,
     PerGroup,
@@ -342,6 +344,76 @@ class TestSecondMomentMFNoise:
         assert state._step_counter == 1
         _, state = noise_fn(_paired(grads), state)
         assert state._step_counter == 2
+
+    def test_bisr_streams_remain_bounded_and_resume_exactly(self, grad_template):
+        """Both paired BISR windows checkpoint independently past ring fill."""
+        n_steps = 9
+        first = bisr_strategy(bandwidth=4, momentum=0.9)
+        second = bisr_strategy(bandwidth=3, momentum=0.99)
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            first,
+            n_steps=n_steps,
+            noise_multiplier=0.8,
+            key=key(795),
+            second_moment_strategy=second,
+            compute_dtype=torch.float64,
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+
+        for _ in range(5):
+            _, state = noise_fn(paired, state)
+
+        first_inner = state._first_state._inner_state
+        second_inner = state._second_state._inner_state
+        assert state._first_state._rng_key != state._second_state._rng_key
+        assert len(first_inner.history) == 3
+        assert len(second_inner.history) == 2
+        assert first_inner.history is not second_inner.history
+        assert first_inner.history[0] is not second_inner.history[0]
+        assert any(
+            not torch.equal(first_value, second_value)
+            for first_value, second_value in zip(
+                tree_leaves(first_inner.history[0]),
+                tree_leaves(second_inner.history[0]),
+                strict=True,
+            )
+        )
+
+        saved = state_dict(state)
+        assert saved["_first_state._inner_state.layout_version"] == 1
+        assert saved["_second_state._inner_state.layout_version"] == 1
+
+        resumed_fn, resumed_template = mf_gaussian_noise(
+            grad_template,
+            first,
+            n_steps=n_steps,
+            noise_multiplier=0.8,
+            key=key(999),
+            second_moment_strategy=second,
+            compute_dtype=torch.float64,
+        )
+        resumed_state = from_state_dict(resumed_template, saved)
+
+        for _ in range(5, n_steps):
+            expected, state = noise_fn(paired, state)
+            actual, resumed_state = resumed_fn(paired, resumed_state)
+            expected_leaves = tree_leaves(expected.noisy_grads.pytree)
+            actual_leaves = tree_leaves(actual.noisy_grads.pytree)
+            for actual_leaf, expected_leaf in zip(
+                actual_leaves, expected_leaves, strict=True
+            ):
+                torch.testing.assert_close(
+                    actual_leaf, expected_leaf, atol=0.0, rtol=0.0
+                )
+            expected_sq_leaves = tree_leaves(expected.noisy_squared_grads.pytree)
+            actual_sq_leaves = tree_leaves(actual.noisy_squared_grads.pytree)
+            for actual_leaf, expected_leaf in zip(
+                actual_sq_leaves, expected_sq_leaves, strict=True
+            ):
+                torch.testing.assert_close(
+                    actual_leaf, expected_leaf, atol=0.0, rtol=0.0
+                )
 
     def test_deterministic_with_same_key(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)

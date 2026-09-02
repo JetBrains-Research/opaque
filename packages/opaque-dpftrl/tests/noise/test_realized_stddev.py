@@ -214,6 +214,53 @@ class TestStreamingMatrixRealizedSigma:
             nm * max_norm * expected_row_l2, rel=1e-9
         )
 
+    @pytest.mark.parametrize("normalized", [False, True])
+    def test_bisr_matches_every_dense_row_across_window_phases(self, normalized):
+        """BISR reports the dense-reference row norm before and after ring fill."""
+        n_steps = 9
+        bandwidth = 4
+        strategy = bisr_strategy(
+            bandwidth=bandwidth,
+            momentum=0.7,
+            normalized=normalized,
+        )
+        expected_row_l2 = (
+            strategy.streaming_matrix(n_steps=n_steps)
+            .materialize(n_steps)
+            .square()
+            .sum(dim=1)
+            .sqrt()
+        )
+        nm, max_norm = 1.3, 0.4
+        noise_fn, state = mf_gaussian_noise(
+            {"w": torch.zeros(8)},
+            strategy,
+            n_steps=n_steps,
+            noise_multiplier=nm,
+            key=key(795),
+        )
+        grads = clipped({"w": torch.zeros(8)}, max_norm=max_norm)
+
+        reported = []
+        for _ in range(n_steps):
+            out, state = noise_fn(grads, state)
+            reported.append(float(out.noise_stddev))
+
+        expected = expected_row_l2 * (nm * max_norm)
+        torch.testing.assert_close(
+            torch.tensor(reported, dtype=torch.float64),
+            expected,
+            atol=1e-12,
+            rtol=1e-12,
+        )
+        # Name the transition rows explicitly: empty, partially filled, full,
+        # steady-state replacement, and the calibrated horizon boundary.
+        assert reported[0] == pytest.approx(float(expected[0]))
+        assert reported[bandwidth - 2] == pytest.approx(float(expected[bandwidth - 2]))
+        assert reported[bandwidth - 1] == pytest.approx(float(expected[bandwidth - 1]))
+        assert reported[bandwidth] == pytest.approx(float(expected[bandwidth]))
+        assert reported[-1] == pytest.approx(float(expected[-1]))
+
 
 class TestLambdaCgdRealizedSigma:
     """λ-CGD (PRNG-replay): realized σ = base σ · sqrt(1+λ²) · d_t."""

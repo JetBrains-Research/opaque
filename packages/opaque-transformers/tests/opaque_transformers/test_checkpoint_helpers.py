@@ -10,7 +10,7 @@ import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
-from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
+from opaque.dpftrl.noise import band_mf_strategy, bisr_strategy, mf_gaussian_noise
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.exceptions import CheckpointError
 from opaque.random import key
@@ -296,6 +296,19 @@ class TestNoiseStreamContinuity:
                 n_steps=4,
                 noise_multiplier=1.0,
                 key=key(42),
+            ),
+        )
+
+    def test_bisr_bounded_noise_continues_after_resume(self, tmp_path):
+        self._assert_continuity(
+            tmp_path,
+            lambda: mf_gaussian_noise(
+                torch.zeros(8),
+                bisr_strategy(bandwidth=3, momentum=0.9),
+                n_steps=4,
+                noise_multiplier=1.0,
+                key=key(42),
+                compute_dtype=torch.float64,
             ),
         )
 

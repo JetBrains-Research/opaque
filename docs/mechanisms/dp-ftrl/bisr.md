@@ -7,7 +7,8 @@ from the inverse square root of the workload matrix.
 
 - **Paper**: [Back to Square Roots: An Optimal Bound on the Matrix Factorization Error for Multi-Epoch Differentially Private SGD](https://arxiv.org/abs/2505.12128)
 - **Strategy matrix**: Inverse is banded Toeplitz with bandwidth p
-- **Memory**: p-1 noise vectors (via PRNG replay or small buffer)
+- **Memory**: `min(p, n_steps) - 1` previous iid noise pytrees (bounded,
+  but not memory-free)
 - **Optimality**: Asymptotically optimal (matches upper and lower bounds)
 - **Amplification**: Balls-in-Bins (BnB) with MC dominating pair accounting
 
@@ -42,7 +43,7 @@ eps = training.epsilon_at(1e-5)
 
 | Parameter | Description |
 |-----------|-------------|
-| `bandwidth` | Number of bands p (≥ 2). Higher = better utility, more PRNG replays. |
+| `bandwidth` | Number of bands p (≥ 2). Higher can improve utility, at the cost of more retained noise buffers and convolution work. |
 | `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
 | `lr_schedule` | Deprecated compatibility argument; only `None` is accepted |
 
@@ -94,8 +95,50 @@ noise_fn, state = mf_gaussian_noise(
 )
 ```
 
-The noise function regenerates p-1 previous noise vectors via PRNG replay
-and computes the linear combination defined by the BISR coefficients.
+At step `t`, the noise function draws one fresh iid noise pytree and applies the
+signed banded inverse directly:
+
+\[
+y_t = d_t \sum_{k=0}^{\min(t,p-1)} q_k z_{t-k}.
+\]
+
+Here `q_k` are the inverse coefficients, `z_t` is the fresh iid draw, and `d_t`
+is `1` for unnormalized BISR or the finite-horizon column-normalization factor
+for normalized BISR. Runtime state keeps only the newest
+`min(p, n_steps) - 1` iid draws. It therefore uses
+`O(min(p, n_steps) * model_size)` tensor storage and the same asymptotic work
+per step, independent of the training horizon once `n_steps >= p`.
+
+This bounded ring is the complete `O(p)` execution design required by
+[issue #795](https://github.com/JetBrains-Research/opaque/issues/795). It is not
+a zero-buffer design: a large model or bandwidth can still make the retained
+pytrees significant. PRNG replay could trade that persistent tensor storage for
+extra noise generation, but replay and a reusable generic banded-inverse
+executor are follow-up directions rather than requirements for this bounded
+BISR path.
+
+The full-horizon forward-substitution operator remains available through
+`BisrStrategy.streaming_matrix()` as a numerical reference, but the public
+noise path does not allocate its `n_steps - 1` model-shaped history.
+
+!!! warning "Checkpoint layout change"
+
+    BISR runtime checkpoints written before bounded-state support contain past
+    correlated outputs, while current checkpoints contain a versioned window of
+    past iid draws. These layouts are not safely interchangeable. Restoring a
+    standalone legacy BISR noise state fails with a targeted BISR checkpoint
+    error; a full trainer checkpoint may instead fail first at its outer bundle
+    version. Resume either form with the Opaque version that created it. This
+    rejection is intentional; the bounded-state change does not attempt a
+    legacy-state migration.
+
+    Exact continuation from a bounded-layout checkpoint requires the same BISR
+    execution identity and base noise scale as the original run, in addition to
+    the saved iid window. Open
+    [issue #789](https://github.com/JetBrains-Research/opaque/issues/789) tracks
+    the separate, urgent problem where calibrated DP-FTRL resume can rebuild a
+    mechanism with a different noise multiplier. This bounded-state change does
+    not fix or relax that resume requirement.
 
 ## Assumptions and limitations
 
@@ -107,5 +150,6 @@ and computes the linear combination defined by the BISR coefficients.
 
 ## Bandwidth selection
 
-Bandwidth `p` retains `p - 1` noise vectors. Measure the runtime and utility
-trade-off on your workload.
+Bandwidth `p` retains up to `p - 1` noise vectors. That makes memory independent
+of a longer training horizon, not independent of model size or bandwidth.
+Measure the runtime and utility trade-off on your workload.

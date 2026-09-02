@@ -20,7 +20,12 @@ from opaque_test_support import (
 
 from opaque.distributed import sum_gradients, sync
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad
-from opaque.dpftrl.noise import band_mf_strategy, identity_strategy, mf_gaussian_noise
+from opaque.dpftrl.noise import (
+    band_mf_strategy,
+    bisr_strategy,
+    identity_strategy,
+    mf_gaussian_noise,
+)
 from opaque.functional import make_functional
 from opaque.pytree import tree_leaves, tree_map
 from opaque.random import key
@@ -438,6 +443,52 @@ def _worker_per_group_mf_state_gloo(rank: int, world_size: int, port: int) -> No
         token = torch.tensor([1.0])
         dist.all_reduce(token, op=dist.ReduceOp.SUM)
         assert token.item() == float(world_size)
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_bisr_bounded_state_gloo(rank: int, world_size: int, port: int) -> None:
+    """Keep BISR releases and each local history slot identical across ranks."""
+    _setup_gloo(rank, world_size, port)
+    try:
+        n_steps = 7
+        bandwidth = 3
+        template = {
+            "weight": torch.zeros(6),
+            "nested": {"bias": torch.zeros(3)},
+        }
+        noise_fn, state = mf_gaussian_noise(
+            template,
+            bisr_strategy(bandwidth=bandwidth, momentum=0.9),
+            n_steps=n_steps,
+            noise_multiplier=0.8,
+            key=key(795),
+            compute_dtype=torch.float64,
+        )
+        gradients = clipped(tree_map(torch.zeros_like, template), max_norm=1.0)
+
+        for step in range(n_steps):
+            noised, state = noise_fn(gradients, state)
+            state = sync(state)
+            assert state._step_counter == step + 1
+            assert state._inner_state.step == step + 1
+            assert len(state._inner_state.history) == bandwidth - 1
+
+            for value in tree_leaves(noised.pytree):
+                gathered = [torch.zeros_like(value) for _ in range(world_size)]
+                dist.all_gather(gathered, value)
+                assert all(torch.equal(gathered[0], other) for other in gathered[1:])
+
+            # The distributed schema intentionally treats the inner matrix
+            # state as local, so verify the fixed window itself, not just the
+            # public step counter validated by ``sync``.
+            for history_tree in state._inner_state.history:
+                for value in tree_leaves(history_tree):
+                    gathered = [torch.zeros_like(value) for _ in range(world_size)]
+                    dist.all_gather(gathered, value)
+                    assert all(
+                        torch.equal(gathered[0], other) for other in gathered[1:]
+                    )
     finally:
         _cleanup_ddp()
 

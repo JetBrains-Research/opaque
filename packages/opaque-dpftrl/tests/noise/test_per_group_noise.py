@@ -11,7 +11,7 @@ from opaque.api.dpftrl.noise._distributed import (
     fingerprint_per_group_max_norm,
     mf_per_group_sync_fingerprint_for_latch,
 )
-from opaque.api.dpftrl.noise._engine import MFNoiseState
+from opaque.api.dpftrl.noise._engine import MFNoiseState, _matrix_factorization_noise
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import (
@@ -23,6 +23,7 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_gaussian_noise,
 )
+from opaque.pytree import tree_leaves
 from opaque.random import key
 from opaque.types import NoisedPytree, PerGroup, SecondMomentClippingOutput, clipped
 
@@ -244,6 +245,68 @@ class TestMfNoisePerGroupSingleStream:
         out, _ = noise_fn(grads, state)
         assert isinstance(out.noise_stddev, PerGroup)
         assert not torch.allclose(out.pytree["w"], grads.pytree["w"])
+
+    def test_bisr_per_group_crosses_ring_fill_with_dense_row_stddevs(
+        self, grad_template
+    ):
+        n_steps = 7
+        bandwidth = 3
+        nm = 0.8
+        strategy = bisr_strategy(
+            bandwidth=bandwidth,
+            momentum=0.9,
+            normalized=True,
+        )
+        dense_row_l2 = (
+            strategy.streaming_matrix(n_steps=n_steps)
+            .materialize(n_steps)
+            .square()
+            .sum(dim=1)
+            .sqrt()
+        )
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            strategy,
+            n_steps=n_steps,
+            noise_multiplier=nm,
+            key=key(795),
+        )
+        dense_fn, dense_state = _matrix_factorization_noise(
+            grad_template,
+            strategy.streaming_matrix(n_steps=n_steps),
+            key=key(795),
+            n_steps=n_steps,
+        )
+        pg = PerGroup(
+            groups={"w": "attn", "b": "mlp"},
+            values={"attn": 0.5, "mlp": 1.5},
+        )
+        grads = clipped(
+            {"w": torch.zeros(4, 3), "b": torch.zeros(4)},
+            max_norm=pg,
+        )
+
+        for step in range(n_steps):
+            out, state = noise_fn(grads, state)
+            base = per_group_noise_stddev(pg, nm)
+            dense_tree, dense_state = dense_fn(
+                grads.pytree,
+                dense_state,
+                stddev=base,
+            )
+            for actual, expected in zip(
+                tree_leaves(out.pytree), tree_leaves(dense_tree), strict=True
+            ):
+                torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
+            assert isinstance(out.noise_stddev, PerGroup)
+            for group in base.values:
+                assert out.noise_stddev.values[group] == pytest.approx(
+                    base.values[group] * float(dense_row_l2[step]),
+                    rel=1e-12,
+                )
+            assert len(state._inner_state.history) == bandwidth - 1
+
+        assert state._step_counter == n_steps
 
     def test_constant_max_norm_latch_pergroup(self, grad_template):
         """Identical ``PerGroup`` across calls keeps the latch happy."""
